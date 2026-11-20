@@ -56,6 +56,7 @@ import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { removeWords } from "../../kit/RemoveDraftButton.tsx";
 import { Code } from "../../kit/status.tsx";
+import { useTitleObject } from "../../kit/title.ts";
 import { navigate } from "../../router.tsx";
 import {
   appFor,
@@ -561,6 +562,11 @@ export function Docs({
                   else newHere("new-page", into);
                 }}
                 disabled={rows.every((row) => row.kind !== "folder")}
+                title={
+                  rows.every((row) => row.kind !== "folder")
+                    ? "Make a folder first: a page goes in a folder."
+                    : undefined
+                }
               >
                 <FilePlus aria-hidden="true" size={14} />
                 New page
@@ -1466,6 +1472,7 @@ function Reader({
 }) {
   const product = useProduct();
   const brand = useBrand();
+  useTitleObject(page.title);
   const { resources } = useWorkspaceTerms(tenantId, workspaceId);
   const app = appFor(list.apps, page.path);
   const read = useMemo(

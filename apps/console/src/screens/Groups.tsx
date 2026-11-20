@@ -8,6 +8,7 @@ import { usePagedList } from "../kit/paged.tsx";
 import { Code, Mono, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
+import { useUrlParam } from "../router.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
 
 interface Person {
@@ -166,7 +167,9 @@ interface MemberGroup {
 /** Groups of members: staff who are given access together. */
 export function Groups({ base, framed }: { base: string; framed?: Framed }) {
   const groups = useLoad<{ items: MemberGroup[] }>(`${base}/groups`);
-  const [open, setOpen] = useState<{ id: string; name: string }>();
+  // The open group is in the address, so a link reaches it and Back closes it.
+  const [openId, setOpenId] = useUrlParam("group", undefined, { push: true });
+  const open = groups.data?.items.find((row) => row.id === openId);
   const [creating, setCreating] = useState(false);
   return (
     <>
@@ -216,7 +219,7 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
             align: "end",
             cell: (row) => (
               <span className="inline-flex gap-1">
-                <Button size="small" onClick={() => setOpen(row)}>
+                <Button size="small" onClick={() => setOpenId(row.id)}>
                   Members
                 </Button>
                 <Button
@@ -278,7 +281,7 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
             path={`${base}/groups/${open.id}`}
             candidates={`${base}/members`}
             noun="member"
-            onClose={() => setOpen(undefined)}
+            onClose={() => setOpenId(undefined)}
           />
         )}
       </Closing>
@@ -296,7 +299,8 @@ interface EndUserGroup {
 /** Groups of end users: the people of the tenant's apps, sorted by what they may see and do. */
 export function EndUserGroups({ base, framed }: { base: string; framed?: Framed }) {
   const groups = useLoad<{ items: EndUserGroup[] }>(`${base}/end-user-groups`);
-  const [open, setOpen] = useState<EndUserGroup>();
+  const [openId, setOpenId] = useUrlParam("group", undefined, { push: true });
+  const open = groups.data?.items.find((row) => row.id === openId);
   const [creating, setCreating] = useState(false);
   return (
     <>
@@ -332,7 +336,7 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
             align: "end",
             cell: (row) => (
               <span className="inline-flex gap-1">
-                <Button size="small" onClick={() => setOpen(row)}>
+                <Button size="small" onClick={() => setOpenId(row.id)}>
                   People
                 </Button>
                 <RemoveButton
@@ -383,7 +387,7 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
             candidates={`${base}/end-users`}
             noun="end user"
             onClose={() => {
-              setOpen(undefined);
+              setOpenId(undefined);
               // The count on the list is of the people just added or taken out.
               groups.reload();
             }}

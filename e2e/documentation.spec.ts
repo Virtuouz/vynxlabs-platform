@@ -566,6 +566,8 @@ test("a page is dragged to another folder, its details are a form, and a trigger
   await expect(page.locator(".monaco-editor .view-lines").first()).toContainText(
     "description: What customers ask most.",
   );
+  // The preview and the details share one side since phase 21: the preview is its own tab.
+  await page.getByRole("tab", { name: "Preview" }).click();
   await expect(page.getByRole("region", { name: "The page as it will be served" })).toContainText(
     "What customers ask most.",
   );

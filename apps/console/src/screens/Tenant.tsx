@@ -8,6 +8,7 @@ import { KeyValues } from "../kit/layout.tsx";
 import { setOperatorAccess } from "../kit/OperatorStrip.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import {
   type CreateConfig,
   CreateDialog,
@@ -715,13 +716,15 @@ function WorkspaceDetail({
                   isEditedKind(row.kind) ? (
                     <Link
                       to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
-                      className="font-mono text-code text-action"
+                      className="block min-w-0 font-mono text-code text-action"
                     >
-                      {row.path}
+                      <Truncate mode="middle">{row.path}</Truncate>
                     </Link>
                   ) : (
-                    <span className="flex flex-col">
-                      <Code>{row.path}</Code>
+                    <span className="flex min-w-0 flex-col">
+                      <Code>
+                        <Truncate mode="middle">{row.path}</Truncate>
+                      </Code>
                       {row.title ? (
                         <span className="text-meta text-ink-muted">{row.title}</span>
                       ) : null}

@@ -189,7 +189,7 @@ test("POLISH-002: a new script at a path that is taken is refused on the path fi
   await expect(owner).toHaveURL(/\/scripts\/new$/);
   const after = await ok(owner, "GET", `${W}/resources/${taken}`);
   expect(after.revision).toBe(before.revision);
-  expect(await draftOf(owner, W, taken)).toBe("none");
+  await expect.poll(() => draftOf(owner, W, taken)).toBe("none");
 });
 
 test("POLISH-002: Make an app with the name of the Fernhill handbook is refused on the address", async () => {
@@ -220,7 +220,7 @@ test("POLISH-010: a create of a flow or a schedule at a taken path is refused by
     expect(refused.body.code ?? refused.body.error?.code ?? JSON.stringify(refused.body)).toMatch(
       /path_taken/,
     );
-    expect(await draftOf(owner, W, path)).toBe("none");
+    await expect.poll(() => draftOf(owner, W, path)).toBe("none");
   }
 });
 
@@ -262,9 +262,9 @@ test("POLISH-003: a script, a flow, a query and a docs site are removed, taken b
   );
   await say(owner, "Remove");
   await expect(owner).toHaveURL(/\/changes$/);
-  expect(await draftOf(owner, W, `${ROOT}/script`)).toBe("removed");
+  await expect.poll(() => draftOf(owner, W, `${ROOT}/script`)).toBe("removed");
   await ok(owner, "DELETE", `${W}/drafts/${ROOT}/script`);
-  expect(await draftOf(owner, W, `${ROOT}/script`)).toBe("none");
+  await expect.poll(() => draftOf(owner, W, `${ROOT}/script`)).toBe("none");
   await owner.goto(`${L}/scripts/edit/${ROOT}/script`);
   await owner.getByRole("button", { name: "Remove", exact: true }).click();
   await say(owner, "Remove");
@@ -277,7 +277,7 @@ test("POLISH-003: a script, a flow, a query and a docs site are removed, taken b
   await expect(owner.getByRole("button", { name: "Keep this flow" })).toBeVisible();
   await owner.getByRole("button", { name: "Keep this flow" }).click();
   await say(owner, "Keep");
-  expect(await draftOf(owner, W, `${ROOT}/flow`)).toBe("none");
+  await expect.poll(() => draftOf(owner, W, `${ROOT}/flow`)).toBe("none");
   await owner.getByRole("button", { name: "Remove", exact: true }).click();
   await say(owner, "Remove");
   await expect(owner.getByRole("button", { name: "Keep this flow" })).toBeVisible();
@@ -289,7 +289,7 @@ test("POLISH-003: a script, a flow, a query and a docs site are removed, taken b
   await expect(owner.getByRole("button", { name: "Keep this query" })).toBeVisible();
   await owner.getByRole("button", { name: "Keep this query" }).click();
   await say(owner, "Keep");
-  expect(await draftOf(owner, W, `${ROOT}/query`)).toBe("none");
+  await expect.poll(() => draftOf(owner, W, `${ROOT}/query`)).toBe("none");
   await owner.getByRole("button", { name: "Remove", exact: true }).click();
   await say(owner, "Remove");
   await expect(owner.getByRole("button", { name: "Keep this query" })).toBeVisible();
@@ -307,7 +307,7 @@ test("POLISH-003: a script, a flow, a query and a docs site are removed, taken b
   await owner.getByRole("menuitem", { name: /Remove the site's app/ }).click();
   await expect(owner.getByRole("dialog")).toContainText("The site stops being served");
   await say(owner, "Remove");
-  expect(await draftOf(owner, W, `${ROOT}-site`)).toBe("removed");
+  await expect.poll(() => draftOf(owner, W, `${ROOT}-site`)).toBe("removed");
 
   // The removals are deployed.
   await deploy([`${ROOT}/script`, `${ROOT}/flow`, `${ROOT}/query`, `${ROOT}-site`]);

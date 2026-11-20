@@ -125,6 +125,7 @@ test("a variable is made with a path, a purpose and a default, and saved as a dr
       kind: "variable",
       schemaVersion: 1,
       body: { description: "How many orders at once.", default: "50" },
+      create: true,
     },
   });
   await screen.findByText("Draft");

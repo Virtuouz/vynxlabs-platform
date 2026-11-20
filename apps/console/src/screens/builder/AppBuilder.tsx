@@ -4,7 +4,7 @@ import { Button, Notice, TextField } from "@volvel/ui";
 import { Monitor, Plus, Smartphone, Tablet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../../api.ts";
-import { ask, failureText, notify } from "../../ask.tsx";
+import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { useHistory } from "../../kit/history.ts";
 import { Loading } from "../../kit/LoadState.tsx";
 import { type DraftAnswer, type Listed, slug } from "./data.ts";
@@ -228,25 +228,31 @@ export function AppBuilder({
             action={
               <Button
                 onClick={async () => {
+                  let made = false;
                   const address = await ask.prompt({
                     title: "Make an app for it",
                     text: "The app's address ends with this. Lower-case letters, digits and dashes.",
                     label: "Address",
                     initial: slug(body.title),
                     action: "Make the app",
+                    submit: async (value) => {
+                      try {
+                        await api.put(`${root}/drafts/${slug(value)}`, {
+                          kind: "app",
+                          schemaVersion: 1,
+                          body: { title: body.title, interface: path },
+                          create: true,
+                        });
+                        made = true;
+                        return undefined;
+                      } catch (error) {
+                        return takenText(error) ?? failureText(error);
+                      }
+                    },
                   });
-                  if (!address) return;
-                  try {
-                    await api.put(`${root}/drafts/${slug(address)}`, {
-                      kind: "app",
-                      schemaVersion: 1,
-                      body: { title: body.title, interface: path },
-                    });
-                    list.reload();
-                    drafts.reload();
-                  } catch (error) {
-                    notify.error(error);
-                  }
+                  if (!address || !made) return;
+                  list.reload();
+                  drafts.reload();
                 }}
               >
                 Make an app for it

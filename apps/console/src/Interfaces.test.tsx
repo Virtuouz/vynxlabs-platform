@@ -111,6 +111,7 @@ test("an app is made as an interface and the app that serves it, and is then bui
         kind: "interface",
         schemaVersion: 1,
         body: { title: "Stock room", pages: [{ id: "main", title: "Stock room", widgets: [] }] },
+        create: true,
       },
     ],
     [
@@ -119,9 +120,36 @@ test("an app is made as an interface and the app that serves it, and is then bui
         kind: "app",
         schemaVersion: 1,
         body: { title: "Stock room", interface: "screens/stock-room" },
+        create: true,
       },
     ],
   ]);
+});
+
+test("an app made at an address something holds is refused on the address, and keeps what was typed", async () => {
+  routes[`GET ${api}/interfaces`] = () => [200, { items: [] }];
+  routes[`PUT ${api}/drafts/screens/stock-room`] = (saved) => [
+    200,
+    { revision: 1, body: (saved as Any).body },
+  ];
+  routes[`PUT ${api}/drafts/stock-room`] = () => [
+    409,
+    { code: "path_taken", detail: "stock-room is the path of an app." },
+  ];
+  routes[`DELETE ${api}/drafts/screens/stock-room`] = () => [200, {}];
+  show(<Interfaces root={root} link="/t/t1/workspaces/w1" editable />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Make an app" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Stock room" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Make the app" }));
+  expect(await within(dialog).findByText(/Something already exists at this path/)).toBeTruthy();
+  expect((within(dialog).getByLabelText("Name") as HTMLInputElement).value).toBe("Stock room");
+  expect((within(dialog).getByLabelText("Address") as HTMLInputElement).value).toBe("stock-room");
+  // The screen made for it a moment before is not left behind.
+  await waitFor(() => expect(sent("DELETE", "/drafts/screens/stock-room")).toHaveLength(1));
+  expect(window.location.pathname).toBe("/");
 });
 
 test("a workspace that is not a dev workspace lists its apps and builds none", async () => {

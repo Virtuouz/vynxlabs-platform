@@ -498,6 +498,14 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             body: AnyObject,
             deleted: Type.Optional(Type.Boolean()),
             revision: Type.Optional(Type.Integer({ minimum: 1 })),
+            create: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Say that this makes something new. When the path already holds a draft or a " +
+                  "deployed resource, it is refused with 409 `path_taken` and nothing is saved. " +
+                  "Without it, a save without a revision replaces what is there.",
+              }),
+            ),
             path: Type.Optional(
               Type.String({
                 maxLength: 255,
@@ -533,6 +541,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             body: body.body,
             deleted: body.deleted,
             revision: body.revision,
+            create: body.create,
             path,
             ...(body.path !== undefined && body.path !== path
               ? { moveTo: movedPath(body.path) }
@@ -590,6 +599,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 source: Type.Optional(Type.String()),
                 deleted: Type.Optional(Type.Boolean()),
                 revision: Type.Optional(Type.Integer({ minimum: 1 })),
+                create: Type.Optional(
+                  Type.Boolean({
+                    description: "A new one: refused as `path_taken` when the path is held.",
+                  }),
+                ),
               }),
               { minItems: 1, maxItems: 500 },
             ),
@@ -662,6 +676,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               body: kind === "doc" ? { source } : (change.body ?? {}),
               deleted: change.deleted,
               revision: change.revision,
+              create: change.create,
               path: change.path,
               ...(change.to !== undefined && change.to !== change.path
                 ? { moveTo: change.to }

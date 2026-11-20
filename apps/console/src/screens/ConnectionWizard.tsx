@@ -9,7 +9,7 @@ import {
 } from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText } from "../ask.tsx";
+import { failureText, takenText } from "../ask.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
@@ -191,6 +191,9 @@ export function ConnectionWizard({
   const [saved, setSaved] = useState<ConnectionRow | undefined>(row?.bound ? row : undefined);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
+  const [pathTaken, setPathTaken] = useState<string>();
+  // The path whose draft this wizard has made, so a retry after a later step failed does not read it as taken.
+  const madeAt = useRef<string | undefined>(undefined);
   const [taskId, setTaskId] = useState<string>();
   const [found, setFound] = useState<{ ok: boolean; text: string }>();
   const credentialRef = useRef<HTMLDivElement>(null);
@@ -249,6 +252,7 @@ export function ConnectionWizard({
 
   const save = async () => {
     setProblem(undefined);
+    setPathTaken(undefined);
     setFound(undefined);
     if (!chosen && !PATH.test(newPath)) {
       setProblem(
@@ -259,12 +263,14 @@ export function ConnectionWizard({
     setBusy(true);
     try {
       // A connection nothing declares yet is declared in a draft, deployed with the next change.
-      if (!chosen) {
+      if (!chosen && madeAt.current !== path) {
         await api.put(`${root}/drafts/${path}`, {
           kind: "connection",
           schemaVersion: 1,
           body: { connector },
+          create: true,
         });
+        madeAt.current = path;
       }
       await api.put(`${root}/connection-bindings/${path}`, {
         config,
@@ -298,7 +304,9 @@ export function ConnectionWizard({
       // An OAuth connection is tested once it is connected; anything else, now.
       if (!isOAuth) await test(path);
     } catch (error) {
-      setProblem(failureText(error));
+      const refused = takenText(error);
+      if (refused && !chosen) setPathTaken(refused);
+      else setProblem(failureText(error));
     } finally {
       setBusy(false);
     }
@@ -362,7 +370,11 @@ export function ConnectionWizard({
                     value={newPath}
                     placeholder="crm"
                     hint="What scripts call it by."
-                    onChange={setNewPath}
+                    {...(pathTaken ? { error: pathTaken } : {})}
+                    onChange={(value) => {
+                      setPathTaken(undefined);
+                      setNewPath(value);
+                    }}
                   />
                   <SelectField
                     label="Kind"

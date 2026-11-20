@@ -35,7 +35,7 @@ import {
   useState,
 } from "react";
 import { ApiError, api, useLoad } from "../../api.ts";
-import { ask, failureText, notify } from "../../ask.tsx";
+import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { Diagram } from "../../diagrams/Diagram.tsx";
 import type { CodeEditorHandle, Marker } from "../../editor/CodeEditor.tsx";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
@@ -143,6 +143,7 @@ export function DocEditor({
   const [saved, setSaved] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [clash, setClash] = useState(false);
+  const [taken, setTaken] = useState<string>();
   const [reveal, setReveal] = useState<{ line: number; at: number }>();
   const [comparing, setComparing] = useState(compareAsked === "1");
   const [side, setSide] = useState<"preview" | "details">("preview");
@@ -260,13 +261,14 @@ export function DocEditor({
   const save = async () => {
     if (placed || source === undefined) return;
     setSaving(true);
+    setTaken(undefined);
     try {
       const answer = await api.put<{ revision: number }>(`${root}/drafts/${where}`, {
         kind: "doc",
         schemaVersion: 1,
         title,
         body: { source },
-        ...(revision !== null ? { revision } : {}),
+        ...(revision !== null ? { revision } : path === undefined ? { create: true } : {}),
       });
       setSaved(source);
       setRevision(answer.revision);
@@ -281,6 +283,7 @@ export function DocEditor({
     } catch (error) {
       // Someone else saved it since it was opened: say so, and keep what was typed.
       if (error instanceof ApiError && error.code === "draft_changed") setClash(true);
+      else if (takenText(error)) setTaken(takenText(error));
       else notify.error(error);
     } finally {
       setSaving(false);
@@ -461,8 +464,11 @@ export function DocEditor({
                 value={where}
                 required
                 hint="Where the page is: its folder, then its file's name. A page goes in a folder."
-                {...(where !== "" && placed ? { error: placed } : {})}
-                onChange={setWhere}
+                {...(where !== "" && (placed ?? taken) ? { error: placed ?? taken } : {})}
+                onChange={(value) => {
+                  setTaken(undefined);
+                  setWhere(value);
+                }}
               />
             </div>
           ) : (

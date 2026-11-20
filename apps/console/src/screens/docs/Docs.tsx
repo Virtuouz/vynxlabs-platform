@@ -46,7 +46,7 @@ import {
 } from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../../api.ts";
-import { ask, failureText, notify } from "../../ask.tsx";
+import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { Diagram } from "../../diagrams/Diagram.tsx";
 import { loadManifest } from "../../help/content.ts";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
@@ -593,6 +593,7 @@ export function Docs({
                   kind: "app",
                   schemaVersion: 1,
                   body: { title, docs: publishing.path },
+                  create: true,
                 },
               ],
             });
@@ -601,7 +602,7 @@ export function Docs({
             setPublishing(undefined);
             return undefined;
           } catch (error) {
-            return failureText(error);
+            return takenText(error) ?? failureText(error);
           }
         }}
       />

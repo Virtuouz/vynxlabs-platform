@@ -13,7 +13,7 @@ import {
 } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText, notify } from "../ask.tsx";
+import { failureText, notify, takenText } from "../ask.tsx";
 import { FieldAbout } from "../help/FieldAbout.tsx";
 import { inZone } from "../kit/format.ts";
 import { Link } from "../router.tsx";
@@ -366,26 +366,32 @@ export function NewScheduleSheet({
   }));
   const [problems, setProblems] = useState<string[]>([]);
   const [failure, setFailure] = useState<string>();
+  const [taken, setTaken] = useState<string>();
   const [busy, setBusy] = useState(false);
   const pathProblem =
-    path && !PATH.test(path)
+    taken ??
+    (path && !PATH.test(path)
       ? "Lowercase letters, digits, hyphens and underscores, in folders, such as reports/daily."
-      : undefined;
+      : undefined);
   const ready = PATH.test(path) && problems.length === 0;
 
   const save = async () => {
     setFailure(undefined);
+    setTaken(undefined);
     setBusy(true);
     try {
       await api.put(`${root}/drafts/${path}`, {
         kind: "schedule",
         schemaVersion: 1,
         body: tidy(body),
+        create: true,
       });
       notify.success(`${path} is saved as a draft. Deploy it from Changes.`);
       onClose();
     } catch (error) {
-      setFailure(failureText(error));
+      const refused = takenText(error);
+      if (refused) setTaken(refused);
+      else setFailure(failureText(error));
     } finally {
       setBusy(false);
     }
@@ -420,7 +426,10 @@ export function NewScheduleSheet({
           placeholder="reports/daily"
           hint="Its name in this workspace. It can be renamed later, and stays the same resource."
           error={pathProblem}
-          onChange={setPath}
+          onChange={(value) => {
+            setTaken(undefined);
+            setPath(value);
+          }}
         />
         <ScheduleFields
           root={root}

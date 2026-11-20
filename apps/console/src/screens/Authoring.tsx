@@ -13,7 +13,7 @@ import {
 } from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask, failureText, notify } from "../ask.tsx";
+import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { CodeEditor, type Marker } from "../editor/CodeEditor.tsx";
 import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -257,6 +257,7 @@ export function ScriptEditor({
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
   const [dirty, setDirty] = useState(false);
   const [problem, setProblem] = useState<string>();
+  const [pathTaken, setPathTaken] = useState<string>();
   const [fields, setFields] = useState<ApiError["fields"]>([]);
   const [busy, setBusy] = useState(false);
   const [schemaText, setSchemaText] = useState("");
@@ -423,6 +424,7 @@ export function ScriptEditor({
 
   const save = async (): Promise<boolean> => {
     setProblem(undefined);
+    setPathTaken(undefined);
     setFields([]);
     if (!PATH.test(path)) {
       setProblem(
@@ -447,7 +449,7 @@ export function ScriptEditor({
           about.schema && body.schemaSource !== "code"
             ? { ...body, [about.schema.field]: schema }
             : body,
-        ...(revision ? { revision } : {}),
+        ...(revision ? { revision } : opened ? {} : { create: true }),
       });
       setBody(saved.body);
       setRevision(saved.revision);
@@ -462,7 +464,9 @@ export function ScriptEditor({
       }
       return true;
     } catch (error) {
-      setProblem(failureText(error));
+      const refused = takenText(error);
+      if (refused) setPathTaken(refused);
+      else setProblem(failureText(error));
       setFields((error as ApiError).fields ?? []);
       setBuildIssues(buildIssuesOf(error));
       return false;
@@ -808,7 +812,11 @@ export function ScriptEditor({
                   value={path}
                   placeholder={about.example}
                   hint="Its name in this workspace. It can be renamed later, and stays the same resource."
-                  onChange={setPath}
+                  {...(pathTaken ? { error: pathTaken } : {})}
+                  onChange={(value) => {
+                    setPathTaken(undefined);
+                    setPath(value);
+                  }}
                 />
               </div>
               {kind === "script" ? (

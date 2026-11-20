@@ -173,6 +173,7 @@ test("a new connection is declared in a draft, bound, and tested; a refusal says
     kind: "connection",
     schemaVersion: 1,
     body: { connector: "http" },
+    create: true,
   });
   // Declared first, then bound.
   expect(calls.findIndex((call) => call.url.endsWith("/drafts/crm"))).toBeLessThan(

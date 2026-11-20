@@ -27,7 +27,7 @@ import {
 import { Ellipsis, Move, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, invalidatePrefix, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
@@ -378,25 +378,31 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
                   {
                     label: "Keep it as a resource of the workspace…",
                     onSelect: async () => {
+                      let made = "";
                       const path = await ask.prompt({
                         title: "Keep it as a resource",
                         text: "A copy is saved as a draft of a dashboard resource: versioned, deployed and promoted with the rest of the workspace, and open to everyone who may see dashboards. Yours stays as it is.",
                         label: "Its path, such as boards/lending",
                         action: "Save the draft",
+                        submit: async (value) => {
+                          try {
+                            await api.put(`${root}/drafts/${value.trim()}`, {
+                              kind: "dashboard",
+                              schemaVersion: 1,
+                              body: { ...body, title: loaded.title },
+                              create: true,
+                            });
+                            made = value.trim();
+                            return undefined;
+                          } catch (error) {
+                            return takenText(error) ?? failureText(error);
+                          }
+                        },
                       });
-                      if (!path) return;
-                      try {
-                        await api.put(`${root}/drafts/${path}`, {
-                          kind: "dashboard",
-                          schemaVersion: 1,
-                          body: { ...body, title: loaded.title },
-                        });
-                        notify.success(`${path} is saved as a draft. Deploy it to keep it.`, {
-                          link: { label: "Review and deploy", href: `${link}/release` },
-                        });
-                      } catch (error) {
-                        notify.error(error);
-                      }
+                      if (!path || !made) return;
+                      notify.success(`${made} is saved as a draft. Deploy it to keep it.`, {
+                        link: { label: "Review and deploy", href: `${link}/release` },
+                      });
                     },
                   },
                   {

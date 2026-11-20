@@ -156,7 +156,7 @@ export function Page({
   return (
     // A page that fills the window keeps its parts closer, so what it holds starts high (P4-1).
     <section
-      className={`flex flex-col ${fill ? "min-h-0 flex-1 gap-3 px-4 py-4 md:px-8" : "gap-5"} ${
+      className={`flex flex-col ${fill ? "min-h-0 flex-1 gap-3 px-4 pt-3 pb-4 md:px-8" : "gap-5"} ${
         width === "form" ? "max-w-[52rem]" : ""
       }`}
     >
@@ -166,6 +166,8 @@ export function Page({
         description={description}
         actions={action}
         {...(helpKey ? { helpKey } : {})}
+        // A workbench's heading, as the lists that fill the window have (P4-1).
+        oneRow={fill}
       />
       {children}
     </section>

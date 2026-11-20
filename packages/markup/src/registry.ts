@@ -255,6 +255,25 @@ export const COMPONENTS: readonly ComponentSpec[] = [
     profiles: EVERYWHERE,
   },
   {
+    name: "glossary",
+    summary: "Every term this collection defines",
+    insert: "::glossary$0",
+    form: "leaf",
+    description:
+      "Every term defined by the pages of the collection this page is in, from A to Z, with what each means and the page that defines it. `scope=site` gives every term of the site.",
+    label: "none",
+    props: {
+      type: "object",
+      properties: {
+        scope: text("Whose terms: the collection's, or the whole site's.", {
+          enum: ["collection", "site"],
+        }),
+      },
+      additionalProperties: false,
+    },
+    profiles: ["docs"],
+  },
+  {
     name: "pages",
     summary: "What is in this folder",
     insert: "::pages$0",

@@ -47,6 +47,7 @@ import {
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../../api.ts";
 import { ask, failureText, notify } from "../../ask.tsx";
+import { Diagram } from "../../diagrams/Diagram.tsx";
 import { loadManifest } from "../../help/content.ts";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
 import { useBrand } from "../../kit/brand.tsx";
@@ -63,6 +64,7 @@ import {
   findRow,
   folderId,
   foldersOf,
+  glossaryFor,
   inApp,
   isFolderId,
   movable,
@@ -1260,9 +1262,13 @@ function Reader({
             profile="docs"
             headingShift={2}
             productName={brand.productName}
+            asServed
             folder={() => folderItems(rows, page, link)}
+            glossary={(scope) => glossaryFor(list, page, scope, (to) => `${link}/docs/${to}`)}
             {...drawn}
             components={{
+              code: ({ value, lang }) =>
+                lang === "mermaid" ? <Diagram source={value} /> : undefined,
               link: ({ href, external, children }) =>
                 external ? (
                   <a href={href} target="_blank" rel="noopener noreferrer">

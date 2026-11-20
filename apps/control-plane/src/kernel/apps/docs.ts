@@ -22,6 +22,7 @@ import {
   type DocsApp,
   type Folder,
   folderItems,
+  glossaryOf,
   loadSearchIndex,
   type Marked,
   type PageHit,
@@ -52,8 +53,9 @@ import { escapeHtml, iconLinks, type PageFrame } from "./pages.js";
 export const DOCS_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
-  // No inline style either: the renderer writes classes, never a style attribute.
-  "style-src 'self'",
+  // The renderer writes classes, never a style. Inline styles are allowed for a diagram, which
+  // Mermaid draws with a style block and style attributes; scripts stay the instance's own.
+  "style-src 'self' 'unsafe-inline'",
   "img-src 'self' https: data:",
   "font-src 'self'",
   "connect-src 'self'",
@@ -110,7 +112,7 @@ kbd.key {
 /* The frame: navigation, the page, what is on it. */
 .layout { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 100vh; }
 .side {
-  display: none; flex-direction: column; gap: 14px; padding: 18px 12px 24px;
+  display: flex; flex-direction: column; gap: 14px; padding: 18px 12px 24px;
   background: var(--vx-canvas); font-size: 14px;
 }
 .side .brand { padding: 4px 8px 6px; }
@@ -125,34 +127,47 @@ kbd.key {
   background: none; color: var(--vx-ink); cursor: pointer; text-decoration: none;
 }
 .iconbutton:hover { background: var(--vx-sunken); }
-.page { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; }
+/* The page and what is on it are one block, in the middle of the room beside the navigation. */
+.page { display: grid; grid-template-columns: minmax(0, 56rem); justify-content: center; align-content: start; }
 main { min-width: 0; padding: 20px 18px 64px; }
-.column { width: 100%; max-width: 56rem; }
+.column { width: 100%; max-width: 56rem; margin: 0 auto; }
 .toc { display: none; }
 
-/* On a phone, the navigation is a sheet over the page: by its address without script, by a class with it. */
-.side:target, body.nav-open .side {
-  display: flex; position: fixed; inset: 0; z-index: 40; overflow-y: auto; padding-top: 12px;
+/* On a phone, the navigation is a sheet that slides over the page: by its address without script, by a class with it. */
+@media (max-width: 1023.98px) {
+  .side {
+    position: fixed; inset: 0 auto 0 0; z-index: 40; width: min(320px, 88vw); overflow-y: auto; padding-top: 12px;
+    border-right: 1px solid var(--vx-line); box-shadow: 0 24px 64px rgb(0 0 0 / 0.35);
+    transform: translateX(-102%); visibility: hidden;
+    transition: transform 0.24s cubic-bezier(0.2, 0, 0, 1), visibility 0s linear 0.24s;
+  }
+  .side:target, body.nav-open .side { transform: none; visibility: visible; transition: transform 0.24s cubic-bezier(0.2, 0, 0, 1); }
+  .side .close { display: inline-grid; position: absolute; top: 10px; right: 10px; }
+  .scrim {
+    position: fixed; inset: 0; z-index: 39; background: rgb(0 0 0 / 0.45); opacity: 0; visibility: hidden;
+    transition: opacity 0.24s ease, visibility 0s linear 0.24s;
+  }
+  body.nav-open .scrim { opacity: 1; visibility: visible; transition: opacity 0.24s ease; }
 }
-.side:target .close, body.nav-open .side .close { display: inline-grid; position: absolute; top: 10px; right: 10px; }
-
 @media (min-width: 1024px) {
   .layout { grid-template-columns: 280px minmax(0, 1fr); }
-  .topbar { display: none; }
-  .side, .side:target {
-    display: flex; position: sticky; top: 0; inset: auto; z-index: auto; height: 100vh; overflow-y: auto;
-    border-right: 1px solid var(--vx-line);
-  }
-  .side .close, .side:target .close { display: none; }
+  .topbar, .scrim { display: none; }
+  .side { position: sticky; top: 0; height: 100vh; overflow-y: auto; border-right: 1px solid var(--vx-line); }
   main { padding: 48px 40px 96px; }
-  html { --top: 0px; }
 }
 @media (min-width: 1280px) {
-  .page { grid-template-columns: minmax(0, 56rem) 220px; gap: 48px; justify-content: start; padding-right: 32px; }
-  main { padding-right: 0; }
+  .page { grid-template-columns: minmax(0, 56rem) 220px; gap: 48px; padding: 0 32px; }
+  main { padding-left: 0; padding-right: 0; }
   .toc { display: block; position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 56px 0 24px; font-size: 13px; }
   .tocbar { display: none; }
 }
+
+/* What opens and closes moves, unless the reader asked for less motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+.switcher > ul { transform-origin: top center; }
+.finder::backdrop { transition: opacity 0.18s ease; }
 
 /* The navigation's tree. Folders fold, and any depth draws. */
 .switcher { position: relative; }
@@ -373,6 +388,68 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     } catch (_) {}
   }
 
+  // What opens and closes moves: a fold grows and shrinks, a menu fades. Less, when the reader asks for less.
+  const still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const EASE = "cubic-bezier(0.2, 0, 0, 1)";
+  const moving = new WeakMap();
+  const settle = (node) => { const was = moving.get(node); if (was) was.cancel(); };
+  const menuOf = (details) => details.classList.contains("switcher") ? details.querySelector(":scope > ul") : null;
+  const heightOf = (details, open) => {
+    const was = details.open;
+    details.open = open;
+    const height = details.getBoundingClientRect().height;
+    details.open = was;
+    return height;
+  };
+  const fold = (details, open) => {
+    if (details.open === open && !moving.get(details)) return;
+    settle(details);
+    const menu = menuOf(details);
+    if (still || typeof details.animate !== "function") { details.open = open; return; }
+    if (menu) {
+      if (open) details.open = true;
+      const frames = [{ opacity: 0, transform: "translateY(-6px) scale(0.98)" }, { opacity: 1, transform: "none" }];
+      const run = menu.animate(open ? frames : [...frames].reverse(), { duration: open ? 160 : 120, easing: EASE });
+      moving.set(details, run);
+      run.onfinish = () => { moving.delete(details); if (!open) details.open = false; };
+      run.oncancel = () => moving.delete(details);
+      return;
+    }
+    const from = details.getBoundingClientRect().height;
+    const to = heightOf(details, open);
+    details.open = true;
+    details.style.overflow = "hidden";
+    const run = details.animate({ height: [from + "px", to + "px"] }, { duration: 200, easing: EASE });
+    moving.set(details, run);
+    const done = () => { moving.delete(details); details.style.overflow = ""; details.open = open; };
+    run.onfinish = done;
+    run.oncancel = () => { moving.delete(details); details.style.overflow = ""; };
+  };
+  for (const details of document.querySelectorAll("details")) {
+    const summary = details.querySelector(":scope > summary");
+    if (!summary) continue;
+    summary.addEventListener("click", (event) => {
+      // A link in a folder's row leads to its page; the chevron beside it opens and closes.
+      if (event.target instanceof Element && event.target.closest("a")) return;
+      event.preventDefault();
+      fold(details, !details.open);
+    });
+  }
+  // A menu closes when the reader clicks anywhere else, or presses Escape.
+  document.addEventListener("pointerdown", (event) => {
+    for (const open of document.querySelectorAll("details.switcher[open]")) {
+      if (!open.contains(event.target)) fold(open, false);
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    for (const open of document.querySelectorAll("details.switcher[open]")) {
+      fold(open, false);
+      const summary = open.querySelector(":scope > summary");
+      if (summary) summary.focus();
+    }
+  });
+
   // The navigation, on a narrow screen.
   const body = document.body;
   for (const opener of document.querySelectorAll("[data-nav-open]")) {
@@ -424,7 +501,12 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     mark();
   }
   for (const link of document.querySelectorAll(".tocbar a")) {
-    link.addEventListener("click", () => { const bar = link.closest("details"); if (bar) bar.open = false; });
+    link.addEventListener("click", () => { const bar = link.closest("details"); if (bar) fold(bar, false); });
+  }
+
+  // A diagram is drawn by the instance's own drawing script, fetched only for a page that has one.
+  if (document.querySelector("[data-vd-mermaid]")) {
+    import("/_platform/diagrams.js").then((drawing) => drawing.drawAll(document)).catch(() => {});
   }
 
   // Whether a page helped: said without leaving the page. Without script, the form is sent as it is.
@@ -546,8 +628,10 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
         count,
       ]),
     ]);
-    close.addEventListener("click", () => dialog.close());
-    dialog.addEventListener("click", (event) => { if (event.target === dialog) dialog.close(); });
+    close.addEventListener("click", () => hide());
+    dialog.addEventListener("click", (event) => { if (event.target === dialog) hide(); });
+    // Escape closes it as everything else does: moving away.
+    dialog.addEventListener("cancel", (event) => { event.preventDefault(); hide(); });
     input.addEventListener("input", ask);
     input.addEventListener("keydown", (event) => {
       if (event.key === "ArrowDown") { event.preventDefault(); activate(active + 1); }
@@ -557,14 +641,33 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
         if (all[active]) { event.preventDefault(); location.href = all[active].href; }
       }
     });
-    list.addEventListener("click", () => dialog.close());
+    list.addEventListener("click", () => hide());
     body.append(dialog);
   };
+  const FRAMES = [{ opacity: 0, transform: "translateY(-8px) scale(0.98)" }, { opacity: 1, transform: "none" }];
+  const BACKDROP = [{ opacity: 0 }, { opacity: 1 }];
+  const motion = (frames, options, pseudo) => {
+    if (still || typeof dialog.animate !== "function") return null;
+    try { return dialog.animate(frames, pseudo ? { ...options, pseudoElement: "::backdrop" } : options); } catch (_) { return null; }
+  };
+  let hiding = false;
+  function hide() {
+    if (!dialog || !dialog.open || hiding) return;
+    hiding = true;
+    const run = motion([...FRAMES].reverse(), { duration: 140, easing: EASE });
+    motion([...BACKDROP].reverse(), { duration: 140, easing: EASE }, true);
+    const done = () => { hiding = false; dialog.close(); };
+    if (run) { run.onfinish = done; run.oncancel = done; } else done();
+  }
   const open = (event) => {
     if (event) event.preventDefault();
     if (!dialog) build();
     body.classList.remove("nav-open");
-    if (!dialog.open) dialog.showModal();
+    if (!dialog.open) {
+      dialog.showModal();
+      motion(FRAMES, { duration: 180, easing: EASE });
+      motion(BACKDROP, { duration: 180, easing: EASE }, true);
+    }
     input.select();
     ask();
   };
@@ -818,6 +921,7 @@ ${brand(at)}
 <a class="iconbutton" href="#nav" data-nav-open aria-label="Open the navigation">${icon("menu", 20)}</a>
 </header>
 ${side(at, options.collection, options.current)}
+<div class="scrim" data-nav-close></div>
 <div class="page">
 <main id="content"><div class="column">
 ${options.main}
@@ -857,11 +961,21 @@ function draw(at: Drawn, path: string, tree: Root): string {
       ];
     });
   // A folder's own page with nothing written in it lists what the folder holds.
+  const glossary = (scope: "collection" | "site") =>
+    glossaryOf(set, path, scope).map((term) => ({
+      id: term.id,
+      term: term.term,
+      short: term.short,
+      ...(term.aliases ? { aliases: term.aliases } : {}),
+      href: `${at.base}${urlOf(term.path)}`,
+      page: set.pages.get(term.path)?.frontmatter.title ?? term.path,
+    }));
   return renderHtml(asDirectory(path, tree), {
     profile: "docs",
     // The page's title is its first heading. What the author wrote as `#` comes under it.
     headingShift: 1,
     folder,
+    glossary,
     link: (writtenHref) => {
       if (linkKind(writtenHref) !== "relative") return undefined;
       const target = resolveLink(set, path, writtenHref);

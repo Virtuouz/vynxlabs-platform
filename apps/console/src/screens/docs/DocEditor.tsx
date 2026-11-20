@@ -8,7 +8,7 @@ import {
   planRename,
   setFrontmatter,
 } from "@volvel/docs-engine";
-import { Button, Doc, Notice, Panel, Popover, TextField } from "@volvel/ui";
+import { Button, Doc, Notice, Panel, Popover, reveal as revealIn, TextField } from "@volvel/ui";
 import {
   Bold,
   CircleAlert,
@@ -36,6 +36,7 @@ import {
 } from "react";
 import { ApiError, api, useLoad } from "../../api.ts";
 import { ask, failureText, notify } from "../../ask.tsx";
+import { Diagram } from "../../diagrams/Diagram.tsx";
 import type { CodeEditorHandle, Marker } from "../../editor/CodeEditor.tsx";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
 import { useHelpTopic } from "../../help/store.ts";
@@ -63,6 +64,7 @@ import {
   type DocsList,
   findRow,
   folderId,
+  glossaryFor,
   inApp,
   indexOf,
   resolvers,
@@ -248,6 +250,8 @@ export function DocEditor({
       }
     }
     if (best) {
+      // A tab or a fold the cursor is in shows itself, as the cursor goes in.
+      revealIn(best);
       best.classList.add("vx-following");
       if (typeof best.scrollIntoView === "function") best.scrollIntoView({ block: "nearest" });
     }
@@ -736,7 +740,14 @@ export function DocEditor({
                     lines
                     idPrefix="preview"
                     folder={() => folderItems(rows, { path: where }, link)}
+                    glossary={(scope) =>
+                      glossaryFor(data, { path: where }, scope, (to) => `${link}/docs/${to}`)
+                    }
                     {...drawn}
+                    components={{
+                      code: ({ value, lang }) =>
+                        lang === "mermaid" ? <Diagram source={value} /> : undefined,
+                    }}
                   />
                 ) : null}
                 {within.length > 0 ? (

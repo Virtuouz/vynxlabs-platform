@@ -514,3 +514,16 @@ export function folderItems(nav: Nav, path: string): (PageRef | Folder)[] {
     return nav.collections.flatMap((one) => (one.id === "" ? one.items : [one]));
   return trailOf(nav, path).at(-1)?.items ?? [];
 }
+
+/**
+ * The terms `::glossary` lists on a page: those defined by the pages of the
+ * page's collection, or by every page of the set. A page in no collection, and
+ * the home page, list the set's.
+ */
+export function glossaryOf(set: DocSet, path: string, scope: "collection" | "site"): Term[] {
+  const collection = path.includes("/") ? (path.split("/")[0] as string) : undefined;
+  return Object.values(set.terms).filter(
+    (term) =>
+      scope === "site" || collection === undefined || term.path.startsWith(`${collection}/`),
+  );
+}

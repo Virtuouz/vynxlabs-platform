@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { parse } from "@volvel/markup";
 import { useState } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -9,6 +9,7 @@ import {
   Doc,
   GlossaryProvider,
   Grid,
+  reveal,
   Term,
   TermScope,
   TermText,
@@ -282,7 +283,28 @@ describe("a page of documentation", () => {
     expect(container.querySelector(".vd-alert.vd-alert-warning")).toBeTruthy();
     expect(container.querySelector("[data-vd-tabs]")).toBeTruthy();
     expect(container.querySelector(".vd-term-tip")?.textContent).toContain("Where resources live.");
-    expect(screen.queryByRole("tab")).toBeNull();
+    // Tabs are tabs, as the site's script makes them, in the site's own markup.
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.length).toBeGreaterThan(1);
+    expect(container.querySelector(".vd-tabs.vd-tabs-on > .vd-tablist")).toBeTruthy();
+    expect(tabs[0]?.getAttribute("aria-selected")).toBe("true");
+    fireEvent.click(tabs[1] as HTMLElement);
+    expect(tabs[1]?.getAttribute("aria-selected")).toBe("true");
+    const sections = container.querySelectorAll(".vd-tab");
+    expect((sections[0] as HTMLElement).hidden).toBe(true);
+    expect((sections[1] as HTMLElement).hidden).toBe(false);
+    // A term opens as a button does.
+    const word = container.querySelector(".vd-term-word") as HTMLElement;
+    fireEvent.click(word);
+    expect(word.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector(".vd-term-open")).toBeTruthy();
+  });
+
+  test("shows what the cursor is in when asked: a tab chooses itself, a fold opens", () => {
+    const { container } = render(<Doc tree={tree} {...options} asServed />);
+    const second = container.querySelectorAll(".vd-tab")[1] as HTMLElement;
+    act(() => reveal(second.querySelector(".vd-tab-body") as HTMLElement));
+    expect(second.hidden).toBe(false);
   });
 });
 

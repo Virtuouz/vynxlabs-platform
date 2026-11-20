@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
+import { join } from "node:path";
 import {
   buildApp,
   buildSearchIndex,
@@ -14,7 +16,7 @@ import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
 import { describeTable, insertRows, withData } from "../data/rows.js";
-import { productNames } from "../docs/product.js";
+import { consoleDirectory, productNames } from "../docs/product.js";
 import { workingDocs } from "../docs/working.js";
 import {
   checkEndUserPassword,
@@ -198,6 +200,28 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       .send(`${text}\n`);
   const redirect = (reply: FastifyReply, to: string, status = 303) =>
     reply.code(status).header("location", to).header("cache-control", "no-store").send();
+
+  const drawings = new Map<string, { body: Buffer; encoding?: string } | undefined>();
+  /**
+   * The diagram script, read once from the console's files, compressed as asked when a
+   * compressed copy is there. Nothing when the console was not built.
+   */
+  const diagramsScript = (encoding: "br" | "gzip" | undefined) => {
+    const key = encoding ?? "identity";
+    if (drawings.has(key)) return drawings.get(key);
+    const directory = consoleDirectory(kernel.config);
+    const file = directory ? join(directory, "_platform", "diagrams.js") : undefined;
+    let found: { body: Buffer; encoding?: string } | undefined;
+    if (file && existsSync(file)) {
+      const packed = encoding ? `${file}.${encoding === "br" ? "br" : "gz"}` : undefined;
+      found =
+        packed && existsSync(packed)
+          ? { body: readFileSync(packed), encoding: encoding as string }
+          : { body: readFileSync(file) };
+    }
+    drawings.set(key, found);
+    return found;
+  };
 
   /** A form must come from a page of the address it is sent to. */
   const ownForm = (request: FastifyRequest) => {
@@ -1301,6 +1325,28 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .header("x-content-type-options", "nosniff")
         .header("cache-control", "public, max-age=3600")
         .send(script ? DOCS_SCRIPT : DOCS_CSS);
+    }
+
+    // What draws a diagram on a page of documentation: Mermaid, and the instance's own pan and
+    // zoom. It is built with the console and fetched only by a page that has a diagram.
+    if (path === "/_platform/diagrams.js") {
+      // The console's build writes compressed copies beside it: the best the browser takes is sent.
+      const accepts = String(request.headers["accept-encoding"] ?? "");
+      const encoding = /\bbr\b/.test(accepts)
+        ? "br"
+        : /\bgzip\b/.test(accepts)
+          ? "gzip"
+          : undefined;
+      const drawing = diagramsScript(encoding);
+      if (drawing === undefined) return plain(reply, 404, "Not found.");
+      if (drawing.encoding) reply.header("content-encoding", drawing.encoding);
+      return reply
+        .code(200)
+        .header("content-type", "text/javascript; charset=utf-8")
+        .header("vary", "accept-encoding")
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "public, max-age=3600")
+        .send(drawing.body);
     }
 
     if (path === "/_platform/portal.css") {

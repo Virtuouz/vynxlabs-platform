@@ -1,6 +1,8 @@
 // Fails when a dependency carries a license outside the allowlist.
 // See CONTRIBUTING.md for the policy.
 import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /** Apache-compatible licenses. Everything that ships in the image must be on this list. */
 const SHIPPED = new Set([
@@ -27,6 +29,32 @@ const SHIPPED = new Set([
  */
 const TOOLING = new Set([...SHIPPED, "MPL-2.0", "CC-BY-4.0"]);
 
+/**
+ * Packages whose `package.json` names no license, by name and version, with the
+ * license their own license file grants. Each is read again on every check: a
+ * new version, or a file that no longer says so, is refused as unknown.
+ */
+const UNDECLARED = {
+  // Mermaid's colours. Its file is the MIT License; its package.json leaves it out.
+  "khroma@2.1.0": { license: "MIT", says: "The MIT License (MIT)" },
+};
+
+/** The license an undeclared package's own file grants, when it is one recorded above. */
+function undeclared(pkg) {
+  const versions = pkg.versions ?? [];
+  if (versions.length === 0) return undefined;
+  const found = versions.map((version) => UNDECLARED[`${pkg.name}@${version}`]);
+  if (found.some((one) => one === undefined)) return undefined;
+  for (const path of pkg.paths ?? []) {
+    const file = ["license", "LICENSE", "license.md", "LICENSE.md"]
+      .map((name) => join(path, name))
+      .find((candidate) => existsSync(candidate));
+    if (!file || !found.every((one) => readFileSync(file, "utf8").includes(one.says)))
+      return undefined;
+  }
+  return found[0]?.license;
+}
+
 /** Evaluates an SPDX expression: every AND term must be allowed, any OR term may be. */
 export function isAllowed(expression, allowed = SHIPPED) {
   const text = expression.trim().replace(/^\((.*)\)$/, "$1");
@@ -47,7 +75,12 @@ function audit(label, flag, allowed) {
   for (const [license, packages] of Object.entries(JSON.parse(output))) {
     count += packages.length;
     if (!isAllowed(license, allowed)) {
-      for (const pkg of packages) rejected.push(`${pkg.name} (${license})`);
+      for (const pkg of packages) {
+        const granted = license === "Unknown" ? undeclared(pkg) : undefined;
+        if (granted === undefined || !isAllowed(granted, allowed)) {
+          rejected.push(`${pkg.name} (${license})`);
+        }
+      }
     }
   }
   if (rejected.length > 0) {

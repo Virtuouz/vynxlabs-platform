@@ -38,9 +38,19 @@ export interface Components {
   }) => ReactNode;
   field?: (props: { path: string; info: FieldInfo | null }) => ReactNode;
   steps?: (props: { children: ReactNode }) => ReactNode;
-  /** Draws `tabs` and `code-tabs` alike. */
-  tabs?: (props: { tabs: { label: string; children: ReactNode }[] }) => ReactNode;
-  details?: (props: { summary: string; children: ReactNode }) => ReactNode;
+  /**
+   * Draws `tabs` and `code-tabs` alike. `marks` are the lines each came from,
+   * as attributes to put on what is drawn, when the drawing was asked for them.
+   */
+  tabs?: (props: {
+    tabs: { label: string; children: ReactNode; marks: Record<string, string> }[];
+    marks: Record<string, string>;
+  }) => ReactNode;
+  details?: (props: {
+    summary: string;
+    children: ReactNode;
+    marks: Record<string, string>;
+  }) => ReactNode;
   kbd?: (props: { keys: string }) => ReactNode;
   screenshot?: (props: { src: string | null; alt: string }) => ReactNode;
   fileTree?: (props: { children: ReactNode }) => ReactNode;
@@ -92,6 +102,17 @@ function toReact(drawn: readonly Drawn[]): ReactNode {
       : createElement(one.tag, props, toReact(one.children));
   });
   return out.length === 1 ? out[0] : out;
+}
+
+/** The lines a node came from, as attributes, when the drawing asks for them. */
+function marksOf(node: Node, ctx: Context): Record<string, string> {
+  if (!ctx.options.lines || node.line === undefined) return {};
+  return {
+    "data-line": String(node.line),
+    ...(node.type === "component" && node.endLine !== undefined
+      ? { "data-end-line": String(node.endLine) }
+      : {}),
+  };
 }
 
 function own(node: Node, ctx: Context, components: Components): ReactNode | undefined {
@@ -165,10 +186,16 @@ function ownComponent(
           children: toReact(
             tab.node.type === "component" ? drawAll(tab.node.children, ctx) : draw(tab.node, ctx),
           ),
+          marks: marksOf(tab.node, ctx),
         })),
+        marks: marksOf(node, ctx),
       });
     case "details":
-      return components.details?.({ summary: node.props.summary ?? "", children: inside() });
+      return components.details?.({
+        summary: node.props.summary ?? "",
+        children: inside(),
+        marks: marksOf(node, ctx),
+      });
     case "kbd":
       return components.kbd?.({ keys: plain(node) });
     case "screenshot":
@@ -194,4 +221,4 @@ export function renderReact(tree: Node, options: ReactOptions = {}): ReactNode {
   return toReact(draw(tree, ctx));
 }
 
-export type { FieldInfo, FolderItem, RenderOptions, TermInfo } from "./render.js";
+export type { FieldInfo, FolderItem, GlossaryItem, RenderOptions, TermInfo } from "./render.js";

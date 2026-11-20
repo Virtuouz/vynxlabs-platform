@@ -249,6 +249,68 @@ export const DOC_CSS = `
 .vd-doc .vd-pages-folder .vd-pages-title::after { content: " \\2192"; color: var(--vd-muted, #5c5c5c); }
 .vd-doc .vd-pages-text { color: var(--vd-muted, #5c5c5c); font-size: 0.9em; }
 
+.vd-doc .vd-glossary { margin: 0 0 1.25em; }
+.vd-doc .vd-glossary-group { display: grid; grid-template-columns: 2.5em minmax(0, 1fr); gap: 0 1em; padding: 0.75em 0; border-top: 1px solid var(--vd-line, #dcdcdc); }
+.vd-doc .vd-glossary-group:first-child { border-top: 0; }
+.vd-doc .vd-glossary-letter { margin: 0; font-size: 1.4em; font-weight: 600; line-height: 1.2; color: var(--vd-muted, #5c5c5c); }
+.vd-doc .vd-glossary dl { margin: 0; }
+.vd-doc .vd-glossary-item { padding: 0.35em 0 0.6em; scroll-margin-top: var(--vd-scroll-margin, 5rem); }
+.vd-doc .vd-glossary-item:target { border-radius: var(--vd-radius, 6px); background: var(--vd-info-soft, #eef4ff); }
+.vd-doc .vd-glossary dt { font-weight: 600; }
+.vd-doc .vd-glossary dd { display: flex; flex-direction: column; gap: 0.15em; margin: 0.1em 0 0; }
+.vd-doc .vd-glossary-also, .vd-doc .vd-glossary-page { font-size: 0.875em; color: var(--vd-muted, #5c5c5c); }
+
+.vd-doc .vd-mermaid {
+  position: relative;
+  margin: 0 0 1.25em;
+  overflow: hidden;
+  border: 1px solid var(--vd-line, #dcdcdc);
+  border-radius: calc(var(--vd-radius, 6px) * 2);
+  background: var(--vd-surface, #fff);
+}
+.vd-doc .vd-mermaid > pre { margin: 0; border: 0; border-radius: 0; }
+.vd-doc .vd-mermaid-drawn { touch-action: pan-x pan-y; cursor: grab; }
+.vd-doc .vd-mermaid-drawn.vd-dragging { cursor: grabbing; }
+.vd-doc .vd-mermaid-drawn > svg { display: block; width: 100%; height: 100%; max-width: none; }
+.vd-doc .vd-mermaid-controls {
+  position: absolute;
+  right: 0.6em;
+  bottom: 0.6em;
+  display: flex;
+  gap: 0.25em;
+  padding: 0.2em;
+  border: 1px solid var(--vd-line, #dcdcdc);
+  border-radius: var(--vd-radius, 6px);
+  background: var(--vd-surface, #fff);
+}
+.vd-doc .vd-mermaid-controls button {
+  display: inline-grid;
+  place-items: center;
+  width: 1.9em;
+  height: 1.9em;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--vd-radius, 6px) - 2px);
+  background: none;
+  color: var(--vd-muted, #5c5c5c);
+  cursor: pointer;
+}
+.vd-doc .vd-mermaid-controls button:hover { background: var(--vd-sunken, #f3f3f3); color: var(--vd-ink, #1a1a1a); }
+.vd-doc .vd-mermaid-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(0 0 0 / 0.45);
+  color: #fff;
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.vd-doc .vd-mermaid-hint.vd-on { opacity: 1; }
+.vd-doc .vd-mermaid-error { margin: 0; padding: 0.6em 1em; border-bottom: 1px solid var(--vd-line, #dcdcdc); color: var(--vd-danger, #b91c1c); font-size: 0.9em; }
+
 .vd-doc .vd-term { position: relative; display: inline-block; }
 .vd-doc .vd-term-word {
   padding: 0;
@@ -266,7 +328,10 @@ export const DOC_CSS = `
   z-index: 10;
   top: 100%;
   left: 0;
-  display: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0s linear 0.15s;
   width: max-content;
   max-width: min(22rem, 80vw);
   margin-top: 0.35em;
@@ -283,5 +348,15 @@ export const DOC_CSS = `
 }
 .vd-doc .vd-term:not(.vd-term-on):hover .vd-term-tip,
 .vd-doc .vd-term:not(.vd-term-on):focus-within .vd-term-tip,
-.vd-doc .vd-term-open .vd-term-tip { display: block; }
+.vd-doc .vd-term-open .vd-term-tip {
+  visibility: visible;
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.vd-doc .vd-details > summary { transition: color 0.15s ease; }
+.vd-doc .vd-tab-button { transition: color 0.15s ease, border-color 0.15s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .vd-doc *, .vd-doc *::before, .vd-doc *::after { transition-duration: 0.01ms !important; }
+}
 `;

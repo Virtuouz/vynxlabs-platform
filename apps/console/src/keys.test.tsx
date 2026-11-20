@@ -151,7 +151,9 @@ const files = (dir: string): string[] =>
 
 test("no screen listens for keys on the page by hand: shortcuts go through the registry", () => {
   // The registry itself, and kit parts whose keys work only inside them.
-  const allowed = new Set(["kit/keys.ts"]);
+  // The diagram listens on its own box, which holds the focus, and runs on served sites too,
+  // where there is no registry: its keys are the diagram's, not the page's.
+  const allowed = new Set(["kit/keys.ts", "diagrams/draw.ts"]);
   const found = files(here)
     .filter((path) => !allowed.has(path.slice(here.length + 1)))
     .filter((path) => /addEventListener\(\s*"keydown"/.test(readFileSync(path, "utf8")))

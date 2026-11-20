@@ -54,6 +54,8 @@ export interface RenderOptions {
    * preview follows its cursor. A served page leaves it out.
    */
   lines?: boolean;
+  /** The terms `::glossary` lists, for its scope. Nothing draws nothing. */
+  glossary?: (scope: "collection" | "site") => readonly GlossaryItem[] | null | undefined;
   /** What is in the folder the page is in, for `::pages`. Nothing draws nothing. */
   folder?: () => readonly FolderItem[] | null | undefined;
   /**
@@ -65,6 +67,17 @@ export interface RenderOptions {
   idPrefix?: string;
   /** The words of the link behind a term. `{word}` is the term as it was written. "More about {word}" when left out. */
   learnMore?: string;
+}
+
+/** One term, as `::glossary` lists it. */
+export interface GlossaryItem {
+  id: string;
+  term: string;
+  aliases?: readonly string[];
+  short: string;
+  /** The page that defines it, already resolved, and what that page is called. */
+  href?: string;
+  page?: string;
 }
 
 /** One page or folder of a folder, as `::pages` lists it. */
@@ -283,6 +296,14 @@ function usual(node: Node, ctx: Context): Drawn[] {
 }
 
 export function codeBlock(value: string, lang: string | undefined): El {
+  // A diagram is drawn by the page's script. Until then, and without it, it is its source.
+  if (lang === "mermaid") {
+    return el("figure", { class: "vd-mermaid", "data-vd-mermaid": "1" }, [
+      el("pre", { class: "vd-mermaid-source" }, [
+        el("code", { class: "language-mermaid" }, [value]),
+      ]),
+    ]);
+  }
   const safe = lang && /^[A-Za-z0-9_+#-]+$/.test(lang) ? lang : undefined;
   return el("pre", safe ? { "data-lang": safe } : {}, [
     el("code", safe ? { class: `language-${safe}` } : {}, [value]),
@@ -414,6 +435,64 @@ function component(node: Component, ctx: Context): Drawn[] {
     }
     case "file-tree":
       return [el("div", { class: "vd-file-tree" }, inside())];
+    case "glossary": {
+      const scope = node.props.scope === "site" ? "site" : "collection";
+      const items = [...(ctx.options.glossary?.(scope) ?? [])].sort((a, b) =>
+        a.term.localeCompare(b.term, "en", { sensitivity: "base" }),
+      );
+      if (items.length === 0) return [];
+      const prefix = ctx.options.idPrefix ?? "vd";
+      const groups = new Map<string, GlossaryItem[]>();
+      for (const item of items) {
+        const letter = item.term.charAt(0).toUpperCase();
+        const key = /\p{L}/u.test(letter) ? letter : "#";
+        groups.set(key, [...(groups.get(key) ?? []), item]);
+      }
+      return [
+        el(
+          "div",
+          { class: "vd-glossary" },
+          [...groups].map(([letter, list]) =>
+            el("section", { class: "vd-glossary-group" }, [
+              el("p", { class: "vd-glossary-letter" }, [letter]),
+              el(
+                "dl",
+                {},
+                list.map((item) => {
+                  const href = item.href
+                    ? hrefOf(item.href, { ...ctx, profile: "docs" }, true)
+                    : undefined;
+                  return el(
+                    "div",
+                    { class: "vd-glossary-item", id: `${prefix}-glossary-${item.id}` },
+                    [
+                      el("dt", {}, [item.term]),
+                      el("dd", {}, [
+                        el("span", {}, [item.short]),
+                        ...(item.aliases && item.aliases.length > 0
+                          ? [
+                              el("span", { class: "vd-glossary-also" }, [
+                                `Also: ${item.aliases.join(", ")}`,
+                              ]),
+                            ]
+                          : []),
+                        ...(href && item.page
+                          ? [
+                              el("a", { class: "vd-glossary-page", href }, [
+                                `Defined on ${item.page}`,
+                              ]),
+                            ]
+                          : []),
+                      ]),
+                    ],
+                  );
+                }),
+              ),
+            ]),
+          ),
+        ),
+      ];
+    }
     case "pages": {
       const items = ctx.options.folder?.() ?? [];
       if (items.length === 0) return [];

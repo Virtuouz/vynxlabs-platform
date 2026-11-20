@@ -61,3 +61,19 @@ Answered by the owner on 2026-11-19.
 - **"Powered by Volvel"** in the drawing's footer was left out: a tenant's site says the tenant's name, and an operator may brand the instance as their own.
 - **Geist** was not added. Its licence is not on the list, and a site takes its font from the workspace's theme.
 - **Pagefind** was not used: it reads built HTML with a program of its own, and these pages are drawn on each request, from drafts too, for whoever may open them.
+
+## After the first look
+
+The owner asked, after vetting the field guide on the test instance:
+
+- **The page in the middle.** The page and what is on it are one block, in the middle of the room beside the navigation, at any width.
+- **What opens and closes moves.** Folds and folders grow and shrink, the collection switcher fades and closes when the reader clicks elsewhere or presses Escape, search fades in and out by every way it closes, the phone's navigation slides, a tab fades in, a term's note fades. Less motion when the reader asks for less.
+- **`::glossary`**, every term a collection's pages define, or the site's with `scope=site`.
+- **Diagrams.** Code written as `mermaid`. The owner chose, for this, to let docs sites have inline styles as other apps do; scripts stay the instance's own. The drawing follows the owner's own in another project (vellum), and changes it: Mermaid is served by the instance instead of a public CDN, so a site works offline; a theme's colours are put into sRGB before Mermaid reads them, since its reader knows few forms; a small diagram is not blown up to fill a tall box; one set of pointer events moves it for a mouse, a pen and two fingers; the keys move it too; it refits when its box changes size, until the reader has moved it; a diagram that does not read says why, above its source.
+- **The previews draw what the site draws.** The Documentation section's page and the editor's preview use the site's own markup and classes, with tabs, folds and terms behaving as the site's script makes them, instead of the console's components. The help panel keeps the console's.
+
+### Findings
+
+- **Mermaid is large**: 3.4 MB as one file, 935 KB compressed. It is fetched only by a page with a diagram, and sent compressed.
+- **A Mermaid colour package names no licence** in its `package.json` (khroma, MIT by its own file). The licence check now has a short list of such packages, by version, and reads each one's file on every check.
+- **A library build of Vite keeps every space** in its output; the diagram script is built as a plain entry instead.

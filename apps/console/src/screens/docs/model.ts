@@ -250,3 +250,33 @@ export function resolvers(options: {
     },
   };
 }
+
+/**
+ * The terms `::glossary` lists on a page in the console: those defined by the
+ * pages of the page's collection, in its site, or by every page of the site.
+ */
+export function glossaryFor(
+  list: DocsList,
+  page: Pick<DocPage, "path">,
+  scope: "collection" | "site",
+  address: (path: string) => string,
+) {
+  const app = appFor(list.apps, page.path);
+  const root = app ? `${app.docs}/` : `${page.path.split("/")[0]}/`;
+  const inside = page.path.startsWith(root) ? page.path.slice(root.length) : page.path;
+  const collection = inside.includes("/") ? `${root}${inside.split("/")[0]}/` : undefined;
+  return termsOf(list)
+    .filter((term) => term.page.path.startsWith(root))
+    .filter(
+      (term) =>
+        scope === "site" || collection === undefined || term.page.path.startsWith(collection),
+    )
+    .map((term) => ({
+      id: term.id,
+      term: term.term,
+      short: term.short,
+      ...(term.aliases.length > 0 ? { aliases: term.aliases } : {}),
+      href: address(term.page.path),
+      page: term.page.title,
+    }));
+}

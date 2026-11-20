@@ -327,7 +327,19 @@ Refund at the till.
 :::
 ```
 
-The components are `alert`, `term`, `field`, `steps`, `tabs` and `tab`, `details`, `kbd`, `code-tabs`, `file-tree` and `pages`. Each may sit inside any other, as deep as you like: a container inside another is written with more colons, so that it reads as inside it, and a container inside a list item is indented with the item's words. Only a `tab` goes in `tabs`, and `code-tabs` holds code blocks. `::pages` lists what is in the page's folder. Every instance lists what each takes in its help, under Reference. There is no HTML in a page and nothing in it runs.
+The components are `alert`, `term`, `field`, `steps`, `tabs` and `tab`, `details`, `kbd`, `code-tabs`, `file-tree` and `pages`. Each may sit inside any other, as deep as you like: a container inside another is written with more colons, so that it reads as inside it, and a container inside a list item is indented with the item's words. Only a `tab` goes in `tabs`, and `code-tabs` holds code blocks. `::pages` lists what is in the page's folder, and `::glossary` every term the pages of the page's collection define, from A to Z, with the page that defines each (`::glossary{scope=site}` for the whole site's). Every instance lists what each takes in its help, under Reference. There is no HTML in a page and nothing in it runs.
+
+A block of code written as `mermaid` is a diagram:
+
+````md
+```mermaid
+flowchart LR
+  A[Customer asks] --> B{Has an RMA?}
+  B -- yes --> C[Refund]
+```
+````
+
+It is drawn in the site's own colours, again when the reader's theme changes, and the reader can move and zoom it: drag, ⌘ or Ctrl and scroll, two fingers, or the keys + − 0 and the arrows. Without script it is its source. Mermaid is served by the instance, and fetched only by a page that has a diagram.
 
 ### What columns and resources are for
 

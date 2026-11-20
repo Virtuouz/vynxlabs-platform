@@ -11,6 +11,8 @@ Documentation sites look and work like a documentation product, and the console 
 - A docs app's pages are drawn in a new frame: the navigation, a home page, search that answers as it is typed, and a phone layout. Its stylesheet and script are still the instance's own files, under the same policy.
 - A docs app takes one kind of POST, at `<app>/_feedback`: a reader's answer to "Was this page helpful?", for an app that asks. It is rate limited by address, refused from another site, and kept as a row of the workspace's own table, not in the audit log.
 - `<app>/_search.json` and `<page>.md` answer the site's own script, to whoever may open the app.
+- Docs sites now allow inline styles (`style-src 'self' 'unsafe-inline'`), as other apps already do, so that Mermaid can draw diagrams. Scripts are still the instance's own only.
+- `/_platform/diagrams.js` is Mermaid and the instance's drawing, built with the console (3.4 MB, sent compressed when the browser takes it), and fetched only by a page that has a diagram. Nothing is fetched from another site.
 - No migration.
 
 ### For tenant developers
@@ -18,6 +20,7 @@ Documentation sites look and work like a documentation product, and the console 
 - **A folder's order is its own page's `pages:` list.** `order:` is gone from a page's top: list the folder's pages and folders, by name, in its `index.md`. What is not listed comes after, by title. A page that still says `order:` is refused, naming the line.
 - **Folders go as deep as they are written.** A page is no longer refused for being more than two folders down.
 - **A docs app serves a top-level folder.** `docs: handbook/support` is refused: serve `handbook`.
+- `::glossary` lists every term a collection's pages define, from A to Z. A block of code written as `mermaid` is a diagram, in the site's colours, that the reader can move and zoom.
 - `::pages` lists what is in a page's folder. A folder's own page with nothing written in it does the same.
 - Every component may sit inside any other. The editor's Insert writes it one level deeper inside another.
 - `defineApp({ docs, feedback: { table } })` asks readers whether a page helped. The table needs `page` (text), `helpful` (boolean), `version` (text) and `at` (timestamp).

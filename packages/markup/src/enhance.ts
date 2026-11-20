@@ -38,6 +38,7 @@ export const ENHANCE_SCRIPT = `(() => {
       list.append(button);
       return button;
     });
+    let first = true;
     const show = (shown, focus) => {
       sections.forEach((section, index) => {
         const on = index === shown;
@@ -45,6 +46,15 @@ export const ENHANCE_SCRIPT = `(() => {
         buttons[index].setAttribute("aria-selected", String(on));
         buttons[index].tabIndex = on ? 0 : -1;
       });
+      // A tab chosen fades in, unless the reader asked for less motion.
+      const still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (!first && !still && typeof sections[shown].animate === "function") {
+        sections[shown].animate([{ opacity: 0, transform: "translateY(2px)" }, { opacity: 1, transform: "none" }], {
+          duration: 160,
+          easing: "cubic-bezier(0.2, 0, 0, 1)",
+        });
+      }
+      first = false;
       if (focus) buttons[shown].focus();
     };
     buttons.forEach((button, index) => {
@@ -61,10 +71,6 @@ export const ENHANCE_SCRIPT = `(() => {
     show(0, false);
   }
 
-  // On a narrow screen a site's navigation starts folded, so the page is what is seen first.
-  if (window.matchMedia && window.matchMedia("(max-width: 819px)").matches) {
-    for (const folded of document.querySelectorAll("nav.side > details")) folded.open = false;
-  }
 
   const terms = [...document.querySelectorAll(".vd-term")];
   const close = (term) => {

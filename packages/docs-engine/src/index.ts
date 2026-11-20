@@ -62,6 +62,7 @@ export {
   type DocSet,
   type Folder,
   folderItems,
+  glossaryOf,
   type Nav,
   nameOf,
   ordered,

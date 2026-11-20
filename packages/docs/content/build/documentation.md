@@ -12,7 +12,7 @@ Any top-level folder can be **published as a site**: a docs app that serves the 
 
 A folder's own page is the `index` page inside it. Under a site's folder, `index` is the home page, each folder is a collection, and folders inside them go as deep as you make them.
 
-A folder's own page can list the order of what is in it, with `pages:`. Anything it does not list comes after, by title. A folder's own page with nothing written in it shows what is in the folder, and `::pages` does the same anywhere on a page.
+A folder's own page can list the order of what is in it, with `pages:`. Anything it does not list comes after, by title. A folder's own page with nothing written in it shows what is in the folder, and `::pages` does the same anywhere on a page. `::glossary` lists every term the collection's pages define, and a block of code written as `mermaid` is a diagram the reader can move and zoom.
 
 ## The tree of pages
 

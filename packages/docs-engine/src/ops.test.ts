@@ -16,6 +16,7 @@ import {
 } from "./ops.js";
 import { frontmatterOf } from "./page.js";
 import { buildSearchIndex, loadSearchIndex } from "./search.js";
+import { glossaryOf } from "./set.js";
 import { buildApp, checkWorkspaceDocs } from "./workspace.js";
 
 const md = (frontmatter: string, body = "") => `---\n${frontmatter}\n---\n\n${body}`;
@@ -409,5 +410,28 @@ describe("a site that asks its readers", () => {
         },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("a glossary", () => {
+  test("lists the terms of the page's collection, or of the whole site", () => {
+    const term = (id: string) => `terms:\n  - id: ${id}\n    term: ${id}\n    short: ${id}.`;
+    const built = buildApp({ path: "site", title: "Site", docs: "s" }, [
+      { kind: "doc", path: "s/index", body: { source: md(`title: Home\n${term("home-word")}`) } },
+      { kind: "doc", path: "s/a/index", body: { source: md(`title: A\n${term("a-word")}`) } },
+      {
+        kind: "doc",
+        path: "s/a/deep/page",
+        body: { source: md(`title: Deep\n${term("deep-word")}`) },
+      },
+      { kind: "doc", path: "s/b/page", body: { source: md(`title: B\n${term("b-word")}`) } },
+    ]);
+    const ids = (path: string, scope: "collection" | "site") =>
+      glossaryOf(built.set, path, scope)
+        .map((one) => one.id)
+        .sort();
+    expect(ids("a/deep/page", "collection")).toEqual(["a-word", "deep-word"]);
+    expect(ids("a/index", "site")).toEqual(["a-word", "b-word", "deep-word", "home-word"]);
+    expect(ids("index", "collection")).toEqual(["a-word", "b-word", "deep-word", "home-word"]);
   });
 });

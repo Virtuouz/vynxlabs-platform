@@ -200,9 +200,10 @@ describe("a folder of pages served as a docs app", () => {
     expect(home.status).toBe(200);
     expect(home.headers["content-type"]).toContain("text/html");
     const policy = home.headers["content-security-policy"] ?? "";
-    expect(policy).toContain("script-src 'self'");
-    expect(policy).toContain("style-src 'self'");
-    expect(policy).not.toContain("unsafe-inline");
+    // Scripts are the instance's own. Inline styles are allowed, for the diagrams Mermaid draws.
+    expect(policy).toContain("script-src 'self';");
+    expect(policy).not.toMatch(/script-src[^;]*unsafe/);
+    expect(policy).toContain("style-src 'self' 'unsafe-inline'");
     expect(policy).toContain("img-src 'self' https:");
     expect(home.body).toContain("<h1>Handbook</h1>");
     expect(home.body).toContain('<p class="intro">How the shop runs.</p>');
@@ -357,6 +358,22 @@ describe("a folder of pages served as a docs app", () => {
     expect(missing.body).toContain('<aside class="toc" aria-label="On this page"></aside>');
     // A page of another docs app is not reachable through this one.
     expect((await browser().get(`${HELP}../staff/`)).status).not.toBe(200);
+  });
+
+  test("a diagram is its source until the instance's drawing script draws it", async () => {
+    const script = await browser().get("/_platform/docs.js");
+    expect(script.body).toContain('import("/_platform/diagrams.js")');
+    // Served from the console's own build, when there is one; never from another site.
+    const drawing = await t.app.inject({
+      method: "GET",
+      url: "/_platform/diagrams.js",
+      headers: { host: MAIN },
+    });
+    expect([200, 404]).toContain(drawing.statusCode);
+    if (drawing.statusCode === 200) {
+      expect(drawing.headers["content-type"]).toContain("text/javascript");
+      expect(drawing.body).not.toMatch(/https?:\/\/(unpkg|cdn)/);
+    }
   });
 
   test("the stylesheet and the script are the platform's own files", async () => {

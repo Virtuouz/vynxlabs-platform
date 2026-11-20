@@ -22,6 +22,7 @@ export {
   useDialogs,
 } from "./Dialogs.tsx";
 export { Doc, type DocProps } from "./Doc.tsx";
+export { reveal, servedComponents } from "./DocServed.tsx";
 export { type Fact, Facts } from "./Facts.tsx";
 export {
   CheckboxField,

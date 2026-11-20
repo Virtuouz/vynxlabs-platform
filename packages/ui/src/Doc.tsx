@@ -2,6 +2,7 @@ import { DOC_CSS, type Root } from "@volvel/markup";
 import { type Components, type ReactOptions, renderReact } from "@volvel/markup/react";
 import { type ReactNode, useMemo } from "react";
 import { Details } from "./Details.tsx";
+import { servedComponents } from "./DocServed.tsx";
 import { Notice } from "./Notice.tsx";
 import { Tabs } from "./Tabs.tsx";
 import { Term } from "./Term.tsx";
@@ -25,7 +26,10 @@ const THEMED = `
   --vd-danger: var(--vx-danger);
   --vd-danger-soft: var(--vx-danger-soft);
   --vd-font-code: var(--vx-font-code);
+  --vd-radius: var(--vx-radius-control);
 }
+/* As a served site sets its pages: a size of its own, whatever is around it. */
+.vd-doc.vd-served { font-size: 16px; line-height: 1.6; }
 `;
 
 const TONE = { info: "plain", success: "success", warning: "attention", danger: "danger" } as const;
@@ -70,8 +74,9 @@ export interface DocProps extends Omit<ReactOptions, "components"> {
    */
   more?: (href: string, word: string) => ReactNode;
   /**
-   * Draw the page as it is served, with no component of the kit: plain
-   * elements and the one stylesheet. For a preview that must match the site.
+   * Draw the page as it is served, with no component of the kit: the elements
+   * and the stylesheet the site uses, behaving as the site's script makes them.
+   * For a preview that must match the site.
    */
   asServed?: boolean;
   /** Components to use in place of the kit's, or beside them. */
@@ -116,7 +121,12 @@ export function Doc({
       ...(folder === undefined ? {} : { folder }),
       ...(lines === undefined ? {} : { lines }),
     };
-    if (asServed) return renderReact(tree, options);
+    if (asServed) {
+      return renderReact(tree, {
+        ...options,
+        components: { ...servedComponents(more), ...components },
+      });
+    }
     const drawTerm: Components["term"] = ({ props, word, info, children }) => {
       const href = info?.href;
       return (
@@ -161,7 +171,7 @@ export function Doc({
     lines,
   ]);
   return (
-    <div className="vd-doc">
+    <div className={asServed ? "vd-doc vd-served" : "vd-doc"}>
       <style href="volvel-doc" precedence="default">
         {DOC_CSS + THEMED}
       </style>

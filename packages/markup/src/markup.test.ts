@@ -286,6 +286,7 @@ describe("components", () => {
       "screenshot",
       "code-tabs",
       "file-tree",
+      "glossary",
       "pages",
     ]);
     const source = readFileSync(join(FIXTURES, "components.md"), "utf8");
@@ -531,4 +532,44 @@ test("an editor's preview is told which lines each block came from", () => {
   expect(html).toContain('<section class="vd-tab" data-line="6" data-end-line="8">');
   // A served page says nothing of where its words were.
   expect(renderHtml(parse(source), { profile: "docs" })).not.toContain("data-line");
+});
+
+describe("a glossary and a diagram", () => {
+  test("::glossary lists the terms its host gives, from A to Z, grouped by letter", () => {
+    const tree = parse("::glossary\n");
+    const glossary = (scope: "collection" | "site") =>
+      scope === "collection"
+        ? [
+            {
+              id: "rma",
+              term: "RMA",
+              short: "A return authorisation.",
+              href: "refunds",
+              page: "Refunds",
+            },
+            { id: "courier", term: "courier", aliases: ["couriers"], short: "Carries the parcel." },
+          ]
+        : [];
+    const html = renderHtml(tree, { profile: "docs", glossary });
+    expect(html.indexOf("courier")).toBeLessThan(html.indexOf("RMA"));
+    expect(html).toContain('<p class="vd-glossary-letter">C</p>');
+    expect(html).toContain('<div class="vd-glossary-item" id="vd-glossary-rma"><dt>RMA</dt>');
+    expect(html).toContain('<span class="vd-glossary-also">Also: couriers</span>');
+    expect(html).toContain('<a class="vd-glossary-page" href="refunds">Defined on Refunds</a>');
+    expect(renderText(tree, { profile: "docs", glossary })).toBe(
+      "courier: Carries the parcel.\nRMA: A return authorisation.",
+    );
+    // The site's terms are asked for by name, and none draws nothing.
+    expect(renderHtml(parse("::glossary{scope=site}\n"), { profile: "docs", glossary })).toBe("");
+    expect(
+      validate(parse("::glossary{scope=everywhere}\n"), "docs").map((one) => one.code),
+    ).not.toEqual([]);
+  });
+
+  test("a mermaid block is its source until a script draws it", () => {
+    const html = renderHtml(parse("```mermaid\ngraph TD\n  A --> B\n```\n"), { profile: "docs" });
+    expect(html).toBe(
+      '<figure class="vd-mermaid" data-vd-mermaid="1"><pre class="vd-mermaid-source"><code class="language-mermaid">graph TD\n  A --&gt; B</code></pre></figure>',
+    );
+  });
 });

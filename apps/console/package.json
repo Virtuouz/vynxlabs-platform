@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node compress.mjs dist",
+    "build": "vite build && vite build -c vite.diagrams.config.ts && node compress.mjs dist",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
@@ -23,6 +23,7 @@
     "@volvel/ui": "workspace:*",
     "@xyflow/react": "^12.12.1",
     "lucide-react": "^1.72.0",
+    "mermaid": "11.17.2",
     "monaco-editor": "^0.57.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"

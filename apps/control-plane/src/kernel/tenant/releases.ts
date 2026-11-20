@@ -1075,13 +1075,14 @@ export async function rollbackAsks(db: Db | Trx, tenantId: string, releaseId: st
   }
   const current = await currentAccess(db, tenantId);
   const kept = new Set(release.snapshot.map((one) => `${one.kind}/${one.key}`));
+  const removed = current.filter((one) => !kept.has(`${one.kind}/${one.key}`));
   return {
+    /** What going back removes, each as a name a person reads. */
+    removes: removed.map((one) => ({ kind: one.kind, key: one.key, label: labelOf(one) })),
     number: release.number,
     asks: release.snapshot.map((resource): AccessAsk => ({ op: "put", resource })),
     // Going back removes what was made since. That is what going back means, so each is allowed.
-    allowDelete: current
-      .filter((one) => !kept.has(`${one.kind}/${one.key}`))
-      .map((one) => `${one.kind}/${one.key}`),
+    allowDelete: removed.map((one) => `${one.kind}/${one.key}`),
   };
 }
 

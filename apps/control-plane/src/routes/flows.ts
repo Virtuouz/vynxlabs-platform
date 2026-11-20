@@ -1505,13 +1505,15 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Approvals surfaced to the tenant that the caller may decide",
           description:
             "Those whose step said `surface: tenant`, from every workspace. An approval that " +
-            "says nothing is listed in its workspace only.",
+            "says nothing is listed in its workspace only. With `all=true`, every one the " +
+            "caller may read, decided by them or not: to see what waits for someone else.",
           tags: ["flows"],
           params: TenantParams,
+          querystring: Type.Object({ all: Type.Optional(Type.Boolean()) }),
           response: { 200: Type.Object({ items: Type.Array(Approval) }) },
         },
       },
-      async ({ ctx, params }) => {
+      async ({ ctx, params, query }) => {
         const rows = await pending(params.t).where(SURFACED).execute();
         const allowed = new Map<string, boolean>();
         const items = [];
@@ -1520,7 +1522,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!allowed.has(row.workspace_id)) {
             allowed.set(
               row.workspace_id,
-              await ctx.allowed("approval:write", {
+              await ctx.allowed(query.all ? "approval:read" : "approval:write", {
                 tenantId: params.t,
                 workspaceId: row.workspace_id,
               }),
@@ -1530,6 +1532,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           // A step that names its approvers is shown only to them.
           const named = approversOf(row.detail);
           if (
+            !query.all &&
             named &&
             !(await isApprover(
               db,

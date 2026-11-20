@@ -1,7 +1,7 @@
 import { Button, Dialog, EmptyState, Notice, TextField } from "@volvel/ui";
-import { useState } from "react";
-import { api, useLoad } from "../api.ts";
-import { failureText, takenText } from "../ask.tsx";
+import { useEffect, useState } from "react";
+import { ApiError, api, useLoad } from "../api.ts";
+import { failureText, notify, takenText } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago } from "../kit/format.ts";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
@@ -9,6 +9,7 @@ import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 import { type Listed, slug } from "./builder/data.ts";
+import { cannotRename } from "./ResourceIdentity.tsx";
 
 /** The apps made in the console: each an interface, and the app that serves it. */
 export function Interfaces({
@@ -29,6 +30,7 @@ export function Interfaces({
   const [error, setError] = useState<string>();
   const [taken, setTaken] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [renaming, setRenaming] = useState<Listed>();
   const where = address || slug(title);
 
   const create = editable ? (
@@ -128,30 +130,55 @@ export function Interfaces({
                 {
                   header: "",
                   cell: (row: Listed) => (
-                    <RemoveDraftButton
-                      root={root}
-                      kind="interface"
-                      path={row.path}
-                      noun="app"
-                      size="small"
-                      state={
-                        row.removing
-                          ? "removed"
-                          : row.ownership === "code"
-                            ? "repository"
-                            : row.deployed
-                              ? "deployed"
-                              : "draft"
-                      }
-                      also={row.app ? [{ kind: "app", path: row.app }] : []}
-                      then="The app's address stops serving it once that is deployed."
-                      onDone={() => list.reload()}
-                    />
+                    <span className="flex flex-wrap justify-end gap-2">
+                      <Button
+                        size="small"
+                        disabled={
+                          cannotRename({
+                            ownership: row.ownership ?? "console",
+                            path: row.path,
+                          }) !== undefined
+                        }
+                        title={cannotRename({
+                          ownership: row.ownership ?? "console",
+                          path: row.path,
+                        })}
+                        onClick={() => setRenaming(row)}
+                      >
+                        Rename
+                      </Button>
+                      <RemoveDraftButton
+                        root={root}
+                        kind="interface"
+                        path={row.path}
+                        noun="app"
+                        size="small"
+                        state={
+                          row.removing
+                            ? "removed"
+                            : row.ownership === "code"
+                              ? "repository"
+                              : row.deployed
+                                ? "deployed"
+                                : "draft"
+                        }
+                        also={row.app ? [{ kind: "app", path: row.app }] : []}
+                        then="The app's address stops serving it once that is deployed."
+                        onDone={() => list.reload()}
+                      />
+                    </span>
                   ),
                 },
               ]
             : []),
         ]}
+      />
+      <RenameApp
+        root={root}
+        link={link}
+        row={renaming}
+        onClose={() => setRenaming(undefined)}
+        onDone={() => list.reload()}
       />
       <Dialog
         open={creating}
@@ -233,5 +260,126 @@ export function Interfaces({
         </form>
       </Dialog>
     </Page>
+  );
+}
+
+interface Stored {
+  kind: string;
+  schemaVersion: number;
+  body: Record<string, unknown>;
+  /** Of a draft: the one the change is made over. */
+  revision?: number;
+}
+
+/**
+ * Changes an app's title, and only that: in the interface and in the app that
+ * serves it, as one draft. The address stays, so links to it and what is
+ * bound to it go on working.
+ */
+function RenameApp({
+  root,
+  link,
+  row,
+  onClose,
+  onDone,
+}: {
+  root: string;
+  link: string;
+  row: Listed | undefined;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setTitle(row?.title ?? "");
+    setError(undefined);
+  }, [row]);
+  const unchanged = !row || title.trim() === row.title || title.trim() === "";
+  const save = async () => {
+    if (!row) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      // What each is now: its draft over what is deployed. The rest of each body is kept.
+      const read = async (path: string): Promise<Stored | undefined> => {
+        const missing = (caught: unknown) => {
+          if (caught instanceof ApiError && caught.status === 404) return undefined;
+          throw caught;
+        };
+        const [draft, deployed] = await Promise.all([
+          api.get<Stored>(`${root}/drafts/${path}`).catch(missing),
+          api.get<Stored>(`${root}/resources/${path}`).catch(missing),
+        ]);
+        return draft ?? (deployed ? { ...deployed, revision: undefined } : undefined);
+      };
+      const paths = [row.path, ...(row.app ? [row.app] : [])];
+      const found = await Promise.all(paths.map(read));
+      const changes = paths.flatMap((path, at) => {
+        const one = found[at];
+        return one
+          ? [
+              {
+                path,
+                kind: one.kind,
+                schemaVersion: one.schemaVersion,
+                body: { ...one.body, title: title.trim() },
+                ...(one.revision ? { revision: one.revision } : {}),
+              },
+            ]
+          : [];
+      });
+      if (changes.length === 0) throw new Error(`${row.path} is not there any more.`);
+      await api.post(`${root}/drafts/batch`, { changes });
+      notify.success(`A draft renames ${row.title} to ${title.trim()}.`, {
+        action: { label: "Review and deploy", onClick: () => navigate(`${link}/release`) },
+      });
+      onClose();
+      onDone();
+    } catch (caught) {
+      setError(failureText(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Dialog
+      open={row !== undefined}
+      onClose={onClose}
+      title={row ? `Rename ${row.title}` : "Rename"}
+      description="Only its name changes. Its address does not, so links to it keep working. Nothing changes for people until you publish."
+    >
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!busy && !unchanged) void save();
+        }}
+      >
+        <TextField
+          label="Name"
+          name="title"
+          value={title}
+          required
+          maxLength={200}
+          onChange={setTitle}
+        />
+        {row ? (
+          <p className="m-0 text-meta text-ink-muted">
+            The address stays <code className="font-mono">{row.app ?? row.path}</code>.
+          </p>
+        ) : null}
+        {error ? <Notice tone="danger">{error}</Notice> : null}
+        <div className="flex justify-end gap-2">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" loading={busy} disabled={unchanged}>
+            Save as a draft
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }

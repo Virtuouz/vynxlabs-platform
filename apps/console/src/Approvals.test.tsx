@@ -135,6 +135,23 @@ test("the queue's Waiting for others view lists what the viewer cannot decide, r
   expect(screen.queryByRole("button", { name: "Reject" })).toBeNull();
 });
 
+test("the tenant's queue has Waiting for others too, read-only", async () => {
+  routes[`GET ${base}/approvals`] = (_body, url) =>
+    url.includes("all=true")
+      ? [200, { items: [waiting("a", null), waiting("b", "Finance managers")] }]
+      : [200, { items: [waiting("a", null)] }];
+  routes[`GET ${base}/workspaces`] = () => [
+    200,
+    { items: [{ id: "w1", name: "Main", type: "production" }] },
+  ];
+  history.replaceState(null, "", "/t/t1/approvals?show=others");
+  show(<ApprovalsQueue base={base} tenantId="t1" />);
+  expect(await screen.findByText("Refund b")).toBeTruthy();
+  expect(screen.getByText("Finance managers")).toBeTruthy();
+  expect(screen.queryByText("Refund a")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+});
+
 const flowRun = {
   id: "f1",
   flow: "refunds/approve",

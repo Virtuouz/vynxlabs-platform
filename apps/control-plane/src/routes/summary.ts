@@ -56,6 +56,12 @@ const WorkspaceSummary = Type.Object({
 const TenantSummary = Type.Object({
   workspaces: Count,
   approvalsWaiting: Count,
+  approvalsWaitingMine: Type.Optional(
+    Type.Union([Type.Integer({ minimum: 0 }), Type.Null()], {
+      description:
+        "Of the approvals waiting in the tenant's workspaces, those the caller may decide, by the same rule as a workspace's.",
+    }),
+  ),
   domainsToFix: Count,
   workersOnline: Count,
   operatorAccessActive: Count,
@@ -343,6 +349,24 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             return null;
           return waiting;
         };
+        /** Of the approvals waiting in every workspace, those this caller may decide. */
+        const waitingForMe = async () => {
+          const rows = await db
+            .selectFrom("step_run")
+            .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
+            .select(["step_run.detail", "flow_run.workspace_id"])
+            .where("flow_run.tenant_id", "=", params.t)
+            .where("flow_run.status", "=", "running")
+            .where("step_run.status", "=", "waiting")
+            .where(sql<boolean>`step_run.detail ? 'title'`)
+            .execute();
+          let mine = 0;
+          for (const row of rows) {
+            const here = { tenantId: params.t, workspaceId: row.workspace_id };
+            if (await mayDecide(db, ctx, here, row.detail)) mine += 1;
+          }
+          return mine;
+        };
         const total = (table: "workspace" | "tenant_member") =>
           count(
             db
@@ -366,6 +390,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   .executeTakeFirst(),
               )
             : null,
+          approvalsWaitingMine: approvals ? await waitingForMe() : null,
           domainsToFix: domains
             ? await count(
                 db

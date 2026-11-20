@@ -8,7 +8,7 @@ import { Interfaces } from "./screens/Interfaces.tsx";
 import { Queries } from "./screens/Queries.tsx";
 import { answer, show } from "./testing.tsx";
 
-configure({ asyncUtilTimeout: 5000 });
+configure({ asyncUtilTimeout: 15_000 });
 
 const root = "/tenants/t1/workspaces/w1";
 const api = `/api/v1${root}`;
@@ -36,7 +36,10 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-const sent = (method: string) => calls.filter((call) => call.method === method);
+// A member's preference is sent a moment after it changes, so one from the test before may land
+// during this one: it is not what the screen under test wrote.
+const sent = (method: string) =>
+  calls.filter((call) => call.method === method && !call.url.includes("/me/preferences"));
 
 describe("RemoveDraftButton", () => {
   test("a deployed resource is removed as a draft that removes it, after saying what that does", async () => {

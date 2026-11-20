@@ -129,7 +129,9 @@ test("asking for a second person is turned on without a question", async () => {
   show(<AccessReleases base={base} />);
   fireEvent.click(await screen.findByRole("button", { name: "Ask for a second person" }));
   await waitFor(() =>
-    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({ required: true }),
+    expect(
+      calls.find((call) => call.method === "PUT" && !call.url.includes("/me/preferences"))?.body,
+    ).toEqual({ required: true }),
   );
   expect(screen.queryByRole("dialog")).toBeNull();
 });

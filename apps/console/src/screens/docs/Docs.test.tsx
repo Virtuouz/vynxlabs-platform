@@ -445,6 +445,7 @@ describe("the Documentation screen", () => {
           path: "guide-site",
           kind: "app",
           schemaVersion: 1,
+          create: true,
           body: { title: "Staff guide", docs: "guide" },
         },
       ],

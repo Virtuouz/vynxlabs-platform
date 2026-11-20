@@ -125,6 +125,10 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
               setFieldError(undefined);
               submit(text)
                 .then((refused) => (refused ? setFieldError(refused) : close(true)))
+                // A failure that was not foreseen is said on the field too, keeping what was typed.
+                .catch((caught: unknown) =>
+                  setFieldError(caught instanceof Error ? caught.message : String(caught)),
+                )
                 .finally(() => setWorking(false));
             }}
           >

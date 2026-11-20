@@ -8,6 +8,7 @@ import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
 import { when } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
 import type { TenantCounts, WorkspaceCounts } from "../Shell.tsx";
+import { RenameTenantButton } from "./Environments.tsx";
 import { PromotionRequests } from "./Promotion.tsx";
 
 /** Actions that recorded a person's own preference, not a change. */
@@ -124,6 +125,11 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
         title={tenant.data?.name ?? "Overview"}
         description="What asks for someone, how each workspace stands, and what changed last."
         meta={tenant.data ? <Mono>{tenant.data.slug}</Mono> : null}
+        actions={
+          tenant.data ? (
+            <RenameTenantButton tenant={{ id: tenantId, ...tenant.data }} onDone={tenant.reload} />
+          ) : null
+        }
       />
       {counts.error ? <ErrorState error={counts.error} onRetry={counts.reload} /> : null}
 

@@ -41,7 +41,8 @@ VOLVEL_URL=http://localhost:8080 node setup/setup.mjs          # --reset to star
    - today's first visits are checked in, seen and invoiced
    - PayFern sends two good payments, one for the wrong amount, and one with a bad signature
    - unpaid invoices are chased
-7. Registers `fernhill.localhost` to serve the portal and every app, uploads the logo, and ends operator access.
+7. In the sandbox, makes two tables of the console's own: `suppliers` (220 rows, shown by their `name`, so the picker has more than the first 50 to search) and `supplier_contacts`, whose `supplier` column refers to it. Adds Sam Reyes, a doc writer in the sandbox.
+8. Registers `fernhill.localhost` to serve the portal and every app, uploads the logo, and ends operator access.
 
 Sign-ins and addresses are written to `.platform/demo.json`. Every account's password is `fernhill-demo-2026`.
 
@@ -50,6 +51,7 @@ Sign-ins and addresses are written to `.platform/demo.json`. Every account's pas
 | Practice owner | `maya.brooks@fernhill.example` (console) | The console; Clinic performance through "Staff sign-in" |
 | Practice manager | `rowan.ellis@fernhill.example` (console) | Approvals |
 | Developer | `devi.shah@fernhill.example` (console) | The sandbox, deploys |
+| Doc writer | `sam.reyes@fernhill.example` (console) | The sandbox's documentation; deploys pages, sites and a site's feedback table |
 | Front desk, Northside | `jess.morgan@fernhill.example` (portal) | `/apps/fernhill/clinics/front-desk/` |
 | Front desk, Riverside, Hilltop | `omar.haddad@…`, `lena.fischer@…` | the same app, their own clinic's rows |
 | Pet owner | `george.lewis@example.net` (portal) | `/apps/fernhill/clinics/pet-portal/` |
@@ -91,6 +93,16 @@ The agent is offered exactly the scripts and the flow it is bound to (`src/apps.
    ```
 
    Then, as Maya, review it in Release and promote it. Repository scripts are read-only in the console's editor.
+
+## What phase 23 walks here
+
+`e2e/phase-23.spec.ts` uses the sandbox's `suppliers` and `supplier_contacts`, and Sam. By hand:
+
+- **Tables.** Open `supplier_contacts` in the sandbox: the rows are the one scroller, with the header pinned. Open the row, and type `Veterinary Supply` or a number such as `219` in `supplier`: the picker asks the server, shows 50 and says "Type to find more".
+- **Release, as Maya.** One list of deploys with "Activate this version", and "Not yet run here" for bundles never run.
+- **Documentation, as Sam.** Write a page, publish a folder as a site that asks for feedback, and deploy: the feedback table goes with the site. A table of any other kind is refused.
+
+The two tables are the console's own, so a CLI deploy of this repository to the sandbox removes them. Run `setup.mjs --reset` to bring them back.
 
 ## Findings from building it, and what became of them
 

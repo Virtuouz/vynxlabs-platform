@@ -584,6 +584,16 @@ const TYPING_MS = 250;
  * finds the rows whose name contains it, so a row past the first page can be found. Where the
  * table cannot be read, the ID is typed.
  */
+/** A column to name a row by, when the table says none: its name or title, else its first text. */
+export function displayGuess(columns: { name: string; type: string; status?: string }[]) {
+  const text = columns.filter((one) => one.type === "text" && one.status !== "retired");
+  return (
+    text.find((one) => one.name === "name")?.name ??
+    text.find((one) => one.name === "title")?.name ??
+    text[0]?.name
+  );
+}
+
 function ReferenceField({
   column,
   rowsPath,
@@ -599,8 +609,13 @@ function ReferenceField({
 }) {
   const target = column.references ?? "";
   const root = rowsPath.includes("/rows/") ? rowsPath.split("/rows/")[0] : undefined;
-  const table = useLoad<{ display?: string | null }>(root ? `${root}/tables/${target}` : null);
-  const display = table.data?.display ?? undefined;
+  const table = useLoad<{
+    display?: string | null;
+    columns?: { name: string; type: string; status?: string }[];
+  }>(root ? `${root}/tables/${target}` : null);
+  // What stands for a row, or, when the table names none, its name or title, or its first text
+  // column: a person picks a pet by its name, never by an ID (A2-06; Fernhill's pets name none).
+  const display = table.data?.display ?? displayGuess(table.data?.columns ?? []);
   const [typed, setTyped] = useState("");
   const [sent, setSent] = useState("");
   useEffect(() => {

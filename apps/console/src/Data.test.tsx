@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { Sources, SourceView, TableView, toFilter } from "./screens/Data.tsx";
+import { displayGuess, Sources, SourceView, TableView, toFilter } from "./screens/Data.tsx";
 import { answer, show } from "./testing.tsx";
 
 // The whole suite runs in parallel with tests that use a database, so waits are generous.
@@ -682,4 +682,14 @@ test("a removal that is not confirmed changes nothing", async () => {
   await answer("Cancel");
   await waitFor(() => expect(screen.queryByText(/Remove the file from/)).toBeNull());
   expect(calls.some((call) => call.method === "PATCH")).toBe(false);
+});
+
+test("a reference names a row by its name or title when the table says nothing stands for it", () => {
+  const col = (name: string, type: string, status = "active") => ({ name, type, status });
+  expect(displayGuess([col("species", "text"), col("name", "text"), col("born", "date")])).toBe(
+    "name",
+  );
+  expect(displayGuess([col("code", "text"), col("title", "text")])).toBe("title");
+  expect(displayGuess([col("weight", "number"), col("breed", "text")])).toBe("breed");
+  expect(displayGuess([col("old", "text", "retired"), col("weight", "number")])).toBeUndefined();
 });

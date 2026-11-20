@@ -8,6 +8,8 @@ import { answer, show } from "./testing.tsx";
 const base = "/tenants/t1";
 let calls: { method: string; url: string; body: unknown }[];
 let approval: boolean;
+let who: string;
+let mayChange: boolean;
 const release = (number: number, extra: object = {}) => ({
   id: `r${number}`,
   number,
@@ -22,6 +24,8 @@ const release = (number: number, extra: object = {}) => ({
     changes: [{ change: "created", kind: "group", key: "night-shift", label: "Night shift" }],
   },
   createdBy: "Alice",
+  createdByType: "member",
+  createdById: "alice",
   createdAt: "2026-11-17T10:00:00.000Z",
   decidedBy: null,
   comment: null,
@@ -31,6 +35,8 @@ const release = (number: number, extra: object = {}) => ({
 beforeEach(() => {
   calls = [];
   approval = true;
+  who = "bob";
+  mayChange = true;
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     calls.push({
@@ -47,7 +53,9 @@ beforeEach(() => {
         ],
       });
     }
-    if (method === "GET" && address.endsWith("/access")) return json({ approval });
+    if (method === "GET" && address.endsWith("/me"))
+      return json({ principal: { type: "member", id: who, name: who, email: null } });
+    if (method === "GET" && address.endsWith("/access")) return json({ approval, mayChange });
     if (method === "PUT") {
       approval = false;
       return json({ required: false });
@@ -82,7 +90,7 @@ test("a release that waits says what it would do, and is approved after asking",
   ).toBeTruthy();
 
   fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-  expect(await answer("Approve")).toContain("Makes the group Night shift. It applies at once.");
+  expect(await answer("Approve")).toContain("It applies at once, and does all of this:");
   await waitFor(() =>
     expect(calls.find((call) => call.method === "POST")).toMatchObject({
       url: `/api/v1${base}/access/releases/r2/decision`,
@@ -94,7 +102,10 @@ test("a release that waits says what it would do, and is approved after asking",
 test("an applied release can be gone back to, and asking for a second person can be stopped", async () => {
   show(<AccessReleases base={base} />);
   fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
-  expect(await answer("Go back")).toContain("It waits for a second person.");
+  const sure = await answer("Go back");
+  expect(sure).toContain("It waits for a second person.");
+  expect(sure).toContain("groups an identity provider made are left alone");
+  expect(sure).toContain("Makes the group Night shift");
   await waitFor(() =>
     expect(calls.some((call) => call.url.endsWith("/access/releases/r1/rollback"))).toBe(true),
   );
@@ -110,5 +121,35 @@ test("a change that waits is told to whoever made it, in place of the thing they
   expect((made as ApiError).code).toBe("awaiting_approval");
   expect((made as ApiError).message).toBe(
     "This tenant asks for a second person. Nothing changed yet.",
+  );
+});
+
+test("whoever asked for a release is offered only to withdraw it, and told why", async () => {
+  who = "alice";
+  show(<AccessReleases base={base} />);
+  expect(await screen.findByText("You asked for this. Someone else approves it.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Withdraw" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
+});
+
+test("someone who may only read a release is offered nothing to answer it with", async () => {
+  mayChange = false;
+  show(<AccessReleases base={base} />);
+  expect(await screen.findByText("You may read this, not answer it.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Withdraw" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Go back to this" })).toBeNull();
+});
+
+test("a decline takes a comment and sends it", async () => {
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Decline" }));
+  await answer("Decline", "Wrong group");
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "POST")).toMatchObject({
+      url: `/api/v1${base}/access/releases/r2/decision`,
+      body: { decision: "decline", comment: "Wrong group" },
+    }),
   );
 });

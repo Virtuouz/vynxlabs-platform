@@ -90,6 +90,8 @@ export interface WorkspaceCounts {
   failedRuns?: { count: number | null; since: string };
   unboundConnections: number | null;
   approvalsWaiting: number | null;
+  /** Of those, the ones the viewer may decide. An older server does not send it. */
+  approvalsWaitingMine?: number | null;
   git: { state: string } | null;
   version: number | null;
   linked: {

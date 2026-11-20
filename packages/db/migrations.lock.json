@@ -79,5 +79,6 @@
   "0078_sql_permission.sql": "24d88f0480efe93e1a446779c0fef3f62bde749afded1a3bf1146af7814747f5",
   "0079_icons.sql": "833d73ef859278906f3a5fc6970f59840be8e1a6c70de5c1641511c973752c02",
   "0080_traces.sql": "3e9b279f244bd42bc6800d2373bcb0f18ce0fb75cb893e33b9b414b52cf79d03",
-  "0081_doc_writer.sql": "030f10ca346afde7f158d1de2b884c90b67bf3095becd92cac34d6aec2fb2c21"
+  "0081_doc_writer.sql": "030f10ca346afde7f158d1de2b884c90b67bf3095becd92cac34d6aec2fb2c21",
+  "0082_row_file_history.sql": "50fd3393eed9a738dfc4de846fe6efa503b1ea9606ec27f86aae41f02fbce644"
 }

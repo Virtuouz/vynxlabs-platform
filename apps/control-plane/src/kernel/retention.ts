@@ -14,6 +14,7 @@ export interface Pruned {
   events: number;
   refusals: number;
   payloads: number;
+  files: number;
   tasks: number;
   auditMonths: string[];
 }
@@ -113,6 +114,7 @@ export async function pruneOnce(
         events: 0,
         refusals: 0,
         payloads: 0,
+        files: 0,
         tasks: 0,
         auditMonths: [],
       };
@@ -223,6 +225,8 @@ async function pruneTenant(
     if (roots.rows.length < batch) break;
   }
 
+  pruned.files += await pruneFileHistory(kernel, tenantId, policy.auditDays, batch, deadline);
+
   pruned.events += await prune(
     kernel,
     sql`select id from event where tenant_id = ${tenantId}
@@ -241,6 +245,45 @@ async function pruneTenant(
       deadline,
     );
   }
+}
+
+/**
+ * Removes the notes of files that rows no longer name once they are older than the tenant's
+ * history of changes, and then each file no note names any more, its bytes with it. A file a
+ * note still names stays: the row's history can still be asked for it.
+ */
+async function pruneFileHistory(
+  kernel: Kernel,
+  tenantId: string,
+  keepDays: number,
+  batch: number,
+  deadline: number,
+): Promise<number> {
+  let removed = 0;
+  while (Date.now() <= deadline) {
+    const notes = await sql<{ file_id: string }>`
+      delete from row_file_history where id in (
+        select id from row_file_history
+        where tenant_id = ${tenantId}
+          and replaced_at < now() - make_interval(days => ${keepDays})
+        order by replaced_at limit ${batch}
+      )
+      returning file_id
+    `.execute(kernel.db);
+    if (notes.rows.length === 0) break;
+    const ids = [...new Set(notes.rows.map((row) => row.file_id))];
+    const gone = await sql<{ storage_key: string }>`
+      delete from file where id in (${sql.join(ids)})
+        and not exists (select 1 from row_file_history h where h.file_id = file.id)
+      returning storage_key
+    `.execute(kernel.db);
+    removed += await removeObjects(
+      kernel,
+      gone.rows.map((row) => row.storage_key),
+    );
+    if (notes.rows.length < batch) break;
+  }
+  return removed;
 }
 
 /** Deletes whole flow-run trees under the given roots, leaving any tree not yet finished. */

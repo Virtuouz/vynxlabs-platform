@@ -4,6 +4,7 @@ import { sql } from "@volvel/db";
 import { PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { loadCatalog, purgeRetired, workspaceSchema } from "../kernel/data/apply.js";
+import { updateRowKeepingFiles } from "../kernel/data/files.js";
 import {
   aggregateQueryFrom,
   aggregateRows,
@@ -17,7 +18,6 @@ import {
   insertRows,
   type Row,
   scopeFor,
-  updateRow,
   withData,
 } from "../kernel/data/rows.js";
 import { badRequest, forbidden } from "../kernel/errors.js";
@@ -753,7 +753,15 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }) => {
         const { target, scope } = await enter(ctx, params, wildPath(params), "write");
         const row = await withData(kernel, params.t, scope, (data) =>
-          updateRow(data, target, params.id, body),
+          updateRowKeepingFiles(
+            kernel,
+            data,
+            { tenantId: params.t, id: params.w },
+            ctx.principal,
+            target,
+            params.id,
+            body,
+          ),
         );
         ctx.mutated = true;
         await announceRows(kernel, params.t, params.w, target.name, "updated", [params.id]);

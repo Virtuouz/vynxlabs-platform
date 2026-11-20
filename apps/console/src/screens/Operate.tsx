@@ -19,6 +19,7 @@ import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { ago, stamp } from "../kit/format.ts";
 import { FilterChips, HeadNote, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
 import { triggerKey } from "../kit/objects.tsx";
+import { LoadMore, usePagedList } from "../kit/paged.tsx";
 import { Mono, type RunState, StatePill, stateOf, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
@@ -656,11 +657,18 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
   // The name searched for is in the address, so a reload, a link or a saved view keeps it.
   const [applied, setApplied] = useUrlParam("name", "");
   const [name, setName] = useState(applied);
-  const list = useLoad<{ items: EventRow[] }>(
-    `${root}/events?limit=100${applied ? `&name=${encodeURIComponent(applied)}` : ""}`,
+  // Newest first, a page at a time: older ones are one "Load more" away.
+  const list = usePagedList<EventRow>(
+    `${root}/events${applied ? `?name=${encodeURIComponent(applied)}` : ""}`,
+    { limit: 100 },
   );
   const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
-  const open = list.data?.items.find((one) => one.id === chosen);
+  const onPage = list.items?.find((one) => one.id === chosen);
+  // A link to an event that the pages loaded do not reach is looked up by its ID.
+  const lookup = useLoad<{ items: EventRow[] }>(
+    chosen && list.items && !onPage ? `${root}/events?id=${encodeURIComponent(chosen)}` : null,
+  );
+  const open = onPage ?? lookup.data?.items.find((one) => one.id === chosen);
 
   return (
     <CollectionView
@@ -676,7 +684,7 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
         >
           <div className="w-72 max-w-full">
             <TextField
-              label="Event name"
+              label="Exact event name"
               labelHidden
               name="event"
               value={name}
@@ -739,18 +747,42 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
             ),
         },
       ]}
-      rows={list.data?.items}
+      rows={list.items}
       rowKey={(row) => row.id}
       selected={chosen}
       onSelect={(row) => setChosen(row.id)}
       error={list.error}
       onRetry={list.reload}
+      table={{
+        footer: (
+          <LoadMore
+            shown={list.items?.length ?? 0}
+            hasMore={list.hasMore}
+            loading={list.loadingMore}
+            error={list.moreError}
+            noun="events"
+            onMore={list.loadMore}
+          />
+        ),
+      }}
       empty={{
         title: applied ? `No ${applied} events yet` : "No events yet",
         text: "Declare an event with defineEvent, and publish it from a script with ctx.events.publish.",
       }}
       inspector={
-        open ? (
+        chosen && !open && !lookup.loading && (lookup.error || lookup.data) ? (
+          <Inspector
+            open
+            label="The chosen event"
+            title="Event not found"
+            onClose={() => setChosen(undefined)}
+          >
+            <p className="m-0 text-ink-muted">
+              No event with that ID is in this workspace. It may belong to another workspace, or
+              have been removed with the older ones.
+            </p>
+          </Inspector>
+        ) : open ? (
           <Inspector
             open
             label="The chosen event"

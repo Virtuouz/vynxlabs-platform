@@ -316,17 +316,32 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
           description: "The promotion preview of the bundle the request pinned.",
           tags: ["deploys"],
           params: RequestParams,
+          querystring: Type.Object({
+            allowDelete: Type.Optional(
+              Type.String({
+                maxLength: 4000,
+                description:
+                  "Paths the promotion may delete although it looks like a rename, separated by commas.",
+              }),
+            ),
+          }),
           response: { 200: AnyObject },
         },
       },
-      async ({ ctx, params }) => {
+      async ({ ctx, params, query }) => {
         const row = await load(params.t, params.id);
         await ctx.authorize("deployment:read", {
           tenantId: params.t,
           workspaceId: row.target_workspace_id,
         });
         const source = await sourceOf(row);
-        return previewPromotion(kernel, ctx.actor, source, row.bundle_id);
+        return previewPromotion(
+          kernel,
+          ctx.actor,
+          source,
+          row.bundle_id,
+          query.allowDelete?.split(",").filter(Boolean),
+        );
       },
     );
 

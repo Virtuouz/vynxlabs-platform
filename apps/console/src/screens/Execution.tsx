@@ -557,7 +557,14 @@ interface BundleRow {
   createdAt: string;
 }
 
-export function Deployments({ root }: { root: string }) {
+export function Deployments({
+  root,
+  workspace,
+}: {
+  root: string;
+  /** Whose bundles these are: a rollback names it, and in production asks as a danger. */
+  workspace: { name: string; type: string };
+}) {
   return (
     <ListScreen<BundleRow>
       title="Deployments"
@@ -588,9 +595,10 @@ export function Deployments({ root }: { root: string }) {
             size="small"
             onClick={async () => {
               const sure = await ask.confirm({
-                title: `Activate version ${row.version}?`,
-                text: "This replaces what the workspace is running.",
-                action: "Activate",
+                title: `Activate version ${row.version} in ${workspace.name}?`,
+                text: `${workspace.name} stops running what it runs now and starts running version ${row.version} at once. Runs in progress there finish on the version they started with.`,
+                action: workspace.type === "production" ? "Activate in production" : "Activate",
+                danger: workspace.type === "production",
               });
               if (!sure) return;
               try {

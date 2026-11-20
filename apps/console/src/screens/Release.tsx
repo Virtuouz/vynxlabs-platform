@@ -23,6 +23,7 @@ import { Link, navigate, useUrlParam } from "../router.tsx";
 import { DriftView } from "./Drift.tsx";
 import { Deployments } from "./Execution.tsx";
 import { type PromotionRequest, RequestPromotion } from "./Promotion.tsx";
+import { breakingOf, breakingText, PromotionConfirm } from "./PromotionConfirm.tsx";
 
 interface Workspace {
   id: string;
@@ -58,9 +59,6 @@ interface Summary {
 /** A draft saved more than a day ago: likely not part of what is being released now. */
 export const isOld = (row: { updatedAt: string }, now = Date.now()) =>
   now - new Date(row.updatedAt).getTime() > 86_400_000;
-
-/** A message from the API starts in lower case, to follow a path. Alone, it is a sentence. */
-const sentence = (message: string) => `${message.charAt(0).toUpperCase()}${message.slice(1)}`;
 
 interface Refusal {
   code: string;
@@ -642,7 +640,7 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
       </section>
       <section className="flex flex-col gap-2">
         <SectionLabel>Bundles and rollback</SectionLabel>
-        <Deployments root={root} />
+        <Deployments root={root} workspace={workspace} />
       </section>
     </div>
   );
@@ -676,7 +674,7 @@ function PromoteStep({
   const [problem, setProblem] = useState<string>();
   const data = preview.data;
   // Only production has agents that were told a name and cannot be told another at once.
-  const breaking = target.type === "production" ? (data?.summary?.breaking ?? []) : [];
+  const breaking = breakingOf(data);
 
   return (
     <div className="flex flex-col gap-5">
@@ -712,36 +710,13 @@ function PromoteStep({
       ) : (
         <PreviewPanels data={data} targetName={target.name} link={link} />
       )}
-      {data?.refusal?.code === "rename_suspected" && data.canPromote !== false ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            variant="danger"
-            onClick={async () => {
-              const paths = data.refusal?.errors.map((one) => one.path) ?? [];
-              const sure = await ask.confirm({
-                title: `Delete ${paths.join(", ")} in ${target.name}?`,
-                text: "What each one holds there is cut off from whatever is created in its place. If one of them was renamed, give the new one its key in the repository instead, and nothing is lost.",
-                action: "Delete them and look again",
-                danger: true,
-              });
-              if (sure) setAllowed([...allowed, ...paths]);
-            }}
-          >
-            Delete them anyway
-          </Button>
-        </div>
-      ) : null}
-      {breaking.length > 0 ? (
-        <Notice tone="attention">
-          <strong>
-            This changes {breaking.length === 1 ? "a name" : "names"} that something outside calls.
-          </strong>
-          <ul className="mt-2 mb-0 pl-5">
-            {breaking.map((one) => (
-              <li key={`${one.path} ${one.message}`}>{sentence(one.message)}</li>
-            ))}
-          </ul>
-        </Notice>
+      {data ? (
+        <PromotionConfirm
+          data={data}
+          targetName={target.name}
+          allowed={allowed}
+          onAllow={setAllowed}
+        />
       ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
       {result ? (
@@ -779,11 +754,7 @@ function PromoteStep({
             onClick={async () => {
               const sure = await ask.confirm({
                 title: `Promote to ${target.name}?`,
-                text: `${target.name} starts running version ${data?.bundle.version} at once. Runs in progress there finish on the version they started with.${
-                  breaking.length > 0
-                    ? ` It also changes what an agent calls: ${breaking.map((one) => sentence(one.message)).join(" ")}`
-                    : ""
-                }`,
+                text: `${target.name} starts running version ${data?.bundle.version} at once. Runs in progress there finish on the version they started with.${breakingText(data)}`,
                 action: "Promote to production",
                 danger: true,
               });

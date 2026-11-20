@@ -27,9 +27,9 @@ export function Tenants({ me }: { me: Me }) {
           ? "Every client organization on this instance. Opening one needs an access grant unless you are a member of it."
           : "The organizations you belong to."
       }
-      path="/tenants?limit=200"
+      path="/tenants"
       rowKey={(row) => row.id}
-      search={(row) => `${row.name} ${row.slug}`}
+      paged
       columns={[
         {
           header: "Name",

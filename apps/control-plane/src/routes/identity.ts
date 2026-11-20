@@ -13,7 +13,7 @@ import { createMember } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
 import { effectivePolicy } from "../kernel/retention.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
-import { PageQuery, pageOf } from "../pagination.js";
+import { likeTerm, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
 import {
   AnyObject,
   Id,
@@ -893,7 +893,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Every member of the instance",
           description: "With the tenants each belongs to.",
           tags: ["identity"],
-          querystring: PageQuery,
+          querystring: SearchPageQuery,
           response: {
             200: pageOf(
               Type.Object({
@@ -909,6 +909,15 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         let select = kernel.db
           .selectFrom("member")
           .select(["id", "name", "email", "created_at", "disabled_at"]);
+        if (query.search) {
+          const term = likeTerm(query.search);
+          select = select.where((eb) =>
+            eb.or([
+              eb(eb.fn("lower", ["email"]), "like", term),
+              eb(eb.fn("lower", ["name"]), "like", term),
+            ]),
+          );
+        }
         if (args.after) select = select.where("id", ">", args.after);
         const rows = await select
           .orderBy("id")

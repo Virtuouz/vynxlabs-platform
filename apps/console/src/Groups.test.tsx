@@ -90,7 +90,7 @@ test("groups of end users have the same membership dialog, against their own rou
   fireEvent.click(screen.getByRole("button", { name: "People" }));
   await screen.findByText("ada@acme.test");
   expect(calls.some((call) => call.url === `/api/v1${base}/end-user-groups/g1`)).toBe(true);
-  expect(calls.some((call) => call.url === `/api/v1${base}/end-users?limit=200`)).toBe(true);
+  expect(calls.some((call) => call.url === `/api/v1${base}/end-users?limit=50`)).toBe(true);
 });
 
 test("attributes are saved together, and a row left empty is left out", async () => {

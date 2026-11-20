@@ -301,7 +301,8 @@ const WIDTHS = [390, 768, 1280, 1440];
 
 /** The numbers as they stand, written beside the results for the phase's record. */
 test("the measures are recorded", async () => {
-  test.setTimeout(300_000);
+  // Every screen of the navigation, at four widths: more than five minutes since phase 22 M7.
+  test.setTimeout(600_000);
   const record: Record<string, unknown> = {};
   await page.setViewportSize({ width: 1440, height: 900 });
   const tops: Record<string, number | null> = {};

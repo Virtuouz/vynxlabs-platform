@@ -2,11 +2,13 @@ import { ENUM_COLORS, enumColor } from "@volvel/manifest";
 import {
   Button,
   Closing,
+  ComboboxField,
   Dialog,
   EmptyState,
   Grid,
   type GridColumn,
   type GridSort,
+  Menu,
   MoveButtons,
   MultiSelectField,
   Notice,
@@ -19,13 +21,14 @@ import {
   useFlip,
   ValueChip,
 } from "@volvel/ui";
-import { Download } from "lucide-react";
+import { Download, Ellipsis } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { count } from "../kit/format.ts";
+import { HealthCell } from "../kit/health.tsx";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
@@ -33,14 +36,7 @@ import { Inspector } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
-import {
-  type CreateConfig,
-  CreateDialog,
-  ListScreen,
-  Page,
-  RemoveButton,
-  when,
-} from "../ListScreen.tsx";
+import { type CreateConfig, CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate, useNavigationGuard, useUrlParam, useUrlState } from "../router.tsx";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import {
@@ -466,6 +462,7 @@ function RowsBrowser(props: RowsBrowserProps) {
               row={open}
               columns={columns}
               editable={canChange}
+              rowsPath={props.rowsPath}
               onSave={(values) => saveRow(open, values)}
               onDirty={(now) => {
                 unsaved.current = now;
@@ -545,6 +542,97 @@ const listOf = (text: string) =>
     .map((one) => one.trim())
     .filter(Boolean);
 
+/** A yes/no column: one control in every form, a select, since a typed word is only refused at save. */
+function BooleanField({
+  column,
+  value,
+  error,
+  onChange,
+}: {
+  column: RowColumn;
+  value: string;
+  error?: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <SelectField
+      name={column.name}
+      label={column.name}
+      value={value}
+      options={[
+        { value: "", label: column.required ? "Choose" : "No value" },
+        { value: "true", label: "Yes" },
+        { value: "false", label: "No" },
+      ]}
+      error={error}
+      onChange={onChange}
+    />
+  );
+}
+
+/** How many rows of the table a reference points to are offered by name. */
+const OFFERED = 200;
+
+/**
+ * A reference column: the row it points to is chosen by what its table says stands for a row,
+ * as the grid shows it, and the ID is not typed. Where the table cannot be read, the ID is.
+ */
+function ReferenceField({
+  column,
+  rowsPath,
+  value,
+  error,
+  onChange,
+}: {
+  column: RowColumn;
+  rowsPath: string;
+  value: string;
+  error?: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  const target = column.references ?? "";
+  const root = rowsPath.includes("/rows/") ? rowsPath.split("/rows/")[0] : undefined;
+  const table = useLoad<{ display?: string | null }>(root ? `${root}/tables/${target}` : null);
+  const rows = useLoad<{ items: DataRow[]; nextCursor: string | null }>(
+    root && table.data ? `${root}/rows/${target}?limit=${OFFERED}` : null,
+  );
+  if (!root || table.error || rows.error) {
+    return (
+      <TextField
+        name={column.name}
+        label={column.name}
+        value={value}
+        required={false}
+        hint={`The ID of a row of ${target}`}
+        error={error}
+        onChange={onChange}
+      />
+    );
+  }
+  const display = table.data?.display ?? undefined;
+  const options = (rows.data?.items ?? []).map((row) => {
+    const id = String(row.id);
+    const named = display ? row[display] : undefined;
+    return { value: id, label: named === undefined || named === null ? id : String(named) };
+  });
+  const held = value && !options.some((one) => one.value === value);
+  return (
+    <ComboboxField
+      label={column.name}
+      options={held ? [...options, { value, label: value }] : options}
+      value={value || undefined}
+      error={error}
+      hint={
+        rows.data?.nextCursor
+          ? `A row of ${target}. The first ${OFFERED} are listed: type to narrow them.`
+          : `A row of ${target}${column.required ? "" : ", optional"}`
+      }
+      placeholder={rows.data ? "Choose a row" : "Loading…"}
+      onChange={(next) => onChange(next ?? "")}
+    />
+  );
+}
+
 /** Text longer than this is edited in a text area, as the kit's forms do. */
 const LONG_TEXT = 200;
 
@@ -552,12 +640,14 @@ function RowEditor({
   row,
   columns,
   editable,
+  rowsPath,
   onSave,
   onDirty,
 }: {
   row: DataRow;
   columns: RowColumn[];
   editable: boolean;
+  rowsPath: string;
   onSave: (values: Record<string, unknown>) => Promise<void>;
   /** Whether there are edits not saved, for the table to ask before another row is chosen. */
   onDirty: (dirty: boolean) => void;
@@ -617,7 +707,24 @@ function RowEditor({
       }}
     >
       {columns.map((column) =>
-        editable && column.writable && column.type === "enum" ? (
+        editable && column.writable && column.type === "boolean" ? (
+          <BooleanField
+            key={column.name}
+            column={column}
+            value={text[column.name] ?? shown(column)}
+            error={errors[column.name]}
+            onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
+        ) : editable && column.writable && column.type === "reference" && column.references ? (
+          <ReferenceField
+            key={column.name}
+            column={column}
+            rowsPath={rowsPath}
+            value={text[column.name] ?? shown(column)}
+            error={errors[column.name]}
+            onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
+        ) : editable && column.writable && column.type === "enum" ? (
           <SelectField
             key={column.name}
             name={column.name}
@@ -792,16 +899,19 @@ function AddRow({
             </p>
           ) : null,
           column.type === "boolean" ? (
-            <SelectField
+            <BooleanField
               key={column.name}
-              name={column.name}
-              label={column.name}
+              column={column}
               value={values[column.name] ?? ""}
-              options={[
-                { value: "", label: column.required ? "Choose" : "No value" },
-                { value: "true", label: "Yes" },
-                { value: "false", label: "No" },
-              ]}
+              error={errors[column.name]}
+              onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
+            />
+          ) : column.type === "reference" && column.references ? (
+            <ReferenceField
+              key={column.name}
+              column={column}
+              rowsPath={rowsPath}
+              value={values[column.name] ?? ""}
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
@@ -904,14 +1014,16 @@ export function Tables({ root, link }: { root: string; link: string }) {
         },
         {
           header: "What it holds",
+          priority: 2,
           cell: (row) => <span className="text-ink-muted">{row.description}</span>,
         },
         {
           header: "Managed in",
+          priority: 3,
           cell: (row) => (row.managedIn === "code" ? "Repository" : "Console"),
         },
-        { header: "Who sees rows", cell: (row) => policyText(row.policy) },
-        { header: "Columns", cell: (row) => row.columnCount, align: "end" },
+        { header: "Who sees rows", priority: 3, cell: (row) => policyText(row.policy) },
+        { header: "Columns", priority: 2, cell: (row) => row.columnCount, align: "end" },
         { header: "Rows", cell: (row) => count(row.rowCount), align: "end" },
       ]}
       empty={{
@@ -1385,6 +1497,13 @@ interface TableBody {
   [key: string]: unknown;
 }
 
+interface ColumnAction {
+  label: string;
+  onSelect: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}
+
 function Definition({
   root,
   link,
@@ -1403,6 +1522,20 @@ function Definition({
   // The column whose values, or whose rule for a delete, are being changed.
   const [optionsOf, setOptionsOf] = useState<TableColumn>();
   const [failure, setFailure] = useState<string>();
+  // What was chosen for "What stands for a row" shows at once, until the save has answered.
+  const [chosenDisplay, setChosenDisplay] = useState<string>();
+  // The rules editor is started afresh when the rules change from elsewhere (an undo, a deploy),
+  // and not when its own save comes back: it would lose its "Saved" and its place.
+  const rules = useRef<{ json: string; own: string | undefined; version: number }>({
+    json: JSON.stringify(table.policy),
+    own: undefined,
+    version: 0,
+  });
+  const policyNow = JSON.stringify(table.policy);
+  if (policyNow !== rules.current.json) {
+    rules.current.json = policyNow;
+    if (policyNow !== rules.current.own) rules.current.version += 1;
+  }
   const active = table.columns.filter((column) => column.status === "active");
   const retired = table.columns.filter((column) => column.status === "retired");
   // The definition as last saved from here, and every change made to it, for ⌘Z.
@@ -1503,6 +1636,92 @@ function Definition({
   };
   const quietly = (run: Promise<unknown>) => run.catch(() => undefined);
 
+  /** What can be done to a column, as buttons where there is room and as one menu on a phone. */
+  const columnActions = (row: TableColumn): ColumnAction[] => [
+    ...(row.values || row.references
+      ? [
+          {
+            label: row.values ? "Values" : "On delete",
+            onSelect: () => setOptionsOf(row),
+          },
+        ]
+      : []),
+    {
+      label: "Describe",
+      onSelect: async () => {
+        const next = await ask.prompt({
+          title: `What ${row.name} holds`,
+          label: "Description",
+          hint: "In plain words, 500 characters at most. Shown on the column's heading. Leave it empty to say nothing.",
+          initial: row.description ?? "",
+          action: "Save",
+          required: false,
+          multiline: true,
+        });
+        if (next === null) return;
+        const said = next.trim().slice(0, 500);
+        if (said === (row.description ?? "")) return;
+        void quietly(
+          change(
+            (body) => {
+              const column = body.columns[row.name];
+              if (!column) return;
+              if (said === "") delete column.description;
+              else column.description = said;
+            },
+            { label: `the description of ${row.name}` },
+          ),
+        );
+      },
+    },
+    {
+      label: "Rename",
+      onSelect: async () => {
+        const next = await ask.prompt({
+          title: `Rename ${row.name}`,
+          label: "New name",
+          initial: row.name,
+          action: "Rename",
+        });
+        if (!next || next === row.name) return;
+        void quietly(
+          change(
+            (body) => {
+              const { renamedFrom: _old, ...kept } = body.columns[row.name] ?? {};
+              delete body.columns[row.name];
+              body.columns[next] = { ...kept, renamedFrom: row.name };
+              if (body.policy?.column === row.name) body.policy.column = next;
+              // A rule that looks at the column follows it to its new name.
+              for (const rule of body.policy?.rules ?? []) {
+                if ("column" in rule.when && rule.when.column === row.name) {
+                  rule.when.column = next;
+                }
+              }
+            },
+            { label: `renaming ${row.name} to ${next}` },
+          ),
+        );
+      },
+    },
+    {
+      label: "Retire",
+      danger: true,
+      disabled: active.length === 1,
+      onSelect: async () => {
+        const sure = await ask.confirm({
+          title: `Retire ${row.name}?`,
+          text: "It is hidden and its data kept. You can bring it back.",
+          action: "Retire",
+          danger: true,
+        });
+        if (!sure) return;
+        void quietly(
+          change((body) => delete body.columns[row.name], { label: `retiring ${row.name}` }),
+        );
+      },
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-5">
       {table.status === "active" && !editable ? (
@@ -1588,6 +1807,7 @@ function Definition({
             },
             {
               header: "Rules",
+              priority: 2,
               cell: (row) =>
                 [row.required ? "Required" : "", row.unique ? "No two rows alike" : ""]
                   .filter(Boolean)
@@ -1595,6 +1815,7 @@ function Definition({
             },
             {
               header: "When not given",
+              priority: 3,
               cell: (row) =>
                 row.default === null || row.default === undefined ? (
                   ""
@@ -1607,100 +1828,36 @@ function Definition({
                   {
                     header: "",
                     align: "end" as const,
-                    cell: (row: TableColumn) => (
-                      <span className="inline-flex gap-1">
-                        {row.values || row.references ? (
-                          <Button size="small" variant="quiet" onClick={() => setOptionsOf(row)}>
-                            {row.values ? "Values" : "On delete"}
-                          </Button>
-                        ) : null}
-                        <Button
-                          size="small"
-                          variant="quiet"
-                          onClick={async () => {
-                            const next = await ask.prompt({
-                              title: `What ${row.name} holds`,
-                              label: "Description",
-                              hint: "In plain words, 500 characters at most. Shown on the column's heading. Leave it empty to say nothing.",
-                              initial: row.description ?? "",
-                              action: "Save",
-                              required: false,
-                              multiline: true,
-                            });
-                            if (next === null) return;
-                            const said = next.trim().slice(0, 500);
-                            if (said === (row.description ?? "")) return;
-                            void quietly(
-                              change(
-                                (body) => {
-                                  const column = body.columns[row.name];
-                                  if (!column) return;
-                                  if (said === "") delete column.description;
-                                  else column.description = said;
-                                },
-                                { label: `the description of ${row.name}` },
-                              ),
-                            );
-                          }}
-                        >
-                          Describe
-                        </Button>
-                        <Button
-                          size="small"
-                          variant="quiet"
-                          onClick={async () => {
-                            const next = await ask.prompt({
-                              title: `Rename ${row.name}`,
-                              label: "New name",
-                              initial: row.name,
-                              action: "Rename",
-                            });
-                            if (!next || next === row.name) return;
-                            void quietly(
-                              change(
-                                (body) => {
-                                  const { renamedFrom: _old, ...kept } =
-                                    body.columns[row.name] ?? {};
-                                  delete body.columns[row.name];
-                                  body.columns[next] = { ...kept, renamedFrom: row.name };
-                                  if (body.policy?.column === row.name) body.policy.column = next;
-                                  // A rule that looks at the column follows it to its new name.
-                                  for (const rule of body.policy?.rules ?? []) {
-                                    if ("column" in rule.when && rule.when.column === row.name) {
-                                      rule.when.column = next;
-                                    }
-                                  }
-                                },
-                                { label: `renaming ${row.name} to ${next}` },
-                              ),
-                            );
-                          }}
-                        >
-                          Rename
-                        </Button>
-                        <Button
-                          size="small"
-                          variant="danger"
-                          disabled={active.length === 1}
-                          onClick={async () => {
-                            const sure = await ask.confirm({
-                              title: `Retire ${row.name}?`,
-                              text: "It is hidden and its data kept. You can bring it back.",
-                              action: "Retire",
-                              danger: true,
-                            });
-                            if (!sure) return;
-                            void quietly(
-                              change((body) => delete body.columns[row.name], {
-                                label: `retiring ${row.name}`,
-                              }),
-                            );
-                          }}
-                        >
-                          Retire
-                        </Button>
-                      </span>
-                    ),
+                    cell: (row: TableColumn) => {
+                      const actions = columnActions(row);
+                      return (
+                        <>
+                          <span className="hidden gap-1 sm:inline-flex">
+                            {actions.map((one) => (
+                              <Button
+                                key={one.label}
+                                size="small"
+                                variant={one.danger ? "danger" : "quiet"}
+                                {...(one.disabled ? { disabled: true } : {})}
+                                onClick={one.onSelect}
+                              >
+                                {one.label}
+                              </Button>
+                            ))}
+                          </span>
+                          {/* A phone has no room for four buttons: one menu holds them. */}
+                          <span className="sm:hidden">
+                            <Menu
+                              ariaLabel={`Actions for ${row.name}`}
+                              align="end"
+                              triggerClassName="inline-flex size-9 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
+                              label={<Ellipsis aria-hidden="true" size={16} />}
+                              items={actions.filter((one) => !one.disabled)}
+                            />
+                          </span>
+                        </>
+                      );
+                    },
                   },
                 ]
               : []),
@@ -1784,14 +1941,15 @@ function Definition({
               name="display"
               label="The column that stands for a row"
               labelHidden
-              value={table.display ?? ""}
+              value={chosenDisplay ?? table.display ?? ""}
               options={[
                 { value: "", label: "None: the row's ID" },
                 ...active
                   .filter((column) => !["json", "file", "enum_list"].includes(column.type))
                   .map((column) => ({ value: column.name, label: column.name })),
               ]}
-              onChange={(display) =>
+              onChange={(display) => {
+                setChosenDisplay(display);
                 void quietly(
                   change(
                     (body) => {
@@ -1800,8 +1958,8 @@ function Definition({
                     },
                     { label: "the change to what stands for a row" },
                   ),
-                )
-              }
+                ).finally(() => setChosenDisplay(undefined));
+              }}
             />
           </div>
         ) : (
@@ -1813,17 +1971,18 @@ function Definition({
         <h2 className="m-0 text-title font-semibold">Who sees rows</h2>
         {editable ? (
           <RowRulesEditor
-            key={JSON.stringify(table.policy)}
+            key={`${table.name}:${rules.current.version}`}
             policy={table.policy as Policy}
             columns={active}
-            onSave={(policy) =>
-              change(
+            onSave={(policy) => {
+              rules.current.own = JSON.stringify(policy);
+              return change(
                 (body) => {
                   body.policy = policy;
                 },
                 { label: "the change to who sees rows" },
-              )
-            }
+              );
+            }}
           />
         ) : (
           <div className="max-w-measure">
@@ -2100,6 +2259,43 @@ function ChangeSource({
   );
 }
 
+/** Tests a data source from the server. The same word and the same busy state as a connection's Test. */
+function TestSource({
+  root,
+  row,
+  onDone,
+}: {
+  root: string;
+  row: SourceBinding;
+  onDone: () => void;
+}) {
+  const [testing, setTesting] = useState(false);
+  return (
+    <Button
+      size="small"
+      loading={testing}
+      onClick={async () => {
+        setTesting(true);
+        try {
+          const result = await api.post<{ ok: boolean; problem: string | null }>(
+            `${root}/data-source-checks/${row.path}`,
+            {},
+          );
+          if (result.ok) notify.success(`${row.path}: reached.`);
+          else notify.error(new Error(`${row.path}: ${result.problem ?? "not reached"}`));
+          onDone();
+        } catch (caught) {
+          notify.error(caught);
+        } finally {
+          setTesting(false);
+        }
+      }}
+    >
+      {testing ? "Testing…" : "Test"}
+    </Button>
+  );
+}
+
 export function Sources({ root, link }: { root: string; link: string }) {
   return (
     <ListScreen<SourceBinding>
@@ -2126,53 +2322,23 @@ export function Sources({ root, link }: { root: string; link: string }) {
             row.bound ? (
               `${row.config?.database} on ${row.config?.host}, as ${row.config?.user}`
             ) : (
-              <StatePill state="disconnected" />
+              <StatePill state="unbound" />
             ),
         },
         { header: "Password", cell: (row) => (row.hasPassword ? "Set" : row.bound ? "None" : "") },
         {
-          header: "Reached",
-          cell: (row) =>
-            !row.bound ? (
-              ""
-            ) : !row.health ? (
-              <span className="text-ink-muted">Not checked yet</span>
-            ) : row.health.ok ? (
-              <span className="text-success" title={`Checked ${when(row.health.checkedAt)}`}>
-                Yes{row.health.latencyMs !== null ? `, ${row.health.latencyMs} ms` : ""}
-              </span>
-            ) : (
-              <span className="text-danger" title={row.health.problem ?? ""}>
-                No: {row.health.problem}
-              </span>
-            ),
+          header: "Health",
+          cell: (row) => (row.bound ? <HealthCell health={row.health} /> : ""),
         },
       ]}
       rowActions={(row, reload) =>
         row.bound ? (
           <span className="inline-flex gap-2">
-            <Button
-              size="small"
-              onClick={async () => {
-                try {
-                  const result = await api.post<{ ok: boolean; problem: string | null }>(
-                    `${root}/data-source-checks/${row.path}`,
-                    {},
-                  );
-                  if (result.ok) notify.success(`${row.path} answered.`);
-                  else notify.error(new Error(`${row.path} did not answer: ${result.problem}`));
-                  reload();
-                } catch (caught) {
-                  notify.error(caught);
-                }
-              }}
-            >
-              Test connection
-            </Button>
+            <TestSource root={root} row={row} onDone={reload} />
             <ChangeSource root={root} row={row} onDone={reload} />
             <RemoveButton
-              label="Disconnect"
-              confirm={`Disconnect "${row.path}"? Scripts that use it will fail until it is connected again. Nothing in that database changes.`}
+              label="Unbind"
+              confirm={`Unbind "${row.path}"? Scripts that use it will fail until it is bound again. Nothing in that database changes.`}
               run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
               onDone={reload}
             />

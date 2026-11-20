@@ -131,7 +131,16 @@ function choicesOf(schema: JsonSchema): readonly (string | number | boolean)[] |
 }
 
 /** What drawing a schema comes to. `json` for what the form cannot draw. */
-type Shape = "choice" | "string" | "number" | "boolean" | "object" | "list" | "union" | "json";
+type Shape =
+  | "choice"
+  | "string"
+  | "number"
+  | "boolean"
+  | "object"
+  | "list"
+  | "map"
+  | "union"
+  | "json";
 
 function shapeOf(schema: JsonSchema): Shape {
   if (choicesOf(schema)) return "choice";
@@ -141,6 +150,14 @@ function shapeOf(schema: JsonSchema): Shape {
   if (type === "number" || type === "integer") return "number";
   if (type === "boolean") return "boolean";
   if (type === "object" && isObject(schema.properties)) return "object";
+  // A map of names to text, such as the headers of a request: rows of a name and its value.
+  if (
+    type === "object" &&
+    isObject(schema.additionalProperties) &&
+    schema.additionalProperties.type === "string" &&
+    !choicesOf(schema.additionalProperties)
+  )
+    return "map";
   if (type === "array" && isObject(schema.items) && !Array.isArray(schema.prefixItems)) {
     const items = withoutNull(schema.items).schema;
     const inner = shapeOf(items);
@@ -305,6 +322,12 @@ function check(schema: JsonSchema, value: unknown, at: string, errors: Record<st
       : undefined;
     if (!chosen) errors[`${at}/${segment(union.by)}`] = "Choose one of the options.";
     else check(chosen.schema, value, at, errors);
+    return;
+  }
+  if (shape === "map") {
+    if (!isObject(value) || Object.values(value).some((held) => typeof held !== "string")) {
+      errors[at] = "Each name needs text.";
+    }
     return;
   }
   if (shape === "list") {
@@ -566,6 +589,9 @@ function Node(props: NodeProps): ReactNode {
   if (shape === "list") {
     return <ListNode {...props} schema={plain} />;
   }
+  if (shape === "map") {
+    return <MapNode {...props} schema={plain} />;
+  }
 
   return <JsonNode {...props} schema={plain} />;
 }
@@ -645,6 +671,108 @@ function ListNode({ schema, value, onChange, pointer, label, errors, disabled }:
           onClick={() => onChange([...list, startValue(items, undefined)])}
         >
           Add {itemLabel.toLowerCase()}
+        </Button>
+      </div>
+    </fieldset>
+  );
+}
+
+/** A map of names to text: a row for each, with its name and its value, added and removed. */
+function MapNode({
+  schema,
+  value,
+  onChange,
+  pointer,
+  label,
+  required,
+  errors,
+  disabled,
+}: NodeProps) {
+  const hint = typeof schema.description === "string" ? schema.description : undefined;
+  const held = isObject(value) ? value : {};
+  const toRows = (map: Record<string, unknown>) =>
+    Object.entries(map).map(([name, text]) => ({
+      name,
+      text: typeof text === "string" ? text : "",
+    }));
+  // Rows are kept as typed, so a row with no name yet, or a name typed twice, is not lost.
+  const [rows, setRows] = useState(() => toRows(held));
+  const names = useKeys(rows.length);
+  const asMap = (list: { name: string; text: string }[]) =>
+    Object.fromEntries(list.filter((one) => one.name !== "").map((one) => [one.name, one.text]));
+  // What the form holds from outside (a reset, switching to JSON and back) replaces the rows.
+  const outside = JSON.stringify(held);
+  if (outside !== JSON.stringify(asMap(rows))) {
+    setRows(toRows(held));
+  }
+  const send = (list: { name: string; text: string }[]) => {
+    setRows(list);
+    const map = asMap(list);
+    onChange(Object.keys(map).length === 0 && !required ? undefined : map);
+  };
+  const duplicate = (name: string) =>
+    name !== "" && rows.filter((one) => one.name === name).length > 1;
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-2 rounded-control border border-line p-3">
+      <legend className="px-1 text-body-sm font-medium text-ink">{label}</legend>
+      {hint ? <p className="m-0 text-body-sm text-ink-muted">{hint}</p> : null}
+      {errors[pointer] ? (
+        <p role="alert" className="m-0 text-body-sm text-danger">
+          {errors[pointer]}
+        </p>
+      ) : null}
+      {rows.map((row, index) => (
+        <div
+          key={names.keys[index]}
+          className="flex min-w-0 flex-col gap-2 border-line border-b pb-2 last:border-b-0 sm:flex-row sm:items-end"
+        >
+          <div className="min-w-0 sm:w-2/5">
+            <TextField
+              name={`${pointer}/${index}#name`}
+              label={`Name ${index + 1}`}
+              value={row.name}
+              disabled={disabled}
+              error={
+                duplicate(row.name) ? "This name is used twice. The last one is kept." : undefined
+              }
+              onChange={(name) =>
+                send(rows.map((one, at) => (at === index ? { ...one, name } : one)))
+              }
+            />
+          </div>
+          <div className="min-w-0 flex-1">
+            <TextField
+              name={`${pointer}/${index}#value`}
+              label={`Value ${index + 1}`}
+              value={row.text}
+              disabled={disabled}
+              onChange={(text) =>
+                send(rows.map((one, at) => (at === index ? { ...one, text } : one)))
+              }
+            />
+          </div>
+          <div>
+            <Button
+              size="small"
+              disabled={disabled}
+              aria-label={`Remove ${row.name || `row ${index + 1}`}`}
+              onClick={() => {
+                names.remove(index);
+                send(rows.filter((_, at) => at !== index));
+              }}
+            >
+              Remove
+            </Button>
+          </div>
+        </div>
+      ))}
+      <div>
+        <Button
+          size="small"
+          disabled={disabled}
+          onClick={() => send([...rows, { name: "", text: "" }])}
+        >
+          Add
         </Button>
       </div>
     </fieldset>

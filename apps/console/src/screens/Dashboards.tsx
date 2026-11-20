@@ -97,10 +97,10 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
       action={action}
     >
       {list.error ? (
-        <Notice tone="danger" action={<Button onClick={list.reload}>Try again</Button>}>
-          {list.error.message}
-        </Notice>
-      ) : list.data ? (
+        <ErrorState what="dashboards" error={list.error} onRetry={list.reload} />
+      ) : !list.data ? (
+        <Loading what="dashboards" />
+      ) : (
         <DataTable<Summary>
           variant="static"
           framed
@@ -143,7 +143,7 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
             { header: "Changed", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
           ]}
         />
-      ) : null}
+      )}
     </Page>
   );
 }
@@ -165,6 +165,8 @@ const slug = (text: string, taken: string[], fallback: string, separator: "_" | 
 export function DashboardView({ root, link, id }: { root: string; link: string; id: string }) {
   const [loaded, setLoaded] = useState<Dashboard>();
   const [missing, setMissing] = useState<ApiError>();
+  /** Counted up by Try again, so the read is made once more. */
+  const [attempt, setAttempt] = useState(0);
   const [mode, setMode] = useUrlParam("edit");
   const [set, setSet] = useUrlParam("f");
   const [editing, setEditing] = useState<DashboardWidget>();
@@ -181,9 +183,11 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   );
   const forget = history.clear;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is Try again: it asks once more
   useEffect(() => {
     let current = true;
     setLoaded(undefined);
+    setMissing(undefined);
     forget();
     api.get<Dashboard>(`${root}/dashboards/${id}`).then(
       (dashboard) => current && setLoaded(dashboard),
@@ -192,7 +196,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     return () => {
       current = false;
     };
-  }, [root, id, forget]);
+  }, [root, id, forget, attempt]);
 
   // What the filters are set to, kept in the address so a link shows the same thing.
   const settings = useMemo<Record<string, FilterSetting>>(() => {
@@ -240,7 +244,11 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     [gridRef],
   );
 
-  if (missing) return <ErrorState error={missing} />;
+  if (missing) {
+    return (
+      <ErrorState what="this dashboard" error={missing} onRetry={() => setAttempt((n) => n + 1)} />
+    );
+  }
   if (!loaded || !body) return <Loading />;
   const mine = loaded.kind === "member" && loaded.mine;
   const edit = mine && mode === "1";
@@ -334,8 +342,12 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   // Nothing asks again under someone who is changing it.
   const every = refresh === "off" || edit ? undefined : refresh * 60_000;
   const asking = widgets.filter((one) => one.type !== "text").map((one) => one.id);
-  const times = asking.map((one) => readAt[one]).filter((at): at is number => at !== undefined);
-  const asOf = times.length === asking.length && times.length > 0 ? Math.min(...times) : undefined;
+  // A widget that could not be read is told as -1: it does not hold the age back, and is counted.
+  const answered = asking.filter((one) => readAt[one] !== undefined);
+  const unread = answered.filter((one) => (readAt[one] ?? 0) < 0).length;
+  const times = answered.map((one) => readAt[one] ?? 0).filter((at) => at > 0);
+  const asOf =
+    answered.length === asking.length && times.length > 0 ? Math.min(...times) : undefined;
   const audience = loaded.shared
     ? "Everyone in this workspace"
     : (loaded.sharedWith ?? []).length > 0
@@ -446,6 +458,9 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
         >
           <span>
             Last refreshed {asOf ? <Time value={new Date(asOf)} mode="clock" /> : "…"}
+            {unread > 0
+              ? ` · ${unread === 1 ? "1 widget" : `${unread} widgets`} could not be read`
+              : ""}
             {" · "}
             {refresh === "off"
               ? "Does not refresh by itself"
@@ -756,7 +771,10 @@ function FiltersDialog({
         if (index !== at) return one;
         const merged = { ...one, ...next } as Record<string, unknown>;
         for (const key of Object.keys(merged)) {
-          if (merged[key] === undefined || merged[key] === "") delete merged[key];
+          // The label may be empty while it is typed; the name stands in for it on save.
+          if (merged[key] === undefined || (merged[key] === "" && key !== "label")) {
+            delete merged[key];
+          }
         }
         return merged as unknown as DashboardFilter;
       }),
@@ -783,6 +801,7 @@ function FiltersDialog({
                     name={`label-${filter.name}`}
                     label="Called"
                     value={filter.label ?? filter.name}
+                    hint="Left empty, it is called by its name."
                     onChange={(label) => change(at, { label })}
                   />
                 </div>
@@ -933,7 +952,15 @@ function FiltersDialog({
                 const { filters: _filters, ...rest } = body;
                 await onSave({
                   ...rest,
-                  ...(filters.length > 0 ? { filters } : {}),
+                  ...(filters.length > 0
+                    ? {
+                        filters: filters.map((one) => {
+                          if (one.label?.trim()) return one;
+                          const { label: _label, ...bare } = one;
+                          return bare as DashboardFilter;
+                        }),
+                      }
+                    : {}),
                   // A widget no longer names a filter that is gone.
                   widgets: body.widgets.map((widget) => {
                     const { filters: bound, options, ...bare } = widget;

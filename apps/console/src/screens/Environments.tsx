@@ -345,19 +345,26 @@ function CloneDialog({
   const [safety, setSafety] = useState("on");
   const [problem, setProblem] = useState<ApiError | string>();
   const [clone, setClone] = useState<Clone>();
+  const [posting, setPosting] = useState(false);
+  /** Reads of the copy's progress that failed in a row. The asking stops at three. */
+  const [misses, setMisses] = useState(0);
 
   // The copying goes on after the request is answered. Ask how it is going until it ends.
   useEffect(() => {
     if (clone?.status !== "running" && clone?.status !== "queued") return;
+    if (misses >= 3) return;
     const timer = setInterval(async () => {
       try {
         setClone(await api.get<Clone>(`${base}/workspace-clones/${clone.id}`));
+        setMisses(0);
+        setProblem(undefined);
       } catch (error) {
         setProblem(failed(error));
+        setMisses((n) => n + 1);
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [clone, base]);
+  }, [clone, base, misses]);
 
   const field = (path: string) =>
     problem instanceof ApiError
@@ -375,6 +382,21 @@ function CloneDialog({
     >
       {clone ? (
         <div className="flex flex-col gap-3">
+          {problem ? (
+            <Notice tone="danger">
+              {misses >= 3
+                ? "The copy's progress cannot be read, so this stopped asking. The copy may still be going: close this and look for it in the workspace list. "
+                : "The copy's progress could not be read. Asking again. "}
+              {typeof problem === "string" ? problem : problem.message}
+            </Notice>
+          ) : null}
+          {misses >= 3 ? (
+            <div>
+              <Button size="small" onClick={() => setMisses(0)}>
+                Try again
+              </Button>
+            </div>
+          ) : null}
           {clone.status === "queued" ? (
             <p className="m-0" role="status">
               Waiting for another clone to finish copying. One copies its rows at a time, so the
@@ -422,7 +444,9 @@ function CloneDialog({
           className="flex flex-col gap-3"
           onSubmit={async (event) => {
             event.preventDefault();
+            if (posting) return;
             setProblem(undefined);
+            setPosting(true);
             try {
               setClone(
                 await api.post<Clone>(`${base}/workspaces/${workspace.id}/clones`, {
@@ -434,6 +458,8 @@ function CloneDialog({
               );
             } catch (error) {
               setProblem(error as ApiError);
+            } finally {
+              setPosting(false);
             }
           }}
         >
@@ -482,7 +508,7 @@ function CloneDialog({
           ) : null}
           <div className="mt-1 flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
-            <Button type="submit" variant="primary">
+            <Button type="submit" variant="primary" loading={posting}>
               Clone workspace
             </Button>
           </div>

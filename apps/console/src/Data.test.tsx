@@ -437,8 +437,8 @@ test("a data source that does not answer its test says so as a failure", async (
     { ok: false, problem: "connection refused" },
   ];
   show(<Sources root={root} link="/t/t1/workspaces/w1" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Test connection" }));
-  const said = await screen.findByText("erp did not answer: connection refused");
+  fireEvent.click(await screen.findByRole("button", { name: "Test" }));
+  const said = await screen.findByText("erp: connection refused");
   expect(said.closest("[role]")?.className).toContain("bg-danger-soft");
 });
 

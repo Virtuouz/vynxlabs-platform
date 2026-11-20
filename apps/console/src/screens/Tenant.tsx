@@ -1129,10 +1129,18 @@ function OperatorAccess({ base }: { base: string }) {
       path={`${base}/access-grants`}
       rowKey={(row) => row.id}
       columns={[
-        { header: "Operator", cell: (row) => row.memberEmail },
-        { header: "Reason", cell: (row) => row.reason },
-        { header: "Access level", cell: (row) => <Code>{row.roleName}</Code> },
-        { header: "Opened", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
+        // On a phone a row keeps who and whether it is active; why, from a tablet up.
+        {
+          header: "Operator",
+          cell: (row) => <Truncate mode="middle">{row.memberEmail}</Truncate>,
+        },
+        { header: "Reason", priority: 2, cell: (row) => row.reason },
+        { header: "Access level", priority: 3, cell: (row) => <Code>{row.roleName}</Code> },
+        {
+          header: "Opened",
+          priority: 3,
+          cell: (row) => <Time value={row.createdAt} mode="ago" />,
+        },
         {
           header: "Status",
           cell: (row) =>

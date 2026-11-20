@@ -242,8 +242,9 @@ test("POLISH-003: a script, a flow, a query and a docs site are removed, taken b
     edges: [],
   });
   await put(`${ROOT}/query`, "query", { sql: "select 1" });
-  await put(`${ROOT}-notes/index`, "doc", { source: "---\ntitle: Notes\n---\n\nWords.\n" });
-  await put(`${ROOT}-site`, "app", { title: "Notes", docs: `${ROOT}-notes` });
+  // Its own title, so a site left by an earlier walk is not the one found.
+  await put(`${ROOT}-notes/index`, "doc", { source: `---\ntitle: Notes ${ROOT}\n---\n\nWords.\n` });
+  await put(`${ROOT}-site`, "app", { title: `Notes ${ROOT}`, docs: `${ROOT}-notes` });
   const deploy = (paths: string[]) =>
     ok(owner, "POST", `${W}/changes/deploy`, { paths, message: "Phase 22 walk" });
   await deploy([
@@ -296,14 +297,23 @@ test("POLISH-003: a script, a flow, a query and a docs site are removed, taken b
 
   // A docs site: switched off and on, keeping its pages and its app; removing its app says so first.
   await owner.goto(`${L}/docs`);
-  await owner.getByRole("button", { name: "More for Notes", exact: true }).first().click();
+  await owner
+    .getByRole("button", { name: `More for Notes ${ROOT}`, exact: true })
+    .first()
+    .click();
   await owner.getByRole("menuitem", { name: /Stop publishing/ }).click();
   await expect(owner.getByRole("dialog")).toContainText("Its pages and its app are kept");
   await say(owner, "Stop publishing");
-  await owner.getByRole("button", { name: "More for Notes", exact: true }).first().click();
+  await owner
+    .getByRole("button", { name: `More for Notes ${ROOT}`, exact: true })
+    .first()
+    .click();
   await owner.getByRole("menuitem", { name: /Publish again/ }).click();
   await say(owner, "Publish again");
-  await owner.getByRole("button", { name: "More for Notes", exact: true }).first().click();
+  await owner
+    .getByRole("button", { name: `More for Notes ${ROOT}`, exact: true })
+    .first()
+    .click();
   await owner.getByRole("menuitem", { name: /Remove the site's app/ }).click();
   await expect(owner.getByRole("dialog")).toContainText("The site stops being served");
   await say(owner, "Remove");

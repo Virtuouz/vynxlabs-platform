@@ -12,6 +12,7 @@ import {
   MoveButtons,
   MultiSelectField,
   Notice,
+  Popover,
   parseValue,
   SelectField,
   SideSheet,
@@ -21,8 +22,8 @@ import {
   useFlip,
   ValueChip,
 } from "@volvel/ui";
-import { Download, Ellipsis } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Download, Ellipsis, Keyboard } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
@@ -143,7 +144,13 @@ const ROWS_URL = {
   row: { type: "string", push: true },
 } as const;
 
-function RowsBrowser(props: RowsBrowserProps & { fill?: boolean }) {
+function RowsBrowser(
+  props: RowsBrowserProps & {
+    fill?: boolean;
+    /** What leads the toolbar's row, such as the table's tabs, so they take no row of their own. */
+    lead?: ReactNode;
+  },
+) {
   const { columns, keyColumn, rowPath } = props;
   const [url, setUrl] = useUrlState(ROWS_URL);
   const sort: GridSort | undefined = url.sort
@@ -290,11 +297,29 @@ function RowsBrowser(props: RowsBrowserProps & { fill?: boolean }) {
   return (
     <div className={`flex flex-col gap-3 ${fill ? "min-h-0 flex-1" : ""}`}>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-        <p className="m-0 text-body-sm text-ink-muted">
-          {props.readOnlyNote ??
-            "Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a filter, type text to look for, or a comparison such as > 100. Type empty to find rows with no value."}
-        </p>
-        <span className="flex flex-wrap items-center gap-2">
+        {props.lead}
+        {/* What a read-only table says stands in the row. The keys are behind a button: two
+            lines above every grid kept its first row far from the top (P4-1). */}
+        {props.readOnlyNote ? (
+          <p className="m-0 text-body-sm text-ink-muted">{props.readOnlyNote}</p>
+        ) : null}
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {props.readOnlyNote ? null : (
+            <Popover
+              title="Keys in the table"
+              trigger={
+                <Button size="small" variant="quiet">
+                  <Keyboard aria-hidden="true" size={14} /> Keys
+                </Button>
+              }
+            >
+              <p className="m-0">
+                Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a
+                filter, type text to look for, or a comparison such as &gt; 100. Type empty to find
+                rows with no value.
+              </p>
+            </Popover>
+          )}
           <ColumnsMenu
             columns={columns.map((column) => ({ key: column.name, label: column.name }))}
             shown={order.length === columns.length && chosen.length === 0 ? undefined : order}
@@ -1281,6 +1306,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
   return (
     <Page
       fill
+      helpKey="table"
       title={data.name}
       description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
     >
@@ -1296,7 +1322,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           {count(data.rowCount)} rows are kept. Deploying a definition with this name brings it
           back.
         </Notice>
-      ) : (
+      ) : view === "rows" ? null : (
         <div className="flex shrink-0 gap-1">
           {tab("rows", "Rows")}
           {tab("definition", "Definition")}
@@ -1305,6 +1331,12 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       {!retired && view === "rows" ? (
         <RowsBrowser
           fill
+          lead={
+            <div className="flex shrink-0 gap-1">
+              {tab("rows", "Rows")}
+              {tab("definition", "Definition")}
+            </div>
+          }
           key={active.map((column) => column.name).join(",")}
           label={`Rows of ${data.name}`}
           rowsPath={`${root}/rows/${data.name}`}

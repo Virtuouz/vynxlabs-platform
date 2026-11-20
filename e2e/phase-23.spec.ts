@@ -399,7 +399,8 @@ test("POLISH-002: Release is one list of deploys, and goes back from a row of it
   }[];
   const running = bundles.find((one) => one.active)?.id as string;
   test.skip(bundles.length < 2, "A workspace with a second version is needed.");
-  await owner.goto(`${L}/release`);
+  // In a dev workspace the versions are Release's second step, "Deploy to dev".
+  await owner.goto(`${L}/release?step=deploy`);
   await expect(owner.getByRole("heading", { level: 1 })).toHaveCount(1);
   await expect(owner.getByText("Bundles and rollback")).toHaveCount(0);
   await expect(owner.getByText(/^Versions of /)).toBeVisible();

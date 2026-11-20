@@ -134,6 +134,7 @@ export function Page({
   width = "full",
   mono = false,
   fill = false,
+  helpKey,
   children,
 }: {
   title: string;
@@ -148,6 +149,8 @@ export function Page({
    * is under the title takes the height left, and one part of it scrolls.
    */
   fill?: boolean;
+  /** Shows the description on a member's first visit, then folds it behind the title's help. */
+  helpKey?: string;
   children: ReactNode;
 }) {
   return (
@@ -156,7 +159,13 @@ export function Page({
         fill ? "min-h-0 flex-1 px-4 py-4 md:px-8" : ""
       }`}
     >
-      <PageHeader title={title} mono={mono} description={description} actions={action} />
+      <PageHeader
+        title={title}
+        mono={mono}
+        description={description}
+        actions={action}
+        {...(helpKey ? { helpKey } : {})}
+      />
       {children}
     </section>
   );

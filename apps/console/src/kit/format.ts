@@ -110,6 +110,11 @@ export function count(n: number): string {
   return new Intl.NumberFormat().format(n);
 }
 
+/** "runs, events, and audit": things named in one sentence, joined as the copy joins them. */
+export function listOf(items: readonly string[]): string {
+  return new Intl.ListFormat("en-US", { style: "long", type: "conjunction" }).format(items);
+}
+
 /** "12.4 KB", "3.1 MB": a size in bytes, to one decimal. */
 export function bytes(n: number): string {
   const one = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });

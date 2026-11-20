@@ -51,6 +51,7 @@ import { Diagram } from "../../diagrams/Diagram.tsx";
 import { loadManifest } from "../../help/content.ts";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
 import { useBrand } from "../../kit/brand.tsx";
+import { listOf } from "../../kit/format.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { Code } from "../../kit/status.tsx";
@@ -69,6 +70,7 @@ import {
   isFolderId,
   movable,
   pathOfId,
+  pendingOf,
   resolvers,
   rowsOf,
   sourcesOf,
@@ -157,21 +159,26 @@ export function Docs({
   const data = list.data;
   const first = data.pages.find((page) => page.state !== "removed");
   const chosen = data.pages.find((page) => page.path === path) ?? (path ? undefined : first);
-  const drafts = data.pages.filter((page) => page.state !== "deployed");
-  const draftApps = data.apps.filter((app) => !app.deployed);
-  const changes = drafts.length + draftApps.length;
+  const pending = pendingOf(data);
+  const changes = pending.count;
 
   const deploy = async () => {
+    const tables = pending.tables.map((table) => table.path);
     const sure = await ask.confirm({
       title: `Deploy ${changes} ${changes === 1 ? "change" : "changes"} to the documentation?`,
-      text: "Readers see them at once. Nothing but documentation is deployed.",
+      text:
+        tables.length === 0
+          ? "Readers see them at once. Nothing but documentation is deployed."
+          : `Readers see them at once. With the documentation goes the ${
+              tables.length === 1 ? "table" : "tables"
+            } ${listOf(tables)}, where a site keeps its readers' answers. Nothing else is deployed.`,
       action: "Deploy",
     });
     if (!sure) return;
     setDeploying(true);
     try {
       await api.post(`${root}/changes/deploy`, {
-        paths: [...drafts.map((page) => page.path), ...draftApps.map((app) => app.path)],
+        paths: pending.paths,
         message: "Documentation",
       });
       notify.success("The documentation is deployed.");
@@ -982,7 +989,9 @@ function FeedbackDialog({
   const site = row?.site;
   const table = site ? `${site.path}-feedback` : "";
   const taken =
-    list.pages.some((page) => page.path === table) || list.apps.some((app) => app.path === table);
+    list.pages.some((page) => page.path === table) ||
+    list.apps.some((app) => app.path === table) ||
+    list.tables.some((one) => one.path === table);
   useEffect(() => {
     if (row) setError(undefined);
   }, [row]);

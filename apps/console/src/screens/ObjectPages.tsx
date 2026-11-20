@@ -11,7 +11,7 @@ import { ago } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
-import { kindName, ObjectLink } from "../kit/objects.tsx";
+import { kindName, ObjectLink, objectHref, triggerKey } from "../kit/objects.tsx";
 import { ReferenceList } from "../kit/references.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
@@ -461,12 +461,16 @@ export function TriggersOf({
         rowKey={(one) => `${one.path}:${one.node}`}
         error={triggers.error}
         onRetry={triggers.reload}
-        onOpen={(one) => navigate(`${link}/triggers?trigger=${encodeURIComponent(one.path)}`)}
+        onOpen={(one) => navigate(objectHref(link, "trigger", triggerKey(one)))}
         empty={{ title: "Nothing starts it on its own", text: "It runs when started by hand." }}
         columns={[
           {
             header: "Trigger",
-            cell: (one) => <ObjectLink link={link} kind="trigger" path={one.path} />,
+            cell: (one) => (
+              <ObjectLink link={link} kind="trigger" path={triggerKey(one)}>
+                {one.path}
+              </ObjectLink>
+            ),
           },
           { header: "Kind", cell: (one) => kindName(one.type) },
           {

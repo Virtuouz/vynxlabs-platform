@@ -5,7 +5,15 @@ import { forgetHelp } from "../../help/content.ts";
 import { answer, show } from "../../testing.tsx";
 import { DocEditor } from "./DocEditor.tsx";
 import { Docs } from "./Docs.tsx";
-import { type DocRow, type DocsList, filterRows, indexOf, resolvers, rowsOf } from "./model.ts";
+import {
+  type DocRow,
+  type DocsApp,
+  type DocsList,
+  filterRows,
+  indexOf,
+  resolvers,
+  rowsOf,
+} from "./model.ts";
 
 configure({ asyncUtilTimeout: 5000 });
 
@@ -50,6 +58,7 @@ const list = (): DocsList => ({
       title: "Shop handbook",
       docs: "handbook",
       deployed: true,
+      drafted: false,
       url: "https://apps.example.test/apps/acme/dev/help/",
       preview: "https://apps.example.test/apps/acme/dev/help/_draft/",
     },
@@ -70,6 +79,7 @@ const list = (): DocsList => ({
     }),
     page("handbook/ops/closing/checklist", "Closing checklist", { state: "new", revision: 1 }),
   ],
+  tables: [],
 });
 
 let calls: { method: string; url: string; body: Record<string, unknown> | undefined }[];
@@ -191,6 +201,7 @@ describe("the pages of a workspace", () => {
     const loose: DocsList = {
       apps: [],
       pages: [page("notes/todo", "To do", { app: null, url: null })],
+      tables: [],
     };
     expect(labels(rowsOf(loose))).toEqual(["Notes", "  To do"]);
     expect(indexOf(loose, undefined)).toEqual([]);
@@ -413,7 +424,11 @@ describe("the Documentation screen", () => {
   test("a top-level folder is published as a site, as an app's draft", async () => {
     routes[`GET /api/v1${root}/docs`] = () => [
       200,
-      { apps: [], pages: [page("guide/index", "Staff guide", { app: null, url: null })] },
+      {
+        apps: [],
+        pages: [page("guide/index", "Staff guide", { app: null, url: null })],
+        tables: [],
+      },
     ];
     docs();
     fireEvent.click(await screen.findByRole("button", { name: "More for Staff guide" }));
@@ -466,6 +481,66 @@ describe("the Documentation screen", () => {
       docs: "handbook",
       feedback: { table: "help-feedback" },
     });
+  });
+
+  test("turning on feedback, then deploying, sends the table with the site, and the count says so", async () => {
+    routes[`POST /api/v1${root}/changes/deploy`] = () => [201, { applied: [] }];
+    let turnedOn = false;
+    routes[`POST /api/v1${root}/drafts/batch`] = () => {
+      turnedOn = true;
+      return [200, { paths: [] }];
+    };
+    routes[`GET /api/v1${root}/docs`] = () => {
+      const now = list();
+      if (turnedOn) {
+        now.apps[0] = { ...(now.apps[0] as DocsApp), drafted: true, feedback: "help-feedback" };
+        now.tables = [
+          { path: "orders", state: "deployed" },
+          { path: "help-feedback", state: "new" },
+        ];
+      }
+      return [200, now];
+    };
+    docs();
+    expect(await screen.findByRole("button", { name: "Deploy 2 changes" })).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Turn on page feedback/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Make the table and turn it on" }));
+    // Two pages, the site and its table.
+    fireEvent.click(await screen.findByRole("button", { name: "Deploy 4 changes" }));
+    expect(await answer("Deploy")).toContain("the table help-feedback");
+    await waitFor(() =>
+      expect(sent("POST").filter((one) => one.url.endsWith("/deploy"))).toHaveLength(1),
+    );
+    expect(sent("POST").find((one) => one.url.endsWith("/deploy"))?.body).toEqual({
+      paths: [
+        "handbook/support/refunds",
+        "handbook/ops/closing/checklist",
+        "help",
+        "help-feedback",
+      ],
+      message: "Documentation",
+    });
+  });
+
+  test("feedback is not turned on over a table that has its path", async () => {
+    routes[`GET /api/v1${root}/docs`] = () => [
+      200,
+      { ...list(), tables: [{ path: "help-feedback", state: "deployed" }] },
+    ];
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Turn on page feedback/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Something already has the path help-feedback.");
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: "Make the table and turn it on",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
   });
 
   test("a page of a site that asks says what its readers said", async () => {

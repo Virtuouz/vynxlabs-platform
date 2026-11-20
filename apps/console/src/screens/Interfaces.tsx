@@ -46,87 +46,83 @@ export function Interfaces({
           Apps are built in a dev workspace and promoted. Here they can be opened.
         </Notice>
       )}
-      {list.error ? (
-        <Notice tone="danger" action={<Button onClick={list.reload}>Try again</Button>}>
-          {list.error.message}
-        </Notice>
-      ) : list.data ? (
-        <DataTable<Listed>
-          variant="static"
-          framed
-          label="Apps"
-          rows={list.data.items}
-          rowKey={(row) => row.path}
-          empty={
-            <EmptyState title="No apps made here yet" action={create}>
-              Make one over a table of this workspace. Tables are under Data.
-            </EmptyState>
-          }
-          columns={[
-            {
-              header: "App",
-              cell: (row) => (
-                <span className="flex flex-col gap-0.5">
-                  {editable ? (
-                    <Link to={`${link}/screens/${row.path}`} className="font-medium text-action">
-                      {row.title}
-                    </Link>
-                  ) : (
-                    <span className="font-medium">{row.title}</span>
-                  )}
-                  <code className="font-mono text-code text-ink-muted">{row.path}</code>
-                </span>
-              ),
-            },
-            {
-              header: "Pages",
-              cell: (row) => (
-                <span className="flex flex-col">
-                  <Mono>{row.pages ?? "—"}</Mono>
-                  {row.tables && row.tables.length > 0 ? (
-                    <span className="text-meta text-ink-subtle">reads {row.tables.join(", ")}</span>
-                  ) : null}
-                </span>
-              ),
-            },
-            {
-              header: "State",
-              cell: (row) => (
-                <span className="flex flex-wrap items-center gap-1.5">
-                  {row.deployed ? (
-                    <Tag tone="live">Published{row.version ? ` v${row.version}` : ""}</Tag>
-                  ) : (
-                    <Tag tone="draft">Not published</Tag>
-                  )}
-                  {row.removing ? (
-                    <Tag tone="danger">Being removed</Tag>
-                  ) : row.draft && row.deployed ? (
-                    <StatePill state="draft">Edits not published</StatePill>
-                  ) : null}
-                  {row.editedAt ? (
-                    <span className="text-meta text-ink-subtle">edited {ago(row.editedAt)}</span>
-                  ) : null}
-                </span>
-              ),
-            },
-            {
-              header: "Address",
-              cell: (row) => {
-                const url = apps.data?.items.find((app) => app.path === row.app)?.url;
-                return url ? (
-                  <a href={url} target="_blank" rel="noreferrer" className="break-all text-action">
-                    {url}
-                  </a>
+      <DataTable<Listed>
+        variant="static"
+        framed
+        label="Apps"
+        rows={list.data?.items}
+        error={list.error}
+        onRetry={list.reload}
+        rowKey={(row) => row.path}
+        empty={
+          <EmptyState title="No apps made here yet" action={create}>
+            Make one over a table of this workspace. Tables are under Data.
+          </EmptyState>
+        }
+        columns={[
+          {
+            header: "App",
+            cell: (row) => (
+              <span className="flex flex-col gap-0.5">
+                {editable ? (
+                  <Link to={`${link}/screens/${row.path}`} className="font-medium text-action">
+                    {row.title}
+                  </Link>
                 ) : (
-                  <span className="text-ink-muted">
-                    {row.app ? "Once it is published" : "No app serves it"}
-                  </span>
-                );
-              },
+                  <span className="font-medium">{row.title}</span>
+                )}
+                <code className="font-mono text-code text-ink-muted">{row.path}</code>
+              </span>
+            ),
+          },
+          {
+            header: "Pages",
+            cell: (row) => (
+              <span className="flex flex-col">
+                <Mono>{row.pages ?? "—"}</Mono>
+                {row.tables && row.tables.length > 0 ? (
+                  <span className="text-meta text-ink-subtle">reads {row.tables.join(", ")}</span>
+                ) : null}
+              </span>
+            ),
+          },
+          {
+            header: "State",
+            cell: (row) => (
+              <span className="flex flex-wrap items-center gap-1.5">
+                {row.deployed ? (
+                  <Tag tone="live">Published{row.version ? ` v${row.version}` : ""}</Tag>
+                ) : (
+                  <Tag tone="draft">Not published</Tag>
+                )}
+                {row.removing ? (
+                  <Tag tone="danger">Being removed</Tag>
+                ) : row.draft && row.deployed ? (
+                  <StatePill state="draft">Edits not published</StatePill>
+                ) : null}
+                {row.editedAt ? (
+                  <span className="text-meta text-ink-subtle">edited {ago(row.editedAt)}</span>
+                ) : null}
+              </span>
+            ),
+          },
+          {
+            header: "Address",
+            cell: (row) => {
+              const url = apps.data?.items.find((app) => app.path === row.app)?.url;
+              return url ? (
+                <a href={url} target="_blank" rel="noreferrer" className="break-all text-action">
+                  {url}
+                </a>
+              ) : (
+                <span className="text-ink-muted">
+                  {row.app ? "Once it is published" : "No app serves it"}
+                </span>
+              );
             },
-          ]}
-        />
-      ) : null}
+          },
+        ]}
+      />
       <Dialog
         open={creating}
         onClose={() => setCreating(false)}

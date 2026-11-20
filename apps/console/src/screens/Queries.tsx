@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { count } from "../kit/format.ts";
-import { ErrorState, Loading } from "../kit/LoadState.tsx";
+import { ErrorState, Loading, LoadState } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { ReadTable } from "../kit/ReadTable.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
@@ -322,31 +322,38 @@ export function Queries({ root, link }: { root: string; link: string }) {
         >
           <section className="flex flex-col gap-2">
             <SectionLabel>Saved queries</SectionLabel>
-            {saved.data && saved.data.items.length > 0 ? (
-              <ul className="m-0 flex list-none flex-col gap-1 p-0">
-                {saved.data.items.map((one) => (
-                  <li key={one.path}>
-                    <Link
-                      to={`${link}/queries?query=${encodeURIComponent(one.path)}`}
-                      current={one.path === open}
-                      className={`flex flex-col rounded-control px-2 py-1 hover:bg-sunken ${
-                        one.path === open ? "bg-action-soft" : ""
-                      }`}
-                    >
-                      <span className="font-mono text-code">{one.path}</span>
-                      {one.description ? (
-                        <span className="text-meta text-ink-muted">{one.description}</span>
-                      ) : null}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="m-0 text-body-sm text-ink-muted">
-                None yet. A query that is saved can be run by name, by anyone who may read its
-                tables.
-              </p>
-            )}
+            <LoadState
+              of={saved}
+              what="saved queries"
+              isEmpty={(data) => data.items.length === 0}
+              empty={
+                <p className="m-0 text-body-sm text-ink-muted">
+                  None yet. A query that is saved can be run by name, by anyone who may read its
+                  tables.
+                </p>
+              }
+            >
+              {(data) => (
+                <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                  {data.items.map((one) => (
+                    <li key={one.path}>
+                      <Link
+                        to={`${link}/queries?query=${encodeURIComponent(one.path)}`}
+                        current={one.path === open}
+                        className={`flex flex-col rounded-control px-2 py-1 hover:bg-sunken ${
+                          one.path === open ? "bg-action-soft" : ""
+                        }`}
+                      >
+                        <span className="font-mono text-code">{one.path}</span>
+                        {one.description ? (
+                          <span className="text-meta text-ink-muted">{one.description}</span>
+                        ) : null}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </LoadState>
           </section>
           <section className="flex flex-col gap-2">
             <SectionLabel>Tables</SectionLabel>

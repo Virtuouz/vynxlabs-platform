@@ -745,7 +745,7 @@ describe("someone who writes documentation in the console, and is not a develope
         })
       ).status,
     ).toBe(200);
-    expect((await wren.get(`${devWs()}/docs`)).body).toEqual({ apps: [], pages: [] });
+    expect((await wren.get(`${devWs()}/docs`)).body).toEqual({ apps: [], pages: [], tables: [] });
     // Someone bound to nothing is refused, by the name of what they lack.
     const refused = await nell.get(`${devWs()}/docs`);
     expect(refused.status).toBe(403);
@@ -1048,6 +1048,54 @@ describe("someone who writes documentation in the console, and is not a develope
     for (const path of ["notes/index", "notes/b/index", "notes/b/one"]) {
       expect((await wren.delete(`${devWs()}/drafts/${path}`)).status).toBe(204);
     }
+  });
+
+  test("the list names an app's draft and the tables, so that turning on feedback deploys whole", async () => {
+    const before = (await alice.get(`${devWs()}/docs`)).body;
+    expect(before.apps[0]).toMatchObject({ path: "guide-site", deployed: true, drafted: false });
+    const turned = await alice.post(`${devWs()}/drafts/batch`, {
+      changes: [
+        {
+          path: "guide-site-feedback",
+          kind: "table",
+          schemaVersion: 1,
+          body: {
+            columns: {
+              page: { type: "text", required: true },
+              helpful: { type: "boolean", required: true },
+              version: { type: "text" },
+              at: { type: "timestamp" },
+            },
+          },
+        },
+        {
+          path: "guide-site",
+          kind: "app",
+          schemaVersion: 1,
+          body: { title: "Guide", docs: "guide", feedback: { table: "guide-site-feedback" } },
+        },
+      ],
+    });
+    expect(turned.status, JSON.stringify(turned.body)).toBe(200);
+    const listed = (await alice.get(`${devWs()}/docs`)).body;
+    expect(listed.apps[0]).toMatchObject({
+      deployed: true,
+      drafted: true,
+      feedback: "guide-site-feedback",
+    });
+    expect(listed.tables).toEqual([{ path: "guide-site-feedback", state: "new" }]);
+    // Someone who reads only the documentation is told of the tables its apps name.
+    expect((await wren.get(`${devWs()}/docs`)).body.tables).toEqual([
+      { path: "guide-site-feedback", state: "new" },
+    ]);
+    const deployed = await alice.post(`${devWs()}/changes/deploy`, {
+      paths: ["guide-site", "guide-site-feedback"],
+      message: "Documentation",
+    });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    const after = (await alice.get(`${devWs()}/docs`)).body;
+    expect(after.apps[0].drafted).toBe(false);
+    expect(after.tables).toEqual([{ path: "guide-site-feedback", state: "deployed" }]);
   });
 
   test("a production workspace takes no page from the console", async () => {

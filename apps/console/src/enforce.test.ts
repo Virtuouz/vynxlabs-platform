@@ -423,7 +423,7 @@ test("every section in the navigation is measured for polish, or says it is not"
   if (/\["tenants", "\/"\]/.test(listed)) measured.add("instance/");
   const block = spec.slice(spec.indexOf("const NOT_MEASURED"));
   const skipped = new Set(
-    [...block.slice(0, block.indexOf("];")).matchAll(/"([\w/-]+)"/g)].map(([, key]) => key),
+    [...block.slice(0, block.indexOf("];")).matchAll(/"([\w/-]+)"/g)].map(([, key]) => key ?? ""),
   );
   expect(start).toBeGreaterThan(0);
   expect(sections.filter((key) => !measured.has(key) && !skipped.has(key))).toEqual([]);

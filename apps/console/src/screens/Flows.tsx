@@ -520,7 +520,9 @@ export function FlowView({
           variant="static"
           framed
           label="Recent runs"
-          rows={runs.data?.items ?? []}
+          rows={runs.data?.items}
+          error={runs.error}
+          onRetry={runs.reload}
           rowKey={(row) => row.id}
           empty={<EmptyState title="This flow has not run yet" />}
           columns={[

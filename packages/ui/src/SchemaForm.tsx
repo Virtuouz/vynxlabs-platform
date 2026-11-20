@@ -34,8 +34,23 @@ class Unparsed {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** Up to this many choices are shown side by side. */
 const FEW = 4;
-/** A string this long or longer is asked for in a box of several lines. */
-const LONG_TEXT = 200;
+/**
+ * A string is asked for in a box of several lines only when its schema says
+ * so: `format: "textarea"`, the name forms give a field of several lines, or,
+ * with no format, a `maxLength` above this. A host name of 253 characters or
+ * an address of 320 is still one line (H0-26, H0-64, A2-10).
+ */
+const LONG_TEXT = 1000;
+
+/** Whether a string's schema asks for several lines. */
+function isMultiline(schema: JsonSchema): boolean {
+  if (schema.format === "textarea") return true;
+  return (
+    schema.format === undefined &&
+    typeof schema.maxLength === "number" &&
+    schema.maxLength > LONG_TEXT
+  );
+}
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" &&
@@ -438,7 +453,7 @@ function Node(props: NodeProps): ReactNode {
       ...(typeof plain.minLength === "number" ? { minLength: plain.minLength } : {}),
       ...(typeof plain.maxLength === "number" ? { maxLength: plain.maxLength } : {}),
     };
-    if (typeof plain.maxLength === "number" && plain.maxLength >= LONG_TEXT) {
+    if (isMultiline(plain)) {
       return <TextAreaField {...common} {...limits} value={text} onChange={set} />;
     }
     return (

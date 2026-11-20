@@ -8,6 +8,7 @@ import {
   EventPage,
   ScriptPage,
   SecretPage,
+  TriggersOf,
   VariablePage,
 } from "./screens/ObjectPages.tsx";
 import { show } from "./testing.tsx";
@@ -149,4 +150,47 @@ test("a variable, a secret, an event and a script each have a page; an unknown o
   cleanup();
   show(<SecretPage root={root} link={link} name="MISSING" />);
   expect(await screen.findByRole("link", { name: "Go to the secrets" })).toBeTruthy();
+});
+
+test("a trigger inside a flow links to Triggers by its path and node, so it opens chosen there", async () => {
+  routes[`/tenants/t1/workspaces/w1/triggers`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "intake/route",
+          node: "nightly",
+          type: "schedule",
+          script: "intake/route",
+          targetKind: "flow",
+          enabled: true,
+          cron: "0 2 * * *",
+          timezone: null,
+          nextFireAt: null,
+          paused: null,
+        },
+        {
+          path: "reminders/hourly",
+          node: "",
+          type: "schedule",
+          script: "intake/route",
+          targetKind: "flow",
+          enabled: true,
+          cron: "0 * * * *",
+          timezone: null,
+          nextFireAt: null,
+          paused: null,
+        },
+      ],
+    },
+  ];
+  show(<TriggersOf root={root} link={link} kind="flow" path="intake/route" />);
+  const grid = await screen.findByRole("grid", { name: "Triggers of intake/route" });
+  expect(within(grid).getByRole("link", { name: "intake/route" }).getAttribute("href")).toBe(
+    `${link}/triggers?trigger=intake%2Froute%23nightly`,
+  );
+  // A trigger of its own, with no node, is linked by its path alone.
+  expect(within(grid).getByRole("link", { name: "reminders/hourly" }).getAttribute("href")).toBe(
+    `${link}/triggers?trigger=reminders%2Fhourly`,
+  );
 });

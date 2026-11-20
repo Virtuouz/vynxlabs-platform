@@ -98,10 +98,29 @@ test("an applied release can be gone back to, and asking for a second person can
   await waitFor(() =>
     expect(calls.some((call) => call.url.endsWith("/access/releases/r1/rollback"))).toBe(true),
   );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // It asks first, saying what changes and what becomes of the release that waits.
   fireEvent.click(screen.getByRole("button", { name: "Stop asking for a second person" }));
+  const said = await answer("Cancel");
+  expect(said).toContain("applies as soon as it is made, with nobody else approving it");
+  expect(said).toContain("The 1 release that waits now stays waiting");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Stop asking for a second person" }));
+  await answer("Stop asking");
   await waitFor(() =>
     expect(calls.find((call) => call.method === "PUT")?.body).toEqual({ required: false }),
   );
+});
+
+test("asking for a second person is turned on without a question", async () => {
+  approval = false;
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ask for a second person" }));
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({ required: true }),
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("a change that waits is told to whoever made it, in place of the thing they asked for", async () => {

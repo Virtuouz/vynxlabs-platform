@@ -38,15 +38,46 @@ export interface DocsApp {
   /** The table its readers' answers to whether a page helped are kept in, when it asks. */
   feedback?: string | null;
   deployed: boolean;
+  /** Whether a draft changes the app, or makes it: it goes with the next deploy. */
+  drafted: boolean;
   /** Where the app is served, once it is deployed. */
   url?: string;
   /** Where the app is shown with the workspace's drafts, to its writers alone. */
   preview?: string;
 }
 
+/** A table of the workspace's: the one an app keeps its readers' answers in, or one whose path is taken. */
+export interface DocsTable {
+  path: string;
+  state: DocPage["state"];
+}
+
 export interface DocsList {
   apps: DocsApp[];
   pages: DocPage[];
+  /** The workspace's tables. To someone who may read only the documentation, the ones its apps name. */
+  tables: DocsTable[];
+}
+
+/**
+ * What a deploy of the documentation carries: each page and app that is not
+ * deployed as it is, and each draft table an app keeps its readers' answers
+ * in, without which the app does not deploy.
+ */
+export function pendingOf(list: DocsList) {
+  const pages = list.pages.filter((page) => page.state !== "deployed");
+  const apps = list.apps.filter((app) => !app.deployed || app.drafted);
+  const named = new Set(list.apps.map((app) => app.feedback).filter(Boolean));
+  const tables = list.tables.filter(
+    (table) => table.state !== "deployed" && table.state !== "removed" && named.has(table.path),
+  );
+  return {
+    pages,
+    apps,
+    tables,
+    paths: [...pages, ...apps, ...tables].map((one) => one.path),
+    count: pages.length + apps.length + tables.length,
+  };
 }
 
 /** The app whose folder holds a page's path, deployed or not. */

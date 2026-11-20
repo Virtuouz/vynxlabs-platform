@@ -15,7 +15,8 @@ export interface WorkingResource extends ResourceLike {
 
 export interface Working {
   resources: WorkingResource[];
-  apps: (DocsApp & { deployed: boolean })[];
+  /** `deployed` is false for an app that is only a draft. `drafted` is true while a draft changes it. */
+  apps: (DocsApp & { deployed: boolean; drafted: boolean })[];
 }
 
 /**
@@ -70,8 +71,15 @@ export async function workingDocs(db: Db, workspaceId: string): Promise<Working>
   }
   // What a draft removes is still listed, as removed, and is no part of what is built.
   const kept = resources.filter((one) => one.state !== "removed");
+  const draftedApps = new Set(
+    kept.filter((one) => one.kind === "app" && one.state !== "deployed").map((one) => one.path),
+  );
   return {
     resources,
-    apps: docsApps(kept).map((one) => ({ ...one, deployed: deployedApps.has(one.path) })),
+    apps: docsApps(kept).map((one) => ({
+      ...one,
+      deployed: deployedApps.has(one.path),
+      drafted: draftedApps.has(one.path),
+    })),
   };
 }

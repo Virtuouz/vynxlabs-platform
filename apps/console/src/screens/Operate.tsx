@@ -18,6 +18,7 @@ import { Current } from "../kit/current.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { ago, stamp } from "../kit/format.ts";
 import { FilterChips, HeadNote, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
+import { triggerKey } from "../kit/objects.tsx";
 import { Mono, type RunState, StatePill, stateOf, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
@@ -78,8 +79,6 @@ const REFUSED: Record<string, string> = {
   paused: "the trigger was paused",
 };
 
-/** A trigger as runs name it: its path, and the node for one inside a flow. */
-const triggerKey = (row: Trigger) => (row.node ? `${row.path}#${row.node}` : row.path);
 /** The page of what a trigger starts. */
 const targetLink = (link: string, row: Trigger) =>
   row.targetKind === "flow" ? `${link}/flows/${row.script}` : `${link}/scripts/edit/${row.script}`;
@@ -190,12 +189,11 @@ export function TriggersWorkbench({
           ...(one.node ? { node: one.node } : {}),
         })),
       });
-    const idOf = (one: Trigger) => (one.node ? `${one.path}#${one.node}` : one.path);
     await batch.run(() => send(chosen), {
       title: paused ? "Pausing triggers" : "Resuming triggers",
       done: (count) =>
         `${count} trigger${count === 1 ? "" : "s"} ${paused ? "paused" : "resumed"}.`,
-      retry: (ids) => send(chosen.filter((one) => ids.includes(idOf(one)))),
+      retry: (ids) => send(chosen.filter((one) => ids.includes(triggerKey(one)))),
     });
     setChecked(new Set());
     list.reload();
@@ -879,10 +877,15 @@ export function ApprovalsQueue({
     const comment = await ask.prompt({
       title: `${decision === "approve" ? "Approve" : "Reject"} ${rows.length} decision${rows.length === 1 ? "" : "s"}?`,
       text: rows.length > 3 ? `${names} and ${rows.length - 3} more.` : `${names}.`,
-      label: "Comment, kept with each decision",
+      // As for one: a reject says why, and the reason is kept with each decision.
+      label:
+        decision === "approve"
+          ? "Note (optional), kept with each decision"
+          : "Why are they rejected? Kept with each decision.",
       action: decision === "approve" ? "Approve" : "Reject",
       danger: decision === "reject",
-      required: false,
+      required: decision === "reject",
+      multiline: true,
     });
     if (comment === null) return;
     const send = (subset: typeof rows) =>

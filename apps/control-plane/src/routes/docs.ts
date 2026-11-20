@@ -71,6 +71,19 @@ const PageSummary = Type.Object({
   ),
 });
 
+const Table = Type.Object({
+  path: Type.String(),
+  state: Type.Union(
+    [
+      Type.Literal("deployed"),
+      Type.Literal("changed"),
+      Type.Literal("new"),
+      Type.Literal("removed"),
+    ],
+    { description: "As a page's: whether a draft makes it, changes it or removes it." },
+  ),
+});
+
 const App = Type.Object({
   path: Type.String(),
   title: Type.String(),
@@ -80,6 +93,9 @@ const App = Type.Object({
       "The table its readers' answers to whether a page helped are kept in. Null when it does not ask.",
   }),
   deployed: Type.Boolean({ description: "False for an app that is only a draft." }),
+  drafted: Type.Boolean({
+    description: "True while a draft changes the app, or makes it: it goes with the next deploy.",
+  }),
   url: Type.String({ description: "Where the app is served, once it is deployed." }),
   preview: Type.String({
     description:
@@ -145,13 +161,56 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["docs"],
           params: WorkspaceParams,
           response: {
-            200: Type.Object({ apps: Type.Array(App), pages: Type.Array(PageSummary) }),
+            200: Type.Object({
+              apps: Type.Array(App),
+              pages: Type.Array(PageSummary),
+              tables: Type.Array(Table, {
+                description:
+                  "The workspace's tables, as its writers see them: a deploy of the documentation " +
+                  "carries a draft table an app keeps its readers' answers in, and a new one is " +
+                  "not made at a path a table has. To whoever may read only the documentation, " +
+                  "just the tables its apps name.",
+              }),
+            }),
           },
         },
       },
       async ({ ctx, params }) => {
         const workspace = await enter(ctx, params);
         const { resources, apps } = await working(workspace.id);
+        const [liveTables, draftTables] = await Promise.all([
+          db
+            .selectFrom("resource")
+            .select(["key", "path"])
+            .where("workspace_id", "=", workspace.id)
+            .where("kind", "=", "table")
+            .execute(),
+          db
+            .selectFrom("resource_draft")
+            .select(["key", "path", "deleted"])
+            .where("workspace_id", "=", workspace.id)
+            .where("kind", "=", "table")
+            .execute(),
+        ]);
+        const tableDrafts = new Map(draftTables.map((draft) => [draft.key, draft]));
+        const tables: Static<typeof Table>[] = liveTables.map((one) => {
+          const draft = tableDrafts.get(one.key);
+          tableDrafts.delete(one.key);
+          if (!draft) return { path: one.path, state: "deployed" };
+          return draft.deleted
+            ? { path: one.path, state: "removed" }
+            : { path: draft.path, state: "changed" };
+        });
+        for (const draft of tableDrafts.values()) {
+          if (!draft.deleted) tables.push({ path: draft.path, state: "new" });
+        }
+        const named = new Set(apps.map((one) => one.feedback).filter(Boolean));
+        const seen = (await ctx.allowed("resource:read", {
+          tenantId: workspace.tenantId,
+          workspaceId: workspace.id,
+        }))
+          ? tables
+          : tables.filter((one) => named.has(one.path));
         const tenant = await db
           .selectFrom("tenant")
           .select("slug")
@@ -170,6 +229,7 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .filter((one) => one.kind === "doc")
             .map((one) => summary(one, apps))
             .sort((a, b) => a.path.localeCompare(b.path)),
+          tables: seen.sort((a, b) => a.path.localeCompare(b.path)),
         };
       },
     );

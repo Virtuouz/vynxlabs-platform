@@ -1,6 +1,10 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+// Every connector each worker has, as its own source: the forms of their connections are drawn from these.
+import { httpConnector } from "../../sdk/src/http.ts";
+import { oauth2Connector } from "../../sdk/src/oauth2.ts";
+import { smtpConfigSchema } from "../../sdk/src/smtp.ts";
 import { checkValue, type JsonSchema, SchemaForm } from "./index.ts";
 
 afterEach(cleanup);
@@ -274,5 +278,77 @@ describe("a form drawn from a schema", () => {
     fireEvent.input(screen.getByLabelText("As JSON"), { target: { value: '["a"]' } });
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
     await waitFor(() => expect(sent).toHaveBeenCalledWith(["a"]));
+  });
+});
+
+describe("a string's box", () => {
+  const field = (schema: JsonSchema) => {
+    render(
+      <SchemaForm
+        schema={{ type: "object", properties: { it: { ...schema, title: "It" } } }}
+        onSubmit={() => {}}
+      />,
+    );
+    return screen.getByLabelText("It").tagName;
+  };
+
+  test("is one line for a long maxLength, with or without a format", () => {
+    expect(field({ type: "string", maxLength: 253 })).toBe("INPUT");
+    cleanup();
+    expect(field({ type: "string", maxLength: 1000 })).toBe("INPUT");
+    cleanup();
+    expect(field({ type: "string", format: "email", maxLength: 5000 })).toBe("INPUT");
+  });
+
+  test("is several lines when the schema asks: format textarea, or more than 1000 characters", () => {
+    expect(field({ type: "string", format: "textarea" })).toBe("TEXTAREA");
+    cleanup();
+    expect(field({ type: "string", maxLength: 1001 })).toBe("TEXTAREA");
+  });
+});
+
+/** Each string a schema draws as a field of its own, by the title it is labelled with. */
+function strings(schema: JsonSchema): { title: string; schema: JsonSchema }[] {
+  const found: { title: string; schema: JsonSchema }[] = [];
+  const properties = (schema.properties ?? {}) as Record<string, JsonSchema>;
+  for (const property of Object.values(properties)) {
+    if (property.type === "string" && typeof property.title === "string") {
+      found.push({ title: property.title, schema: property });
+    } else if (property.type === "object" && property.properties) {
+      found.push(...strings(property));
+    }
+  }
+  return found;
+}
+
+describe("every connector's configuration form", () => {
+  const connectors: [string, JsonSchema][] = [
+    ["http", httpConnector.configSchema as JsonSchema],
+    ["smtp", smtpConfigSchema as unknown as JsonSchema],
+    ["oauth2", oauth2Connector.configSchema as JsonSchema],
+  ];
+
+  test.each(connectors)("%s draws each one-line field as one line", (_name, schema) => {
+    render(<SchemaForm schema={schema} onSubmit={() => {}} />);
+    const drawn = strings(schema);
+    expect(drawn.length).toBeGreaterThan(0);
+    for (const one of drawn) {
+      const multiline =
+        one.schema.format === "textarea" ||
+        (one.schema.format === undefined &&
+          typeof one.schema.maxLength === "number" &&
+          one.schema.maxLength > 1000);
+      expect(
+        [one.title, screen.getByLabelText(one.title).tagName],
+        `${one.title} is drawn as ${multiline ? "several lines" : "one line"}`,
+      ).toEqual([one.title, multiline ? "TEXTAREA" : "INPUT"]);
+    }
+  });
+
+  test("the SMTP form's mail server, sender and user name are one line each (A2-10)", () => {
+    render(<SchemaForm schema={smtpConfigSchema as unknown as JsonSchema} onSubmit={() => {}} />);
+    for (const label of ["Mail server", "Sent from", "User name"]) {
+      expect(screen.getByLabelText(label).tagName).toBe("INPUT");
+    }
   });
 });

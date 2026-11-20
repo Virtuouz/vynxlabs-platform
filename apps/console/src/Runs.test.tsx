@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { RunsWorkbench } from "./screens/Runs.tsx";
-import { show } from "./testing.tsx";
+import { answer, show } from "./testing.tsx";
 
 const root = "/tenants/t1/workspaces/w1";
 let asked: string[];
@@ -178,4 +178,25 @@ test("cancelling queued runs names how many and cancels only what the list shows
     include: "queued",
     filters: { q: "reminders", tags: ["vip"] },
   });
+});
+
+test("Run again from a row asks first, as the run page does", async () => {
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "reminders/send" });
+  fireEvent.click(screen.getByRole("button", { name: /^Actions for/ }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Run again…" }));
+  const said = await answer("Cancel");
+  expect(said).toContain("Run reminders/send again?");
+  expect(said).toContain("on version 1, the one it ran");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(sent).toEqual([]);
+
+  fireEvent.click(screen.getByRole("button", { name: /^Actions for/ }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Run again…" }));
+  await answer("Run again");
+  await waitFor(() =>
+    expect(sent).toEqual([
+      { address: `/api/v1${root}/runs/r1/rerun`, body: { bundle: "original" } },
+    ]),
+  );
 });

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import { count } from "../kit/format.ts";
 import { StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
@@ -130,6 +131,24 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
         <Button
           onClick={async () => {
             setProblem(undefined);
+            if (approval) {
+              const waiting = releases.data?.items.filter(
+                (one) => one.status === "awaiting_approval",
+              ).length;
+              const sure = await ask.confirm({
+                title: "Stop asking for a second person?",
+                text: `From now on, a change to the tenant's groups, service accounts and roles, and to what they are given, applies as soon as it is made, with nobody else approving it. ${
+                  waiting === undefined || waiting === 0
+                    ? "Releases that wait now stay waiting"
+                    : waiting === 1
+                      ? "The 1 release that waits now stays waiting"
+                      : `The ${count(waiting)} releases that wait now stay waiting`
+                } until someone answers them. Asking again needs two people who may release access.`,
+                action: "Stop asking",
+                danger: true,
+              });
+              if (!sure) return;
+            }
             try {
               await api.put(`${base}/access/approval`, { required: !approval });
               notify.success(

@@ -285,6 +285,81 @@ test("a table made in the console is changed by saving its definition", async ()
   );
 });
 
+test("a refused save of an enum's values or a reference's rule keeps its dialog open, with what was typed", async () => {
+  const table = orders("ui");
+  const columns = table.columns as Record<string, unknown>[];
+  columns.push(
+    {
+      name: "state",
+      type: "enum",
+      values: [{ value: "open" }, { value: "closed" }],
+      required: false,
+      unique: false,
+      default: null,
+      references: null,
+      status: "active",
+      held: null,
+    },
+    {
+      name: "customer",
+      type: "uuid",
+      required: false,
+      unique: false,
+      default: null,
+      references: "customers",
+      status: "active",
+      held: null,
+    },
+  );
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [
+    200,
+    {
+      body: {
+        columns: {
+          state: { type: "enum", values: ["open", "closed"] },
+          customer: { type: "uuid", references: "customers" },
+        },
+      },
+    },
+  ];
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [
+    400,
+    { status: 400, code: "invalid", detail: "A row rule needs the value open." },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+
+  fireEvent.click(await screen.findByRole("button", { name: "Values" }));
+  let dialog = await screen.findByRole("dialog");
+  const first = within(dialog).getAllByLabelText("Value")[0] as HTMLInputElement;
+  fireEvent.input(first, { target: { value: "opened" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(await within(dialog).findByText(/A row rule needs the value open\./)).toBeTruthy();
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  expect((within(dialog).getAllByLabelText("Value")[0] as HTMLInputElement).value).toBe("opened");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // It was said in the dialog, and is not said again over the columns.
+  expect(screen.queryByText(/A row rule needs the value open\./)).toBeNull();
+
+  fireEvent.click(await screen.findByRole("button", { name: "On delete" }));
+  dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText(/What happens to the row/), {
+    target: { value: "cascade" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(await within(dialog).findByText(/A row rule needs the value open\./)).toBeTruthy();
+  expect(
+    (within(dialog).getByLabelText(/What happens to the row/) as HTMLSelectElement).value,
+  ).toBe("cascade");
+
+  // Saved, it closes.
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [200, {}];
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
 test("an external source's tables are browsed, and one without a key cannot be changed", async () => {
   routes[`GET /api/v1${root}/data-source-tables/erp`] = () => [
     200,

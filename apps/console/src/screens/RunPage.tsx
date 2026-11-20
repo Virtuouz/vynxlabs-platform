@@ -41,6 +41,13 @@ import { type FlowDetail, type FlowRunDetail, FlowRunView } from "./Flows.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { type PreviousSuccess, RunCompare } from "./RunCompare.tsx";
 import type { Insight } from "./Runs.tsx";
+import {
+  flowFromFailed,
+  flowFromStart,
+  type RetryPlan,
+  scriptAgain,
+  type Version,
+} from "./runAgain.ts";
 
 const LIVE: RunState[] = ["queued", "running", "waiting_approval", "waiting_time"];
 
@@ -235,14 +242,6 @@ function EditInDev({ root, path, runId }: { root: string; path: string; runId: s
   );
 }
 
-interface RetryPlan {
-  bundleVersion: number;
-  changed: string[];
-  kept: string[];
-  again: string[];
-  approvalsKept: { node: string; decidedBy: string | null }[];
-}
-
 function ScriptRunPage({ root, link, id }: { root: string; link: string; id: string }) {
   const { run, lines, earlier, error, reconnecting } = useLiveRun(root, id);
   const ended = run !== undefined && !LIVE.includes(run.state);
@@ -264,17 +263,17 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
     const started = await api.post<{ id: string }>(`${root}/runs/${id}/rerun`, body);
     navigate(`${link}/runs/${started.id}`);
   };
-  const confirmed = async (bundle: "original" | "active") => {
-    const sure = await ask.confirm({
-      title: `Run ${run.script} again?`,
-      text:
-        bundle === "original"
-          ? `With the same input, on version ${run.bundleVersion}, the one it ran.`
-          : "With the same input, on the version deployed now.",
-      action: "Run again",
-    });
-    if (sure) await rerun({ bundle }).catch(notify.error);
-  };
+  const confirmed = (bundle: Version) =>
+    scriptAgain(
+      {
+        root,
+        id,
+        script: run.script,
+        bundleVersion: run.bundleVersion,
+        started: (next) => navigate(`${link}/runs/${next}`),
+      },
+      bundle,
+    );
 
   const cancel = async () => {
     const sure = await ask.confirm({
@@ -679,42 +678,10 @@ function FlowRunHeader({
     (onFix.data.changed ?? []).length === 0
       ? onFix.data.bundleVersion
       : undefined;
-  const fromFailed = async (bundle: "original" | "active" = "original") => {
-    let plan: RetryPlan;
-    try {
-      plan = await api.get(`${root}/flow-runs/${run.id}/retry-plan?bundle=${bundle}`);
-    } catch (caught) {
-      notify.error(caught);
-      return;
-    }
-    const approvals = plan.approvalsKept
-      .map((one) => `${one.node}${one.decidedBy ? ` (approved by ${one.decidedBy})` : ""}`)
-      .join(", ");
-    const sure = await ask.confirm({
-      title: "Retry from the failed step?",
-      text:
-        `Runs again: ${plan.again.join(", ") || "nothing"}. ` +
-        `Kept as it was: ${plan.kept.join(", ") || "nothing"}. ` +
-        (approvals ? `Approvals kept, not asked again: ${approvals}. ` : "") +
-        `On version ${plan.bundleVersion}${bundle === "active" ? ", the one deployed now" : ""}, with the same input.`,
-      action: "Retry",
-    });
-    if (sure)
-      await retry({ from: "failed", ...(bundle === "active" ? { bundle } : {}) }).catch(
-        notify.error,
-      );
-  };
-  const fromStart = async (bundle: "original" | "active") => {
-    const sure = await ask.confirm({
-      title: `Run ${run.flow} again from the start?`,
-      text:
-        bundle === "original"
-          ? `Every step runs again, with the same input, on version ${run.bundleVersion}.`
-          : "Every step runs again, with the same input, on the version deployed now.",
-      action: "Run again",
-    });
-    if (sure) await retry({ from: "start", bundle }).catch(notify.error);
-  };
+  const again = { root, id: run.id, started: (next: string) => navigate(`${link}/runs/${next}`) };
+  const fromFailed = (bundle: Version = "original") => flowFromFailed(again, bundle);
+  const fromStart = (bundle: Version) =>
+    flowFromStart({ ...again, flow: run.flow, bundleVersion: run.bundleVersion }, bundle);
 
   const cancel = async () => {
     const sure = await ask.confirm({

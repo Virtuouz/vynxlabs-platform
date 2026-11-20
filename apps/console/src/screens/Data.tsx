@@ -22,7 +22,7 @@ import {
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { count } from "../kit/format.ts";
@@ -1076,6 +1076,8 @@ function OnDeleteDialog({
 }) {
   const [rule, setRule] = useState(column.onDelete ?? "restrict");
   const [busy, setBusy] = useState(false);
+  // Why the save was refused: said here, with the choice kept, until it is saved or canceled.
+  const [error, setError] = useState<string>();
   return (
     <Dialog open={open} onClose={onClose} title={`When a row ${column.name} points to is deleted`}>
       <div className="flex flex-col gap-4">
@@ -1091,6 +1093,7 @@ function OnDeleteDialog({
             Deleting a row of {column.references} will delete every row here that points to it.
           </Notice>
         ) : null}
+        {error ? <Notice tone="danger">{error}</Notice> : null}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button
@@ -1098,13 +1101,14 @@ function OnDeleteDialog({
             loading={busy}
             onClick={async () => {
               setBusy(true);
+              setError(undefined);
               try {
                 await onSave(rule);
-              } catch {
-                // The definition says what went wrong, above the columns.
+                onClose();
+              } catch (caught) {
+                setError(failureText(caught));
               } finally {
                 setBusy(false);
-                onClose();
               }
             }}
           >
@@ -1150,6 +1154,8 @@ function ValuesDialog({
     })),
   );
   const [busy, setBusy] = useState(false);
+  // Why the save was refused: said here, with everything typed kept, until it is saved or canceled.
+  const [error, setError] = useState<string>();
   const edit = (key: number, change: Partial<EditedValue>) =>
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...change } : row)));
   const move = (at: number, by: -1 | 1) =>
@@ -1289,7 +1295,11 @@ function ValuesDialog({
             {gone.length === 1 ? "it" : "them"} keep {gone.length === 1 ? "it" : "them"}.
           </Notice>
         ) : null}
-        {problem ? <Notice tone="danger">{problem}</Notice> : null}
+        {problem ? (
+          <Notice tone="danger">{problem}</Notice>
+        ) : error ? (
+          <Notice tone="danger">{error}</Notice>
+        ) : null}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button
@@ -1298,6 +1308,7 @@ function ValuesDialog({
             disabled={problem !== undefined}
             onClick={async () => {
               setBusy(true);
+              setError(undefined);
               try {
                 await onSave(
                   rows.map((row) => {
@@ -1313,11 +1324,11 @@ function ValuesDialog({
                     return Object.keys(full).length === 1 ? value : full;
                   }),
                 );
-              } catch {
-                // The definition says what went wrong, above the columns.
+                onClose();
+              } catch (caught) {
+                setError(failureText(caught));
               } finally {
                 setBusy(false);
-                onClose();
               }
             }}
           >
@@ -1358,7 +1369,11 @@ function Definition({
   const retired = table.columns.filter((column) => column.status === "retired");
 
   /** Loads the stored definition, changes it, and saves it. The platform works out what to do. */
-  const change = async (edit: (body: TableBody) => void) => {
+  const change = async (
+    edit: (body: TableBody) => void,
+    /** Off where a dialog says what went wrong itself, so it is not said twice. */
+    { report = true }: { report?: boolean } = {},
+  ) => {
     setFailure(undefined);
     try {
       const resource = await api.get<{ body: TableBody }>(`${root}/resources/${table.name}`);
@@ -1372,9 +1387,11 @@ function Definition({
       });
       reload();
     } catch (error) {
-      const caught = error as ApiError;
-      const first = caught.fields?.[0];
-      setFailure(first ? `${caught.message} ${first.message}` : caught.message);
+      if (report) {
+        const caught = error as ApiError;
+        const first = caught.fields?.[0];
+        setFailure(first ? `${caught.message} ${first.message}` : caught.message);
+      }
       throw error;
     }
   };
@@ -1713,10 +1730,13 @@ function Definition({
               column={optionsOf}
               onClose={() => setOptionsOf(undefined)}
               onSave={(values) =>
-                change((body) => {
-                  const column = body.columns[optionsOf.name];
-                  if (column) column.values = values;
-                })
+                change(
+                  (body) => {
+                    const column = body.columns[optionsOf.name];
+                    if (column) column.values = values;
+                  },
+                  { report: false },
+                )
               }
             />
           ) : (
@@ -1725,12 +1745,15 @@ function Definition({
               column={optionsOf}
               onClose={() => setOptionsOf(undefined)}
               onSave={(onDelete) =>
-                change((body) => {
-                  const column = body.columns[optionsOf.name];
-                  if (!column) return;
-                  if (onDelete === "restrict") delete column.onDelete;
-                  else column.onDelete = onDelete;
-                })
+                change(
+                  (body) => {
+                    const column = body.columns[optionsOf.name];
+                    if (!column) return;
+                    if (onDelete === "restrict") delete column.onDelete;
+                    else column.onDelete = onDelete;
+                  },
+                  { report: false },
+                )
               }
             />
           )

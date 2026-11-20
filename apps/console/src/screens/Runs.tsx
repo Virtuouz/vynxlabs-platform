@@ -38,6 +38,7 @@ import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
 import { LogWindowNote, TRIGGER, useLiveRun, wholeLogDownload } from "./Execution.tsx";
+import { flowFromFailed, flowFromStart, scriptAgain } from "./runAgain.ts";
 
 /** What the list can be narrowed to: a state. `waiting`, from older addresses, is either kind. */
 type Filter =
@@ -427,43 +428,43 @@ export function RunsWorkbench({
   const actionsOf = (one: Activity): MenuItem[] => {
     const page = `${link}/runs/${one.id}`;
     const going = LIVE.includes(one.state);
+    // The run page's own commands, which ask first: the new run is offered, and the list catches up.
+    const again = {
+      root,
+      id: one.id,
+      started: (next: string) => {
+        notify.success("Started again.", {
+          action: { label: "Open it", onClick: () => navigate(`${link}/runs/${next}`) },
+        });
+        refresh();
+      },
+    };
     return [
       { label: "Open", onSelect: () => navigate(page) },
       ...(one.kind === "script" && !going
         ? [
             {
-              label: "Run again",
+              label: "Run again…",
               onSelect: () =>
-                void api
-                  .post<{ id: string }>(`${root}/runs/${one.id}/rerun`, { bundle: "original" })
-                  .then((started) =>
-                    notify.success("Started again.", {
-                      action: {
-                        label: "Open it",
-                        onClick: () => navigate(`${link}/runs/${started.id}`),
-                      },
-                    }),
-                  )
-                  .then(refresh, notify.error),
+                void scriptAgain(
+                  { ...again, script: one.target, bundleVersion: one.bundleVersion },
+                  "original",
+                ),
             },
           ]
         : []),
       ...(one.kind === "flow" && one.state === "failed"
+        ? [{ label: "Retry from the failed step…", onSelect: () => void flowFromFailed(again) }]
+        : []),
+      ...(one.kind === "flow" && !going
         ? [
             {
-              label: "Retry from the failed step",
+              label: "Again from the start…",
               onSelect: () =>
-                void api
-                  .post<{ id: string }>(`${root}/flow-runs/${one.id}/retry`, { from: "failed" })
-                  .then((started) =>
-                    notify.success("Retrying from the failed step.", {
-                      action: {
-                        label: "Open it",
-                        onClick: () => navigate(`${link}/runs/${started.id}`),
-                      },
-                    }),
-                  )
-                  .then(refresh, notify.error),
+                void flowFromStart(
+                  { ...again, flow: one.target, bundleVersion: one.bundleVersion },
+                  "original",
+                ),
             },
           ]
         : []),

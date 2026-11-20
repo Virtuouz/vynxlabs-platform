@@ -72,6 +72,39 @@ const titled = (folder: string) => {
   return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
+/** Whether a page can be moved from here: one written here, that is not on its way out. */
+export const movable = (page: DocPage | undefined): page is DocPage =>
+  page !== undefined && page.file === null && page.state !== "removed";
+
+/**
+ * Where a page would be, let go on a row of the tree: in that app's folder,
+ * in that folder, or beside that page. Its own name goes with it. A reason
+ * instead, when it cannot go there; nothing, when it is there already or the
+ * row is not a place.
+ */
+export function movedTo(
+  list: DocsList,
+  dragged: string,
+  onto: string,
+): { to: string } | { problem: string } | undefined {
+  const page = list.pages.find((one) => one.path === dragged);
+  if (!movable(page)) return undefined;
+  let folder: string | undefined;
+  if (onto.startsWith("app:")) {
+    folder = list.apps.find((app) => app.path === onto.slice("app:".length))?.docs;
+  } else if (onto.startsWith("dir:")) {
+    folder = onto.slice("dir:".length);
+  } else if (list.pages.some((one) => one.path === onto) && onto.includes("/")) {
+    folder = onto.slice(0, onto.lastIndexOf("/"));
+  }
+  if (folder === undefined) return undefined;
+  const to = `${folder}/${dragged.slice(dragged.lastIndexOf("/") + 1)}`;
+  if (to === dragged) return undefined;
+  if (list.pages.some((one) => one.path === to && one.state !== "removed"))
+    return { problem: `There is a page at ${to} already.` };
+  return { to };
+}
+
 /**
  * The pages as their folders: each docs app, its collections, their groups,
  * and the pages in each. A folder is named by its index page's title when it

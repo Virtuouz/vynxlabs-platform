@@ -1,5 +1,5 @@
 import { type Issue, type ProfileName, parse, type Root, validate } from "@volvel/markup";
-import { parse as parseYaml } from "yaml";
+import { isMap, parseDocument, parse as parseYaml } from "yaml";
 import { check, FRONTMATTER_SCHEMA, type Frontmatter, PATH_PATTERN } from "./schema.js";
 
 /** Something wrong with a page or with a set of them, and where. */
@@ -40,6 +40,55 @@ export function splitFrontmatter(text: string): { yaml: string; body: string; of
     body: lines.slice(close + 1).join("\n"),
     offset: close + 1,
   };
+}
+
+/** What a page's frontmatter says, as it is written, when it can be read at all. */
+export function frontmatterOf(text: string): Record<string, unknown> | undefined {
+  const { yaml, offset } = splitFrontmatter(text);
+  if (offset === 0) return {};
+  try {
+    const read: unknown = parseYaml(yaml);
+    if (read === null || read === undefined) return {};
+    return typeof read === "object" && !Array.isArray(read)
+      ? (read as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const empty = (value: unknown) =>
+  value === undefined ||
+  value === null ||
+  value === "" ||
+  (Array.isArray(value) && value.length === 0);
+
+/**
+ * A page's source with some of its frontmatter changed, for a form that
+ * writes what a person would have typed. A key given nothing, an empty text
+ * or an empty list is taken out. Everything else stays as it was written:
+ * the other keys, their order, the comments among them, and the page under
+ * them. A page with no frontmatter is given one. Undefined when what is
+ * there cannot be read, which a form cannot mend.
+ */
+export function setFrontmatter(text: string, changes: Record<string, unknown>): string | undefined {
+  const { yaml, body, offset } = splitFrontmatter(text);
+  // An empty top is read as an empty map, so that there is something to set keys on.
+  const written0 = offset === 0 || yaml.trim() === "" ? "{}" : yaml;
+  const document = parseDocument(written0);
+  if (document.errors.length > 0) return undefined;
+  if (!isMap(document.contents)) return undefined;
+  document.contents.flow = false;
+  for (const [key, value] of Object.entries(changes)) {
+    if (empty(value)) document.delete(key);
+    else document.set(key, value);
+  }
+  const written =
+    isMap(document.contents) && document.contents.items.length === 0
+      ? ""
+      : document.toString({ lineWidth: 0 });
+  const under = offset === 0 && body !== "" ? `\n${body}` : body;
+  return `---\n${written}---\n${under}`;
 }
 
 const PATH = new RegExp(PATH_PATTERN);

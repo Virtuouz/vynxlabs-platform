@@ -11,7 +11,16 @@ import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { Code, Tag } from "../../kit/status.tsx";
 import { navigate } from "../../router.tsx";
-import { appFor, type DocPage, type DocsList, inApp, resolvers, treeOf } from "./model.ts";
+import {
+  appFor,
+  type DocPage,
+  type DocsList,
+  inApp,
+  movable,
+  movedTo,
+  resolvers,
+  treeOf,
+} from "./model.ts";
 
 /** The product's own help, for the terms a tenant's page may use. Loaded once. */
 export function useProduct(): Manifest | undefined {
@@ -97,6 +106,34 @@ export function Docs({
     }
   };
 
+  // A page let go on a folder goes into it, as a draft, as Move in its editor would put it.
+  const move = async (dragged: string, onto: string) => {
+    const place = movedTo(data, dragged, onto);
+    if (!place) return;
+    if ("problem" in place) {
+      notify.error(new Error(place.problem));
+      return;
+    }
+    try {
+      const page = await api.get<{ source: string; revision: number | null; page: DocPage }>(
+        `${root}/docs/page/${dragged}`,
+      );
+      await api.put(`${root}/drafts/${dragged}`, {
+        kind: "doc",
+        schemaVersion: 1,
+        title: page.page.title,
+        body: { source: page.source },
+        path: place.to,
+        ...(page.revision !== null ? { revision: page.revision } : {}),
+      });
+      notify.success(`Moved to ${place.to}. It takes effect when it is deployed.`);
+      list.reload();
+      if (chosen?.path === dragged) navigate(`${link}/docs/${place.to}`, { replace: true });
+    } catch (error) {
+      notify.error(error);
+    }
+  };
+
   return (
     <section className="flex flex-col gap-5">
       <PageHeader
@@ -140,6 +177,14 @@ export function Docs({
               label="Pages"
               nodes={tree}
               {...(chosen ? { selected: chosen.path } : {})}
+              {...(editable
+                ? {
+                    canDrag: (id: string) => movable(data.pages.find((page) => page.path === id)),
+                    canDrop: (dragged: string, onto: string) =>
+                      movedTo(data, dragged, onto) !== undefined,
+                    onMove: move,
+                  }
+                : {})}
               // An app or a folder is opened and closed, not chosen.
               onSelect={(id) => {
                 if (!id.startsWith("app:") && !id.startsWith("dir:"))

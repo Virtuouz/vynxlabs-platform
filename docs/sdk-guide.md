@@ -320,7 +320,17 @@ A column's description is shown behind an ⓘ on its heading, in the console and
 
 ### Help from an app
 
-A page of an interface can name a topic as its help. Whoever uses the app, and may open the documentation, gets a Help button that shows the page. From an app written as code, `helpUrl("support-refunds")` in `@volvel/app` gives the page's address, and `terms()` gives the glossary.
+A page of an interface can name a topic as its help. Whoever uses the app, and may open the documentation, gets a Help button that shows the page.
+
+An app written as code has the same from `@volvel/app`:
+
+```tsx
+import { HelpPanel } from "@volvel/app";
+
+<HelpPanel topic="support-refunds" />
+```
+
+It is a button that opens the page beside the app, as its docs app serves it. It draws nothing when no page has the topic or the person may not open it, so it can go on a screen before its help is written. Give it a `className` to make the button one of your own. Where the documentation is served at another address than the app, the button opens the page in a new tab, since one address may not show another's page inside it. `useHelp(topic)` gives the page's title and address to draw your own, `helpUrl(topic)` the address alone, and `terms()` the glossary.
 
 ### What the build checks
 

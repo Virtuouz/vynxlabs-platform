@@ -26,6 +26,7 @@ import {
   resolvers,
   termsOf,
 } from "./model.ts";
+import { PageDetails } from "./PageDetails.tsx";
 
 const CodeEditor = lazy(() =>
   import("../../editor/CodeEditor.tsx").then((module) => ({ default: module.CodeEditor })),
@@ -76,6 +77,7 @@ export function DocEditor({
   const [clash, setClash] = useState(false);
   const [reveal, setReveal] = useState<{ line: number; at: number }>();
   const [comparing, setComparing] = useState(false);
+  const [detailing, setDetailing] = useState(false);
   const product = useProduct();
   const brand = useBrand();
   const { resources } = useWorkspaceTerms(tenantId, workspaceId);
@@ -252,6 +254,9 @@ export function DocEditor({
                 <ExternalLink aria-hidden="true" size={14} />
               </a>
             ) : null}
+            <Button aria-pressed={detailing} onClick={() => setDetailing((now) => !now)}>
+              {detailing ? "Hide details" : "Page details"}
+            </Button>
             {deployed !== null ? (
               <Button aria-pressed={comparing} onClick={() => setComparing((now) => !now)}>
                 {comparing ? "Hide what is deployed" : "Compare with deployed"}
@@ -335,6 +340,16 @@ export function DocEditor({
           Someone else saved this page after you opened it. Nothing of theirs was overwritten, and
           what you typed is still here.
         </Notice>
+      ) : null}
+      {detailing ? (
+        <section aria-label="Page details">
+          <PageDetails
+            source={source}
+            onChange={setSource}
+            index={where === "index" || where.endsWith("/index")}
+            product={product}
+          />
+        </section>
       ) : null}
       <SplitPane
         id="doc-editor"

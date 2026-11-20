@@ -24,6 +24,10 @@ interface Row {
  * Up and Down move between the rows that show, Right opens a row or steps
  * into it, Left closes it or steps out, Home and End go to the ends, and
  * Enter or Space chooses.
+ *
+ * With `onMove`, a row can be dragged onto another: a page onto a folder. A
+ * drag is a pointer's way only, so whoever gives `onMove` gives the same move
+ * another way too, for the keyboard.
  */
 export function Tree({
   label,
@@ -31,6 +35,9 @@ export function Tree({
   selected,
   onSelect,
   defaultExpanded,
+  canDrag,
+  canDrop,
+  onMove,
 }: {
   /** Names the tree for screen readers: "Pages". */
   label: string;
@@ -40,7 +47,21 @@ export function Tree({
   onSelect?: (id: string) => void;
   /** The ids open to begin with. Left out, every node is open. */
   defaultExpanded?: string[];
+  /** Which rows can be picked up. Left out, with `onMove`, every row can. */
+  canDrag?: (id: string) => boolean;
+  /** Whether one row can be let go on another. Left out, with `onMove`, on any but itself. */
+  canDrop?: (dragged: string, onto: string) => boolean;
+  /** A row was dragged onto another. */
+  onMove?: (dragged: string, onto: string) => void;
 }) {
+  // The row being dragged, and the row it is over, when it may be let go there.
+  const [dragged, setDragged] = useState<string>();
+  const [over, setOver] = useState<string>();
+  const takes = (onto: string) =>
+    onMove !== undefined &&
+    dragged !== undefined &&
+    dragged !== onto &&
+    (canDrop ? canDrop(dragged, onto) : true);
   const everyBranch = useMemo(() => {
     const ids: string[] = [];
     const visit = (list: TreeNode[]) => {
@@ -147,9 +168,46 @@ export function Tree({
               setFocused(node.id);
               onSelect?.(node.id);
             }}
+            {...(onMove && (canDrag ? canDrag(node.id) : true)
+              ? {
+                  draggable: true,
+                  onDragStart: (event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", node.label);
+                    setDragged(node.id);
+                  },
+                  onDragEnd: () => {
+                    setDragged(undefined);
+                    setOver(undefined);
+                  },
+                }
+              : {})}
+            {...(onMove
+              ? {
+                  onDragOver: (event) => {
+                    if (!takes(node.id)) return;
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    if (over !== node.id) setOver(node.id);
+                  },
+                  onDragLeave: () => {
+                    if (over === node.id) setOver(undefined);
+                  },
+                  onDrop: (event) => {
+                    if (!takes(node.id) || dragged === undefined) return;
+                    event.preventDefault();
+                    const moved = dragged;
+                    setDragged(undefined);
+                    setOver(undefined);
+                    onMove(moved, node.id);
+                  },
+                }
+              : {})}
             style={{ paddingLeft: `${(level - 1) * 16 + 4}px` }}
             className={`flex min-h-control cursor-pointer items-center gap-1.5 rounded-control pr-2 ${
               chosen ? "bg-selected font-medium text-ink" : "text-ink hover:bg-sunken"
+            } ${over === node.id ? "outline outline-2 outline-action -outline-offset-2" : ""} ${
+              dragged === node.id ? "opacity-60" : ""
             }`}
           >
             {branch ? (

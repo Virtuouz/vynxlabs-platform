@@ -182,7 +182,7 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
 
   await page.goto(`/t/${made.tenant}/workspaces/${made.dev}/tables/orders`);
   const grid = page.getByRole("grid", { name: "Rows of orders" });
-  await expect(grid.getByRole("row")).toHaveCount(3, { timeout: 30_000 });
+  await expect(grid.getByText("A-2")).toBeVisible({ timeout: 30_000 });
 
   // What a column holds is behind its heading.
   await grid.getByRole("button", { name: "About status" }).click();
@@ -489,6 +489,64 @@ test("a page of an app names its help, and the app shows that page of the handbo
     sheet.frameLocator("iframe").getByRole("heading", { level: 1, name: "Refund an order" }),
   ).toBeVisible();
   await shot(page, "15-app-help");
+  await page.context().close();
+});
+
+test("a page is dragged to another folder, its details are a form, and a trigger says what it is for", async ({
+  browser,
+}) => {
+  test.setTimeout(120_000);
+  const page = await signedIn(browser);
+  const W = `/tenants/${made.tenant}/workspaces/${made.dev}`;
+  const at = `/t/${made.tenant}/workspaces/${made.dev}`;
+  await call(page, "PUT", `${W}/drafts/handbook/questions`, {
+    kind: "doc",
+    schemaVersion: 1,
+    body: { source: text("title: Questions", "What people ask.\n") },
+  });
+
+  await page.goto(`${at}/docs/handbook/questions`);
+  const tree = page.getByRole("tree", { name: "Pages" });
+  const dragged = tree.getByRole("treeitem", { name: /^Questions/ });
+  await expect(dragged).toBeVisible({ timeout: 30_000 });
+  await dragged.dragTo(tree.getByRole("treeitem", { name: /^Customer support/ }).first());
+  await expect(page.getByText("Moved to handbook/support/questions.")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`${at}/docs/handbook/support/questions$`));
+  await expect(page.getByRole("heading", { level: 2, name: "Questions" })).toBeVisible();
+  await shot(page, "16-dragged");
+
+  await page.getByRole("button", { name: "Edit" }).click();
+  await expect(page.locator(".monaco-editor").first()).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Page details" }).click();
+  const details = page.getByRole("region", { name: "Page details" });
+  await details.getByLabel(/^Description/).fill("What customers ask most.");
+  await details.getByLabel(/^Order/).fill("5");
+  await details.getByRole("button", { name: "Term" }).click();
+  await details.getByLabel("Term", { exact: true }).fill("SLA");
+  await details.getByLabel("Id", { exact: true }).fill("sla");
+  await details.getByLabel("What it means").fill("How fast we answer.");
+  // The form wrote the page's own source, and the preview is drawn from that.
+  await expect(page.locator(".monaco-editor .view-lines").first()).toContainText(
+    "description: What customers ask most.",
+  );
+  await expect(page.getByRole("region", { name: "The page as it will be served" })).toContainText(
+    "What customers ask most.",
+  );
+  await expect(page.getByText("This page would deploy as it is.")).toBeVisible();
+  await shot(page, "17-page-details", true);
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await expect(page.getByText(/^Saved as a draft/)).toBeVisible();
+  const saved = await call(page, "GET", `${W}/docs/page/handbook/support/questions`);
+  expect(saved.source).toContain("order: 5\n");
+  expect(saved.source).toContain("  - id: sla\n    term: SLA\n    short: How fast we answer.\n");
+  expect(saved.source).toContain("What people ask.");
+
+  await page.goto(`${at}/resources/new/trigger`);
+  const purpose = page.getByLabel(/^What it is for/);
+  await expect(purpose).toBeVisible({ timeout: 30_000 });
+  await purpose.fill("Takes feedback from the shop's site.");
+  await page.getByRole("button", { name: "About what it is for" }).click();
+  await shot(page, "18-trigger-description");
   await page.context().close();
 });
 

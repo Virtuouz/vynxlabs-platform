@@ -5,7 +5,7 @@ import { forgetHelp } from "../../help/content.ts";
 import { answer, show } from "../../testing.tsx";
 import { DocEditor } from "./DocEditor.tsx";
 import { Docs } from "./Docs.tsx";
-import { type DocsList, indexOf, resolvers, treeOf } from "./model.ts";
+import { type DocsList, indexOf, movedTo, resolvers, treeOf } from "./model.ts";
 
 configure({ asyncUtilTimeout: 5000 });
 
@@ -197,6 +197,34 @@ describe("the pages of a workspace", () => {
   });
 });
 
+describe("a page let go on a row of the tree", () => {
+  test("goes into that folder with its own name, or beside that page", () => {
+    expect(movedTo(list(), "handbook/faq", "dir:handbook/support")).toEqual({
+      to: "handbook/support/faq",
+    });
+    expect(movedTo(list(), "handbook/support/refunds", "app:help")).toEqual({
+      to: "handbook/refunds",
+    });
+    expect(movedTo(list(), "handbook/faq", "handbook/ops/closing/checklist")).toEqual({
+      to: "handbook/ops/closing/faq",
+    });
+  });
+
+  test("stays where it is when that is where it is, and says when the place is taken", () => {
+    expect(movedTo(list(), "handbook/faq", "app:help")).toBeUndefined();
+    expect(movedTo(list(), "handbook/faq", "handbook/index")).toBeUndefined();
+    const taken = list();
+    taken.pages.push(page("handbook/support/faq", "Support questions"));
+    expect(movedTo(taken, "handbook/faq", "dir:handbook/support")).toEqual({
+      problem: "There is a page at handbook/support/faq already.",
+    });
+  });
+
+  test("a page kept in the repository is the repository's to move", () => {
+    expect(movedTo(list(), "handbook/support/returns", "app:help")).toBeUndefined();
+  });
+});
+
 describe("the Documentation screen", () => {
   test("shows the first page, drawn, with the tree of pages beside it", async () => {
     docs();
@@ -232,6 +260,46 @@ describe("the Documentation screen", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(location.pathname).toBe(`${link}/docs/edit/handbook/support/refunds`);
+  });
+
+  test("a page dragged onto a folder is moved there as a draft, with the revision it had", async () => {
+    routes[`PUT /api/v1${root}/drafts/handbook/support/refunds`] = () => [200, { revision: 4 }];
+    docs("handbook/support/refunds");
+    const tree = await screen.findByRole("tree", { name: "Pages" });
+    const dragged = within(tree).getByRole("treeitem", { name: /^Refund an order/ });
+    const onto = within(tree).getByRole("treeitem", { name: /^Ops/ });
+    expect(dragged.getAttribute("draggable")).toBe("true");
+    // The repository's page cannot be picked up, and a folder is not a page.
+    expect(
+      within(tree)
+        .getByRole("treeitem", { name: /^Returns/ })
+        .getAttribute("draggable"),
+    ).toBeNull();
+    expect(onto.getAttribute("draggable")).toBeNull();
+    const dataTransfer = { setData: () => {}, effectAllowed: "", dropEffect: "" };
+    fireEvent.dragStart(dragged, { dataTransfer });
+    fireEvent.dragOver(onto, { dataTransfer });
+    fireEvent.drop(onto, { dataTransfer });
+    await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+    expect(sent("PUT")[0]?.url).toBe(`/api/v1${root}/drafts/handbook/support/refunds`);
+    expect(sent("PUT")[0]?.body).toMatchObject({
+      kind: "doc",
+      path: "handbook/ops/refunds",
+      revision: 3,
+      body: { source: sources["handbook/support/refunds"] },
+    });
+    // It was the page being read, so the reader follows it.
+    await waitFor(() => expect(location.pathname).toBe(`${link}/docs/handbook/ops/refunds`));
+  });
+
+  test("where pages cannot be changed, none can be dragged", async () => {
+    docs("handbook/faq", false);
+    const tree = await screen.findByRole("tree", { name: "Pages" });
+    expect(
+      within(tree)
+        .getByRole("treeitem", { name: /^Questions/ })
+        .getAttribute("draggable"),
+    ).toBeNull();
   });
 
   test("a page kept in the repository is read here and changed there", async () => {
@@ -410,6 +478,51 @@ describe("the page editor", () => {
     // The next save says the revision the first one gave.
     expect(sent("PUT")[1]?.body?.revision).toBe(4);
     expect(box.value).toBe(again);
+  });
+
+  test("the page's details are a form that writes its source, and leaves the rest as it was", async () => {
+    editor("handbook/support/refunds");
+    const box = await source();
+    expect(screen.queryByRole("region", { name: "Page details" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Page details" }));
+    const form = within(screen.getByRole("region", { name: "Page details" }));
+    expect((form.getByLabelText(/^Title/) as HTMLInputElement).value).toBe("Refund an order");
+    expect((form.getByLabelText(/^Topic/) as HTMLInputElement).value).toBe("support-refunds");
+    expect((form.getByLabelText("What it means") as HTMLInputElement).value).toBe(
+      "A return authorisation.",
+    );
+
+    fireEvent.change(form.getByLabelText(/^Title/), { target: { value: "Refunds" } });
+    fireEvent.change(form.getByLabelText(/^Description/), {
+      target: { value: "Full and partial." },
+    });
+    await waitFor(() => expect(box.value).toContain("title: Refunds\n"));
+    expect(box.value).toContain("description: Full and partial.\n");
+    // What the form did not touch is as it was written, the page under it too.
+    expect(box.value).toContain("  - id: rma\n    term: RMA\n    short: A return authorisation.");
+    expect(box.value).toContain("Ask for the :term[RMA]{id=rma}");
+
+    fireEvent.click(form.getByRole("button", { name: "Resource" }));
+    fireEvent.change(form.getByLabelText("Path"), { target: { value: "orders" } });
+    await waitFor(() => expect(box.value).toContain("about:\n  - table: orders\n"));
+    fireEvent.change(form.getByLabelText(/^Add this page's notes to/), {
+      target: { value: "data-tables" },
+    });
+    await waitFor(() => expect(box.value).toContain("extends:\n  - data-tables\n"));
+    fireEvent.click(form.getByRole("button", { name: "Remove RMA" }));
+    await waitFor(() => expect(box.value).not.toContain("terms:"));
+    // And it is still a page that would deploy.
+    expect(await screen.findByText("This page would deploy as it is.")).toBeTruthy();
+  });
+
+  test("details that cannot be read are mended in the source, not by the form", async () => {
+    editor("handbook/support/refunds");
+    const box = await source();
+    fireEvent.change(box, { target: { value: "---\ntitle: [unclosed\n---\n\nWords.\n" } });
+    fireEvent.click(screen.getByRole("button", { name: "Page details" }));
+    expect(
+      within(screen.getByRole("region", { name: "Page details" })).getByText(/cannot be read/),
+    ).toBeTruthy();
   });
 
   test("a new page is given a path a docs app serves, and starts from its title", async () => {

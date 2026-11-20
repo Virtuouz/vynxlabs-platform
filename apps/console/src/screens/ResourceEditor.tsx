@@ -12,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { FieldAbout } from "../help/FieldAbout.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
@@ -580,7 +581,7 @@ export function ResourceEditor({
                 ? {}
                 : { hint: "What a trigger is cannot be changed once it is saved. Make another." })}
               onChange={(type) => {
-                const kept = { script: text("script") };
+                const kept = { script: text("script"), description: text("description") };
                 setBody(
                   type === "event"
                     ? { type, ...kept, event: "" }
@@ -592,6 +593,17 @@ export function ResourceEditor({
               }}
             />
             {script}
+            <FieldAbout path="trigger.description" name="what it is for">
+              <TextField
+                name="description"
+                label="What it is for"
+                value={text("description")}
+                required={false}
+                maxLength={500}
+                disabled={readOnly}
+                onChange={(value) => change({ description: value })}
+              />
+            </FieldAbout>
             {body.type === "webhook" ? (
               <WebhookSettings
                 canRespond={false}
@@ -602,7 +614,14 @@ export function ResourceEditor({
                   label: one.name,
                 }))}
                 onChange={(trigger) => {
-                  setBody(tidy({ ...trigger, script: text("script"), enabled: body.enabled }));
+                  setBody(
+                    tidy({
+                      ...trigger,
+                      script: text("script"),
+                      enabled: body.enabled,
+                      description: text("description"),
+                    }),
+                  );
                   setDirty(true);
                 }}
               />
@@ -632,7 +651,14 @@ export function ResourceEditor({
               <FormDesigner
                 trigger={body as unknown as FormTrigger}
                 onChange={(trigger) => {
-                  setBody(tidy({ ...trigger, script: text("script"), enabled: body.enabled }));
+                  setBody(
+                    tidy({
+                      ...trigger,
+                      script: text("script"),
+                      enabled: body.enabled,
+                      description: text("description"),
+                    }),
+                  );
                   setDirty(true);
                 }}
               />

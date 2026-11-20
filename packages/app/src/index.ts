@@ -35,6 +35,7 @@ export {
   terms,
   totalOf,
 } from "./client.ts";
+export { type Help, HelpPanel, useHelp } from "./help.tsx";
 export {
   type Followed,
   type Query,

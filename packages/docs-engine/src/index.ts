@@ -3,9 +3,11 @@ export { type Manifest, manifestOf, type PageFile, packageOutput } from "./outpu
 export {
   type DocEntry,
   type DocIssue,
+  frontmatterOf,
   pagePath,
   type ReadOptions,
   readPage,
+  setFrontmatter,
   splitFrontmatter,
   titleOf,
 } from "./page.js";

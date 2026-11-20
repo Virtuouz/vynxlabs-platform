@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   ApiError,
   type AppContext,
   appContext,
+  HelpPanel,
   logoUrl,
   RunError,
   runScript,
@@ -413,4 +414,52 @@ test("an end user's groups and attributes come with who they are", async () => {
     },
   ];
   expect((await session()).principal.groups).toEqual(["a"]);
+});
+
+describe("help in an app", () => {
+  const answering = (topics: unknown[], status = 200) =>
+    vi.stubGlobal(
+      "fetch",
+      async () => new Response(JSON.stringify({ terms: [], resources: [], topics }), { status }),
+    );
+  const booking = (url: string) => ({
+    topic: "desk-booking",
+    page: { title: "Booking a visit", url, app: "handbook" },
+  });
+
+  test("a page with the topic opens beside the app, as its docs app serves it", async () => {
+    answering([booking(`${location.origin}/apps/fernhill/main/handbook/front-desk/booking`)]);
+    render(<HelpPanel topic="desk-booking" />);
+    const button = await screen.findByRole("button", { name: "Help" });
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(button);
+    const panel = screen.getByRole("complementary", { name: "Booking a visit" });
+    expect(panel.querySelector("iframe")?.getAttribute("src")).toBe(
+      `${location.origin}/apps/fernhill/main/handbook/front-desk/booking`,
+    );
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" }));
+    fireEvent.keyDown(globalThis as unknown as Window, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("complementary")).toBeNull());
+    expect(document.activeElement).toBe(button);
+  });
+
+  test("documentation served at another address is linked to, since it cannot be shown inside", async () => {
+    answering([booking("https://docs.fernhill.example/front-desk/booking")]);
+    render(<HelpPanel topic="desk-booking">How to book</HelpPanel>);
+    const link = await screen.findByRole("link", { name: "How to book" });
+    expect(link.getAttribute("href")).toBe("https://docs.fernhill.example/front-desk/booking");
+    expect(link.getAttribute("target")).toBe("_blank");
+  });
+
+  test("nothing is drawn when no page has the topic, the person may not read it, or it cannot be asked", async () => {
+    answering([]);
+    const { container, unmount } = render(<HelpPanel topic="desk-booking" />);
+    await act(async () => {});
+    expect(container.innerHTML).toBe("");
+    unmount();
+    answering([], 403);
+    const refused = render(<HelpPanel topic="desk-booking" />);
+    await act(async () => {});
+    expect(refused.container.innerHTML).toBe("");
+  });
 });

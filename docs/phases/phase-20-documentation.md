@@ -498,11 +498,23 @@ After M10 the instance was rebuilt from nothing and everything from M5 on was us
 - **The documentation's sets are kept** by `/terms` for as long as the workspace runs the bundle they were built from, since an app now asks on every page.
 - **A schedule's description** says what a description is for, as other fields do.
 
+#### Built after that, at the owner's word
+
+- **A page is dragged onto a folder.** In the tree of pages a page can be picked up and let go on an app, a folder or another page, and goes there with its own name, as a draft, as Move in its editor would put it. `Tree` in the kit takes `onMove`, `canDrag` and `canDrop`. A page kept in the repository cannot be picked up, and nothing can where the workspace is not a dev one. A drag is a pointer's way: Move in the editor is the keyboard's.
+- **A form for what the top of a page says**: "Page details" in the editor, with the title, description, order, topic, the terms the page defines, the resources it is about and the topics of the help it adds notes to. It writes the page's own source, so the source is still the one thing saved. `setFrontmatter` in the docs engine changes the keys it is given and leaves the rest as it was written: the other keys, their order, the comments, and the page under them. Lines that cannot be read are mended in the source, and the form says so.
+- **A trigger says what it is for**, on its form, with what the schema says of the field beside it. A webhook's and a form's own settings rewrote the whole trigger and would have dropped it: they keep it.
+- **A help panel for an app written as code**: `<HelpPanel topic="…" />` and `useHelp(topic)` in `@volvel/app`. A button that opens the page beside the app, as its docs app serves it. It draws nothing when no page has the topic or the person may not open it. Fernhill's front desk has one on its booking screen.
+
+#### Findings
+
+- **An app shows help inside itself only from its own address.** An app's policy lets it frame only where it is served, and a docs app lets itself be framed only from there. Where the documentation is at another address, a hostname of its own, the button opens the page in a new tab.
+- **The walk-through had passed by luck.** It counted a grid's rows, and a grid's filters are a row. It waits for a row it knows now.
+- **The help panel in a code app is tested without a browser.** Deploying an app of files needs a built repository, which the browser tests do not make. Its page, its framing and its absence are tested in `packages/app`.
+- 1,975 tests, and 7 in a browser.
+
 #### Still not built
 
-- Dragging a page to another folder, and a form for the frontmatter. The architecture put both off.
-- "What is this for" beside the fields of most hand-written forms. The descriptions are generated and `FieldAbout` shows them. It is on a schedule's form and the forms `SchemaForm` draws.
-- A help panel inside an app written as code. `helpUrl` gives the address.
+- "What is this for" beside the fields of most hand-written forms. It is on a schedule's and a trigger's forms and the forms `SchemaForm` draws.
 - The older browser tests were not run again. Their pictures predate the help button in the header and the ⓘ on headings, and each needs looking at before it is replaced.
 
 ### M11: the packages and the CLI can be published

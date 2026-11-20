@@ -33,7 +33,8 @@ The console has help beside every screen, and a workspace has documentation of i
 - A build, and every deploy, now refuses documentation that does not hold together: a link that leads nowhere, a term nobody defines, a page about a resource that is not there.
 - `description` on a table's columns, and on `defineSchedule`, `defineWebhook`, `defineEventTrigger` and `defineBinding`. A column's is shown on its heading in the console and in apps.
 - A page of an interface takes `help`, a topic of the documentation, and the app then offers that page as its help.
-- `@volvel/app`: `terms()` gives the workspace's glossary, what its tables and scripts are for, and the pages that go with them, as far as the person using the app may know. `helpUrl(topic)` gives a page's address.
+- `@volvel/app`: `terms()` gives the workspace's glossary, what its tables and scripts are for, and the pages that go with them, as far as the person using the app may know. `helpUrl(topic)` gives a page's address. `<HelpPanel topic="…" />` is a Help button that opens that page beside the app, and draws nothing for someone who may not read it.
+- In the console, a page is moved by dragging it onto a folder of the tree, and what its top says is a form, "Page details", that writes the page's own source.
 - New permissions: `doc:read` and `doc:write`. Whoever holds `doc:write` writes and deploys pages and nothing else. The built-in role `doc_writer` holds it.
 - An error's `code` is one of a published list, in the help under Reference, and keeps its meaning. A sign-in that fails still carries the sign-in library's own code.
 - A push through git sync writes a page as its Markdown file, and a pull reads one.

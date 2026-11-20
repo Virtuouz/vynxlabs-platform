@@ -14,6 +14,7 @@ import {
   FRONTMATTER_SCHEMA,
   findTerm,
   findTopic,
+  frontmatterOf,
   loadSearchIndex,
   manifestOf,
   packageOutput,
@@ -22,6 +23,7 @@ import {
   readPage,
   resolveAsset,
   resolveLink,
+  setFrontmatter,
   splitFrontmatter,
 } from "./index.js";
 
@@ -526,5 +528,45 @@ describe("a page checked as it is written, beside an index of the others", () =>
           path === "gone" ? false : path === "orders" ? true : undefined,
       }),
     ).toEqual(["1: about_unknown"]);
+  });
+});
+
+describe("a page's frontmatter, written by a form", () => {
+  const page =
+    "---\n# Kept by support.\ntitle: Refunds\norder: 20 # after returns\ntopic: refunds\n---\n\nAsk for the receipt.\n";
+
+  test("one key changes, and the rest stays as it was written", () => {
+    const next = setFrontmatter(page, { title: "Refund an order" });
+    expect(next).toBe(
+      "---\n# Kept by support.\ntitle: Refund an order\norder: 20 # after returns\ntopic: refunds\n---\n\nAsk for the receipt.\n",
+    );
+  });
+
+  test("a key given nothing is taken out, and a new one is added", () => {
+    const next = setFrontmatter(page, {
+      topic: "",
+      extends: ["data-tables"],
+      terms: [{ id: "rma", term: "RMA", short: "A return authorisation." }],
+      about: [],
+    }) as string;
+    expect(frontmatterOf(next)).toEqual({
+      title: "Refunds",
+      order: 20,
+      extends: ["data-tables"],
+      terms: [{ id: "rma", term: "RMA", short: "A return authorisation." }],
+    });
+    expect(next.endsWith("---\n\nAsk for the receipt.\n")).toBe(true);
+    // And what it wrote reads as a page.
+    expect(readPage("refunds", next).issues).toEqual([]);
+  });
+
+  test("a page with none is given one, and one that cannot be read is left alone", () => {
+    expect(setFrontmatter("Just words.\n", { title: "Words" })).toBe(
+      "---\ntitle: Words\n---\n\nJust words.\n",
+    );
+    expect(
+      setFrontmatter("---\ntitle: [unclosed\n---\n\nWords.\n", { title: "x" }),
+    ).toBeUndefined();
+    expect(frontmatterOf("---\ntitle: [unclosed\n---\n")).toBeUndefined();
   });
 });

@@ -32,6 +32,8 @@ export interface DocsApp {
   docs: string;
   /** The table its readers' answers to "Was this page helpful?" are kept in, when it asks. */
   feedback?: string;
+  /** False when the site is not served: its pages and the app are kept. Absent means served. */
+  published?: false;
 }
 
 /** The columns a table that keeps readers' answers needs, and of what type. */
@@ -47,7 +49,12 @@ export function docsApps(resources: readonly ResourceLike[]): DocsApp[] {
   return resources
     .filter((one) => one.kind === "app")
     .flatMap((one) => {
-      const body = one.body as { title?: unknown; docs?: unknown; feedback?: { table?: unknown } };
+      const body = one.body as {
+        title?: unknown;
+        docs?: unknown;
+        feedback?: { table?: unknown };
+        published?: unknown;
+      };
       const feedback = body.feedback?.table;
       return typeof body.docs === "string"
         ? [
@@ -56,6 +63,7 @@ export function docsApps(resources: readonly ResourceLike[]): DocsApp[] {
               title: typeof body.title === "string" ? body.title : one.path,
               docs: body.docs,
               ...(typeof feedback === "string" ? { feedback } : {}),
+              ...(body.published === false ? { published: false as const } : {}),
             },
           ]
         : [];

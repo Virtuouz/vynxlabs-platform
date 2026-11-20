@@ -11,12 +11,13 @@ import {
 } from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask, failureText, notify, takenText } from "../ask.tsx";
+import { failureText, takenText } from "../ask.tsx";
 import { FieldAbout } from "../help/FieldAbout.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
@@ -385,36 +386,17 @@ export function ResourceEditor({
                 />
               ) : null}
               {opened && state !== "new" ? (
-                <Button
-                  variant="danger"
+                <RemoveDraftButton
+                  root={root}
+                  kind={kind}
+                  path={opened}
+                  noun={about.noun}
+                  state={state}
                   disabled={busy}
-                  onClick={async () => {
-                    const draft = state === "draft";
-                    const sure = await ask.confirm({
-                      title: draft ? "Discard this draft?" : `Remove this ${about.noun}?`,
-                      text: draft
-                        ? `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`
-                        : "This saves a draft that removes it. Nothing changes until that draft is deployed.",
-                      action: draft ? "Discard" : "Remove",
-                      danger: true,
-                    });
-                    if (!sure) return;
-                    await (draft
-                      ? api.delete(`${root}/drafts/${opened}`)
-                      : api.put(`${root}/drafts/${opened}`, {
-                          kind,
-                          schemaVersion: 1,
-                          body: {},
-                          deleted: true,
-                        })
-                    ).then(
-                      () => navigate(`${link}/${draft ? "resources" : "changes"}`),
-                      notify.error,
-                    );
-                  }}
-                >
-                  {state === "draft" ? "Discard draft" : "Remove"}
-                </Button>
+                  onDone={(did) =>
+                    navigate(`${link}/${did === "discarded" ? "resources" : "changes"}`)
+                  }
+                />
               ) : null}
               <Button
                 variant="primary"

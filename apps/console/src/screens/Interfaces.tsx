@@ -4,6 +4,7 @@ import { api, useLoad } from "../api.ts";
 import { failureText, takenText } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago } from "../kit/format.ts";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
@@ -122,6 +123,26 @@ export function Interfaces({
               );
             },
           },
+          ...(editable
+            ? [
+                {
+                  header: "",
+                  cell: (row: Listed) => (
+                    <RemoveDraftButton
+                      root={root}
+                      kind="interface"
+                      path={row.path}
+                      noun="app"
+                      size="small"
+                      state={row.removing ? "removed" : row.deployed ? "deployed" : "draft"}
+                      also={row.app ? [{ kind: "app", path: row.app }] : []}
+                      then="The app's address stops serving it once that is deployed."
+                      onDone={() => list.reload()}
+                    />
+                  ),
+                },
+              ]
+            : []),
         ]}
       />
       <Dialog

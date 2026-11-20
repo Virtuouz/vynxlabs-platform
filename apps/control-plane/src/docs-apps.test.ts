@@ -1098,6 +1098,29 @@ describe("someone who writes documentation in the console, and is not a develope
     expect(after.tables).toEqual([{ path: "guide-site-feedback", state: "deployed" }]);
   });
 
+  test("a site is switched off and on with one setting of its app, which keeps its pages and what else the app says", async () => {
+    const body = { title: "Guide", docs: "guide", feedback: { table: "guide-site-feedback" } };
+    const off = await alice.put(`${devWs()}/drafts/guide-site`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: { ...body, published: false },
+    });
+    expect(off.status, JSON.stringify(off.body)).toBe(200);
+    const listed = (await alice.get(`${devWs()}/docs`)).body;
+    expect(listed.apps[0]).toMatchObject({
+      published: false,
+      drafted: true,
+      body: { ...body, published: false },
+    });
+    expect(listed.pages.length).toBeGreaterThan(0);
+    // Taking it back is discarding the draft: it is served as it was.
+    expect((await alice.delete(`${devWs()}/drafts/guide-site`)).status).toBe(204);
+    expect((await alice.get(`${devWs()}/docs`)).body.apps[0]).toMatchObject({
+      published: true,
+      drafted: false,
+    });
+  });
+
   test("a production workspace takes no page from the console", async () => {
     const answer = await alice.put(`${ws()}/drafts/handbook/extra`, {
       kind: "doc",
@@ -1230,5 +1253,34 @@ describe("a docs app that asks its readers whether a page helped", () => {
         })
       ).statusCode,
     ).toBe(405);
+  });
+});
+
+describe("a docs site that is switched off", () => {
+  const withHelp = (more: object) =>
+    handbook().map((one) =>
+      one.kind === "app" && one.path === "help"
+        ? manifest("app", "help", { title: "Shop handbook", docs: "handbook", ...more })
+        : one,
+    );
+
+  test("is not served, and the app that is not switched off still is", async () => {
+    const deployed = await deploy(withHelp({ published: false }));
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect((await browser().get(HELP)).status).toBe(404);
+    expect((await browser().get(`${HELP}support/refunds`)).status).toBe(404);
+    // Its pages and its app are kept: the workspace still lists the app.
+    const apps = (await alice.get(`${ws()}/apps`)).body.items;
+    expect(apps.map((app: Any) => app.path)).toContain("help");
+    // The staff manual, which is not switched off, is still there for members.
+    expect((await alice.get(`${ws()}/docs`)).body.apps.map((app: Any) => app.path)).toContain(
+      "help",
+    );
+  });
+
+  test("is served again at the next deploy once it is switched on", async () => {
+    const deployed = await deploy(withHelp({ published: true }));
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect((await browser().get(HELP)).status).toBe(200);
   });
 });

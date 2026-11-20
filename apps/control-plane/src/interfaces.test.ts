@@ -776,6 +776,8 @@ describe("someone who maintains apps made in the console, and is not a developer
       deployed: true,
       draft: true,
       removing: true,
+      // The app that served it is still named, so taking the removal back finds it.
+      app: "stock-app",
     });
     const removed = await mona.post(`${devWs()}/changes/deploy`, {
       paths: ["screens/stock", "stock-app"],

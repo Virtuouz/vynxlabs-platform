@@ -54,12 +54,14 @@ import { useBrand } from "../../kit/brand.tsx";
 import { listOf } from "../../kit/format.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
+import { removeWords } from "../../kit/RemoveDraftButton.tsx";
 import { Code } from "../../kit/status.tsx";
 import { navigate } from "../../router.tsx";
 import {
   appFor,
   type DocPage,
   type DocRow,
+  type DocsApp,
   type DocsList,
   filterRows,
   findRow,
@@ -191,43 +193,19 @@ export function Docs({
   };
 
   /** Saves a plan's drafts as one, and offers to take them back. */
-  const apply = async (
+  const apply = (
     plan: Plan,
     done: string,
-    options: { undo?: boolean; after?: (changes: Change[]) => void } = {},
-  ): Promise<string | undefined> => {
-    if ("problem" in plan) return plan.problem;
-    if (plan.changes.length === 0) return undefined;
-    const before = sourcesOf(data);
-    try {
-      await send(root, plan.changes, data);
-      list.reload();
-      options.after?.(plan.changes);
-      notify.success(
-        done,
-        options.undo === false
-          ? {}
-          : {
-              action: {
-                label: "Undo",
-                onClick: async () => {
-                  try {
-                    const now = await api.get<DocsList>(`${root}/docs`);
-                    await send(root, inverseOf(before, plan.changes), now);
-                    list.reload();
-                    notify.info("Undone.");
-                  } catch (error) {
-                    notify.error(error);
-                  }
-                },
-              },
-            },
-      );
-      return undefined;
-    } catch (error) {
-      return failureText(error);
-    }
-  };
+    options: Omit<ApplyOptions, "reload" | "back"> & { follows?: boolean } = {},
+  ) =>
+    applyPlan(root, data, plan, done, {
+      ...options,
+      reload: list.reload,
+      // Undoing a move puts the address back with the page, as doing it took it along.
+      ...(options.follows
+        ? { back: (forward: Change[], inverse: Change[]) => followBack(forward, inverse) }
+        : {}),
+    });
   const report = (problem: string | undefined) => {
     if (problem) notify.error(new Error(problem));
   };
@@ -236,6 +214,13 @@ export function Docs({
   const follow = (changes: Change[]) => {
     const own = changes.find((change) => change.path === chosen?.path && change.to);
     if (own?.to) navigate(`${link}/docs/${own.to}`, { replace: true });
+  };
+
+  /** Where the chosen page goes back to when a move of it is undone. */
+  const followBack = (forward: readonly Change[], inverse: readonly Change[]) => {
+    const own = forward.find((change) => change.path === chosen?.path && change.to);
+    const back = inverse.find((change) => change.path === own?.to && change.to);
+    if (back?.to) navigate(`${link}/docs/${back.to}`, { replace: true });
   };
 
   const move = (dragged: string, target: string, position: DropPosition) => {
@@ -256,6 +241,7 @@ export function Docs({
     const sameFolder = from.split("/").slice(0, -1).join("/") === place.folder;
     void apply(plan, sameFolder ? `Put ${what} in its new place.` : `Moved ${what} into ${into}.`, {
       after: follow,
+      follows: true,
     }).then(report);
   };
 
@@ -287,24 +273,128 @@ export function Docs({
   };
 
   const remove = async (row: DocRow) => {
-    const count = row.kind === "folder" ? countPages(row) : 1;
-    const sure = await ask.typeToConfirm({
-      title: row.kind === "folder" ? `Delete the folder ${row.title}?` : `Delete ${row.title}?`,
-      text:
-        row.kind === "folder"
-          ? `Its ${count} ${count === 1 ? "page goes" : "pages go"} with it, once this is deployed. Readers of the old addresses are told there is no page there.`
-          : "It is gone once this is deployed.",
-      expected: row.name,
-      action: "Delete",
+    report(
+      await deletePage({
+        root,
+        data,
+        reload: list.reload,
+        path: row.path,
+        title: row.title,
+        name: row.name,
+        folder: row.kind === "folder" ? { pages: countPages(row) } : undefined,
+      }),
+    );
+  };
+
+  /** Saves the app of a site with one setting changed, and offers to put it back. */
+  const changeSite = async (site: DocsApp, body: Record<string, unknown>, done: string) => {
+    const put = (to: Record<string, unknown>) =>
+      api.put(`${root}/drafts/${site.path}`, { kind: "app", schemaVersion: 1, body: to });
+    try {
+      await put(body);
+      list.reload();
+      notify.success(done, {
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            try {
+              await put(site.body);
+              list.reload();
+              notify.info("Undone.");
+            } catch (error) {
+              notify.error(error);
+            }
+          },
+        },
+      });
+    } catch (error) {
+      notify.error(error);
+    }
+  };
+
+  /** The switch on a site: off stops serving it and keeps its pages and its app; on serves it again. */
+  const switchPublishing = async (site: DocsApp, on: boolean) => {
+    const sure = await ask.confirm({
+      title: on ? `Publish ${site.title} again?` : `Stop publishing ${site.title}?`,
+      text: on
+        ? "It is served again once this is deployed. Its pages and its address are as they were."
+        : "Once this is deployed, readers are told there is nothing at its address. Its pages and its app are kept, and it can be published again.",
+      action: on ? "Publish again" : "Stop publishing",
+      danger: !on,
+    });
+    if (!sure) return;
+    const { published: _was, ...rest } = site.body;
+    await changeSite(
+      site,
+      on ? rest : { ...rest, published: false },
+      on
+        ? `${site.title} will be served again when you deploy.`
+        : `${site.title} will stop being served when you deploy.`,
+    );
+  };
+
+  const turnOffFeedback = async (site: DocsApp) => {
+    const sure = await ask.confirm({
+      title: `Turn off page feedback on ${site.title}?`,
+      text: `Its pages stop asking readers whether they helped, once this is deployed. The table ${site.feedback} and the answers in it are kept.`,
+      action: "Turn off",
+    });
+    if (!sure) return;
+    const { feedback: _table, ...rest } = site.body;
+    await changeSite(site, rest, `${site.title} will stop asking its readers when you deploy.`);
+  };
+
+  /** Removing the app of a site: the pages stay, and the site stops being served. */
+  const removeSiteApp = async (site: DocsApp) => {
+    const sure = await ask.confirm({
+      title: `Remove the app of ${site.title}?`,
+      text: site.deployed
+        ? "The site stops being served once this is deployed, and readers are told there is nothing at its address. Its pages stay here, and it can be published again."
+        : "It was never deployed, so nothing is being served. Its pages stay here.",
+      action: "Remove",
       danger: true,
     });
     if (!sure) return;
-    report(
-      await apply(
-        planDelete(sourcesOf(data), row.path),
-        `${row.title} will be deleted when you deploy.`,
-      ),
-    );
+    try {
+      if (site.deployed)
+        await api.put(`${root}/drafts/${site.path}`, {
+          kind: "app",
+          schemaVersion: 1,
+          body: {},
+          deleted: true,
+        });
+      else await api.delete(`${root}/drafts/${site.path}`);
+      list.reload();
+      notify.success(`${site.title} will stop being served when you deploy.`, {
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            try {
+              if (site.deployed) await api.delete(`${root}/drafts/${site.path}`);
+              else
+                await api.put(`${root}/drafts/${site.path}`, {
+                  kind: "app",
+                  schemaVersion: 1,
+                  body: site.body,
+                  create: true,
+                });
+              list.reload();
+              notify.info("Undone.");
+            } catch (error) {
+              notify.error(error);
+            }
+          },
+        },
+      });
+    } catch (error) {
+      notify.error(error);
+    }
+  };
+
+  /** Throws away the draft that removes a page: it stays as it was last deployed. */
+  const keep = async (page: DocPage) => {
+    const kept = await keepPage(root, page);
+    if (kept) list.reload();
   };
 
   const duplicate = async (row: DocRow) => {
@@ -324,6 +414,7 @@ export function Docs({
     commitRename: async (row, next) =>
       apply(planRename(sourcesOf(data), row.path, next), `Renamed ${row.title}.`, {
         after: follow,
+        follows: true,
       }),
     commitNew: async (kind, parent, next) => {
       const plan =
@@ -340,6 +431,7 @@ export function Docs({
         },
       );
     },
+    onKeep: (page) => void keep(page),
     menu: (row) => [
       ...(row.kind === "folder"
         ? [
@@ -382,6 +474,42 @@ export function Docs({
               detail: "Ask readers whether a page helped",
               icon: <ThumbsUp aria-hidden size={14} />,
               onSelect: () => setAsking(row),
+            },
+          ]
+        : []),
+      ...(row.site?.feedback
+        ? [
+            {
+              label: "Turn off page feedback…",
+              separated: true,
+              detail: "Stop asking readers",
+              icon: <ThumbsUp aria-hidden size={14} />,
+              onSelect: () => void turnOffFeedback(row.site as DocsApp),
+            },
+          ]
+        : []),
+      ...(row.site
+        ? [
+            row.site.published
+              ? {
+                  label: "Stop publishing…",
+                  separated: !row.site.feedback,
+                  detail: "Keeps its pages and its app",
+                  icon: <Globe aria-hidden size={14} />,
+                  onSelect: () => void switchPublishing(row.site as DocsApp, false),
+                }
+              : {
+                  label: "Publish again…",
+                  separated: !row.site.feedback,
+                  detail: "Served again once deployed",
+                  icon: <Globe aria-hidden size={14} />,
+                  onSelect: () => void switchPublishing(row.site as DocsApp, true),
+                },
+            {
+              label: "Remove the site's app…",
+              detail: "Stops serving it; the pages stay",
+              icon: <Globe aria-hidden size={14} />,
+              onSelect: () => void removeSiteApp(row.site as DocsApp),
             },
           ]
         : []),
@@ -514,6 +642,7 @@ export function Docs({
               rows={rows}
               page={chosen}
               editable={editable}
+              reload={list.reload}
             />
           ) : path ? (
             <Notice tone="attention">There is no page at {path}. Choose one from the list.</Notice>
@@ -531,7 +660,7 @@ export function Docs({
           const problem = await apply(
             planMove(sourcesOf(data), moving.path, { folder }),
             `Moved ${moving.title} into ${findRow(rows, folderId(folder))?.title ?? folder}.`,
-            { after: follow },
+            { after: follow, follows: true },
           );
           if (!problem) setMoving(undefined);
           return problem;
@@ -573,12 +702,30 @@ export function Docs({
                   path: site.path,
                   kind: "app",
                   schemaVersion: 1,
-                  body: { title: site.title, docs: site.docs, feedback: { table } },
+                  body: { ...site.body, feedback: { table } },
                 },
               ],
             });
             list.reload();
-            notify.success(`${site.title} will ask its readers when you deploy.`);
+            notify.success(`${site.title} will ask its readers when you deploy.`, {
+              action: {
+                label: "Undo",
+                onClick: async () => {
+                  try {
+                    await api.delete(`${root}/drafts/${table}`);
+                    await api.put(`${root}/drafts/${site.path}`, {
+                      kind: "app",
+                      schemaVersion: 1,
+                      body: site.body,
+                    });
+                    list.reload();
+                    notify.info("Undone.");
+                  } catch (error) {
+                    notify.error(error);
+                  }
+                },
+              },
+            });
             setAsking(undefined);
             return undefined;
           } catch (error) {
@@ -605,7 +752,21 @@ export function Docs({
               ],
             });
             list.reload();
-            notify.success(`${publishing.title} will be published as a site when you deploy.`);
+            const made = publishing;
+            notify.success(`${made.title} will be published as a site when you deploy.`, {
+              action: {
+                label: "Undo",
+                onClick: async () => {
+                  try {
+                    await api.delete(`${root}/drafts/${address}`);
+                    list.reload();
+                    notify.info("Undone.");
+                  } catch (error) {
+                    notify.error(error);
+                  }
+                },
+              },
+            });
             setPublishing(undefined);
             return undefined;
           } catch (error) {
@@ -634,6 +795,116 @@ async function send(root: string, changes: readonly Change[], list: DocsList) {
   });
 }
 
+/** What applying a plan does besides saving it. */
+export interface ApplyOptions {
+  undo?: boolean;
+  after?: (changes: Change[]) => void;
+  /** Called once an undo has put the pages back, with what was done and what undid it. */
+  back?: (forward: Change[], inverse: Change[]) => void;
+  reload: () => void;
+}
+
+/**
+ * Saves a plan's drafts as one, and offers to take them back with Undo. The
+ * one place a change to the pages is made, whether from the tree or the editor.
+ */
+export async function applyPlan(
+  root: string,
+  data: DocsList,
+  plan: Plan,
+  done: string,
+  options: ApplyOptions,
+): Promise<string | undefined> {
+  if ("problem" in plan) return plan.problem;
+  if (plan.changes.length === 0) return undefined;
+  const before = sourcesOf(data);
+  try {
+    await send(root, plan.changes, data);
+    options.reload();
+    options.after?.(plan.changes);
+    notify.success(
+      done,
+      options.undo === false
+        ? {}
+        : {
+            action: {
+              label: "Undo",
+              onClick: async () => {
+                try {
+                  const now = await api.get<DocsList>(`${root}/docs`);
+                  const inverse = inverseOf(before, plan.changes);
+                  await send(root, inverse, now);
+                  options.reload();
+                  options.back?.(plan.changes, inverse);
+                  notify.info("Undone.");
+                } catch (error) {
+                  notify.error(error);
+                }
+              },
+            },
+          },
+    );
+    return undefined;
+  } catch (error) {
+    return failureText(error);
+  }
+}
+
+/**
+ * Deletes a page or a folder: the same words, the same asking to type the name,
+ * and the same Undo wherever it is done from. A page is gone once this is deployed.
+ */
+export async function deletePage(options: {
+  root: string;
+  data: DocsList;
+  reload: () => void;
+  path: string;
+  title: string;
+  name: string;
+  /** Set for a folder: how many pages it holds. */
+  folder: { pages: number } | undefined;
+  /** Called once it is saved, as the editor leaves the page that is gone. */
+  after?: () => void;
+}): Promise<string | undefined> {
+  const { folder } = options;
+  const sure = await ask.typeToConfirm({
+    title: folder ? `Delete the folder ${options.title}?` : `Delete ${options.title}?`,
+    text: folder
+      ? `Its ${folder.pages} ${folder.pages === 1 ? "page goes" : "pages go"} with it, once this is deployed. Readers of the old addresses are told there is no page there.`
+      : "It is gone once this is deployed.",
+    expected: options.name,
+    action: "Delete",
+    danger: true,
+  });
+  if (!sure) return undefined;
+  return applyPlan(
+    options.root,
+    options.data,
+    planDelete(sourcesOf(options.data), options.path),
+    `${options.title} will be deleted when you deploy.`,
+    { reload: options.reload, ...(options.after ? { after: options.after } : {}) },
+  );
+}
+
+/** Says first what keeping does, then throws away the draft that removes a page. */
+export async function keepPage(root: string, page: Pick<DocPage, "path" | "title">) {
+  const words = removeWords("removed", "page");
+  const sure = await ask.confirm({
+    title: `Keep ${page.title}?`,
+    text: words.text,
+    action: words.action,
+  });
+  if (!sure) return false;
+  try {
+    await api.delete(`${root}/drafts/${page.path}`);
+    notify.success(`${page.title} is kept.`);
+    return true;
+  } catch (error) {
+    notify.error(error);
+    return false;
+  }
+}
+
 function everyMovable(row: DocRow): boolean {
   if (row.kind === "page") return movable(row.page);
   return (row.page === undefined || movable(row.page)) && (row.children ?? []).every(everyMovable);
@@ -658,6 +929,8 @@ function toNodes(options: {
     next: { title: string; name: string },
   ) => Promise<string | undefined>;
   menu: (row: DocRow) => Parameters<typeof Menu>[0]["items"];
+  /** Throws away the draft that removes a page. */
+  onKeep: (page: DocPage) => void;
 }): TreeNode[] {
   const { editing } = options;
   const newRow = (parent: string): TreeNode[] => {
@@ -709,7 +982,7 @@ function toNodes(options: {
             trailing: (
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-action/50 px-1.5 text-meta text-action">
                 <Globe aria-hidden size={14} />
-                Site
+                {row.site.published ? "Site" : "Site, not published"}
               </span>
             ),
           }
@@ -739,6 +1012,23 @@ function toNodes(options: {
                   items={options.menu(row)}
                 />
               </>
+            ),
+          }
+        : {}),
+      ...(options.editable && !folder && row.page?.state === "removed" && !row.page.file
+        ? {
+            actions: (
+              <button
+                type="button"
+                aria-label={`Keep ${row.title}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (row.page) options.onKeep(row.page);
+                }}
+                className="inline-flex h-6 items-center rounded-inner px-1.5 text-meta text-action hover:bg-surface"
+              >
+                Keep
+              </button>
             ),
           }
         : {}),
@@ -1132,6 +1422,7 @@ function Reader({
   rows,
   page,
   editable,
+  reload,
 }: {
   root: string;
   link: string;
@@ -1141,6 +1432,7 @@ function Reader({
   rows: readonly DocRow[];
   page: DocPage;
   editable: boolean;
+  reload: () => void;
 }) {
   const product = useProduct();
   const brand = useBrand();
@@ -1256,7 +1548,21 @@ function Reader({
           </Notice>
         ) : null}
         {page.state === "removed" ? (
-          <Notice tone="attention">
+          <Notice
+            tone="attention"
+            action={
+              editable && !page.file ? (
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    if (await keepPage(root, page)) reload();
+                  }}
+                >
+                  Keep this page
+                </Button>
+              ) : undefined
+            }
+          >
             A draft removes this page. It is gone once that is deployed.
           </Notice>
         ) : null}

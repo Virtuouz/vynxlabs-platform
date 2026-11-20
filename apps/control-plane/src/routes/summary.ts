@@ -359,6 +359,8 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("flow_run.status", "=", "running")
             .where("step_run.status", "=", "waiting")
             .where(sql<boolean>`step_run.detail ? 'title'`)
+            // As the tenant's queue lists them: a step that surfaces its approval to the tenant.
+            .where(sql<boolean>`step_run.detail ->> 'surface' = 'tenant'`)
             .execute();
           let mine = 0;
           for (const row of rows) {
@@ -387,6 +389,8 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   .where("flow_run.status", "=", "running")
                   .where("step_run.status", "=", "waiting")
                   .where(sql<boolean>`step_run.detail ? 'title'`)
+                  // The tenant counts what its queue lists, so the count and the queue agree.
+                  .where(sql<boolean>`step_run.detail ->> 'surface' = 'tenant'`)
                   .executeTakeFirst(),
               )
             : null,

@@ -583,3 +583,103 @@ test("a connected data source is changed from what it is, and the stored passwor
     }),
   );
 });
+
+/** An orders table with a reference to customers and a file, and its first row open in the inspector. */
+function openOrderWithCustomerAndFile(row: Record<string, unknown>) {
+  const table = orders("ui");
+  const extra = (name: string, type: string, references: string | null) => ({
+    name,
+    type,
+    required: false,
+    unique: false,
+    default: null,
+    references,
+    status: "active",
+    held: null,
+  });
+  (table.columns as unknown[]).push(
+    extra("customer", "reference", "customers"),
+    extra("attachment", "file", null),
+  );
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`GET /api/v1${root}/tables/customers`] = () => [200, { display: "name" }];
+  routes[`GET /api/v1${root}/rows/orders`] = () => [
+    200,
+    { items: [{ ...rows[0], customer: null, attachment: null, ...row }], nextCursor: null },
+  ];
+  history.replaceState(history.state, "", "?row=r1");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+}
+
+test("a reference is found by typing: the server is asked for the rows whose name has what was typed", async () => {
+  const everyone = Array.from({ length: 50 }, (_, n) => ({ id: `c${n}`, name: `Customer ${n}` }));
+  routes[`GET /api/v1${root}/rows/customers`] = (_body, url) => {
+    const filter = url.searchParams.get("filter");
+    return filter
+      ? [200, { items: [{ id: "c900", name: "Zelda Corp" }], nextCursor: null }]
+      : [200, { items: everyone, nextCursor: "NTA" }];
+  };
+  openOrderWithCustomerAndFile({});
+  const box = await screen.findByRole("combobox");
+  // The first 50 are asked for, and there are more.
+  await screen.findByText(/Type to find more/);
+  const first = calls.find((call) => call.url.includes("/rows/customers"));
+  expect(new URL(first?.url ?? "", "http://x").searchParams.get("limit")).toBe("50");
+
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: "Zel" } });
+  await waitFor(() => {
+    const found = calls.filter(
+      (call) => call.url.includes("/rows/customers") && call.url.includes("filter="),
+    );
+    expect(found.length).toBeGreaterThan(0);
+    const sent = new URL(found.at(-1)?.url ?? "", "http://x").searchParams;
+    expect(JSON.parse(sent.get("filter") ?? "null")).toEqual({
+      column: "name",
+      op: "contains",
+      value: "Zel",
+    });
+  });
+  fireEvent.click(await screen.findByRole("option", { name: "Zelda Corp" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Save row" }));
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PATCH")?.body).toEqual({ customer: "c900" }),
+  );
+});
+
+test("a file in the inspector is replaced and removed after asking, and the old one is said to stay in history", async () => {
+  routes[`POST /api/v1${root}/files`] = () => [201, { id: "f2", name: "new.txt" }];
+  routes[`PATCH /api/v1${root}/row/r1/orders`] = (body) => [
+    200,
+    { ...rows[0], ...(body as object) },
+  ];
+  openOrderWithCustomerAndFile({ attachment: "f1" });
+  const input = (await screen.findByLabelText("New file for attachment")) as HTMLInputElement;
+  const file = new File(["hello"], "new.txt", { type: "text/plain" });
+  fireEvent.change(input, { target: { files: [file] } });
+  const said = await answer("Replace");
+  expect(said).toMatch(/old file stays in this row's history/);
+  await waitFor(() => {
+    expect(
+      calls.some((call) => call.method === "POST" && call.url.includes("/files?name=new.txt")),
+    ).toBe(true);
+    expect(calls.find((call) => call.method === "PATCH")?.body).toEqual({ attachment: "f2" });
+  });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+  expect(await answer("Remove")).toMatch(/old file stays in this row's history/);
+  await waitFor(() =>
+    expect(calls.filter((call) => call.method === "PATCH").at(-1)?.body).toEqual({
+      attachment: null,
+    }),
+  );
+});
+
+test("a removal that is not confirmed changes nothing", async () => {
+  openOrderWithCustomerAndFile({ attachment: "f1" });
+  fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+  await answer("Cancel");
+  await waitFor(() => expect(screen.queryByText(/Remove the file from/)).toBeNull());
+  expect(calls.some((call) => call.method === "PATCH")).toBe(false);
+});

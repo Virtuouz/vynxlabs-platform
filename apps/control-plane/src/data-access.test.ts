@@ -5,6 +5,7 @@ import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { pruneOnce } from "./kernel/retention.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 const PASSWORD = "a-good-long-password";
@@ -580,6 +581,68 @@ describe("files", () => {
     });
     expect(done.output.attachment).toBe(done.output.id);
     expect((await alice.get(`${ws()}/files/${done.output.id}`)).body.sizeBytes).toBe(9);
+  });
+
+  test("a replaced or removed file stays while the row's history does, and goes when that history has run out", async () => {
+    const upload = async (name: string) => {
+      const made = await alice.upload(`${ws()}/files?name=${name}`, name, "text/plain");
+      return made.body.id as string;
+    };
+    const keyOf = async (id: string) =>
+      (
+        await t.db
+          .selectFrom("file")
+          .select("storage_key")
+          .where("id", "=", id)
+          .executeTakeFirstOrThrow()
+      ).storage_key;
+    const first = await upload("first.txt");
+    const second = await upload("second.txt");
+    const row = (await alice.post(`${ws()}/rows/tasks`, { title: "Kept", attachment: first })).body
+      .items[0];
+    const at = `${ws()}/row/${row.id}/tasks`;
+
+    // Replaced: the row names the new file, and the old one is still there.
+    expect((await alice.patch(at, { attachment: second })).body.attachment).toBe(second);
+    expect((await alice.get(`${ws()}/files/${first}`)).status).toBe(200);
+    await t.kernel.storage.get(await keyOf(first));
+    // Removed: the row names none, and the second is kept as well.
+    expect((await alice.patch(at, { attachment: null })).body.attachment).toBeNull();
+    expect((await alice.get(`${ws()}/files/${second}`)).status).toBe(200);
+    const notes = await t.db
+      .selectFrom("row_file_history")
+      .select(["file_id", "row_id", "column_name"])
+      .where("file_id", "in", [first, second])
+      .execute();
+    expect(notes.map((note) => note.file_id).sort()).toEqual([first, second].sort());
+    expect(notes[0]).toMatchObject({ row_id: row.id, column_name: "attachment" });
+
+    // A pass finds the history still within what is kept: nothing goes.
+    await pruneOnce(t.kernel);
+    expect((await alice.get(`${ws()}/files/${first}`)).status).toBe(200);
+
+    // The note of the first file runs out, and the file goes with it. The second stays.
+    const firstKey = await keyOf(first);
+    await t.db
+      .updateTable("row_file_history")
+      .set({ replaced_at: new Date(Date.now() - 500 * 86_400_000) })
+      .where("file_id", "=", first)
+      .execute();
+    const pruned = await pruneOnce(t.kernel);
+    expect(pruned !== "busy" && pruned.files).toBe(1);
+    expect((await alice.get(`${ws()}/files/${first}`)).status).toBe(404);
+    await expect(t.kernel.storage.get(firstKey)).rejects.toThrow();
+    expect((await alice.get(`${ws()}/files/${second}`)).status).toBe(200);
+
+    // A file named by a row again is no longer noted, so it does not go.
+    expect((await alice.patch(at, { attachment: second })).body.attachment).toBe(second);
+    expect(
+      await t.db
+        .selectFrom("row_file_history")
+        .select("id")
+        .where("file_id", "=", second)
+        .execute(),
+    ).toEqual([]);
   });
 
   test("a deleted file is gone from the list and from storage", async () => {

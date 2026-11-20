@@ -22,7 +22,7 @@ import {
   ValueChip,
 } from "@volvel/ui";
 import { Download, Ellipsis } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
@@ -465,6 +465,7 @@ function RowsBrowser(props: RowsBrowserProps & { fill?: boolean }) {
               columns={columns}
               editable={canChange}
               rowsPath={props.rowsPath}
+              filesPath={props.filesPath}
               onSave={(values) => saveRow(open, values)}
               onDirty={(now) => {
                 unsaved.current = now;
@@ -572,12 +573,16 @@ function BooleanField({
   );
 }
 
-/** How many rows of the table a reference points to are offered by name. */
-const OFFERED = 200;
+/** How many rows of the table a reference points to are offered by name, before the typing. */
+const OFFERED = 50;
+/** How long after the last key what is typed is sent to the server. */
+const TYPING_MS = 250;
 
 /**
  * A reference column: the row it points to is chosen by what its table says stands for a row,
- * as the grid shows it, and the ID is not typed. Where the table cannot be read, the ID is.
+ * as the grid shows it, and the ID is not typed. What is typed is sent to the server, which
+ * finds the rows whose name contains it, so a row past the first page can be found. Where the
+ * table cannot be read, the ID is typed.
  */
 function ReferenceField({
   column,
@@ -595,8 +600,40 @@ function ReferenceField({
   const target = column.references ?? "";
   const root = rowsPath.includes("/rows/") ? rowsPath.split("/rows/")[0] : undefined;
   const table = useLoad<{ display?: string | null }>(root ? `${root}/tables/${target}` : null);
+  const display = table.data?.display ?? undefined;
+  const [typed, setTyped] = useState("");
+  const [sent, setSent] = useState("");
+  useEffect(() => {
+    if (typed === sent) return;
+    const timer = setTimeout(() => setSent(typed), TYPING_MS);
+    return () => clearTimeout(timer);
+  }, [typed, sent]);
+  const filter =
+    display && sent
+      ? `&filter=${encodeURIComponent(JSON.stringify({ column: display, op: "contains", value: sent }))}`
+      : "";
   const rows = useLoad<{ items: DataRow[]; nextCursor: string | null }>(
-    root && table.data ? `${root}/rows/${target}?limit=${OFFERED}` : null,
+    root && table.data ? `${root}/rows/${target}?limit=${OFFERED}${filter}` : null,
+  );
+  const labelOf = (row: DataRow) => {
+    const named = display ? row[display] : undefined;
+    return named === undefined || named === null ? String(row.id) : String(named);
+  };
+  // The same list until the server answers again: a list that changes under the box resets what is typed in it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: labelOf follows display
+  const options = useMemo(
+    () => (rows.data?.items ?? []).map((row) => ({ value: String(row.id), label: labelOf(row) })),
+    [rows.data, display],
+  );
+  const held = value !== "" && !options.some((one) => one.value === value);
+  // The row now chosen is shown by its name even when it is not among those listed.
+  const heldRow = useLoad<DataRow>(
+    root && table.data && held ? `${root}/row/${value}/${target}` : null,
+  );
+  const heldLabel = heldRow.data ? labelOf(heldRow.data) : value;
+  const offered = useMemo(
+    () => (held ? [{ value, label: heldLabel }, ...options] : options),
+    [held, value, heldLabel, options],
   );
   if (!root || table.error || rows.error) {
     return (
@@ -611,27 +648,108 @@ function ReferenceField({
       />
     );
   }
-  const display = table.data?.display ?? undefined;
-  const options = (rows.data?.items ?? []).map((row) => {
-    const id = String(row.id);
-    const named = display ? row[display] : undefined;
-    return { value: id, label: named === undefined || named === null ? id : String(named) };
-  });
-  const held = value && !options.some((one) => one.value === value);
+  const chosen = options.find((one) => one.value === value)?.label ?? heldLabel;
   return (
     <ComboboxField
       label={column.name}
-      options={held ? [...options, { value, label: value }] : options}
+      options={offered}
       value={value || undefined}
       error={error}
       hint={
         rows.data?.nextCursor
-          ? `A row of ${target}. The first ${OFFERED} are listed: type to narrow them.`
+          ? `A row of ${target}. Type to find more.`
           : `A row of ${target}${column.required ? "" : ", optional"}`
       }
       placeholder={rows.data ? "Choose a row" : "Loading…"}
       onChange={(next) => onChange(next ?? "")}
+      // Choosing a row puts its name in the box: that is not a search for it.
+      {...(display ? { onSearch: (text: string) => setTyped(text === chosen ? "" : text) } : {})}
     />
+  );
+}
+
+/**
+ * The file in a file column, replaced or removed from the inspector. Each is asked about first,
+ * and says that the old file stays in the row's history, so nothing is lost by saying yes.
+ */
+function FileField({
+  column,
+  value,
+  filesPath,
+  editable,
+  onSave,
+}: {
+  column: RowColumn;
+  value: unknown;
+  filesPath: string | undefined;
+  editable: boolean;
+  onSave: (values: Record<string, unknown>) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const has = typeof value === "string" && value !== "";
+  const change = async (next: File | null) => {
+    const sure = await ask.confirm({
+      title: next ? `Replace the file in ${column.name}?` : `Remove the file from ${column.name}?`,
+      text: `${
+        next ? `${next.name} takes its place. ` : "The row will have no file. "
+      }The old file stays in this row's history, until that history expires.`,
+      action: next ? "Replace" : "Remove",
+      danger: next === null,
+    });
+    if (!sure) return;
+    setBusy(true);
+    try {
+      const stored = next
+        ? await api.upload<{ id: string }>(
+            `${filesPath}?name=${encodeURIComponent(next.name)}`,
+            next,
+          )
+        : null;
+      await onSave({ [column.name]: stored ? stored.id : null });
+      notify.success(next ? "File replaced." : "File removed.");
+    } catch (error) {
+      notify.error(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-body-sm text-ink-muted">{column.name}</span>
+      <div className="flex flex-wrap items-center gap-2">
+        {has && filesPath ? (
+          <a className="text-action" href={`/api/v1${filesPath}/${value}/content`}>
+            Download
+          </a>
+        ) : (
+          <span className="font-mono text-code">{has ? String(value) : "—"}</span>
+        )}
+        {editable && filesPath ? (
+          <>
+            <input
+              ref={input}
+              type="file"
+              hidden
+              aria-label={`New file for ${column.name}`}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (file) void change(file);
+              }}
+            />
+            <Button loading={busy} onClick={() => input.current?.click()}>
+              Replace
+            </Button>
+            {has ? (
+              <Button disabled={busy} onClick={() => void change(null)}>
+                Remove
+              </Button>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -643,6 +761,7 @@ function RowEditor({
   columns,
   editable,
   rowsPath,
+  filesPath,
   onSave,
   onDirty,
 }: {
@@ -650,6 +769,7 @@ function RowEditor({
   columns: RowColumn[];
   editable: boolean;
   rowsPath: string;
+  filesPath?: string | undefined;
   onSave: (values: Record<string, unknown>) => Promise<void>;
   /** Whether there are edits not saved, for the table to ask before another row is chosen. */
   onDirty: (dirty: boolean) => void;
@@ -766,6 +886,15 @@ function RowEditor({
             required={false}
             error={errors[column.name]}
             onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
+        ) : column.type === "file" ? (
+          <FileField
+            key={column.name}
+            column={column}
+            value={row[column.name]}
+            filesPath={filesPath}
+            editable={editable && column.writable}
+            onSave={onSave}
           />
         ) : (
           <div key={column.name} className="flex flex-col gap-0.5">

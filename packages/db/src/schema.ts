@@ -826,6 +826,20 @@ export interface FileTable {
   created_at: Generated<Date>;
 }
 
+/** A file a row used to name: kept until the tenant's history of changes has run out. */
+export interface RowFileHistoryTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  file_id: string;
+  table_name: string;
+  row_id: string;
+  column_name: string;
+  replaced_by_type: string;
+  replaced_by_id: string | null;
+  replaced_at: Generated<Date>;
+}
+
 export interface WorkspaceCloneTable {
   id: string;
   tenant_id: string;
@@ -1291,6 +1305,7 @@ export interface PlatformSchema {
   data_column: DataColumnTable;
   data_source_binding: DataSourceBindingTable;
   file: FileTable;
+  row_file_history: RowFileHistoryTable;
   database_location: DatabaseLocationTable;
   workspace_clone: WorkspaceCloneTable;
   bundle_asset: BundleAssetTable;

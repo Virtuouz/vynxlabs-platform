@@ -220,6 +220,13 @@ export const OWNED_TABLES: OwnedTable[] = [
     stored: ["storage_key"],
   },
   {
+    table: "row_file_history",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "history",
+  },
+  {
     table: "flow_run",
     ofTenant: own,
     ofWorkspace: inWorkspace,

@@ -2,6 +2,7 @@ import { newId } from "@volvel/db";
 import type { Db, Principal, Trx } from "../audit.js";
 import { HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
+import { getRow, type Row, type RowTarget, updateRow } from "./rows.js";
 
 /** The largest file the platform stores. */
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -74,4 +75,58 @@ export async function readFile(kernel: Kernel, db: Db | Trx, workspaceId: string
     .executeTakeFirst();
   if (!row) throw notFound("The file");
   return { file: toStoredFile(row), content: await kernel.storage.get(row.storage_key) };
+}
+
+/**
+ * Changes a row, and notes each file it no longer names (replaced, or removed) in the row's
+ * history, so the file stays until that history has run out. A file a row names again is no
+ * longer noted. The row may live in a database of its own, so the note is made after the row
+ * is changed: at worst a file goes unnoted, and a file nothing deletes is kept.
+ */
+export async function updateRowKeepingFiles(
+  kernel: Kernel,
+  data: Parameters<typeof updateRow>[0],
+  workspace: { tenantId: string; id: string },
+  by: Principal | { type: string; id: string | null },
+  target: RowTarget,
+  id: string,
+  patch: unknown,
+): Promise<Row> {
+  const named =
+    patch !== null && typeof patch === "object"
+      ? target.columns.filter((column) => column.type === "file" && column.name in patch)
+      : [];
+  if (named.length === 0) return updateRow(data, target, id, patch);
+  const before = await getRow(data, target, id);
+  const after = await updateRow(data, target, id, patch);
+  for (const column of named) {
+    const was = before[column.name];
+    const now = after[column.name];
+    if (typeof now === "string") {
+      await kernel.db.deleteFrom("row_file_history").where("file_id", "=", now).execute();
+    }
+    if (typeof was !== "string" || was === now) continue;
+    const file = await kernel.db
+      .selectFrom("file")
+      .select("id")
+      .where("id", "=", was)
+      .where("workspace_id", "=", workspace.id)
+      .executeTakeFirst();
+    if (!file) continue;
+    await kernel.db
+      .insertInto("row_file_history")
+      .values({
+        id: newId(),
+        tenant_id: workspace.tenantId,
+        workspace_id: workspace.id,
+        file_id: was,
+        table_name: target.name,
+        row_id: id,
+        column_name: column.name,
+        replaced_by_type: by.type,
+        replaced_by_id: by.id,
+      })
+      .execute();
+  }
+  return after;
 }

@@ -440,6 +440,39 @@ test("no time wraps onto a second line at 1280 px or wider", async () => {
   }
 });
 
+/**
+ * Phase 23 M5 (POLISH-004, 013): a list's filters have a row of their own. The audit log, on a
+ * visit that shows its description, has no filter beside the title and no text over text.
+ */
+test("the audit log's filters sit under its title and description on a first visit", async () => {
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    // A member who has not read it: the preference is cleared, here and in the browser.
+    await call(page, "DELETE", "/me/preferences/seen:audit-log").catch(() => {});
+    await page.evaluate(() => localStorage.removeItem("vx-pref:seen:audit-log"));
+    await open(`/t/${tenant.id}/audit`);
+    const title = page.getByRole("heading", { level: 1, name: "Audit log" });
+    await expect(title).toBeVisible();
+    const header = page.locator("main header").first();
+    await expect(header.locator("p")).toBeVisible();
+    const titleBox = await title.boundingBox();
+    const controls = header.locator("select, input");
+    expect(await controls.count(), "the filters are in the header").toBeGreaterThan(1);
+    const tops = await controls.evaluateAll((all) =>
+      all
+        .filter((el) => (el as HTMLElement).getBoundingClientRect().width > 0)
+        .map((el) => el.getBoundingClientRect().top),
+    );
+    const bottom = (titleBox?.y ?? 0) + (titleBox?.height ?? 0);
+    for (const top of tops) expect(top, `a filter at ${width}px`).toBeGreaterThanOrEqual(bottom);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+      `sideways at ${width}px`,
+    ).toBe(false);
+    expect(await overdraws(page), `text over text at ${width}px`).toEqual([]);
+  }
+});
+
 /** P4-1: what a list is for is said once, then kept behind help; operator access is one line. */
 test("a list says what it is for once, and operator access hides to a mark and comes back", async () => {
   await page.setViewportSize({ width: 1440, height: 900 });

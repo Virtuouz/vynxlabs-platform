@@ -1,6 +1,6 @@
 # Phase 22: what the polish audit found, fixed where it is shared
 
-Status: planned, on branch `phase-22-polish`, off `polish-pattern-audit` (which is off `phase-21-docs-redesign`).
+Status: built, on branch `phase-22-polish`, off `polish-pattern-audit` (which is off `phase-21-docs-redesign`).
 Last updated: 2026-11-20
 
 The polish audit ([docs/polish](../polish/README.md)) read 316 commits for the corrections the owner asked for after each phase. It turned them into rules POLISH-001 to 015 and audited the application against them. It found 84 distinct findings. Thirteen of them are earlier corrections made again somewhere else, because the first fix stayed where the symptom was. This phase fixes them in the order of [the roadmap](../polish/polish-remediation-roadmap.md): the quick wins first, then each shared piece before the screens that use it.
@@ -636,9 +636,59 @@ M1 and M2 come first: everything later that saves goes through M2. M3 comes befo
 - A phase walk-through spec walks this exit criterion, tagged with the POLISH rules each step checks.
 - The phase 21 walk (`e2e/documentation.spec.ts`), never run, is run here.
 
+**Built** in `568483d`, merged in `627ac1d`.
+- `CHANGELOG.md`: a phase 22 entry, for operators and for tenant developers.
+- Thirteen guide pages under `packages/docs/content` say what changed. `pnpm docs:check` passes.
+- Fernhill: Amara (viewer) and Devi (developer) already read approvals without deciding them. `setup.mjs` adds 60 members, `locum.01` to `locum.60`, so lists page.
+- `e2e/phase-22.spec.ts` walks the exit criterion in 11 tests, each named for the POLISH rule it checks.
+
+**The full e2e run** on a throwaway instance (:8090, Fernhill seeded), first at `627ac1d`: 57 passed, 9 failed, 2 skipped.
+- **Real defects, fixed:**
+  - a draft discarded while a deploy settled its drafts deadlocked, answering 500. Draft writes now take the workspace's lock first (`2b8cf64`);
+  - All resources, operator access and Queries drew over themselves, or a box in a box, at 390 px. They were measured for the first time since M7. Fixed in `1725b52`, `31d9dc6`, `1edbe59` and `5c0deb6`.
+  - The phase 21 walk, run for the first time, found the docs site scrolling sideways on a phone: a glossary term's hidden tip took room. In `packages/markup/src/style.ts` a hidden tip now takes none, and on a phone an open tip sits inside the screen (`1725b52`).
+- **The specs' own mistakes, fixed:**
+  - paging waited for the wrong thing, and clicked the help instead of Members;
+  - the walk-through named a site by its path, not its title, and read a draft before the dialog's request landed;
+  - `documentation.spec.ts` expected the preview beside the details, which have been tabs since phase 21.
+- **The measure's own reach:**
+  - The kit's sheet shows each sample in a panel of its own (`data-samples`).
+  - A recessed well (JSON, code) has a border at any depth, by 07 §7.5 (`data-well`).
+  - Both are left out of the box-in-box measure, which now names every screen before it fails (`8640dc5`, `cdf21b8`).
+- **Pictures:** `redesign.spec.ts` and `wide.spec.ts` compare against pictures from phases 16 and 18. They differ by the help button on a phone (phase 20), the tenant's Rename (M8) and the run page's words (M9). They were taken again.
+- **Not this instance's to pass:** `exit-criterion.spec.ts`'s single sign-on test needs the Keycloak of `e2e/README.md`, which the throwaway instance did not run.
+- **The last run:** at `cdf21b8`, 88 passed, 2 skipped, and 1 failed: the single sign-on test, for want of Keycloak.
+
+**Polish gate.**
+1. Rules: 014 (the walk before "built"), and 015.
+2. Siblings: not applicable.
+3. Lifecycle: not applicable.
+4. States: not applicable.
+5. Walk: this milestone's walk is the e2e run above, the walk-through spec included.
+6. Guards: the full `pnpm test` (212 files, 2167 tests at `8fff039`) and the full `pnpm e2e`, as above.
+7. Left out: the single sign-on test, for want of Keycloak here.
+
 ## Findings
 
-None yet.
+- **What the phase closed.** Of the audit's 84 findings, 80 are fixed in full and walked or tested, three in part, and one not:
+  - **A2-08:** one scroller for the rows grid needs a fill layout.
+  - **A2-06, in part:** the reference picker lists the first 200 rows, and file replace and remove in the row inspector is not done.
+  - **A1-23, in part:** the two lists of versions on Release are not merged.
+  - **A3-18, in part:** an access release's rollback lists what it made, not what would be removed since.
+- **What walking found that the audit did not.** Each was found by the walk or the e2e run, after a milestone's own tests passed:
+  - Remove was offered on what the repository manages, and the server refused it.
+  - A draft discard and a deploy deadlocked.
+  - The docs site scrolled sideways on a phone.
+  - Three screens drew over themselves on a phone.
+
+  That is POLISH-014's point, made again.
+- **For the owner.**
+  - A member with only `interface:write` cannot deploy a feedback table a developer left as a draft, so their docs deploy is refused (M1).
+  - The audit log's filters stack in one column at 1440 px while its first-visit description is shown. This predates phase 22.
+  - The tenant approvals screen and `TenantOverview` still count all approvals, not the viewer's (M5).
+  - Release's two version lists (M6).
+  - Queries and apps have no rename (M4).
+- **How it was built.** Milestones were built in parallel worktrees and merged. The merges needed hands where two milestones changed one save path (M2 and M3, M2 and M4), one import (M1, M5 and M6), or one confirm (M6 and M7). Each merge was typechecked and tested before the next.
 
 ## Traceability
 

@@ -267,7 +267,9 @@ test("pausing a trigger from a script's page asks why, and sends the reason", as
   fireEvent.click(await screen.findByRole("menuitem", { name: "Pause…" }));
   await answer("Pause", "Supplier is down");
   await waitFor(() =>
-    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+    expect(
+      calls.find((call) => call.method === "PUT" && call.url.includes("/trigger-pauses/"))?.body,
+    ).toEqual({
       reason: "Supplier is down",
     }),
   );

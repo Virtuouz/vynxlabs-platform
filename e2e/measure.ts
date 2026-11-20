@@ -74,7 +74,8 @@ export function overdraws(page: Page): Promise<string[]> {
 /**
  * Bordered containers inside bordered containers (07 §7.5): block boxes with a
  * border on at least three sides, larger than a control, that have such a box
- * as an ancestor. Theme previews (`data-preview`) and dialogs are left out.
+ * as an ancestor. Theme previews (`data-preview`), a sheet of the kit's samples, each in
+ * its own panel (`data-samples`), and dialogs are left out.
  */
 export function nested(page: Page): Promise<string[]> {
   return page.evaluate(() => {
@@ -110,7 +111,7 @@ export function nested(page: Page): Promise<string[]> {
     };
     const found: string[] = [];
     for (const element of main.querySelectorAll("*")) {
-      if (element.closest("[data-preview], [role='dialog']")) continue;
+      if (element.closest("[data-preview], [data-samples], [role='dialog']")) continue;
       if (!bordered(element)) continue;
       let parent = element.parentElement;
       while (parent && parent !== main) {

@@ -127,7 +127,9 @@ export function KitSheet() {
   const [chip, setChip] = useState("all");
   const [stage, setStage] = useState("review");
   return (
-    <div className="flex flex-col gap-8">
+    // Each sample of the kit is shown in a panel of its own: the polish measure of boxes in
+    // boxes leaves the sheet out (e2e/measure.ts), and still measures what draws over what.
+    <div className="flex flex-col gap-8" data-samples>
       <PageHeader
         eyebrow="Instance"
         title="Component kit"

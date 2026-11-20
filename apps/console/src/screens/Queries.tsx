@@ -350,7 +350,8 @@ export function Queries({ root, link }: { root: string; link: string }) {
               with SQL (<code>sql:read</code>), which a role has only when it names it.
             </Notice>
           )}
-          <div className="overflow-hidden rounded-panel border border-line">
+          {/* The editor draws its own frame: a second border around it is a box in a box. */}
+          <div>
             <Suspense fallback={<Loading />}>
               <CodeEditor
                 label="The query"

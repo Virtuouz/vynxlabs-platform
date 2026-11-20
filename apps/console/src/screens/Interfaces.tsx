@@ -312,7 +312,13 @@ function RenameApp({
           api.get<Stored>(`${root}/drafts/${path}`).catch(missing),
           api.get<Stored>(`${root}/resources/${path}`).catch(missing),
         ]);
-        return draft ?? (deployed ? { ...deployed, revision: undefined } : undefined);
+        // What is deployed has no draft's revision: the change is a new draft over it.
+        return (
+          draft ??
+          (deployed
+            ? { kind: deployed.kind, schemaVersion: deployed.schemaVersion, body: deployed.body }
+            : undefined)
+        );
       };
       const paths = [row.path, ...(row.app ? [row.app] : [])];
       const found = await Promise.all(paths.map(read));

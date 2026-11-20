@@ -386,7 +386,7 @@ export function NewScheduleSheet({
         body: tidy(body),
         create: true,
       });
-      notify.success(`${path} is saved as a draft. Deploy it from Changes.`);
+      notify.success(`${path} is saved as a draft. Deploy it from Releases.`);
       onClose();
     } catch (error) {
       const refused = takenText(error);
@@ -440,7 +440,7 @@ export function NewScheduleSheet({
           fresh
         />
         <p className="m-0 text-body-sm text-ink-muted">
-          Drafts are deployed from <Link to={`${link}/changes`}>Changes</Link>.
+          Drafts are deployed from <Link to={`${link}/release`}>Releases</Link>.
         </p>
       </div>
     </SideSheet>

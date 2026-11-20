@@ -495,7 +495,7 @@ export function problemsAt(
   return problems;
 }
 
-/** A flow drawn on a canvas. Saving makes a draft, deployed from the Changes screen. */
+/** A flow drawn on a canvas. Saving makes a draft, deployed from the Releases screen. */
 export function FlowEditor({
   root,
   link,

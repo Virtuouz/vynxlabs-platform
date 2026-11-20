@@ -15,6 +15,13 @@ export interface GraphEdge {
 }
 export type Positions = Record<string, { x: number; y: number }>;
 
+/** How far an arrow key moves a step, by key. */
+const NUDGE: Record<string, [number, number]> = {
+  ArrowLeft: [-16, 0],
+  ArrowRight: [16, 0],
+  ArrowUp: [0, -16],
+  ArrowDown: [0, 16],
+};
 const WIDTH = 176;
 const HEIGHT = 54;
 
@@ -240,15 +247,15 @@ export function FlowGraph({
             : undefined;
           const isSelected = selected === id;
           return (
-            // biome-ignore lint/a11y/useSemanticElements: an SVG group cannot be a button element
+            // biome-ignore lint/a11y/noStaticElementInteractions: the role is a button, a group or an image by what the graph can do, and the handlers only run when it is one that acts
             <g
               key={id}
               transform={`translate(${at.x} ${at.y})`}
-              role="button"
-              tabIndex={0}
+              role={onSelect ? "button" : onMove ? "group" : "img"}
+              tabIndex={onSelect || onMove ? 0 : undefined}
               // The ring below shows where keyboard focus is; the browser's own outline does not fit an SVG shape.
               className="group outline-none"
-              aria-pressed={isSelected}
+              {...(onSelect ? { "aria-pressed": isSelected } : {})}
               aria-label={`${KIND[node.type] ?? node.type} ${id}${look ? `, ${look.label}` : ""}`}
               style={{ cursor: onMove ? "grab" : onSelect ? "pointer" : "default" }}
               onPointerDown={(event) => {
@@ -258,9 +265,20 @@ export function FlowGraph({
               }}
               onClick={() => onSelect?.(id)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
+                if (onSelect && (event.key === "Enter" || event.key === " ")) {
                   event.preventDefault();
-                  onSelect?.(id);
+                  onSelect(id);
+                }
+                // The arrows arrange a step without a pointer.
+                const step = NUDGE[event.key];
+                if (onMove && step) {
+                  event.preventDefault();
+                  const next = {
+                    x: Math.max(0, at.x + step[0]),
+                    y: Math.max(0, at.y + step[1]),
+                  };
+                  setMoved((existing) => ({ ...existing, [id]: next }));
+                  onMove({ ...automatic, ...layout, ...moved, [id]: next });
                 }
               }}
             >

@@ -82,7 +82,7 @@ const REFUSED: Record<string, string> = {
 
 /** The page of what a trigger starts. */
 const targetLink = (link: string, row: Trigger) =>
-  row.targetKind === "flow" ? `${link}/flows/${row.script}` : `${link}/scripts/edit/${row.script}`;
+  row.targetKind === "flow" ? `${link}/flows/${row.script}` : `${link}/scripts/${row.script}`;
 const runLink = (link: string, run: NonNullable<Trigger["lastRun"]>) => `${link}/runs/${run.id}`;
 
 /**

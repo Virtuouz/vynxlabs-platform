@@ -16,6 +16,7 @@ import {
   Stepper,
 } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
+import { kindName, objectHref } from "../kit/objects.tsx";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
@@ -99,14 +100,11 @@ const CHANGE_TAG: Record<DraftRow["change"], [string, "draft" | "live" | "danger
     rename: ["Renamed", "draft"],
   };
 
-const KIND_LABEL: Record<string, string> = {
-  flow: "Flows",
-  script: "Scripts",
-  interface: "Apps",
-  app: "Apps",
-  table: "Tables",
-  connector: "Connectors",
-  trigger_source: "Trigger sources",
+/** A section's heading: the kind's name, in the plural. */
+const kindHeading = (kind: string) => {
+  if (kind === "interface") return "Apps";
+  const name = kindName(kind);
+  return name.endsWith("y") ? `${name.slice(0, -1)}ies` : `${name}s`;
 };
 
 export type ReleaseStep = "review" | "deploy" | "promote";
@@ -285,7 +283,7 @@ function ReviewStep({
       </div>
     );
 
-  const groups = [...new Set(drafts.map((row) => KIND_LABEL[row.kind] ?? row.kind))];
+  const groups = [...new Set(drafts.map((row) => kindHeading(row.kind)))];
   // With none chosen, every draft is deployed: one saved days ago goes with the rest.
   const old = chosen.size === 0 && drafts.length > 1 ? drafts.filter((row) => isOld(row)) : [];
   const editLink = (row: DraftRow) =>
@@ -297,7 +295,7 @@ function ReviewStep({
           ? `${link}/scripts/edit/${row.path}`
           : row.kind === "interface"
             ? `${link}/screens/${row.path}`
-            : undefined;
+            : objectHref(link, row.kind, row.path);
 
   return (
     <div className="flex flex-col gap-6">
@@ -342,7 +340,7 @@ function ReviewStep({
                 <SectionLabel>{group}</SectionLabel>
                 <Panel as="div" className="divide-y divide-line">
                   {drafts
-                    .filter((row) => (KIND_LABEL[row.kind] ?? row.kind) === group)
+                    .filter((row) => kindHeading(row.kind) === group)
                     .map((row) => {
                       const to = editLink(row);
                       return (

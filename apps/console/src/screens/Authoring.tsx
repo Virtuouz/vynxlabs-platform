@@ -706,21 +706,26 @@ export function ScriptEditor({
   const trying = (
     <div className="flex flex-col gap-3">
       {readOnly ? (
-        <p className="m-0 text-ink-muted">This script is not run from here.</p>
+        <p className="m-0 text-ink-muted">
+          This script is not run from here. Run it from{" "}
+          <Link to={`${link}/scripts/${path}`}>its page</Link>, or edit it in the dev workspace.
+        </p>
       ) : (
-        <InputForm
-          // Drawn again when the schema changes, starting from the last input.
-          key={`${JSON.stringify(inputSchema ?? null)}:${formKey}`}
-          schema={inputSchema}
-          initial={testInput}
-          action={dirty || state === "new" ? "Save and run" : "Run the draft"}
-          onSubmit={test}
-        />
+        <>
+          <InputForm
+            // Drawn again when the schema changes, starting from the last input.
+            key={`${JSON.stringify(inputSchema ?? null)}:${formKey}`}
+            schema={inputSchema}
+            initial={testInput}
+            action={dirty || state === "new" ? "Save and run" : "Run the draft"}
+            onSubmit={test}
+          />
+          <p className="m-0 text-body-sm text-ink-muted">
+            Runs the script as its draft has it, on a worker, without deploying anything.{" "}
+            <kbd className="rounded-inner border border-line px-1 font-mono text-tag">⌘↵</kbd>
+          </p>
+        </>
       )}
-      <p className="m-0 text-body-sm text-ink-muted">
-        Runs the script as its draft has it, on a worker, without deploying anything.{" "}
-        <kbd className="rounded-inner border border-line px-1 font-mono text-tag">⌘↵</kbd>
-      </p>
     </div>
   );
 

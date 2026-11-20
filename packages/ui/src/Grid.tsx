@@ -491,18 +491,18 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
           </tr>
           {filterable ? (
             <tr>
-              {checking ? <td className={`${head} sticky left-0 pb-2`} /> : null}
+              {checking ? <td className={`${head} sticky left-0 pb-1`} /> : null}
               {columns.map((column, index) => (
                 <td
                   key={column.name}
-                  className={`${head} pb-2 font-normal ${lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : ""}`}
+                  className={`${head} pb-1 font-normal ${lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : ""}`}
                 >
                   {column.filterable ? (
                     <input
                       aria-label={`Filter by ${column.label ?? column.name}`}
                       placeholder="Filter"
                       value={filters?.[column.name] ?? ""}
-                      className="h-7 w-full min-w-20 rounded-inner border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
+                      className="h-6 w-full min-w-20 rounded-inner border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
                       onChange={(event) => onFilter?.(column.name, event.currentTarget.value)}
                       onKeyDown={(event) => {
                         if (keepsKey(event)) event.stopPropagation();

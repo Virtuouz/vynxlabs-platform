@@ -537,6 +537,12 @@ export interface CheckContext {
   /** A table's definition, when it is known. A table made in the console is in no bundle, and is not checked. */
   tableOf?: (path: string) => TableBody | undefined;
   registry?: WidgetRegistry;
+  /**
+   * The page is being made, not deployed: a widget still waiting for its source is
+   * allowed, and drawn as waiting. A member's own dashboard is kept this way; what is
+   * deployed is not.
+   */
+  incomplete?: boolean;
 }
 
 /**
@@ -614,7 +620,7 @@ export function checkWidgets(
       const input = data[name];
       const where = `/data/${name}`;
       if (!input) {
-        if (declared.required !== false)
+        if (declared.required !== false && !context.incomplete)
           say(where, `${definition.title} needs ${declared.label ?? "a source"} to show`);
         continue;
       }
@@ -741,11 +747,13 @@ export function checkDashboard(
   body: DashboardBody,
   tableOf?: (path: string) => TableBody | undefined,
   registry?: WidgetRegistry,
+  how: { incomplete?: boolean } = {},
 ): ManifestIssue[] {
   return checkWidgets(body.widgets, body.filters ?? [], {
     surface: "dashboard",
     ...(tableOf ? { tableOf } : {}),
     ...(registry ? { registry } : {}),
+    ...(how.incomplete ? { incomplete: true } : {}),
   });
 }
 

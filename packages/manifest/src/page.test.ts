@@ -176,3 +176,15 @@ describe("pages", () => {
     });
   });
 });
+
+describe("a page being made", () => {
+  it("keeps a widget still waiting for its source, which a deploy refuses", () => {
+    const waiting: PageWidget = { id: "w", type: "core/stat", at: { x: 0, y: 0, w: 3, h: 3 } };
+    expect(checkDashboard({ widgets: [waiting] }, tableOf)).toEqual([
+      { path: "/body/widgets/0/data/value", message: "Stat needs a source to show" },
+    ]);
+    expect(
+      checkDashboard({ widgets: [waiting] }, tableOf, undefined, { incomplete: true }),
+    ).toEqual([]);
+  });
+});

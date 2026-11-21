@@ -179,7 +179,14 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       });
       const tables = await workspaceTables(kernel, ctx.workspace as WorkspaceRef);
       const issues = result.ok
-        ? checkDashboard(result.value.body as unknown as DashboardBody, (path) => tables.get(path))
+        ? // A member's dashboard is kept while it is being made: a widget still waiting for
+          // its source is saved, and drawn as waiting. It is never deployed.
+          checkDashboard(
+            result.value.body as unknown as DashboardBody,
+            (path) => tables.get(path),
+            undefined,
+            { incomplete: true },
+          )
         : result.issues;
       if (issues.length > 0) throw badRequest("The dashboard is not valid.", issues);
       const body = given as DashboardBody;

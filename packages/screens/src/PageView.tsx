@@ -127,10 +127,18 @@ function Cell({
   };
 }) {
   const definition = entry?.definition;
+  // Whether it arrived is as of when it first drew: the next draw must not stop its fade.
+  const [arrived] = useState(arriving);
+  // A widget added before its source was chosen has nothing to ask for yet.
+  const waiting =
+    definition !== undefined &&
+    Object.entries(definition.data).some(
+      ([input, declared]) => declared.required !== false && !widget.data?.[input],
+    );
   const reading = useWidgetData({
     client,
     widget,
-    reads: definition !== undefined && Object.keys(definition.data).length > 0,
+    reads: definition !== undefined && Object.keys(definition.data).length > 0 && !waiting,
     filterValues,
     refreshKey,
     emptyMessage,
@@ -165,7 +173,7 @@ function Cell({
       style={style}
       className={`relative flex min-h-0 min-w-0 flex-col @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
         selected ? "ring-2 ring-action" : ""
-      } ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arriving ? "animate-arrive" : ""} ${
+      } ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
         building ? "cursor-grab touch-pan-y select-none active:cursor-grabbing" : ""
       }`}
       {...(building
@@ -192,7 +200,11 @@ function Cell({
         onRename={editing ? (title) => editing.onRename(widget.id, title) : undefined}
         tabbable={!narrow}
       >
-        {View ? (
+        {waiting ? (
+          <p className="m-0 text-ink-muted">
+            {building ? "Choose what it shows in Data." : "Nothing is set up here yet."}
+          </p>
+        ) : View ? (
           <View
             config={config}
             data={reading.data}

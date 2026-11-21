@@ -1126,5 +1126,36 @@ describe("carrying a widget onto the page (POLISH-008)", () => {
     );
     expect(screen.getByRole("group", { name: "Later" }).className).toContain("animate-arrive");
     expect(screen.getByRole("group", { name: "Note" }).className).not.toContain("animate-arrive");
+    // Drawn again (it is chosen, say) before its fade has run: it still fades.
+    rerender(
+      <PageView
+        widgets={[stat, { ...stat, id: "t", title: "Later", at: { x: 6, y: 0, w: 6, h: 2 } }]}
+        {...props}
+        editing={{ ...props.editing, selected: "t" }}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Later" }).className).toContain("animate-arrive");
   });
+});
+
+test("a widget still waiting for its source asks for nothing and says what to do (POLISH-001)", async () => {
+  const read = vi.fn(async () => ({ inputs: {} }));
+  render(
+    <PageView
+      widgets={[{ id: "w", type: "core/stat", title: "Unpaid", at: { x: 0, y: 0, w: 3, h: 3 } }]}
+      filters={[]}
+      registry={registry}
+      client={{ read }}
+      filterValues={{}}
+      onFilterValues={() => undefined}
+      editing={{
+        selected: undefined,
+        onSelect: () => undefined,
+        onChange: () => undefined,
+        onRename: () => undefined,
+      }}
+    />,
+  );
+  expect(await screen.findByText("Choose what it shows in Data.")).toBeTruthy();
+  expect(read).not.toHaveBeenCalled();
 });

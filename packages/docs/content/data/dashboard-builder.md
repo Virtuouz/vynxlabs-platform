@@ -8,7 +8,7 @@ A dashboard is edited in the same editor as a page of an app, so what is said in
 
 ## What is different on a dashboard
 
-- **Add to page** offers only widgets that read: a table, a list, a stat, a chart, a pivot and text. A widget that changes data is not offered, and a dashboard has no Actions.
+- **Add to page** offers only widgets that read: a table, a list, a stat, a chart, a pivot and text. A widget that changes data is not offered, and on a dashboard **Actions** will only ever show or narrow what is there, never change a row.
 - **Source** can be a table from menus, a **saved query**, or **SQL**. A person who may write SQL writes it in the Data tab, and binds the page's filters to its parameters: a date range fills two, `from` and `to`. A table from menus is bound to a filter by a column.
 - A dashboard has **how often it asks again**, and a title and description of its own, in its settings.
 - It is **shared** from the dashboards screen, and the people it is shared with see only the rows they may read.

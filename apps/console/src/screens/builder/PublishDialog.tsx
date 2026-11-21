@@ -84,8 +84,8 @@ export function PublishDialog({
       .then((answer) => current && setPreview(answer))
       .catch(() => current && setPreview({ possible: true, refusal: null, summary: null }));
     api
-      .get<{ interface: InterfaceBody }>(`${root}/interfaces/${path}`)
-      .then((answer) => current && setPublished(answer.interface))
+      .get<{ body: InterfaceBody }>(`${root}/interfaces/${path}`)
+      .then((answer) => current && setPublished(answer.body))
       .catch(() => current && setPublished(null));
     const [base = "", workspaceId = ""] = root.split("/workspaces/");
     Promise.all([

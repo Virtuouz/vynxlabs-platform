@@ -16,7 +16,8 @@ export function isEmpty(inputs: Readonly<Record<string, WireData>>): boolean {
   const all = Object.values(inputs);
   if (all.length === 0) return false;
   return all.every((wire) => {
-    if (wire.shape === "record") return wire.record === null;
+    // A record input with no record is for the view to draw: a create form, or a detail that says nothing is open.
+    if (wire.shape === "record") return false;
     if (wire.shape === "summary" && wire.breakdowns.length === 0) return false;
     return wire.rows.length === 0;
   });

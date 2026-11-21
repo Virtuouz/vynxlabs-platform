@@ -46,7 +46,7 @@ test("a read is empty when every input has nothing, and a figure with no groups 
   expect(isEmpty({ rows: { shape: "rows", columns: [], rows: [] } })).toBe(true);
   expect(isEmpty({ rows: summary(["a"], []) })).toBe(true);
   expect(isEmpty({ value: summary([], []) })).toBe(false);
-  expect(isEmpty({ one: { shape: "record", columns: [], record: null } })).toBe(true);
+  expect(isEmpty({ one: { shape: "record", columns: [], record: null } })).toBe(false);
   expect(isEmpty({ one: { shape: "record", columns: [], record: { id: "a" } } })).toBe(false);
   expect(isEmpty({})).toBe(false);
 });

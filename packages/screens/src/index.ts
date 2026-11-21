@@ -1,4 +1,11 @@
 export { corePack } from "@volvel/widgets-core/views";
+export {
+  type ActionsHost,
+  actionAt,
+  fillText,
+  holds,
+  type NavigateTo,
+} from "./actions.tsx";
 export { FilterBar, type FilterBarProps, TYPING_PAUSE } from "./FilterBar.tsx";
 export { Frame, nameOf } from "./Frame.tsx";
 export {
@@ -19,6 +26,16 @@ export {
   sizeWords,
   without,
 } from "./layout.ts";
+export {
+  type Address,
+  addressOf,
+  type Over,
+  parseAddress,
+  Stepper,
+  type Stepping,
+  steppingOf,
+  useAddress,
+} from "./navigation.tsx";
 export { type CarryRequest, PageView, type PageViewProps } from "./PageView.tsx";
 export {
   type Box,
@@ -30,6 +47,8 @@ export {
   usePlacement,
 } from "./placement.ts";
 export {
+  ActionError,
+  type ActResponse,
   type FilterValues,
   type PageDataClient,
   type ViewEntry,

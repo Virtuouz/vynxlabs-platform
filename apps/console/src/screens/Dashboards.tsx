@@ -200,7 +200,10 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   const [readAt, setReadAt] = useState<Record<string, number>>({});
   const client = useMemo(() => {
     const inner = pageClient(root, { of: "dashboard", id });
+    // Everything the page client does (actions, the rows behind, a filter's values), with
+    // each read noted for how old the dashboard is.
     return {
+      ...inner,
       read: async (
         widget: string,
         filters: FilterValues,

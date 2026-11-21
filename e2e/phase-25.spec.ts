@@ -92,7 +92,8 @@ test.beforeAll(async ({ browser }) => {
   L = `/t/${tenant.id}/workspaces/${sandbox.id}`;
   // Clinic performance's Money page, as the repository deployed it, under the walk's own name.
   const deployed = await ok(owner, "GET", `${W}/interfaces/screens/performance`);
-  const body = { title: `Walk ${stamp}`, pages: [deployed.body.pages[0]] };
+  // Every page: Money opens others (the invoice sheet, the new-invoice modal) since phase 26.
+  const body = { title: `Walk ${stamp}`, pages: deployed.body.pages };
   await ok(owner, "PUT", `${W}/drafts/${PAGE}`, {
     kind: "interface",
     schemaVersion: 2,

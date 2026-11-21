@@ -1,7 +1,7 @@
 # Phase 25: apps and dashboards are built from one set of widgets, configured in the reader's words
 
-Status: in progress, on branch `phase-25-one-widget-system`, off `main` at `35a61cc`.
-Last updated: 2026-11-21
+Status: in progress (M2–M11 built; M12 and the full suites remain), on branch `phase-25-one-widget-system`, off `main` at `35a61cc`.
+Last updated: 2026-11-21 (after the first walk)
 
 The owner's drawings in `temp/` (six boards on Fernhill's Clinic performance, `Volvel App Builder redesign.html`, and `research.md`) ask for the builder to become an application builder: a Data, Display, Actions and Rules inspector in task words, record pages, steps run by buttons, forms made from a table, phone layouts made for you, a check before publishing. The owner then asked that apps and dashboards be one system, that widgets come from a contract developers could later use, with the built-ins as a core pack, that text be Markdown with the docs' components, and that no compatibility be kept with what was built before.
 
@@ -114,7 +114,62 @@ M2 and M3 can be built side by side; M4 needs M2; M5 needs M3 and M4; M6 needs M
 
 ## Findings
 
-To be written as the phase is built.
+Built by the integrator and five parallel work streams (control plane; renderer and core views; console; Markdown and labs; examples and end-to-end), each in its own worktree, against one written contract, then merged (`617fa6f`…`bd5d29a`).
+
+**The walk (2026-11-21).** A throwaway instance (its own database and bucket, port 8095), seeded by `examples/fernhill/setup/setup.mjs`.
+
+- **Builder, Money (Clinic performance) and the console-made Front desk board.** At 1440×900, 1440×640, 768 and 390, light and dark: the outline, filters, canvas and inspector are drawn as board 1. Data shows Source, "Follows the page filters", Value "Sum of Total", "Break down by Issued on · Weekly", Only include and More data options. All four tabs, "Add to page" grouped as board 2 (with the labs Goal marked "Labs pack"), click to select, the chip "8 × 8 · col 1 · row 6", → and Shift+↓, Ctrl+D, Delete and undo, and a reload.
+- **The published app**, as a practice manager at 1440, 768 and 390, light and dark: the pages are tabs, the filters, stats, Goal and charts are drawn from Clinics' rows, the page stacks on a phone, and a tab survives a reload. As a front-desk end user it is refused, "Not for this account", and the portal doesn't list it.
+- **A repository dashboard** (Visits by clinic) is read only, with Download.
+- **Found and fixed in the walk:**
+  - a widget just added or copied showed a failure until its draft was saved (`apps/console/src/screens/builder/client.ts`, test `builder-client.test.ts`);
+  - the Goal's number overflowed three columns (it now uses the kit's type scale);
+  - the Text widget's second line was cut off, and the Goal's title was truncated (Fernhill's Money page);
+  - Download was offered for a single number;
+  - Fernhill's goal of $60,000 was a quarter of a real month.
+- **Found, not a defect:** an `info` alert is drawn in the plain tone, as the docs draw it.
+- **Found about the instance, not the code:** an instance started without `MANAGED_WORKER_USER=same` (as `.env.example` sets) runs no scripts for Fernhill, and its setup waits forever on the first seeding run. An instance also lists its console files when it starts, so a rebuild needs a restart.
+- **Not walked yet:**
+  - by keyboard alone (F1, ⌘K, `/`, Tab through the inspector);
+  - the network throttled;
+  - the longest real values;
+  - renaming on the canvas;
+  - writing Markdown with steps;
+  - adding and configuring the Goal from "Add to page";
+  - a member's own dashboard in the editor;
+  - publishing from the builder.
+
+  The phase is not presented as finished until these and the full `pnpm test` and `pnpm e2e` have run.
+
+**What the internal pack showed about the contract (M11).**
+
+- **What it made easy:** a widget is a definition of about 90 lines of data plus a small view. The hints were enough, the frame drew every state, and `defineWidget` caught a missing hint at once.
+- **What it lacked, now in the contract:** a shared number format (`formatValue`, `formatNumber`, `ValueFormat`), the format setting (`FORMAT_SCHEMA`) and `WidgetPack`, all in `@volvel/widgets`. The packs' class names now reach both hosts' stylesheets.
+- **Still open:**
+  - a view's config type is written by hand, not derived from its schema, so decision 0005's "typed from the definition" is not built;
+  - a developer's widget in a sandboxed frame would need the theme as variables, not classes;
+  - no pack yet raises an event that gives a record or a group to something that listens (phase 26).
+
+**What the rebuild left out until phases 26–27** (decision 0006; nothing is upgraded):
+
+- **Forms, buttons and row actions, editing in a table, and a widget that follows another's chosen row.** From the examples this drops:
+  - Fernhill's "The visit chosen" card (a "Latest visits" list stands in) and its editable stock cells;
+  - acme's "The invoice chosen" card;
+  - higher-ed borrow's "Ask for a device" and "Cancel";
+  - higher-ed desk's "Check out" and "Check in", its editable devices and its add form.
+- **"See it as"**, the builder's preview as an end-user group: the new endpoint has no group to read as. *Asked of the owner: now, or in phase 29 with "View as".*
+- **Dragging from "Add to page" onto the grid** is not built: a widget is placed at the end of the page, and the dialog says so. *Asked of the owner.*
+- **The phone and tablet layout controls and priority** (board 6) are phase 29's.
+
+**Kept from earlier phases, in the shared frame:**
+
+- Download as CSV or a spreadsheet (phase 18), now on any widget with rows, in apps too.
+- "Names `x`, now `y`: change it in the repository" (phase 24).
+
+**Owner decisions taken while building:**
+
+- **The Goal measures this month.** Fernhill's Money page has a "Goal month" filter that defaults to this month, because a condition can't say "this month" (an "Only include" relative to today is a candidate for phase 28).
+- **No access to an interface reads as "not there" (404).** The control plane keeps answering an interface someone may not open with 404, as before, so its existence doesn't leak.
 
 ## After the owner's first look
 

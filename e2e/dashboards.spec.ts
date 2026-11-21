@@ -113,6 +113,8 @@ test.beforeAll(async ({ browser }) => {
             },
           },
           config: { compareTo: "lent", trendBy: "lent_on" },
+          // Pressed, the number shows the rows it adds up (phase 26).
+          on: { click: { steps: [{ do: "rows" }] } },
         },
         {
           id: "by-device",
@@ -250,11 +252,28 @@ test("the date filter changes every widget bound to it, and the address keeps it
   await expect(widget("Fees")).toContainText("80");
 });
 
-// Drill-through to the rows behind a number (phase 18) comes back in phase 26, as an action
-// ("Show the rows behind it"), as the owner chose (phase 25, decision 10).
-test.fixme("a number opens the rows behind it", async () => {
-  // - click Laptop's line in "Fees by device": a dialog "Rows of loans" with its two loans;
-  // - sort by a heading, and filter the rows in the dialog.
+// Drill-through to the rows behind a number (phase 18) is an action since phase 26: the number's
+// widget says "Show the rows behind it" when it is pressed.
+test("a number opens the rows behind it", async () => {
+  await page.goto(`${link}/dashboards/${board}`);
+  await expect(widget("Fees")).toContainText("80");
+  await widget("Fees").getByRole("button").first().click();
+  // A side sheet of the loans the 80 adds up: three in the last thirty days, with their fees.
+  const behind = page.getByRole("dialog");
+  await expect(behind).toBeVisible();
+  await expect(behind.getByRole("row")).toHaveCount(4);
+  await expect(behind).toContainText("40");
+  await expect(behind).toContainText("late");
+  // Esc puts the sheet away, and the page is as it was.
+  await page.keyboard.press("Escape");
+  await expect(behind).toHaveCount(0);
+  // It follows the page's filters: with the older loans in range, it lists all five.
+  await page.getByRole("combobox", { name: "Lent" }).selectOption({ label: "Last 90 days" });
+  await expect(widget("Fees")).toContainText("105");
+  await widget("Fees").getByRole("button").first().click();
+  await expect(page.getByRole("dialog").getByRole("row")).toHaveCount(6);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
 test("a widget's rows are kept as a file, from its frame (POLISH-002)", async () => {

@@ -249,14 +249,18 @@ export interface ResourceAliasTable {
   last_used_at: Date | null;
 }
 
-/** The query a dashboard's widget named when the dashboard was deployed, by its key. */
+/**
+ * The saved query a data input of a deployed interface or dashboard named when it was deployed, by
+ * its key. `dashboard_id` is the resource; `widget_id` is where the input is: `page/widget/input` on
+ * an interface, `widget/input` on a dashboard.
+ */
 export interface DashboardWidgetQueryTable {
   dashboard_id: string;
   widget_id: string;
   workspace_id: string;
   tenant_id: string;
   dashboard_key: string;
-  /** The path the widget names, as written in the dashboard. */
+  /** The path the input names, as written in the page. */
   path: string;
   /** The key of the query that path named at deploy time. */
   query_key: string;

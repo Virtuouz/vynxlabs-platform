@@ -1,63 +1,50 @@
-import type {
-  DashboardBody,
-  DashboardFilter,
-  DashboardWidget,
-  QueryBody,
-  VisualBucket,
-  VisualCondition,
-  VisualQuery,
+import {
+  type DataInput,
+  groupName,
+  type PageFilter,
+  type QueryBody,
+  type VisualBucket,
+  type VisualCondition,
+  type VisualQuery,
 } from "@volvel/manifest";
-import { groupName } from "@volvel/manifest";
 import { followRecordedKey } from "../../dashboard-queries.js";
 import { badRequest, notFound } from "../../errors.js";
 import type { Kernel } from "../../kernel.js";
 import { resolveResource } from "../../resolve.js";
 import { loadCatalog } from "../apply.js";
+import type { CatalogTable } from "../plan.js";
+import { dayAfter, daysIn, type FilterValues, rangeOf } from "./filters.js";
 import { compileVisual, type VisualCatalog, VisualRefused } from "./visual.js";
 
 /**
- * What a dashboard's widget asks, as SQL and the values it is given: its
- * source, with the dashboard's filters filled in as whoever is looking set
- * them. The SQL is then run by `runQuery`, which reads it and holds it to
- * what a query may be, whichever of the three forms it came from.
+ * What a data input of a widget asks, as SQL and the values it is given: its source, with the
+ * page's filters filled in as whoever is looking set them. The SQL is then run by `runQuery`,
+ * which reads it and holds it to what a query may be, whichever of the three forms it came
+ * from.
  */
 
-/** What whoever looks at a dashboard set its filters to, by filter name. A filter left out narrows nothing. */
-export type FilterValues = Record<string, unknown>;
-
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
-
-/** The day after a date, as a date: so that a range's last day is whole. */
-function dayAfter(day: string): string {
-  const next = new Date(`${day}T00:00:00Z`);
-  next.setUTCDate(next.getUTCDate() + 1);
-  return next.toISOString().slice(0, 10);
-}
-
-/** A range of dates as it was set: both ends, or nothing when it was not set or is not a range. */
-function rangeOf(value: unknown): { from?: string; to?: string } | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const { from, to } = value as { from?: unknown; to?: unknown };
-  const range = {
-    ...(typeof from === "string" && DAY.test(from) ? { from } : {}),
-    ...(typeof to === "string" && DAY.test(to) ? { to } : {}),
-  };
-  return range.from || range.to ? range : undefined;
-}
+export type { FilterValues } from "./filters.js";
 
 const unset = (value: unknown) => value === undefined || value === null || value === "";
 
-/** The workspace's tables and columns, for a visual query's names to be looked up in. */
-export async function visualCatalog(
+/** The workspace's tables, by path: what a visual query's names are looked up in, and what a result is described by. */
+export interface WorkspaceCatalog {
+  visual: VisualCatalog;
+  tables: Map<string, CatalogTable>;
+}
+
+export async function workspaceCatalog(
   kernel: Kernel,
   tenantId: string,
   workspaceId: string,
-): Promise<VisualCatalog> {
+): Promise<WorkspaceCatalog> {
   const data = (await kernel.data.forTenant(tenantId)).owner;
-  const catalog = new Map();
+  const visual: VisualCatalog = new Map();
+  const tables = new Map<string, CatalogTable>();
   for (const table of await loadCatalog(data, workspaceId)) {
     if (table.status !== "active") continue;
-    catalog.set(table.name, {
+    tables.set(table.name, table);
+    visual.set(table.name, {
       columns: new Map(
         table.columns
           .filter((column) => column.status === "active")
@@ -65,17 +52,26 @@ export async function visualCatalog(
       ),
     });
   }
-  return catalog;
+  return { visual, tables };
 }
 
-/** The conditions a dashboard's filters add to a visual query, as far as they were set. */
-function conditionsFor(
-  widget: DashboardWidget,
-  filters: Map<string, DashboardFilter>,
+/** The workspace's tables and columns, for a visual query's names to be looked up in. */
+export async function visualCatalog(
+  kernel: Kernel,
+  tenantId: string,
+  workspaceId: string,
+): Promise<VisualCatalog> {
+  return (await workspaceCatalog(kernel, tenantId, workspaceId)).visual;
+}
+
+/** The conditions a page's filters add to a visual input, as far as they were set. */
+export function conditionsFor(
+  input: DataInput,
+  filters: Map<string, PageFilter>,
   values: FilterValues,
 ): VisualCondition[] {
   const conditions: VisualCondition[] = [];
-  for (const binding of widget.filters ?? []) {
+  for (const binding of input.filters ?? []) {
     const filter = filters.get(binding.filter);
     const column = binding.column;
     if (!filter || !column) continue;
@@ -96,26 +92,23 @@ function conditionsFor(
 }
 
 /**
- * How long each point of a trend is when the figure does not say: days for a
- * range of up to six weeks, weeks for up to about half a year, months beyond
- * that or when the dates are not narrowed at all.
+ * How long each point of a trend is when the figure does not say: days for a range of up to
+ * six weeks, weeks for up to about half a year, months beyond that or when the dates are not
+ * narrowed at all.
  */
-function bucketFor(
-  widget: DashboardWidget,
-  filters: Map<string, DashboardFilter>,
+export function bucketFor(
+  input: DataInput,
+  filters: Map<string, PageFilter>,
   values: FilterValues,
   column: string,
 ): VisualBucket {
-  const bindings = (widget.filters ?? []).filter(
+  const bindings = (input.filters ?? []).filter(
     (one) => filters.get(one.filter)?.type === "date_range",
   );
   const binding = bindings.find((one) => one.column === column) ?? bindings[0];
   const range = binding ? rangeOf(values[binding.filter]) : undefined;
   if (!range?.from || !range.to) return "month";
-  const days =
-    (new Date(`${range.to}T00:00:00Z`).getTime() - new Date(`${range.from}T00:00:00Z`).getTime()) /
-      86_400_000 +
-    1;
+  const days = daysIn({ from: range.from, to: range.to });
   return days <= 45 ? "day" : days <= 200 ? "week" : "month";
 }
 
@@ -139,69 +132,87 @@ export function writeVisual(
 export interface WidgetQuery {
   text: string;
   parameters: unknown[];
+  /** The names of the result's columns, in order, when the query is built from menus. */
+  columns?: string[];
   /**
-   * The widget's path named nothing, and its query was found by the key recorded when the
-   * dashboard was deployed: `names` is the path the dashboard still has, `now` the query's.
+   * The input's path named nothing, and its query was found by the key recorded when the page
+   * was deployed: `names` is the path the page still has, `now` the query's.
    */
   followed?: { names: string; now: string };
 }
 
-/** What one widget of a dashboard asks, with the filters as they were set. */
-export async function widgetQuery(
+/** What a data input is read as, for a visual query. */
+export interface InputKind {
+  /** `rows`: every row has its `id` and a stable order, so that pages do not repeat or skip. */
+  shape: "rows" | "summary" | "record";
+  /** For a figure's trend: its number over the time it covers, one row to a day, week or month. */
+  trend?: { by: string };
+}
+
+/** A visual query asked for as rows: it carries each row's id, and a stable order. */
+export function asRows(visual: VisualQuery): VisualQuery {
+  if ((visual.groupBy?.length ?? 0) > 0 || (visual.measures?.length ?? 0) > 0) return visual;
+  const columns = visual.columns && visual.columns.length > 0 ? visual.columns : undefined;
+  const sort = visual.sort ?? [];
+  return {
+    ...visual,
+    ...(columns && !columns.includes("id") ? { columns: ["id", ...columns] } : {}),
+    sort: sort.some((one) => one.by === "id") ? sort : [...sort, { by: "id" }],
+  };
+}
+
+/** What one data input of a widget asks, with the page's filters as they were set. */
+export async function inputQuery(
   kernel: Kernel,
   at: { tenantId: string; workspaceId: string },
-  dashboard: DashboardBody,
-  widget: DashboardWidget,
-  values: FilterValues,
-  /** `trend`: a figure's number over the time it covers, one row to a day, week or month. */
-  part?: "trend",
-  /** The deployed dashboard, whose recorded keys a widget falls back on. */
-  dashboardId?: string,
+  input: DataInput,
+  page: {
+    filters: readonly PageFilter[];
+    values: FilterValues;
+    catalog: VisualCatalog;
+    /** The deployed page and where the input is in it, whose recorded keys a saved query falls back on. */
+    follow?: { pageId: string; place: string };
+  },
+  kind: InputKind,
 ): Promise<WidgetQuery> {
-  const source = widget.source;
-  if (!source) throw badRequest("This widget asks nothing.");
-  const filters = new Map((dashboard.filters ?? []).map((filter) => [filter.name, filter]));
-
-  if (part === "trend") {
-    const trend = widget.options?.trend;
-    if (widget.type !== "figure" || !trend) throw badRequest("This widget draws no trend.");
-    // A saved query or SQL gives its own rows as the trend: there is nothing more to ask.
-    if (!("visual" in source)) {
-      throw badRequest("This figure's trend is the rows of its own query.");
-    }
-  }
+  const source = input.source;
+  const filters = new Map(page.filters.map((filter) => [filter.name, filter]));
 
   if ("visual" in source) {
-    const catalog = await visualCatalog(kernel, at.tenantId, at.workspaceId);
-    const trend = part === "trend" ? widget.options?.trend : undefined;
+    const trend = kind.trend;
     const group = trend
-      ? { column: trend.by, bucket: trend.bucket ?? bucketFor(widget, filters, values, trend.by) }
+      ? { column: trend.by, bucket: bucketFor(input, filters, page.values, trend.by) }
       : undefined;
+    const visual = group
+      ? // The same question, a period at a time, oldest first.
+        {
+          table: source.visual.table,
+          ...(source.visual.joins ? { joins: source.visual.joins } : {}),
+          ...(source.visual.filters ? { filters: source.visual.filters } : {}),
+          ...(source.visual.measures ? { measures: source.visual.measures.slice(0, 1) } : {}),
+          groupBy: [group],
+          sort: [{ by: groupName(group) }],
+        }
+      : kind.shape === "summary"
+        ? source.visual
+        : asRows(source.visual);
     const written = writeVisual(
-      group
-        ? // The same question, a period at a time, oldest first.
-          {
-            table: source.visual.table,
-            ...(source.visual.joins ? { joins: source.visual.joins } : {}),
-            ...(source.visual.filters ? { filters: source.visual.filters } : {}),
-            ...(source.visual.measures ? { measures: source.visual.measures } : {}),
-            groupBy: [group],
-            sort: [{ by: groupName(group) }],
-          }
-        : source.visual,
-      catalog,
-      conditionsFor(widget, filters, values),
+      visual,
+      page.catalog,
+      conditionsFor(input, filters, page.values),
       "/source/visual",
     );
-    return { text: written.sql, parameters: written.parameters };
+    return { text: written.sql, parameters: written.parameters, columns: written.columns };
   }
+
+  if (kind.trend) throw badRequest("This figure's trend is the rows of its own query.");
 
   /** What a filter gives the parameter it is bound to: for a range of dates, the end that was asked for. */
   const given = (name: string): unknown => {
-    const binding = (widget.filters ?? []).find((one) => one.parameter === name);
+    const binding = (input.filters ?? []).find((one) => one.parameter === name);
     if (!binding) return undefined;
     const filter = filters.get(binding.filter);
-    const value = values[binding.filter];
+    const value = page.values[binding.filter];
     if (filter?.type === "date_range") {
       const range = rangeOf(value);
       return binding.part === "to" ? range?.to : range?.from;
@@ -211,11 +222,11 @@ export async function widgetQuery(
 
   if ("query" in source) {
     const found = await resolveResource(kernel.db, at.workspaceId, source.query, { kind: "query" });
-    // Nothing at the path, or at a path it had: the query the path named when the dashboard
-    // was deployed, if it is still there under another path.
+    // Nothing at the path, or at a path it had: the query the path named when the page was
+    // deployed, if it is still there under another path.
     const byKey =
-      !found?.resource && dashboardId
-        ? await followRecordedKey(kernel.db, at.workspaceId, dashboardId, widget.id)
+      !found?.resource && page.follow
+        ? await followRecordedKey(kernel.db, at.workspaceId, page.follow.pageId, page.follow.place)
         : undefined;
     const query = found?.resource ?? byKey?.resource;
     if (!query) throw notFound(`The query ${source.query}`);
@@ -232,7 +243,7 @@ export async function widgetQuery(
 
   // SQL written in the widget: its parameters are $1, $2 and so on.
   const fixed = source.values ?? [];
-  const bound = (widget.filters ?? [])
+  const bound = (input.filters ?? [])
     .map((one) => Number(one.parameter?.slice(1)))
     .filter((n) => Number.isInteger(n) && n > 0);
   const count = Math.max(fixed.length, 0, ...bound);

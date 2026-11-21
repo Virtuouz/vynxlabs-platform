@@ -173,6 +173,9 @@ importers:
       '@volvel/sdk':
         specifier: workspace:^
         version: link:../../packages/sdk
+      '@volvel/widgets':
+        specifier: workspace:*
+        version: link:../../packages/widget-sdk
       '@volvel/worker':
         specifier: workspace:*
         version: link:../../packages/worker
@@ -521,6 +524,12 @@ importers:
 
   packages/sdk:
     dependencies:
+      '@volvel/manifest':
+        specifier: workspace:*
+        version: link:../manifest
+      '@volvel/widgets':
+        specifier: workspace:*
+        version: link:../widget-sdk
       zod:
         specifier: ^4.6.7
         version: 4.6.7

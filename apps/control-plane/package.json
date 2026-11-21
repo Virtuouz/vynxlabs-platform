@@ -22,6 +22,7 @@
     "@volvel/markup": "workspace:*",
     "@volvel/nodes": "workspace:*",
     "@volvel/sdk": "workspace:^",
+    "@volvel/widgets": "workspace:*",
     "@volvel/worker": "workspace:*",
     "@xmldom/xmldom": "^0.8.15",
     "better-auth": "^1.7.21",

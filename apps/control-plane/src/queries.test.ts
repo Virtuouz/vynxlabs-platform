@@ -804,37 +804,48 @@ describe("a dashboard the workspace keeps", () => {
   test("is a resource: drafted, deployed, listed for whoever may see dashboards, and asked like any other", async () => {
     const saved = await alice.put(`${ws()}/drafts/boards/lending`, {
       kind: "dashboard",
-      schemaVersion: 1,
+      schemaVersion: 3,
       body: {
-        version: 2,
         title: "Lending",
         filters: [{ name: "due", type: "date_range" }],
         widgets: [
           {
             id: "fees",
-            type: "figure",
-            source: {
-              visual: {
-                table: "lending/loans",
-                measures: [{ fn: "sum", column: "fee", as: "fees" }],
+            type: "core/stat",
+            at: { x: 0, y: 0, w: 3, h: 3 },
+            data: {
+              value: {
+                source: {
+                  visual: {
+                    table: "lending/loans",
+                    measures: [{ fn: "sum", column: "fee", as: "fees" }],
+                  },
+                },
+                filters: [{ filter: "due", column: "due" }],
               },
             },
-            filters: [{ filter: "due", column: "due" }],
-            options: { value: "fees", compareTo: "due" },
+            config: { compareTo: "due" },
           },
           {
             id: "by-name",
-            type: "table",
-            source: { query: "reports/fees", values: { statuses: "late" } },
-            filters: [],
+            type: "core/table",
+            at: { x: 0, y: 3, w: 12, h: 6 },
+            data: {
+              rows: { source: { query: "reports/fees", values: { statuses: "late" } } },
+            },
           },
           {
             id: "since",
-            type: "table",
-            source: {
-              sql: `select status, count(*) as n from "lending/loans" where ($1::date is null or due >= $1::date) group by status order by status`,
+            type: "core/table",
+            at: { x: 0, y: 9, w: 12, h: 6 },
+            data: {
+              rows: {
+                source: {
+                  sql: `select status, count(*) as n from "lending/loans" where ($1::date is null or due >= $1::date) group by status order by status`,
+                },
+                filters: [{ filter: "due", parameter: "$1", part: "from" }],
+              },
             },
-            filters: [{ filter: "due", parameter: "$1", part: "from" }],
           },
         ],
       },
@@ -875,26 +886,26 @@ describe("a dashboard the workspace keeps", () => {
 
     const shown = (client: Client, widget: string, filters?: object) =>
       client.get(
-        `${boards()}/${id}/widgets/${widget}/data${filters ? `?filters=${encodeURIComponent(JSON.stringify(filters))}` : ""}`,
+        `${ws()}/widget-data?of=dashboard&path=${id}&widget=${widget}${filters ? `&filters=${encodeURIComponent(JSON.stringify(filters))}` : ""}`,
       );
     // Each of the three kinds of source, each as whoever looks.
-    expect((await shown(alice, "fees")).body.rows).toEqual([[85]]);
-    expect((await shown(carol.client, "fees")).body.rows).toEqual([[40]]);
+    expect((await shown(alice, "fees")).body.inputs.value.rows).toEqual([{ fees: 85 }]);
+    expect((await shown(carol.client, "fees")).body.inputs.value.rows).toEqual([{ fees: 40 }]);
     expect(
       (await shown(carol.client, "fees", { due: { from: "2026-11-15", to: "2026-12-31" } })).body
-        .rows,
-    ).toEqual([[10]]);
+        .inputs.value.rows,
+    ).toEqual([{ fees: 10 }]);
     // A saved query, with a value the widget fixes.
-    expect(rowsOf((await shown(carol.client, "by-name")).body)).toEqual([
+    expect((await shown(carol.client, "by-name")).body.inputs.rows.rows).toEqual([
       { title: "Camera", fees: 30 },
     ]);
     // SQL written in the widget, by someone who could; read by someone who cannot write it.
-    expect(rowsOf((await shown(carol.client, "since")).body)).toEqual([
+    expect((await shown(carol.client, "since")).body.inputs.rows.rows).toEqual([
       { status: "late", n: 1 },
       { status: "out", n: 1 },
     ]);
     expect(
-      rowsOf((await shown(carol.client, "since", { due: { from: "2026-11-15" } })).body),
+      (await shown(carol.client, "since", { due: { from: "2026-11-15" } })).body.inputs.rows.rows,
     ).toEqual([{ status: "out", n: 1 }]);
   });
 });

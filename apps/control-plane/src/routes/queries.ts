@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { DASHBOARD_VERSION, enumColor, type QueryBody, type VisualQuery } from "@volvel/manifest";
+import { dashboardKind, enumColor, type QueryBody, type VisualQuery } from "@volvel/manifest";
 import { Type } from "typebox";
 import { loadCatalog } from "../kernel/data/apply.js";
 import { ALLOWED_FUNCTIONS } from "../kernel/data/query/allowed.js";
@@ -60,18 +60,24 @@ export const queryRoutes =
     const validateVisual = (visual: unknown) => {
       const result = kernel.kinds.validateManifest({
         kind: "dashboard",
-        schemaVersion: 1,
+        schemaVersion: dashboardKind.schemaVersion,
         path: "preview",
         ownership: "ui",
         body: {
-          version: DASHBOARD_VERSION,
-          widgets: [{ id: "preview", type: "table", source: { visual } }],
+          widgets: [
+            {
+              id: "preview",
+              type: "core/table",
+              at: { x: 0, y: 0, w: 12, h: 6 },
+              data: { rows: { source: { visual } } },
+            },
+          ],
         },
       });
       return result.ok
         ? []
         : result.issues.map((issue) => ({
-            path: issue.path.replace("/body/widgets/0/source/visual", "/query"),
+            path: issue.path.replace("/body/widgets/0/data/rows/source/visual", "/query"),
             message: issue.message,
           }));
     };

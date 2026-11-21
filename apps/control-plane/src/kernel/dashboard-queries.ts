@@ -1,37 +1,68 @@
-import type { DashboardBody } from "@volvel/manifest";
+import type { DashboardBody, InterfaceBody, PageWidget } from "@volvel/manifest";
 import type { Db, Trx } from "./audit.js";
 import { resolveResource } from "./resolve.js";
 
 /**
- * What a dashboard's widgets name. A widget names a saved query by path, and a path can
- * change: the old one answers for 90 days. A deployed dashboard therefore keeps, for each
- * widget, the key of the query its path named when it was deployed, and a widget whose
- * path answers nothing any more runs the query with that key.
+ * What the widgets of an interface or a dashboard name. A data input names a saved query by
+ * path, and a path can change: the old one answers for 90 days. A deployed page therefore
+ * keeps, for each such input, the key of the query its path named when it was deployed, and
+ * an input whose path answers nothing any more runs the query with that key.
  */
 
-/** The saved-query path each widget of a dashboard names, by the widget's ID. */
-export function queryPathsOf(body: DashboardBody): Map<string, string> {
+/** The kinds of resource that hold pages of widgets. */
+export const PAGE_KINDS_HELD = ["interface", "dashboard"] as const;
+export type PageResourceKind = (typeof PAGE_KINDS_HELD)[number];
+export type PageBody = InterfaceBody | DashboardBody;
+
+/** Every widget of a body, with the page's id before it when the body has pages. */
+function widgetsOf(
+  kind: PageResourceKind,
+  body: PageBody,
+): { prefix: string; widget: PageWidget }[] {
+  if (kind === "dashboard") {
+    return ((body as DashboardBody).widgets ?? []).map((widget) => ({ prefix: "", widget }));
+  }
+  return ((body as InterfaceBody).pages ?? []).flatMap((page) =>
+    (page.widgets ?? []).map((widget) => ({ prefix: `${page.id}/`, widget })),
+  );
+}
+
+/**
+ * The saved-query path each data input of a body's widgets names, by where it is: the
+ * widget's id and the input's name, with the page's id first on an interface
+ * (`money/by-week/rows`, or `by-week/rows` on a dashboard). A widget's id is only unique on
+ * its page.
+ */
+export function queryPathsOf(kind: PageResourceKind, body: PageBody): Map<string, string> {
   const named = new Map<string, string>();
-  for (const widget of body.widgets ?? []) {
-    if (widget.source && "query" in widget.source) named.set(widget.id, widget.source.query);
+  for (const { prefix, widget } of widgetsOf(kind, body)) {
+    for (const [input, one] of Object.entries(widget.data ?? {})) {
+      if ("query" in one.source) named.set(`${prefix}${widget.id}/${input}`, one.source.query);
+    }
   }
   return named;
 }
 
+/** Where a widget's input is, in the form `queryPathsOf` gives: `page/widget/input`, or `widget/input`. */
+export function placeOf(page: string | undefined, widget: string, input: string): string {
+  return `${page ? `${page}/` : ""}${widget}/${input}`;
+}
+
 /**
- * Writes what each widget of the workspace's dashboards names, after a deploy has applied
- * every resource (a dashboard may come before the query it names). A widget whose path names
- * a query is recorded with that query's key. One whose path names nothing keeps the record it
- * had for that path, so that it can still be followed; any other record is dropped.
+ * Writes what each data input of the workspace's interfaces and dashboards names, after a
+ * deploy has applied every resource (a page may come before the query it names). An input
+ * whose path names a query is recorded with that query's key. One whose path names nothing
+ * keeps the record it had for that path, so that it can still be followed; any other record
+ * is dropped.
  */
 export async function recordWidgetQueries(trx: Trx, workspace: { id: string; tenantId: string }) {
-  const dashboards = await trx
+  const pages = await trx
     .selectFrom("resource")
-    .select(["id", "key", "body"])
+    .select(["id", "key", "kind", "body"])
     .where("workspace_id", "=", workspace.id)
-    .where("kind", "=", "dashboard")
+    .where("kind", "in", [...PAGE_KINDS_HELD])
     .execute();
-  if (dashboards.length === 0) return;
+  if (pages.length === 0) return;
   const had = await trx
     .selectFrom("dashboard_widget_query")
     .selectAll()
@@ -48,9 +79,12 @@ export async function recordWidgetQueries(trx: Trx, workspace: { id: string; ten
     query_key: string;
   }[] = [];
   const kept = new Set<string>();
-  for (const dashboard of dashboards) {
-    for (const [widgetId, path] of queryPathsOf(dashboard.body as unknown as DashboardBody)) {
-      const id = `${dashboard.id}/${widgetId}`;
+  for (const page of pages) {
+    for (const [place, path] of queryPathsOf(
+      page.kind as PageResourceKind,
+      page.body as unknown as PageBody,
+    )) {
+      const id = `${page.id}/${place}`;
       const found = await resolveResource(trx, workspace.id, path, { kind: "query" });
       const before = hadOf.get(id);
       if (!found && before?.path === path) {
@@ -63,11 +97,11 @@ export async function recordWidgetQueries(trx: Trx, workspace: { id: string; ten
         continue;
       }
       records.push({
-        dashboard_id: dashboard.id,
-        widget_id: widgetId,
+        dashboard_id: page.id,
+        widget_id: place,
         workspace_id: workspace.id,
         tenant_id: workspace.tenantId,
-        dashboard_key: dashboard.key,
+        dashboard_key: page.key,
         path,
         query_key: found.resource.key,
       });
@@ -103,21 +137,21 @@ export async function recordWidgetQueries(trx: Trx, workspace: { id: string; ten
 }
 
 /**
- * The query a widget named at deploy time, found by its key, for a widget whose path
- * answers nothing. `names` is the path the dashboard still has and `now` the path the
- * query has.
+ * The query an input named at deploy time, found by its key, for an input whose path
+ * answers nothing. `place` is as `queryPathsOf` gives it. `names` is the path the page still
+ * has and `now` the path the query has.
  */
 export async function followRecordedKey(
   db: Db | Trx,
   workspaceId: string,
-  dashboardId: string,
-  widgetId: string,
+  pageId: string,
+  place: string,
 ) {
   const record = await db
     .selectFrom("dashboard_widget_query")
     .select(["path", "query_key"])
-    .where("dashboard_id", "=", dashboardId)
-    .where("widget_id", "=", widgetId)
+    .where("dashboard_id", "=", pageId)
+    .where("widget_id", "=", place)
     .executeTakeFirst();
   if (!record) return undefined;
   const resource = await db
@@ -130,8 +164,9 @@ export async function followRecordedKey(
   return resource ? { resource, names: record.path, now: resource.path } : undefined;
 }
 
-/** A dashboard with a widget that names a path. */
+/** An interface or a dashboard with an input that names a path. */
 export interface DashboardNaming {
+  kind: PageResourceKind;
   path: string;
   key: string;
   title: string;
@@ -140,15 +175,15 @@ export interface DashboardNaming {
   /** Whether what it is now is an open draft. */
   drafted: boolean;
   schemaVersion: number;
-  body: DashboardBody;
-  /** The widgets that name the path. */
+  body: PageBody;
+  /** Where in it the path is named, as `queryPathsOf` gives it. */
   widgets: string[];
 }
 
 /**
- * The dashboards whose widgets name a query path, as they would be deployed now: a draft
- * where there is one, else what is deployed. A dashboard from the repository that has no
- * draft is `code`.
+ * The interfaces and dashboards whose widgets name a query path, as they would be deployed
+ * now: a draft where there is one, else what is deployed. One from the repository that has
+ * no draft is `code`.
  */
 export async function dashboardsNaming(
   db: Db | Trx,
@@ -157,15 +192,15 @@ export async function dashboardsNaming(
 ): Promise<DashboardNaming[]> {
   const deployed = await db
     .selectFrom("resource")
-    .select(["key", "path", "title", "body", "ownership", "schema_version"])
+    .select(["key", "path", "kind", "title", "body", "ownership", "schema_version"])
     .where("workspace_id", "=", workspaceId)
-    .where("kind", "=", "dashboard")
+    .where("kind", "in", [...PAGE_KINDS_HELD])
     .execute();
   const drafts = await db
     .selectFrom("resource_draft")
-    .select(["key", "path", "title", "body", "deleted", "schema_version"])
+    .select(["key", "path", "kind", "title", "body", "deleted", "schema_version"])
     .where("workspace_id", "=", workspaceId)
-    .where("kind", "=", "dashboard")
+    .where("kind", "in", [...PAGE_KINDS_HELD])
     .execute();
   const draftOf = new Map(drafts.map((draft) => [draft.key, draft]));
   const seen = new Set<string>();
@@ -174,6 +209,7 @@ export async function dashboardsNaming(
     one: {
       key: string;
       path: string;
+      kind: string;
       title: string | null;
       body: unknown;
       schema_version: number;
@@ -181,10 +217,14 @@ export async function dashboardsNaming(
     ownership: "ui" | "code",
     drafted: boolean,
   ) => {
-    const body = one.body as DashboardBody;
-    const widgets = [...queryPathsOf(body)].filter(([, named]) => named === path).map(([id]) => id);
+    const kind = one.kind as PageResourceKind;
+    const body = one.body as PageBody;
+    const widgets = [...queryPathsOf(kind, body)]
+      .filter(([, named]) => named === path)
+      .map(([place]) => place);
     if (widgets.length === 0) return;
     out.push({
+      kind,
       path: one.path,
       key: one.key,
       title: one.title || (body as { title?: string }).title || one.path,
@@ -208,14 +248,32 @@ export async function dashboardsNaming(
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/** A dashboard's body with each widget that names `from` naming `to`. */
-export function renamedQuery(body: DashboardBody, from: string, to: string): DashboardBody {
+/** A body with each data input that names the saved query `from` naming `to`. */
+export function renamedQuery(
+  kind: PageResourceKind,
+  body: PageBody,
+  from: string,
+  to: string,
+): PageBody {
+  const widget = (one: PageWidget): PageWidget => {
+    if (!one.data) return one;
+    const data = Object.fromEntries(
+      Object.entries(one.data).map(([name, input]) => [
+        name,
+        "query" in input.source && input.source.query === from
+          ? { ...input, source: { ...input.source, query: to } }
+          : input,
+      ]),
+    );
+    return { ...one, data };
+  };
+  if (kind === "dashboard") {
+    const dashboard = body as DashboardBody;
+    return { ...dashboard, widgets: dashboard.widgets.map(widget) };
+  }
+  const interfaceBody = body as InterfaceBody;
   return {
-    ...body,
-    widgets: body.widgets.map((widget) =>
-      widget.source && "query" in widget.source && widget.source.query === from
-        ? { ...widget, source: { ...widget.source, query: to } }
-        : widget,
-    ),
+    ...interfaceBody,
+    pages: interfaceBody.pages.map((page) => ({ ...page, widgets: page.widgets.map(widget) })),
   };
 }

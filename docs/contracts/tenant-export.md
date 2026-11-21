@@ -83,7 +83,7 @@ Sign-ins that were in flight, and the record of SAML assertions already accepted
 
 ## Dashboards
 
-`platform/member_dashboard.NNNN.jsonl` carries each member's dashboards: `id`, `workspace_id`, `member_id`, `title`, `body` (one page, in the shape of a page of an interface), `shared` and `revision`. The member it names is rewritten with the member, as everywhere.
+`platform/member_dashboard.NNNN.jsonl` carries each member's dashboards: `id`, `workspace_id`, `member_id`, `title`, `body` (a `DashboardBody`: `title`, `description`, `refresh`, `filters` and `widgets`, each widget `{ id, type, title, subtitle, at, data, config }` as on a page of an interface; a body made before phase 25 is not carried, and the migration that came with it cleared them), `shared` and `revision`. The member it names is rewritten with the member, as everywhere.
 
 ## App files
 

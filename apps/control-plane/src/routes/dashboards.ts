@@ -1,21 +1,12 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@volvel/db";
-import {
-  checkDashboard,
-  DASHBOARD_VERSION,
-  type DashboardBody,
-  isOldDashboard,
-  upgradeDashboard,
-} from "@volvel/manifest";
+import { checkDashboard, type DashboardBody, dashboardKind } from "@volvel/manifest";
 import { Type } from "typebox";
 import { checkQuery, QueryRefused } from "../kernel/data/query/parse.js";
-import { checkFor, QUERY_ROWS, refusal, runQuery } from "../kernel/data/query/run.js";
-import { type FilterValues, widgetQuery } from "../kernel/data/query/widget.js";
-import { scopeFor } from "../kernel/data/rows.js";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
-import { QueryResultSchema } from "./queries.js";
+import { workspaceTables } from "../kernel/pages.js";
 import { AnyObject, Id, iso, NoContent, NullableString, Time, WorkspaceParams } from "./shared.js";
 
 /** The most dashboards one member may keep in one workspace. */
@@ -51,30 +42,10 @@ const Dashboard = Type.Object({
   ...Summary.properties,
   body: Type.Unsafe<Record<string, unknown>>({
     ...AnyObject,
-    description:
-      "The dashboard: its filters and its widgets. See the `dashboard` schema. One made " +
-      "before phase 18 is given as it reads now.",
-  }),
-  upgraded: Type.Boolean({
-    description:
-      "It was made before phase 18 and is shown converted. Saving it keeps the conversion.",
+    description: "The dashboard: its filters and its widgets. See the `dashboard` schema.",
   }),
 });
 const Params = Type.Object({ ...WorkspaceParams.properties, d: Id });
-const WidgetResultSchema = Type.Object({
-  ...QueryResultSchema.properties,
-  followed: Type.Optional(
-    Type.Object(
-      { names: Type.String(), now: Type.String() },
-      {
-        description:
-          "The path the widget names answered nothing, and the query it named when the " +
-          "dashboard was deployed was found by its key: `names` is the path the dashboard " +
-          "has, `now` the query's path. A dashboard from the repository is changed there.",
-      },
-    ),
-  ),
-});
 
 /** A member's own dashboards in a workspace. */
 export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
@@ -151,14 +122,10 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         )
       )`;
     /** What a member's dashboard holds, as a dashboard of now. */
-    const bodyOf = (row: { body: unknown; title: string }): DashboardBody =>
-      isOldDashboard(row.body)
-        ? upgradeDashboard(row.body, row.title)
-        : (row.body as unknown as DashboardBody);
+    const bodyOf = (row: { body: unknown }): DashboardBody => row.body as unknown as DashboardBody;
     const whole = async (_workspace: WorkspaceRef, row: Row, me: string) => ({
       ...summary(row, me, (await sharesOf([row.id]))(row.id)),
       body: bodyOf(row) as unknown as Record<string, unknown>,
-      upgraded: isOldDashboard(row.body),
     });
     /** The dashboards the workspace keeps as resources. Whoever may see dashboards sees them. */
     const kept = (workspace: WorkspaceRef) =>
@@ -205,21 +172,21 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     const checked = async (ctx: RequestContext, title: string, given: unknown) => {
       const result = kernel.kinds.validateManifest({
         kind: "dashboard",
-        schemaVersion: 1,
+        schemaVersion: dashboardKind.schemaVersion,
         path: "dashboard",
         ownership: "ui",
         body: given,
       });
+      const tables = await workspaceTables(kernel, ctx.workspace as WorkspaceRef);
       const issues = result.ok
-        ? checkDashboard(result.value.body as unknown as DashboardBody).map((issue) => ({
-            path: `/body${issue.path}`,
-            message: issue.message,
-          }))
+        ? checkDashboard(result.value.body as unknown as DashboardBody, (path) => tables.get(path))
         : result.issues;
       if (issues.length > 0) throw badRequest("The dashboard is not valid.", issues);
       const body = given as DashboardBody;
       const written = body.widgets.flatMap((widget, index) =>
-        widget.source && "sql" in widget.source ? [{ sql: widget.source.sql, index }] : [],
+        Object.entries(widget.data ?? {}).flatMap(([name, input]) =>
+          "sql" in input.source ? [{ sql: input.source.sql, at: `${index}/data/${name}` }] : [],
+        ),
       );
       // SQL typed into a widget is SQL typed: whoever saves it must be allowed to write it.
       if (written.length > 0) {
@@ -234,7 +201,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         } catch (error) {
           if (!(error instanceof QueryRefused)) throw error;
           throw badRequest("The dashboard is not valid.", [
-            { path: `/body/widgets/${one.index}/source/sql`, message: error.message },
+            { path: `/body/widgets/${one.at}/source/sql`, message: error.message },
           ]);
         }
       }
@@ -292,7 +259,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const workspace = ctx.workspace as WorkspaceRef;
         const id = newId();
         const title = body.title.trim();
-        const page = await checked(ctx, title, { version: DASHBOARD_VERSION, widgets: [] });
+        const page = await checked(ctx, title, { widgets: [] });
         await ctx.mutate(async (trx, audit) => {
           const held = await trx
             .selectFrom("member_dashboard")
@@ -352,113 +319,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           ...keptSummary(found.resource),
           body: found.body as unknown as Record<string, unknown>,
-          upgraded: false,
         };
-      },
-    );
-
-    app.get(
-      `${base}/:d/widgets/:widget/data`,
-      {
-        config: { access: access.workspace("dashboard:read") },
-        schema: {
-          summary: "What one widget of a dashboard shows",
-          description:
-            "Runs the widget's query with the dashboard's filters as `filters` sets them, and " +
-            "answers as a query does. Whoever asks needs `data:read` on each table the query " +
-            "reads, and is given the rows each table's policy gives them: two people looking " +
-            "at one dashboard may see different numbers. It asks for no `sql:read`: the " +
-            "query is the dashboard's.",
-          tags: ["dashboards"],
-          params: Type.Object({
-            ...Params.properties,
-            widget: Type.String({ maxLength: 40 }),
-          }),
-          querystring: Type.Object({
-            filters: Type.Optional(
-              Type.String({
-                maxLength: 4000,
-                description:
-                  'The filters by name, as JSON. A range of dates is {"from":"2026-01-01","to":"2026-01-31"}. A filter left out narrows nothing.',
-              }),
-            ),
-            limit: Type.Optional(
-              Type.Integer({ minimum: 1, maximum: QUERY_ROWS.most, default: QUERY_ROWS.default }),
-            ),
-            part: Type.Optional(
-              Type.Literal("trend", {
-                description:
-                  "For a figure with a `trend`, built from menus: its number over the time it covers, one row to a day, a week or a month, oldest first.",
-              }),
-            ),
-          }),
-          response: { 200: WidgetResultSchema },
-        },
-      },
-      async ({ ctx, params, query }) => {
-        const me = member(ctx);
-        const workspace = ctx.workspace as WorkspaceRef;
-        const found = await open(workspace, params.d, me);
-        const widget = found.body.widgets.find((one) => one.id === params.widget);
-        if (!widget) throw notFound("The widget");
-        let values: FilterValues = {};
-        if (query.filters !== undefined) {
-          try {
-            values = JSON.parse(query.filters) as FilterValues;
-          } catch {
-            throw badRequest("The filters must be JSON.");
-          }
-          if (typeof values !== "object" || values === null || Array.isArray(values)) {
-            throw badRequest("The filters must be an object, by name.");
-          }
-        }
-        const at = { tenantId: workspace.tenantId, workspaceId: workspace.id };
-        const asked = await widgetQuery(
-          kernel,
-          at,
-          found.body,
-          widget,
-          values,
-          query.part,
-          found.resource?.id,
-        );
-        // A parameter nothing fills is empty, so that the query can say what an empty one means.
-        const needs = await checkFor(kernel, at.tenantId, at.workspaceId, asked.text).catch(
-          (error) => {
-            throw error instanceof QueryRefused ? refusal(error) : error;
-          },
-        );
-        const parameters = Array.from(
-          { length: needs.parameters },
-          (_, index) => asked.parameters[index] ?? null,
-        );
-        const scope = await scopeFor(
-          kernel,
-          at.tenantId,
-          ctx.principal,
-          await ctx.allowed("data_all:read", at),
-        );
-        const answer = await runQuery(kernel, {
-          ...at,
-          scope,
-          text: asked.text,
-          parameters,
-          ...(query.limit ? { limit: query.limit } : {}),
-          mayRead: async (table) => {
-            const allowed = await ctx.allowed("data:read", {
-              ...at,
-              resourceId: table.resourceId ?? undefined,
-            });
-            if (!allowed) {
-              throw new HttpError(
-                403,
-                "forbidden",
-                `This reads the table "${table.name}", which needs the data:read permission there.`,
-              );
-            }
-          },
-        });
-        return asked.followed ? { ...answer, followed: asked.followed } : answer;
       },
     );
 

@@ -19,11 +19,20 @@ type Any = any;
 
 const ws = () => `/tenants/${tenant}/workspaces/${dev}`;
 const dashboard = (title: string, query: string) => ({
-  version: 2,
   title,
   widgets: [
-    { id: "n", type: "table", source: { query }, filters: [] },
-    { id: "plain", type: "table", source: { sql: "select 2 as n" }, filters: [] },
+    {
+      id: "n",
+      type: "core/table",
+      at: { x: 0, y: 0, w: 12, h: 6 },
+      data: { rows: { source: { query } } },
+    },
+    {
+      id: "plain",
+      type: "core/table",
+      at: { x: 0, y: 6, w: 12, h: 6 },
+      data: { rows: { source: { sql: "select 2 as n" } } },
+    },
   ],
 });
 /** The repository's part: a query and a dashboard that asks it, both code-managed. */
@@ -38,7 +47,7 @@ function repository(): Bundle {
     },
     {
       kind: "dashboard",
-      schemaVersion: 1,
+      schemaVersion: 3,
       path: "boards/theirs",
       ownership: "code",
       body: dashboard("Theirs", "reports/n"),
@@ -54,7 +63,12 @@ function repository(): Bundle {
   return { ...unsigned, digest: bundleDigest(unsigned) };
 }
 const draft = (path: string, kind: string, body: object, extra: object = {}) =>
-  alice.put(`${ws()}/drafts/${path}`, { kind, schemaVersion: 1, body, ...extra });
+  alice.put(`${ws()}/drafts/${path}`, {
+    kind,
+    schemaVersion: kind === "dashboard" ? 3 : 1,
+    body,
+    ...extra,
+  });
 const deployAll = async () => {
   const answer = await alice.post(`${ws()}/changes/deploy`, {});
   expect(answer.status, JSON.stringify(answer.body)).toBe(201);
@@ -69,7 +83,7 @@ const idOf = async (path: string) =>
       .executeTakeFirstOrThrow()
   ).id;
 const shown = (dashboardId: string, widget = "n") =>
-  alice.get(`${ws()}/dashboards/${dashboardId}/widgets/${widget}/data`);
+  alice.get(`${ws()}/widget-data?of=dashboard&path=${dashboardId}&widget=${widget}`);
 const records = (path: string) =>
   t.db
     .selectFrom("dashboard_widget_query")
@@ -130,7 +144,7 @@ describe("a widget follows its query", () => {
     const key = (await alice.get(`${ws()}/resources/reports/n`)).body.key;
     expect(await records(consoleBoard)).toEqual([
       expect.objectContaining({
-        widget_id: "n",
+        widget_id: "n/rows",
         path: "reports/n",
         query_key: key,
         dashboard_key: "boards/mine",
@@ -149,7 +163,7 @@ describe("a widget follows its query", () => {
       (
         await alice.put(`${ws()}/drafts/boards/gone`, {
           kind: "dashboard",
-          schemaVersion: 1,
+          schemaVersion: 3,
           body: {},
           deleted: true,
         })
@@ -162,8 +176,8 @@ describe("a widget follows its query", () => {
   test("renaming a query drafts the console's dashboards, and not the repository's", async () => {
     const effects = await alice.get(`${ws()}/rename-effects/reports/n`);
     expect(effects.body.dashboards).toEqual([
-      { path: "boards/mine", title: "Mine", ownership: "ui", widgets: 1 },
-      { path: "boards/theirs", title: "Theirs", ownership: "code", widgets: 1 },
+      { kind: "dashboard", path: "boards/mine", title: "Mine", ownership: "ui", widgets: 1 },
+      { kind: "dashboard", path: "boards/theirs", title: "Theirs", ownership: "code", widgets: 1 },
     ]);
     const renamed = await draft(
       "reports/n",
@@ -174,10 +188,10 @@ describe("a widget follows its query", () => {
     expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
     expect(await draftsOf()).toEqual(["boards/mine", "reports/count"]);
     const mine = (await alice.get(`${ws()}/drafts/boards/mine`)).body;
-    expect(mine.body.widgets[0].source.query).toBe("reports/count");
+    expect(mine.body.widgets[0].data.rows.source.query).toBe("reports/count");
     // What is deployed is as it was.
     const live = (await alice.get(`${ws()}/resources/boards/mine`)).body;
-    expect(live.body.widgets[0].source.query).toBe("reports/n");
+    expect(live.body.widgets[0].data.rows.source.query).toBe("reports/n");
   });
 
   test("discarding the rename sets those dashboard drafts aside with it", async () => {
@@ -191,7 +205,7 @@ describe("a widget follows its query", () => {
     const mine = (await alice.get(`${ws()}/drafts/boards/mine`)).body;
     const edited = await alice.put(`${ws()}/drafts/boards/mine`, {
       kind: "dashboard",
-      schemaVersion: 1,
+      schemaVersion: 3,
       body: { ...mine.body, title: "Mine, retitled" },
       revision: mine.revision,
     });
@@ -211,13 +225,13 @@ describe("a widget follows its query", () => {
     // The console's dashboard was moved to the new path with the rename, and its record too.
     const first = await shown(consoleBoard);
     expect(first.status, JSON.stringify(first.body)).toBe(200);
-    expect(first.body.followed).toBeUndefined();
+    expect(first.body.inputs.rows.followed).toBeUndefined();
     expect((await records(consoleBoard))[0]?.path).toBe("reports/count");
 
     // The repository's still says the old path: the alias answers for it, with no note.
     const aliased = await shown(repoBoard);
     expect(aliased.status).toBe(200);
-    expect(aliased.body.followed).toBeUndefined();
+    expect(aliased.body.inputs.rows.followed).toBeUndefined();
 
     // The alias runs out.
     await t.db
@@ -228,10 +242,13 @@ describe("a widget follows its query", () => {
       .execute();
     const followed = await shown(repoBoard);
     expect(followed.status, JSON.stringify(followed.body)).toBe(200);
-    expect(followed.body.rows).toEqual([[1]]);
-    expect(followed.body.followed).toEqual({ names: "reports/n", now: "reports/count" });
+    expect(followed.body.inputs.rows.rows).toEqual([{ n: 1 }]);
+    expect(followed.body.inputs.rows.followed).toEqual({
+      names: "reports/n",
+      now: "reports/count",
+    });
     // A widget that names no query has nothing to follow.
-    expect((await shown(repoBoard, "plain")).body.followed).toBeUndefined();
+    expect((await shown(repoBoard, "plain")).body.inputs.rows.followed).toBeUndefined();
   });
 
   test("a widget that names a query that was never there still finds nothing", async () => {

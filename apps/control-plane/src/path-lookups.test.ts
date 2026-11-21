@@ -18,7 +18,6 @@ import { expect, test } from "vitest";
  * here, and say why in a comment beside the query.
  */
 const ALLOWED: Record<string, number> = {
-  "kernel/apps/actions.ts": 1,
   "kernel/apps/front.ts": 1,
   "kernel/authoring.ts": 2,
   "kernel/execution/runs.ts": 1,

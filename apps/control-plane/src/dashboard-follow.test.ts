@@ -186,6 +186,23 @@ describe("a widget follows its query", () => {
     expect(await draftsOf()).toEqual([]);
   });
 
+  test("a dashboard draft changed after the rename is someone's work, and is kept when the rename is discarded", async () => {
+    await draft("reports/n", "query", { sql: "select 1 as n" }, { path: "reports/count" });
+    const mine = (await alice.get(`${ws()}/drafts/boards/mine`)).body;
+    const edited = await alice.put(`${ws()}/drafts/boards/mine`, {
+      kind: "dashboard",
+      schemaVersion: 1,
+      body: { ...mine.body, title: "Mine, retitled" },
+      revision: mine.revision,
+    });
+    expect(edited.status, JSON.stringify(edited.body)).toBe(200);
+    expect((await alice.delete(`${ws()}/drafts/reports/count`)).status).toBe(204);
+    expect(await draftsOf()).toEqual(["boards/mine"]);
+    // Left as it was found for the next test.
+    expect((await alice.delete(`${ws()}/drafts/boards/mine`)).status).toBe(204);
+    expect(await draftsOf()).toEqual([]);
+  });
+
   test("deploying the rename keeps the dashboard running, by path, then by key once the alias has gone", async () => {
     await draft("reports/n", "query", { sql: "select 1 as n" }, { path: "reports/count" });
     expect(await draftsOf()).toEqual(["boards/mine", "reports/count"]);

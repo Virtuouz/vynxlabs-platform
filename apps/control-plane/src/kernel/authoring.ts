@@ -370,7 +370,12 @@ export async function discardDraft(trx: Trx, audit: Audit, workspace: WorkspaceR
       .where("key", "=", dashboard.key)
       .executeTakeFirst();
     const before = deployed ? queryPathsOf(deployed.body as unknown as DashboardBody) : undefined;
-    if (!before || !dashboard.widgets.some((id) => before.get(id) === was.path)) continue;
+    if (!deployed || !before || !dashboard.widgets.some((id) => before.get(id) === was.path))
+      continue;
+    // Only the draft the rename wrote, as it wrote it: one changed since is someone's work, and
+    // is kept (it then names a path that is gone, and runs by the key recorded for it).
+    const written = renamedQuery(deployed.body as unknown as DashboardBody, was.path, removed.path);
+    if (JSON.stringify(dashboard.body) !== JSON.stringify(written)) continue;
     await setAside(trx, audit, workspace, dashboard.path);
   }
 }

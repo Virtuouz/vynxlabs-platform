@@ -159,7 +159,20 @@ const newPayment = {
       config: {
         mode: "create",
         fields: [{ column: "invoice" }, { column: "amount" }, { column: "method" }],
-        submit: { steps: [{ do: "close" }] },
+        submit: {
+          steps: [
+            {
+              do: "create",
+              table: "payments",
+              set: {
+                invoice: { asked: "invoice" },
+                amount: { asked: "amount" },
+                method: { asked: "method" },
+              },
+            },
+            { do: "close" },
+          ],
+        },
       },
     },
   ],
@@ -791,6 +804,10 @@ describe("the rows behind a group of a summary", () => {
     expect(read.body.inputs.rows.columns.map((column: Any) => column.name)).toContain("number");
     expect(numbers(await behind({ team: "sales" }))).toEqual(["INV-3"]);
     expect(numbers(await behind({ team: "nobody" }))).toEqual([]);
+    // No group (a number that isn't broken down, a stat): every row behind it.
+    expect(numbers(await behind({})).length).toBeGreaterThan(
+      numbers(await behind({ team: "sales" })).length,
+    );
   });
 
   test("still have the page's filters applied, and the caller's row policy", async () => {

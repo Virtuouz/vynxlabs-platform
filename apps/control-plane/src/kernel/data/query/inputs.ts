@@ -548,8 +548,9 @@ export async function readWidget(
 
     // The rows behind one group of a summary: the table, filters and page filters, and that group.
     if (request.behind && request.only?.input === name) {
-      if (!visual || (visual.groupBy?.length ?? 0) === 0) {
-        throw badRequest("Only a table's figures broken down by something have rows behind them.");
+      // A number that isn't broken down (a stat) has every row of its input behind it.
+      if (!visual) {
+        throw badRequest("Only figures read from a table have rows behind them.");
       }
       const base: VisualQuery = {
         table: visual.table,

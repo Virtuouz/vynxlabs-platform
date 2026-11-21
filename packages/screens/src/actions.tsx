@@ -213,9 +213,10 @@ export function useActions(host: ActionsHost): {
           values = { ...values, [step.filter]: value ?? null };
           now.onFilterValues(values);
         } else if (step.do === "rows") {
+          // A clicked point gives its group; a number that isn't broken down (a stat) gives
+          // none, and every row behind it is shown.
           const input = request.input;
-          if (input && request.group)
-            setRows({ widget: request.widget.id, input, group: request.group });
+          if (input) setRows({ widget: request.widget.id, input, group: request.group ?? {} });
         }
       }
       const closing = response.message ?? action.done;

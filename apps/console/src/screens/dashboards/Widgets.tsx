@@ -801,7 +801,7 @@ export function WidgetCard({
           </span>
         ) : null}
         {result?.followed ? (
-          <Notice tone="warning">
+          <Notice tone="attention">
             Names <code className="font-mono text-code">{result.followed.names}</code>, now{" "}
             <code className="font-mono text-code">{result.followed.now}</code>:{" "}
             {fromRepository

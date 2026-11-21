@@ -229,7 +229,9 @@ test.beforeAll(async ({ browser }) => {
       roleId: reader,
     });
     if (shared.status >= 300 && shared.status !== 409) {
-      throw new Error(`Sharing ${one.id} with Northside: ${shared.status} ${JSON.stringify(shared.body)}`);
+      throw new Error(
+        `Sharing ${one.id} with Northside: ${shared.status} ${JSON.stringify(shared.body)}`,
+      );
     }
   }
   const apps = (await ok(owner, "GET", `${W}/apps`)).items as { url: string; path?: string }[];
@@ -355,7 +357,8 @@ test("New invoice makes a row with the same form, and the table shows it", async
   await form.getByLabel("Number").fill(`${PREFIX}-NEW`);
   await form.getByLabel("Client").fill("C-1002");
   await form.getByLabel("Clinic").fill("northside");
-  await form.getByLabel("Total").fill("5500");
+  // In dollars: the invoice keeps 5500 cents.
+  await form.getByLabel("Total").fill("55.00");
   await form.getByLabel("Issued").fill(today);
   await form.getByRole("button", { name: "Create invoice" }).click();
   await expect(owner.getByText("Invoice created")).toBeVisible();

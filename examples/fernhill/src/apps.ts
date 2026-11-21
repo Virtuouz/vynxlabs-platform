@@ -541,7 +541,11 @@ export const performance = defineInterface({
           data: { record: { source: { visual: { table: "invoices" } } } },
           config: {
             mode: "create",
-            fields: [{ column: "number" }, ...INVOICE_FORM_FIELDS],
+            // A new invoice is unpaid: it is not asked ("Unpaid by default", board 5).
+            fields: [
+              { column: "number" },
+              ...INVOICE_FORM_FIELDS.filter((field) => field.column !== "status"),
+            ],
             submitLabel: "Create invoice",
             submit: {
               steps: [
@@ -549,11 +553,15 @@ export const performance = defineInterface({
                 {
                   do: "create",
                   table: "invoices",
-                  set: Object.fromEntries(
-                    ["number", ...INVOICE_FORM_FIELDS.map((field) => field.column)].map(
-                      (column) => [column, { asked: column }],
+                  // A new invoice is unpaid: it is not asked ("Unpaid by default", board 5).
+                  set: {
+                    ...Object.fromEntries(
+                      ["number", ...INVOICE_FORM_FIELDS.map((field) => field.column)]
+                        .filter((column) => column !== "status")
+                        .map((column) => [column, { asked: column }]),
                     ),
-                  ),
+                    status: { value: "unpaid" },
+                  },
                 },
                 { do: "close" },
                 { do: "message", text: "Invoice created", tone: "success" },

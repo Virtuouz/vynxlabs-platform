@@ -3,6 +3,7 @@ import {
   MAX_WIDGET_HEIGHT,
   newWidget,
   PAGE_COLUMNS,
+  type Page,
   type PageFilter,
   type PageWidget,
 } from "@volvel/manifest";
@@ -22,17 +23,52 @@ import {
   settleOnGrid,
   withoutWidget,
 } from "../../kit/inspector/model.ts";
+import { AddFormDialog } from "./AddFormDialog.tsx";
 import { AddToPage } from "./AddToPage.tsx";
 import { type PageSource, pageClient } from "./client.ts";
 import { EditorShell } from "./EditorShell.tsx";
 import { type FilterChange, PageFilterSettings } from "./PageFilters.tsx";
+import { PageSettings } from "./PageSettings.tsx";
+import { MODAL_WIDTH, SHEET_WIDTH } from "./pageKinds.ts";
+import { RowClickOffer } from "./RowClickOffer.tsx";
+import {
+  type Edit,
+  type FormPlan,
+  formEdit,
+  manyOf,
+  type PageContext,
+  pageTable,
+  suggestionEdit,
+  suggestionsFor,
+} from "./records.ts";
 import { definitionOf, views } from "./registry.ts";
 import { type Box, type CarryRequest, type FilterValues, PageView, placed } from "./renderer.ts";
+import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
 
 /** What the editor changes: a page's widgets and its filters. Everything else about a page or a dashboard is its host's. */
 export interface PageValue {
   widgets: PageWidget[];
   filters: PageFilter[];
+  /** Pages this change also makes: the detail a click opens, the modal a button opens. Added with it, as one step. */
+  addPages?: Page[];
+}
+
+/** What a page of an app is, to the editor: its kind and record, the app's other pages, and what is changed about the page itself. */
+export interface PageInfo {
+  page: Page;
+  pages: Page[];
+  /** The record a page opened on one is drawn with, if one was chosen. */
+  record: string | undefined;
+  onRecord: (id: string) => void;
+  /** An `open` or `close` step in the preview: the builder shows that page. */
+  onOpen: (
+    to: { page: string; record?: string; as: "page" | "sheet" | "modal" } | { close: true },
+  ) => void;
+  /** The page's own settings are showing (narrow screens show them as a sheet). */
+  settingsOpen: boolean;
+  onCloseSettings: () => void;
+  onPage: (next: Page, label: string, key?: string) => void;
+  onRemovePage: (() => void) | undefined;
 }
 
 /**
@@ -60,6 +96,7 @@ export function PageEditor({
   canvasHead,
   frame,
   refreshKey,
+  pageInfo,
 }: {
   root: string;
   /** The workspace's console address, for the links the settings give to other screens. */
@@ -87,20 +124,59 @@ export function PageEditor({
   frame?: { name: string; width: number | undefined };
   /** Bumped by the host after a save, so each widget reads the page as it now is. */
   refreshKey?: number;
+  /** For an app's page: its kind, its record and the app's pages. Left out for a dashboard. */
+  pageInfo?: PageInfo;
 }) {
   const { catalog } = useCatalog(root);
   const [adding, setAdding] = useState(false);
+  const [forming, setForming] = useState(false);
+  const sample = useSampleRecords(root, pageInfo?.page, catalog, pageInfo?.record);
   const [filterValues, setFilterValues] = useState<FilterValues>({});
   // A host passes a new `source` object on every render; what it names is what matters.
   const named = JSON.stringify(source);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `named` is `source` as one value
-  const client = useMemo(() => pageClient(root, source, draft), [root, draft, named]);
+  const client = useMemo(
+    () => pageClient(root, source, draft, sample.record),
+    [root, draft, named, sample.record],
+  );
   const { widgets, filters } = value;
+  const context: PageContext = {
+    widgets,
+    filters,
+    pages: pageInfo?.pages ?? [],
+    page: pageInfo?.page ?? { id: "", title: "", widgets },
+  };
+  const suggested = pageInfo ? pageTable(context, mainTable(widgets, catalog)) : undefined;
+  const suggestedInfo = useTableInfo(root, suggested);
+  const nextSteps = suggestionsFor(context, suggestedInfo);
   const widget = widgets.find((one) => one.id === selected);
   const full = widgets.length >= MAX_PAGE_WIDGETS;
 
   const put = (next: PageWidget[], label: string, key?: string) =>
     onChange({ widgets: next, filters }, label, key);
+
+  /** A change that also touches filters and pages (a detail, a form, a next step): one step to Undo. */
+  const apply = (edit: Edit, label: string) => {
+    onChange({ widgets: edit.widgets, filters: edit.filters, addPages: edit.addPages }, label);
+    if (edit.select) onSelect(edit.select);
+    setAdding(false);
+    setForming(false);
+    setTold(edit.told);
+  };
+  const makeForm = (plan: FormPlan) => apply(formEdit(context, plan), "adding a form");
+  const pickNext = (key: string) => {
+    if (key === "form") {
+      setAdding(false);
+      setForming(true);
+      return;
+    }
+    const found = nextSteps.find((one) => one.key === key);
+    if (!found || found.key === "form" || !suggestedInfo) return;
+    apply(
+      suggestionEdit(context, found, suggestedInfo, catalog),
+      `adding ${found.label.toLowerCase()}`,
+    );
+  };
 
   /** A widget changed in the inspector; if its place changed, what it now lies on moves out of its way. */
   const edit = (changed: PageWidget, label: string, key?: string) => {
@@ -220,17 +296,46 @@ export function PageEditor({
     </>
   );
 
+  // A side sheet is drawn at a sheet's width, a modal at a modal's, never wider than the screen size chosen.
+  const kind = pageInfo?.page.kind;
+  const kindWidth = kind === "sheet" ? SHEET_WIDTH : kind === "modal" ? MODAL_WIDTH : undefined;
+  const width =
+    kindWidth !== undefined ? Math.min(kindWidth, frame?.width ?? kindWidth) : frame?.width;
+  const acts = widgets.some(
+    (one) =>
+      (one.on && Object.keys(one.on).length > 0) ||
+      (Array.isArray(one.config?.rowActions) && one.config.rowActions.length > 0) ||
+      (Array.isArray(one.config?.actions) && one.config.actions.length > 0) ||
+      one.config?.submit !== undefined,
+  );
+  // What the renderer is told beyond the data (phase 26): the page's record, and what its steps open.
+  const opens = pageInfo
+    ? {
+        pages: pageInfo.pages,
+        onNavigate: pageInfo.onOpen,
+        ...(sample.record ? { record: sample.record } : {}),
+      }
+    : {};
   const canvas = (
     <>
       {canvasHead}
+      {pageInfo ? (
+        <SampleBar page={pageInfo.page} sample={sample} onChoose={pageInfo.onRecord} />
+      ) : null}
+      {acts && pageInfo ? (
+        <p className="m-0 mb-3 text-body-sm text-ink-muted">
+          Actions run for real in this workspace: a button that changes a record changes it here.
+        </p>
+      ) : null}
       <div
         data-preview={frame?.name}
+        data-page-kind={kind ?? "page"}
         className={
-          frame
+          frame || kindWidth
             ? "mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 transition-[max-width] motion-slow"
             : ""
         }
-        style={frame?.width ? { maxWidth: `${frame.width}px` } : undefined}
+        style={width ? { maxWidth: `${width}px` } : undefined}
       >
         {widgets.length === 0 ? (
           <EmptyState
@@ -253,6 +358,7 @@ export function PageEditor({
             filterValues={filterValues}
             onFilterValues={setFilterValues}
             {...(refreshKey !== undefined ? { refreshKey } : {})}
+            {...opens}
             editing={{
               selected,
               onSelect,
@@ -284,22 +390,40 @@ export function PageEditor({
         {...shell}
         outline={outline}
         canvas={canvas}
-        inspectorOpen={widget !== undefined}
-        onCloseInspector={() => onSelect(undefined)}
+        inspectorOpen={widget !== undefined || pageInfo?.settingsOpen === true}
+        onCloseInspector={() => {
+          onSelect(undefined);
+          pageInfo?.onCloseSettings();
+        }}
         inspector={
           widget ? (
-            <Inspector
-              key={widget.id}
-              widget={widget}
-              definition={definitionOf(widget.type)}
-              surface={surface}
-              filters={filters}
-              neighbours={widgets.filter((one) => one.id !== widget.id)}
+            <>
+              {pageInfo ? (
+                <RowClickOffer root={root} widget={widget} context={context} onApply={apply} />
+              ) : null}
+              <Inspector
+                key={widget.id}
+                widget={widget}
+                definition={definitionOf(widget.type)}
+                surface={surface}
+                filters={filters}
+                neighbours={widgets.filter((one) => one.id !== widget.id)}
+                catalog={catalog}
+                onChange={edit}
+                onDuplicate={() => duplicate(widget.id)}
+                onRemove={() => remove(widget.id)}
+                rowRules={(table) => `${link}/tables/${table}?view=definition`}
+              />
+            </>
+          ) : pageInfo ? (
+            <PageSettings
+              key={pageInfo.page.id}
+              page={pageInfo.page}
               catalog={catalog}
-              onChange={edit}
-              onDuplicate={() => duplicate(widget.id)}
-              onRemove={() => remove(widget.id)}
-              rowRules={(table) => `${link}/tables/${table}?view=definition`}
+              mostReadTable={mainTable(widgets, catalog)}
+              onChange={pageInfo.onPage}
+              onRemove={() => pageInfo.onRemovePage?.()}
+              canRemove={pageInfo.onRemovePage !== undefined}
             />
           ) : (
             <p className="m-0 text-ink-muted">
@@ -313,9 +437,28 @@ export function PageEditor({
         open={adding}
         onClose={() => setAdding(false)}
         surface={surface}
-        onAdd={(definition) => add(definition)}
+        onAdd={(definition) => {
+          // A form is made from a table: it asks what it should do first.
+          if (definition.type === "core/form" && pageInfo) {
+            setAdding(false);
+            setForming(true);
+          } else add(definition);
+        }}
         {...(widgets.length > 0 ? { onCarry: carry } : {})}
+        {...(suggested && nextSteps.length > 0
+          ? { suggestions: { table: manyOf(suggested), items: nextSteps, onPick: pickNext } }
+          : {})}
       />
+      {pageInfo ? (
+        <AddFormDialog
+          open={forming}
+          onClose={() => setForming(false)}
+          root={root}
+          catalog={catalog}
+          initialTable={suggested}
+          onMake={makeForm}
+        />
+      ) : null}
       <span role="status" className="sr-only">
         {told}
       </span>

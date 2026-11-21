@@ -1,6 +1,7 @@
 import { WidgetReadError } from "@volvel/screens";
 import { ApiError, api } from "../../api.ts";
-import type { FilterValues, PageDataClient } from "./renderer.ts";
+import type { ActResponse, PageClientActions } from "./contract.ts";
+import type { FilterValues, PageDataClient, WireData } from "./renderer.ts";
 
 /** How many times, and how long apart, a draft read that finds no such widget waits for the save on its way. */
 const SAVE_WAITS = 4;
@@ -19,7 +20,13 @@ export type PageSource =
  * `draft` reads the page as it is being built, before it is published: only
  * for interfaces in the builder. A dashboard is read plainly.
  */
-export function pageClient(root: string, source: PageSource, draft = false): PageDataClient {
+export function pageClient(
+  root: string,
+  source: PageSource,
+  draft = false,
+  /** The record a page opened on one is drawn with: while building, a sample (phase 26). */
+  record?: string,
+): PageDataClient & PageClientActions {
   /** Which page is asked about, as both endpoints name it. */
   const page = (params: URLSearchParams) => {
     params.set("of", source.of);
@@ -27,6 +34,7 @@ export function pageClient(root: string, source: PageSource, draft = false): Pag
       params.set("path", source.path);
       params.set("page", source.page);
       if (draft) params.set("draft", "1");
+      if (record) params.set("record", record);
     } else {
       params.set("path", source.id);
     }
@@ -57,6 +65,31 @@ export function pageClient(root: string, source: PageSource, draft = false): Pag
         }
       }
     },
+    // Preview actions really run in the dev workspace, from the draft, as whoever is building.
+    act: (widget, at, given) =>
+      api.post<ActResponse>(`${root}/page-actions`, {
+        of: source.of,
+        path: source.of === "interface" ? source.path : source.id,
+        ...(source.of === "interface" ? { page: source.page } : {}),
+        widget,
+        at,
+        records: { ...(record ? { this: record } : {}), ...given.records },
+        ...(given.inputs ? { inputs: given.inputs } : {}),
+        ...(draft ? { draft: true } : {}),
+      }),
+    choices: async (widget, input, column, search) => {
+      const params = page(new URLSearchParams({ widget, input, column, search }));
+      const found = await api.get<{ choices: { value: string; label: string }[] }>(
+        `${root}/widget-choices?${params}`,
+      );
+      return found.choices;
+    },
+    behind: (widget, input, group) =>
+      api.get<WireData>(
+        `${root}/widget-data?${page(
+          new URLSearchParams({ widget, input, behind: JSON.stringify(group) }),
+        )}`,
+      ),
     options: async (filter) => {
       const found = await api.get<{ values: string[] }>(
         `${root}/filter-options?${page(new URLSearchParams({ filter }))}`,

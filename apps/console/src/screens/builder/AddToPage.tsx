@@ -1,4 +1,4 @@
-import { Dialog, Kbd, TextField } from "@volvel/ui";
+import { Button, Dialog, Kbd, TextField } from "@volvel/ui";
 import {
   CATEGORIES,
   CATEGORY_TITLES,
@@ -49,6 +49,7 @@ export function AddToPage({
   surface,
   onAdd,
   onCarry,
+  suggestions,
 }: {
   open: boolean;
   onClose: () => void;
@@ -56,6 +57,12 @@ export function AddToPage({
   onAdd: (definition: WidgetDefinition) => void;
   /** A widget was dragged out of the list: carry it onto the page from where the pointer is. */
   onCarry?: (definition: WidgetDefinition, from: { x: number; y: number }) => void;
+  /** "This page shows Invoices. Common next steps: …": what is worth adding to what the page shows. */
+  suggestions?: {
+    table: string;
+    items: readonly { key: string; label: string }[];
+    onPick: (key: string) => void;
+  };
 }) {
   const [search, setSearch] = useState("");
   const needle = search.trim().toLowerCase();
@@ -125,6 +132,23 @@ export function AddToPage({
           </form>
           <Kbd>esc</Kbd>
         </div>
+        {suggestions && suggestions.items.length > 0 && needle === "" ? (
+          <section aria-label="Next steps" className="flex flex-col gap-2">
+            <p className="m-0 text-body-sm text-ink-muted">
+              This page shows <strong className="font-medium text-ink">{suggestions.table}</strong>.
+              Common next steps:
+            </p>
+            <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
+              {suggestions.items.map((item) => (
+                <li key={item.key}>
+                  <Button size="small" onClick={() => suggestions.onPick(item.key)}>
+                    {item.label}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         {found.length === 0 ? (
           <p className="m-0 text-ink-muted">
             Nothing here is called that. Try a word for what it shows, such as “chart” or “records”.

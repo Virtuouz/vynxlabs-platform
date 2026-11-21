@@ -1,6 +1,6 @@
-import type { InterfaceBody } from "@volvel/manifest";
+import { type InterfaceBody, MAX_PAGES } from "@volvel/manifest";
 import { Button, Notice, TextField } from "@volvel/ui";
-import { Monitor, Plus, Smartphone, Tablet } from "lucide-react";
+import { Monitor, Smartphone, Tablet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../../api.ts";
 import { ask, failureText, notify, takenText } from "../../ask.tsx";
@@ -9,7 +9,9 @@ import { heading } from "../../kit/inspector/model.ts";
 import { Loading } from "../../kit/LoadState.tsx";
 import { type DraftAnswer, type Listed, slug } from "./data.ts";
 import { PageEditor } from "./PageEditor.tsx";
+import { PagesList } from "./PagesList.tsx";
 import { PublishDialog } from "./PublishDialog.tsx";
+import { canAddPage, movedPage, uniquePageId } from "./pageKinds.ts";
 
 /** The sizes the preview can be drawn at. */
 export const VIEWPORTS = {
@@ -39,6 +41,12 @@ export function AppBuilder({
   const [missing, setMissing] = useState<string>();
   const [pageId, setPageId] = useState<string>();
   const [selected, setSelected] = useState<string>();
+  /** The page's own settings are showing in the inspector (a page was chosen, not a widget). */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** The record each page that opens on one is drawn with while building, by page. */
+  const [samples, setSamples] = useState<Record<string, string>>({});
+  /** The pages a side sheet or a modal was opened from, so closing goes back. */
+  const [trail, setTrail] = useState<string[]>([]);
   const [viewport, setViewport] = useState<keyof typeof VIEWPORTS>("desktop");
   /** Counted up when a save is kept, so the preview reads the draft as it now is. */
   const [kept, setKept] = useState(0);
@@ -174,6 +182,63 @@ export function AppBuilder({
     }
   };
 
+  const choosePage = (id: string) => {
+    setPageId(id);
+    setSelected(undefined);
+    setSettingsOpen(true);
+  };
+  const addPage = async () => {
+    const title = await ask.prompt({
+      title: "Add a page",
+      label: "Name of the page",
+      action: "Add the page",
+    });
+    if (!title) return;
+    const id = uniquePageId(body.pages, title);
+    change((draft) => {
+      draft.pages.push({ id, title, widgets: [] });
+    }, "adding a page");
+    setPageId(id);
+    setSelected(undefined);
+  };
+  const removePage = async () => {
+    if (!page) return;
+    const sure = await ask.confirm({
+      title: `Remove the page ${page.title}?`,
+      text: "Its widgets go with it. Nothing in any table is touched.",
+      action: "Remove the page",
+      danger: true,
+    });
+    if (!sure) return;
+    change((draft) => {
+      draft.pages = draft.pages.filter((one) => one.id !== page.id);
+    }, "removing a page");
+    setPageId(undefined);
+    setSelected(undefined);
+    setSettingsOpen(false);
+  };
+  /**
+   * A step of the preview that opens a page or closes one: the builder shows that page, on
+   * the record the step passed. Closing goes back to the page that opened it.
+   */
+  const openPage = (
+    to: { page: string; record?: string; as: "page" | "sheet" | "modal" } | { close: true },
+  ) => {
+    if ("close" in to) {
+      const back = trail.at(-1);
+      setTrail((before) => before.slice(0, -1));
+      if (back) setPageId(back);
+      setSelected(undefined);
+      return;
+    }
+    if (!body.pages.some((one) => one.id === to.page)) return;
+    if (page && to.as !== "page") setTrail((before) => [...before, page.id]);
+    else setTrail([]);
+    if (to.record) setSamples((before) => ({ ...before, [to.page]: to.record as string }));
+    setPageId(to.page);
+    setSelected(undefined);
+  };
+
   /** Where a problem is, in the words of the page: its page and widget. */
   const where = (problemPath: string) => {
     const match = /^\/body\/pages\/(\d+)(?:\/widgets\/(\d+))?/.exec(problemPath);
@@ -294,7 +359,10 @@ export function AppBuilder({
           draft
           value={{ widgets: page.widgets, filters: page.filters ?? [] }}
           selected={selected}
-          onSelect={setSelected}
+          onSelect={(id) => {
+            setSelected(id);
+            if (id) setSettingsOpen(false);
+          }}
           shell={shell}
           refreshKey={kept}
           frame={{ name: viewport, width: VIEWPORTS[viewport].width }}
@@ -331,135 +399,37 @@ export function AppBuilder({
               </div>
             </div>
           }
+          pageInfo={{
+            page,
+            pages: body.pages,
+            record: samples[page.id],
+            onRecord: (id) => setSamples((before) => ({ ...before, [page.id]: id })),
+            onOpen: openPage,
+            settingsOpen,
+            onCloseSettings: () => setSettingsOpen(false),
+            onPage: (next, label, key) =>
+              change(
+                (draft) => {
+                  const at = draft.pages.findIndex((one) => one.id === page.id);
+                  if (at >= 0) draft.pages[at] = next;
+                },
+                label,
+                key,
+              ),
+            onRemovePage: body.pages.length > 1 ? removePage : undefined,
+          }}
           pages={
-            <section aria-labelledby="pages" className="flex flex-col gap-1">
-              <h2 id="pages" className="m-0 text-label text-ink-subtle uppercase">
-                Pages
-              </h2>
-              <div className="flex flex-wrap gap-1 lg:flex-col">
-                {body.pages.map((one) => (
-                  <Button
-                    key={one.id}
-                    size="small"
-                    className="lg:justify-start"
-                    variant={one.id === page?.id ? "primary" : "quiet"}
-                    aria-pressed={one.id === page?.id}
-                    onClick={() => {
-                      setPageId(one.id);
-                      setSelected(undefined);
-                    }}
-                  >
-                    {one.title}
-                  </Button>
-                ))}
-                {body.pages.length < 20 ? (
-                  <Button
-                    size="small"
-                    variant="quiet"
-                    className="lg:justify-start"
-                    onClick={async () => {
-                      const title = await ask.prompt({
-                        title: "Add a page",
-                        label: "Name of the page",
-                        action: "Add the page",
-                      });
-                      if (!title) return;
-                      change((draft) => {
-                        let id = slug(title).replace(/^[^a-z]+/, "") || "page";
-                        for (let count = 2; draft.pages.some((one) => one.id === id); count += 1) {
-                          id = `${slug(title) || "page"}-${count}`;
-                        }
-                        draft.pages.push({ id, title, widgets: [] });
-                        setPageId(id);
-                        setSelected(undefined);
-                      }, "adding a page");
-                    }}
-                  >
-                    <Plus size={14} aria-hidden="true" /> Page
-                  </Button>
-                ) : null}
-                {page ? (
-                  <>
-                    <Button
-                      size="small"
-                      variant="quiet"
-                      className="lg:justify-start"
-                      onClick={async () => {
-                        const title = await ask.prompt({
-                          title: "Rename the page",
-                          label: "Name of the page",
-                          initial: page.title,
-                          action: "Rename",
-                        });
-                        if (!title) return;
-                        change((draft) => {
-                          const target = draft.pages.find((one) => one.id === page.id);
-                          if (target) target.title = title;
-                        }, "renaming the page");
-                      }}
-                    >
-                      Rename
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="quiet"
-                      className="lg:justify-start"
-                      onClick={async () => {
-                        const topic = await ask.prompt({
-                          title: `Help for the page ${page.title}`,
-                          label: "Topic",
-                          hint: "The topic: of a page of your documentation. Whoever uses the app, and may open that documentation, gets a Help button that shows the page. Leave it empty for no help.",
-                          initial: page.help ?? "",
-                          action: "Save",
-                          required: false,
-                        });
-                        if (topic === null) return;
-                        const named = topic.trim();
-                        if (named !== "" && !/^[a-z0-9][a-z0-9_-]*$/.test(named)) {
-                          notify.error(
-                            new Error(
-                              "A topic is lowercase letters, digits, hyphens and underscores, as it is written in the page's frontmatter.",
-                            ),
-                          );
-                          return;
-                        }
-                        change((draft) => {
-                          const target = draft.pages.find((one) => one.id === page.id);
-                          if (!target) return;
-                          if (named === "") delete target.help;
-                          else target.help = named;
-                        }, "setting the page's help");
-                      }}
-                    >
-                      {page.help ? "Help: on" : "Help"}
-                    </Button>
-                    {body.pages.length > 1 ? (
-                      <Button
-                        size="small"
-                        variant="quiet"
-                        className="lg:justify-start"
-                        onClick={async () => {
-                          const sure = await ask.confirm({
-                            title: `Remove the page ${page.title}?`,
-                            text: "Its widgets go with it. Nothing in any table is touched.",
-                            action: "Remove the page",
-                            danger: true,
-                          });
-                          if (!sure) return;
-                          change((draft) => {
-                            draft.pages = draft.pages.filter((one) => one.id !== page.id);
-                          }, "removing a page");
-                          setPageId(undefined);
-                          setSelected(undefined);
-                        }}
-                      >
-                        Remove page
-                      </Button>
-                    ) : null}
-                  </>
-                ) : null}
-              </div>
-            </section>
+            <PagesList
+              pages={body.pages}
+              current={page.id}
+              onChoose={choosePage}
+              onAdd={canAddPage(body.pages) ? addPage : undefined}
+              onMove={(id, by) =>
+                change((draft) => {
+                  draft.pages = movedPage(draft.pages, id, by);
+                }, "moving a page")
+              }
+            />
           }
           onChange={(next, label, key) =>
             change(
@@ -469,6 +439,15 @@ export function AppBuilder({
                 target.widgets = next.widgets;
                 if (next.filters.length > 0) target.filters = next.filters;
                 else delete target.filters;
+                // What the change also made: the sheet a click opens, the modal a button opens.
+                for (const added of next.addPages ?? []) {
+                  if (
+                    draft.pages.length < MAX_PAGES &&
+                    !draft.pages.some((one) => one.id === added.id)
+                  ) {
+                    draft.pages.push(added);
+                  }
+                }
               },
               label,
               key,

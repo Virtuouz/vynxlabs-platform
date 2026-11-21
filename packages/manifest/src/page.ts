@@ -946,6 +946,16 @@ export function checkWidgets(
           });
         if (validAction(held, `/config/${property}`, say)) {
           checkAction(held as Action, `/config/${property}`, false, say, typed);
+          // What is typed into a form's fields is saved by its submit, or the form only pretends.
+          const saves = (held as Action).steps.some(
+            (step) => step.do === "create" || step.do === "update",
+          );
+          if (typed.length > 0 && !saves) {
+            say(
+              `/config/${property}`,
+              "saves nothing that is typed: add a step that makes or changes the record",
+            );
+          }
         }
       } else if (control === "actions" && Array.isArray(held)) {
         held.forEach((one, index) => {

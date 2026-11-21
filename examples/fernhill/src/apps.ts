@@ -512,7 +512,18 @@ export const performance = defineInterface({
             fields: INVOICE_FORM_FIELDS,
             submitLabel: "Save",
             submit: {
-              steps: [{ do: "close" }, { do: "message", text: "Invoice saved", tone: "success" }],
+              steps: [
+                // What was typed into each field is saved to this invoice; a field left alone stays.
+                {
+                  do: "update",
+                  record: "this",
+                  set: Object.fromEntries(
+                    INVOICE_FORM_FIELDS.map((field) => [field.column, { asked: field.column }]),
+                  ),
+                },
+                { do: "close" },
+                { do: "message", text: "Invoice saved", tone: "success" },
+              ],
             },
           },
         },
@@ -533,7 +544,20 @@ export const performance = defineInterface({
             fields: [{ column: "number" }, ...INVOICE_FORM_FIELDS],
             submitLabel: "Create invoice",
             submit: {
-              steps: [{ do: "close" }, { do: "message", text: "Invoice created", tone: "success" }],
+              steps: [
+                // A new invoice, of what was typed into each field.
+                {
+                  do: "create",
+                  table: "invoices",
+                  set: Object.fromEntries(
+                    ["number", ...INVOICE_FORM_FIELDS.map((field) => field.column)].map(
+                      (column) => [column, { asked: column }],
+                    ),
+                  ),
+                },
+                { do: "close" },
+                { do: "message", text: "Invoice created", tone: "success" },
+              ],
             },
           },
         },

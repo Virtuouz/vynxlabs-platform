@@ -229,6 +229,16 @@ body:
             submitLabel: Save
             submit:
               steps:
+                - do: update
+                  record: this
+                  set:
+                    kind: { asked: kind }
+                    model: { asked: model }
+                    location: { asked: location }
+                    status: { asked: status }
+                    condition: { asked: condition }
+                    reserved_for: { asked: reserved_for }
+                    notes: { asked: notes }
                 - { do: close }
                 - { do: message, text: Device saved, tone: success }
     - id: add-device
@@ -255,5 +265,16 @@ body:
             submitLabel: Add device
             submit:
               steps:
+                - do: create
+                  table: devices
+                  set:
+                    asset_tag: { asked: asset_tag }
+                    kind: { asked: kind }
+                    model: { asked: model }
+                    serial: { asked: serial }
+                    location: { asked: location }
+                    status: { asked: status }
+                    condition: { asked: condition }
+                    notes: { asked: notes }
                 - { do: close }
                 - { do: message, text: Device added, tone: success }

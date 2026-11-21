@@ -324,3 +324,16 @@ it("a form's submit takes what is typed into its fields, by column, and nothing 
     `/body/pages/0/widgets/0/config/submit/steps/0/set/status asks for "status", which the confirmation doesn't`,
   ]);
 });
+
+it("refuses a form whose submit saves nothing it asks for", () => {
+  const pretend: PageWidget = {
+    id: "f",
+    type: "core/form",
+    at: { x: 0, y: 0, w: 6, h: 8 },
+    data: { record: { source: { visual: { table: "invoices" } } } },
+    config: { mode: "create", fields: [{ column: "total" }], submit: { steps: [{ do: "close" }] } },
+  };
+  expect(checkInterface(body([pretend]), tableOf).map((one) => one.message)).toContain(
+    "saves nothing that is typed: add a step that makes or changes the record",
+  );
+});

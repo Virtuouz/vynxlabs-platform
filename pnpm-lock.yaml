@@ -490,6 +490,9 @@ importers:
       '@volvel/widgets-core':
         specifier: workspace:*
         version: link:../widgets-core
+      '@volvel/widgets-labs':
+        specifier: workspace:*
+        version: link:../widgets-labs
       react:
         specifier: ^19.3.1
         version: 19.3.1

@@ -27,7 +27,11 @@ export const table = defineWidget({
       of: "rows",
       controls: [
         { control: "source", label: "Source" },
-        { control: "conditions", label: "Only include", help: "For example: Status is Unpaid. Adds to the page filters." },
+        {
+          control: "conditions",
+          label: "Only include",
+          help: "For example: Status is Unpaid. Adds to the page filters.",
+        },
         { control: "sort", label: "Sorted by", level: "more" },
         { control: "limit", label: "At most", level: "more" },
       ],
@@ -64,7 +68,13 @@ export const table = defineWidget({
         type: "integer",
         minimum: 5,
         maximum: 200,
-        "x-volvel": hint({ tab: "display", level: "more", control: "number", label: "Rows at a time", order: 2 }),
+        "x-volvel": hint({
+          tab: "display",
+          level: "more",
+          control: "number",
+          label: "Rows at a time",
+          order: 2,
+        }),
       },
     },
     additionalProperties: false,
@@ -100,17 +110,36 @@ export const list = defineWidget({
     properties: {
       primary: {
         ...RESULT_COLUMN,
-        "x-volvel": hint({ tab: "display", control: "column", of: "rows", label: "Heading", order: 1 }),
+        "x-volvel": hint({
+          tab: "display",
+          control: "column",
+          of: "rows",
+          label: "Heading",
+          order: 1,
+        }),
       },
       secondary: {
         ...RESULT_COLUMN,
-        "x-volvel": hint({ tab: "display", control: "column", of: "rows", label: "Under it", order: 2 }),
+        "x-volvel": hint({
+          tab: "display",
+          control: "column",
+          of: "rows",
+          label: "Under it",
+          order: 2,
+        }),
       },
       meta: {
         type: "array",
         maxItems: 3,
         items: RESULT_COLUMN,
-        "x-volvel": hint({ tab: "display", control: "columns", of: "rows", label: "Also shows", level: "more", order: 3 }),
+        "x-volvel": hint({
+          tab: "display",
+          control: "columns",
+          of: "rows",
+          label: "Also shows",
+          level: "more",
+          order: 3,
+        }),
       },
       status: {
         ...RESULT_COLUMN,
@@ -147,7 +176,11 @@ export const stat = defineWidget({
       controls: [
         { control: "source", label: "Source" },
         { control: "measure", label: "Value" },
-        { control: "conditions", label: "Only include", help: "For example: Status is Unpaid. Adds to the page filters." },
+        {
+          control: "conditions",
+          label: "Only include",
+          help: "For example: Status is Unpaid. Adds to the page filters.",
+        },
       ],
     },
   ],
@@ -156,7 +189,12 @@ export const stat = defineWidget({
     properties: {
       format: {
         ...FORMAT,
-        "x-volvel": hint({ tab: "display", control: "format", label: "Numbers look like", order: 1 }),
+        "x-volvel": hint({
+          tab: "display",
+          control: "format",
+          label: "Numbers look like",
+          order: 1,
+        }),
       },
       caption: {
         type: "string",
@@ -240,7 +278,11 @@ export const chart = defineWidget({
         { control: "source", label: "Source" },
         { control: "measure", label: "Value" },
         { control: "breakdown", label: "Break down by" },
-        { control: "conditions", label: "Only include", help: "For example: Status is Unpaid. Adds to the page filters." },
+        {
+          control: "conditions",
+          label: "Only include",
+          help: "For example: Status is Unpaid. Adds to the page filters.",
+        },
         { control: "sort", label: "Sorted by", level: "more" },
         { control: "limit", label: "At most", level: "more" },
       ],
@@ -255,13 +297,25 @@ export const chart = defineWidget({
           tab: "display",
           control: "segmented",
           label: "Chart type",
-          choices: { line: "Line", bar: "Bar", area: "Area", pie: "Pie", scatter: "Scatter", heatmap: "Heatmap" },
+          choices: {
+            line: "Line",
+            bar: "Bar",
+            area: "Area",
+            pie: "Pie",
+            scatter: "Scatter",
+            heatmap: "Heatmap",
+          },
           order: 1,
         }),
       },
       format: {
         ...FORMAT,
-        "x-volvel": hint({ tab: "display", control: "format", label: "Numbers look like", order: 2 }),
+        "x-volvel": hint({
+          tab: "display",
+          control: "format",
+          label: "Numbers look like",
+          order: 2,
+        }),
       },
       legend: {
         enum: ["auto", "shown", "hidden"],
@@ -275,7 +329,14 @@ export const chart = defineWidget({
       },
       horizontal: {
         type: "boolean",
-        "x-volvel": hint({ tab: "display", level: "more", control: "switch", label: "Bars lie down", when: { mark: "bar" }, order: 4 }),
+        "x-volvel": hint({
+          tab: "display",
+          level: "more",
+          control: "switch",
+          label: "Bars lie down",
+          when: { mark: "bar" },
+          order: 4,
+        }),
       },
       bars: {
         enum: ["stacked", "grouped"],
@@ -359,7 +420,12 @@ export const pivot = defineWidget({
     properties: {
       format: {
         ...FORMAT,
-        "x-volvel": hint({ tab: "display", control: "format", label: "Numbers look like", order: 1 }),
+        "x-volvel": hint({
+          tab: "display",
+          control: "format",
+          label: "Numbers look like",
+          order: 1,
+        }),
       },
       totals: {
         type: "boolean",

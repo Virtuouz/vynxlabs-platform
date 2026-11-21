@@ -110,7 +110,12 @@ body:
       title: Shelf
       filters:
         - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
-        - { name: location, label: Location, type: choice, from: { table: devices, column: location } }
+        - {
+            name: location,
+            label: Location,
+            type: choice,
+            from: { table: devices, column: location },
+          }
       widgets:
         - id: by-kind
           title: Devices by kind and state

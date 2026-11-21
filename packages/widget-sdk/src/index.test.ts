@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { definitionProblems, defineWidget, WidgetRegistry, type WidgetDefinition } from "./index.js";
+import {
+  defineWidget,
+  definitionProblems,
+  type WidgetDefinition,
+  WidgetRegistry,
+} from "./index.js";
 
 const base: WidgetDefinition = {
   type: "labs/goal",
@@ -13,7 +18,10 @@ const base: WidgetDefinition = {
   config: {
     type: "object",
     properties: {
-      target: { type: "number", "x-volvel": { tab: "display", control: "number", label: "Target" } },
+      target: {
+        type: "number",
+        "x-volvel": { tab: "display", control: "number", label: "Target" },
+      },
     },
   },
   events: { click: { gives: "nothing", label: "When it is clicked" } },
@@ -33,8 +41,14 @@ describe("the widget contract", () => {
         type: "object",
         properties: {
           bare: { type: "string" },
-          odd: { type: "string", "x-volvel": { tab: "display", control: "colour" as never, label: "Odd" } },
-          stray: { type: "string", "x-volvel": { tab: "data", control: "column", of: "rows", label: "Stray" } },
+          odd: {
+            type: "string",
+            "x-volvel": { tab: "display", control: "colour" as never, label: "Odd" },
+          },
+          stray: {
+            type: "string",
+            "x-volvel": { tab: "data", control: "column", of: "rows", label: "Stray" },
+          },
         },
       },
     };
@@ -48,8 +62,15 @@ describe("the widget contract", () => {
 
   it("refuses a type that isn't pack/name and sizes that don't fit", () => {
     expect(
-      definitionProblems({ ...base, type: "Goal", layout: { min: { w: 4, h: 4 }, default: { w: 3, h: 3 } } }),
-    ).toEqual(['Goal: a type is "pack/name" in small letters', "Goal: its default size is smaller than its smallest"]);
+      definitionProblems({
+        ...base,
+        type: "Goal",
+        layout: { min: { w: 4, h: 4 }, default: { w: 3, h: 3 } },
+      }),
+    ).toEqual([
+      'Goal: a type is "pack/name" in small letters',
+      "Goal: its default size is smaller than its smallest",
+    ]);
   });
 
   it("keeps one definition per type, and lists by surface", () => {

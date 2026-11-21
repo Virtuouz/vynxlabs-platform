@@ -1,5 +1,5 @@
 import type { ColumnInfo, SummaryData, ValueFormat } from "@volvel/widgets";
-import { formatNumber, formatValue, numberOf } from "@volvel/widgets";
+import { formatNumber, numberOf } from "@volvel/widgets";
 
 export { formatNumber, formatValue, numberOf, type ValueFormat } from "@volvel/widgets";
 

@@ -3,6 +3,7 @@ import { ApiError, api, appContext, signInUrl, signOut, type Term, terms } from 
 import type { InterfaceBody, Page } from "@volvel/manifest";
 import { Button, GlossaryProvider, Notice, SideSheet, Tabs } from "@volvel/ui";
 import { corePack } from "@volvel/widgets-core/views";
+import { labsPack } from "@volvel/widgets-labs/views";
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -19,7 +20,8 @@ interface InterfaceView {
   body: InterfaceBody;
 }
 
-const registry = viewRegistry(corePack);
+/** The platform's packs: what a page made in the console may hold. */
+const registry = viewRegistry(corePack, labsPack);
 
 function workspaceApi() {
   const context = appContext();
@@ -46,6 +48,13 @@ function clientFor(path: string, page: string): PageDataClient {
       } catch (error) {
         throw error instanceof ApiError ? new WidgetReadError(error.message, error.status) : error;
       }
+    },
+    async options(filter) {
+      const query = new URLSearchParams({ of: "interface", path, page, filter });
+      const found = await api.get<{ values: string[] }>(
+        `${workspaceApi()}/filter-options?${query}`,
+      );
+      return found.values;
     },
   };
 }

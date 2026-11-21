@@ -465,7 +465,7 @@ test("a stat is narrowed to some rows and its number written as dollars from cen
   };
   show(<InterfaceBuilder root={root} link="/t/t1/workspaces/w1" path="screens/sales" />);
 
-  fireEvent.click(await screen.findByText("Owed", { selector: "p" }));
+  fireEvent.click(await screen.findByLabelText("Owed", { selector: "section" }));
   const settings = within(await screen.findByRole("complementary", { name: "Settings" }));
   // The value it works out is a sentence: a sum of a column.
   expect((settings.getByLabelText("What value 1 works out") as HTMLSelectElement).value).toBe(

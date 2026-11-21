@@ -221,7 +221,11 @@ const visualSchema = {
   type: "object",
   properties: {
     table: { type: "string", pattern: PATH, maxLength: 255 },
-    joins: { type: "array", maxItems: 6, items: { type: "string", pattern: "^[a-z][a-z0-9_]{0,62}$" } },
+    joins: {
+      type: "array",
+      maxItems: 6,
+      items: { type: "string", pattern: "^[a-z][a-z0-9_]{0,62}$" },
+    },
     filters: {
       type: "array",
       maxItems: 20,
@@ -285,16 +289,27 @@ const visualSchema = {
 
 const sourceSchema = {
   oneOf: [
-    { type: "object", properties: { visual: visualSchema }, required: ["visual"], additionalProperties: false },
     {
       type: "object",
-      properties: { query: { type: "string", pattern: PATH, maxLength: 255 }, values: { type: "object" } },
+      properties: { visual: visualSchema },
+      required: ["visual"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        query: { type: "string", pattern: PATH, maxLength: 255 },
+        values: { type: "object" },
+      },
       required: ["query"],
       additionalProperties: false,
     },
     {
       type: "object",
-      properties: { sql: { type: "string", minLength: 1, maxLength: 20000 }, values: { type: "array", maxItems: 20 } },
+      properties: {
+        sql: { type: "string", minLength: 1, maxLength: 20000 },
+        values: { type: "array", maxItems: 20 },
+      },
       required: ["sql"],
       additionalProperties: false,
     },
@@ -332,7 +347,11 @@ export const pageFilterSchema = {
     label: { type: "string", minLength: 1, maxLength: 100 },
     type: { enum: [...PAGE_FILTER_TYPES] },
     default: {},
-    choices: { type: "array", maxItems: 200, items: { type: "string", minLength: 1, maxLength: 200 } },
+    choices: {
+      type: "array",
+      maxItems: 200,
+      items: { type: "string", minLength: 1, maxLength: 200 },
+    },
     from: {
       type: "object",
       properties: {
@@ -377,8 +396,16 @@ export const pageWidgetSchema = {
   additionalProperties: false,
 } as const;
 
-const filtersSchema = { type: "array", maxItems: MAX_PAGE_FILTERS, items: pageFilterSchema } as const;
-const widgetsSchema = { type: "array", maxItems: MAX_PAGE_WIDGETS, items: pageWidgetSchema } as const;
+const filtersSchema = {
+  type: "array",
+  maxItems: MAX_PAGE_FILTERS,
+  items: pageFilterSchema,
+} as const;
+const widgetsSchema = {
+  type: "array",
+  maxItems: MAX_PAGE_WIDGETS,
+  items: pageWidgetSchema,
+} as const;
 
 export const pageSchema = {
   type: "object",
@@ -419,10 +446,18 @@ export const dashboardBodySchema = {
 } as const;
 
 /** Pages built in the console with no code, served by an app that names the interface. */
-export const interfaceKind: KindDefinition = { kind: "interface", schemaVersion: 2, body: interfaceBodySchema };
+export const interfaceKind: KindDefinition = {
+  kind: "interface",
+  schemaVersion: 2,
+  body: interfaceBodySchema,
+};
 
 /** A dashboard kept as a resource: versioned, deployed and promoted with the rest of a workspace. */
-export const dashboardKind: KindDefinition = { kind: "dashboard", schemaVersion: 3, body: dashboardBodySchema };
+export const dashboardKind: KindDefinition = {
+  kind: "dashboard",
+  schemaVersion: 3,
+  body: dashboardBodySchema,
+};
 
 // ---------------------------------------------------------------------------
 // Checks beyond the schema
@@ -488,7 +523,9 @@ export function widgetQueries(widgets: readonly PageWidget[]): string[] {
   return [
     ...new Set(
       widgets.flatMap((widget) =>
-        Object.values(widget.data ?? {}).flatMap((input) => ("query" in input.source ? [input.source.query] : [])),
+        Object.values(widget.data ?? {}).flatMap((input) =>
+          "query" in input.source ? [input.source.query] : [],
+        ),
       ),
     ),
   ];
@@ -517,12 +554,14 @@ export function checkWidgets(
   const issues: ManifestIssue[] = [];
   const registry = context.registry ?? platformWidgets;
   const byName = new Map(filters.map((filter) => [filter.name, filter]));
-  if (byName.size !== filters.length) issues.push({ path: `${at}/filters`, message: "two filters have the same name" });
+  if (byName.size !== filters.length)
+    issues.push({ path: `${at}/filters`, message: "two filters have the same name" });
 
   const columnType = (table: string, column: string): string | null | undefined => {
     const known = context.tableOf?.(table);
     if (!known) return null;
-    if ((SYSTEM_COLUMNS as readonly string[]).includes(column)) return column === "id" ? "uuid" : "timestamp";
+    if ((SYSTEM_COLUMNS as readonly string[]).includes(column))
+      return column === "id" ? "uuid" : "timestamp";
     if (column.includes(".")) return null; // a joined table's column is checked when the query is compiled
     return known.columns[column]?.type;
   };
@@ -534,7 +573,10 @@ export function checkWidgets(
     if (ids.has(widget.id)) say("/id", `"${widget.id}" is used twice`);
     ids.add(widget.id);
     if (widget.at.x + widget.at.w > PAGE_COLUMNS) {
-      say("/at", `it starts at column ${widget.at.x + 1} and is ${widget.at.w} wide, which is past the twelfth`);
+      say(
+        "/at",
+        `it starts at column ${widget.at.x + 1} and is ${widget.at.w} wide, which is past the twelfth`,
+      );
     }
 
     const definition = registry.get(widget.type);
@@ -543,7 +585,10 @@ export function checkWidgets(
       return;
     }
     if (!definition.surfaces.includes(context.surface)) {
-      say("/type", `${definition.title} can't be used on ${context.surface === "app" ? "an app's page" : "a dashboard"}`);
+      say(
+        "/type",
+        `${definition.title} can't be used on ${context.surface === "app" ? "an app's page" : "a dashboard"}`,
+      );
     }
     const { min, max } = definition.layout;
     if (widget.at.w < min.w || widget.at.h < min.h) {
@@ -562,20 +607,27 @@ export function checkWidgets(
 
     const data = widget.data ?? {};
     for (const name of Object.keys(data)) {
-      if (!(name in definition.data)) say(`/data/${name}`, `${definition.title} takes no data called "${name}"`);
+      if (!(name in definition.data))
+        say(`/data/${name}`, `${definition.title} takes no data called "${name}"`);
     }
     for (const [name, declared] of Object.entries(definition.data)) {
       const input = data[name];
       const where = `/data/${name}`;
       if (!input) {
-        if (declared.required !== false) say(where, `${definition.title} needs ${declared.label ?? "a source"} to show`);
+        if (declared.required !== false)
+          say(where, `${definition.title} needs ${declared.label ?? "a source"} to show`);
         continue;
       }
       const source = input.source;
       const kind = "visual" in source ? "table" : "query" in source ? "query" : "sql";
       const allowed = declared.sources ?? ["table", "query", "sql"];
       if (!allowed.includes(kind) || (kind === "sql" && context.surface === "app")) {
-        say(`${where}/source`, kind === "sql" ? "SQL is written on dashboards, not on an app's page" : `${definition.title} can't read a ${kind}`);
+        say(
+          `${where}/source`,
+          kind === "sql"
+            ? "SQL is written on dashboards, not on an app's page"
+            : `${definition.title} can't read a ${kind}`,
+        );
       }
       if ("visual" in source) {
         const visual = source.visual;
@@ -585,16 +637,27 @@ export function checkWidgets(
           const values = declared.values ?? { min: 1, max: 1 };
           const breakdowns = declared.breakdowns ?? { min: 0, max: 1 };
           if (measures.length < values.min || measures.length > values.max) {
-            say(`${where}/source/visual/measures`, values.min === values.max ? `works out ${values.min === 1 ? "one value" : `${values.min} values`}` : `works out ${values.min} to ${values.max} values`);
+            say(
+              `${where}/source/visual/measures`,
+              values.min === values.max
+                ? `works out ${values.min === 1 ? "one value" : `${values.min} values`}`
+                : `works out ${values.min} to ${values.max} values`,
+            );
           }
           if (groups.length < breakdowns.min || groups.length > breakdowns.max) {
-            say(`${where}/source/visual/groupBy`, breakdowns.max === 0 ? "isn't broken down" : `is broken down ${breakdowns.min === breakdowns.max ? `${breakdowns.min}` : `${breakdowns.min} to ${breakdowns.max}`} way${breakdowns.max === 1 ? "" : "s"}`);
+            say(
+              `${where}/source/visual/groupBy`,
+              breakdowns.max === 0
+                ? "isn't broken down"
+                : `is broken down ${breakdowns.min === breakdowns.max ? `${breakdowns.min}` : `${breakdowns.min} to ${breakdowns.max}`} way${breakdowns.max === 1 ? "" : "s"}`,
+            );
           }
         } else if (measures.length > 0 && declared.shape === "record") {
           say(`${where}/source/visual/measures`, "one record has no values worked out");
         }
         const names = measures.map((measure) => measure.as);
-        if (new Set(names).size !== names.length) say(`${where}/source/visual/measures`, "two values have the same name");
+        if (new Set(names).size !== names.length)
+          say(`${where}/source/visual/measures`, "two values have the same name");
         measures.forEach((measure, which) => {
           if (measure.fn !== "count" && !measure.column) {
             say(`${where}/source/visual/measures/${which}`, `${measure.fn} is of a column`);
@@ -602,12 +665,22 @@ export function checkWidgets(
         });
         const table = visual.table;
         const known = (path: string, column: string) => {
-          if (columnType(table, column) === undefined) say(path, `there is no column "${column}" in the table "${table}"`);
+          if (columnType(table, column) === undefined)
+            say(path, `there is no column "${column}" in the table "${table}"`);
         };
-        measures.forEach((measure, which) => measure.column && known(`${where}/source/visual/measures/${which}/column`, measure.column));
-        groups.forEach((group, which) => known(`${where}/source/visual/groupBy/${which}/column`, group.column));
-        (visual.filters ?? []).forEach((condition, which) => known(`${where}/source/visual/filters/${which}/column`, condition.column));
-        (visual.columns ?? []).forEach((column, which) => known(`${where}/source/visual/columns/${which}`, column));
+        for (const [which, measure] of measures.entries()) {
+          if (measure.column)
+            known(`${where}/source/visual/measures/${which}/column`, measure.column);
+        }
+        for (const [which, group] of groups.entries()) {
+          known(`${where}/source/visual/groupBy/${which}/column`, group.column);
+        }
+        for (const [which, condition] of (visual.filters ?? []).entries()) {
+          known(`${where}/source/visual/filters/${which}/column`, condition.column);
+        }
+        for (const [which, column] of (visual.columns ?? []).entries()) {
+          known(`${where}/source/visual/columns/${which}`, column);
+        }
       }
       (input.filters ?? []).forEach((binding, bound) => {
         const path = `${where}/filters/${bound}`;
@@ -632,7 +705,8 @@ export function checkWidgets(
     }
 
     function known2(path: string, table: string, column: string) {
-      if (columnType(table, column) === undefined) say(`${path}/column`, `there is no column "${column}" in the table "${table}"`);
+      if (columnType(table, column) === undefined)
+        say(`${path}/column`, `there is no column "${column}" in the table "${table}"`);
     }
   });
   return issues;
@@ -647,10 +721,16 @@ export function checkInterface(
   const issues: ManifestIssue[] = [];
   const seen = new Set<string>();
   body.pages.forEach((page, index) => {
-    if (seen.has(page.id)) issues.push({ path: `/body/pages/${index}/id`, message: `"${page.id}" is used twice` });
+    if (seen.has(page.id))
+      issues.push({ path: `/body/pages/${index}/id`, message: `"${page.id}" is used twice` });
     seen.add(page.id);
     issues.push(
-      ...checkWidgets(page.widgets, page.filters ?? [], { surface: "app", ...(tableOf ? { tableOf } : {}), ...(registry ? { registry } : {}) }, `/body/pages/${index}`),
+      ...checkWidgets(
+        page.widgets,
+        page.filters ?? [],
+        { surface: "app", ...(tableOf ? { tableOf } : {}), ...(registry ? { registry } : {}) },
+        `/body/pages/${index}`,
+      ),
     );
   });
   return issues;
@@ -662,7 +742,11 @@ export function checkDashboard(
   tableOf?: (path: string) => TableBody | undefined,
   registry?: WidgetRegistry,
 ): ManifestIssue[] {
-  return checkWidgets(body.widgets, body.filters ?? [], { surface: "dashboard", ...(tableOf ? { tableOf } : {}), ...(registry ? { registry } : {}) });
+  return checkWidgets(body.widgets, body.filters ?? [], {
+    surface: "dashboard",
+    ...(tableOf ? { tableOf } : {}),
+    ...(registry ? { registry } : {}),
+  });
 }
 
 /**

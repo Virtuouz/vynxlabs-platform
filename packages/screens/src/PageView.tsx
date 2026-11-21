@@ -7,6 +7,7 @@ import {
   type CSSProperties,
   type RefObject,
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useState,
@@ -230,6 +231,7 @@ export function PageView({
   editing,
 }: PageViewProps) {
   const [told, setTold] = useState("");
+  const read = useFilterOptions(filters, client, filterOptions);
   // Top to bottom and left to right, so the page reads in order without the grid.
   const ordered = useMemo(
     () => [...widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x),
@@ -280,12 +282,7 @@ export function PageView({
 
   return (
     <div className="flex flex-col gap-3">
-      <FilterBar
-        filters={filters}
-        values={filterValues}
-        onChange={onFilterValues}
-        options={filterOptions}
-      />
+      <FilterBar filters={filters} values={filterValues} onChange={onFilterValues} options={read} />
       {widgets.length === 0 ? (
         <EmptyState
           title={editing ? "Nothing on this page yet" : "This page has nothing on it yet"}
@@ -367,5 +364,42 @@ export function PageView({
         </span>
       </div>
     </div>
+  );
+}
+
+/**
+ * The values each choice filter offers: those the page lists, those the host
+ * gave, and for a filter over a table's column, those the client reads. A
+ * read that fails leaves the filter to be typed into, as before it was read.
+ */
+function useFilterOptions(
+  filters: readonly PageFilter[],
+  client: PageDataClient,
+  given: Readonly<Record<string, readonly string[]>> | undefined,
+): Readonly<Record<string, readonly string[]>> | undefined {
+  const [read, setRead] = useState<Record<string, readonly string[]>>({});
+  const wanted = filters
+    .filter(
+      (filter) =>
+        filter.type === "choice" && filter.from && !filter.choices && !given?.[filter.name],
+    )
+    .map((filter) => filter.name)
+    .join(",");
+  useEffect(() => {
+    if (!client.options || wanted === "") return;
+    let live = true;
+    for (const name of wanted.split(",")) {
+      client.options(name).then(
+        (values) => live && setRead((now) => ({ ...now, [name]: values })),
+        () => undefined,
+      );
+    }
+    return () => {
+      live = false;
+    };
+  }, [client, wanted]);
+  return useMemo(
+    () => (given || Object.keys(read).length > 0 ? { ...read, ...given } : undefined),
+    [given, read],
   );
 }

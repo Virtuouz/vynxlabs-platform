@@ -122,54 +122,6 @@ export {
   variableKind,
 } from "./kinds.js";
 export {
-  APP_FACING_KINDS,
-  isExplicitKind,
-  isGrantablePermission,
-  isKnownPermission,
-  PERMISSION_KINDS,
-  type PermissionKind,
-  type PermissionScope,
-  type PermissionVerb,
-} from "./permissions.js";
-export { resolveKeyReferences } from "./references.js";
-export {
-  type KindDefinition,
-  KindRegistry,
-  type ManifestIssue,
-  type ValidationResult,
-  validateJson,
-} from "./registry.js";
-export {
-  checkTable,
-  conditionColumn,
-  displayGuess,
-  type EnumValue,
-  enumColor,
-  enumValues,
-  isEnumType,
-  MAX_ROW_RULES,
-  type OnDelete,
-  type RowCondition,
-  type RowRule,
-  type TableBody,
-  type TableColumn,
-  type TablePolicy,
-} from "./table.js";
-export {
-  checkTenantResources,
-  isTenantFile,
-  isTenantKind,
-  parseTenantFiles,
-  ROLE_KEY_PATTERN,
-  renderTenantFiles,
-  TENANT_FOLDER,
-  TENANT_KEY_PATTERN,
-  TENANT_KINDS,
-  type TenantResource,
-  tenantName,
-  tenantOrder,
-} from "./tenant.js";
-export {
   type CheckContext,
   checkDashboard,
   checkInterface,
@@ -219,9 +171,57 @@ export {
   type VisualFunction,
   type VisualOperator,
   type VisualQuery,
-  widgetQueries,
-  widgetRegistry,
   type WidgetPlace,
   type WidgetSource,
+  widgetQueries,
+  widgetRegistry,
   widgetTables,
 } from "./page.js";
+export {
+  APP_FACING_KINDS,
+  isExplicitKind,
+  isGrantablePermission,
+  isKnownPermission,
+  PERMISSION_KINDS,
+  type PermissionKind,
+  type PermissionScope,
+  type PermissionVerb,
+} from "./permissions.js";
+export { resolveKeyReferences } from "./references.js";
+export {
+  type KindDefinition,
+  KindRegistry,
+  type ManifestIssue,
+  type ValidationResult,
+  validateJson,
+} from "./registry.js";
+export {
+  checkTable,
+  conditionColumn,
+  displayGuess,
+  type EnumValue,
+  enumColor,
+  enumValues,
+  isEnumType,
+  MAX_ROW_RULES,
+  type OnDelete,
+  type RowCondition,
+  type RowRule,
+  type TableBody,
+  type TableColumn,
+  type TablePolicy,
+} from "./table.js";
+export {
+  checkTenantResources,
+  isTenantFile,
+  isTenantKind,
+  parseTenantFiles,
+  ROLE_KEY_PATTERN,
+  renderTenantFiles,
+  TENANT_FOLDER,
+  TENANT_KEY_PATTERN,
+  TENANT_KINDS,
+  type TenantResource,
+  tenantName,
+  tenantOrder,
+} from "./tenant.js";

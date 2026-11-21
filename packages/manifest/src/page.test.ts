@@ -1,9 +1,15 @@
 import { defineWidget, WidgetRegistry } from "@volvel/widgets";
 import { coreRegistry } from "@volvel/widgets-core";
 import { describe, expect, it } from "vitest";
-import { checkDashboard, checkInterface, type InterfaceBody, newWidget, type PageWidget } from "./page.js";
-import { KindRegistry } from "./registry.js";
 import { registerPlatformKinds } from "./kinds.js";
+import {
+  checkDashboard,
+  checkInterface,
+  type InterfaceBody,
+  newWidget,
+  type PageWidget,
+} from "./page.js";
+import { KindRegistry } from "./registry.js";
 import type { TableBody } from "./table.js";
 
 const invoices: TableBody = {
@@ -38,10 +44,18 @@ const chart: PageWidget = {
 
 const body = (widgets: PageWidget[]): InterfaceBody => ({
   title: "Clinic performance",
-  pages: [{ id: "money", title: "Money", filters: [{ name: "issued", type: "date_range", default: "last_30_days" }], widgets }],
+  pages: [
+    {
+      id: "money",
+      title: "Money",
+      filters: [{ name: "issued", type: "date_range", default: "last_30_days" }],
+      widgets,
+    },
+  ],
 });
 
-const messages = (widgets: PageWidget[]) => checkInterface(body(widgets), tableOf).map((issue) => `${issue.path} ${issue.message}`);
+const messages = (widgets: PageWidget[]) =>
+  checkInterface(body(widgets), tableOf).map((issue) => `${issue.path} ${issue.message}`);
 
 describe("pages", () => {
   it("passes the schema and the checks for a chart of the sum of Total by week", () => {
@@ -85,12 +99,20 @@ describe("pages", () => {
       data: {
         value: {
           source: {
-            visual: { table: "invoices", measures: [{ fn: "sum", column: "total", as: "a" }, { fn: "count", as: "b" }] },
+            visual: {
+              table: "invoices",
+              measures: [
+                { fn: "sum", column: "total", as: "a" },
+                { fn: "count", as: "b" },
+              ],
+            },
           },
         },
       },
     };
-    expect(messages([stat])).toEqual(["/body/pages/0/widgets/0/data/value/source/visual/measures works out one value"]);
+    expect(messages([stat])).toEqual([
+      "/body/pages/0/widgets/0/data/value/source/visual/measures works out one value",
+    ]);
   });
 
   it("names a column the table doesn't have, and a filter the page doesn't have", () => {
@@ -98,7 +120,13 @@ describe("pages", () => {
       ...chart,
       data: {
         rows: {
-          source: { visual: { table: "invoices", measures: [{ fn: "sum", column: "totl", as: "t" }], groupBy: [{ column: "issued" }] } },
+          source: {
+            visual: {
+              table: "invoices",
+              measures: [{ fn: "sum", column: "totl", as: "t" }],
+              groupBy: [{ column: "issued" }],
+            },
+          },
           filters: [{ filter: "clinic", column: "clinic" }],
         },
       },

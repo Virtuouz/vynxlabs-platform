@@ -8,8 +8,15 @@ import {
 } from "./bundle.js";
 import { checkFlow, type FlowBody, flowExpressions, flowGrants, flowReferences } from "./flow.js";
 import { checkForm, type FormTrigger } from "./form.js";
-import { checkDashboard, checkInterface, type DashboardBody, type InterfaceBody, interfaceTables, widgetTables } from "./page.js";
 import { BUILTIN_CONNECTORS, isThemeValue, registerPlatformKinds } from "./kinds.js";
+import {
+  checkDashboard,
+  checkInterface,
+  type DashboardBody,
+  type InterfaceBody,
+  interfaceTables,
+  widgetTables,
+} from "./page.js";
 import { KindRegistry, validateJson } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
 

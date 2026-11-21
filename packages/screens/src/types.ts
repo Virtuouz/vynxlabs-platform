@@ -38,6 +38,12 @@ export interface PageDataClient {
     filters: FilterValues,
     options?: { input?: string; cursor?: string; signal?: AbortSignal },
   ): Promise<{ inputs: Record<string, WireData> }>;
+  /**
+   * The values a choice filter offers when the page names a table's column
+   * for them (`from`) and lists none: the column's values, as the viewer may
+   * read them. Left out, such a filter is typed into.
+   */
+  options?(filter: string): Promise<readonly string[]>;
 }
 
 /** What a client rejects with when the server said no: its status says which kind of no. */

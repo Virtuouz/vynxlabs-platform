@@ -161,7 +161,12 @@ export interface InspectorHint {
 /** A data input's controls, drawn in the Data tab in this order. */
 export interface DataHints {
   of: string;
-  controls: readonly { control: Extract<Control, "source" | "measure" | "breakdown" | "conditions" | "sort" | "limit">; level?: "main" | "more"; label: string; help?: string }[];
+  controls: readonly {
+    control: Extract<Control, "source" | "measure" | "breakdown" | "conditions" | "sort" | "limit">;
+    level?: "main" | "more";
+    label: string;
+    help?: string;
+  }[];
 }
 
 /** A JSON Schema object for a widget's configuration, with an `x-volvel` hint on each property. */
@@ -204,7 +209,8 @@ export function definitionProblems(definition: WidgetDefinition): string[] {
   const say = (message: string) => problems.push(`${definition.type}: ${message}`);
   if (!TYPE.test(definition.type)) say(`a type is "pack/name" in small letters`);
   if (!VERSION.test(definition.version)) say(`version "${definition.version}" is not x.y.z`);
-  if (!CATEGORIES.includes(definition.category)) say(`there is no category "${definition.category}"`);
+  if (!CATEGORIES.includes(definition.category))
+    say(`there is no category "${definition.category}"`);
   if (definition.surfaces.length === 0) say("it is offered nowhere: give it a surface");
   for (const name of Object.keys(definition.data)) {
     if (!NAME.test(name)) say(`data input "${name}" is not a name`);
@@ -223,14 +229,16 @@ export function definitionProblems(definition: WidgetDefinition): string[] {
       say(`config "${property}" has no x-volvel hint, so the inspector can't draw it`);
       continue;
     }
-    if (!CONTROLS.includes(hint.control)) say(`config "${property}": there is no control "${hint.control}"`);
+    if (!CONTROLS.includes(hint.control))
+      say(`config "${property}": there is no control "${hint.control}"`);
     if (!TABS.includes(hint.tab)) say(`config "${property}": there is no tab "${hint.tab}"`);
     if (hint.of !== undefined && !(hint.of in definition.data)) {
       say(`config "${property}" belongs to data input "${hint.of}", which it doesn't declare`);
     }
   }
   for (const hints of definition.dataHints ?? []) {
-    if (!(hints.of in definition.data)) say(`data hints for "${hints.of}", which it doesn't declare`);
+    if (!(hints.of in definition.data))
+      say(`data hints for "${hints.of}", which it doesn't declare`);
   }
   return problems;
 }

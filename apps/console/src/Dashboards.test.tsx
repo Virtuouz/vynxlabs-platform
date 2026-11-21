@@ -151,14 +151,15 @@ test("each widget asks the one endpoint for what it shows, as the dashboard, wit
     `/?f=${encodeURIComponent(JSON.stringify({ created_at: "last_7_days" }))}`,
   );
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByText("Held", { selector: "p" });
+  await screen.findByLabelText("Held", { selector: "section" });
+  // The text widget reads nothing, so it asks nothing.
   await waitFor(() =>
-    expect(calls.filter((call) => call.url.includes("/widget-data"))).toHaveLength(3),
+    expect(calls.filter((call) => call.url.includes("/widget-data"))).toHaveLength(2),
   );
   const asked = calls
     .filter((call) => call.url.includes("/widget-data"))
     .map((call) => new URL(call.url, "http://x").searchParams);
-  expect(asked.map((params) => params.get("widget")).sort()).toEqual(["held", "note", "total"]);
+  expect(asked.map((params) => params.get("widget")).sort()).toEqual(["held", "total"]);
   for (const params of asked) {
     expect(params.get("of")).toBe("dashboard");
     expect(params.get("path")).toBe("d1");
@@ -177,7 +178,7 @@ test("its maker adds a widget from Add to page, changes it in its settings, remo
     return [200, stored];
   };
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByText("Held", { selector: "p" });
+  await screen.findByLabelText("Held", { selector: "section" });
   // Looking, there is nothing to change with.
   expect(screen.queryByRole("button", { name: "Add to page" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
@@ -219,7 +220,7 @@ test("its maker adds a widget from Add to page, changes it in its settings, remo
   expect(put(1).body.widgets.at(-1).title).toBe("How many");
 
   // Another widget is chosen by clicking it, and removed from its menu; it can be taken back.
-  fireEvent.click(screen.getByText("In stock", { selector: "p" }));
+  fireEvent.click(screen.getByLabelText("In stock", { selector: "section" }));
   fireEvent.click(await screen.findByRole("button", { name: "More about In stock" }));
   fireEvent.click(await screen.findByRole("menuitem", { name: "Remove" }));
   await waitFor(() => expect(sent("PUT")).toHaveLength(3));
@@ -243,9 +244,9 @@ test("someone who holds sql:read is offered SQL as a source, and someone who doe
   routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
   maySql = true;
   const { unmount } = show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByText("Held", { selector: "p" });
+  await screen.findByLabelText("Held", { selector: "section" });
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  fireEvent.click(screen.getByText("Held", { selector: "p" }));
+  fireEvent.click(screen.getByLabelText("Held", { selector: "section" }));
   const box = await screen.findByRole("combobox", { name: "Source" });
   fireEvent.click(box);
   fireEvent.keyDown(box, { key: "ArrowDown" });
@@ -254,9 +255,9 @@ test("someone who holds sql:read is offered SQL as a source, and someone who doe
   unmount();
   history.replaceState(null, "", "/");
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByText("Held", { selector: "p" });
+  await screen.findByLabelText("Held", { selector: "section" });
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  fireEvent.click(screen.getByText("Held", { selector: "p" }));
+  fireEvent.click(screen.getByLabelText("Held", { selector: "section" }));
   const other = await screen.findByRole("combobox", { name: "Source" });
   fireEvent.click(other);
   fireEvent.keyDown(other, { key: "ArrowDown" });
@@ -271,7 +272,7 @@ test("a dashboard someone else shared, or the workspace keeps, is looked at and 
   ];
   const { unmount } = show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
   await screen.findByText(/Alice's, shared with you\. You see the rows you may read/);
-  await screen.findByText("Held", { selector: "p" });
+  await screen.findByLabelText("Held", { selector: "section" });
   for (const name of ["Edit", "Share", "Add to page", "More"]) {
     expect(screen.queryByRole("button", { name })).toBeNull();
   }
@@ -297,9 +298,9 @@ test("a change made right before a share is saved on the revision the change mad
     return [200, stored];
   };
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByText("Held", { selector: "p" });
+  await screen.findByLabelText("Held", { selector: "section" });
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  fireEvent.click(screen.getByText("Held", { selector: "p" }));
+  fireEvent.click(screen.getByLabelText("Held", { selector: "section" }));
   const settings = within(await screen.findByRole("complementary", { name: "Settings" }));
   fireEvent.click(settings.getByRole("tab", { name: "Display" }));
   fireEvent.change(settings.getByLabelText("Title"), { target: { value: "On the shelf" } });

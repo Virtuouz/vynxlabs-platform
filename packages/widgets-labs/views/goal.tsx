@@ -1,4 +1,10 @@
-import { formatNumber, numberOf, type SummaryData, type ValueFormat, type WidgetViewProps } from "@volvel/widgets";
+import {
+  formatNumber,
+  numberOf,
+  type SummaryData,
+  type ValueFormat,
+  type WidgetViewProps,
+} from "@volvel/widgets";
 
 export { formatNumber };
 

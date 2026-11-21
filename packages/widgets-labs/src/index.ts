@@ -4,7 +4,7 @@
  * to prove that nothing in the builder is made for the core pack alone. This
  * file holds definitions only, which are data; the views are in `../views`.
  */
-import { defineWidget, type InspectorHint, FORMAT_SCHEMA } from "@volvel/widgets";
+import { defineWidget, FORMAT_SCHEMA, type InspectorHint } from "@volvel/widgets";
 
 const hint = (h: InspectorHint) => h;
 

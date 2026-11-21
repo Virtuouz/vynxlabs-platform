@@ -1,11 +1,11 @@
 import type { InterfaceBody } from "@volvel/manifest";
-import { heading } from "@volvel/screens";
 import { Button, Notice, TextField } from "@volvel/ui";
 import { Monitor, Plus, Smartphone, Tablet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../../api.ts";
 import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { useHistory } from "../../kit/history.ts";
+import { heading } from "../../kit/inspector/model.ts";
 import { Loading } from "../../kit/LoadState.tsx";
 import { type DraftAnswer, type Listed, slug } from "./data.ts";
 import { PageEditor } from "./PageEditor.tsx";
@@ -27,17 +27,21 @@ import type { Saving } from "./EditorShell.tsx";
 /** Builds one interface: a preview drawn from live rows, and the settings of what is chosen. */
 export function AppBuilder({
   root,
+  link,
   path,
 }: {
   root: string;
   /** The workspace's console address. The breadcrumb leads back to the list now. */
-  link?: string;
+  link: string;
   path: string;
 }) {
   const [body, setBody] = useState<InterfaceBody>();
   const [missing, setMissing] = useState<string>();
   const [pageId, setPageId] = useState<string>();
   const [selected, setSelected] = useState<string>();
+  const [viewport, setViewport] = useState<keyof typeof VIEWPORTS>("desktop");
+  /** Counted up when a save is kept, so the preview reads the draft as it now is. */
+  const [kept, setKept] = useState(0);
   const [saving, setSaving] = useState<Saving>("saved");
   const [problems, setProblems] = useState<{ path: string; message: string }[]>([]);
   const [publishing, setPublishing] = useState(false);
@@ -69,8 +73,8 @@ export function AppBuilder({
         setBody(draft.body);
       },
       () =>
-        api.get<{ interface: InterfaceBody }>(`${root}/interfaces/${path}`).then(
-          (view) => current && setBody(view.interface),
+        api.get<{ body: InterfaceBody }>(`${root}/interfaces/${path}`).then(
+          (view) => current && setBody(view.body),
           (error: ApiError) => current && setMissing(error.message),
         ),
     );
@@ -85,13 +89,14 @@ export function AppBuilder({
       try {
         const saved = await api.put<DraftAnswer>(`${root}/drafts/${path}`, {
           kind: "interface",
-          schemaVersion: 1,
+          schemaVersion: 2,
           body: next,
           ...(revision.current !== undefined ? { revision: revision.current } : {}),
         });
         revision.current = saved.revision;
         setProblems(saved.problems ?? []);
         setSaving("saved");
+        setKept((count) => count + 1);
         return true;
       } catch (error) {
         setSaving({ failed: failureText(error) });
@@ -283,11 +288,49 @@ export function AppBuilder({
       {page ? (
         <PageEditor
           root={root}
-          interfacePath={path}
-          page={page}
+          link={link}
+          surface="app"
+          source={{ of: "interface", path, page: page.id }}
+          draft
+          value={{ widgets: page.widgets, filters: page.filters ?? [] }}
           selected={selected}
           onSelect={setSelected}
           shell={shell}
+          refreshKey={kept}
+          frame={{ name: viewport, width: VIEWPORTS[viewport].width }}
+          canvasHead={
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+              <div
+                role="radiogroup"
+                aria-label="Screen size"
+                className="flex rounded-control border border-line p-0.5"
+              >
+                {(Object.keys(VIEWPORTS) as (keyof typeof VIEWPORTS)[]).map((one) => {
+                  const Icon = VIEWPORTS[one].icon;
+                  return (
+                    // biome-ignore lint/a11y/useSemanticElements: a segmented control of toggle buttons
+                    <button
+                      key={one}
+                      type="button"
+                      role="radio"
+                      aria-checked={viewport === one}
+                      onClick={() => setViewport(one)}
+                      className={`flex items-center gap-1.5 rounded-inner px-3 py-1 text-meta ${
+                        viewport === one ? "bg-selected text-ink" : "text-ink-muted hover:text-ink"
+                      }`}
+                    >
+                      <Icon aria-hidden="true" size={14} /> {VIEWPORTS[one].label}
+                      {VIEWPORTS[one].width ? (
+                        <span className="font-mono text-tag text-ink-subtle">
+                          {VIEWPORTS[one].width}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          }
           pages={
             <section aria-labelledby="pages" className="flex flex-col gap-1">
               <h2 id="pages" className="m-0 text-label text-ink-subtle uppercase">
@@ -418,11 +461,14 @@ export function AppBuilder({
               </div>
             </section>
           }
-          onChange={(apply, label, key) =>
+          onChange={(next, label, key) =>
             change(
               (draft) => {
                 const target = draft.pages.find((one) => one.id === page.id);
-                if (target) apply(target);
+                if (!target) return;
+                target.widgets = next.widgets;
+                if (next.filters.length > 0) target.filters = next.filters;
+                else delete target.filters;
               },
               label,
               key,

@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { frontmatterOf } from "@volvel/docs-engine";
+import { frontmatterOf, isFeedbackTable } from "@volvel/docs-engine";
 import {
   type FlowBody,
   type InterfaceBody,
@@ -31,28 +31,6 @@ import { access, findWorkspace, type RequestContext, type WorkspaceRef } from ".
 import type { Kernel } from "../kernel/kernel.js";
 import { interfaceProblems } from "./interfaces.js";
 import { AnyObject, Id, iso, NullableId, Time, WorkspaceParams } from "./shared.js";
-
-/** The columns of a docs site's table of answers: what the console makes, and the site writes. */
-const FEEDBACK_COLUMNS: Record<string, { type: string; required: boolean }> = {
-  page: { type: "text", required: true },
-  helpful: { type: "boolean", required: true },
-  version: { type: "text", required: false },
-  at: { type: "timestamp", required: false },
-};
-
-/** Whether a table's body has exactly the feedback columns. */
-function hasFeedbackColumns(body: unknown): boolean {
-  const columns = (body as { columns?: Record<string, { type?: unknown; required?: unknown }> })
-    ?.columns;
-  if (!columns || typeof columns !== "object") return false;
-  const names = Object.keys(columns).sort();
-  if (names.join() !== Object.keys(FEEDBACK_COLUMNS).sort().join()) return false;
-  return names.every((name) => {
-    const want = FEEDBACK_COLUMNS[name];
-    const have = columns[name];
-    return have?.type === want?.type && (have?.required === true) === want?.required;
-  });
-}
 
 const PathParams = Type.Object({ t: Id, w: Id, "*": Type.String() });
 const pathPattern = new RegExp(PATH_PATTERN);
@@ -248,11 +226,14 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       interface: boolean;
       doc: boolean;
     }
-    const fits = (held: Held, kind: string, body: unknown) => {
+    const fits = (held: Held, kind: string, body: unknown, path: string) => {
       const app = kind === "app" ? (body as { interface?: unknown; docs?: unknown } | null) : null;
       return (
         (held.interface && (kind === "interface" || typeof app?.interface === "string")) ||
-        (held.doc && (kind === "doc" || typeof app?.docs === "string"))
+        // The one table a writer of documentation drafts and deploys: the workspace's table of
+        // its sites' answers, with exactly its columns. Drafting and deploying share this check.
+        (held.doc &&
+          (kind === "doc" || typeof app?.docs === "string" || isFeedbackTable(kind, path, body)))
       );
     };
 
@@ -303,66 +284,10 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .executeTakeFirst(),
       ]);
       if (!live && !draft) return null;
-      const liveOk = !live || fits(held, live.kind, live.body);
+      const liveOk = !live || fits(held, live.kind, live.body, path);
       // A draft that removes something says nothing of what it is. What it removes does.
-      const draftOk = !draft || (draft.deleted ? liveOk : fits(held, draft.kind, draft.body));
+      const draftOk = !draft || (draft.deleted ? liveOk : fits(held, draft.kind, draft.body, path));
       return liveOk && draftOk;
-    }
-
-    /**
-     * Whether what is at a path is a table that a docs site named in the same
-     * deploy keeps its readers' answers in, and has exactly the columns of one.
-     * It is the only table someone who writes documentation may deploy.
-     */
-    async function isFeedbackTableOf(
-      workspace: WorkspaceRef,
-      path: string,
-      paths: string[],
-    ): Promise<boolean> {
-      const [live, draft] = await Promise.all([
-        // By exact path, not `resolveResource`: a deploy is of the drafts at these paths, and the
-        // table that would be replaced is the one there now, not one a rename left behind.
-        db
-          .selectFrom("resource")
-          .select(["kind", "body"])
-          .where("workspace_id", "=", workspace.id)
-          .where("path", "=", path)
-          .executeTakeFirst(),
-        db
-          .selectFrom("resource_draft")
-          .select(["kind", "body", "deleted"])
-          .where("workspace_id", "=", workspace.id)
-          .where("path", "=", path)
-          .executeTakeFirst(),
-      ]);
-      if (!draft || draft.deleted || draft.kind !== "table") return false;
-      if (!hasFeedbackColumns(draft.body)) return false;
-      if (live && (live.kind !== "table" || !hasFeedbackColumns(live.body))) return false;
-      const others = paths.filter((one) => one !== path);
-      if (others.length === 0) return false;
-      const sites = await db
-        .selectFrom("resource_draft")
-        .select(["path", "body", "deleted"])
-        .where("workspace_id", "=", workspace.id)
-        .where("kind", "=", "app")
-        .where("path", "in", others)
-        .execute();
-      const liveSites = await db
-        .selectFrom("resource")
-        .select(["path", "body"])
-        .where("workspace_id", "=", workspace.id)
-        .where("kind", "=", "app")
-        .where("path", "in", others)
-        .execute();
-      const drafted = new Set(sites.map((site) => site.path));
-      const bodies = [
-        ...sites.filter((site) => !site.deleted).map((site) => site.body),
-        ...liveSites.filter((site) => !drafted.has(site.path)).map((site) => site.body),
-      ];
-      return bodies.some((one) => {
-        const site = one as { docs?: unknown; feedback?: { table?: unknown } } | null;
-        return typeof site?.docs === "string" && site.feedback?.table === path;
-      });
     }
 
     app.get(
@@ -652,7 +577,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const path = pathOf(params);
         if (!full) {
           const there = await screenAt(workspace, path, held);
-          const theirs = body.deleted ? there === true : fits(held, body.kind, body.body);
+          const theirs = body.deleted ? there === true : fits(held, body.kind, body.body, path);
           if (!theirs || there === false) throw forbidden("resource:write");
         }
         if (isCodeKind(body.kind)) await mayWriteCode(ctx, workspace);
@@ -756,7 +681,11 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               },
             ]);
           }
-          if (!full && !change.deleted && !fits(held, kind, change.body ?? {})) {
+          if (
+            !full &&
+            !change.deleted &&
+            !fits(held, kind, change.body ?? {}, change.to ?? change.path)
+          ) {
             throw forbidden("resource:write");
           }
           if (isCodeKind(kind)) await mayWriteCode(ctx, workspace);
@@ -1039,8 +968,6 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
           for (const path of body.paths) {
             if ((await screenAt(workspace, path, held)) === true) continue;
-            // The one table a writer of documentation deploys: a site's table of answers.
-            if (held.doc && (await isFeedbackTableOf(workspace, path, body.paths))) continue;
             throw forbidden("deployment:write");
           }
         }

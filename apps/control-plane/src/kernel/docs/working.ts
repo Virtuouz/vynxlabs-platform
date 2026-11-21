@@ -48,6 +48,7 @@ export async function workingDocs(db: Db, workspaceId: string): Promise<Working>
     if (one.kind === "app") deployedApps.add(one.path);
     resources.push({
       kind: one.kind,
+      key: one.key,
       path: draft && !draft.deleted ? draft.path : one.path,
       title: (draft && !draft.deleted ? draft.title : one.title) ?? undefined,
       body: draft && !draft.deleted ? draft.body : one.body,
@@ -61,6 +62,7 @@ export async function workingDocs(db: Db, workspaceId: string): Promise<Working>
     if (draft.deleted) continue;
     resources.push({
       kind: draft.kind,
+      key: draft.key,
       path: draft.path,
       title: draft.title ?? undefined,
       body: draft.body,

@@ -27,7 +27,7 @@ The file's name is under each title. A page that is not deployed as it is carrie
 
 ## Asking readers
 
-A site can end each page with "Was this page helpful?". Turning it on makes a table of the workspace's and keeps each answer there as a row: the page, whether it helped, the version read and when. Nothing about who answered is kept, and a reader answers once for each page. The table is queried like any other.
+A site can end each page with "Was this page helpful?". Turning it on makes one table of the workspace's, `docs-feedback`, the first time, and every site of the workspace keeps its answers there as rows: the site, the page, whether it helped, the version read and when. When the table is there, turning it on for another site changes only that site. Nothing about who answered is kept, and a reader answers once for each page. The table is queried like any other.
 
 ## Two ways to write
 
@@ -43,4 +43,4 @@ A site has a **publishing switch**. Turning it off stops serving the site and ke
 
 Deploying a site that asks readers for feedback also deploys the table that holds the answers, and the count says so.
 
-A member with the **doc writer** role may deploy a site's feedback table, and only that table, together with the site that names it, so a developer need not have deployed it first. A table of any other kind, or one whose columns are not the feedback columns, is still refused.
+A member with the **doc writer** role may draft and deploy the table `docs-feedback`, and only that table, so a developer need not have made it first. A table of any other kind, or one whose columns are not the feedback columns, is still refused.

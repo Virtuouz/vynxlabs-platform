@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { FEEDBACK_COLUMNS, FEEDBACK_TABLE } from "@volvel/docs-engine";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -8,6 +9,14 @@ type Any = any;
 
 const PASSWORD = "a-good-long-password";
 const MAIN = "localhost:8080";
+
+/** The columns of an answer, as the console makes them and the doc writer's deploy holds them to. */
+const answers = Object.fromEntries(
+  Object.entries(FEEDBACK_COLUMNS).map(([name, column]) => [
+    name,
+    { type: column.type, ...(column.required ? { required: true } : {}) },
+  ]),
+);
 
 let t: TestApp;
 let tenant: string;
@@ -1052,27 +1061,20 @@ describe("someone who writes documentation in the console, and is not a develope
 
   test("the list names an app's draft and the tables, so that turning on feedback deploys whole", async () => {
     const before = (await alice.get(`${devWs()}/docs`)).body;
-    expect(before.apps[0]).toMatchObject({ path: "guide-site", deployed: true, drafted: false });
+    expect(before.apps[0]).toMatchObject({
+      path: "guide-site",
+      key: "guide-site",
+      deployed: true,
+      drafted: false,
+    });
     const turned = await alice.post(`${devWs()}/drafts/batch`, {
       changes: [
-        {
-          path: "guide-site-feedback",
-          kind: "table",
-          schemaVersion: 1,
-          body: {
-            columns: {
-              page: { type: "text", required: true },
-              helpful: { type: "boolean", required: true },
-              version: { type: "text" },
-              at: { type: "timestamp" },
-            },
-          },
-        },
+        { path: FEEDBACK_TABLE, kind: "table", schemaVersion: 1, body: { columns: answers } },
         {
           path: "guide-site",
           kind: "app",
           schemaVersion: 1,
-          body: { title: "Guide", docs: "guide", feedback: { table: "guide-site-feedback" } },
+          body: { title: "Guide", docs: "guide", feedback: { table: FEEDBACK_TABLE } },
         },
       ],
     });
@@ -1081,69 +1083,66 @@ describe("someone who writes documentation in the console, and is not a develope
     expect(listed.apps[0]).toMatchObject({
       deployed: true,
       drafted: true,
-      feedback: "guide-site-feedback",
+      feedback: FEEDBACK_TABLE,
     });
-    expect(listed.tables).toEqual([{ path: "guide-site-feedback", state: "new" }]);
+    expect(listed.tables).toEqual([{ path: FEEDBACK_TABLE, state: "new" }]);
     // Someone who reads only the documentation is told of the tables its apps name.
     expect((await wren.get(`${devWs()}/docs`)).body.tables).toEqual([
-      { path: "guide-site-feedback", state: "new" },
+      { path: FEEDBACK_TABLE, state: "new" },
     ]);
     const deployed = await alice.post(`${devWs()}/changes/deploy`, {
-      paths: ["guide-site", "guide-site-feedback"],
+      paths: ["guide-site", FEEDBACK_TABLE],
       message: "Documentation",
     });
     expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
     const after = (await alice.get(`${devWs()}/docs`)).body;
     expect(after.apps[0].drafted).toBe(false);
-    expect(after.tables).toEqual([{ path: "guide-site-feedback", state: "deployed" }]);
+    expect(after.tables).toEqual([{ path: FEEDBACK_TABLE, state: "deployed" }]);
   });
 
-  test("they deploy a site's table of answers with it, and no other table, nor that table without the site", async () => {
-    const answers = {
-      page: { type: "text", required: true },
-      helpful: { type: "boolean", required: true },
-      version: { type: "text" },
-      at: { type: "timestamp" },
-    };
-    const table = (path: string, columns: object) =>
-      alice.put(`${devWs()}/drafts/${path}`, {
+  test("they draft and deploy the workspace's table of answers, and no other table, nor that table with other columns", async () => {
+    const table = (client: Client, path: string, columns: object, description = "Answers.") =>
+      client.put(`${devWs()}/drafts/${path}`, {
         kind: "table",
         schemaVersion: 1,
-        body: { columns },
+        body: { description, columns },
       });
-    const site = await alice.put(`${devWs()}/drafts/guide-site`, {
-      kind: "app",
-      schemaVersion: 1,
-      body: { title: "Guide", docs: "guide", feedback: { table: "guide-site-answers" } },
-    });
-    expect(site.status, JSON.stringify(site.body)).toBe(200);
-    expect((await table("guide-site-answers", answers)).status).toBe(200);
-    expect((await table("orders", { n: { type: "text" } })).status).toBe(200);
-    expect((await table("guide-site-extra", { ...answers, who: { type: "text" } })).status).toBe(
+    // Drafting: exactly that table, with exactly its columns.
+    expect((await table(wren, "orders", { n: { type: "text" } })).status).toBe(403);
+    expect((await table(wren, "guide-site-feedback", answers)).status).toBe(403);
+    expect((await table(wren, FEEDBACK_TABLE, { ...answers, who: { type: "text" } })).status).toBe(
+      403,
+    );
+    const { site_key: _gone, ...without } = answers;
+    expect((await table(wren, FEEDBACK_TABLE, without)).status).toBe(403);
+    const drafted = await table(wren, FEEDBACK_TABLE, answers, "What readers said.");
+    expect(drafted.status, JSON.stringify(drafted.body)).toBe(200);
+    // Deploying: the same check. A draft that someone else made with other columns is refused.
+    expect((await table(alice, "orders", { n: { type: "text" } })).status).toBe(200);
+    expect((await table(alice, "guide-site-extra", answers)).status).toBe(200);
+    const deploy = (paths: string[]) => wren.post(`${devWs()}/changes/deploy`, { paths });
+    expect((await deploy(["orders"])).status).toBe(403);
+    expect((await deploy([FEEDBACK_TABLE, "orders"])).status).toBe(403);
+    expect((await deploy(["guide-site-extra"])).status).toBe(403);
+    expect((await table(alice, FEEDBACK_TABLE, { ...answers, who: { type: "text" } })).status).toBe(
       200,
     );
-    const deploy = (paths: string[]) => wren.post(`${devWs()}/changes/deploy`, { paths });
-    // Any other table, named beside the site or not, is refused; so is one that holds more.
-    expect((await deploy(["guide-site", "orders"])).status).toBe(403);
-    expect((await deploy(["orders"])).status).toBe(403);
-    expect((await deploy(["guide-site", "guide-site-extra"])).status).toBe(403);
-    // The site's table, without the site that names it, is no more than any other.
-    expect((await deploy(["guide-site-answers"])).status).toBe(403);
-    // With the site that names it, and exactly the columns of an answer, it deploys.
-    const done = await deploy(["guide-site", "guide-site-answers"]);
+    expect((await deploy([FEEDBACK_TABLE])).status).toBe(403);
+    expect((await table(alice, FEEDBACK_TABLE, answers, "What readers said.")).status).toBe(200);
+    const done = await deploy([FEEDBACK_TABLE]);
     expect(done.status, JSON.stringify(done.body)).toBe(201);
-    expect(done.body.applied.sort()).toEqual(["guide-site", "guide-site-answers"]);
-    // What is not the site's is still a draft.
+    expect(done.body.applied).toEqual([FEEDBACK_TABLE]);
+    // What is not the table of answers is still a draft.
     const left = (await alice.get(`${devWs()}/drafts`)).body.items.map((one: Any) => one.path);
     expect(left).toEqual(expect.arrayContaining(["guide-site-extra", "limits/batch", "orders"]));
-    expect(left).not.toContain("guide-site-answers");
+    expect(left).not.toContain(FEEDBACK_TABLE);
     for (const path of ["guide-site-extra", "orders"]) {
       expect((await alice.delete(`${devWs()}/drafts/${path}`)).status).toBe(204);
     }
   });
 
   test("a site is switched off and on with one setting of its app, which keeps its pages and what else the app says", async () => {
-    const body = { title: "Guide", docs: "guide", feedback: { table: "guide-site-feedback" } };
+    const body = { title: "Guide", docs: "guide", feedback: { table: FEEDBACK_TABLE } };
     const off = await alice.put(`${devWs()}/drafts/guide-site`, {
       kind: "app",
       schemaVersion: 1,
@@ -1177,22 +1176,15 @@ describe("someone who writes documentation in the console, and is not a develope
 });
 
 describe("a docs app that asks its readers whether a page helped", () => {
-  const votesTable = manifest("table", "help-feedback", {
-    columns: {
-      page: { type: "text" },
-      helpful: { type: "boolean" },
-      version: { type: "text" },
-      at: { type: "timestamp" },
-    },
-  });
+  const votesTable = manifest("table", FEEDBACK_TABLE, { columns: answers });
   const asking = () =>
     handbook().map((one) =>
       one.kind === "app" && one.path === "help"
-        ? { ...one, body: { ...(one.body as object), feedback: { table: "help-feedback" } } }
+        ? { ...one, body: { ...(one.body as object), feedback: { table: FEEDBACK_TABLE } } }
         : one,
     );
   const votes = async () =>
-    ((await alice.get(`${ws()}/rows/help-feedback`)).body.items as Any[]).map((row) => [
+    ((await alice.get(`${ws()}/rows/${FEEDBACK_TABLE}`)).body.items as Any[]).map((row) => [
       row.page,
       row.helpful,
     ]);
@@ -1250,16 +1242,19 @@ describe("a docs app that asks its readers whether a page helped", () => {
       ["support/returns", false],
     ]);
     // Nothing of who the reader is is kept.
-    const row = ((await alice.get(`${ws()}/rows/help-feedback`)).body.items as Any[])[0];
+    const row = ((await alice.get(`${ws()}/rows/${FEEDBACK_TABLE}`)).body.items as Any[])[0];
     expect(Object.keys(row).sort()).toEqual([
       "at",
       "created_at",
       "helpful",
       "id",
       "page",
+      "site",
+      "site_key",
       "updated_at",
       "version",
     ]);
+    expect(row).toMatchObject({ site_key: "help", site: "Shop handbook" });
   });
 
   test("is refused from another site, for a page that is not there, and kept from a robot", async () => {
@@ -1272,6 +1267,61 @@ describe("a docs app that asks its readers whether a page helped", () => {
     // A field no person sees, filled in.
     expect((await send({ page: "faq", helpful: "yes", website: "spam" })).statusCode).toBe(303);
     expect((await votes()).some(([page]) => page === "faq")).toBe(false);
+  });
+
+  test("two sites keep their answers in one table, and a renamed site's answers keep its key", async () => {
+    const second = [
+      page("guides/index", "title: Guides"),
+      manifest("app", "guide", {
+        title: "Guide",
+        docs: "guides",
+        feedback: { table: FEEDBACK_TABLE },
+      }),
+      manifest("binding", "bindings/guide", {
+        role: "portal_user",
+        principal: { type: "anonymous" },
+        resource: "guide",
+      }),
+    ];
+    const both = () => [...asking(), votesTable, ...second];
+    expect((await deploy(both())).status).toBe(201);
+    const GUIDE = "/apps/acme/main/guide/";
+    const ask = (url: string, page: string) =>
+      t.app.inject({
+        method: "POST",
+        url,
+        headers: {
+          host: MAIN,
+          origin: `http://${MAIN}`,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        payload: new URLSearchParams({ page, helpful: "yes" }).toString(),
+      });
+    expect((await ask(`${HELP}_feedback`, "faq")).statusCode).toBe(303);
+    const first = ((await alice.get(`${ws()}/rows/${FEEDBACK_TABLE}`)).body.items as Any[]).find(
+      (row) => row.page === "faq",
+    );
+    expect(first).toMatchObject({ site_key: "help", site: "Shop handbook" });
+    // The site is renamed, and given its old key. Its answers come under that key.
+    const renamed = both().map((one) => {
+      if (one.kind === "app" && one.path === "help") {
+        return manifest("app", "help-site", one.body as object, { key: "help" });
+      }
+      return one.kind === "binding" && one.path === "bindings/help"
+        ? manifest("binding", one.path, { ...(one.body as object), resource: "help-site" })
+        : one;
+    });
+    expect((await deploy(renamed)).status).toBe(201);
+    const NEW = "/apps/acme/main/help-site/";
+    expect((await ask(`${NEW}_feedback`, "ops/closing/checklist")).statusCode).toBe(303);
+    const rows = (await alice.get(`${ws()}/rows/${FEEDBACK_TABLE}`)).body.items as Any[];
+    const kept = rows.find((row) => row.page === "ops/closing/checklist");
+    expect(kept).toMatchObject({ site_key: "help", site: "Shop handbook" });
+    expect(rows.some((row) => row.site_key === "help-site")).toBe(false);
+    // The other site, in the same table, under its own key.
+    expect((await ask(`${GUIDE}_feedback`, "index")).statusCode).toBe(303);
+    const all = (await alice.get(`${ws()}/rows/${FEEDBACK_TABLE}`)).body.items as Any[];
+    expect(new Set(all.map((row) => row.site_key))).toEqual(new Set(["help", "guide"]));
   });
 
   test("an app that does not ask, or is not documentation, takes no answer", async () => {

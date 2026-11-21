@@ -390,7 +390,7 @@ describe("a site that asks its readers", () => {
         },
       ]),
     ).toEqual([
-      "site (app): the table votes keeps its readers' answers, and needs a boolean column helpful, a text column version, a timestamp column at.",
+      "site (app): the table votes keeps its readers' answers, and needs a text column site_key, a text column site, a boolean column helpful, a text column version, a timestamp column at.",
     ]);
     expect(
       checkWorkspaceDocs([
@@ -401,6 +401,8 @@ describe("a site that asks its readers", () => {
           path: "votes",
           body: {
             columns: {
+              site_key: { type: "text" },
+              site: { type: "text" },
               page: { type: "text" },
               helpful: { type: "boolean" },
               version: { type: "text" },

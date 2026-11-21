@@ -1,6 +1,8 @@
 import {
   asDirectory,
   type Change,
+  FEEDBACK_COLUMNS,
+  FEEDBACK_TABLE,
   inverseOf,
   type Manifest,
   nameProblem,
@@ -14,6 +16,7 @@ import {
   readPage,
   slugOf,
 } from "@volvel/docs-engine";
+
 import {
   Button,
   Dialog,
@@ -44,7 +47,7 @@ import {
   Pencil,
   ThumbsUp,
 } from "lucide-react";
-import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../../api.ts";
 import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { Diagram } from "../../diagrams/Diagram.tsx";
@@ -684,34 +687,15 @@ export function Docs({
         row={asking}
         list={data}
         onClose={() => setAsking(undefined)}
-        onTurnOn={async (table) => {
+        onTurnOn={async (makeTable) => {
           const site = asking?.site;
           if (!site) return undefined;
+          const table = FEEDBACK_TABLE;
           try {
             await api.post(`${root}/drafts/batch`, {
               changes: [
-                {
-                  path: table,
-                  kind: "table",
-                  schemaVersion: 1,
-                  body: {
-                    description: `What readers of ${site.title} said of each page: whether it helped them.`,
-                    columns: {
-                      page: {
-                        type: "text",
-                        required: true,
-                        description: "The page, by its path in the site.",
-                      },
-                      helpful: {
-                        type: "boolean",
-                        required: true,
-                        description: "Whether it helped.",
-                      },
-                      version: { type: "text", description: "The deployed version they read." },
-                      at: { type: "timestamp", description: "When they said so." },
-                    },
-                  },
-                },
+                // The workspace's one table of answers: made once, by whichever site is first.
+                ...(makeTable ? [feedbackTableChange()] : []),
                 {
                   path: site.path,
                   kind: "app",
@@ -726,7 +710,7 @@ export function Docs({
                 label: "Undo",
                 onClick: async () => {
                   try {
-                    await api.delete(`${root}/drafts/${table}`);
+                    if (makeTable) await api.delete(`${root}/drafts/${table}`);
                     await api.put(`${root}/drafts/${site.path}`, {
                       kind: "app",
                       schemaVersion: 1,
@@ -1309,16 +1293,18 @@ function FeedbackDialog({
   row: DocRow | undefined;
   list: DocsList;
   onClose: () => void;
-  onTurnOn: (table: string) => Promise<string | undefined>;
+  onTurnOn: (makeTable: boolean) => Promise<string | undefined>;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const site = row?.site;
-  const table = site ? `${site.path}-feedback` : "";
+  const table = FEEDBACK_TABLE;
+  // One table keeps the answers of every site of the workspace. A table that is being removed is
+  // as good as none: making it again replaces that removal.
+  const exists = list.tables.some((one) => one.path === table && one.state !== "removed");
   const taken =
-    list.pages.some((page) => page.path === table) ||
-    list.apps.some((app) => app.path === table) ||
-    list.tables.some((one) => one.path === table);
+    !exists &&
+    (list.pages.some((page) => page.path === table) || list.apps.some((app) => app.path === table));
   useEffect(() => {
     if (row) setError(undefined);
   }, [row]);
@@ -1327,14 +1313,28 @@ function FeedbackDialog({
       open={row !== undefined}
       onClose={onClose}
       title={site ? `Ask readers of ${site.title} whether a page helped` : "Page feedback"}
-      description="Each page ends with “Was this page helpful? Yes / No”. Here is what turning it on makes."
+      description="Each page ends with “Was this page helpful? Yes / No”. Here is what turning it on does."
     >
       <div className="flex flex-col gap-3">
         <ul className="m-0 flex flex-col gap-2 pl-5 text-body">
-          <li>
-            A table, <Code>{table}</Code>, with the columns <Code>page</Code>, <Code>helpful</Code>,{" "}
-            <Code>version</Code> and <Code>at</Code>. Each answer is one row of it.
-          </li>
+          {exists ? (
+            <li>
+              The table <Code>{table}</Code> already keeps the answers of this workspace's sites. It
+              is used as it is: only the site changes.
+            </li>
+          ) : (
+            <li>
+              A table, <Code>{table}</Code>, that keeps the answers of every site of this workspace,
+              with the columns{" "}
+              {Object.keys(FEEDBACK_COLUMNS).map((name, index, all) => (
+                <Fragment key={name}>
+                  <Code>{name}</Code>
+                  {index < all.length - 2 ? ", " : index === all.length - 2 ? " and " : ""}
+                </Fragment>
+              ))}
+              . Each answer is one row of it, with the site it was given on.
+            </li>
+          )}
           <li>
             A change to the site <Code>{site?.path}</Code>: it keeps its readers' answers in that
             table.
@@ -1344,8 +1344,8 @@ function FeedbackDialog({
             page, remembered by their own browser.
           </li>
           <li>
-            Both are drafts until you deploy. The table is queried like any other. Turning this off
-            later keeps the table and what is in it.
+            {exists ? "The site change is a draft" : "Both are drafts"} until you deploy. The table
+            is queried like any other. Turning this off later keeps the table and what is in it.
           </li>
         </ul>
         {taken ? (
@@ -1360,16 +1360,39 @@ function FeedbackDialog({
             disabled={busy || taken}
             onClick={async () => {
               setBusy(true);
-              setError(await onTurnOn(table));
+              setError(await onTurnOn(!exists));
               setBusy(false);
             }}
           >
-            Make the table and turn it on
+            {exists ? "Turn it on" : "Make the table and turn it on"}
           </Button>
         </div>
       </div>
     </Dialog>
   );
+}
+
+/** The draft of the workspace's table of answers. */
+function feedbackTableChange() {
+  return {
+    path: FEEDBACK_TABLE,
+    kind: "table",
+    schemaVersion: 1,
+    body: {
+      description:
+        "What readers of the workspace's documentation sites said of each page: whether it helped them.",
+      columns: Object.fromEntries(
+        Object.entries(FEEDBACK_COLUMNS).map(([name, column]) => [
+          name,
+          {
+            type: column.type,
+            ...(column.required ? { required: true } : {}),
+            description: column.description,
+          },
+        ]),
+      ),
+    },
+  };
 }
 
 function PublishDialog({
@@ -1495,7 +1518,9 @@ function Reader({
     items: { by: { page?: string; helpful?: boolean }; values: { count?: number } }[];
   }>(
     app?.feedback && app.deployed
-      ? `${root}/aggregate/${app.feedback}?group=page,helpful&measure=count`
+      ? `${root}/aggregate/${app.feedback}?group=page,helpful&measure=count&filter=${encodeURIComponent(
+          JSON.stringify({ and: [{ column: "site_key", op: "eq", value: app.key }] }),
+        )}`
       : null,
   );
   const said = (helpful: boolean) =>

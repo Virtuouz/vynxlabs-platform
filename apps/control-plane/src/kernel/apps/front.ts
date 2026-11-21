@@ -10,7 +10,7 @@ import {
   type ResourceLike,
   urlOf,
 } from "@volvel/docs-engine";
-import { readFormAnswer } from "@volvel/manifest";
+import { keyOf, readFormAnswer } from "@volvel/manifest";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Principal, writeAudit } from "../audit.js";
@@ -951,6 +951,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
           resources: bundle.manifests,
           app: {
             path: manifest.path,
+            key: keyOf(manifest),
             title: body.title,
             docs: body.docs as string,
             ...(typeof body.feedback?.table === "string" ? { feedback: body.feedback.table } : {}),
@@ -1153,6 +1154,9 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
               target,
               [
                 {
+                  // The app's key, which a rename keeps; and its name, for people to read.
+                  site_key: at.app.key ?? at.app.path,
+                  site: at.app.title,
                   page,
                   helpful: form.helpful === "yes",
                   version: at.bundleId,

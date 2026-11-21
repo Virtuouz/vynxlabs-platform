@@ -55,6 +55,7 @@ const list = (): DocsList => ({
   apps: [
     {
       path: "help",
+      key: "help",
       title: "Shop handbook",
       published: true,
       body: { title: "Shop handbook", docs: "handbook" },
@@ -84,7 +85,12 @@ const list = (): DocsList => ({
   tables: [],
 });
 
-let calls: { method: string; url: string; body: Record<string, unknown> | undefined }[];
+let calls: {
+  method: string;
+  url: string;
+  search: string;
+  body: Record<string, unknown> | undefined;
+}[];
 let routes: Record<string, (body: unknown) => [number, unknown]>;
 
 beforeEach(() => {
@@ -134,7 +140,7 @@ beforeEach(() => {
     const url = new URL(address, "http://console.test");
     const method = init.method ?? "GET";
     const body = typeof init.body === "string" ? JSON.parse(init.body) : undefined;
-    calls.push({ method, url: url.pathname, body });
+    calls.push({ method, url: url.pathname, search: url.search, body });
     const handler = routes[`${method} ${url.pathname}`];
     const [status, answered] = handler
       ? handler(body)
@@ -467,7 +473,9 @@ describe("the Documentation screen", () => {
     fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Turn on page feedback/ }));
     const dialog = await screen.findByRole("dialog");
-    expect(dialog.textContent).toContain("help-feedback");
+    expect(dialog.textContent).toContain(
+      "A table, docs-feedback, that keeps the answers of every site",
+    );
     expect(dialog.textContent).toContain("Nothing about who answered is kept");
     expect(dialog.textContent).toContain("Both are drafts until you deploy");
     fireEvent.click(within(dialog).getByRole("button", { name: "Make the table and turn it on" }));
@@ -478,20 +486,58 @@ describe("the Documentation screen", () => {
       body: Record<string, unknown>;
     }[];
     expect(changes.map((one) => [one.path, one.kind])).toEqual([
-      ["help-feedback", "table"],
+      ["docs-feedback", "table"],
       ["help", "app"],
     ]);
     expect(Object.keys(changes[0]?.body.columns as object)).toEqual([
+      "site_key",
+      "site",
       "page",
       "helpful",
       "version",
       "at",
     ]);
+    expect(changes[0]?.body.columns).toMatchObject({
+      site_key: { type: "text", required: true },
+      page: { type: "text", required: true },
+      helpful: { type: "boolean", required: true },
+      at: { type: "timestamp" },
+    });
     expect(changes[1]?.body).toEqual({
       title: "Shop handbook",
       docs: "handbook",
-      feedback: { table: "help-feedback" },
+      feedback: { table: "docs-feedback" },
     });
+  });
+
+  test("when the workspace has the table, turning feedback on changes only the site, and says so", async () => {
+    routes[`GET /api/v1${root}/docs`] = () => [
+      200,
+      { ...list(), tables: [{ path: "docs-feedback", state: "deployed" }] },
+    ];
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Turn on page feedback/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("already keeps the answers of this workspace's sites");
+    expect(dialog.textContent).toContain("only the site changes");
+    expect(dialog.textContent).not.toContain("Make the table");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Turn it on" }));
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const changes = batches()[0]?.body?.changes as { path: string; kind: string }[];
+    expect(changes.map((one) => [one.path, one.kind])).toEqual([["help", "app"]]);
+    expect(batches()[0]?.body?.changes).toEqual([
+      {
+        path: "help",
+        kind: "app",
+        schemaVersion: 1,
+        body: {
+          title: "Shop handbook",
+          docs: "handbook",
+          feedback: { table: "docs-feedback" },
+        },
+      },
+    ]);
   });
 
   test("turning on feedback, then deploying, sends the table with the site, and the count says so", async () => {
@@ -504,10 +550,10 @@ describe("the Documentation screen", () => {
     routes[`GET /api/v1${root}/docs`] = () => {
       const now = list();
       if (turnedOn) {
-        now.apps[0] = { ...(now.apps[0] as DocsApp), drafted: true, feedback: "help-feedback" };
+        now.apps[0] = { ...(now.apps[0] as DocsApp), drafted: true, feedback: "docs-feedback" };
         now.tables = [
           { path: "orders", state: "deployed" },
-          { path: "help-feedback", state: "new" },
+          { path: "docs-feedback", state: "new" },
         ];
       }
       return [200, now];
@@ -520,7 +566,7 @@ describe("the Documentation screen", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Make the table and turn it on" }));
     // Two pages, the site and its table.
     fireEvent.click(await screen.findByRole("button", { name: "Deploy 4 changes" }));
-    expect(await answer("Deploy")).toContain("the table help-feedback");
+    expect(await answer("Deploy")).toContain("the table docs-feedback");
     await waitFor(() =>
       expect(sent("POST").filter((one) => one.url.endsWith("/deploy"))).toHaveLength(1),
     );
@@ -529,22 +575,23 @@ describe("the Documentation screen", () => {
         "handbook/support/refunds",
         "handbook/ops/closing/checklist",
         "help",
-        "help-feedback",
+        "docs-feedback",
       ],
       message: "Documentation",
     });
   });
 
-  test("feedback is not turned on over a table that has its path", async () => {
-    routes[`GET /api/v1${root}/docs`] = () => [
-      200,
-      { ...list(), tables: [{ path: "help-feedback", state: "deployed" }] },
-    ];
+  test("feedback is not turned on over a page or app that has the table's path", async () => {
+    routes[`GET /api/v1${root}/docs`] = () => {
+      const now = list();
+      now.pages.push(page("docs-feedback", "In the way"));
+      return [200, now];
+    };
     docs();
     fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Turn on page feedback/ }));
     const dialog = await screen.findByRole("dialog");
-    expect(dialog.textContent).toContain("Something already has the path help-feedback.");
+    expect(dialog.textContent).toContain("Something already has the path docs-feedback.");
     expect(
       (
         within(dialog).getByRole("button", {
@@ -556,9 +603,9 @@ describe("the Documentation screen", () => {
 
   test("a page of a site that asks says what its readers said", async () => {
     const asking = list();
-    (asking.apps[0] as { feedback?: string }).feedback = "help-feedback";
+    (asking.apps[0] as { feedback?: string }).feedback = "docs-feedback";
     routes[`GET /api/v1${root}/docs`] = () => [200, asking];
-    routes[`GET /api/v1${root}/aggregate/help-feedback`] = () => [
+    routes[`GET /api/v1${root}/aggregate/docs-feedback`] = () => [
       200,
       {
         items: [
@@ -571,6 +618,11 @@ describe("the Documentation screen", () => {
     ];
     docs("handbook/support/refunds");
     expect(await screen.findByText("7 found it helpful · 2 didn't")).toBeTruthy();
+    // The table is the whole workspace's: the answers are asked for by this site's key.
+    const asked = sent("GET").find((call) => call.url.includes("/aggregate/docs-feedback"));
+    expect(decodeURIComponent(asked?.search ?? "")).toContain(
+      '"column":"site_key","op":"eq","value":"help"',
+    );
     // A site that asks already is not offered it again.
     fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
     await screen.findByRole("menuitem", { name: /Rename/ });
@@ -1004,14 +1056,14 @@ describe("what is taken out can be brought back", () => {
     routes[`PUT /api/v1${root}/drafts/help`] = () => [200, { revision: 1 }];
     withApp((one) => ({
       ...one,
-      feedback: "help-feedback",
-      body: { ...one.body, feedback: { table: "help-feedback" } },
+      feedback: "docs-feedback",
+      body: { ...one.body, feedback: { table: "docs-feedback" } },
     }));
     docs();
     fireEvent.click(await screen.findByRole("button", { name: "More for Handbook" }));
     fireEvent.click(await screen.findByRole("menuitem", { name: /Turn off page feedback/ }));
     const said = await answer("Turn off");
-    expect(said).toContain("help-feedback");
+    expect(said).toContain("docs-feedback");
     expect(said).toContain("answers in it are kept");
     await waitFor(() => expect(sent("PUT")).toHaveLength(1));
     expect(sent("PUT")[0]?.body).toEqual({

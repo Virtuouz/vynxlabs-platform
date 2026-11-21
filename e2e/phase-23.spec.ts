@@ -350,15 +350,21 @@ test("POLISH-003: a doc writer deploys a docs site with its feedback table, and 
   // A developer leaves a site, its pages and the table of its answers as drafts, and another table.
   const put = (path: string, kind: string, body: unknown) =>
     ok(owner, "PUT", `${W}/drafts/${path}`, { kind, schemaVersion: 1, body, create: true });
-  const FEEDBACK = `${ROOT}-answers`;
-  await put(FEEDBACK, "table", {
-    columns: {
-      page: { type: "text", required: true },
-      helpful: { type: "boolean", required: true },
-      version: { type: "text" },
-      at: { type: "timestamp" },
-    },
-  });
+  // The workspace's one table of answers (phase 24 M2): drafted unless an earlier walk left it.
+  const FEEDBACK = "docs-feedback";
+  const hasTable = (await call(owner, "GET", `${W}/resources/${FEEDBACK}`)).status === 200;
+  if (!hasTable) {
+    await put(FEEDBACK, "table", {
+      columns: {
+        site_key: { type: "text", required: true },
+        site: { type: "text" },
+        page: { type: "text", required: true },
+        helpful: { type: "boolean", required: true },
+        version: { type: "text" },
+        at: { type: "timestamp" },
+      },
+    });
+  }
   await put(`${ROOT}-notes/index`, "doc", {
     source: `---\ntitle: Notes ${ROOT}\n---\n\nWords.\n`,
   });
@@ -379,7 +385,7 @@ test("POLISH-003: a doc writer deploys a docs site with its feedback table, and 
     expect(refused.status).toBe(403);
     // The site with the table it names is deployed, in one deploy.
     const deployed = await call(writer, "POST", `${W}/changes/deploy`, {
-      paths: [`${ROOT}-notes/index`, `${ROOT}-site`, FEEDBACK],
+      paths: [`${ROOT}-notes/index`, `${ROOT}-site`, ...(hasTable ? [] : [FEEDBACK])],
       message: "Phase 23 walk",
     });
     expect(deployed.status, JSON.stringify(deployed.body)).toBeLessThan(300);

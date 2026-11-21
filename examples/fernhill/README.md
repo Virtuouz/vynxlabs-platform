@@ -51,7 +51,7 @@ Sign-ins and addresses are written to `.platform/demo.json`. Every account's pas
 | Practice owner | `maya.brooks@fernhill.example` (console) | The console; Clinic performance through "Staff sign-in" |
 | Practice manager | `rowan.ellis@fernhill.example` (console) | Approvals |
 | Developer | `devi.shah@fernhill.example` (console) | The sandbox, deploys |
-| Doc writer | `sam.reyes@fernhill.example` (console) | The sandbox's documentation; deploys pages, sites and a site's feedback table |
+| Doc writer | `sam.reyes@fernhill.example` (console) | The sandbox's documentation; deploys pages, sites and the workspace's feedback table (`docs-feedback`) |
 | Front desk, Northside | `jess.morgan@fernhill.example` (portal) | `/apps/fernhill/clinics/front-desk/` |
 | Front desk, Riverside, Hilltop | `omar.haddad@…`, `lena.fischer@…` | the same app, their own clinic's rows |
 | Pet owner | `george.lewis@example.net` (portal) | `/apps/fernhill/clinics/pet-portal/` |
@@ -100,7 +100,7 @@ The agent is offered exactly the scripts and the flow it is bound to (`src/apps.
 
 - **Tables.** Open `supplier_contacts` in the sandbox: the rows are the one scroller, with the header pinned. Open the row, and type `Veterinary Supply` or a number such as `219` in `supplier`: the picker asks the server, shows 50 and says "Type to find more".
 - **Release, as Maya.** One list of deploys with "Activate this version", and "Not yet run here" for bundles never run.
-- **Documentation, as Sam.** Write a page, publish a folder as a site that asks for feedback, and deploy: the feedback table goes with the site. A table of any other kind is refused.
+- **Documentation, as Sam.** Write a page, publish a folder as a site that asks for feedback, and deploy: the workspace's one feedback table, `docs-feedback`, is drafted with it the first time, and a second site only changes itself. A table of any other kind is refused.
 
 The two tables are the console's own, so a CLI deploy of this repository to the sandbox removes them. Run `setup.mjs --reset` to bring them back.
 

@@ -5,6 +5,7 @@ import {
   buildSearchIndex,
   type DocsApp,
   docsApps,
+  FEEDBACK_TABLE,
   loadSearchIndex,
   type ResourceLike,
   readPage,
@@ -86,6 +87,10 @@ const Table = Type.Object({
 
 const App = Type.Object({
   path: Type.String(),
+  key: Type.String({
+    description:
+      "The app's key, which a rename keeps: what its readers' answers are filed under, as `site_key`.",
+  }),
   title: Type.String(),
   docs: Type.String({ description: "The folder of pages it serves." }),
   feedback: Type.Union([Type.String(), Type.Null()], {
@@ -217,7 +222,9 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: workspace.id,
         }))
           ? tables
-          : tables.filter((one) => named.has(one.path));
+          : // The workspace's table of answers is always shown to them: it is made by whichever site
+            // asks first, and the next site's writer is told it is there.
+            tables.filter((one) => named.has(one.path) || one.path === FEEDBACK_TABLE);
         const tenant = await db
           .selectFrom("tenant")
           .select("slug")
@@ -237,6 +244,7 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             });
             return {
               ...one,
+              key: one.key ?? one.path,
               feedback: one.feedback ?? null,
               published: one.published !== false,
               body: bodies.get(one.path) ?? {},

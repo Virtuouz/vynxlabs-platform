@@ -23,6 +23,14 @@ When a filter is added, every widget whose table has its column is bound to it, 
 
 Select it, and set it in the inspector in the same words as in an app: **Value** "Sum of Fees", **Break down by** "Lent on · Monthly", **Only include**, and under Display the chart type and how numbers look. A change is on the page at once, and saved as a draft as you go.
 
-## Not here yet
+## Show the rows behind it
 
-Opening the rows behind a number, and a widget that opens a record, come with the record pages of a later phase. A widget that is clicked does nothing yet.
+A number, a point on a chart or a cell of a pivot can open the rows it was made from. In the Actions tab, under **When clicked** (or **When someone clicks a point**), add the step **Show the rows behind it**. A person who clicks the number is shown a side sheet of the rows, as a table, with the page's filters already applied: the number says 80, and the sheet lists the three loans it adds up to. For a point or a cell, the sheet lists only that group's rows.
+
+A widget that does this is drawn as one that can be pressed: it has a pointer and can be reached by keys. A widget that doesn't have the step does nothing when it is clicked.
+
+## Narrow the page by a clicked point
+
+**Narrow the page** sets one of the page's filters to what was clicked. On a chart of invoices by clinic, clicking the Northside bar sets the Clinic filter to Northside, and every widget bound to it asks again. The filter shows the choice, and **Reset** puts it back. The step names the filter and the breakdown to take it from.
+
+A dashboard only reads, so these two and **Show a message** are the only steps it offers. It never changes a row.

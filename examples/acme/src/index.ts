@@ -404,6 +404,7 @@ export const invoiceScreen = defineInterface({
               { column: "total" },
             ],
           },
+          on: { rowClick: { steps: [{ do: "open", page: "invoice", record: "event" }] } },
         },
         {
           id: "latest",
@@ -422,6 +423,7 @@ export const invoiceScreen = defineInterface({
             },
           },
           config: { primary: "number", secondary: "customer_id", meta: ["total"] },
+          on: { rowClick: { steps: [{ do: "open", page: "invoice", record: "event" }] } },
         },
         {
           id: "owed",
@@ -440,6 +442,29 @@ export const invoiceScreen = defineInterface({
             },
           },
           config: { mark: "bar" },
+        },
+      ],
+    },
+    {
+      // The invoice chosen in the table or the list, beside the page.
+      id: "invoice",
+      title: "The invoice chosen",
+      kind: "sheet",
+      record: { table: "invoices" },
+      widgets: [
+        {
+          id: "detail",
+          type: "core/detail",
+          at: { x: 0, y: 0, w: 12, h: 8 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            heading: "number",
+            fields: [
+              { column: "customer_id", label: "Customer" },
+              { column: "total" },
+              { column: "visible_to", label: "Shown to" },
+            ],
+          },
         },
       ],
     },

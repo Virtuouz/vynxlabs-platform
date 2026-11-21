@@ -1,6 +1,6 @@
 # The desk's pages: the queue, the loans out, and the shelf. No code: edit it
 # here or in the console's builder, whichever is to hand. Checking out and in
-# are buttons, which pages have from phase 26.
+# are actions on each row, and a device is added and changed in a form.
 schemaVersion: 2
 body:
   title: Device desk
@@ -85,6 +85,22 @@ body:
               - { column: device_tag, label: Device }
               - { column: location }
               - { column: needed_by, label: Needed by }
+            rowActions:
+              - id: check-out
+                label: Check out
+                action:
+                  when:
+                    - { field: status, of: event, test: is, value: ready }
+                  confirm:
+                    title: Hand the device over?
+                    text: "{student_name} is collecting {device_tag} for {number}."
+                    button: Check out
+                  steps:
+                    - do: script
+                      path: loans/check-out
+                      input:
+                        request: { record: number, of: event }
+                    - { do: message, text: Checked out, tone: success }
         - id: out
           title: On loan
           type: core/table
@@ -106,6 +122,25 @@ body:
               - { column: student_name, label: Student }
               - { column: due_on, label: Due }
               - { column: overdue }
+            rowActions:
+              - id: check-in
+                label: Check in
+                action:
+                  confirm:
+                    title: Take the device back?
+                    text: "{student_name} is returning {device_tag}."
+                    button: Check in
+                    ask:
+                      - { name: condition, label: Condition, type: choice, required: true, choices: [good, worn, damaged] }
+                      - { name: note, label: Note, type: text }
+                  steps:
+                    - do: script
+                      path: loans/check-in
+                      input:
+                        asset_tag: { record: device_tag, of: event }
+                        condition: { asked: condition }
+                        note: { asked: note }
+                    - { do: message, text: Checked in, tone: success }
     - id: shelf
       title: Shelf
       filters:
@@ -156,3 +191,69 @@ body:
               - { column: condition }
               - { column: reserved_for, label: Set aside for }
               - { column: notes }
+            rowActions:
+              - id: edit
+                label: Edit
+                action:
+                  steps:
+                    - { do: open, page: edit-device, record: event }
+        - id: add
+          type: core/button
+          at: { x: 9, y: 20, w: 3, h: 1 }
+          config: { label: Add device, tone: primary }
+          on:
+            click:
+              steps:
+                - { do: open, page: add-device }
+    - id: edit-device
+      title: Edit device
+      kind: modal
+      record: { table: devices }
+      widgets:
+        - id: form
+          type: core/form
+          at: { x: 0, y: 0, w: 12, h: 12 }
+          data:
+            record:
+              source: { record: this }
+          config:
+            mode: edit
+            fields:
+              - { column: kind }
+              - { column: model }
+              - { column: location }
+              - { column: status }
+              - { column: condition }
+              - { column: reserved_for, label: Set aside for }
+              - { column: notes }
+            submitLabel: Save
+            submit:
+              steps:
+                - { do: close }
+                - { do: message, text: Device saved, tone: success }
+    - id: add-device
+      title: Add device
+      kind: modal
+      widgets:
+        - id: form
+          type: core/form
+          at: { x: 0, y: 0, w: 12, h: 14 }
+          data:
+            record:
+              source: { visual: { table: devices } }
+          config:
+            mode: create
+            fields:
+              - { column: asset_tag, label: Tag }
+              - { column: kind }
+              - { column: model }
+              - { column: serial }
+              - { column: location }
+              - { column: status }
+              - { column: condition }
+              - { column: notes }
+            submitLabel: Add device
+            submit:
+              steps:
+                - { do: close }
+                - { do: message, text: Device added, tone: success }

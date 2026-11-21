@@ -10,7 +10,8 @@ The builder shows the page as the people who open the app will see it, with its 
 
 **Add to page** lists the widgets by what they are for, each with a line about it, and has a search:
 
-- **Work with records**: a table, for many rows, dense and sortable; a list, for rows as cards.
+- **Work with records**: a table, for many rows, dense and sortable; a list, for rows as cards; **Record detail**, for one record's fields and actions; a **Form**, to make or change a record.
+- **Take action**: a **Button**, for one action: update, open, run a workflow.
 - **Understand data**: a stat, for one number; a chart, for a trend or a comparison; a pivot, for a value across two breakdowns.
 - **Content**: text, for headings, instructions and help.
 
@@ -37,8 +38,12 @@ The inspector is the same for every widget. It is drawn from what the widget say
 
 - **Data** is what the widget asks of the tables. Pick the **Source** (a table, or a saved query). Then, in the widget's words: **Value** ("Sum of Total", "Average of Total", "Count"), **Break down by** (a column, and for a date how often: "Issued on · Weekly"), and **Only include** ("Status is Unpaid"). Under **More options** are how it is sorted and how many it reads.
 - **Display** is how the answer looks: the **Chart type**, how **Numbers look like** (a number, money, a percent, and whether the money is kept in cents), a line under a stat, a column's name and format in a table. **More options** holds the rest.
-- **Actions** lists what a person can do with the widget, such as "When a row is clicked". In this version nothing happens yet: buttons, forms, record pages and flows started from a page come in a later version.
-- **Rules** says who sees a widget, and what hiding is: it is not security. A widget that is hidden still reads whatever the person may read. What a person may read is decided by the table's own row rules, and the tab links to them.
+- **Actions** lists what a person can do with the widget, and what happens: "When a row is clicked", "When clicked", a form's "When it is sent", and the buttons on a record detail or at the end of a row. Each is a few **steps**, written in sentences, with a preview of what the person will be asked. See [apps made in the console](app-builder).
+- **Rules** says when a widget is shown, as a sentence ("the current user is in Practice managers"), and what hiding is: it is not security. A widget that is hidden still reads whatever the person may read. What a person may read is decided by the table's own row rules, and the tab links to them. In the builder a widget that wouldn't be shown is drawn faded, with "Shown only when …".
+
+### Pages that open on a record
+
+A page's own settings say its kind: **Page**, **Record page**, **Side sheet** or **Modal**. The builder shows a side sheet or a modal on a sample record, chosen from the table's rows, so the detail and the form have something to show. **Pages** lists them beside the pages of the menu, with the kind under each name.
 
 Most changes are a few choices. To make "Invoiced by week" a line of the sum of Total by the week of Issued on: Data, Source Invoices, Value Sum of Total, Break down by Issued on · Weekly; Display, Chart type Line.
 

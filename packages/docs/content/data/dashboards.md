@@ -13,6 +13,8 @@ A dashboard is one page of widgets that only read: tables, lists, stats, charts,
 
 Its filters sit along the top. A date range, a choice, a word or a number narrows every widget that is bound to it. The filters are kept in the address, so a link shows what you were looking at.
 
+A number, a point or a cell can open **the rows behind it**, and a point can **narrow the page** to what was clicked. See [building a dashboard](dashboard-builder).
+
 Whoever looks sees what they are allowed to read. A dashboard never shows rows a person's groups don't allow, however it was shared.
 
 See [building a dashboard](dashboard-builder).

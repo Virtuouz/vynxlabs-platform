@@ -10,6 +10,9 @@ test("the registry holds each type with its definition and its view", () => {
   expect([...registry.keys()]).toEqual([
     "core/table",
     "core/list",
+    "core/detail",
+    "core/form",
+    "core/button",
     "core/stat",
     "core/chart",
     "core/pivot",

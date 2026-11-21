@@ -65,9 +65,14 @@ const byTeam = {
   },
   config: { mark: "bar" },
 };
+const filters = [
+  { name: "team", type: "choice", from: { table: "invoices", column: "team" } },
+  { name: "status", type: "choice", from: { table: "invoices", column: "status" } },
+  { name: "fixed", type: "choice", choices: ["a", "b"] },
+];
 const screen = {
   title: "Invoices",
-  pages: [{ id: "main", title: "Invoices", widgets: [list, byTeam] }],
+  pages: [{ id: "main", title: "Invoices", filters, widgets: [list, byTeam] }],
 };
 /** A dashboard of SQL, and one that narrows rows by when they were made. */
 const board = {
@@ -110,6 +115,7 @@ function bundle(): Bundle {
           number: { type: "text", required: true },
           team: { type: "text" },
           total: { type: "number" },
+          status: { type: "enum", values: ["open", "paid"] },
         },
         policy: {
           type: "rules",
@@ -489,6 +495,38 @@ describe("a draft", () => {
         )
       ).status,
     ).toBe(403);
+  });
+});
+
+describe("the values a choice filter offers", () => {
+  const options = (
+    who: { get: (url: string) => Promise<{ status: number; body: Any }> },
+    filter: string,
+    prefix = "",
+    more = "",
+  ) =>
+    who.get(
+      `${prefix}${ws()}/filter-options?of=interface&path=screens/invoices&page=main&filter=${filter}${more}`,
+    );
+
+  test("are the column's distinct values, as the caller may read the table, sorted", async () => {
+    expect((await options(alice, "team")).body.values).toEqual(["finance", "sales"]);
+    // Two groups of end users are offered only what their rows hold.
+    expect((await options(ivy.browser, "team", "/api/v1")).body.values).toEqual(["finance"]);
+    expect((await options(jon.browser, "team", "/api/v1")).body.values).toEqual(["sales"]);
+  });
+
+  test("are an enum's own values, and a filter's own choices are not read from a table", async () => {
+    expect((await options(alice, "status")).body.values).toEqual(["open", "paid"]);
+    expect((await options(alice, "fixed")).status).toBe(400);
+  });
+
+  test("are not there for a filter the page lacks, or for someone who may not open the page", async () => {
+    expect((await options(alice, "nope")).status).toBe(404);
+    expect((await options(browser(), "team", "/api/v1")).status).toBe(404);
+    // A draft is only for those who may edit it.
+    expect((await options(ivy.browser, "team", "/api/v1", "&draft=1")).status).toBe(403);
+    expect((await options(alice, "team", "", "&draft=1")).status).toBe(200);
   });
 });
 

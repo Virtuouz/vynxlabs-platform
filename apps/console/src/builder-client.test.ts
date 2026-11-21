@@ -47,3 +47,11 @@ describe("the builder's page client", () => {
     vi.useRealTimers();
   });
 });
+
+test("the rows behind a number are that input's, as the served app's client gives them", async () => {
+  const rows = { shape: "rows", columns: [], rows: [{ id: "1" }] };
+  get.mockResolvedValueOnce({ inputs: { value: rows } });
+  const read = await pageClient("/r", { of: "dashboard", id: "d1" }).behind?.("fees", "value", {});
+  expect(read).toEqual(rows);
+  expect(get.mock.calls[0]?.[0]).toContain("behind=%7B%7D");
+});

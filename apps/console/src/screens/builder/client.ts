@@ -96,11 +96,17 @@ export function pageClient(
       );
       return found.choices;
     },
-    behind: (widget, input, group, filters) => {
+    behind: async (widget, input, group, filters) => {
       const params = page(new URLSearchParams({ widget, input, behind: JSON.stringify(group) }));
       if (filters && Object.keys(filters).length > 0)
         params.set("filters", JSON.stringify(filters));
-      return api.get<WireData>(`${root}/widget-data?${params}`);
+      // The endpoint answers every input asked for; the rows behind are that one input's.
+      const read = await api.get<{ inputs: Record<string, WireData> }>(
+        `${root}/widget-data?${params}`,
+      );
+      const found = read.inputs[input];
+      if (!found) throw new WidgetReadError("The rows could not be read.", 404);
+      return found;
     },
     options: async (filter) => {
       const found = await api.get<{ values: string[] }>(

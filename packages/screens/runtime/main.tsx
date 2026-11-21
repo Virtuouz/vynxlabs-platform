@@ -1,56 +1,69 @@
 import "./styles.css";
-import {
-  ApiError,
-  type Filter as AppFilter,
-  api,
-  appContext,
-  signInUrl,
-  signOut,
-  type Term,
-  table,
-  terms,
-} from "@volvel/app";
-import { Button, GlossaryProvider, Notice, SideSheet } from "@volvel/ui";
-import { StrictMode, useEffect, useState } from "react";
+import { ApiError, api, appContext, signInUrl, signOut, type Term, terms } from "@volvel/app";
+import type { InterfaceBody, Page } from "@volvel/manifest";
+import { Button, GlossaryProvider, Notice, SideSheet, Tabs } from "@volvel/ui";
+import { corePack } from "@volvel/widgets-core/views";
+import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { type DataClient, InterfaceRenderer, type InterfaceView } from "../src/index.ts";
+import {
+  type FilterValues,
+  type PageDataClient,
+  PageView,
+  viewRegistry,
+  WidgetReadError,
+  type WireData,
+} from "../src/index.ts";
 
-/** Rows through the app client, so every request is made as whoever is using the app. */
-const client: DataClient = {
-  find: (name, options) =>
-    table(name).page({
-      ...(options.filter ? { filter: options.filter as AppFilter } : {}),
-      ...(options.sort?.length ? { sort: options.sort } : {}),
-      ...(options.limit !== undefined ? { limit: options.limit } : {}),
-      ...(options.cursor ? { cursor: options.cursor } : {}),
-    }),
-  aggregate: (name, options) =>
-    table(name).aggregate({
-      ...(options.group?.length ? { group: options.group } : {}),
-      ...(options.measures?.length ? { measures: options.measures } : {}),
-      ...(options.filter ? { filter: options.filter as AppFilter } : {}),
-      ...(options.sort?.length ? { sort: options.sort } : {}),
-      ...(options.limit !== undefined ? { limit: options.limit } : {}),
-    }),
-  insert: (name, row) => table(name).insert(row),
-  update: (name, id, changes) => table(name).update(id, changes),
-  remove: (name, id) => table(name).delete(id),
-  // Actions start what they start as whoever is using the app.
-  start: async (target, input) => {
-    const at = workspaceApi();
-    const started =
-      target.kind === "script"
-        ? await api.post<{ id: string }>(`${at}/runs`, { script: target.path, input })
-        : await api.post<{ id: string }>(`${at}/flow-runs`, { flow: target.path, input });
-    return { kind: target.kind, id: started.id };
-  },
-  run: (started) =>
-    api.get(`${workspaceApi()}/${started.kind === "script" ? "runs" : "flow-runs"}/${started.id}`),
-};
+/** What the platform gives for an interface: its body, and what each table it reads holds. */
+interface InterfaceView {
+  body: InterfaceBody;
+}
+
+const registry = viewRegistry(corePack);
 
 function workspaceApi() {
   const context = appContext();
   return `/tenants/${context.tenant.id}/workspaces/${context.workspace.id}`;
+}
+
+/** What each widget of a page reads, asked of the platform as whoever is using the app. */
+function clientFor(path: string, page: string): PageDataClient {
+  return {
+    async read(widget, filters, options = {}) {
+      const query = new URLSearchParams({
+        of: "interface",
+        path,
+        page,
+        widget,
+        filters: JSON.stringify(filters),
+      });
+      if (options.input) query.set("input", options.input);
+      if (options.cursor) query.set("cursor", options.cursor);
+      try {
+        return await api.get<{ inputs: Record<string, WireData> }>(
+          `${workspaceApi()}/widget-data?${query}`,
+        );
+      } catch (error) {
+        throw error instanceof ApiError ? new WidgetReadError(error.message, error.status) : error;
+      }
+    },
+  };
+}
+
+/** One page of the app. A new page starts with its filters at their defaults. */
+function PageOf({ path, page }: { path: string; page: Page }) {
+  const client = useMemo(() => clientFor(path, page.id), [path, page.id]);
+  const [values, setValues] = useState<FilterValues>({});
+  return (
+    <PageView
+      widgets={page.widgets}
+      filters={page.filters ?? []}
+      registry={registry}
+      client={client}
+      filterValues={values}
+      onFilterValues={setValues}
+    />
+  );
 }
 
 function App() {
@@ -73,17 +86,15 @@ function App() {
   }, []);
   // The page that is open is in the address, so that it can be linked to and reloaded.
   const [pageId, setPageId] = useState(() => window.location.hash.slice(1) || undefined);
+  const path = context.app.interface;
 
   useEffect(() => {
-    const path = context.app.interface;
     if (!path) {
       setProblem("This app was not set up to show anything.");
       return;
     }
     api
-      .get<InterfaceView>(
-        `/tenants/${context.tenant.id}/workspaces/${context.workspace.id}/interfaces/${path}`,
-      )
+      .get<InterfaceView>(`${workspaceApi()}/interfaces/${path}`)
       .then(setView, (error: unknown) =>
         setProblem(
           error instanceof ApiError && error.status === 404
@@ -91,21 +102,21 @@ function App() {
             : (error as Error).message,
         ),
       );
-  }, [context]);
+  }, [path]);
   useEffect(() => {
-    if (view) document.title = `${view.interface.title} · ${context.tenant.name}`;
+    if (view) document.title = `${view.body.title} · ${context.tenant.name}`;
   }, [view, context]);
 
   const who = context.principal;
+  const pages = view?.body.pages ?? [];
   // The page that is open, and its help: a page of documentation, when it names one this person may read.
-  const open = view?.interface.pages.find((one) => one.id === pageId) ?? view?.interface.pages[0];
+  const open = pages.find((one) => one.id === pageId) ?? pages[0];
   const help = open?.help ? topics[open.help] : undefined;
+  const drawn = open && path ? <PageOf key={open.id} path={path} page={open} /> : null;
   return (
     <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 p-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="m-0 text-xl font-semibold tracking-tight">
-          {view?.interface.title ?? context.app.title}
-        </h1>
+        <h1 className="m-0 text-display font-semibold">{view?.body.title ?? context.app.title}</h1>
         <span className="flex flex-wrap items-center gap-3 text-body text-ink-muted">
           {help ? (
             <Button size="small" variant="quiet" onClick={() => setHelping(true)}>
@@ -158,18 +169,25 @@ function App() {
       </SideSheet>
       {view ? (
         <GlossaryProvider terms={glossary}>
-          <InterfaceRenderer
-            body={view.interface}
-            tables={view.tables}
-            client={client}
-            targets={view.targets}
-            member={who.type === "member"}
-            pageId={pageId}
-            onPage={(id) => {
-              setPageId(id);
-              window.history.replaceState(null, "", `#${id}`);
-            }}
-          />
+          {pages.length === 0 ? (
+            <p className="m-0 text-ink-muted">This app has no pages yet.</p>
+          ) : pages.length === 1 ? (
+            drawn
+          ) : (
+            <Tabs
+              label="Pages"
+              value={open?.id ?? ""}
+              onChange={(id) => {
+                setPageId(id);
+                window.history.replaceState(null, "", `#${id}`);
+              }}
+              tabs={pages.map((page) => ({
+                id: page.id,
+                label: page.title,
+                content: page.id === open?.id ? drawn : null,
+              }))}
+            />
+          )}
         </GlossaryProvider>
       ) : problem ? null : (
         <p className="m-0 text-ink-muted">Loading…</p>

@@ -15,6 +15,11 @@
     "dist"
   ],
   "dependencies": {
-    "@volvel/widgets": "workspace:*"
+    "@volvel/ui": "workspace:*",
+    "@volvel/widgets": "workspace:*",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0"
   }
 }

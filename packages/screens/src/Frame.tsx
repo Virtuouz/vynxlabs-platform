@@ -1,0 +1,183 @@
+import type { PageWidget } from "@volvel/manifest";
+import { Button, Notice, Skeleton } from "@volvel/ui";
+import type { WidgetDefinition, WidgetState } from "@volvel/widgets";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import type { Reading } from "./useWidgetData.ts";
+
+/** What a widget with no title is called where it needs a name: in the builder, and to a screen reader. */
+export const nameOf = (widget: PageWidget, definition: WidgetDefinition | undefined) =>
+  widget.title || definition?.title || widget.id;
+
+/** The title, which in the builder is renamed where it stands. */
+function Title({
+  widget,
+  renamable,
+  onRename,
+}: {
+  widget: PageWidget;
+  /** The widget is the one being built and may be renamed. */
+  renamable: boolean;
+  onRename: (title: string) => void;
+}) {
+  const [renaming, setRenaming] = useState(false);
+  const field = useRef<HTMLInputElement>(null);
+  // Said once: Enter or Esc ends it, and the blur that follows must not say it again.
+  const settled = useRef(false);
+  useEffect(() => {
+    if (renaming) {
+      settled.current = false;
+      field.current?.focus();
+      field.current?.select();
+    }
+  }, [renaming]);
+  const title = widget.title ?? "";
+  if (renaming) {
+    const finish = (save: boolean) => {
+      if (settled.current) return;
+      settled.current = true;
+      const next = field.current?.value.trim() ?? title;
+      setRenaming(false);
+      if (save && next !== title) onRename(next);
+    };
+    return (
+      <input
+        ref={field}
+        aria-label="Widget title"
+        defaultValue={title}
+        maxLength={100}
+        className="min-w-0 flex-1 rounded-inner border border-action bg-surface px-1.5 py-0.5 text-title font-semibold text-ink"
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => {
+          event.stopPropagation();
+          if (event.key === "Enter") finish(true);
+          if (event.key === "Escape") finish(false);
+        }}
+        onBlur={() => finish(true)}
+      />
+    );
+  }
+  if (renamable) {
+    return (
+      <button
+        type="button"
+        title="Rename"
+        className="-ml-1.5 min-w-0 truncate rounded-inner border border-dashed border-action/40 px-1.5 py-0.5 text-left text-title font-semibold"
+        onClick={(event) => {
+          event.stopPropagation();
+          setRenaming(true);
+        }}
+      >
+        {title || <span className="font-normal text-ink-muted">Name this widget</span>}
+      </button>
+    );
+  }
+  return <h2 className="m-0 min-w-0 truncate text-title font-semibold">{title}</h2>;
+}
+
+/**
+ * What goes around every widget, the same for every widget: its title and the
+ * line under it, and what to draw while it is loading, when there is nothing,
+ * when it could not be read and when it may not be seen. A type nobody knows
+ * is said, not skipped.
+ */
+export function Frame({
+  widget,
+  definition,
+  reading,
+  selected,
+  building,
+  onRename,
+  tabbable,
+  children,
+}: {
+  widget: PageWidget;
+  definition: WidgetDefinition | undefined;
+  reading: Reading;
+  selected: boolean;
+  building: boolean;
+  onRename: ((title: string) => void) | undefined;
+  /** The body scrolls, so it takes focus and can be scrolled by keyboard. */
+  tabbable: boolean;
+  children: ReactNode;
+}) {
+  const name = nameOf(widget, definition);
+  const state: WidgetState = definition ? reading.state : { status: "ready" };
+  const heading = widget.title || widget.subtitle || (building && selected);
+  const body = (() => {
+    if (!definition) {
+      return <Notice tone="danger">There is no widget called "{widget.type}".</Notice>;
+    }
+    switch (state.status) {
+      case "loading":
+        return <Skeleton lines={3} label={`Loading ${name}`} />;
+      case "failed":
+        return (
+          <Notice
+            tone="danger"
+            action={
+              <Button size="small" onClick={reading.retry}>
+                Try again
+              </Button>
+            }
+          >
+            {state.message}
+          </Notice>
+        );
+      case "forbidden":
+        return <Notice tone="attention">You may not see this. {state.message}</Notice>;
+      case "empty":
+        return <p className="m-0 text-ink-muted">{state.message}</p>;
+      case "ready":
+        return children;
+    }
+  })();
+  return (
+    <>
+      {heading ? (
+        <header className="flex min-w-0 flex-col gap-0.5 px-4 pt-3 pb-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <Title
+              widget={widget}
+              renamable={building && selected && onRename !== undefined}
+              onRename={(title) => onRename?.(title)}
+            />
+          </div>
+          {widget.subtitle ? (
+            <p className="m-0 text-body-sm text-ink-muted">{widget.subtitle}</p>
+          ) : null}
+        </header>
+      ) : null}
+      <div
+        tabIndex={tabbable ? 0 : undefined}
+        aria-busy={reading.stale ? true : undefined}
+        className={`flex min-h-0 flex-1 flex-col gap-2 px-4 pb-4 @2xl:overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
+          heading ? "" : "pt-4"
+        } ${reading.stale ? "opacity-50" : ""}`}
+      >
+        {reading.stale ? (
+          <span role="status" className="text-body-sm text-ink-muted">
+            Updating…
+          </span>
+        ) : null}
+        {body}
+        {reading.more?.loading ? (
+          <span role="status" className="text-body-sm text-ink-muted">
+            Loading more…
+          </span>
+        ) : null}
+        {reading.more?.error ? (
+          <Notice
+            tone="danger"
+            action={
+              <Button size="small" onClick={reading.more.retry}>
+                Try again
+              </Button>
+            }
+          >
+            {reading.more.error}
+          </Notice>
+        ) : null}
+      </div>
+    </>
+  );
+}

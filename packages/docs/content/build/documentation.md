@@ -44,3 +44,7 @@ A site has a **publishing switch**. Turning it off stops serving the site and ke
 Deploying a site that asks readers for feedback also deploys the table that holds the answers, and the count says so.
 
 A member with the **doc writer** role may draft and deploy the table `docs-feedback`, and only that table, so a developer need not have made it first. A table of any other kind, or one whose columns are not the feedback columns, is still refused.
+
+### Answers from more than one site
+
+The feedback table has the columns `site_key`, `site`, `page`, `helpful`, `version` and `at`. `site_key` is the site app's key, which a rename keeps, so a site that is renamed or moved still owns its answers; `site` is its name when the answer was given, for people to read. To read one site's answers, filter on `site_key`. A table per site (`<site>-feedback`) is no longer made, and one made before is not read.

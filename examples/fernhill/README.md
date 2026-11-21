@@ -42,6 +42,7 @@ VOLVEL_URL=http://localhost:8080 node setup/setup.mjs          # --reset to star
    - PayFern sends two good payments, one for the wrong amount, and one with a bad signature
    - unpaid invoices are chased
 7. In the sandbox, makes two tables of the console's own: `suppliers` (220 rows, shown by their `name`, so the picker has more than the first 50 to search) and `supplier_contacts`, whose `supplier` column refers to it. Adds Sam Reyes, a doc writer in the sandbox.
+   Also made by Maya in the sandbox: a query `reports/visits-by-clinic`, the dashboard `boards/clinic-visits` over it, and two docs sites, `rota` and `supplies` ("Fernhill rota guide", "Fernhill supplies guide"), with feedback off.
 8. Registers `fernhill.localhost` to serve the portal and every app, uploads the logo, and ends operator access.
 
 Sign-ins and addresses are written to `.platform/demo.json`. Every account's password is `fernhill-demo-2026`.
@@ -102,7 +103,18 @@ The agent is offered exactly the scripts and the flow it is bound to (`src/apps.
 - **Release, as Maya.** One list of deploys with "Activate this version", and "Not yet run here" for bundles never run.
 - **Documentation, as Sam.** Write a page, publish a folder as a site that asks for feedback, and deploy: the workspace's one feedback table, `docs-feedback`, is drafted with it the first time, and a second site only changes itself. A table of any other kind is refused.
 
-The two tables are the console's own, so a CLI deploy of this repository to the sandbox removes them. Run `setup.mjs --reset` to bring them back.
+The tables, the query, the dashboard and the two sites are the console's own, so a CLI deploy of this repository to the sandbox removes them. Run `setup.mjs --reset` to bring them back.
+
+## What phase 24 walks here
+
+`e2e/phase-24.spec.ts` makes its own queries, dashboards and sites under names of its own. By hand, in the sandbox:
+
+- **A rename follows.** As Maya, open Queries, choose `reports/visits-by-clinic`, **Name and path**, and change the path. The dialog lists "Visits by clinic" as a dashboard saved as a draft with the new path. Save, and the dashboard is a draft too. Deploy both: the dashboard still shows its rows. Discard instead, and both drafts go.
+- **A repository dashboard** says "Names `old`, now `new`: change it in the repository" once its query's alias has run out. Fernhill's repository has no dashboard over a console query, so this is covered by the control plane's tests.
+- **One feedback table, as Sam.** In Documentation, turn on page feedback for "Fernhill rota guide": the dialog says it makes the table `docs-feedback`. Deploy. Turn it on for "Fernhill supplies guide": the dialog says only the site changes. Answer a page in each: the two sites' answers are rows of one table, told apart by `site_key`.
+- **A data source's page** fills the window, as a table's rows do (bind one with `E2E_SOURCE_URL` in the browser tests, or in Data sources).
+- **A reference by name.** Make a table with a reference column to `supplier_contacts`, which names no display column and has no `name` or `title`: its grid shows each contact by its first text column, `contact`, not by an ID. `suppliers` names `name`, so it was always shown by name.
+
 
 ## Findings from building it, and what became of them
 

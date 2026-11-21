@@ -2,6 +2,29 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 24, the follow-through on phase 23's open items
+
+Five items phase 23 left, each as the owner chose. A migration (`0084`) adds the record of what each dashboard widget names. Nothing needs migrating by hand.
+
+### For operators
+
+- **A dashboard follows a renamed query, for good.** A widget names a query by its readable path, and a deploy records the key of the query that path named. A widget whose path no longer resolves (its alias has run out) runs the query by that key.
+- **A rename drafts the console's dashboards.** The rename dialog lists the console-made dashboards that name the query, and saves each as a draft with the new path. Discarding the rename sets aside only the dashboard drafts it wrote and that are unchanged; one edited since is kept.
+- **A repository dashboard says what to change.** Its widget shows "Names `old`, now `new`: change it in the repository". It is not drafted from the console.
+- **One feedback table for a workspace's sites.** `docs-feedback` is made the first time a site turns feedback on, and every site with feedback on writes to it, naming itself by `site_key` (the site app's key, which a rename keeps) and, for people, `site`. A second site only changes itself, and the dialog says which it does. Per-site `<site>-feedback` tables are no longer made, and ones made before are not read.
+- **A doc writer turns feedback on alone.** They may draft and deploy `docs-feedback` with exactly its columns, and no other table.
+- **A file a worker script replaces is kept like one replaced in the console:** until the tenant's audit retention ends, then removed. A source table's files belong to the source, so none are kept.
+- **A data source's page fills the window.** The rows are the one scroller, the list of tables scrolls beside them.
+- **A reference is named in the grid** when its table names no display column: `name`, else `title`, else the first text column, the same rule as the picker.
+
+### For tenant developers
+
+- `GET …/rename-effects/<path>` answers the dashboards that name a query, with their `ownership` and the number of widgets that do.
+- A widget's data answer has `followed: { names, now }` when it ran through a recorded key.
+- The rows API's `expanded` names rows by the shared rule `displayGuess` (exported from `@volvel/manifest`) when the table names no display column.
+- `PUT drafts/docs-feedback` as a `table` is allowed for a caller who may change a docs site, when its columns are exactly `site_key`, `site`, `page`, `helpful`, `version` and `at`.
+- The served docs site writes `site_key` and `site` with each answer.
+
 ## Unreleased: phase 23, what the owner chose for phase 22's open items
 
 Eight decisions, built. Nothing needs migrating by hand, and a new migration only rewords the `doc_writer` role's description.

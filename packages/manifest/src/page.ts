@@ -642,7 +642,9 @@ export function checkWidgets(
         if (declared.shape === "summary") {
           const values = declared.values ?? { min: 1, max: 1 };
           const breakdowns = declared.breakdowns ?? { min: 0, max: 1 };
-          if (measures.length < values.min || measures.length > values.max) {
+          // While a page is being made, too few is a widget not finished, not a mistake.
+          const few = (count: number, least: number) => count < least && !context.incomplete;
+          if (few(measures.length, values.min) || measures.length > values.max) {
             say(
               `${where}/source/visual/measures`,
               values.min === values.max
@@ -650,7 +652,7 @@ export function checkWidgets(
                 : `works out ${values.min} to ${values.max} values`,
             );
           }
-          if (groups.length < breakdowns.min || groups.length > breakdowns.max) {
+          if (few(groups.length, breakdowns.min) || groups.length > breakdowns.max) {
             say(
               `${where}/source/visual/groupBy`,
               breakdowns.max === 0

@@ -130,11 +130,20 @@ function Cell({
   // Whether it arrived is as of when it first drew: the next draw must not stop its fade.
   const [arrived] = useState(arriving);
   // A widget added before its source was chosen has nothing to ask for yet.
+  // A summary with fewer values or breakdowns than it needs (a pivot broken down one way) is not
+  // finished either.
   const waiting =
     definition !== undefined &&
-    Object.entries(definition.data).some(
-      ([input, declared]) => declared.required !== false && !widget.data?.[input],
-    );
+    Object.entries(definition.data).some(([input, declared]) => {
+      const given = widget.data?.[input];
+      if (!given) return declared.required !== false;
+      if (declared.shape !== "summary" || !("visual" in given.source)) return false;
+      const { measures = [], groupBy = [] } = given.source.visual;
+      return (
+        measures.length < (declared.values?.min ?? 1) ||
+        groupBy.length < (declared.breakdowns?.min ?? 0)
+      );
+    });
   const reading = useWidgetData({
     client,
     widget,

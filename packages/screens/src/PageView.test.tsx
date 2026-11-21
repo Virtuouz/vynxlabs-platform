@@ -217,7 +217,13 @@ describe("the core pack draws from wire data", () => {
       type: "core/stat",
       title: "Invoiced",
       at: place(0, 0, 3, 3),
-      data: { value: { source: { visual: { table: "invoices" } } } },
+      data: {
+        value: {
+          source: {
+            visual: { table: "invoices", measures: [{ fn: "sum", column: "total", as: "total" }] },
+          },
+        },
+      },
       config: { format: { style: "currency" }, caption: "Last 30 days", compareTo: "range" },
     };
     render(<Page client={clientOf({ total: { value: statInput } })} widgets={[stat]} />);
@@ -233,7 +239,13 @@ describe("the core pack draws from wire data", () => {
       id: "overdue",
       type: "core/stat",
       at: place(0, 0, 3, 3),
-      data: { value: { source: { visual: { table: "invoices" } } } },
+      data: {
+        value: {
+          source: {
+            visual: { table: "invoices", measures: [{ fn: "sum", column: "total", as: "total" }] },
+          },
+        },
+      },
       config: { goodWhen: "down", delta: "absolute" },
     };
     const down: WireData = patched(statInput, { rows: [{ total: 5 }], previous: [{ total: 9 }] });
@@ -248,7 +260,17 @@ describe("the core pack draws from wire data", () => {
       type: "core/chart",
       title: "By clinic",
       at: place(0, 0, 6, 6),
-      data: { rows: { source: { visual: { table: "invoices" } } } },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "invoices",
+              measures: [{ fn: "sum", column: "total", as: "total" }],
+              groupBy: [{ column: "issued" }],
+            },
+          },
+        },
+      },
       config: { mark: "bar", format: { style: "currency" } },
     };
     const onEvent = vi.fn();
@@ -276,7 +298,17 @@ describe("the core pack draws from wire data", () => {
       id: "trend",
       type: "core/chart",
       at: place(0, 0, 6, 6),
-      data: { rows: { source: { visual: { table: "invoices" } } } },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "invoices",
+              measures: [{ fn: "sum", column: "total", as: "total" }],
+              groupBy: [{ column: "issued" }, { column: "clinic" }],
+            },
+          },
+        },
+      },
       config: { mark: "line", compareTo: "range" },
     };
     const compared: WireData = patched(summaryInput, { previous: [{ total: 10 }, { total: 20 }] });
@@ -307,7 +339,17 @@ describe("the core pack draws from wire data", () => {
       type: "core/pivot",
       title: "Count",
       at: place(0, 0, 6, 7),
-      data: { rows: { source: { visual: { table: "invoices" } } } },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "invoices",
+              measures: [{ fn: "sum", column: "total", as: "total" }],
+              groupBy: [{ column: "issued" }, { column: "clinic" }],
+            },
+          },
+        },
+      },
     };
     render(<Page client={clientOf({ grid: { rows: pivotInput } })} widgets={[pivot]} />);
     const grid = await screen.findByRole("table");
@@ -620,14 +662,30 @@ describe("the canvas", () => {
       type: "core/stat",
       title: "Invoiced",
       at: place(0, 0, 3, 3),
-      data: { value: { source: { visual: { table: "invoices" } } } },
+      data: {
+        value: {
+          source: {
+            visual: { table: "invoices", measures: [{ fn: "sum", column: "total", as: "total" }] },
+          },
+        },
+      },
     },
     {
       id: "by_clinic",
       type: "core/chart",
       title: "By clinic",
       at: place(3, 0, 6, 6),
-      data: { rows: { source: { visual: { table: "invoices" } } } },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "invoices",
+              measures: [{ fn: "sum", column: "total", as: "total" }],
+              groupBy: [{ column: "clinic" }],
+            },
+          },
+        },
+      },
       config: { mark: "bar" },
     },
     {

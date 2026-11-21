@@ -233,38 +233,110 @@ test("each widget draws what its query gives, and says how fresh it is", async (
   await expectNoAxeViolations(page, "a dashboard");
 });
 
-// The filter bar and the comparison are drawn by the page renderer (phase 25, stream B), whose
-// words and controls are not fixed yet. The steps are walked again once they are.
-test.fixme("the date filter changes every widget bound to it, and the address keeps it", async () => {
-  // - "Lent" is a date range. "All time" is not one of the ranges a page filter offers, so the
-  //   older loans (day(60) and day(62)) are reached with "Last 90 days": 105 in fees, and 55 and 50 by device;
-  // - the address keeps the filters, and a reload shows the same;
-  // - a custom range of day(70) to day(40) shows 25 and Camera alone, and Reset returns to 80;
-  // - "Nothing in the period before" and the picture of how it went, under the number.
+test("the date filter changes every widget bound to it, and the address keeps it (POLISH-006)", async () => {
+  await page.goto(`${link}/dashboards/${board}`);
+  await expect(widget("Fees")).toContainText("80");
+  // The older loans, 60 and 62 days ago, are reached with "Last 90 days": 105 in fees.
+  await page.getByRole("combobox", { name: "Lent" }).selectOption({ label: "Last 90 days" });
+  await expect(widget("Fees")).toContainText("105");
+  const rows = widget("Fees by device").getByRole("row");
+  await expect(rows.nth(1)).toContainText("55");
+  await expect(rows.nth(2)).toContainText("50");
+  // The address keeps the filter, so a reload, or the link sent to someone, shows the same.
+  await expect(page).toHaveURL(/[?&]f=/);
+  await page.reload();
+  await expect(widget("Fees")).toContainText("105");
+  await page.getByRole("button", { name: "Reset" }).click();
+  await expect(widget("Fees")).toContainText("80");
 });
 
-// Drill-through to the rows behind a number, and a widget's result as a file, are not in
-// the page model yet (a click is an event from phase 26, and the frame's menu is stream B's).
-test.fixme("a number opens the rows behind it, and a result is kept as a file", async () => {
+// Drill-through to the rows behind a number (phase 18) is not in the page model: a click is an
+// event, and what it does is phase 26's actions. Whether it comes back now is the owner's to say;
+// see docs/phases/phase-25-one-widget-system.md, Findings.
+test.fixme("a number opens the rows behind it", async () => {
   // - click Laptop's line in "Fees by device": a dialog "Rows of loans" with its two loans;
-  // - sort by a heading, and filter the rows in the dialog;
-  // - Download as CSV gives device_name,fees,loans / Laptop,50,2 / Camera,30,1;
-  // - Download as a spreadsheet gives fees-by-device.xlsx.
+  // - sort by a heading, and filter the rows in the dialog.
 });
 
-// The editor is stream C's: "Add to page" and the inspector.
-test.fixme("a pivot of loans by month and status is built from menus, with no SQL written", async () => {
-  // - Edit, Add to page, Pivot; Data: Source Loans, Value Count, Break down by Lent on (Monthly) and Status;
-  // - Display: Show totals; the page's Lent filter is bound for Lent on;
-  // - in the last 30 days: two out, one late, three in all.
+test("a widget's rows are kept as a file, from its frame (POLISH-002)", async () => {
+  await page.goto(`${link}/dashboards/${board}`);
+  await widget("Fees by device").getByRole("button", { name: "Download Fees by device" }).click();
+  const csv = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: "Download as CSV" }).click();
+  const file = await csv;
+  expect(file.suggestedFilename()).toBe("fees-by-device.csv");
+  const text = await (await import("node:fs/promises")).readFile(await file.path(), "utf8");
+  expect(text).toContain("Laptop,50,2");
+  expect(text).toContain("Camera,30,1");
+  await widget("Fees by device").getByRole("button", { name: "Download Fees by device" }).click();
+  const sheet = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: "Download as a spreadsheet" }).click();
+  expect((await sheet).suggestedFilename()).toBe("fees-by-device.xlsx");
+  // One number is read off the page, and offers no file.
+  await expect(widget("Fees").getByRole("button", { name: /^Download/ })).toHaveCount(0);
 });
 
-// Select, move and size on the page are stream B's canvas (arrow keys move, Shift+arrows size, a chip
-// says "6 × 8 · col 7 · row 1"), and Undo is the editor's.
-test.fixme("widgets are dragged into place and stretched, from the keyboard too, and a change is undone", async () => {
-  // - drag "Fees by status" six columns right; it stays where it was put while the save is on its way;
-  // - what was under it rises beside it, and nothing lies on anything after a stretch;
-  // - arrows move it, Shift+arrows size it, and the move is announced;
-  // - Undo and Redo, by keys and by buttons that say what they would do;
-  // - Delete removes a widget, and Undo brings it back with what it asked.
+test("a pivot of loans by month and status is built from menus, with no SQL written", async () => {
+  await page.goto(`${link}/dashboards/${board}?edit=1`);
+  await page
+    .getByRole("button", { name: /Add to page/ })
+    .first()
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^Pivot/ })
+    .click();
+  const inspector = page.getByRole("complementary", { name: "Settings" });
+  // The page reads one table, so the new widget reads it too, and follows the page's filter.
+  await expect(inspector.getByText("Follows the page filters")).toBeVisible();
+  await inspector.getByLabel("What value 1 works out").selectOption("count");
+  await inspector.getByLabel("Breakdown 1", { exact: true }).selectOption("lent_on");
+  await inspector.getByLabel("How often breakdown 1 is cut").selectOption("month");
+  await inspector.getByRole("button", { name: "Break it down" }).click();
+  await inspector.getByLabel("Breakdown 2", { exact: true }).selectOption("status");
+  const pivot = page.locator("section[data-selected]");
+  // In the last 30 days: two out, one late, three in all.
+  await expect(pivot).toContainText("out");
+  await expect(pivot).toContainText("late");
+  await expect(pivot).toContainText("3");
+  const stored = await call(page, "GET", `${W}/dashboards/${board}`);
+  const made = stored.body.widgets.find((one: { type: string }) => one.type === "core/pivot");
+  expect(made.data.rows.source).toHaveProperty("visual");
+  expect(made.data.rows.source.visual.groupBy).toEqual([
+    { column: "lent_on", bucket: "month" },
+    { column: "status" },
+  ]);
+});
+
+test("widgets are dragged into place and stretched, from the keyboard too, and a change is undone (POLISH-007)", async () => {
+  await page.goto(`${link}/dashboards/${board}?edit=1`);
+  const chart = page.getByRole("group", { name: "Fees by status", exact: true });
+  await expect(chart).toBeVisible();
+  await chart.focus();
+  const chip = chart.getByText(/^\d+ × \d+ · col \d+ · row \d+$/);
+  await expect(chip).toHaveText(/^6 × 8 · col 1 ·/);
+  // Dragged six columns right by the pointer: it lands there, and the chip says so.
+  const at = await chart.boundingBox();
+  if (!at) throw new Error("Fees by status is not on the page");
+  await page.mouse.move(at.x + 80, at.y + 80);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 80 + at.width, at.y + 80, { steps: 12 });
+  await page.mouse.up();
+  await expect(chip).toHaveText(/^6 × 8 · col 7 ·/);
+  // Arrows move it a cell; Shift and an arrow make it bigger; the move is said.
+  await chart.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(chip).toHaveText(/col 6/);
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(chip).toHaveText(/^6 × 9 /);
+  await expect(page.getByRole("status").filter({ hasText: "is 6 wide and 9 tall" })).toHaveCount(1);
+  // Undo takes back the size, then the move.
+  await page.keyboard.press("Control+z");
+  await expect(chip).toHaveText(/^6 × 8 /);
+  // Delete removes it, and Undo brings it back.
+  await chart.focus();
+  await page.keyboard.press("Delete");
+  await expect(chart).toHaveCount(0);
+  await page.keyboard.press("Control+z");
+  await expect(page.getByRole("group", { name: "Fees by status", exact: true })).toBeVisible();
 });

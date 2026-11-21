@@ -417,6 +417,12 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
   ) => Promise<ActOutcome>;
   /** Whether an action the widget holds may be pressed now, for a row: its `when`, as the host reads it. */
   can?: (at: string, row?: Readonly<Record<string, unknown>>) => boolean;
+  /** Why an action can't be pressed now, in the reader's words ("Status is Unpaid"); nothing when it can. */
+  why?: (at: string, row?: Readonly<Record<string, unknown>>) => string | undefined;
+  /** Closes the side sheet or modal the widget is shown in; absent when it is on a page. */
+  close?: () => void;
+  /** The record whose side sheet or modal is open over the page: a list marks its row. */
+  selectedRecord?: string;
   /** Whether the page does something when this event is raised: then the view draws it as pressable. */
   listens?: (event: string) => boolean;
   /** What a reference or choice column of a data input offers, read for whoever is looking. */

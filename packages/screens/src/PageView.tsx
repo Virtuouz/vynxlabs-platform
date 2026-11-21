@@ -327,6 +327,14 @@ function Cell({
             can={(at, row) =>
               holds(actionAt(widget, at)?.when, { this: record ? thisRow : null, event: row }, user)
             }
+            why={(at, row) => {
+              const when = actionAt(widget, at)?.when;
+              const records = { this: record ? thisRow : null, event: row };
+              const failing = (when ?? []).filter((one) => !holds([one], records, user));
+              return failing.length > 0
+                ? `Only when ${failing.map((one) => conditionWords(one)).join(" and ")}.`
+                : undefined;
+            }}
             listens={(event) => !building && widget.on?.[event] !== undefined}
             {...(client.choices
               ? {

@@ -13,7 +13,7 @@ const VARIANT = { primary: "primary", default: "secondary", danger: "danger-soli
  * One action. It runs `on/click` through the host and shows it is under way. Disabled, with
  * the reason, when the action's conditions do not hold. While building it is only drawn.
  */
-export function ButtonView({ config, act, can, building }: WidgetViewProps<ButtonConfig>) {
+export function ButtonView({ config, act, can, why, building }: WidgetViewProps<ButtonConfig>) {
   const { running, run } = useRunning();
   const label = config.label ?? "Do it";
   const variant = VARIANT[config.tone ?? "primary"];
@@ -34,7 +34,7 @@ export function ButtonView({ config, act, can, building }: WidgetViewProps<Butto
         variant={variant}
         disabled={!allowed}
         loading={running !== undefined}
-        tooltip={allowed ? undefined : CANNOT_NOW}
+        tooltip={allowed ? undefined : (why?.("on/click") ?? CANNOT_NOW)}
         onClick={() => void run("click", () => act("on/click"))}
       >
         {label}

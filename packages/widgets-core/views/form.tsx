@@ -50,7 +50,7 @@ type FormColumn = ColumnInfo & {
  * `onClose` is the one thing a form needs that the view props lack: a way to close the
  * modal or sheet it is in. When the host gives it, the form draws Cancel.
  */
-export type FormViewProps = WidgetViewProps<FormConfig> & { onClose?: (() => void) | undefined };
+export type FormViewProps = WidgetViewProps<FormConfig>;
 
 type Values = Record<string, unknown>;
 
@@ -191,7 +191,7 @@ function FormBody({
   building,
   act,
   choices,
-  onClose,
+  close: onClose,
 }: FormViewProps & { record: RecordData }) {
   const edit = config.mode === "edit";
   const columns = data.columns as readonly FormColumn[];

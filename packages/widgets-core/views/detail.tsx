@@ -79,7 +79,7 @@ function sectionsOf(fields: readonly DetailField[]): { name: string; fields: Det
 }
 
 /** One record: a heading and its status, what can be done with it, and its fields. */
-export function DetailView({ config, data, building, act, can }: WidgetViewProps<DetailConfig>) {
+export function DetailView({ config, data, building, act, can, why }: WidgetViewProps<DetailConfig>) {
   const { running, run } = useRunning();
   const input = data.record as NamedRecord | undefined;
   if (input?.shape !== "record") return null;
@@ -144,7 +144,7 @@ export function DetailView({ config, data, building, act, can }: WidgetViewProps
                 variant={VARIANT[item.tone ?? "default"]}
                 disabled={!allowed || running !== undefined}
                 loading={running === item.id}
-                tooltip={!allowed && !building ? CANNOT_NOW : undefined}
+                tooltip={!allowed && !building ? (why?.(where, record) ?? CANNOT_NOW) : undefined}
                 onClick={() => void run(item.id, () => act?.(where, { record: id }))}
               >
                 {item.label}

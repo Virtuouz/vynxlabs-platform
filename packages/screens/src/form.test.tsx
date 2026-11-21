@@ -93,7 +93,7 @@ function draw(
             {...props}
             {...(options.building ? {} : { act: setup.act })}
             choices={setup.choices}
-            {...(options.close ? { onClose: setup.onClose as () => void } : {})}
+            {...(options.close ? { close: setup.onClose as () => void } : {})}
           />
         ),
       },

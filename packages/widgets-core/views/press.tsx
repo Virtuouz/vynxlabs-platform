@@ -3,7 +3,8 @@ import type { ActOutcome, WidgetViewProps } from "@volvel/widgets";
 import { type KeyboardEvent, useState } from "react";
 
 /** A host that knows which record's sheet is open says so as `selectedRecord`; a view marks that row. */
-export type WithSelected<Config> = WidgetViewProps<Config> & { selectedRecord?: string };
+/** A view of the contract: `selectedRecord` is now one of its props. */
+export type WithSelected<Config> = WidgetViewProps<Config>;
 
 /** What a table's or list's `rowActions` hold. */
 export interface RowAction {
@@ -79,7 +80,7 @@ export function RowActionButtons({
   actions: readonly RowAction[];
   row: Readonly<Record<string, unknown>>;
   record: string;
-  props: Pick<WidgetViewProps, "act" | "can" | "building">;
+  props: Pick<WidgetViewProps, "act" | "can" | "why" | "building">;
   always: boolean;
 }) {
   const { running, run } = useRunning();
@@ -102,7 +103,7 @@ export function RowActionButtons({
             variant={item.tone === "danger" ? "danger" : "quiet"}
             disabled={!allowed || running !== undefined}
             loading={running === item.id}
-            tooltip={!allowed && !props.building ? CANNOT_NOW : undefined}
+            tooltip={!allowed && !props.building ? (props.why?.(where, row) ?? CANNOT_NOW) : undefined}
             onClick={(event) => {
               // Not the row's own press.
               event.stopPropagation();

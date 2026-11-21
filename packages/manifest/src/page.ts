@@ -671,9 +671,11 @@ export function checkWidgets(
     path: string,
     eventGivesRecord: boolean,
     say: (path: string, message: string) => void,
+    /** What else is asked for: a form's fields, by their columns. */
+    typed: readonly string[] = [],
   ) {
     checkConditions(action.when, `${path}/when`, eventGivesRecord, say);
-    const asked = new Set((action.confirm?.ask ?? []).map((field) => field.name));
+    const asked = new Set([...(action.confirm?.ask ?? []).map((field) => field.name), ...typed]);
     action.steps.forEach((step, index) => {
       const at = `${path}/steps/${index}`;
       if (
@@ -920,8 +922,21 @@ export function checkWidgets(
       const control = schema["x-volvel"]?.control;
       const held = widget.config?.[property];
       if (control === "action" && held && typeof held === "object") {
+        // A form's submit asks for what is typed into its fields: their columns.
+        const typed = Object.entries(definition.config.properties)
+          .filter(([, one]) => one["x-volvel"]?.control === "fields")
+          .flatMap(([name]) => {
+            const list = widget.config?.[name];
+            return Array.isArray(list)
+              ? list.flatMap((one) =>
+                  typeof (one as { column?: unknown }).column === "string"
+                    ? [(one as { column: string }).column]
+                    : [],
+                )
+              : [];
+          });
         if (validAction(held, `/config/${property}`, say)) {
-          checkAction(held as Action, `/config/${property}`, false, say);
+          checkAction(held as Action, `/config/${property}`, false, say, typed);
         }
       } else if (control === "actions" && Array.isArray(held)) {
         held.forEach((one, index) => {

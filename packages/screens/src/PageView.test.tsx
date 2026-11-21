@@ -287,10 +287,10 @@ describe("the core pack draws from wire data", () => {
     expect(spec.encoding.x.field).toBe("clinic");
     expect(spec.encoding.y.field).toBe("total");
     expect(spec.encoding.y.axis.format).toBe("$,~f");
+    // Nothing listens to its points (no `on.pointClick`), so a click is nothing: a point is
+    // pressable only when the page does something with it (phase 26).
     fireEvent.click(drawn);
-    expect(onEvent).toHaveBeenCalledWith("by_clinic", "pointClick", {
-      group: { clinic: "Hilltop" },
-    });
+    expect(onEvent).not.toHaveBeenCalled();
   });
 
   test("a chart draws the period before as a dashed line, and one more breakdown as a series", async () => {

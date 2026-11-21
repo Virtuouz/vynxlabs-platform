@@ -304,3 +304,23 @@ describe("records and actions (phase 26)", () => {
     ).toEqual(["/body/pages/1/record a record page or a side sheet says the table of its record"]);
   });
 });
+
+it("a form's submit takes what is typed into its fields, by column, and nothing else", () => {
+  const form = (columns: string[], asked: string): PageWidget => ({
+    id: "new",
+    type: "core/form",
+    at: { x: 0, y: 0, w: 6, h: 8 },
+    data: { record: { source: { visual: { table: "invoices" } } } },
+    config: {
+      mode: "create",
+      fields: columns.map((column) => ({ column })),
+      submit: { steps: [{ do: "create", table: "invoices", set: { [asked]: { asked } } }] },
+    },
+  });
+  const said = (widget: PageWidget) =>
+    checkInterface(body([widget]), tableOf).map((one) => `${one.path} ${one.message}`);
+  expect(said(form(["total"], "total"))).toEqual([]);
+  expect(said(form(["total"], "status"))).toEqual([
+    `/body/pages/0/widgets/0/config/submit/steps/0/set/status asks for "status", which the confirmation doesn't`,
+  ]);
+});

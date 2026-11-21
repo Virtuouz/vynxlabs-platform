@@ -397,7 +397,7 @@ test("a table that is read has its tools, and a dialog that holds one is big eno
 });
 
 /**
- * Every section in the navigation is measured by `e2e/polish.spec.ts`, or that spec
+ * Every section in the navigation is measured by `e2e/polish-setup.ts` (shared by the `polish-*.spec.ts` files), or that module
  * lists it in `NOT_MEASURED` (the polish gate, step 6, `docs/polish`). A section
  * added to `nav.ts` without either fails here, so its layout is not left unseen by
  * default, as the data screens were (A2-31).
@@ -409,19 +409,20 @@ test("every section in the navigation is measured for polish, or says it is not"
     ...TENANT_SECTIONS.map((s) => `tenant/${s.slug}`),
     ...INSTANCE_SECTIONS.map((s) => `instance/${s.slug}`),
   ];
-  const spec = readFileSync(join(here, "../../../e2e/polish.spec.ts"), "utf8");
-  const start = spec.indexOf("const workbenches = () => [");
-  const listed = spec.slice(start, spec.indexOf("const NOT_MEASURED", start));
+  const spec = readFileSync(join(here, "../../../e2e/polish-setup.ts"), "utf8");
+  const start = spec.indexOf("export const workbenches = (");
+  const listed = spec.slice(start, spec.indexOf("export const NOT_MEASURED", start));
   const measured = new Set<string>();
-  for (const [, slug] of listed.matchAll(/\$\{ws\}\/([\w-]+)/g)) measured.add(`workspace/${slug}`);
-  for (const [, slug] of listed.matchAll(/\/t\/\$\{tenant\.id\}\/([\w-]+)/g)) {
+  for (const [, slug] of listed.matchAll(/\$\{ctx\.ws\}\/([\w-]+)/g))
+    measured.add(`workspace/${slug}`);
+  for (const [, slug] of listed.matchAll(/\/t\/\$\{ctx\.tenant\.id\}\/([\w-]+)/g)) {
     measured.add(`tenant/${slug}`);
   }
-  if (/\/t\/\$\{tenant\.id\}`/.test(listed)) measured.add("tenant/overview");
+  if (/\/t\/\$\{ctx\.tenant\.id\}`/.test(listed)) measured.add("tenant/overview");
   for (const [, slug] of listed.matchAll(/"\/instance\/([\w-]+)"/g))
     measured.add(`instance/${slug}`);
   if (/\["tenants", "\/"\]/.test(listed)) measured.add("instance/");
-  const block = spec.slice(spec.indexOf("const NOT_MEASURED"));
+  const block = spec.slice(spec.indexOf("export const NOT_MEASURED"));
   const skipped = new Set(
     [...block.slice(0, block.indexOf("];")).matchAll(/"([\w/-]+)"/g)].map(([, key]) => key ?? ""),
   );

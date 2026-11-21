@@ -3,7 +3,7 @@
 Status: adopted on 2026-11-20 in three places, the owner's choice of 1, 3 and 4 below:
 - [docs/phases/TEMPLATE.md](../phases/TEMPLATE.md) and a "Phases" section in `CONTRIBUTING.md`;
 - the root `CLAUDE.md`;
-- a rule in `apps/console/src/enforce.test.ts` that every navigation section is measured by `e2e/polish.spec.ts` or listed in its `NOT_MEASURED`.
+- a rule in `apps/console/src/enforce.test.ts` that every navigation section is measured by `e2e/polish-setup.ts` or listed in its `NOT_MEASURED`.
 
 The other tests in place 4 come in phase 22, each with the fix that makes it pass. Written 2026-11-20.
 
@@ -36,7 +36,7 @@ An implementing agent works through these before a milestone that changes anythi
    - Write what the walk found into the milestone's Findings, including "found nothing".
 6. **Run the guards, and extend them.**
    - Per milestone, a typecheck and the unit tests of what it touched. The full `pnpm test` and `pnpm e2e` run once, at the end of the phase (owner's choice, 2026-11-20: the e2e takes about half an hour).
-   - Add every new screen to `e2e/polish.spec.ts`'s measured list.
+   - Add every new screen to `e2e/polish-setup.ts`'s measured list.
    - A served surface goes under the `e2e/test.ts` motion fixture.
    - A new primitive that can be misused gets an `enforce.test.ts` rule.
 7. **Raise what is left out (POLISH-015).** Anything trimmed from the owner's decisions table or exit criterion is asked about before the phase is presented. Leaving it in a "Not built" list at the bottom of the milestone is not enough.
@@ -66,7 +66,7 @@ These were listed for the owner to choose from. 1, 3 and 4 were adopted, and 2 c
 2. **A pointer in `CONTRIBUTING.md`** to `docs/polish/polish-prevention-rules.md` and this gate, under how a phase is built.
 3. **The agent's standing instructions.** A short `CLAUDE.md` at the repository root, or an entry in the agent's memory for this project, saying that a milestone that changes UI is not "built" until its Polish gate section is filled in and its browser walk has run on Fernhill. Today, the owner's rule that a redesign is responsive lives only in the agent's memory.
 4. **Tests that enforce parts of the gate.**
-   - `e2e/polish.spec.ts` reads its list of screens from `nav.ts`, so a new section is measured without anyone adding it.
+   - `e2e/polish-setup.ts` reads its list of screens from `nav.ts`, so a new section is measured without anyone adding it.
    - `enforce.test.ts` refuses a nested `ListScreen` without `as="section"` (R-01's class), and a key handler that stops propagation of keys it does not handle (H18-24, A3-08).
    - A `SchemaForm` test renders every connector's schema (A2-10's class).
    - The `e2e/test.ts` motion fixture covers the served docs site and code apps.

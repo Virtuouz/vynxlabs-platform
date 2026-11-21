@@ -111,6 +111,8 @@ export const performance = defineInterface({
           from: { table: "invoices", column: "clinic" },
         },
         { name: "issued", label: "Issued", type: "date_range", default: "last_30_days" },
+        // The goal is a month's: its own range, so the page's range can be anything.
+        { name: "goal_month", label: "Goal month", type: "date_range", default: "this_month" },
       ],
       widgets: [
         {
@@ -152,9 +154,19 @@ export const performance = defineInterface({
           type: "labs/goal",
           title: "Invoiced this month",
           at: { x: 9, y: 2, w: 3, h: 3 },
-          data: { value: invoiceValue("invoiced", "sum") },
+          data: {
+            value: {
+              source: {
+                visual: {
+                  table: "invoices",
+                  measures: [{ fn: "sum", column: "total", as: "invoiced" }],
+                },
+              },
+              filters: narrowedBy("goal_month", "issued_on"),
+            },
+          },
           // $60,000, kept in cents like the invoices.
-          config: { target: 6000000, format: DOLLARS, label: "Invoiced this month" },
+          config: { target: 6000000, format: DOLLARS, label: "of $60,000 this month" },
         },
         {
           id: "by-week",

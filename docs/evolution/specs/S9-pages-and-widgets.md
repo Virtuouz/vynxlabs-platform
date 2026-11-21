@@ -30,25 +30,29 @@ title: Clinic performance
 pages:
   - id: money
     title: Money
-    kind: page            # page | record | sheet | modal  (record, sheet, modal from phase 26)
-    record: { table: invoices }     # only for record, sheet and modal
-    filters: [ … ]        # the page's filters; drawn by the Search and filter widget from phase 28
+    kind: page            # page; record, sheet and modal from phase 26
+    filters:              # set by whoever reads the page
+      - { name: issued, label: Issued, type: date_range, default: last_30_days }
     widgets:
       - id: invoiced-by-week
         type: core/chart
         title: Invoiced by week
-        data:             # the widget's data inputs, by the names its definition declares
-          rows: { table: invoices, follows: [issued, clinic] }
+        data:             # each input the definition declares, by name
+          rows:
+            source:       # a query: from menus (visual), saved (query), or SQL on dashboards
+              visual:
+                table: invoices
+                measures: [{ fn: sum, column: total, as: total }]     # "Value: Sum of Total"
+                groupBy: [{ column: issued, bucket: week }]           # "Break down by: Issued on · Weekly"
+            filters: [{ filter: issued, column: issued }]             # the page filters that narrow it
         config:           # checked against the definition's schema
-          value: { fn: sum, column: total }
-          breakdown: { column: issued, by: week }
           mark: line
-          format: { style: currency, currency: USD }
-        on: { pointClick: … }       # events → actions (phase 26)
-        rules: { showWhen: … }      # conditions (phase 26)
+          format: { style: currency, minorUnits: true }
         at: { x: 0, y: 3, w: 8, h: 5 }
-        phone: { … }                # overrides (phase 29)
+        # on:, rules: and phone: arrive in phases 26 and 29
 ```
+
+The inspector's words are a reading of the data input, not a second store: "Value" is a measure, "Break down by" a group, "Only include" the query's conditions. The query model is the one dashboards had since phase 18 (decision 0003), so a page and a dashboard ask questions the same way.
 
 ```yaml
 # kind: dashboard — one page that only holds widgets which read
@@ -59,7 +63,7 @@ widgets: [ … ]
 
 - `type` is namespaced: `core/…` for the core pack, `labs/…` for the internal pack, a tenant's prefix later. `core/` is reserved, as it is for nodes (`bundle-check.ts`).
 - `config` is validated against the widget definition's JSON Schema, at save (draft `problems`) and at deploy (`bundle-check`). An unknown type is a problem, not a crash: the page draws "There is no widget called …" in its place.
-- `data` is the only place a widget says what it reads. Each input names its source by the shape its definition asks for (below).
+- `data` is the only place a widget says what it reads: each input is a source and the page filters bound to it, in the shape its definition asks for (below).
 - A member's dashboard (`member_dashboard.body`) is the dashboard body.
 - Limits: 20 pages; 24 widgets per page (Section and Tabs count their children); 8 filters per page.
 
@@ -121,22 +125,22 @@ A data input names one source:
 
 | Source | Shapes | Read by |
 |---|---|---|
-| `{ table, filter?, sort?, follows? }` | rows, record, summary | the query compiler over the workspace's views |
+| `{ visual: { table, filters?, groupBy?, measures?, columns?, sort?, limit? } }` | rows, record, summary | the query compiler over the workspace's views |
 | `{ query }` (a saved query) | rows, summary | the same |
-| `{ sql }` (dashboards and members only) | rows, summary | the same, under decision 0003 |
+| `{ sql }` (dashboards only) | rows, summary | the same, under decision 0003 |
 | `{ record: "this" }` (phase 26) | record | the page's record |
 
-`follows` names the page filters that narrow it; by default an input follows every page filter whose column it has. The summary shape adds `value` (measures) and `breakdown` (group, cadence), which is what the chart, stat and pivot use.
+An input's `filters` bind it to the page's filters: a column for a query from menus, a parameter for a saved query or SQL. When a builder adds a filter or a widget, every input whose table has the filter's column is bound to it, so "Follows the page filters" is what a widget does unless someone changes it.
 
 ### Reading data
 
 One endpoint reads every widget's data, on the server, from the stored body:
 
 ```
-GET /api/v1/t/:tenant/w/:ws/pages/:kind/:path/widgets/:widget/data?page=&filters=&cursor=
+GET /api/v1/tenants/:t/workspaces/:w/widget-data?of=interface|dashboard&path=&page=&widget=&filters=&cursor=&draft=1
 ```
 
-- `kind/path` names the interface or dashboard. In the builder the draft is read (the caller needs to be able to edit it); served, the deployed body is read.
+- `of` and `path` name the interface or dashboard. In the builder the draft is read (the caller needs to be able to edit it); served, the deployed body is read.
 - The browser sends which widget and the filter values, never a query. The server compiles the widget's input with `kernel/data/query`, checks `data:read` on every table it names, and runs it under `withData(scopeFor(viewer))`, so each table's row policy applies.
 - Who may call it: for an interface, `app:read` on an app serving it (as the interface read is checked today), or `interface:read`; for a dashboard, `dashboard:read` or the member dashboard's sharing. No new permission kind.
 - The rows API stays for writes, and for tables in an external data source, which the query compiler cannot read (decision 0003); a `rows` input over such a table is read through it by the same endpoint.

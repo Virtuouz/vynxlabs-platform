@@ -640,9 +640,12 @@ export function WidgetCard({
   onShow,
   every,
   onAsOf,
+  fromRepository = false,
 }: {
   root: string;
   dashboard: string;
+  /** The dashboard is the repository's: what names an old path is changed there. */
+  fromRepository?: boolean;
   revision: number;
   body: DashboardBody;
   widget: DashboardWidget;
@@ -796,6 +799,15 @@ export function WidgetCard({
           <span role="status" className="text-body-sm text-ink-muted">
             Updating…
           </span>
+        ) : null}
+        {result?.followed ? (
+          <Notice tone="warning">
+            Names <code className="font-mono text-code">{result.followed.names}</code>, now{" "}
+            <code className="font-mono text-code">{result.followed.now}</code>:{" "}
+            {fromRepository
+              ? "change it in the repository."
+              : "change the widget to name the new path."}
+          </Notice>
         ) : null}
         {widget.type === "text" ? (
           <p className="m-0 whitespace-pre-wrap">{widget.options?.text}</p>

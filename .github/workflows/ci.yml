@@ -118,14 +118,15 @@ jobs:
           retention-days: 1
 
   browser:
-    name: The exit criterion, in a browser (${{ matrix.shard }}/3)
+    name: The exit criterion, in a browser (${{ matrix.group }})
     needs: e2e-image
     runs-on: ubuntu-latest
     strategy:
       # One shard failing does not stop the others: each says what it found.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        # Three groups cut by how long their tests take (e2e/playwright.config.ts).
+        group: [a, b, c]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -187,13 +188,13 @@ jobs:
           done
           cd examples/fernhill
           XDG_CONFIG_HOME="$RUNNER_TEMP/xdg" VOLVEL_URL=http://localhost:8080 node setup/setup.mjs
-      - name: Walk the exit criterion, a third of it
+      - name: Walk the exit criterion, one group of it
         # Approval mail is kept as files the test reads, as a developer's machine can.
         env:
           E2E_MAIL_DIR: /tmp/vx-mail
           # A source the data screens bind to: the stack's own Postgres.
           E2E_SOURCE_URL: postgres://platform:platform@localhost:54329/platform
-        run: pnpm e2e --shard=${{ matrix.shard }}/3
+        run: E2E_GROUP=${{ matrix.group }} pnpm e2e
       - name: Logs
         if: failure()
         run: |
@@ -203,6 +204,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-test-results-${{ matrix.shard }}
+          name: browser-test-results-${{ matrix.group }}
           path: e2e/results
           retention-days: 7

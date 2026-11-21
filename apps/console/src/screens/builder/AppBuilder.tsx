@@ -482,6 +482,7 @@ export function AppBuilder({
         root={root}
         path={path}
         appPath={appPath}
+        drafted={[...pending]}
         body={body}
         publishing={publishing}
         onPublish={() => void publish()}

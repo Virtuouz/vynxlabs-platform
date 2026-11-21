@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../api.ts";
 import { Loading } from "../../kit/LoadState.tsx";
 import { Tag } from "../../kit/status.tsx";
+import { DEFINITIONS } from "./registry.ts";
 
 interface Preview {
   possible: boolean;
@@ -23,6 +24,9 @@ interface Binding {
   roleName: string;
 }
 
+/** What a widget with no title of its own is called: its kind, as "Add to page" names it. */
+const definitionTitle = (type: string) => DEFINITIONS.find((one) => one.type === type)?.title;
+
 /** How the draft differs from what people see now, widget by widget. */
 export function widgetChanges(published: InterfaceBody | undefined, draft: InterfaceBody) {
   const out: { page: string; widget: string; change: "added" | "changed" | "removed" }[] = [];
@@ -31,19 +35,27 @@ export function widgetChanges(published: InterfaceBody | undefined, draft: Inter
     const before = new Map((pagesBefore.get(page.id)?.widgets ?? []).map((one) => [one.id, one]));
     for (const widget of page.widgets) {
       const was = before.get(widget.id);
-      const name = widget.title || widget.id;
+      const name = widget.title || definitionTitle(widget.type) || widget.id;
       if (!was) out.push({ page: page.title, widget: name, change: "added" });
       else if (JSON.stringify(was) !== JSON.stringify(widget))
         out.push({ page: page.title, widget: name, change: "changed" });
       before.delete(widget.id);
     }
     for (const gone of before.values())
-      out.push({ page: page.title, widget: gone.title || gone.id, change: "removed" });
+      out.push({
+        page: page.title,
+        widget: gone.title || definitionTitle(gone.type) || gone.id,
+        change: "removed",
+      });
     pagesBefore.delete(page.id);
   }
   for (const page of pagesBefore.values())
     for (const gone of page.widgets)
-      out.push({ page: page.title, widget: gone.title || gone.id, change: "removed" });
+      out.push({
+        page: page.title,
+        widget: gone.title || definitionTitle(gone.type) || gone.id,
+        change: "removed",
+      });
   return out;
 }
 
@@ -57,6 +69,7 @@ export function PublishDialog({
   root,
   path,
   appPath,
+  drafted,
   body,
   publishing,
   onPublish,
@@ -66,6 +79,11 @@ export function PublishDialog({
   root: string;
   path: string;
   appPath: string | null;
+  /**
+   * What publishing deploys: the page's draft, and the app's when it has one. An app
+   * kept in a repository has none here, and is not asked about.
+   */
+  drafted: readonly string[];
   body: InterfaceBody;
   publishing: boolean;
   onPublish: () => void;
@@ -78,7 +96,9 @@ export function PublishDialog({
     let current = true;
     setPreview(undefined);
     setPublished(undefined);
-    const paths = [path, ...(appPath ? [appPath] : [])].join(",");
+    const paths = [path, ...(appPath ? [appPath] : [])]
+      .filter((one) => one === path || drafted.includes(one))
+      .join(",");
     api
       .get<Preview>(`${root}/changes/preview?paths=${encodeURIComponent(paths)}`)
       .then((answer) => current && setPreview(answer))
@@ -100,6 +120,7 @@ export function PublishDialog({
     return () => {
       current = false;
     };
+    // biome-ignore lint/correctness/useExhaustiveDependencies: asked again when it opens, not as drafts change under it
   }, [open, root, path, appPath]);
 
   const changes = published === undefined ? undefined : widgetChanges(published ?? undefined, body);

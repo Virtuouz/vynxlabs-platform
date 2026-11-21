@@ -4,10 +4,12 @@ import type { InterfaceBody } from "@volvel/manifest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 const answers: Record<string, unknown> = {};
+const asked: string[] = [];
 vi.mock("./api.ts", async (original) => ({
   ...(await original<typeof import("./api.ts")>()),
   api: {
     get: async (url: string) => {
+      asked.push(url);
       const found = Object.entries(answers).find(([start]) => url.startsWith(start));
       if (!found) throw new Error(`no answer for ${url}`);
       return found[1];
@@ -47,12 +49,18 @@ describe("publishing from the builder", () => {
         root={root}
         path="screens/performance"
         appPath="performance"
+        drafted={["screens/performance"]}
         body={page([stat, { ...stat, id: "g", type: "labs/goal", title: "This month" }])}
         publishing={false}
         onPublish={() => undefined}
       />,
     );
     expect(await screen.findByText("This month")).toBeTruthy();
+    // The app is kept in a repository and has no draft: it is not asked about.
+    expect(asked.find((url) => url.includes("changes/preview"))).toContain(
+      "paths=screens%2Fperformance",
+    );
+    expect(asked.find((url) => url.includes("changes/preview"))).not.toContain("%2Cperformance");
     expect(screen.getByRole("button", { name: /^Publish/ })).toBeTruthy();
   });
 });

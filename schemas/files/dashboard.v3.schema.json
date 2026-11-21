@@ -358,6 +358,18 @@
                             "sql"
                           ],
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "record": {
+                              "const": "this"
+                            }
+                          },
+                          "required": [
+                            "record"
+                          ],
+                          "additionalProperties": false
                         }
                       ]
                     },
@@ -401,6 +413,829 @@
               },
               "config": {
                 "type": "object"
+              },
+              "on": {
+                "type": "object",
+                "maxProperties": 10,
+                "propertyNames": {
+                  "pattern": "^[a-z][a-zA-Z0-9]{0,40}$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "confirm": {
+                      "type": "object",
+                      "properties": {
+                        "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 120
+                        },
+                        "text": {
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        "button": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 40
+                        },
+                        "ask": {
+                          "type": "array",
+                          "maxItems": 6,
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "name": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                              },
+                              "label": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 80
+                              },
+                              "type": {
+                                "enum": [
+                                  "text",
+                                  "long_text",
+                                  "number",
+                                  "date",
+                                  "choice"
+                                ]
+                              },
+                              "required": {
+                                "type": "boolean"
+                              },
+                              "choices": {
+                                "type": "array",
+                                "maxItems": 50,
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 100
+                                }
+                              }
+                            },
+                            "required": [
+                              "name",
+                              "label",
+                              "type"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "title"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "steps": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 8,
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "do": {
+                                "const": "update"
+                              },
+                              "record": {
+                                "enum": [
+                                  "this",
+                                  "event"
+                                ]
+                              },
+                              "set": {
+                                "type": "object",
+                                "maxProperties": 30,
+                                "propertyNames": {
+                                  "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                },
+                                "additionalProperties": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "value": {}
+                                      },
+                                      "required": [
+                                        "value"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "today": {
+                                          "const": true
+                                        }
+                                      },
+                                      "required": [
+                                        "today"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "now": {
+                                          "const": true
+                                        }
+                                      },
+                                      "required": [
+                                        "now"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "user": {
+                                          "enum": [
+                                            "id",
+                                            "email",
+                                            "name"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "user"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "record": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                        },
+                                        "of": {
+                                          "enum": [
+                                            "this",
+                                            "event"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "record"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "asked": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "asked"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "do",
+                              "record",
+                              "set"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "do": {
+                                "const": "create"
+                              },
+                              "table": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                                "maxLength": 255
+                              },
+                              "set": {
+                                "type": "object",
+                                "maxProperties": 30,
+                                "propertyNames": {
+                                  "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                },
+                                "additionalProperties": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "value": {}
+                                      },
+                                      "required": [
+                                        "value"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "today": {
+                                          "const": true
+                                        }
+                                      },
+                                      "required": [
+                                        "today"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "now": {
+                                          "const": true
+                                        }
+                                      },
+                                      "required": [
+                                        "now"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "user": {
+                                          "enum": [
+                                            "id",
+                                            "email",
+                                            "name"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "user"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "record": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                        },
+                                        "of": {
+                                          "enum": [
+                                            "this",
+                                            "event"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "record"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "asked": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "asked"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "do",
+                              "table",
+                              "set"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "do": {
+                                "const": "delete"
+                              },
+                              "record": {
+                                "enum": [
+                                  "this",
+                                  "event"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "do",
+                              "record"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "do": {
+                                "const": "flow"
+                              },
+                              "path": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                                "maxLength": 255
+                              },
+                              "input": {
+                                "type": "object",
+                                "maxProperties": 30,
+                                "propertyNames": {
+                                  "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                },
+                                "additionalProperties": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "value": {}
+                                      },
+                                      "required": [
+                                        "value"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "today": {
+                                          "const": true
+                                        }
+                                      },
+                                      "required": [
+                                        "today"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "now": {
+                                          "const": true
+                                        }
+                                      },
+                                      "required": [
+                                        "now"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "user": {
+                                          "enum": [
+                                            "id",
+                                            "email",
+                                            "name"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "user"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "record": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                        },
+                                        "of": {
+                                          "enum": [
+                                            "this",
+                                            "event"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "record"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "asked": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "asked"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "do",
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "do": {
+                                "const": "script"
+                              },
+                              "path": {
+                                "type": "string",
+                                "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                                "maxLength": 255
+                              },
+                              "input": {
+                                "type": "object",
+                                "maxProperties": 30,
+                                "propertyNames": {
+                                  "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                },
+                                "additionalProperties": {
+                                  "oneOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "value": {}
+                                      },
+                                      "required": [
+                                        "value"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "today": {
+                                          "const": true
+                                        }
+                                      },
+                                      "required": [
+                                        "today"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "now": {
+                                          "const": true
+                                        }
+                                      },
+                                      "required": [
+                                        "now"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "user": {
+                                          "enum": [
+                                            "id",
+                                            "email",
+                                            "name"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "user"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "record": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                        },
+                                        "of": {
+                                          "enum": [
+                                            "this",
+                                            "event"
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "record"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "asked": {
+                                          "type": "string",
+                                          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                        }
+                                      },
+                                      "required": [
+                                        "asked"
+                                      ],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "do",
+                              "path"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "do": {
+                                "const": "open"
+                              },
+                              "page": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                              },
+                              "record": {
+                                "enum": [
+                                  "this",
+                                  "event"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "do",
+                              "page"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "do": {
+                                "const": "close"
+                              }
+                            },
+                            "required": [
+                              "do"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "do": {
+                                "const": "message"
+                              },
+                              "text": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 300
+                              },
+                              "tone": {
+                                "enum": [
+                                  "success",
+                                  "info"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "do",
+                              "text"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "do": {
+                                "const": "narrow"
+                              },
+                              "filter": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                              },
+                              "from": {
+                                "type": "string",
+                                "maxLength": 130
+                              }
+                            },
+                            "required": [
+                              "do",
+                              "filter",
+                              "from"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "do": {
+                                "const": "rows"
+                              }
+                            },
+                            "required": [
+                              "do"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "when": {
+                      "type": "array",
+                      "maxItems": 10,
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "field": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                              },
+                              "of": {
+                                "enum": [
+                                  "this",
+                                  "event"
+                                ]
+                              },
+                              "test": {
+                                "enum": [
+                                  "is",
+                                  "is_not",
+                                  "gt",
+                                  "gte",
+                                  "lt",
+                                  "lte",
+                                  "contains",
+                                  "is_empty",
+                                  "is_not_empty"
+                                ]
+                              },
+                              "value": {}
+                            },
+                            "required": [
+                              "field",
+                              "test"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "user": {
+                                "const": "in"
+                              },
+                              "group": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 100
+                              }
+                            },
+                            "required": [
+                              "user",
+                              "group"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "record": {
+                                "enum": [
+                                  "exists",
+                                  "missing"
+                                ]
+                              },
+                              "of": {
+                                "enum": [
+                                  "this",
+                                  "event"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "record"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "done": {
+                      "type": "string",
+                      "maxLength": 300
+                    }
+                  },
+                  "required": [
+                    "steps"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "rules": {
+                "type": "object",
+                "properties": {
+                  "showWhen": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                            },
+                            "of": {
+                              "enum": [
+                                "this",
+                                "event"
+                              ]
+                            },
+                            "test": {
+                              "enum": [
+                                "is",
+                                "is_not",
+                                "gt",
+                                "gte",
+                                "lt",
+                                "lte",
+                                "contains",
+                                "is_empty",
+                                "is_not_empty"
+                              ]
+                            },
+                            "value": {}
+                          },
+                          "required": [
+                            "field",
+                            "test"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "user": {
+                              "const": "in"
+                            },
+                            "group": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            }
+                          },
+                          "required": [
+                            "user",
+                            "group"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "record": {
+                              "enum": [
+                                "exists",
+                                "missing"
+                              ]
+                            },
+                            "of": {
+                              "enum": [
+                                "this",
+                                "event"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "record"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
               }
             },
             "required": [

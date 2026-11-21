@@ -2,6 +2,15 @@ import { type WidgetDefinition, WidgetRegistry } from "@volvel/widgets";
 import { CORE_WIDGETS } from "@volvel/widgets-core";
 import { LABS_WIDGETS } from "@volvel/widgets-labs";
 import { Ajv2020 } from "ajv/dist/2020.js";
+import {
+  type Action,
+  actionSchema,
+  type Condition,
+  conditionFields,
+  type RecordRef,
+  type WidgetRules,
+  widgetRulesSchema,
+} from "./action.js";
 import type { KindDefinition, ManifestIssue } from "./registry.js";
 import type { TableBody } from "./table.js";
 
@@ -74,7 +83,16 @@ export interface VisualQuery {
 export type WidgetSource =
   | { visual: VisualQuery }
   | { query: string; values?: Record<string, unknown> }
-  | { sql: string; values?: unknown[] };
+  | { sql: string; values?: unknown[] }
+  /** The record the page was opened on: a record page, side sheet or modal. */
+  | { record: "this" };
+
+/**
+ * What a condition of a query built from menus may compare with, besides a
+ * constant: a column of the record the page is open on ("payments of this
+ * invoice"), or who is looking. Never an expression.
+ */
+export type ConditionValueRef = { record: string } | { user: "id" };
 
 /**
  * How a data input takes a page filter.
@@ -172,15 +190,31 @@ export interface PageWidget {
   data?: Record<string, DataInput>;
   /** Checked against the definition's schema. */
   config?: Record<string, unknown>;
+  /** What happens on each event the definition declares (phase 26). */
+  on?: Record<string, Action>;
+  /** When it is shown. Only what is drawn: never what someone may read or do. */
+  rules?: WidgetRules;
 }
 
-/** Only `page` is drawn in phase 25; `record`, `sheet` and `modal` open on one record from phase 26. */
-export const PAGE_KINDS = ["page"] as const;
+/**
+ * - `page`: a page of the app, in its menu;
+ * - `record`: a page of its own, opened on one record (its address names the record);
+ * - `sheet`: opened beside the page it was opened from, on one record, which stays in view;
+ * - `modal`: opened over the page it was opened from, on one record or none (a form to fill).
+ */
+export const PAGE_KINDS = ["page", "record", "sheet", "modal"] as const;
+export type PageKind = (typeof PAGE_KINDS)[number];
 
 export interface Page {
   id: string;
   title: string;
-  kind?: (typeof PAGE_KINDS)[number];
+  /** Left out: `page`. */
+  kind?: PageKind;
+  /**
+   * For a record page, a side sheet or a modal: the table of the record it is opened on.
+   * A modal may have none, when it opens on nothing (a form that makes a new row).
+   */
+  record?: { table: string };
   /** The topic of the workspace documentation's page that is this page's help. */
   help?: string;
   filters?: PageFilter[];
@@ -313,6 +347,12 @@ const sourceSchema = {
       required: ["sql"],
       additionalProperties: false,
     },
+    {
+      type: "object",
+      properties: { record: { const: "this" } },
+      required: ["record"],
+      additionalProperties: false,
+    },
   ],
 } as const;
 
@@ -391,6 +431,13 @@ export const pageWidgetSchema = {
       additionalProperties: dataInputSchema,
     },
     config: { type: "object" },
+    on: {
+      type: "object",
+      maxProperties: 10,
+      propertyNames: { pattern: "^[a-z][a-zA-Z0-9]{0,40}$" },
+      additionalProperties: actionSchema,
+    },
+    rules: widgetRulesSchema,
   },
   required: ["id", "type", "at"],
   additionalProperties: false,
@@ -413,6 +460,12 @@ export const pageSchema = {
     id: { type: "string", pattern: SLUG },
     title: { type: "string", minLength: 1, maxLength: 100 },
     kind: { enum: [...PAGE_KINDS] },
+    record: {
+      type: "object",
+      properties: { table: { type: "string", pattern: PATH, maxLength: 255 } },
+      required: ["table"],
+      additionalProperties: false,
+    },
     help: { type: "string", minLength: 1, maxLength: 255 },
     filters: filtersSchema,
     widgets: widgetsSchema,
@@ -495,6 +548,19 @@ function configChecker(definition: WidgetDefinition) {
   return check;
 }
 
+const actionChecker = configAjv.compile(actionSchema);
+/** Whether an action kept in a widget's configuration has an action's shape; what is wrong is said. */
+function validAction(
+  value: unknown,
+  at: string,
+  say: (path: string, message: string) => void,
+): boolean {
+  if (actionChecker(value)) return true;
+  for (const error of actionChecker.errors ?? [])
+    say(`${at}${error.instancePath}`, error.message ?? "is not allowed");
+  return false;
+}
+
 /** The name a group has in a visual query's result: its column, and its period when it has one. */
 export function groupName(group: { column: string; bucket?: string }): string {
   const base = group.column.replace(".", "_");
@@ -532,6 +598,9 @@ export function widgetQueries(widgets: readonly PageWidget[]): string[] {
 }
 
 export interface CheckContext {
+  /** The page the widgets are on, and the interface's other pages: what actions open and read. */
+  page?: Page;
+  pages?: readonly Page[];
   /** Where the page is offered: an app's, or a dashboard's. */
   surface: "app" | "dashboard";
   /** A table's definition, when it is known. A table made in the console is in no bundle, and is not checked. */
@@ -571,6 +640,120 @@ export function checkWidgets(
     if (column.includes(".")) return null; // a joined table's column is checked when the query is compiled
     return known.columns[column]?.type;
   };
+
+  /** A record an action or a condition names is there: `this` on a page opened on one, `event` from an event that gives one. */
+  const recordThere = (of: RecordRef, eventGivesRecord: boolean) =>
+    of === "this" ? context.page?.record !== undefined : eventGivesRecord;
+  const tableOfRef = (of: RecordRef, eventTable: string | undefined) =>
+    of === "this" ? context.page?.record?.table : eventTable;
+
+  function checkConditions(
+    conditions: readonly Condition[] | undefined,
+    path: string,
+    eventGivesRecord: boolean,
+    say: (path: string, message: string) => void,
+  ) {
+    for (const [index, one] of (conditions ?? []).entries()) {
+      if ("user" in one) continue;
+      const of = one.of ?? "this";
+      if (!recordThere(of, eventGivesRecord)) {
+        say(
+          `${path}/${index}`,
+          of === "this" ? "this page opens on no record" : "this event gives no record",
+        );
+      }
+    }
+    void conditionFields;
+  }
+
+  function checkAction(
+    action: Action,
+    path: string,
+    eventGivesRecord: boolean,
+    say: (path: string, message: string) => void,
+  ) {
+    checkConditions(action.when, `${path}/when`, eventGivesRecord, say);
+    const asked = new Set((action.confirm?.ask ?? []).map((field) => field.name));
+    action.steps.forEach((step, index) => {
+      const at = `${path}/steps/${index}`;
+      if (
+        context.surface === "dashboard" &&
+        step.do !== "rows" &&
+        step.do !== "narrow" &&
+        step.do !== "message"
+      ) {
+        say(at, "a dashboard only reads: it can narrow, say, or show the rows behind a number");
+        return;
+      }
+      const values =
+        step.do === "update" || step.do === "create"
+          ? step.set
+          : step.do === "flow" || step.do === "script"
+            ? (step.input ?? {})
+            : {};
+      for (const [name, value] of Object.entries(values)) {
+        if ("asked" in value && !asked.has(value.asked)) {
+          say(
+            `${at}/${step.do === "update" || step.do === "create" ? "set" : "input"}/${name}`,
+            `asks for "${value.asked}", which the confirmation doesn't`,
+          );
+        }
+        if ("record" in value && !recordThere(value.of ?? "this", eventGivesRecord)) {
+          say(`${at}/set/${name}`, "reads a record that isn't there");
+        }
+      }
+      if (step.do === "update" || step.do === "delete") {
+        if (!recordThere(step.record, eventGivesRecord)) {
+          say(
+            `${at}/record`,
+            step.record === "this" ? "this page opens on no record" : "this event gives no record",
+          );
+        }
+        const table = tableOfRef(step.record, undefined);
+        if (step.do === "update" && table) {
+          for (const field of Object.keys(step.set)) {
+            if (columnType(table, field) === undefined) {
+              say(`${at}/set/${field}`, `there is no column "${field}" in the table "${table}"`);
+            }
+          }
+        }
+      }
+      if (step.do === "create") {
+        for (const field of Object.keys(step.set)) {
+          if (columnType(step.table, field) === undefined) {
+            say(`${at}/set/${field}`, `there is no column "${field}" in the table "${step.table}"`);
+          }
+        }
+      }
+      if (step.do === "open") {
+        const target = context.pages?.find((one) => one.id === step.page);
+        if (context.pages && !target) {
+          say(`${at}/page`, `there is no page "${step.page}"`);
+        } else if (
+          target &&
+          (target.kind === "record" || target.kind === "sheet") &&
+          !step.record
+        ) {
+          say(`${at}/record`, `"${target.title}" opens on a record: say which`);
+        } else if (step.record && !recordThere(step.record, eventGivesRecord)) {
+          say(
+            `${at}/record`,
+            step.record === "this" ? "this page opens on no record" : "this event gives no record",
+          );
+        }
+      }
+      if (
+        step.do === "close" &&
+        (context.page?.kind ?? "page") !== "sheet" &&
+        context.page?.kind !== "modal"
+      ) {
+        say(at, "only a side sheet or a modal can be closed");
+      }
+      if (step.do === "narrow" && !byName.has(step.filter)) {
+        say(`${at}/filter`, `the page has no filter "${step.filter}"`);
+      }
+    });
+  }
 
   const ids = new Set<string>();
   widgets.forEach((widget, index) => {
@@ -625,6 +808,18 @@ export function checkWidgets(
         continue;
       }
       const source = input.source;
+      if ("record" in source) {
+        // The record the page is open on: only a page opened on a record has one.
+        if (!context.page?.record) {
+          say(
+            `${where}/source`,
+            "reads the record the page is open on, and this page opens on none",
+          );
+        } else if (declared.shape !== "record") {
+          say(`${where}/source`, `${definition.title} reads ${declared.shape}, not one record`);
+        }
+        continue;
+      }
       const kind = "visual" in source ? "table" : "query" in source ? "query" : "sql";
       const allowed = declared.sources ?? ["table", "query", "sql"];
       if (!allowed.includes(kind) || (kind === "sql" && context.surface === "app")) {
@@ -712,6 +907,32 @@ export function checkWidgets(
       say("/config/compareTo", `is compared across a range of dates, and "${compared}" is not one`);
     }
 
+    // What it does: events it declares, mapped to actions that make sense where they are.
+    for (const [event, action] of Object.entries(widget.on ?? {})) {
+      const declared = definition.events[event];
+      if (!declared) {
+        say(`/on/${event}`, `${definition.title} has no event "${event}"`);
+        continue;
+      }
+      checkAction(action, `/on/${event}`, declared.gives === "record", say);
+    }
+    for (const [property, schema] of Object.entries(definition.config.properties)) {
+      const control = schema["x-volvel"]?.control;
+      const held = widget.config?.[property];
+      if (control === "action" && held && typeof held === "object") {
+        if (validAction(held, `/config/${property}`, say)) {
+          checkAction(held as Action, `/config/${property}`, false, say);
+        }
+      } else if (control === "actions" && Array.isArray(held)) {
+        held.forEach((one, index) => {
+          const action = (one as { action?: unknown }).action;
+          const at = `/config/${property}/${index}/action`;
+          if (action && validAction(action, at, say)) checkAction(action as Action, at, true, say);
+        });
+      }
+    }
+    checkConditions(widget.rules?.showWhen, "/rules/showWhen", false, say);
+
     function known2(path: string, table: string, column: string) {
       if (columnType(table, column) === undefined)
         say(`${path}/column`, `there is no column "${column}" in the table "${table}"`);
@@ -732,11 +953,30 @@ export function checkInterface(
     if (seen.has(page.id))
       issues.push({ path: `/body/pages/${index}/id`, message: `"${page.id}" is used twice` });
     seen.add(page.id);
+    const kind = page.kind ?? "page";
+    if ((kind === "record" || kind === "sheet") && !page.record) {
+      issues.push({
+        path: `/body/pages/${index}/record`,
+        message: "a record page or a side sheet says the table of its record",
+      });
+    }
+    if (kind === "page" && page.record) {
+      issues.push({
+        path: `/body/pages/${index}/record`,
+        message: "a page in the app's menu opens on no record",
+      });
+    }
     issues.push(
       ...checkWidgets(
         page.widgets,
         page.filters ?? [],
-        { surface: "app", ...(tableOf ? { tableOf } : {}), ...(registry ? { registry } : {}) },
+        {
+          surface: "app",
+          page,
+          pages: body.pages,
+          ...(tableOf ? { tableOf } : {}),
+          ...(registry ? { registry } : {}),
+        },
         `/body/pages/${index}`,
       ),
     );

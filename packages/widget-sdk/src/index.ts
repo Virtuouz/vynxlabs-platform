@@ -128,6 +128,14 @@ export const CONTROLS = [
   "columns",
   /** One of the page's filters, chosen by name: a figure is compared across a range of dates. */
   "filter",
+  /** An action: steps run when the widget is used (a button's). Edited in the Actions tab. */
+  "action",
+  /** A list of labelled actions, each with when it may be pressed (a table's row actions). */
+  "actions",
+  /** A page of the interface, chosen by name. */
+  "page",
+  /** Fields of a table, in order, each with its label and help (a form's, a record detail's). */
+  "fields",
   // a data input's parts
   "source",
   "measure",
@@ -364,6 +372,21 @@ export type EventPayload =
   | { group: Readonly<Record<string, unknown>> }
   | Record<string, never>;
 
+/**
+ * How running an action went. `fields` says what was wrong with what was typed,
+ * by field name, for a form to draw beside each field.
+ */
+export type ActOutcome =
+  | { ok: true }
+  | { ok: false; cancelled: true }
+  | { ok: false; message: string; fields?: Readonly<Record<string, string>> };
+
+/** A value a reference or choice column offers. */
+export interface Choice {
+  value: string;
+  label: string;
+}
+
 /** The props of a widget's view. */
 export interface WidgetViewProps<Config = Record<string, unknown>> {
   /** The widget's configuration, with its definition's defaults filled in. */
@@ -375,6 +398,23 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
   emit: (event: string, payload: EventPayload) => void;
   /** Whether the page is being built. A view may draw hints for the builder, never different data. */
   building: boolean;
+  /**
+   * Runs an action the widget holds, named by where it is: `on/<event>`, or a config
+   * property the definition marks `action` (`config/<property>`) or `actions`
+   * (`config/<property>/<index>/action`). The host asks to confirm, runs it on the
+   * server, and does what follows (open a page, say something). A form gives what was
+   * typed as `inputs`. Absent while building, and on a host that runs no actions.
+   */
+  act?: (
+    at: string,
+    given?: { record?: string; inputs?: Readonly<Record<string, unknown>> },
+  ) => Promise<ActOutcome>;
+  /** Whether an action the widget holds may be pressed now, for a row: its `when`, as the host reads it. */
+  can?: (at: string, row?: Readonly<Record<string, unknown>>) => boolean;
+  /** Whether the page does something when this event is raised: then the view draws it as pressable. */
+  listens?: (event: string) => boolean;
+  /** What a reference or choice column of a data input offers, read for whoever is looking. */
+  choices?: (input: string, column: string, search: string) => Promise<readonly Choice[]>;
 }
 
 /** What the inspector writes as a measure, a breakdown and a condition. The manifest checks them. */

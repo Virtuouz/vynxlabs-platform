@@ -188,3 +188,119 @@ describe("a page being made", () => {
     ).toEqual([]);
   });
 });
+
+describe("records and actions (phase 26)", () => {
+  const rows: PageWidget = {
+    id: "invoices",
+    type: "core/table",
+    at: { x: 0, y: 0, w: 12, h: 8 },
+    data: { rows: { source: { visual: { table: "invoices" } } } },
+  };
+  const detailPage = {
+    id: "invoice",
+    title: "Invoice",
+    kind: "sheet" as const,
+    record: { table: "invoices" },
+    widgets: [
+      {
+        id: "detail",
+        type: "core/detail",
+        at: { x: 0, y: 0, w: 12, h: 8 },
+        data: { record: { source: { record: "this" as const } } },
+      },
+      {
+        id: "paid",
+        type: "core/button",
+        at: { x: 0, y: 8, w: 3, h: 1 },
+        config: { label: "Mark paid" },
+        on: {
+          click: {
+            when: [{ field: "status", test: "is" as const, value: "unpaid" }],
+            confirm: { title: "Mark it paid?" },
+            steps: [
+              {
+                do: "update" as const,
+                record: "this" as const,
+                set: { status: { value: "paid" } },
+              },
+              { do: "close" as const },
+            ],
+          },
+        },
+      },
+    ],
+  };
+  const app = (money: PageWidget[]): InterfaceBody => ({
+    title: "Clinic",
+    pages: [{ id: "money", title: "Money", widgets: money }, detailPage],
+  });
+  const said = (body: InterfaceBody) =>
+    checkInterface(body, tableOf).map((one) => `${one.path} ${one.message}`);
+
+  it("lets a row click open a side sheet on the row, which reads and changes that record", () => {
+    const open = {
+      ...rows,
+      on: {
+        rowClick: { steps: [{ do: "open" as const, page: "invoice", record: "event" as const }] },
+      },
+    };
+    expect(said(app([open]))).toEqual([]);
+  });
+
+  it("says what is wrong: a sheet opened on no record, a record a page has none of, an event a widget lacks", () => {
+    const wrong: PageWidget = {
+      ...rows,
+      on: {
+        rowClick: { steps: [{ do: "open", page: "invoice" }] },
+        hover: { steps: [{ do: "message", text: "hi" }] },
+      },
+    };
+    const button: PageWidget = {
+      id: "b",
+      type: "core/button",
+      at: { x: 0, y: 8, w: 3, h: 1 },
+      config: { label: "Pay" },
+      on: {
+        click: { steps: [{ do: "update", record: "this", set: { status: { value: "paid" } } }] },
+      },
+    };
+    expect(said(app([wrong, button]))).toEqual([
+      '/body/pages/0/widgets/0/on/rowClick/steps/0/record "Invoice" opens on a record: say which',
+      '/body/pages/0/widgets/0/on/hover Table has no event "hover"',
+      "/body/pages/0/widgets/1/on/click/steps/0/record this page opens on no record",
+    ]);
+  });
+
+  it("checks a row action's shape and fields, and refuses a change on a dashboard", () => {
+    const act: PageWidget = {
+      ...rows,
+      config: {
+        rowActions: [
+          {
+            id: "pay",
+            label: "Mark paid",
+            action: {
+              steps: [{ do: "update", record: "event", set: { stats: { value: "paid" } } }],
+            },
+          },
+        ],
+      },
+    };
+    expect(said(app([act]))).toEqual([]);
+    const board = checkDashboard(
+      { widgets: [{ ...rows, on: { rowClick: { steps: [{ do: "delete", record: "event" }] } } }] },
+      tableOf,
+    );
+    expect(board.map((one) => one.message)).toEqual([
+      "a dashboard only reads: it can narrow, say, or show the rows behind a number",
+    ]);
+  });
+
+  it("a record page says the table of its record", () => {
+    const body = app([rows]);
+    const { record: _record, ...nameless } = detailPage;
+    expect(
+      said({ ...body, pages: [body.pages[0] as never, { ...nameless, widgets: [] }] }),
+    ).toEqual(["/body/pages/1/record a record page or a side sheet says the table of its record"]);
+  });
+});

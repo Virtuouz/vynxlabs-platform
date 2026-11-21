@@ -64,6 +64,28 @@ export const table = defineWidget({
           order: 1,
         }),
       },
+      rowActions: {
+        type: "array",
+        maxItems: 5,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,39}$" },
+            label: { type: "string", minLength: 1, maxLength: 40 },
+            tone: { enum: ["default", "danger"] },
+            action: { type: "object" },
+          },
+          required: ["id", "label", "action"],
+          additionalProperties: false,
+        },
+        "x-volvel": hint({
+          tab: "actions",
+          control: "actions",
+          label: "Row actions",
+          help: "At the end of each row, and in its detail. Each says when it may be pressed.",
+          order: 2,
+        }),
+      },
       pageSize: {
         type: "integer",
         minimum: 5,
@@ -151,6 +173,28 @@ export const list = defineWidget({
           label: "Status",
           help: "Drawn as a chip in its colour.",
           order: 4,
+        }),
+      },
+      rowActions: {
+        type: "array",
+        maxItems: 5,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,39}$" },
+            label: { type: "string", minLength: 1, maxLength: 40 },
+            tone: { enum: ["default", "danger"] },
+            action: { type: "object" },
+          },
+          required: ["id", "label", "action"],
+          additionalProperties: false,
+        },
+        "x-volvel": hint({
+          tab: "actions",
+          control: "actions",
+          label: "Row actions",
+          help: "On each record, and in its detail. Each says when it may be pressed.",
+          order: 2,
         }),
       },
     },
@@ -471,7 +515,214 @@ export const text = defineWidget({
   layout: { min: { w: 2, h: 1 }, default: { w: 6, h: 2 }, phone: "stack" },
 });
 
-export const CORE_WIDGETS = [table, list, stat, chart, pivot, text] as const;
+/** One action: update a record, open a page, run a flow. */
+export const button = defineWidget({
+  type: "core/button",
+  version: "1.0.0",
+  title: "Button",
+  description: "One action: update, open, run a workflow",
+  category: "action",
+  icon: "button",
+  surfaces: ["app"],
+  data: {},
+  config: {
+    type: "object",
+    properties: {
+      label: {
+        type: "string",
+        minLength: 1,
+        maxLength: 40,
+        "x-volvel": hint({ tab: "display", control: "text", label: "It says", order: 1 }),
+      },
+      tone: {
+        enum: ["primary", "default", "danger"],
+        "x-volvel": hint({
+          tab: "display",
+          control: "segmented",
+          label: "It looks",
+          choices: { primary: "Main", default: "Plain", danger: "Careful" },
+          order: 2,
+        }),
+      },
+    },
+    required: ["label"],
+    additionalProperties: false,
+  },
+  defaults: { label: "Do it", tone: "primary" },
+  events: { click: { gives: "nothing", label: "When clicked" } },
+  layout: { min: { w: 2, h: 1 }, default: { w: 3, h: 1 }, max: { w: 12, h: 2 }, phone: "stack" },
+});
+
+/** One record: its fields, and what can be done with it. */
+export const detail = defineWidget({
+  type: "core/detail",
+  version: "1.0.0",
+  title: "Record detail",
+  description: "One record: fields and actions",
+  category: "records",
+  icon: "detail",
+  surfaces: ["app"],
+  data: { record: { shape: "record", label: "Record", sources: ["table"] } },
+  dataHints: [{ of: "record", controls: [{ control: "source", label: "Record" }] }],
+  config: {
+    type: "object",
+    properties: {
+      heading: {
+        ...RESULT_COLUMN,
+        "x-volvel": hint({
+          tab: "display",
+          control: "column",
+          of: "record",
+          label: "Heading",
+          order: 1,
+        }),
+      },
+      status: {
+        ...RESULT_COLUMN,
+        "x-volvel": hint({
+          tab: "display",
+          control: "column",
+          of: "record",
+          types: ["enum"],
+          label: "Status",
+          help: "Drawn as a chip beside the heading.",
+          order: 2,
+        }),
+      },
+      fields: {
+        type: "array",
+        maxItems: 50,
+        items: {
+          type: "object",
+          properties: {
+            column: RESULT_COLUMN,
+            label: { type: "string", maxLength: 60 },
+            format: FORMAT,
+            section: { type: "string", maxLength: 60 },
+            hidden: { type: "boolean" },
+          },
+          required: ["column"],
+          additionalProperties: false,
+        },
+        "x-volvel": hint({
+          tab: "display",
+          control: "fields",
+          of: "record",
+          label: "Fields",
+          help: "Drag to change the order. A section starts a new group.",
+          order: 3,
+        }),
+      },
+      actions: {
+        type: "array",
+        maxItems: 6,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,39}$" },
+            label: { type: "string", minLength: 1, maxLength: 40 },
+            tone: { enum: ["primary", "default", "danger"] },
+            action: { type: "object" },
+          },
+          required: ["id", "label", "action"],
+          additionalProperties: false,
+        },
+        "x-volvel": hint({
+          tab: "actions",
+          control: "actions",
+          label: "Actions",
+          help: "Buttons on the record. Each says when it may be pressed.",
+          order: 1,
+        }),
+      },
+    },
+    additionalProperties: false,
+  },
+  events: {},
+  layout: { min: { w: 3, h: 4 }, default: { w: 6, h: 8 }, phone: "stack" },
+});
+
+/** Create or edit a record: its fields from the table, checked as the table says. */
+export const form = defineWidget({
+  type: "core/form",
+  version: "1.0.0",
+  title: "Form",
+  description: "Create or edit a record",
+  category: "records",
+  icon: "form",
+  surfaces: ["app"],
+  data: {
+    record: {
+      shape: "record",
+      label: "Record",
+      sources: ["table"],
+    },
+  },
+  dataHints: [{ of: "record", controls: [{ control: "source", label: "Table" }] }],
+  config: {
+    type: "object",
+    properties: {
+      mode: {
+        enum: ["create", "edit"],
+        "x-volvel": hint({
+          tab: "data",
+          control: "segmented",
+          label: "It",
+          choices: { create: "Makes a new record", edit: "Changes the record that is open" },
+          order: 1,
+        }),
+      },
+      fields: {
+        type: "array",
+        minItems: 1,
+        maxItems: 50,
+        items: {
+          type: "object",
+          properties: {
+            column: RESULT_COLUMN,
+            label: { type: "string", maxLength: 60 },
+            help: { type: "string", maxLength: 200 },
+            section: { type: "string", maxLength: 60 },
+            required: { type: "boolean" },
+          },
+          required: ["column"],
+          additionalProperties: false,
+        },
+        "x-volvel": hint({
+          tab: "display",
+          control: "fields",
+          of: "record",
+          label: "Fields",
+          help: "Drag to change the order. The control for each is picked from its column's type.",
+          order: 1,
+        }),
+      },
+      submitLabel: {
+        type: "string",
+        minLength: 1,
+        maxLength: 40,
+        "x-volvel": hint({ tab: "display", control: "text", label: "The button says", order: 2 }),
+      },
+      submit: {
+        type: "object",
+        "x-volvel": hint({
+          tab: "actions",
+          control: "action",
+          label: "When it is sent",
+          help: "Saves the fields, then does what follows: close, say something, open a page.",
+          order: 1,
+        }),
+      },
+    },
+    required: ["mode", "fields", "submit"],
+    additionalProperties: false,
+  },
+  defaults: { mode: "create", submitLabel: "Save" },
+  events: {},
+  layout: { min: { w: 3, h: 4 }, default: { w: 6, h: 8 }, phone: "stack" },
+});
+
+export const CORE_WIDGETS = [table, list, detail, form, button, stat, chart, pivot, text] as const;
 
 /** A registry of the core pack, to add other packs to. */
 export function coreRegistry(): WidgetRegistry {

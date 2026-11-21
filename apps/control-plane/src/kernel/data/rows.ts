@@ -204,31 +204,36 @@ export async function withData<T>(
   kernel: Kernel,
   tenantId: string,
   scope: DataScope,
-  run: (trx: AnyDb) => Promise<T>,
+  run: (trx: AnyDb, actAs: (scope: DataScope) => Promise<void>) => Promise<T>,
   options: { timeoutMs?: number } = {},
 ): Promise<T> {
   const store = await kernel.data.forTenant(tenantId);
   const timeoutMs = options.timeoutMs ?? kernel.config.limits.dataStatementTimeoutMs;
   // Who is asking, signed with a key this connection's role cannot read. A policy takes it
   // from `vx.claim()`, which checks the signature: nothing run here can say it is someone else.
-  const claim = store.sign(
-    JSON.stringify({
-      principal: scope.principalId ?? "",
-      all: scope.all,
-      groups: scope.groups ?? [],
-      attrs: scope.attributes ?? {},
-      // Good for as long as a statement may run, and some more for clocks that differ.
-      exp: Math.floor(Date.now() / 1000) + Math.ceil(timeoutMs / 1000) + CLAIM_SECONDS,
-    }),
-  );
+  const claimFor = (who: DataScope) =>
+    store.sign(
+      JSON.stringify({
+        principal: who.principalId ?? "",
+        all: who.all,
+        groups: who.groups ?? [],
+        attrs: who.attributes ?? {},
+        // Good for as long as a statement may run, and some more for clocks that differ.
+        exp: Math.floor(Date.now() / 1000) + Math.ceil(timeoutMs / 1000) + CLAIM_SECONDS,
+      }),
+    );
   const work = () =>
     store.rows.transaction().execute(async (trx) => {
       // No one statement holds a connection for long: past the limit it is stopped.
       await sql`select
-        set_config('app.claim', ${claim}, true),
+        set_config('app.claim', ${claimFor(scope)}, true),
         set_config('statement_timeout', ${String(timeoutMs)}, true)`.execute(trx);
+      // For a page's action (phase 26): it reads as the caller, then writes as its own grant.
+      const actAs = async (who: DataScope) => {
+        await sql`select set_config('app.claim', ${claimFor(who)}, true)`.execute(trx);
+      };
       try {
-        return await run(trx as unknown as AnyDb);
+        return await run(trx as unknown as AnyDb, actAs);
       } catch (error) {
         throw translate(error, timeoutMs);
       }

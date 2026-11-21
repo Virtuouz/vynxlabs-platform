@@ -40,6 +40,8 @@ export interface QueryRequest {
   text: string;
   parameters?: unknown[];
   limit?: number;
+  /** Rows to skip, to read a page after the first. */
+  offset?: number;
   /** Refuses, by throwing, when the caller may not read this table. Called for each one the query names. */
   mayRead(table: { name: string; resourceId: string | null }): Promise<void>;
 }
@@ -143,7 +145,7 @@ export async function runQuery(kernel: Kernel, request: QueryRequest): Promise<Q
         // One row more than is wanted is read, to know whether there were more.
         const fetched = await trx.executeQuery<{ r: Record<string, unknown> }>(
           CompiledQuery.raw(
-            `select row_to_json(vx_q) as r from (${checked.sql}) as vx_q limit ${limit + 1}`,
+            `select row_to_json(vx_q) as r from (${checked.sql}) as vx_q offset ${Math.max(Math.trunc(request.offset ?? 0), 0)} limit ${limit + 1}`,
             given,
           ),
         );

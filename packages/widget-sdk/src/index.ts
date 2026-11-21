@@ -311,6 +311,8 @@ export interface SummaryData {
   rows: readonly Record<string, unknown>[];
   /** For a widget that compares: the same values for the period before. */
   previous?: readonly Record<string, unknown>[];
+  /** For a figure with a trend: its first value over the time it covers, oldest first. `at` is a day. */
+  trend?: readonly { at: string; value: number }[];
 }
 
 export interface RecordData {

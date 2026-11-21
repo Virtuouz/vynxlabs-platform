@@ -158,6 +158,34 @@ function describeInterface(before: Body, after: Body): string[] {
   return out;
 }
 
+type Widget = { id: string; title?: string };
+
+/** What changed among a page's widgets, by the words the page uses for them. */
+function describeWidgets(was: Widget[], now: Widget[]): string[] {
+  const name = (widget: Widget) => widget.title ?? widget.id;
+  const out: string[] = [];
+  const added = now.filter((widget) => !was.some((one) => one.id === widget.id));
+  const removed = was.filter((widget) => !now.some((one) => one.id === widget.id));
+  const changed = now.filter((widget) => {
+    const old = was.find((one) => one.id === widget.id);
+    return old !== undefined && !same(old, widget);
+  });
+  if (added.length) out.push(`Adds ${list(added.map(name))}.`);
+  if (removed.length) out.push(`Removes ${list(removed.map(name))}.`);
+  if (changed.length) out.push(`Changes ${list(changed.map(name))}.`);
+  return out;
+}
+
+function describeDashboard(before: Body, after: Body): string[] {
+  const out = describeWidgets(
+    (before?.widgets ?? []) as Widget[],
+    (after?.widgets ?? []) as Widget[],
+  );
+  if (!same(before?.filters, after?.filters)) out.push("Changes its filters.");
+  if (!same(before?.title, after?.title)) out.push("Changes its title.");
+  return out;
+}
+
 function describeGeneric(before: Body, after: Body): string[] {
   const fields = Object.keys({ ...(before ?? {}), ...(after ?? {}) }).filter(
     (key) => !same(before?.[key], after?.[key]),
@@ -195,7 +223,9 @@ export function describeChange(kind: string, before: Body, after: Body): string[
           ? describeTable(before, after)
           : kind === "interface"
             ? describeInterface(before, after)
-            : describeGeneric(before, after);
+            : kind === "dashboard"
+              ? describeDashboard(before, after)
+              : describeGeneric(before, after);
   if (said.length === 0) return ["No change that matters to how it runs."];
   return said.length > MAX_SENTENCES
     ? [...said.slice(0, MAX_SENTENCES - 1), `And ${said.length - MAX_SENTENCES + 1} more changes.`]

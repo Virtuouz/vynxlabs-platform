@@ -1,4 +1,11 @@
-import { type FlowBody, flowGrants, flowReferences } from "@volvel/manifest";
+import {
+  type DashboardBody,
+  type FlowBody,
+  flowGrants,
+  flowReferences,
+  type InterfaceBody,
+  widgetTables,
+} from "@volvel/manifest";
 import type { Db } from "./audit.js";
 
 /** Something a resource can depend on, by kind and name. */
@@ -131,12 +138,12 @@ export async function workspaceReferences(
       add("secret", trigger.verify?.secret, by, "checks signatures with it");
       add("event", trigger.event, by, "listens for it");
     }
-    if (resource.kind === "interface") {
-      const pages = (body.pages ?? []) as { widgets?: { table?: string }[] }[];
-      const tables = new Set(
-        pages.flatMap((page) => (page.widgets ?? []).map((widget) => widget.table)),
-      );
-      for (const table of tables) add("table", table, by, "shows it");
+    if (resource.kind === "interface" || resource.kind === "dashboard") {
+      const widgets =
+        resource.kind === "interface"
+          ? ((body as unknown as InterfaceBody).pages ?? []).flatMap((page) => page.widgets ?? [])
+          : ((body as unknown as DashboardBody).widgets ?? []);
+      for (const table of widgetTables(widgets)) add("table", table, by, "shows it");
     }
     if (resource.kind === "app") {
       const app = body as { interface?: string; reads?: string[] };

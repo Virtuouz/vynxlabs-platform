@@ -70,6 +70,7 @@ import { streamRoutes } from "./routes/stream.js";
 import { summaryRoutes } from "./routes/summary.js";
 import { tenantRoutes } from "./routes/tenants.js";
 import { termRoutes } from "./routes/terms.js";
+import { widgetDataRoutes } from "./routes/widget-data.js";
 import { workerRoutes } from "./routes/worker.js";
 import { workerHostRoutes } from "./routes/worker-host.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
@@ -278,6 +279,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(termRoutes(kernel));
       await api.register(docRoutes(kernel));
       await api.register(dashboardRoutes(kernel));
+      await api.register(widgetDataRoutes(kernel));
       await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));
       await api.register(searchRoutes(kernel));

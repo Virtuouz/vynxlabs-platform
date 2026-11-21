@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { frontmatterOf, isFeedbackTable } from "@volvel/docs-engine";
 import {
+  type DashboardBody,
   type FlowBody,
   type InterfaceBody,
   PATH_PATTERN,
@@ -29,7 +30,7 @@ import { downstreamOf, keptNodes, kickFlow, startFlowRun } from "../kernel/flows
 import { draftManifests, markAhead } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
-import { interfaceProblems } from "./interfaces.js";
+import { dashboardProblems, interfaceProblems } from "../kernel/pages.js";
 import { AnyObject, Id, iso, NullableId, Time, WorkspaceParams } from "./shared.js";
 
 const PathParams = Type.Object({ t: Id, w: Id, "*": Type.String() });
@@ -488,7 +489,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "What renaming a query would change",
           description:
-            "The dashboards whose widgets name the query's path. Renaming the query in the " +
+            "The interfaces and dashboards whose widgets name the query's path. Renaming the query in the " +
             "console drafts the ones made in the console with the new path, in the same " +
             "request, and sets those drafts aside when the rename's draft is. A dashboard from " +
             "the repository is changed in the repository: until then its widgets reach the " +
@@ -499,6 +500,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             200: Type.Object({
               dashboards: Type.Array(
                 Type.Object({
+                  kind: Type.Union([Type.Literal("interface"), Type.Literal("dashboard")]),
                   path: Type.String(),
                   title: Type.String(),
                   ownership: Type.Union([Type.Literal("ui"), Type.Literal("code")]),
@@ -515,6 +517,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const found = full ? await dashboardsNaming(db, workspace.id, pathOf(params)) : [];
         return {
           dashboards: found.map((one) => ({
+            kind: one.kind,
             path: one.path,
             title: one.title,
             ownership: one.ownership,
@@ -612,6 +615,15 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   kernel,
                   workspace,
                   saved.draft.body as unknown as InterfaceBody,
+                ),
+              }
+            : {}),
+          ...(body.kind === "dashboard" && !body.deleted
+            ? {
+                problems: await dashboardProblems(
+                  kernel,
+                  workspace,
+                  saved.draft.body as unknown as DashboardBody,
                 ),
               }
             : {}),

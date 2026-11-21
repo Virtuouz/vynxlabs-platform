@@ -19,6 +19,8 @@
     "access": "public"
   },
   "dependencies": {
+    "@volvel/manifest": "workspace:*",
+    "@volvel/widgets": "workspace:*",
     "zod": "^4.6.7"
   }
 }

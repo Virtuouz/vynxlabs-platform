@@ -1,19 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import {
-  checkInterface,
-  enumColor,
-  type InterfaceBody,
-  interfaceTables,
-  type TableBody,
-} from "@volvel/manifest";
+import { enumColor, type InterfaceBody, interfaceTables, type TableBody } from "@volvel/manifest";
 import { type Static, Type } from "typebox";
-import {
-  actionsOf,
-  audienceMay,
-  audiencesOf,
-  targetKey,
-  targetResource,
-} from "../kernel/apps/actions.js";
+import { humanize } from "../kernel/data/query/inputs.js";
 import { forbidden, notFound } from "../kernel/errors.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -46,77 +34,6 @@ const TableView = Type.Object({
     }),
   ),
 });
-
-/** What an action's target is, to someone who may open the page it is on. */
-const TargetView = Type.Object({
-  canStart: Type.Boolean({
-    description: "Whether the caller may start it. An action the caller may not start is hidden.",
-  }),
-  description: Type.Union([Type.String(), Type.Null()]),
-  inputSchema: Type.Union([AnyObject, Type.Null()], {
-    description: "What it takes, as JSON Schema. Asked for when what the page maps is not all.",
-  }),
-});
-
-/**
- * What is wrong with an interface as the workspace stands now: everything its
- * shape cannot show, checked against the tables that are really there, those
- * made in the console included. A draft with problems is still saved, because
- * a screen is built a step at a time. It cannot be shown properly until they
- * are gone, and the builder says so.
- */
-export async function interfaceProblems(
-  kernel: Kernel,
-  workspace: { id: string; tenantId: string },
-  body: InterfaceBody,
-): Promise<{ path: string; message: string }[]> {
-  const data = (await kernel.data.forTenant(workspace.tenantId)).owner;
-  const rows = await data
-    .selectFrom("data_table")
-    .innerJoin("data_column", "data_column.table_id", "data_table.id")
-    .select([
-      "data_table.name as table",
-      "data_column.name as column",
-      "data_column.type",
-      "data_column.reference_table",
-    ])
-    .where("data_table.workspace_id", "=", workspace.id)
-    .where("data_table.tenant_id", "=", workspace.tenantId)
-    .where("data_table.status", "=", "active")
-    .where("data_column.status", "=", "active")
-    .execute();
-  const tables = new Map<string, TableBody>();
-  for (const row of rows) {
-    const table = tables.get(row.table) ?? { columns: {} };
-    table.columns[row.column] = {
-      type: row.type as TableBody["columns"][string]["type"],
-      ...(row.reference_table ? { references: row.reference_table } : {}),
-    };
-    tables.set(row.table, table);
-  }
-  // A table with no columns of its own yet is still a table.
-  const empty = await data
-    .selectFrom("data_table")
-    .select("name")
-    .where("workspace_id", "=", workspace.id)
-    .where("tenant_id", "=", workspace.tenantId)
-    .where("status", "=", "active")
-    .execute();
-  for (const table of empty) if (!tables.has(table.name)) tables.set(table.name, { columns: {} });
-
-  const problems = checkInterface(body, (path) => tables.get(path));
-  body.pages.forEach((page, pageIndex) => {
-    page.widgets.forEach((widget, index) => {
-      if (widget.table !== undefined && !tables.has(widget.table)) {
-        problems.push({
-          path: `/body/pages/${pageIndex}/widgets/${index}/table`,
-          message: `there is no table "${widget.table}" in this workspace`,
-        });
-      }
-    });
-  });
-  return problems;
-}
 
 /** What the app that draws an interface reads before it reads any rows. */
 export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
@@ -197,13 +114,11 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         /** How many pages a body has, and the tables its widgets read. */
         const shapeOf = (body: unknown) => {
-          const pages = ((body as { pages?: { widgets?: { table?: unknown }[] }[] } | null)
-            ?.pages ?? []) as { widgets?: { table?: unknown }[] }[];
-          const tables = new Set<string>();
-          for (const page of pages)
-            for (const widget of page.widgets ?? [])
-              if (typeof widget.table === "string") tables.add(widget.table);
-          return { pages: pages.length, tables: [...tables].sort() };
+          const shown = body as InterfaceBody | null;
+          return {
+            pages: shown?.pages?.length ?? 0,
+            tables: shown?.pages ? interfaceTables(shown).sort() : [],
+          };
         };
         const found = new Map<
           string,
@@ -270,30 +185,57 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "many rows it has. Which rows the caller sees is decided when rows are asked for.",
           tags: ["apps"],
           params: Type.Object({ t: Id, w: Id, "*": Type.String() }),
+          querystring: Type.Object({
+            draft: Type.Optional(
+              Type.String({
+                maxLength: 5,
+                description:
+                  "`1` reads the draft, for someone who may edit the interface, in a dev workspace.",
+              }),
+            ),
+          }),
           response: {
             200: Type.Object({
               path: Type.String(),
-              interface: AnyObject,
+              body: AnyObject,
               tables: Type.Record(Type.String(), TableView),
-              targets: Type.Record(Type.String(), TargetView, {
-                description: "What each action starts, by `script:<path>` or `flow:<path>`.",
-              }),
             }),
           },
         },
       },
-      async ({ ctx, params }) => {
+      async ({ ctx, params, query }) => {
         const path = wildPath(params);
         await findWorkspace(kernel, params.t, params.w);
         const at = { tenantId: params.t, workspaceId: params.w };
-        const resource = await db
+        let resource: { id: string; body: unknown } | undefined = await db
           .selectFrom("resource")
-          .select(["id", "body"])
+          .select(["id", "key", "body"])
           .where("workspace_id", "=", params.w)
           .where("tenant_id", "=", params.t)
           .where("kind", "=", "interface")
           .where("path", "=", path)
           .executeTakeFirst();
+        if (query.draft === "1" || query.draft === "true") {
+          const where = await db
+            .selectFrom("workspace")
+            .select("type")
+            .where("id", "=", params.w)
+            .executeTakeFirstOrThrow();
+          const mayEdit =
+            (await ctx.allowed("resource:write", at)) || (await ctx.allowed("interface:write", at));
+          if (where.type !== "dev" || !mayEdit) {
+            throw forbidden("to edit this interface, in a dev workspace, which a draft is read by");
+          }
+          const draft = await db
+            .selectFrom("resource_draft")
+            .select(["key", "body", "deleted"])
+            .where("workspace_id", "=", params.w)
+            .where("kind", "=", "interface")
+            .where("path", "=", path)
+            .executeTakeFirst();
+          if (draft?.deleted) throw notFound("The interface");
+          if (draft) resource = { id: draft.key, body: draft.body };
+        }
         // Someone who may open none of the apps that show it is told the same as when it is not there.
         let allowed =
           (await ctx.allowed("resource:read", at)) || (await ctx.allowed("interface:read", at));
@@ -362,17 +304,31 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             columns: [
               ...(canRead
                 ? [
-                    { name: "id", type: "uuid", required: true, references: null },
-                    { name: "created_at", type: "timestamp", required: true, references: null },
-                    { name: "updated_at", type: "timestamp", required: true, references: null },
+                    { name: "id", label: "Id", type: "uuid", required: true, references: null },
+                    {
+                      name: "created_at",
+                      label: "Created at",
+                      type: "timestamp",
+                      required: true,
+                      references: null,
+                    },
+                    {
+                      name: "updated_at",
+                      label: "Updated at",
+                      type: "timestamp",
+                      required: true,
+                      references: null,
+                    },
                   ]
                 : []),
               ...columns.map((column) => ({
                 name: column.name,
+                label: humanize(column.name),
                 ...(said[column.name]?.description
                   ? { description: said[column.name]?.description as string }
                   : {}),
-                type: column.type,
+                // A reference is of the type `reference`, and `references` says which table.
+                type: column.reference_table ? "reference" : column.type,
                 required: column.required,
                 references: column.reference_table,
                 // A colour by name is given as the colour itself: a page needs no list of names.
@@ -388,121 +344,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ],
           };
         }
-        const targets: Record<string, Static<typeof TargetView>> = {};
-        for (const action of actionsOf(body)) {
-          const key = targetKey(action.target);
-          if (targets[key]) continue;
-          const found = await targetResource(db, params.w, action.target);
-          const canStart =
-            found?.startable === true &&
-            (await ctx.allowed(found.permission, { ...at, resourceId: found.id }));
-          // Someone who may not start it is told nothing about it.
-          targets[key] = canStart
-            ? { canStart, description: found.description, inputSchema: found.inputSchema }
-            : { canStart: false, description: null, inputSchema: null };
-        }
-        return {
-          path,
-          interface: body as unknown as Record<string, unknown>,
-          tables,
-          targets,
-        };
-      },
-    );
-
-    app.get(
-      "/tenants/:t/workspaces/:w/interface-targets",
-      {
-        config: { access: access.custom },
-        schema: {
-          summary: "What the actions of an interface being built would start, and for whom",
-          description:
-            "For the builder. For each target: whether it is there and can be started from a " +
-            "page, what it takes, and which audiences of the apps serving `interface` may not " +
-            "start it, so would not see the action. Needs what reading the interface's draft needs.",
-          tags: ["apps"],
-          params: Type.Object({ t: Id, w: Id }),
-          querystring: Type.Object({
-            interface: Type.Optional(Type.String({ maxLength: 255 })),
-            targets: Type.String({
-              maxLength: 8000,
-              description: "Comma-separated: `script:<path>` or `flow:<path>`.",
-            }),
-          }),
-          response: {
-            200: Type.Object({
-              items: Type.Array(
-                Type.Object({
-                  key: Type.String(),
-                  found: Type.Boolean(),
-                  startable: Type.Boolean({
-                    description: "False for a flow with no manual trigger to start from.",
-                  }),
-                  description: Type.Union([Type.String(), Type.Null()]),
-                  inputSchema: Type.Union([AnyObject, Type.Null()]),
-                  notFor: Type.Array(Type.String(), {
-                    description: "The audiences that would not see the action.",
-                  }),
-                }),
-              ),
-            }),
-          },
-        },
-      },
-      async ({ ctx, params, query }) => {
-        const body = {
-          interface: query.interface,
-          targets: query.targets
-            .split(",")
-            .filter(Boolean)
-            .slice(0, 100)
-            .flatMap((one) => {
-              const [kind, ...rest] = one.split(":");
-              return kind === "script" || kind === "flow"
-                ? [{ kind: kind as "script" | "flow", path: rest.join(":") }]
-                : [];
-            }),
-        };
-        const workspace = await findWorkspace(kernel, params.t, params.w);
-        const at = { tenantId: params.t, workspaceId: params.w };
-        if (
-          !(await ctx.allowed("resource:read", at)) &&
-          !(await ctx.allowed("interface:read", at))
-        ) {
-          throw forbidden("interface:read");
-        }
-        const audiences = body.interface
-          ? await audiencesOf(db, { id: workspace.id, tenantId: params.t }, body.interface)
-          : [];
-        const items = [];
-        for (const target of body.targets) {
-          const found = await targetResource(db, params.w, target);
-          const notFor: string[] = [];
-          if (found) {
-            for (const audience of audiences) {
-              if (
-                !(await audienceMay(
-                  db,
-                  { id: workspace.id, tenantId: params.t },
-                  audience,
-                  found.permission,
-                  found.id,
-                ))
-              ) {
-                notFor.push(audience.name);
-              }
-            }
-          }
-          items.push({
-            key: targetKey(target),
-            found: found !== undefined,
-            startable: found?.startable ?? false,
-            description: found?.description ?? null,
-            inputSchema: found?.inputSchema ?? null,
-            notFor,
-          });
-        }
-        return { items };
+        return { path, body: body as unknown as Record<string, unknown>, tables };
       },
     );
   };

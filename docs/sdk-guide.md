@@ -284,12 +284,14 @@ export const open = defineBinding({
 
 Every page whose path is under `handbook` is a page of the site, and `handbook` is a top-level folder: a site never serves a folder inside another. `index` is its home page, each folder directly under it is a collection, and folders inside them go as deep as they are written. A folder's own page with nothing written in it lists what is in the folder. Who may open the site is decided by bindings, as for any app: nobody outside without one.
 
-A site can ask its readers whether a page helped, and keep each answer as a row of a table of yours:
+A site can ask its readers whether a page helped, and keep each answer as a row of a table of yours. A workspace keeps the answers of all its sites in one table, `docs-feedback`, where each row says which site it is from by `site_key`, the key of the site's app, which a rename keeps:
 
 ```ts
 export const votes = defineTable({
-  path: "handbook-feedback",
+  path: "docs-feedback",
   columns: {
+    site_key: column.text({ required: true }),
+    site: column.text(),
     page: column.text({ required: true }),
     helpful: column.boolean({ required: true }),
     version: column.text(),
@@ -300,7 +302,7 @@ export const handbook = defineApp({
   path: "handbook",
   title: "Handbook",
   docs: "handbook",
-  feedback: { table: "handbook-feedback" },
+  feedback: { table: "docs-feedback" },
 });
 ```
 

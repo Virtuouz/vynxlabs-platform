@@ -16,6 +16,8 @@ import { clashes } from "./stack.js";
 /** A resource, as much of it as documentation needs. */
 export interface ResourceLike {
   kind: string;
+  /** The resource's key, which a rename keeps, if whoever gives it knows. */
+  key?: string | undefined;
   path: string;
   title?: string | null | undefined;
   body: unknown;
@@ -27,6 +29,8 @@ export interface ResourceLike {
 export interface DocsApp {
   /** The app's own path. */
   path: string;
+  /** The app's key, which a rename keeps. Set where a bundle says it. */
+  key?: string;
   title: string;
   /** The folder of pages it serves: every page whose path is under it. */
   docs: string;
@@ -36,13 +40,43 @@ export interface DocsApp {
   published?: false;
 }
 
-/** The columns a table that keeps readers' answers needs, and of what type. */
+/** The one table of a workspace in which every docs site keeps its readers' answers. */
+export const FEEDBACK_TABLE = "docs-feedback";
+
+/**
+ * The columns of that table, and of what type: what the console makes, what a
+ * served site writes, and what a doc writer's deploy is held to.
+ */
 export const FEEDBACK_COLUMNS = {
-  page: "text",
-  helpful: "boolean",
-  version: "text",
-  at: "timestamp",
+  site_key: {
+    type: "text",
+    required: true,
+    description: "The key of the site's app, which a rename keeps.",
+  },
+  site: { type: "text", required: false, description: "The site's name when the reader said so." },
+  page: { type: "text", required: true, description: "The page, by its path in the site." },
+  helpful: { type: "boolean", required: true, description: "Whether it helped." },
+  version: { type: "text", required: false, description: "The deployed version they read." },
+  at: { type: "timestamp", required: false, description: "When they said so." },
 } as const;
+
+/** Whether a table's body has exactly the feedback columns, of the same types. */
+export function hasFeedbackColumns(body: unknown): boolean {
+  const columns = (body as { columns?: Record<string, { type?: unknown; required?: unknown }> })
+    ?.columns;
+  if (!columns || typeof columns !== "object") return false;
+  const names = Object.keys(columns).sort();
+  if (names.join() !== Object.keys(FEEDBACK_COLUMNS).sort().join()) return false;
+  return names.every((name) => {
+    const want = FEEDBACK_COLUMNS[name as keyof typeof FEEDBACK_COLUMNS];
+    const have = columns[name];
+    return have?.type === want.type && (have?.required === true) === want.required;
+  });
+}
+
+/** Whether a resource is the workspace's table of readers' answers, as it should be made. */
+export const isFeedbackTable = (kind: string, path: string, body: unknown): boolean =>
+  kind === "table" && path === FEEDBACK_TABLE && hasFeedbackColumns(body);
 
 /** The apps of a workspace that serve documentation. */
 export function docsApps(resources: readonly ResourceLike[]): DocsApp[] {
@@ -60,6 +94,7 @@ export function docsApps(resources: readonly ResourceLike[]): DocsApp[] {
         ? [
             {
               path: one.path,
+              ...(one.key !== undefined ? { key: one.key } : {}),
               title: typeof body.title === "string" ? body.title : one.path,
               docs: body.docs,
               ...(typeof feedback === "string" ? { feedback } : {}),
@@ -193,12 +228,12 @@ export function checkWorkspaceDocs(
     const columns = ((table.body as { columns?: Record<string, { type?: string }> }).columns ??
       {}) as Record<string, { type?: string }>;
     const wrong = Object.entries(FEEDBACK_COLUMNS).filter(
-      ([name, type]) => columns[name]?.type !== type,
+      ([name, column]) => columns[name]?.type !== column.type,
     );
     if (wrong.length > 0) {
       problems.push(
         `${app.path} (app): the table ${app.feedback} keeps its readers' answers, and needs ${wrong
-          .map(([name, type]) => `a ${type} column ${name}`)
+          .map(([name, column]) => `a ${column.type} column ${name}`)
           .join(", ")}.`,
       );
     }

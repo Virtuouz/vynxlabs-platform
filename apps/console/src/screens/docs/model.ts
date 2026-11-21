@@ -32,6 +32,8 @@ export interface DocPage {
 
 export interface DocsApp {
   path: string;
+  /** The app's key, which a rename keeps: what its readers' answers are filed under. */
+  key: string;
   title: string;
   /** The folder of pages it serves. */
   docs: string;

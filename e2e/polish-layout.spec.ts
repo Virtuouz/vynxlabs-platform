@@ -27,6 +27,9 @@ test.afterAll(async () => {
 test("every workbench's first row starts within 160 px of the top", async () => {
   await ctx.page.setViewportSize({ width: 1440, height: 900 });
   for (const [name, path] of workbenches(ctx)) {
+    // As a returning member sees it: a description shown on the first visit folds after it.
+    // This file no longer follows the recording that used to open every screen first.
+    await open(ctx.page, path as string);
     await open(ctx.page, path as string);
     const top = await firstRowTop(ctx.page);
     expect(top, `${name} shows a first row`).not.toBeNull();

@@ -20,6 +20,12 @@ A table's screen fills the window. Its rows are the one thing that scrolls, with
 
 A reference column is filled by typing. The picker asks the server for rows whose display column contains what you typed, so it finds a row however far down the table it is. It shows the first 50 and says "Type to find more". The display column is the one the table names; when it names none, the picker uses a column called `name` or `title`, or else the first text column.
 
+## References in the grid
+
+A reference cell in the grid shows the row it points to by name, not by its ID. Where the table names no display column, the server names rows by the same rule as the picker: `name`, else `title`, else the first text column. Exports and the rows API's `expanded` use the same rule, so a row is called the same thing everywhere.
+
 ## Replacing and removing files
 
 A file column in the row inspector has **Replace** and **Remove**. Each asks first. A replaced or removed file is not deleted at once: it stays in the row's history, and is kept as long as that history is, which is as long as the tenant keeps its audit log (400 days unless [retention](../tenant/retention) says otherwise). After that it is removed.
+
+A file that a worker script replaces in a row is kept the same way: it is noted in the row's history when the script updates the row, and removed once audit retention has passed. A source table's rows hold files the source owns, not Volvel, so nothing of a source's is kept or removed here.

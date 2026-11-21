@@ -2501,9 +2501,15 @@ export function Sources({ root, link }: { root: string; link: string }) {
               <Code>{row.path}</Code>
             ),
         },
-        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
+        // On a phone a source keeps its name and its health; where it points, from a tablet up.
+        {
+          header: "For",
+          priority: 3,
+          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+        },
         {
           header: "Points to",
+          priority: 2,
           cell: (row) =>
             row.bound ? (
               `${row.config?.database} on ${row.config?.host}, as ${row.config?.user}`
@@ -2511,7 +2517,11 @@ export function Sources({ root, link }: { root: string; link: string }) {
               <StatePill state="unbound" />
             ),
         },
-        { header: "Password", cell: (row) => (row.hasPassword ? "Set" : row.bound ? "None" : "") },
+        {
+          header: "Password",
+          priority: 3,
+          cell: (row) => (row.hasPassword ? "Set" : row.bound ? "None" : ""),
+        },
         {
           header: "Health",
           cell: (row) => (row.bound ? <HealthCell health={row.health} /> : ""),

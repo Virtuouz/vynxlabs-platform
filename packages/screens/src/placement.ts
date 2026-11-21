@@ -3,8 +3,10 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type RefObject,
+  useRef,
   useState,
 } from "react";
+import { fit, type Limits } from "./layout.ts";
 
 /** Where something is on a grid of twelve columns, and how big: all in cells. */
 export interface Box {
@@ -15,46 +17,41 @@ export interface Box {
 }
 
 /** The grid's measures in pixels, which the stylesheet also has to draw: a row and the gap. */
-export const GRID = { columns: 12, row: 40, gap: 12, rows: 200, tallest: 40 } as const;
+export const GRID = { columns: 12, row: 40, gap: 12, rows: 400, tallest: 40 } as const;
+
+/** How far a pointer travels before a press on a widget is a drag and not a click, in pixels. */
+export const DRAG_FROM = 4;
 
 const same = (a: Box, b: Box) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
 
-const moved = (at: Box, dx: number, dy: number): Box => ({
-  ...at,
-  x: Math.min(GRID.columns - at.w, Math.max(0, at.x + dx)),
-  y: Math.min(GRID.rows - 1, Math.max(0, at.y + dy)),
-});
-const stretched = (at: Box, dx: number, dy: number, least: { w: number; h: number }): Box => ({
-  ...at,
-  w: Math.min(GRID.columns - at.x, Math.max(least.w, at.w + dx)),
-  h: Math.min(GRID.tallest, Math.max(least.h, at.h + dy)),
-});
+const moved = (at: Box, dx: number, dy: number, limits: Limits): Box =>
+  fit({ ...at, x: at.x + dx, y: at.y + dy }, limits);
+const stretched = (at: Box, dx: number, dy: number, limits: Limits): Box =>
+  fit({ ...at, w: at.w + dx, h: at.h + dy }, limits);
+
+/** Whether a press or a key is for something typed into or pressed, which the page's moves leave alone. */
+export const isControl = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  target.closest("button, a, input, select, textarea, [contenteditable='true']") !== null;
+
+export type HowMoved = "move" | "stretch";
 
 export interface Placement {
   /** For the element that is the grid. Each thing on it carries `data-flip-key`. */
   grid: RefObject<HTMLDivElement | null>;
   /** What is being dragged or stretched, and where it would land. */
-  held: { id: string; at: Box } | undefined;
+  held: { id: string; at: Box; how: HowMoved } | undefined;
   /** Where to draw a thing: where it would land while it is held, its own place otherwise. */
   at: (id: string, own: Box) => Box;
-  /** Start a drag (`move`) from a thing's heading, or a stretch from its corner. */
-  grab: (
-    event: ReactPointerEvent<HTMLElement>,
-    id: string,
-    own: Box,
-    how: "move" | "stretch",
-  ) => void;
-  /**
-   * For the control that has focus when a thing is chosen: the arrow keys
-   * move it a cell, and with Shift change its size.
-   */
+  /** Start a drag (`move`) from anywhere on a thing, or a stretch from its corner. */
+  grab: (event: ReactPointerEvent<HTMLElement>, id: string, own: Box, how: HowMoved) => void;
+  /** For the thing that has focus when it is chosen: the arrows move it a cell, and with Shift change its size. */
   keys: (
     id: string,
     name: string,
     own: Box,
   ) => {
     "aria-keyshortcuts": string;
-    title: string;
     onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
   };
   /** What a screen reader is told after a move from the keyboard. Put it in a `role="status"`. */
@@ -62,11 +59,11 @@ export interface Placement {
 }
 
 /**
- * Things placed on a grid of twelve columns by dragging them: an app page's
- * widgets in the builder, a dashboard's widgets. A thing is dragged by its
- * heading and stretched by its corner, and shown where it would land before
- * it is let go. From the keyboard the arrows do the same a cell at a time.
- * Whatever else has to move out of the way is seen to move (`useFlip`).
+ * Things placed on a grid of twelve columns by dragging them: a page's
+ * widgets in the builder. A thing is dragged by itself and stretched by its
+ * corner, and shown where it would land before it is let go. From the
+ * keyboard the arrows do the same a cell at a time. Whatever else has to move
+ * out of the way is seen to move (`useFlip`).
  *
  * The one who uses this draws the grid: `GRID.columns` columns, rows of
  * `GRID.row` pixels, `GRID.gap` between. `onMove` is told once, when a thing
@@ -75,53 +72,66 @@ export interface Placement {
 export function usePlacement({
   places,
   onMove,
-  least = { w: 1, h: 1 },
+  limits,
+  onGrabbed,
 }: {
   /** Every thing's place, as text: when it changes, things are played to their new places. */
   places: string;
   /** `by` says whether it was dragged or moved a cell with a key, for what counts as one step to undo. */
-  onMove: ((id: string, at: Box, by: "pointer" | "keys") => void) | undefined;
-  /** The smallest a thing may be made. */
-  least?: { w: number; h: number };
+  onMove: ((id: string, at: Box, by: "pointer" | "keys", how: HowMoved) => void) | undefined;
+  /** How small and how large each thing may be made. */
+  limits: (id: string) => Limits;
+  /** Called when a press on a thing has become a drag. */
+  onGrabbed?: (id: string) => void;
 }): Placement {
-  const [held, setHeld] = useState<{ id: string; at: Box }>();
+  const [held, setHeld] = useState<{ id: string; at: Box; how: HowMoved }>();
   const [said, setSaid] = useState("");
   // A drag is its own motion: what is held follows the pointer, and is not played.
   const grid = useFlip<HTMLDivElement>(places, { paused: held !== undefined });
+  const grabbed = useRef(onGrabbed);
+  grabbed.current = onGrabbed;
 
   const grab: Placement["grab"] = (event, id, own, how) => {
     const box = grid.current?.getBoundingClientRect();
     if (!onMove || !box || event.button !== 0) return;
-    // A press on a button in the heading is that button's, not the start of a drag.
-    if (how === "move" && (event.target as HTMLElement).closest("button, a, input, select")) return;
-    event.preventDefault();
-    const handle = event.currentTarget;
-    handle.setPointerCapture(event.pointerId);
+    // A press on a button, a link or a field is that control's, not the start of a drag.
+    if (isControl(event.target)) return;
     const column = (box.width + GRID.gap) / GRID.columns;
     const row = GRID.row + GRID.gap;
     const from = { x: event.clientX, y: event.clientY };
+    const least = limits(id);
     let latest = own;
+    let dragging = how === "stretch";
+    if (how === "stretch") event.preventDefault();
     const follow = (pointer: PointerEvent) => {
-      const across = Math.round((pointer.clientX - from.x) / column);
-      const down = Math.round((pointer.clientY - from.y) / row);
-      latest = how === "move" ? moved(own, across, down) : stretched(own, across, down, least);
-      setHeld({ id, at: latest });
+      const dx = pointer.clientX - from.x;
+      const dy = pointer.clientY - from.y;
+      if (!dragging) {
+        if (Math.hypot(dx, dy) < DRAG_FROM) return;
+        dragging = true;
+        grabbed.current?.(id);
+      }
+      const across = Math.round(dx / column);
+      const down = Math.round(dy / row);
+      latest =
+        how === "move" ? moved(own, across, down, least) : stretched(own, across, down, least);
+      setHeld({ id, at: latest, how });
     };
     const drop = () => {
-      handle.removeEventListener("pointermove", follow);
-      handle.removeEventListener("pointerup", drop);
-      handle.removeEventListener("pointercancel", drop);
+      window.removeEventListener("pointermove", follow);
+      window.removeEventListener("pointerup", drop);
+      window.removeEventListener("pointercancel", drop);
       setHeld(undefined);
-      if (!same(latest, own)) onMove(id, latest, "pointer");
+      if (dragging && !same(latest, own)) onMove(id, latest, "pointer", how);
     };
-    handle.addEventListener("pointermove", follow);
-    handle.addEventListener("pointerup", drop);
-    handle.addEventListener("pointercancel", drop);
+    window.addEventListener("pointermove", follow);
+    window.addEventListener("pointerup", drop);
+    window.addEventListener("pointercancel", drop);
   };
 
   const keys: Placement["keys"] = (id, name, own) => ({
-    "aria-keyshortcuts": "ArrowLeft ArrowRight ArrowUp ArrowDown",
-    title: "Arrow keys move it. Shift and arrow keys change its size.",
+    "aria-keyshortcuts":
+      "ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown",
     onKeyDown: (event) => {
       const step: Record<string, [number, number]> = {
         ArrowLeft: [-1, 0],
@@ -130,11 +140,15 @@ export function usePlacement({
         ArrowDown: [0, 1],
       };
       const by = step[event.key];
-      if (!by || !onMove) return;
+      // A key typed into a field, or meant for a button, is not a move.
+      if (!by || !onMove || isControl(event.target)) return;
       event.preventDefault();
-      const next = event.shiftKey ? stretched(own, by[0], by[1], least) : moved(own, by[0], by[1]);
+      const least = limits(id);
+      const next = event.shiftKey
+        ? stretched(own, by[0], by[1], least)
+        : moved(own, by[0], by[1], least);
       if (same(next, own)) return;
-      onMove(id, next, "keys");
+      onMove(id, next, "keys", event.shiftKey ? "stretch" : "move");
       setSaid(
         event.shiftKey
           ? `${name} is ${next.w} wide and ${next.h} tall.`

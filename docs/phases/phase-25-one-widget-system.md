@@ -1,6 +1,6 @@
 # Phase 25: apps and dashboards are built from one set of widgets, configured in the reader's words
 
-Status: built, pending one owner question (the rows behind a number on a dashboard), on branch `phase-25-one-widget-system`, off `main` at `35a61cc`.
+Status: built, on branch `phase-25-one-widget-system`, off `main` at `35a61cc`.
 Last updated: 2026-11-21 (after the first walk)
 
 The owner's drawings in `temp/` (six boards on Fernhill's Clinic performance, `Volvel App Builder redesign.html`, and `research.md`) ask for the builder to become an application builder: a Data, Display, Actions and Rules inspector in task words, record pages, steps run by buttons, forms made from a table, phone layouts made for you, a check before publishing. The owner then asked that apps and dashboards be one system, that widgets come from a contract developers could later use, with the built-ins as a core pack, that text be Markdown with the docs' components, and that no compatibility be kept with what was built before.
@@ -34,6 +34,7 @@ Answered by the owner on 2026-11-21.
 | 7 | Extensibility | A declarative contract and an SDK; the built-ins are the core pack; one internal widget proves it; how a developer's widget would be packaged and run is designed (decision 0005), not built. |
 | 8 | "See it as" | **Deferred to phase 29**, with "View as" as the boards draw it (answered after the first walk). |
 | 9 | Drag from "Add to page" | **Built in this phase**, with close attention to how it moves (answered after the first walk). |
+| 10 | The rows behind a number | **Phase 26, as an action** ("Show the rows behind it"), not restored as a fixed behaviour now (answered after the full runs). |
 
 ## Milestones
 
@@ -210,7 +211,7 @@ The four files and the specs behind them were run again: 21 passed.
   - higher-ed borrow's "Ask for a device" and "Cancel";
   - higher-ed desk's "Check out" and "Check in", its editable devices and its add form.
 - **"See it as"**, the builder's preview as an end-user group: the new endpoint has no group to read as. *The owner deferred it to phase 29, with "View as".*
-- **A number on a dashboard no longer opens the rows behind it** (phase 18's drill-through). A click is a widget's event, and what an event does is phase 26's actions. *Asked of the owner: back now, or in phase 26 as an action ("Show the rows behind it").*
+- **A number on a dashboard no longer opens the rows behind it** (phase 18's drill-through). A click is a widget's event, and what an event does is phase 26's actions. *The owner chose phase 26, as an action ("Show the rows behind it").*
 - **The phone and tablet layout controls and priority** (board 6) are phase 29's.
 
 **Kept from earlier phases, in the shared frame:**

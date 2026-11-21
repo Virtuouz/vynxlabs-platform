@@ -200,10 +200,10 @@ Decision 0005 designs, and does not build: a `widget` resource kind carrying a d
 | Phase | At the end a person can… |
 |---|---|
 | 25 | build Clinic performance and Clinic visits on one system, configure any widget in Data, Display, Actions and Rules, place it on the canvas, write Markdown, add from "Add to page"; a widget from an internal pack works the same |
-| 26 | open record pages, side sheets and modals with Back and a shared link; run steps on the server from a button; show and enable by a sentence |
+| 26 | open record pages, side sheets and modals with Back and a shared link; run steps on the server from a button; show and enable by a sentence; on a dashboard, show the rows behind a number |
 | 27 | click an invoice, see its detail, edit it, create one with the same form, run row actions, and see the table change |
 | 28 | build the Visits and Stock pages with List, Section, Tabs, Search and filter and Action group, helped by suggestions |
-| 29 | use the app on a phone without arranging it by hand; publish after a readiness check; try it as a group; restore an earlier draft |
+| 29 | use the app on a phone without arranging it by hand; publish after a readiness check; see a page as a group sees it ("View as", which replaces the old "See it as"); restore an earlier draft |
 
 ## Decision log
 

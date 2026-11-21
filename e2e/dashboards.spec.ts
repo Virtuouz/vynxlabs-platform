@@ -250,9 +250,8 @@ test("the date filter changes every widget bound to it, and the address keeps it
   await expect(widget("Fees")).toContainText("80");
 });
 
-// Drill-through to the rows behind a number (phase 18) is not in the page model: a click is an
-// event, and what it does is phase 26's actions. Whether it comes back now is the owner's to say;
-// see docs/phases/phase-25-one-widget-system.md, Findings.
+// Drill-through to the rows behind a number (phase 18) comes back in phase 26, as an action
+// ("Show the rows behind it"), as the owner chose (phase 25, decision 10).
 test.fixme("a number opens the rows behind it", async () => {
   // - click Laptop's line in "Fees by device": a dialog "Rows of loans" with its two loans;
   // - sort by a heading, and filter the rows in the dialog.

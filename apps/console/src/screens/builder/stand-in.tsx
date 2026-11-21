@@ -18,11 +18,7 @@
  */
 import type { PageFilter, PageWidget } from "@volvel/manifest";
 import { Skeleton } from "@volvel/ui";
-import {
-  type ColumnInfo,
-  type WidgetDefinition,
-  type WidgetViewProps,
-} from "@volvel/widgets";
+import type { ColumnInfo, WidgetDefinition, WidgetViewProps } from "@volvel/widgets";
 import { CORE_WIDGETS } from "@volvel/widgets-core";
 import { type ComponentType, useEffect, useState } from "react";
 
@@ -111,7 +107,10 @@ function Placeholder({
   client,
   filterValues,
   refreshKey,
-}: Pick<PageViewProps, "client" | "filterValues"> & { refreshKey: number | undefined; widget: PageWidget }) {
+}: Pick<PageViewProps, "client" | "filterValues"> & {
+  refreshKey: number | undefined;
+  widget: PageWidget;
+}) {
   const [state, setState] = useState<string>();
   // biome-ignore lint/correctness/useExhaustiveDependencies: asked again when what it asks changes
   useEffect(() => {
@@ -136,17 +135,12 @@ export function PageView(props: PageViewProps) {
   return (
     <div className="grid grid-cols-12 gap-3" data-stand-in="page-view">
       {props.widgets.map((widget) => (
-        // biome-ignore lint/a11y/useSemanticElements: a stand-in for the canvas
+        // biome-ignore lint/a11y/noStaticElementInteractions: a stand-in for the canvas, removed with it
         <div
           key={widget.id}
-          role={props.editing ? "button" : undefined}
-          tabIndex={props.editing ? 0 : undefined}
-          aria-pressed={props.editing ? props.editing.selected === widget.id : undefined}
           data-widget={widget.id}
           onClick={() => props.editing?.onSelect(widget.id)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") props.editing?.onSelect(widget.id);
-          }}
+          onKeyDown={undefined}
           style={{ gridColumn: `${widget.at.x + 1} / span ${widget.at.w}` }}
           className={`rounded-panel border p-3 ${
             props.editing?.selected === widget.id ? "border-action" : "border-line"

@@ -34,6 +34,12 @@ const catalog: Catalog = {
 };
 
 const place = { x: 0, y: 0, w: 6, h: 6 };
+/** The visual query of a widget's `rows` input. */
+const queryOf = (widget: PageWidget | undefined) => {
+  const source = widget?.data?.rows?.source;
+  if (!source || !("visual" in source)) throw new Error("it reads no table");
+  return source.visual;
+};
 const chartWidget = (): PageWidget => ({
   id: "by-week",
   type: "core/chart",
@@ -101,8 +107,8 @@ test("the chart's Data tab is drawn as Source, Value, Break down by, Only includ
   expect(tabs).toEqual(["Data", "Display", "Actions", "Rules"]);
   const panel = within(screen.getByRole("tabpanel"));
   // In the order the definition gives.
-  const order = ["Source", "Value", "Break down by", "Only include"].map((name) =>
-    panel.getAllByText(name, { exact: false })[0],
+  const order = ["Source", "Value", "Break down by", "Only include"].map(
+    (name) => panel.getAllByText(name, { exact: false })[0],
   );
   expect(order.every(Boolean)).toBe(true);
   const text = screen.getByRole("tabpanel").textContent ?? "";
@@ -115,7 +121,9 @@ test("the chart's Data tab is drawn as Source, Value, Break down by, Only includ
   expect(panel.getByText(/More data options/)).toBeTruthy();
   expect(panel.getByText(/Sorted by, at most/)).toBeTruthy();
   // The source is the table the widget reads, and says it follows no page filter yet.
-  expect((panel.getByRole("combobox", { name: "Source" }) as HTMLInputElement).value).toBe("Invoices");
+  expect((panel.getByRole("combobox", { name: "Source" }) as HTMLInputElement).value).toBe(
+    "Invoices",
+  );
 });
 
 test("choosing Sum of Total as the value writes the first measure", () => {
@@ -123,13 +131,10 @@ test("choosing Sum of Total as the value writes the first measure", () => {
   fireEvent.change(screen.getByLabelText("What value 1 works out"), { target: { value: "sum" } });
   const last = written.at(-1) as PageWidget;
   // A sum is of a number: the first one the table has is chosen, and the value is named for what it is.
-  const visual = (last.data?.rows?.source as { visual: { measures: unknown[] } }).visual;
-  expect(visual.measures[0]).toEqual({ fn: "sum", column: "total", as: "sum_total" });
+  expect(queryOf(last).measures?.[0]).toEqual({ fn: "sum", column: "total", as: "sum_total" });
   expect(screen.getByLabelText("Column value 1 is of")).toBeTruthy();
   // The breakdown is left as it was.
-  expect(
-    (last.data?.rows?.source as { visual: { groupBy: unknown[] } }).visual.groupBy,
-  ).toEqual([{ column: "issued_at", bucket: "week" }]);
+  expect(queryOf(last).groupBy).toEqual([{ column: "issued_at", bucket: "week" }]);
 });
 
 test("a widget that named the value by its old name names it by the new one", () => {
@@ -145,8 +150,7 @@ test("a condition is added as a sentence of column, test and value", () => {
   fireEvent.click(screen.getByRole("button", { name: "Add a condition" }));
   fireEvent.change(screen.getByLabelText("Test of condition 1"), { target: { value: "ne" } });
   fireEvent.change(screen.getByLabelText("Value of condition 1"), { target: { value: "paid" } });
-  const visual = (written.at(-1)?.data?.rows?.source as { visual: { filters: unknown[] } }).visual;
-  expect(visual.filters).toEqual([{ column: "status", op: "ne", value: "paid" }]);
+  expect(queryOf(written.at(-1)).filters).toEqual([{ column: "status", op: "ne", value: "paid" }]);
 });
 
 test("a setting that depends on another is shown only while it holds", () => {
@@ -213,7 +217,10 @@ test("a widget from a pack no code here knows is drawn from its definition", () 
     layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 } },
   });
   show(
-    <Harness start={{ id: "g", type: "labs/x", at: { x: 0, y: 0, w: 3, h: 3 } }} definition={labs} />,
+    <Harness
+      start={{ id: "g", type: "labs/x", at: { x: 0, y: 0, w: 3, h: 3 } }}
+      definition={labs}
+    />,
   );
   // The pack is named beside its kind.
   expect(screen.getByText("Gauge · Labs pack")).toBeTruthy();
@@ -230,7 +237,10 @@ test("a widget from a pack no code here knows is drawn from its definition", () 
 
 test("a widget no pack declares is said so, and can be removed", () => {
   show(
-    <Harness start={{ id: "g", type: "labs/gone", at: { x: 0, y: 0, w: 3, h: 3 } }} definition={undefined} />,
+    <Harness
+      start={{ id: "g", type: "labs/gone", at: { x: 0, y: 0, w: 3, h: 3 } }}
+      definition={undefined}
+    />,
   );
   expect(screen.getByText(/There is no widget called “labs\/gone”/)).toBeTruthy();
   expect(screen.getByRole("button", { name: /Remove it/ })).toBeTruthy();

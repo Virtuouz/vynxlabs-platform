@@ -13,7 +13,13 @@
  *   import { viewRegistry, type WidgetPack } from "@volvel/screens";
  */
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
-import { corePack, labsPack, type ViewRegistry, viewRegistry, type WidgetPack } from "./stand-in.tsx";
+import {
+  corePack,
+  labsPack,
+  type ViewRegistry,
+  viewRegistry,
+  type WidgetPack,
+} from "./stand-in.tsx";
 
 /** Every pack this console draws, the platform's own first. */
 export const PACKS: readonly WidgetPack[] = [corePack, labsPack];

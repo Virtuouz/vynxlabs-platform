@@ -9,10 +9,10 @@
  * deeper (08, S9 §inspector).
  */
 import type { PageFilter, PageWidget } from "@volvel/manifest";
-import { Details, Menu, NumberField, Tabs, TextField, Button } from "@volvel/ui";
+import { Button, Details, Menu, NumberField, Tabs, TextField } from "@volvel/ui";
 import {
-  TAB_TITLES,
   type Surface,
+  TAB_TITLES,
   type Tab,
   type WidgetDefinition,
   WidgetRegistry,
@@ -25,8 +25,8 @@ import { ConfigControl, type Env } from "./controls.tsx";
 import { DataControl } from "./dataControls.tsx";
 import {
   type Catalog,
-  clampPlace,
   type ConfigSetting,
+  clampPlace,
   configOf,
   configSettings,
   type DataPart,
@@ -72,8 +72,8 @@ export function Inspector(props: InspectorProps) {
       <div className="flex flex-col gap-3">
         <h2 className="m-0 text-title">{name}</h2>
         <p className="m-0 text-ink-muted">
-          There is no widget called “{widget.type}”. A pack that declares it may be missing from this
-          workspace. Its place on the page is kept, and nothing is drawn.
+          There is no widget called “{widget.type}”. A pack that declares it may be missing from
+          this workspace. Its place on the page is kept, and nothing is drawn.
         </p>
         <div>
           <Button variant="danger" onClick={props.onRemove}>
@@ -123,9 +123,24 @@ export function Inspector(props: InspectorProps) {
           triggerClassName="inline-flex size-8 shrink-0 items-center justify-center rounded-control border border-line-control hover:bg-sunken"
           label={<Ellipsis aria-hidden="true" size={16} />}
           items={[
-            { label: "Layout", icon: <LayoutGrid aria-hidden="true" size={14} />, onSelect: () => setView("layout") },
-            { label: "Duplicate", icon: <Copy aria-hidden="true" size={14} />, keys: formatCombo("Mod+d"), onSelect: props.onDuplicate },
-            { label: "Remove", icon: <Trash2 aria-hidden="true" size={14} />, danger: true, separated: true, onSelect: props.onRemove },
+            {
+              label: "Layout",
+              icon: <LayoutGrid aria-hidden="true" size={14} />,
+              onSelect: () => setView("layout"),
+            },
+            {
+              label: "Duplicate",
+              icon: <Copy aria-hidden="true" size={14} />,
+              keys: formatCombo("Mod+d"),
+              onSelect: props.onDuplicate,
+            },
+            {
+              label: "Remove",
+              icon: <Trash2 aria-hidden="true" size={14} />,
+              danger: true,
+              separated: true,
+              onSelect: props.onRemove,
+            },
           ]}
         />
       </div>
@@ -143,7 +158,8 @@ export function Inspector(props: InspectorProps) {
       <p className="m-0 flex items-start gap-2 rounded-control border border-line p-3 text-body-sm text-ink-muted">
         <LayoutGrid aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
         <span>
-          Size and position live on the page. Drag, or press the arrow keys. <strong className="font-medium text-ink">⋯ › Layout</strong> for exact values.
+          Size and position live on the page. Drag, or press the arrow keys.{" "}
+          <strong className="font-medium text-ink">⋯ › Layout</strong> for exact values.
         </span>
       </p>
     </div>
@@ -183,7 +199,9 @@ function TabBody({
       help={part.help}
     />
   );
-  const drawSetting = (setting: ConfigSetting) => <ConfigControl key={setting.name} env={env} setting={setting} />;
+  const drawSetting = (setting: ConfigSetting) => (
+    <ConfigControl key={setting.name} env={env} setting={setting} />
+  );
 
   // A widget with several data inputs says which is which.
   for (const input of inputs) {
@@ -215,7 +233,13 @@ function TabBody({
         required={false}
         maxLength={100}
         value={env.widget.title ?? ""}
-        onChange={(text) => env.write(withText(env.widget, "title", text), "renaming the widget", `title:${env.widget.id}`)}
+        onChange={(text) =>
+          env.write(
+            withText(env.widget, "title", text),
+            "renaming the widget",
+            `title:${env.widget.id}`,
+          )
+        }
       />,
       <TextField
         key="subtitle"
@@ -225,7 +249,13 @@ function TabBody({
         required={false}
         maxLength={200}
         value={env.widget.subtitle ?? ""}
-        onChange={(text) => env.write(withText(env.widget, "subtitle", text), "changing the line under the title", `subtitle:${env.widget.id}`)}
+        onChange={(text) =>
+          env.write(
+            withText(env.widget, "subtitle", text),
+            "changing the line under the title",
+            `subtitle:${env.widget.id}`,
+          )
+        }
       />,
     );
   }
@@ -245,7 +275,9 @@ function TabBody({
           summary={
             <>
               More {TAB_TITLES[tab].toLowerCase()} options{" "}
-              <span className="font-normal text-body-sm text-ink-muted">{aboutMore(moreLabels)}</span>
+              <span className="font-normal text-body-sm text-ink-muted">
+                {aboutMore(moreLabels)}
+              </span>
             </>
           }
         >
@@ -292,7 +324,9 @@ function RulesTab({ env, rowRules }: { env: Env; rowRules: InspectorProps["rowRu
         <p className="m-0 flex h-control items-center rounded-control border border-line px-3 text-ink-muted">
           Always
         </p>
-        <p className="m-0 text-body-sm text-ink-muted">Showing a widget only sometimes comes later.</p>
+        <p className="m-0 text-body-sm text-ink-muted">
+          Showing a widget only sometimes comes later.
+        </p>
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-body-sm font-medium text-ink">Who can see it</span>
@@ -306,14 +340,16 @@ function RulesTab({ env, rowRules }: { env: Env; rowRules: InspectorProps["rowRu
           {tables.length === 0 ? (
             "the row rules of the tables it reads."
           ) : (
-            <>
-              the {tables.map((table) => heading(table)).join(" and ")} row rules.
-            </>
+            <>the {tables.map((table) => heading(table)).join(" and ")} row rules.</>
           )}
         </span>
         {rowRules
           ? tables.map((table) => (
-              <Link key={table} to={rowRules(table)} className="text-action underline underline-offset-2">
+              <Link
+                key={table}
+                to={rowRules(table)}
+                className="text-action underline underline-offset-2"
+              >
                 Open row rules{tables.length > 1 ? ` for ${heading(table)}` : ""}
               </Link>
             ))
@@ -350,9 +386,7 @@ function LayoutPanel({
             <ArrowLeft aria-hidden="true" size={14} /> Back to settings
           </Button>
         </div>
-        <h2 className="m-0 text-title">
-          {widget.title || kind} · Layout
-        </h2>
+        <h2 className="m-0 text-title">{widget.title || kind} · Layout</h2>
       </div>
       <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
         <legend className="p-0 text-body-sm font-medium text-ink">Position on the page</legend>
@@ -394,9 +428,9 @@ function LayoutPanel({
           />
         </div>
         <p className="m-0 text-body-sm text-ink-muted">
-          For keyboards and exact placement. Usually you drag. A {definition.title.toLowerCase()} is
-          {" "}
-          {min.w} to {Math.min(max?.w ?? columns, columns)} wide and {min.h} to {max?.h ?? 40} high, on twelve columns.
+          For keyboards and exact placement. Usually you drag. A {definition.title.toLowerCase()} is{" "}
+          {min.w} to {Math.min(max?.w ?? columns, columns)} wide and {min.h} to {max?.h ?? 40} high,
+          on twelve columns.
         </p>
       </fieldset>
     </div>

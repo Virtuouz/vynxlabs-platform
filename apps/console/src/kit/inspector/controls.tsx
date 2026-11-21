@@ -8,6 +8,7 @@ import type { PageFilter, PageWidget, ValueFormat } from "@volvel/manifest";
 import {
   Button,
   CheckboxField,
+  Markdown,
   MoveButtons,
   MultiSelectField,
   NumberField,
@@ -18,19 +19,12 @@ import {
   TextField,
   useFlip,
 } from "@volvel/ui";
-import { Markdown } from "@volvel/ui";
-import type { Catalog, ConfigSetting } from "./model.ts";
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
 import { useState } from "react";
 import { amount } from "../format.ts";
 import { DataControl } from "./dataControls.tsx";
-import {
-  heading,
-  resultNames,
-  visualOf,
-  withConfig,
-  withSystemColumns,
-} from "./model.ts";
+import type { Catalog, ConfigSetting } from "./model.ts";
+import { heading, resultNames, visualOf, withConfig, withSystemColumns } from "./model.ts";
 
 /** What every control is given: the widget, its definition, and how to write it. */
 export interface Env {
@@ -46,7 +40,11 @@ export interface Env {
 }
 
 /** The columns a column control offers for a data input. */
-export function columnOptions(env: Env, of: string | undefined, types?: readonly string[]): Option[] {
+export function columnOptions(
+  env: Env,
+  of: string | undefined,
+  types?: readonly string[],
+): Option[] {
   const input = of ? env.widget.data?.[of] : undefined;
   const visual = visualOf(input);
   const table = visual ? env.catalog.tables.find((one) => one.name === visual.table) : undefined;
@@ -72,7 +70,11 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
   const value = env.config[name];
   const field = `${widget.id}-${name}`;
   const set = (next: unknown, key = true) =>
-    env.write(withConfig(widget, name, next), `changing ${labelOf(setting).toLowerCase()}`, key ? `config:${widget.id}:${name}` : undefined);
+    env.write(
+      withConfig(widget, name, next),
+      `changing ${labelOf(setting).toLowerCase()}`,
+      key ? `config:${widget.id}:${name}` : undefined,
+    );
   const help = hint.help;
 
   switch (hint.control) {
@@ -89,7 +91,15 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
         />
       );
     case "markdown":
-      return <MarkdownControl field={field} label={hint.label} help={help} value={typeof value === "string" ? value : ""} onChange={(text) => set(text)} />;
+      return (
+        <MarkdownControl
+          field={field}
+          label={hint.label}
+          help={help}
+          value={typeof value === "string" ? value : ""}
+          onChange={(text) => set(text)}
+        />
+      );
     case "number":
       return (
         <NumberField
@@ -175,7 +185,8 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
     }
     case "column": {
       const options = columnOptions(env, hint.of, hint.types);
-      const known = typeof value === "string" && value !== "" && !options.some((one) => one.value === value);
+      const known =
+        typeof value === "string" && value !== "" && !options.some((one) => one.value === value);
       return (
         <SelectField
           name={field}
@@ -227,7 +238,13 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
     case "limit":
       // A data control written as a setting of config still belongs to an input.
       return hint.of ? (
-        <DataControl env={env} input={hint.of} control={hint.control} label={hint.label} help={help} />
+        <DataControl
+          env={env}
+          input={hint.of}
+          control={hint.control}
+          label={hint.label}
+          help={help}
+        />
       ) : null;
     default:
       return null;
@@ -236,7 +253,9 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
 
 /** What each value of a choice is called: the hint's words, else the value made readable. */
 export function choicesOf(setting: ConfigSetting): { value: string; label: string }[] {
-  const values = (setting.schema.enum as readonly unknown[] | undefined) ?? Object.keys(setting.hint.choices ?? {});
+  const values =
+    (setting.schema.enum as readonly unknown[] | undefined) ??
+    Object.keys(setting.hint.choices ?? {});
   return values.map((one) => ({
     value: String(one),
     label: setting.hint.choices?.[String(one)] ?? heading(String(one)),
@@ -259,7 +278,9 @@ export function formatSummary(format: ValueFormat | undefined): string {
     STYLE_WORDS[format.style],
     format.style === "currency" ? (format.currency ?? "USD") : undefined,
     format.minorUnits ? "kept in cents" : undefined,
-    format.decimals !== undefined ? `${format.decimals} decimal${format.decimals === 1 ? "" : "s"}` : undefined,
+    format.decimals !== undefined
+      ? `${format.decimals} decimal${format.decimals === 1 ? "" : "s"}`
+      : undefined,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -300,7 +321,10 @@ function FormatControl({
       </Button>
       <span className="text-body-sm text-ink-muted">Shown as {shown}</span>
       {open ? (
-        <div id={`${field}-panel`} className="flex flex-col gap-2 rounded-control border border-line p-3">
+        <div
+          id={`${field}-panel`}
+          className="flex flex-col gap-2 rounded-control border border-line p-3"
+        >
           <SelectField
             name={`${field}-style`}
             label="Written as"
@@ -398,7 +422,7 @@ function MarkdownControl({
       />
       <div className="flex flex-col gap-1">
         <span className="text-label text-ink-subtle uppercase">Preview</span>
-        <div
+        <section
           aria-label="Preview of the text"
           className="max-h-60 overflow-auto rounded-control border border-line p-3"
         >
@@ -407,7 +431,7 @@ function MarkdownControl({
           ) : (
             <Markdown text={value} />
           )}
-        </div>
+        </section>
       </div>
     </div>
   );
@@ -439,7 +463,9 @@ function ColumnsControl({
   value: ColumnSetting[] | undefined;
   onChange: (next: ColumnSetting[] | undefined) => void;
 }) {
-  const rows: ColumnSetting[] = value?.length ? value : options.map((one) => ({ column: one.value }));
+  const rows: ColumnSetting[] = value?.length
+    ? value
+    : options.map((one) => ({ column: one.value }));
   const holder = useFlip<HTMLUListElement>(rows.map((one) => one.column).join(" "));
   const change = (at: number, patch: Partial<ColumnSetting>) => {
     const next = rows.map((row, index) => (index === at ? { ...row, ...patch } : row));
@@ -503,7 +529,10 @@ function ColumnsControl({
           name={`${field}-add`}
           label="Add a column"
           value=""
-          options={[{ value: "", label: "Choose a column" }, ...left.map((one) => ({ value: one.value, label: one.label }))]}
+          options={[
+            { value: "", label: "Choose a column" },
+            ...left.map((one) => ({ value: one.value, label: one.label })),
+          ]}
           onChange={(next) => next && onChange([...rows, { column: next }])}
         />
       ) : null}

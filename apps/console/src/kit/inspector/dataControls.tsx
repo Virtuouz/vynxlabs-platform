@@ -18,22 +18,18 @@ import {
   type VisualOperator,
   type VisualQuery,
 } from "@volvel/manifest";
-import {
-  Button,
-  ComboboxField,
-  NumberField,
-  SelectField,
-  TextField,
-} from "@volvel/ui";
+import { Button, ComboboxField, NumberField, SelectField, TextField } from "@volvel/ui";
 import {
   BREAKDOWN_CADENCES,
   CADENCE_WORDS,
   MEASURE_FUNCTIONS,
   MEASURE_WORDS,
 } from "@volvel/widgets";
+import { Plus, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Loading } from "../LoadState.tsx";
 import type { Env } from "./controls.tsx";
+import type { DataPart } from "./model.ts";
 import {
   bindFilter,
   defaultInputs,
@@ -48,8 +44,6 @@ import {
   withInput,
   withSystemColumns,
 } from "./model.ts";
-import type { DataPart } from "./model.ts";
-import { Plus, X } from "lucide-react";
 
 const CodeEditor = lazy(() =>
   import("../../editor/CodeEditor.tsx").then((module) => ({ default: module.CodeEditor })),
@@ -87,11 +81,21 @@ export function typedValue(op: string, text: string): unknown {
   return text;
 }
 const shownValue = (value: unknown) =>
-  Array.isArray(value) ? value.join(", ") : value === undefined || value === null ? "" : String(value);
+  Array.isArray(value)
+    ? value.join(", ")
+    : value === undefined || value === null
+      ? ""
+      : String(value);
 
 type Kind = "table" | "query" | "sql";
 const kindOf = (input: DataInput | undefined): Kind | undefined =>
-  !input ? undefined : "visual" in input.source ? "table" : "query" in input.source ? "query" : "sql";
+  !input
+    ? undefined
+    : "visual" in input.source
+      ? "table"
+      : "query" in input.source
+        ? "query"
+        : "sql";
 
 /** One data control of one input. */
 export function DataControl({
@@ -109,13 +113,19 @@ export function DataControl({
 }) {
   const data = env.widget.data?.[input];
   const visual = visualOf(data);
-  if (control === "source") return <SourceControl env={env} input={input} label={label} help={help} />;
+  if (control === "source")
+    return <SourceControl env={env} input={input} label={label} help={help} />;
   // A saved query or SQL decides its own columns. Until something is chosen there is nothing to set.
   if (!visual) return null;
-  const columns = withSystemColumns(env.catalog.tables.find((one) => one.name === visual.table)?.columns ?? []);
+  const columns = withSystemColumns(
+    env.catalog.tables.find((one) => one.name === visual.table)?.columns ?? [],
+  );
   const write = (next: VisualQuery, words: string, key?: string) =>
     env.write(
-      withInput(env.widget, input, { ...(data as DataInput), source: { visual: tidyVisual(next) } }),
+      withInput(env.widget, input, {
+        ...(data as DataInput),
+        source: { visual: tidyVisual(next) },
+      }),
       words,
       key,
     );
@@ -160,7 +170,9 @@ function renameIn(env: Env, input: string, visual: VisualQuery, from: string, to
   return {
     visual: {
       ...visual,
-      ...(visual.sort ? { sort: visual.sort.map((one) => (one.by === from ? { ...one, by: to } : one)) } : {}),
+      ...(visual.sort
+        ? { sort: visual.sort.map((one) => (one.by === from ? { ...one, by: to } : one)) }
+        : {}),
     },
     widget: renamedResult(env.definition, env.widget, input, from, to),
   };
@@ -195,14 +207,17 @@ function SourceControl({
   const { catalog } = env;
   const visual = visualOf(data);
   const bound = (data?.filters ?? []).map((binding) => binding.filter);
-  const named = (name: string) => env.filters.find((one) => one.name === name)?.label ?? heading(name);
+  const named = (name: string) =>
+    env.filters.find((one) => one.name === name)?.label ?? heading(name);
   const [changing, setChanging] = useState(false);
   const field = `${env.widget.id}-${input}-source`;
   const key = `source:${env.widget.id}:${input}`;
 
   /** A table chosen starts the input over for that table, following the filters whose column it has. */
   const choose = (table: string) => {
-    const start = defaultInputs(env.definition, table, catalog)[input] ?? { source: { visual: { table } } };
+    const start = defaultInputs(env.definition, table, catalog)[input] ?? {
+      source: { visual: { table } },
+    };
     let widget = withInput(env.widget, input, start);
     for (const filter of env.filters) widget = bindFilter(widget, filter, catalog);
     env.write(widget, "choosing a table", key);
@@ -241,10 +256,15 @@ function SourceControl({
           if (!next || next === value) return;
           if (next === "sql:") {
             setWriting(true);
-            if (current !== "sql") env.write(withInput(env.widget, input, undefined), "choosing SQL", key);
+            if (current !== "sql")
+              env.write(withInput(env.widget, input, undefined), "choosing SQL", key);
           } else if (next.startsWith("query:")) {
             setWriting(false);
-            env.write(withInput(env.widget, input, { source: { query: next.slice(6) } }), "choosing a query", key);
+            env.write(
+              withInput(env.widget, input, { source: { query: next.slice(6) } }),
+              "choosing a query",
+              key,
+            );
           } else {
             setWriting(false);
             choose(next.slice(6));
@@ -261,9 +281,16 @@ function SourceControl({
               value={data && "sql" in data.source ? data.source.sql : ""}
               height="10rem"
               onChange={(sql) => {
-                const values = data && "sql" in data.source && data.source.values ? { values: data.source.values } : {};
+                const values =
+                  data && "sql" in data.source && data.source.values
+                    ? { values: data.source.values }
+                    : {};
                 env.write(
-                  withInput(env.widget, input, sql.trim() ? { ...(data ?? {}), source: { sql, ...values } } : undefined),
+                  withInput(
+                    env.widget,
+                    input,
+                    sql.trim() ? { ...(data ?? {}), source: { sql, ...values } } : undefined,
+                  ),
                   "writing the query",
                   key,
                 );
@@ -272,7 +299,9 @@ function SourceControl({
           </Suspense>
         </div>
       ) : null}
-      {data && !visual ? <p className="m-0 text-body-sm text-ink-muted">It gives its own columns.</p> : null}
+      {data && !visual ? (
+        <p className="m-0 text-body-sm text-ink-muted">It gives its own columns.</p>
+      ) : null}
       {data && env.filters.length > 0 ? (
         <div className="flex flex-col gap-2">
           <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-body-sm text-ink-muted">
@@ -295,7 +324,9 @@ function SourceControl({
             <FollowFilters
               env={env}
               input={input}
-              columns={withSystemColumns(catalog.tables.find((one) => one.name === visual?.table)?.columns ?? [])}
+              columns={withSystemColumns(
+                catalog.tables.find((one) => one.name === visual?.table)?.columns ?? [],
+              )}
             />
           ) : null}
         </div>
@@ -368,7 +399,10 @@ function FollowFilters({
                 name={`${env.widget.id}-${input}-bind-${filter.name}`}
                 label={`Column that ${name} narrows`}
                 value={mine[0]?.column ?? ""}
-                options={columns.map((column) => ({ value: column.name, label: heading(column.name) }))}
+                options={columns.map((column) => ({
+                  value: column.name,
+                  label: heading(column.name),
+                }))}
                 onChange={(column) =>
                   save(
                     bindings.map((one) => (one.filter === filter.name ? { ...one, column } : one)),
@@ -450,8 +484,17 @@ function MeasureControl({ env, input, visual, columns, label, help, write }: Par
                 options={MEASURE_FUNCTIONS.map((fn) => ({ value: fn, label: MEASURE_WORDS[fn] }))}
                 onChange={(fn) => {
                   const wanted = fn as VisualFunction;
-                  const keep = measure.column && allowed(wanted).some((one) => one.name === measure.column);
-                  change(at, wanted, wanted === "count" ? undefined : keep ? measure.column : allowed(wanted)[0]?.name);
+                  const keep =
+                    measure.column && allowed(wanted).some((one) => one.name === measure.column);
+                  change(
+                    at,
+                    wanted,
+                    wanted === "count"
+                      ? undefined
+                      : keep
+                        ? measure.column
+                        : allowed(wanted)[0]?.name,
+                  );
                 }}
               />
             </div>
@@ -502,7 +545,14 @@ function MeasureControl({ env, input, visual, columns, label, help, write }: Par
                   ...visual,
                   measures: [
                     ...measures,
-                    { fn: "count", as: measureName("count", undefined, measures.map((one) => one.as)) },
+                    {
+                      fn: "count",
+                      as: measureName(
+                        "count",
+                        undefined,
+                        measures.map((one) => one.as),
+                      ),
+                    },
                   ],
                 },
                 "adding a value",
@@ -523,7 +573,10 @@ function MeasureControl({ env, input, visual, columns, label, help, write }: Par
 function BreakdownControl({ env, input, visual, columns, label, help, write }: PartProps) {
   const limits = env.definition.data[input]?.breakdowns ?? { min: 0, max: 1 };
   const groups = visual.groupBy ?? [];
-  const change = (at: number, next: { column: string; bucket?: (typeof BREAKDOWN_CADENCES)[number] }) => {
+  const change = (
+    at: number,
+    next: { column: string; bucket?: (typeof BREAKDOWN_CADENCES)[number] },
+  ) => {
     const old = groups[at];
     if (!old) return;
     const groupBy = groups.map((one, index) => (index === at ? next : one));
@@ -545,6 +598,7 @@ function BreakdownControl({ env, input, visual, columns, label, help, write }: P
         {groups.map((one, at) => {
           const type = columns.find((column) => column.name === one.column)?.type;
           return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: a part of a query has no identity but its place in the list
             <li key={`${one.column}-${at}`} className="flex flex-wrap items-center gap-2">
               <div className="w-40 max-w-full">
                 <SelectField
@@ -552,9 +606,14 @@ function BreakdownControl({ env, input, visual, columns, label, help, write }: P
                   label={`Breakdown ${at + 1}`}
                   labelHidden
                   value={one.column}
-                  options={columns.map((column) => ({ value: column.name, label: heading(column.name) }))}
+                  options={columns.map((column) => ({
+                    value: column.name,
+                    label: heading(column.name),
+                  }))}
                   onChange={(column) => {
-                    const temporal = TEMPORAL.has(columns.find((c) => c.name === column)?.type ?? "");
+                    const temporal = TEMPORAL.has(
+                      columns.find((c) => c.name === column)?.type ?? "",
+                    );
                     change(at, { column, ...(temporal ? { bucket: one.bucket ?? "week" } : {}) });
                   }}
                 />
@@ -568,12 +627,17 @@ function BreakdownControl({ env, input, visual, columns, label, help, write }: P
                     value={one.bucket ?? ""}
                     options={[
                       { value: "", label: "Each value" },
-                      ...BREAKDOWN_CADENCES.map((cadence) => ({ value: cadence, label: CADENCE_WORDS[cadence] })),
+                      ...BREAKDOWN_CADENCES.map((cadence) => ({
+                        value: cadence,
+                        label: CADENCE_WORDS[cadence],
+                      })),
                     ]}
                     onChange={(cadence) =>
                       change(at, {
                         column: one.column,
-                        ...(cadence ? { bucket: cadence as (typeof BREAKDOWN_CADENCES)[number] } : {}),
+                        ...(cadence
+                          ? { bucket: cadence as (typeof BREAKDOWN_CADENCES)[number] }
+                          : {}),
                       })
                     }
                   />
@@ -585,7 +649,10 @@ function BreakdownControl({ env, input, visual, columns, label, help, write }: P
                   variant="quiet"
                   aria-label={`Remove breakdown ${at + 1}`}
                   onClick={() =>
-                    write({ ...visual, groupBy: groups.filter((_, index) => index !== at) }, "removing a breakdown")
+                    write(
+                      { ...visual, groupBy: groups.filter((_, index) => index !== at) },
+                      "removing a breakdown",
+                    )
                   }
                 >
                   <X aria-hidden="true" size={14} />
@@ -603,15 +670,22 @@ function BreakdownControl({ env, input, visual, columns, label, help, write }: P
             disabled={columns.length === 0}
             onClick={() => {
               const column =
-                columns.find((one) => !groups.some((g) => g.column === one.name) && TEMPORAL.has(one.type) && one.name !== "updated_at") ??
-                columns.find((one) => !groups.some((g) => g.column === one.name));
+                columns.find(
+                  (one) =>
+                    !groups.some((g) => g.column === one.name) &&
+                    TEMPORAL.has(one.type) &&
+                    one.name !== "updated_at",
+                ) ?? columns.find((one) => !groups.some((g) => g.column === one.name));
               if (!column) return;
               write(
                 {
                   ...visual,
                   groupBy: [
                     ...groups,
-                    { column: column.name, ...(TEMPORAL.has(column.type) ? { bucket: "week" as const } : {}) },
+                    {
+                      column: column.name,
+                      ...(TEMPORAL.has(column.type) ? { bucket: "week" as const } : {}),
+                    },
                   ],
                 },
                 "adding a breakdown",
@@ -638,7 +712,11 @@ function ConditionsControl({ env, input, visual, columns, label, help, write }: 
       if (merged.op === "is_null" || merged.op === "not_null") delete merged.value;
       return merged;
     });
-    write({ ...visual, filters: next }, "changing a condition", key ? `condition:${env.widget.id}:${input}:${at}` : undefined);
+    write(
+      { ...visual, filters: next },
+      "changing a condition",
+      key ? `condition:${env.widget.id}:${input}:${at}` : undefined,
+    );
   };
   return group(
     label,
@@ -646,7 +724,11 @@ function ConditionsControl({ env, input, visual, columns, label, help, write }: 
     <>
       <ul className="m-0 flex list-none flex-col gap-3 p-0">
         {conditions.map((condition, at) => (
-          <li key={`${condition.column}-${at}`} className="flex flex-col gap-2 rounded-control border border-line p-2">
+          <li
+            // biome-ignore lint/suspicious/noArrayIndexKey: a part of a query has no identity but its place in the list
+            key={`${condition.column}-${at}`}
+            className="flex flex-col gap-2 rounded-control border border-line p-2"
+          >
             <div className="flex flex-wrap items-center gap-2">
               <div className="w-40 max-w-full">
                 <SelectField
@@ -654,7 +736,10 @@ function ConditionsControl({ env, input, visual, columns, label, help, write }: 
                   label={`Column of condition ${at + 1}`}
                   labelHidden
                   value={condition.column}
-                  options={columns.map((column) => ({ value: column.name, label: heading(column.name) }))}
+                  options={columns.map((column) => ({
+                    value: column.name,
+                    label: heading(column.name),
+                  }))}
                   onChange={(column) => set(at, { column }, false)}
                 />
               </div>
@@ -673,7 +758,10 @@ function ConditionsControl({ env, input, visual, columns, label, help, write }: 
                 variant="quiet"
                 aria-label={`Remove condition ${at + 1}`}
                 onClick={() =>
-                  write({ ...visual, filters: conditions.filter((_, index) => index !== at) }, "removing a condition")
+                  write(
+                    { ...visual, filters: conditions.filter((_, index) => index !== at) },
+                    "removing a condition",
+                  )
                 }
               >
                 <X aria-hidden="true" size={14} />
@@ -703,7 +791,10 @@ function ConditionsControl({ env, input, visual, columns, label, help, write }: 
               const column = columns.find((one) => one.type === "enum") ?? columns[1] ?? columns[0];
               if (!column) return;
               write(
-                { ...visual, filters: [...conditions, { column: column.name, op: "eq", value: "" }] },
+                {
+                  ...visual,
+                  filters: [...conditions, { column: column.name, op: "eq", value: "" }],
+                },
                 "adding a condition",
               );
             }}
@@ -731,6 +822,7 @@ function SortControl({ env, input, visual, columns, label, help, write }: PartPr
     <>
       <ul className="m-0 flex list-none flex-col gap-2 p-0">
         {sorts.map((one, at) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: a part of a query has no identity but its place in the list
           <li key={`${one.by}-${at}`} className="flex flex-wrap items-center gap-2">
             <div className="w-40 max-w-full">
               <SelectField
@@ -740,7 +832,10 @@ function SortControl({ env, input, visual, columns, label, help, write }: PartPr
                 value={one.by}
                 options={byOptions}
                 onChange={(by) =>
-                  write({ ...visual, sort: sorts.map((s, index) => (index === at ? { ...s, by } : s)) }, "changing the order")
+                  write(
+                    { ...visual, sort: sorts.map((s, index) => (index === at ? { ...s, by } : s)) },
+                    "changing the order",
+                  )
                 }
               />
             </div>
@@ -773,7 +868,12 @@ function SortControl({ env, input, visual, columns, label, help, write }: PartPr
               size="small"
               variant="quiet"
               aria-label={`Remove sort ${at + 1}`}
-              onClick={() => write({ ...visual, sort: sorts.filter((_, index) => index !== at) }, "removing a sort")}
+              onClick={() =>
+                write(
+                  { ...visual, sort: sorts.filter((_, index) => index !== at) },
+                  "removing a sort",
+                )
+              }
             >
               <X aria-hidden="true" size={14} />
             </Button>
@@ -786,7 +886,10 @@ function SortControl({ env, input, visual, columns, label, help, write }: PartPr
             size="small"
             variant="quiet"
             onClick={() =>
-              write({ ...visual, sort: [...sorts, { by: byOptions[0]?.value ?? "id" }] }, "adding a sort")
+              write(
+                { ...visual, sort: [...sorts, { by: byOptions[0]?.value ?? "id" }] },
+                "adding a sort",
+              )
             }
           >
             <Plus aria-hidden="true" size={14} /> Sort it
@@ -810,7 +913,11 @@ function LimitControl({ env, input, visual, label, help, write }: PartProps) {
       value={visual.limit}
       onChange={(limit) => {
         const { limit: _before, ...rest } = visual;
-        write(limit === undefined ? rest : { ...rest, limit: Math.round(limit) }, "changing how many", `limit:${env.widget.id}:${input}`);
+        write(
+          limit === undefined ? rest : { ...rest, limit: Math.round(limit) },
+          "changing how many",
+          `limit:${env.widget.id}:${input}`,
+        );
       }}
     />
   );

@@ -4,6 +4,16 @@
  * knows nothing about any widget type in particular: a pack's widgets are
  * drawn from their hints (S9, decision 0005).
  */
+
+import {
+  type DataInput,
+  groupName,
+  MAX_WIDGET_HEIGHT,
+  PAGE_COLUMNS,
+  type PageFilter,
+  type PageWidget,
+  type VisualQuery,
+} from "@volvel/manifest";
 import {
   type DataInputDeclaration,
   type InspectorHint,
@@ -12,15 +22,6 @@ import {
   type Tab,
   type WidgetDefinition,
 } from "@volvel/widgets";
-import {
-  groupName,
-  type DataInput,
-  type PageFilter,
-  type PageWidget,
-  type VisualQuery,
-  PAGE_COLUMNS,
-  MAX_WIDGET_HEIGHT,
-} from "@volvel/manifest";
 
 /** A column of a table, as the workspace's schema says. */
 export interface CatalogColumn {
@@ -100,7 +101,10 @@ export function dataParts(definition: WidgetDefinition): DataPart[] {
 }
 
 /** The widget's configuration with its definition's defaults filled in. */
-export function configOf(definition: WidgetDefinition, widget: PageWidget): Record<string, unknown> {
+export function configOf(
+  definition: WidgetDefinition,
+  widget: PageWidget,
+): Record<string, unknown> {
   return { ...(definition.defaults ?? {}), ...(widget.config ?? {}) };
 }
 
@@ -112,15 +116,23 @@ export function isShown(hint: InspectorHint, config: Record<string, unknown>): b
 /** Whether a tab has anything to draw. Rules and Actions say what is so even when nothing can be set. */
 export function tabsOf(definition: WidgetDefinition): Tab[] {
   return TABS.filter((tab) => {
-    if (tab === "data") return dataParts(definition).length > 0 || configSettings(definition, tab).length > 0;
+    if (tab === "data")
+      return dataParts(definition).length > 0 || configSettings(definition, tab).length > 0;
     if (tab === "display") return true; // the title and the line under it are every widget's
-    if (tab === "actions") return Object.keys(definition.events).length > 0 || configSettings(definition, tab).length > 0;
+    if (tab === "actions")
+      return (
+        Object.keys(definition.events).length > 0 || configSettings(definition, tab).length > 0
+      );
     return true; // who can see it is said for every widget
   });
 }
 
 /** A number shown beside a tab's name, when there is one. */
-export function tabCount(definition: WidgetDefinition, widget: PageWidget, tab: Tab): number | undefined {
+export function tabCount(
+  definition: WidgetDefinition,
+  widget: PageWidget,
+  tab: Tab,
+): number | undefined {
   if (tab !== "data") return undefined;
   let count = 0;
   for (const input of Object.values(widget.data ?? {})) {
@@ -136,8 +148,7 @@ export function tabCount(definition: WidgetDefinition, widget: PageWidget, tab: 
 /** A widget with one config property set; an empty value takes the property out. */
 export function withConfig(widget: PageWidget, name: string, value: unknown): PageWidget {
   const config = { ...(widget.config ?? {}) };
-  const empty =
-    value === undefined || value === "" || (Array.isArray(value) && value.length === 0);
+  const empty = value === undefined || value === "" || (Array.isArray(value) && value.length === 0);
   if (empty) delete config[name];
   else config[name] = value;
   const { config: _before, ...rest } = widget;
@@ -145,7 +156,11 @@ export function withConfig(widget: PageWidget, name: string, value: unknown): Pa
 }
 
 /** A widget with one data input replaced, or taken away. */
-export function withInput(widget: PageWidget, name: string, input: DataInput | undefined): PageWidget {
+export function withInput(
+  widget: PageWidget,
+  name: string,
+  input: DataInput | undefined,
+): PageWidget {
   const data = { ...(widget.data ?? {}) };
   if (input) data[name] = input;
   else delete data[name];
@@ -154,7 +169,11 @@ export function withInput(widget: PageWidget, name: string, input: DataInput | u
 }
 
 /** A widget with its title or subtitle set. */
-export function withText(widget: PageWidget, field: "title" | "subtitle", value: string): PageWidget {
+export function withText(
+  widget: PageWidget,
+  field: "title" | "subtitle",
+  value: string,
+): PageWidget {
   const { [field]: _before, ...rest } = widget;
   return value.trim() === "" && field === "subtitle" ? rest : { ...rest, [field]: value };
 }
@@ -174,7 +193,8 @@ export function tidyVisual(visual: VisualQuery): VisualQuery {
 
 /** An input as its definition declares it: where it may come from, by default. */
 export function sourcesOf(declared: DataInputDeclaration | undefined, surface: Surface) {
-  return (declared?.sources ?? (surface === "dashboard" ? ["table", "query", "sql"] : ["table", "query"])) as readonly (
+  return (declared?.sources ??
+    (surface === "dashboard" ? ["table", "query", "sql"] : ["table", "query"])) as readonly (
     | "table"
     | "query"
     | "sql"
@@ -188,11 +208,18 @@ export function sourcesOf(declared: DataInputDeclaration | undefined, surface: S
 export function resultNames(input: DataInput | undefined): string[] {
   const visual = visualOf(input);
   if (!visual) return [];
-  return [...(visual.groupBy ?? []).map(groupName), ...(visual.measures ?? []).map((measure) => measure.as)];
+  return [
+    ...(visual.groupBy ?? []).map(groupName),
+    ...(visual.measures ?? []).map((measure) => measure.as),
+  ];
 }
 
 /** A name for a measure, from what it works out. */
-export function measureName(fn: string, column: string | undefined, taken: readonly string[]): string {
+export function measureName(
+  fn: string,
+  column: string | undefined,
+  taken: readonly string[],
+): string {
   const base =
     fn === "count" && !column
       ? "count"
@@ -213,7 +240,11 @@ export function renamedResult(
   let next = widget;
   for (const [name, schema] of Object.entries(definition.config.properties)) {
     const hint = schema["x-volvel"];
-    if (hint?.control === "column" && (hint.of ?? input) === input && next.config?.[name] === from) {
+    if (
+      hint?.control === "column" &&
+      (hint.of ?? input) === input &&
+      next.config?.[name] === from
+    ) {
       next = withConfig(next, name, to);
     }
   }
@@ -245,7 +276,10 @@ export function bindFilter(widget: PageWidget, filter: PageFilter, catalog: Cata
     const visual = visualOf(input);
     const bound = (input.filters ?? []).some((binding) => binding.filter === filter.name);
     if (visual && !bound && hasColumn(catalog, visual.table, column)) {
-      data[name] = { ...input, filters: [...(input.filters ?? []), { filter: filter.name, column }] };
+      data[name] = {
+        ...input,
+        filters: [...(input.filters ?? []), { filter: filter.name, column }],
+      };
       changed = true;
     } else data[name] = input;
   }
@@ -273,7 +307,8 @@ export function unbindFilter(widget: PageWidget, filterName: string): PageWidget
 
 /** A widget's id on a page: its type's name, made unique. */
 export function newId(type: string, widgets: readonly PageWidget[]): string {
-  const base = (type.split("/")[1] ?? type).replace(/[^a-z0-9_-]/g, "-").replace(/^[^a-z]+/, "") || "widget";
+  const base =
+    (type.split("/")[1] ?? type).replace(/[^a-z0-9_-]/g, "-").replace(/^[^a-z]+/, "") || "widget";
   let id = base;
   for (let n = 2; widgets.some((one) => one.id === id); n += 1) id = `${base}-${n}`;
   return id;
@@ -301,7 +336,9 @@ export function defaultInputs(
   catalog: Catalog,
 ): Record<string, DataInput> {
   if (!table) return {};
-  const columns = withSystemColumns(catalog.tables.find((one) => one.name === table)?.columns ?? []);
+  const columns = withSystemColumns(
+    catalog.tables.find((one) => one.name === table)?.columns ?? [],
+  );
   const inputs: Record<string, DataInput> = {};
   for (const [name, declared] of Object.entries(definition.data)) {
     if (declared.required === false) continue;
@@ -317,7 +354,9 @@ export function defaultInputs(
           columns.find((column) => column.type === "enum") ??
           columns.find((column) => column.type === "text");
         if (by) {
-          visual.groupBy = [{ column: by.name, ...(TEMPORAL.has(by.type) ? { bucket: "week" as const } : {}) }];
+          visual.groupBy = [
+            { column: by.name, ...(TEMPORAL.has(by.type) ? { bucket: "week" as const } : {}) },
+          ];
         }
       }
     }
@@ -381,7 +420,10 @@ export function withoutWidget(widgets: readonly PageWidget[], id: string): PageW
   for (const widget of order) {
     while (
       widget.at.y > 0 &&
-      !rest.some((other) => other.id !== widget.id && overlaps({ ...widget.at, y: widget.at.y - 1 }, other.at))
+      !rest.some(
+        (other) =>
+          other.id !== widget.id && overlaps({ ...widget.at, y: widget.at.y - 1 }, other.at),
+      )
     ) {
       widget.at.y -= 1;
     }
@@ -390,7 +432,10 @@ export function withoutWidget(widgets: readonly PageWidget[], id: string): PageW
 }
 
 /** A copy of a widget just under the original, with an id of its own. */
-export function duplicated(widgets: readonly PageWidget[], id: string): { widgets: PageWidget[]; id: string } | undefined {
+export function duplicated(
+  widgets: readonly PageWidget[],
+  id: string,
+): { widgets: PageWidget[]; id: string } | undefined {
   const source = widgets.find((one) => one.id === id);
   if (!source) return undefined;
   const copyId = newId(source.type, widgets);

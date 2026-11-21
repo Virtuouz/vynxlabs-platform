@@ -1,9 +1,4 @@
-import {
-  MAX_PAGE_WIDGETS,
-  newWidget,
-  type PageFilter,
-  type PageWidget,
-} from "@volvel/manifest";
+import { MAX_PAGE_WIDGETS, newWidget, type PageFilter, type PageWidget } from "@volvel/manifest";
 import { Button, EmptyState } from "@volvel/ui";
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
@@ -89,11 +84,10 @@ export function PageEditor({
   const { catalog } = useCatalog(root);
   const [adding, setAdding] = useState(false);
   const [filterValues, setFilterValues] = useState<FilterValues>({});
-  const client = useMemo(
-    () => pageClient(root, source, draft),
-    // biome-ignore lint/correctness/useExhaustiveDependencies: the source by its parts
-    [root, draft, source.of, source.of === "interface" ? source.path : source.id, source.of === "interface" ? source.page : ""],
-  );
+  // A host passes a new `source` object on every render; what it names is what matters.
+  const named = JSON.stringify(source);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `named` is `source` as one value
+  const client = useMemo(() => pageClient(root, source, draft), [root, draft, named]);
   const { widgets, filters } = value;
   const widget = widgets.find((one) => one.id === selected);
   const full = widgets.length >= MAX_PAGE_WIDGETS;
@@ -208,7 +202,8 @@ export function PageEditor({
               </Button>
             }
           >
-            Add a table, a chart or a number. What you see is drawn from this workspace's rows, as you may read them.
+            Add a table, a chart or a number. What you see is drawn from this workspace's rows, as
+            you may read them.
           </EmptyState>
         ) : (
           <PageView
@@ -234,7 +229,12 @@ export function PageEditor({
           />
         )}
       </div>
-      <PageFilterSettings filters={filters} widgets={widgets} catalog={catalog} onChange={filtersChanged} />
+      <PageFilterSettings
+        filters={filters}
+        widgets={widgets}
+        catalog={catalog}
+        onChange={filtersChanged}
+      />
     </>
   );
 

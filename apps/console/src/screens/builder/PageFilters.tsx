@@ -103,7 +103,10 @@ export function PageFilterSettings({
     const chosen = columns.find((one) => one.name === column);
     if (!chosen) return;
     const filter: PageFilter = {
-      name: nameFor(column, filters.map((one) => one.name)),
+      name: nameFor(
+        column,
+        filters.map((one) => one.name),
+      ),
       label: heading(column.replace(/_at$/, "")),
       type: kind,
       ...(kind === "date_range" ? { default: "last_30_days" } : {}),
@@ -119,13 +122,19 @@ export function PageFilterSettings({
     );
     setAdding(false);
   };
-  const change = (at: number, patch: Partial<PageFilter>, drop: (keyof PageFilter)[] = [], key?: string) =>
+  const change = (
+    at: number,
+    patch: Partial<PageFilter>,
+    drop: (keyof PageFilter)[] = [],
+    key?: string,
+  ) =>
     keep(
       filters.map((one, index) => {
         if (index !== at) return one;
         const next: Record<string, unknown> = { ...one, ...patch };
         for (const name of drop) delete next[name];
-        for (const [name, value] of Object.entries(next)) if (value === undefined || value === "") delete next[name];
+        for (const [name, value] of Object.entries(next))
+          if (value === undefined || value === "") delete next[name];
         return next as unknown as PageFilter;
       }),
       `changing the filter ${filters[at]?.label ?? filters[at]?.name ?? ""}`,
@@ -133,7 +142,10 @@ export function PageFilterSettings({
     );
 
   return (
-    <section aria-labelledby="page-filters" className="mt-4 flex flex-col gap-3 rounded-panel border border-line p-3">
+    <section
+      aria-labelledby="page-filters"
+      className="mt-4 flex flex-col gap-3 rounded-panel border border-line p-3"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="page-filters" className="m-0 text-label text-ink-subtle uppercase">
           Filters for whoever reads this page
@@ -153,7 +165,8 @@ export function PageFilterSettings({
       </div>
       {filters.length === 0 ? (
         <p className="m-0 text-body-sm text-ink-muted">
-          None. A filter narrows every widget whose table has its column, and the reader sets it above the page.
+          None. A filter narrows every widget whose table has its column, and the reader sets it
+          above the page.
         </p>
       ) : (
         <ul className="m-0 flex list-none flex-col gap-3 p-0">
@@ -175,7 +188,9 @@ export function PageFilterSettings({
                   name={`filter-${filter.name}-type`}
                   value={filter.type}
                   options={Object.entries(KIND_WORDS).map(([value, label]) => ({ value, label }))}
-                  onChange={(type) => change(at, { type: type as PageFilterType }, ["default", "choices", "from"])}
+                  onChange={(type) =>
+                    change(at, { type: type as PageFilterType }, ["default", "choices", "from"])
+                  }
                 />
               </div>
               {filter.type === "date_range" ? (
@@ -186,9 +201,14 @@ export function PageFilterSettings({
                     value={typeof filter.default === "string" ? filter.default : ""}
                     options={[
                       { value: "", label: "All time" },
-                      ...RELATIVE_RANGES.map((range) => ({ value: range, label: RANGE_WORDS[range] })),
+                      ...RELATIVE_RANGES.map((range) => ({
+                        value: range,
+                        label: RANGE_WORDS[range],
+                      })),
                     ]}
-                    onChange={(value) => change(at, { default: value || undefined }, value ? [] : ["default"])}
+                    onChange={(value) =>
+                      change(at, { default: value || undefined }, value ? [] : ["default"])
+                    }
                   />
                 </div>
               ) : filter.type === "text" || filter.type === "number" ? (
@@ -203,7 +223,9 @@ export function PageFilterSettings({
                         at,
                         {
                           default:
-                            filter.type === "number" && value.trim() !== "" && Number.isFinite(Number(value))
+                            filter.type === "number" &&
+                            value.trim() !== "" &&
+                            Number.isFinite(Number(value))
                               ? Number(value)
                               : value,
                         },
@@ -219,14 +241,23 @@ export function PageFilterSettings({
                     label="The choices, with commas"
                     name={`filter-${filter.name}-choices`}
                     required={false}
-                    hint={filter.from ? `Left empty, they are the values of ${heading(filter.from.column)} in ${heading(filter.from.table)}.` : ""}
+                    hint={
+                      filter.from
+                        ? `Left empty, they are the values of ${heading(filter.from.column)} in ${heading(filter.from.table)}.`
+                        : ""
+                    }
                     value={(filter.choices ?? []).join(", ")}
                     onChange={(text) => {
                       const choices = text
                         .split(",")
                         .map((one) => one.trim())
                         .filter(Boolean);
-                      change(at, { choices }, choices.length === 0 ? ["choices"] : [], `filter:${filter.name}:choices`);
+                      change(
+                        at,
+                        { choices },
+                        choices.length === 0 ? ["choices"] : [],
+                        `filter:${filter.name}:choices`,
+                      );
                     }}
                   />
                 </div>
@@ -250,7 +281,12 @@ export function PageFilterSettings({
           ))}
         </ul>
       )}
-      <Dialog open={adding} onClose={() => setAdding(false)} title="Add a filter" description="Whoever reads the page sets it, and it narrows every widget whose table has this column.">
+      <Dialog
+        open={adding}
+        onClose={() => setAdding(false)}
+        title="Add a filter"
+        description="Whoever reads the page sets it, and it narrows every widget whose table has this column."
+      >
         <div className="flex flex-col gap-4">
           <SelectField
             label="Column"

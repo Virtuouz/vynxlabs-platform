@@ -1,3 +1,4 @@
+import { type PageWidget, widgetTables } from "@volvel/manifest";
 import { Button, Notice, SelectField, SideSheet, Tabs } from "@volvel/ui";
 import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
@@ -75,7 +76,7 @@ interface Stored {
   id: string;
   kind: string;
   path: string;
-  body: { interface?: string; pages?: { widgets: { table?: string }[] }[] };
+  body: { interface?: string; pages?: { widgets: PageWidget[] }[] };
 }
 
 /**
@@ -115,15 +116,9 @@ function ShareDialog({
     (one) =>
       one.kind === "interface" && one.path === stored.find((x) => x.id === app?.id)?.body.interface,
   );
+  // The tables its widgets read from menus: a saved query names its own, and is shared with them.
   const tablePaths =
-    app?.reads ??
-    [
-      ...new Set(
-        (shown?.body.pages ?? []).flatMap((page) =>
-          page.widgets.map((widget) => widget.table).filter((table): table is string => !!table),
-        ),
-      ),
-    ].sort();
+    app?.reads ?? widgetTables((shown?.body.pages ?? []).flatMap((page) => page.widgets)).sort();
   const tableInfo = useLoad<{ items: TableInfo[] }>(open ? `${root}/tables` : null);
   const [tab, setTab] = useState("who");
   const tables = stored.filter((one) => one.kind === "table" && tablePaths.includes(one.path));

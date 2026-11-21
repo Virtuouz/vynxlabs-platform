@@ -53,7 +53,12 @@ export function AddToPage({
   const needle = search.trim().toLowerCase();
   const matches = (definition: WidgetDefinition) =>
     needle === "" ||
-    [definition.title, definition.description, CATEGORY_TITLES[definition.category], WidgetRegistry.packOf(definition.type)]
+    [
+      definition.title,
+      definition.description,
+      CATEGORY_TITLES[definition.category],
+      WidgetRegistry.packOf(definition.type),
+    ]
       .join(" ")
       .toLowerCase()
       .includes(needle);
@@ -74,13 +79,14 @@ export function AddToPage({
     >
       <div className="flex flex-col gap-4">
         <div className="flex items-end gap-2">
-          <div className="min-w-0 flex-1" onKeyDown={(event) => {
-            const first = found[0];
-            if (event.key === "Enter" && first) {
+          <form
+            className="min-w-0 flex-1"
+            onSubmit={(event) => {
               event.preventDefault();
-              add(first);
-            }
-          }}>
+              const first = found[0];
+              if (first) add(first);
+            }}
+          >
             <TextField
               name="add-to-page-search"
               label="Find something to add"
@@ -89,7 +95,7 @@ export function AddToPage({
               value={search}
               onChange={setSearch}
             />
-          </div>
+          </form>
           <Kbd>esc</Kbd>
         </div>
         {found.length === 0 ? (
@@ -101,8 +107,14 @@ export function AddToPage({
             const here = found.filter((definition) => definition.category === category);
             if (here.length === 0) return null;
             return (
-              <section key={category} aria-label={CATEGORY_TITLES[category]} className="flex flex-col gap-1">
-                <h3 className="m-0 text-label text-ink-subtle uppercase">{CATEGORY_TITLES[category]}</h3>
+              <section
+                key={category}
+                aria-label={CATEGORY_TITLES[category]}
+                className="flex flex-col gap-1"
+              >
+                <h3 className="m-0 text-label text-ink-subtle uppercase">
+                  {CATEGORY_TITLES[category]}
+                </h3>
                 <ul className="m-0 flex list-none flex-col p-0">
                   {here.map((definition) => {
                     const Icon = widgetIcon(definition.icon);
@@ -126,7 +138,9 @@ export function AddToPage({
                                 </span>
                               )}
                             </span>
-                            <span className="text-body-sm text-ink-muted">{definition.description}</span>
+                            <span className="text-body-sm text-ink-muted">
+                              {definition.description}
+                            </span>
                           </span>
                         </button>
                       </li>

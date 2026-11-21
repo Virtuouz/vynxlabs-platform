@@ -28,7 +28,7 @@ export type WireData =
       rows: Record<string, unknown>[];
       previous?: Record<string, unknown>[];
       /** For a stat that has a line over time. */
-      trend?: { at: unknown; value: unknown }[];
+      trend?: { at: string; value: number }[];
     }
   | { shape: "record"; columns: ColumnInfo[]; record: Record<string, unknown> | null };
 

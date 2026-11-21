@@ -98,7 +98,7 @@ export const typeOfColumn = (columns: readonly ColumnInfo[], name: string): stri
 
 /** A summary's trend, which the data endpoint adds for a stat whose `trendBy` is set. */
 export function trendOf(data: SummaryData): number[] {
-  const trend = (data as SummaryData & { trend?: { at: unknown; value: unknown }[] }).trend;
+  const trend = data.trend;
   return (trend ?? [])
     .map((point) => numberOf(point.value))
     .filter((one): one is number => one !== undefined);

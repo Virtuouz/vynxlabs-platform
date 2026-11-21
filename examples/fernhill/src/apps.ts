@@ -1,4 +1,11 @@
-import { defineApp, defineBinding, defineInterface, defineRole, defineTheme } from "@volvel/sdk";
+import {
+  type DataInput,
+  defineApp,
+  defineBinding,
+  defineInterface,
+  defineRole,
+  defineTheme,
+} from "@volvel/sdk";
 import { reorder } from "./flows.ts";
 import {
   bookAppointment,
@@ -60,7 +67,7 @@ const invoiceValue = (
 });
 
 /** Invoices totalled by one breakdown. */
-const invoicesBy = (group: { column: string; bucket?: "week" }) => ({
+const invoicesBy = (group: { column: string; bucket?: "week" }): Record<string, DataInput> => ({
   rows: {
     source: {
       visual: {
@@ -74,7 +81,7 @@ const invoicesBy = (group: { column: string; bucket?: "week" }) => ({
 });
 
 /** Visits counted by one breakdown. */
-const visitsBy = (column: string) => ({
+const visitsBy = (column: string): Record<string, DataInput> => ({
   rows: {
     source: {
       visual: {

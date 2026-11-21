@@ -10,7 +10,9 @@ import type { Reading } from "./useWidgetData.ts";
 /** What a widget read as a table to keep: the first input that has rows, as its view was given them. */
 function resultOf(read: Readonly<Record<string, WireData>> | undefined): Result | undefined {
   for (const wire of Object.values(read ?? {})) {
+    // Rows are worth keeping; one number, or one record, is read off the page.
     if (wire.shape === "record" || wire.rows.length === 0) continue;
+    if (wire.shape === "summary" && wire.breakdowns.length === 0) continue;
     const columns = wire.columns.map((column) => ({ name: column.label || column.name }));
     const names = wire.shape === "rows" ? (wire.names ?? {}) : {};
     const rows = wire.rows.map((row) =>

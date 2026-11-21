@@ -165,8 +165,8 @@ export const performance = defineInterface({
               filters: narrowedBy("goal_month", "issued_on"),
             },
           },
-          // $60,000, kept in cents like the invoices.
-          config: { target: 6000000, format: DOLLARS, label: "of a $60,000 goal" },
+          // $200,000, kept in cents like the invoices.
+          config: { target: 20000000, format: DOLLARS, label: "of a $200,000 goal" },
         },
         {
           id: "by-week",

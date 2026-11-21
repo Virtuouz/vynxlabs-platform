@@ -11,6 +11,9 @@
       "path": "packages/widgets-core"
     },
     {
+      "path": "packages/widgets-labs"
+    },
+    {
       "path": "packages/manifest"
     },
     {

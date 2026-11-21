@@ -4,21 +4,11 @@
  * to prove that nothing in the builder is made for the core pack alone. This
  * file holds definitions only, which are data; the views are in `../views`.
  */
-import { defineWidget, type InspectorHint } from "@volvel/widgets";
+import { defineWidget, type InspectorHint, FORMAT_SCHEMA } from "@volvel/widgets";
 
 const hint = (h: InspectorHint) => h;
 
-const FORMAT = {
-  type: "object",
-  properties: {
-    style: { enum: ["number", "currency", "percent"] },
-    currency: { type: "string", pattern: "^[A-Z]{3}$" },
-    minorUnits: { type: "boolean" },
-    decimals: { type: "integer", minimum: 0, maximum: 6 },
-  },
-  required: ["style"],
-  additionalProperties: false,
-} as const;
+const FORMAT = FORMAT_SCHEMA;
 
 /** Progress toward a target: a number, a bar and the share reached. */
 export const goal = defineWidget({

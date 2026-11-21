@@ -1,5 +1,6 @@
-import type { WidgetDefinition, WidgetRegistry } from "@volvel/widgets";
-import { coreRegistry } from "@volvel/widgets-core";
+import { type WidgetDefinition, WidgetRegistry } from "@volvel/widgets";
+import { CORE_WIDGETS } from "@volvel/widgets-core";
+import { LABS_WIDGETS } from "@volvel/widgets-labs";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import type { KindDefinition, ManifestIssue } from "./registry.js";
 import type { TableBody } from "./table.js";
@@ -426,8 +427,9 @@ export const dashboardKind: KindDefinition = { kind: "dashboard", schemaVersion:
 // ---------------------------------------------------------------------------
 // Checks beyond the schema
 
-/** The widgets the platform knows: the core pack and the platform's other packs. */
-let platformWidgets: WidgetRegistry = coreRegistry();
+/** The widgets the platform knows: the core pack and the platform's other packs (labs). */
+const platformPacks = (): WidgetRegistry => new WidgetRegistry([...CORE_WIDGETS, ...LABS_WIDGETS]);
+let platformWidgets: WidgetRegistry = platformPacks();
 
 /** The registry pages are checked against. A pack the platform ships is added once, at start. */
 export function widgetRegistry(): WidgetRegistry {
@@ -441,9 +443,9 @@ export function registerWidgets(definitions: Iterable<WidgetDefinition>): void {
   }
 }
 
-/** For tests: back to the core pack alone. */
+/** For tests: back to the platform's packs alone. */
 export function resetWidgets(): void {
-  platformWidgets = coreRegistry();
+  platformWidgets = platformPacks();
 }
 
 const configAjv = new Ajv2020({ allErrors: true, strict: false });

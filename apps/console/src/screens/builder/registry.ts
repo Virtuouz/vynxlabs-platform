@@ -19,7 +19,7 @@ import {
   type ViewRegistry,
   viewRegistry,
   type WidgetPack,
-} from "./stand-in.tsx";
+} from "./renderer.ts";
 
 /** Every pack this console draws, the platform's own first. */
 export const PACKS: readonly WidgetPack[] = [corePack, labsPack];

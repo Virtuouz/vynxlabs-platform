@@ -4,21 +4,11 @@
  * which are data; their views are in `../views` and are imported by what
  * draws pages.
  */
-import { defineWidget, type InspectorHint, WidgetRegistry } from "@volvel/widgets";
+import { defineWidget, FORMAT_SCHEMA, type InspectorHint, WidgetRegistry } from "@volvel/widgets";
 
 const hint = (h: InspectorHint) => h;
 
-const FORMAT = {
-  type: "object",
-  properties: {
-    style: { enum: ["number", "currency", "percent"] },
-    currency: { type: "string", pattern: "^[A-Z]{3}$" },
-    minorUnits: { type: "boolean" },
-    decimals: { type: "integer", minimum: 0, maximum: 6 },
-  },
-  required: ["style"],
-  additionalProperties: false,
-} as const;
+const FORMAT = FORMAT_SCHEMA;
 
 const RESULT_COLUMN = { type: "string", minLength: 1, maxLength: 130 } as const;
 

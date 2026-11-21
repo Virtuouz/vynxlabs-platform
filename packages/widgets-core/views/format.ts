@@ -1,53 +1,7 @@
-import type { ColumnInfo, SummaryData } from "@volvel/widgets";
+import type { ColumnInfo, SummaryData, ValueFormat } from "@volvel/widgets";
+import { formatNumber, formatValue, numberOf } from "@volvel/widgets";
 
-/** How a number is written, as a widget's `format` setting says. */
-export interface ValueFormat {
-  style: "number" | "currency" | "percent";
-  currency?: string;
-  /** Money kept in cents. */
-  minorUnits?: boolean;
-  decimals?: number;
-}
-
-/** A number from a value: totals can arrive as text, from the database's exact numbers. */
-export function numberOf(value: unknown): number | undefined {
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
-
-/** `12.5%`, `$1,234.56`, `1,204`. Undefined for a value that is not a number. */
-export function formatValue(value: unknown, format: ValueFormat | undefined): string | undefined {
-  const found = numberOf(value);
-  if (found === undefined) return undefined;
-  const scaled = format?.minorUnits ? found / 100 : found;
-  const options: Intl.NumberFormatOptions =
-    format?.style === "currency"
-      ? { style: "currency", currency: format.currency ?? "USD" }
-      : format?.style === "percent"
-        ? { style: "percent", maximumFractionDigits: 1 }
-        : { maximumFractionDigits: 2 };
-  if (format?.decimals !== undefined) {
-    options.minimumFractionDigits = format.decimals;
-    options.maximumFractionDigits = format.decimals;
-  }
-  try {
-    return new Intl.NumberFormat("en-US", options).format(scaled);
-  } catch {
-    // A currency code the browser does not know: the number, and the code after it.
-    return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(scaled)} ${format?.currency ?? ""}`.trim();
-  }
-}
-
-/** A number as a person reads it; anything else as it is, and nothing as a dash. */
-export function formatNumber(value: unknown, format?: ValueFormat): string {
-  const written = formatValue(value, format);
-  if (written !== undefined) return written;
-  return value === null || value === undefined ? "—" : String(value);
-}
+export { formatNumber, formatValue, numberOf, type ValueFormat } from "@volvel/widgets";
 
 /**
  * How a chart writes the values up its side: a d3 format string, what the

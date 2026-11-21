@@ -1,48 +1,14 @@
-import type { SummaryData, WidgetViewProps } from "@volvel/widgets";
+import { formatNumber, numberOf, type SummaryData, type ValueFormat, type WidgetViewProps } from "@volvel/widgets";
+
+export { formatNumber };
 
 /** What the Goal's configuration holds, as its definition declares it. */
 export interface GoalConfig {
   target: number;
-  format?: {
-    style: "number" | "currency" | "percent";
-    currency?: string;
-    minorUnits?: boolean;
-    decimals?: number;
-  };
+  format?: ValueFormat;
   label?: string;
   goodWhen?: "up" | "down";
   bands?: boolean;
-}
-
-/** A number from a row: totals can come back as text, from the database's exact numbers. */
-function numberOf(value: unknown): number | undefined {
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-}
-
-/** A value written as its format says, in US English: `$45,000`, `12.5%`, `1,204`. */
-export function formatNumber(value: number, format: GoalConfig["format"]): string {
-  const scaled = format?.minorUnits ? value / 100 : value;
-  const options: Intl.NumberFormatOptions =
-    format?.style === "currency"
-      ? { style: "currency", currency: format.currency ?? "USD", maximumFractionDigits: 0 }
-      : format?.style === "percent"
-        ? { style: "percent", maximumFractionDigits: 1 }
-        : { maximumFractionDigits: 2 };
-  if (format?.decimals !== undefined) {
-    options.minimumFractionDigits = format.decimals;
-    options.maximumFractionDigits = format.decimals;
-  }
-  try {
-    return new Intl.NumberFormat("en-US", options).format(scaled);
-  } catch {
-    // A currency code the browser does not know: the number, and the code after it.
-    return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(scaled)} ${format?.currency ?? ""}`.trim();
-  }
 }
 
 type Band = "good" | "close" | "behind";

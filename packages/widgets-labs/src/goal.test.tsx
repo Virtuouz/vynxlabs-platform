@@ -72,12 +72,12 @@ describe("the Goal's definition", () => {
 describe("the Goal's view", () => {
   test("draws how far it is: 45,000 toward 60,000 is 75%", () => {
     draw({ target: 60000, format: MONEY, label: "of $60,000 this month" }, 45000);
-    expect(screen.getByText("$45,000")).toBeTruthy();
+    expect(screen.getByText("$45,000.00")).toBeTruthy();
     expect(screen.getByText("75%")).toBeTruthy();
     expect(screen.getByText("of $60,000 this month")).toBeTruthy();
     const bar = screen.getByRole("progressbar");
     expect(bar.getAttribute("aria-valuenow")).toBe("75");
-    expect(bar.getAttribute("aria-valuetext")).toBe("75% of $60,000");
+    expect(bar.getAttribute("aria-valuetext")).toBe("75% of $60,000.00");
   });
 
   test("a value that comes back as text is read as a number", () => {

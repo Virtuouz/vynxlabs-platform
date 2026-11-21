@@ -381,3 +381,77 @@ export const CADENCE_WORDS: Record<(typeof BREAKDOWN_CADENCES)[number], string> 
   quarter: "Quarterly",
   year: "Yearly",
 };
+
+// ---------------------------------------------------------------------------
+// Shared by every pack: how a number is written, and the setting that says so.
+
+/** How a number is written. Money kept in cents is shown with `minorUnits`. */
+export interface ValueFormat {
+  style: "number" | "currency" | "percent";
+  /** ISO 4217, for `currency`. Default `USD`. */
+  currency?: string;
+  minorUnits?: boolean;
+  decimals?: number;
+}
+
+/** The JSON Schema of a `format` setting. A pack spreads it into its config with an `x-volvel` hint. */
+export const FORMAT_SCHEMA = {
+  type: "object",
+  properties: {
+    style: { enum: ["number", "currency", "percent"] },
+    currency: { type: "string", pattern: "^[A-Z]{3}$" },
+    minorUnits: { type: "boolean" },
+    decimals: { type: "integer", minimum: 0, maximum: 6 },
+  },
+  required: ["style"],
+  additionalProperties: false,
+} as const;
+
+/** A number from a value: totals can arrive as text, from the database's exact numbers. */
+export function numberOf(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+/** `12.5%`, `$1,234.56`, `1,204`, in US English. Undefined for a value that is not a number. */
+export function formatValue(value: unknown, format: ValueFormat | undefined): string | undefined {
+  const found = numberOf(value);
+  if (found === undefined) return undefined;
+  const scaled = format?.minorUnits ? found / 100 : found;
+  const options: Intl.NumberFormatOptions =
+    format?.style === "currency"
+      ? { style: "currency", currency: format.currency ?? "USD" }
+      : format?.style === "percent"
+        ? { style: "percent", maximumFractionDigits: 1 }
+        : { maximumFractionDigits: 2 };
+  if (format?.decimals !== undefined) {
+    options.minimumFractionDigits = format.decimals;
+    options.maximumFractionDigits = format.decimals;
+  }
+  try {
+    return new Intl.NumberFormat("en-US", options).format(scaled);
+  } catch {
+    // A currency code the runtime does not know: the number, and the code after it.
+    return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(scaled)} ${format?.currency ?? ""}`.trim();
+  }
+}
+
+/** A number as a person reads it; anything else as it is, and nothing as a dash. */
+export function formatNumber(value: unknown, format?: ValueFormat): string {
+  const written = formatValue(value, format);
+  if (written !== undefined) return written;
+  return value === null || value === undefined ? "—" : String(value);
+}
+
+/**
+ * A pack as a page renderer takes it: its definitions, and a view for each.
+ * `View` is the renderer's component type (React's, for the platform's own).
+ */
+export interface WidgetPack<View = unknown> {
+  definitions: readonly WidgetDefinition[];
+  views: Readonly<Record<string, View>>;
+}

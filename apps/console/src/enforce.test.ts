@@ -531,7 +531,8 @@ test("no key handler on a field stops every key", () => {
  * not be shipped as a pack. Tests may import what they test with.
  */
 test("a pack's views import only react, the widget contract, the kit and their own files", () => {
-  const roots = ["packages/widgets-core/views", "packages/widgets-labs"].map((path) =>
+  // A pack is its package: its views may import its own definitions in `src/`.
+  const roots = ["packages/widgets-core", "packages/widgets-labs"].map((path) =>
     resolve(here, "../../..", path),
   );
   const allowed = /^(react|react\/jsx-runtime|@volvel\/widgets|@volvel\/ui)(\/.*)?$/;

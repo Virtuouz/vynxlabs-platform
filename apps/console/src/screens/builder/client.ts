@@ -1,5 +1,5 @@
 import { api } from "../../api.ts";
-import type { FilterValues, PageDataClient } from "./stand-in.tsx";
+import type { FilterValues, PageDataClient } from "./renderer.ts";
 
 /** What a page's data is read for: an interface's page, or a dashboard. */
 export type PageSource =

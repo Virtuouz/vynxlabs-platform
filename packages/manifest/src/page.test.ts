@@ -119,7 +119,7 @@ describe("pages", () => {
 
   it("knows a pack's widget only when it is in the registry it is checked against", () => {
     const goal = defineWidget({
-      type: "labs/goal",
+      type: "trial/goal",
       version: "0.1.0",
       title: "Goal",
       description: "Progress toward a target",
@@ -131,11 +131,11 @@ describe("pages", () => {
       events: {},
       layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 } },
     });
-    const widget: PageWidget = { id: "goal", type: "labs/goal", at: { x: 0, y: 0, w: 3, h: 3 } };
+    const widget: PageWidget = { id: "goal", type: "trial/goal", at: { x: 0, y: 0, w: 3, h: 3 } };
     expect(messages([widget])).toHaveLength(1);
     const registry = coreRegistry().add(goal);
     expect(checkInterface(body([widget]), tableOf, registry)).toEqual([]);
-    expect(new WidgetRegistry([goal]).list("dashboard").map((d) => d.type)).toEqual(["labs/goal"]);
+    expect(new WidgetRegistry([goal]).list("dashboard").map((d) => d.type)).toEqual(["trial/goal"]);
   });
 
   it("places a new widget at its default size below the others", () => {

@@ -29,7 +29,7 @@ import { Link, navigate, useUrlParam } from "../router.tsx";
 import { pageClient } from "./builder/client.ts";
 import { PageEditor } from "./builder/PageEditor.tsx";
 import { definitionOf, views } from "./builder/registry.ts";
-import { type FilterValues, PageView } from "./builder/stand-in.tsx";
+import { type FilterValues, PageView } from "./builder/renderer.ts";
 
 const REFRESH_WORDS: Record<Exclude<DashboardRefresh, "off">, string> = {
   1: "minute",

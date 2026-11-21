@@ -20,7 +20,7 @@ import { type PageSource, pageClient } from "./client.ts";
 import { EditorShell } from "./EditorShell.tsx";
 import { type FilterChange, PageFilterSettings } from "./PageFilters.tsx";
 import { definitionOf, views } from "./registry.ts";
-import { type FilterValues, PageView } from "./stand-in.tsx";
+import { type FilterValues, PageView } from "./renderer.ts";
 
 /** What the editor changes: a page's widgets and its filters. Everything else about a page or a dashboard is its host's. */
 export interface PageValue {

@@ -1,4 +1,9 @@
-import type { ColumnInfo, WidgetDefinition, WidgetViewProps } from "@volvel/widgets";
+import type {
+  ColumnInfo,
+  WidgetPack as SdkWidgetPack,
+  WidgetDefinition,
+  WidgetViewProps,
+} from "@volvel/widgets";
 import type { ComponentType } from "react";
 
 /** What whoever reads a page set its filters to, by filter name. Absent: the filter's default. `null`: not narrowed. */
@@ -46,11 +51,8 @@ export class WidgetReadError extends Error {
 }
 
 /** A pack: the definitions of its widgets, and a view for each. */
-export interface WidgetPack {
-  definitions: readonly WidgetDefinition[];
-  // biome-ignore lint/suspicious/noExplicitAny: each view has the configuration type of its own widget
-  views: Record<string, ComponentType<WidgetViewProps<any>>>;
-}
+// biome-ignore lint/suspicious/noExplicitAny: each view has the configuration type of its own widget
+export type WidgetPack = SdkWidgetPack<ComponentType<WidgetViewProps<any>>>;
 
 export interface ViewEntry {
   definition: WidgetDefinition;

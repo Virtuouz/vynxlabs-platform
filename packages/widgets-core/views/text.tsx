@@ -9,6 +9,5 @@ export function TextView({ config, building }: WidgetViewProps<{ text?: string }
       <p className="m-0 text-ink-muted">Write something in the Display tab.</p>
     ) : null;
   }
-  // The `product` profile for now: a `page` profile is the Markdown reader's to add.
-  return <Markdown text={text} />;
+  return <Markdown text={text} profile="page" />;
 }

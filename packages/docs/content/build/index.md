@@ -12,6 +12,7 @@ pages:
   - published-apps
   - extensions
   - extension-editor
+  - writing-a-widget
   - resources
   - resource-editor
   - documentation
@@ -29,5 +30,6 @@ Scripts, flows and apps, and everything else a workspace holds.
 - [Published apps](published-apps): The apps a workspace serves, where each is served, and who may open it.
 - [Extensions](extensions): Connectors and trigger sources a tenant writes for itself, beside the ones that come with the product.
 - [Writing an extension](extension-editor): The editor for a connector or a trigger source.
+- [Writing a widget](writing-a-widget): How a widget is made: what it declares, what it is given to draw, and how the builder configures it without any code of its own.
 - [All resources](resources): Every resource in the workspace in one list, of whatever kind, with who manages each.
 - [Editing a resource](resource-editor): The editor for a resource that has no screen of its own, as the form its kind describes.

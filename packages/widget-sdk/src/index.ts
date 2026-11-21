@@ -343,6 +343,11 @@ export type WidgetState =
   | { status: "failed"; message: string }
   | { status: "forbidden"; message: string };
 
+/**
+ * A view is drawn inside a CSS container named `cell`, the widget's own box, so it
+ * can size what it draws by the room it has (`@[14rem]/cell:…`) rather than by the
+ * window's width or a count of columns.
+ */
 export interface ViewSize {
   /** In cells. */
   w: number;

@@ -49,7 +49,10 @@ export function GoalView({ config, data, emit }: WidgetViewProps<GoalConfig>) {
       onClick={() => emit("click", {})}
       className="my-auto flex w-full cursor-pointer flex-col gap-1.5 border-0 bg-transparent p-0 text-left text-ink"
     >
-      <span className="text-display-lg font-semibold tabular-nums">
+      <span
+        // Money to the cent fits a narrow cell only at the smaller size: by the cell's width, not its columns.
+        className="text-display font-semibold tabular-nums @[14rem]/cell:text-display-lg"
+      >
         {formatNumber(value, config.format)}
       </span>
       <span

@@ -171,7 +171,8 @@ function Cell({
       data-flip-key={held ? undefined : widget.id}
       data-selected={selected ? "" : undefined}
       style={style}
-      className={`relative flex min-h-0 min-w-0 flex-col @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
+      // A view may size what it draws by its cell's width: the container named `cell`.
+      className={`@container/cell relative flex min-h-0 min-w-0 flex-col @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
         selected ? "ring-2 ring-action" : ""
       } ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
         building ? "cursor-grab touch-pan-y select-none active:cursor-grabbing" : ""

@@ -46,7 +46,10 @@ export function StatView({ config, data }: WidgetViewProps<StatConfig>) {
   return (
     <div className="my-auto flex flex-col gap-1">
       <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="text-display-lg font-semibold tabular-nums">
+        <span
+          // Money to the cent fits a narrow cell only at the smaller size: by the cell's width, not its columns.
+          className="text-display font-semibold tabular-nums @[14rem]/cell:text-display-lg"
+        >
           {formatNumber(value, config.format)}
         </span>
         {against ? (

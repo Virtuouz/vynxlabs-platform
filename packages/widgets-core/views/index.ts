@@ -6,7 +6,10 @@
 import type { WidgetDefinition, WidgetViewProps } from "@volvel/widgets";
 import type { ComponentType } from "react";
 import { CORE_WIDGETS } from "../src/index.ts";
+import { ButtonView } from "./button.tsx";
 import { ChartView } from "./chart.tsx";
+import { DetailView } from "./detail.tsx";
+import { FormView } from "./form.tsx";
 import { ListView } from "./list.tsx";
 import { PivotView } from "./pivot.tsx";
 import { StatView } from "./stat.tsx";
@@ -25,6 +28,9 @@ export const corePack: CorePack = {
   views: {
     "core/table": TableView,
     "core/list": ListView,
+    "core/detail": DetailView,
+    "core/form": FormView,
+    "core/button": ButtonView,
     "core/stat": StatView,
     "core/chart": ChartView,
     "core/pivot": PivotView,
@@ -32,4 +38,14 @@ export const corePack: CorePack = {
   },
 };
 
-export { ChartView, ListView, PivotView, StatView, TableView, TextView };
+export {
+  ButtonView,
+  ChartView,
+  DetailView,
+  FormView,
+  ListView,
+  PivotView,
+  StatView,
+  TableView,
+  TextView,
+};

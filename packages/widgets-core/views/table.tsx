@@ -9,10 +9,19 @@ import {
   largest,
   rowId,
 } from "./cells.tsx";
+import {
+  listensTo,
+  PRESSABLE,
+  press,
+  type RowAction,
+  RowActionButtons,
+  type WithSelected,
+} from "./press.tsx";
 
 interface TableConfig {
   columns?: ColumnSpec[];
   pageSize?: number;
+  rowActions?: RowAction[];
 }
 
 /** "Show more", for a view whose rows come a page at a time. */
@@ -35,10 +44,20 @@ export function RowCards({
   data,
   specs,
   onRow,
+  pressable = false,
+  selected,
+  actions = [],
+  view,
 }: {
   data: RowsData;
   specs: ColumnSpec[] | undefined;
   onRow: (id: string) => void;
+  /** Something listens for a row being pressed: it is drawn so. */
+  pressable?: boolean;
+  /** The row whose sheet is open. */
+  selected?: string | undefined;
+  actions?: readonly RowAction[];
+  view?: Pick<WidgetViewProps, "act" | "can" | "building">;
 }) {
   const shown = columnsToShow(specs, data);
   const [head, ...rest] = shown;
@@ -46,11 +65,13 @@ export function RowCards({
   return (
     <ul className="m-0 flex list-none flex-col gap-2 p-0">
       {data.rows.map((row, at) => (
-        // biome-ignore lint/a11y/useKeyWithClickEvents: nothing handles a click until phase 26, so the card does not look pressable and takes no key
         <li
           key={rowId(row, at)}
-          className="rounded-control border border-line bg-surface p-3"
-          onClick={() => onRow(rowId(row, at))}
+          className={`rounded-control border border-line bg-surface p-3 ${
+            pressable ? `${PRESSABLE} data-[selected]:border-action` : ""
+          }`}
+          // biome-ignore lint/a11y/useKeyWithClickEvents: only a row something listens to is pressed, and that one takes Enter
+          {...press(pressable, () => onRow(rowId(row, at)), selected === rowId(row, at))}
         >
           <strong className="block truncate">
             {cellOf(head.spec, head.info, row[head.spec.column], data)}
@@ -63,16 +84,30 @@ export function RowCards({
               </span>
             </span>
           ))}
+          {view && actions.length > 0 ? (
+            <span className="mt-2 flex justify-end">
+              <RowActionButtons
+                actions={actions}
+                row={row}
+                record={rowId(row, at)}
+                props={view}
+                always
+              />
+            </span>
+          ) : null}
         </li>
       ))}
     </ul>
   );
 }
 
-export function TableView({ config, data, size, emit, building }: WidgetViewProps<TableConfig>) {
+export function TableView(props: WithSelected<TableConfig>) {
+  const { config, data, size, emit, building, selectedRecord } = props;
   const rows = data.rows;
   if (rows?.shape !== "rows") return null;
   const shown = columnsToShow(config.columns, rows);
+  const pressable = listensTo(props, "rowClick");
+  const actions = config.rowActions ?? [];
   // On a phone a table is drawn as a list: the definition says so.
   if (size.narrow) {
     return (
@@ -81,6 +116,10 @@ export function TableView({ config, data, size, emit, building }: WidgetViewProp
           data={rows}
           specs={config.columns}
           onRow={(record) => emit("rowClick", { record })}
+          pressable={pressable}
+          selected={selectedRecord}
+          actions={actions}
+          view={props}
         />
         <ShowMore data={rows} />
       </>
@@ -131,14 +170,24 @@ export function TableView({ config, data, size, emit, building }: WidgetViewProp
                 </th>
               );
             })}
+            {actions.length > 0 ? (
+              <th scope="col" className="sticky top-0 border-b border-line bg-surface px-3 py-2">
+                <span className="sr-only">Actions</span>
+              </th>
+            ) : null}
           </tr>
         </thead>
         <tbody>
           {rows.rows.map((row, at) => (
             <tr
               key={rowId(row, at)}
-              className="border-b border-line last:border-b-0"
-              onClick={() => emit("rowClick", { record: rowId(row, at) })}
+              className={`group/row border-b border-line last:border-b-0 ${pressable ? PRESSABLE : ""}`}
+              // biome-ignore lint/a11y/useKeyWithClickEvents: only a row something listens to is pressed, and that one takes Enter
+              {...press(
+                pressable,
+                () => emit("rowClick", { record: rowId(row, at) }),
+                selectedRecord === rowId(row, at),
+              )}
             >
               {shown.map(({ spec, info }) => (
                 <td
@@ -148,6 +197,17 @@ export function TableView({ config, data, size, emit, building }: WidgetViewProp
                   {cellOf(spec, info, row[spec.column], rows, most.get(spec.column))}
                 </td>
               ))}
+              {actions.length > 0 ? (
+                <td className="px-3 py-2 text-right align-middle whitespace-nowrap">
+                  <RowActionButtons
+                    actions={actions}
+                    row={row}
+                    record={rowId(row, at)}
+                    props={props}
+                    always={false}
+                  />
+                </td>
+              ) : null}
             </tr>
           ))}
         </tbody>

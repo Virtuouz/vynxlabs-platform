@@ -473,7 +473,7 @@ describe("the frame", () => {
     const hiding = viewRegistry({
       definitions: [
         {
-          ...(corePack.definitions[5] as object),
+          ...(corePack.definitions.find((d) => d.type === "core/text") as object),
           type: "labs/note",
           layout: { min: { w: 1, h: 1 }, default: { w: 6, h: 2 }, phone: "hide" },
         } as never,

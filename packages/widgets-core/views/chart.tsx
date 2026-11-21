@@ -3,6 +3,7 @@ import type { WidgetViewProps } from "@volvel/widgets";
 import { useCallback, useRef, useState } from "react";
 import { type ChartConfig, chartFor } from "./chartSpec.ts";
 import { labelOf } from "./format.ts";
+import { listensTo } from "./press.tsx";
 
 /** How tall an element is, kept as it changes: for a chart that fills the widget it is in. */
 function useRoom<E extends HTMLElement>(): [(node: E | null) => void, number] {
@@ -20,7 +21,8 @@ function useRoom<E extends HTMLElement>(): [(node: E | null) => void, number] {
 /** Over a page this narrow a chart has a height of its own: the widgets are stacked. */
 const STACKED_HEIGHT = 260;
 
-export function ChartView({ config, data, size, emit, building }: WidgetViewProps<ChartConfig>) {
+export function ChartView(props: WidgetViewProps<ChartConfig>) {
+  const { config, data, size, emit, building } = props;
   const [room, height] = useRoom<HTMLDivElement>();
   const summary = data.rows;
   if (summary?.shape !== "summary") return null;
@@ -36,8 +38,9 @@ export function ChartView({ config, data, size, emit, building }: WidgetViewProp
         data={rows}
         height={fills ? Math.max(120, height) : STACKED_HEIGHT}
         // A bar, a point or a slice: the group it stands for.
+        // Only when the page does something with it: a point that does nothing is not drawn pressable.
         onPick={
-          building
+          building || !(props.listens === undefined || listensTo(props, "pointClick"))
             ? undefined
             : (row) => {
                 const group: Record<string, unknown> = {};

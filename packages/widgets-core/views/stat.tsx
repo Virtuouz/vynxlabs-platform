@@ -9,6 +9,7 @@ import {
   trendWords,
   type ValueFormat,
 } from "./format.ts";
+import { listensTo, PRESSABLE, press } from "./press.tsx";
 
 interface StatConfig {
   format?: ValueFormat;
@@ -19,7 +20,8 @@ interface StatConfig {
 }
 
 /** One number, how it stands against the period before, and its line over time. */
-export function StatView({ config, data }: WidgetViewProps<StatConfig>) {
+export function StatView(props: WidgetViewProps<StatConfig>) {
+  const { config, data, emit } = props;
   const summary = data.value;
   if (summary?.shape !== "summary") return null;
   const name = summary.values[0] ?? "";
@@ -43,8 +45,15 @@ export function StatView({ config, data }: WidgetViewProps<StatConfig>) {
   const caption = config.caption?.replace("{previous}", formatNumber(earlier, config.format));
   const line = trendOf(summary);
   const label = labelOf(summary.columns, name);
+  const pressable = listensTo(props, "click");
   return (
-    <div className="my-auto flex flex-col gap-1">
+    <div
+      className={`my-auto flex flex-col gap-1 ${
+        pressable ? `${PRESSABLE} -m-2 rounded-control p-2` : ""
+      }`}
+      // A number that something listens to is pressed: it opens the rows behind it, or does what the page says.
+      {...(pressable ? { role: "button", ...press(true, () => emit("click", {})) } : {})}
+    >
       <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span
           // Money to the cent fits a narrow cell only at the smaller size: by the cell's width, not its columns.

@@ -1,5 +1,6 @@
 import type { SummaryData, WidgetViewProps } from "@volvel/widgets";
 import { formatNumber, labelOf, numberOf, type ValueFormat } from "./format.ts";
+import { listensTo, PRESSABLE, press } from "./press.tsx";
 
 interface PivotConfig {
   format?: ValueFormat;
@@ -61,7 +62,9 @@ export function turn(data: SummaryData): Turned {
 }
 
 /** A value across two breakdowns, as a grid, with totals along the edges. */
-export function PivotView({ config, data, emit }: WidgetViewProps<PivotConfig>) {
+export function PivotView(props: WidgetViewProps<PivotConfig>) {
+  const { config, data, emit } = props;
+  const pressable = listensTo(props, "cellClick");
   const summary = data.rows;
   if (summary?.shape !== "summary") return null;
   const turned = turn(summary);
@@ -123,15 +126,16 @@ export function PivotView({ config, data, emit }: WidgetViewProps<PivotConfig>) 
                 </th>
               ))}
               {row.cells.map((value, at) => (
-                // biome-ignore lint/a11y/useKeyWithClickEvents: nothing handles a click until phase 26, so the cell does not look pressable and takes no key
                 <td
                   key={turned.columns[at]}
-                  className={cell}
-                  onClick={
+                  className={`${cell} ${pressable && value !== null ? PRESSABLE : ""}`}
+                  // biome-ignore lint/a11y/useKeyWithClickEvents: only a cell something listens to is pressed, and that one takes Enter
+                  {...press(
+                    pressable && value !== null,
                     value === null
                       ? undefined
-                      : () => emit("cellClick", say(row.headers, turned.columns[at]))
-                  }
+                      : () => emit("cellClick", say(row.headers, turned.columns[at])),
+                  )}
                 >
                   {write(value)}
                 </td>

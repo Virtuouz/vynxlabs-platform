@@ -155,6 +155,29 @@ export const invoices = defineTable({
   },
 });
 
+// ----- Asked for by owners -----
+
+export const visitRequests = defineTable({
+  path: "visit_requests",
+  description:
+    "Visits a pet owner asked for in the portal's account pages, until the front desk books them.",
+  columns: {
+    client_code: column.text({ required: true }),
+    pet_name: column.text({ required: true }),
+    clinic: column.text({ required: true }),
+    reason: column.text({ required: true }),
+    preferred_on: column.date(),
+    status: column.text({ required: true, default: "asked" }),
+  },
+  indexes: [["client_code"], ["clinic"]],
+  policy: {
+    rules: [
+      { allow: "all", when: { column: "clinic", in: "groups" } },
+      { allow: "read", when: { column: "client_code", equals: { attribute: "client_id" } } },
+    ],
+  },
+});
+
 // ----- Stock -----
 
 export const inventory = defineTable({

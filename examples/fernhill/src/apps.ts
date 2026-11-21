@@ -6,6 +6,7 @@ import {
   defineRole,
   defineTheme,
 } from "@volvel/sdk";
+import { REASONS } from "./constants.ts";
 import { reorder } from "./flows.ts";
 import {
   bookAppointment,
@@ -94,6 +95,31 @@ const visitsBy = (column: string): Record<string, DataInput> => ({
   },
 });
 
+/** When a row is clicked, its record opens in a side sheet. */
+const openSheet = (page: string) => ({
+  rowClick: { steps: [{ do: "open" as const, page, record: "event" as const }] },
+});
+
+/** What an invoice shows, in the order the front desk reads it. */
+const INVOICE_FIELDS = [
+  { column: "clinic" },
+  { column: "client_code", label: "Client" },
+  { column: "total", label: "Total", format: DOLLARS },
+  { column: "issued_on", label: "Issued" },
+  { column: "paid_at", label: "Paid on" },
+  { column: "payment_ref", label: "Payment reference" },
+];
+
+/** The fields of an invoice a form asks for. A column's own rules say what is required. */
+const INVOICE_FORM_FIELDS = [
+  { column: "client_code", label: "Client" },
+  { column: "clinic" },
+  { column: "total", label: "Total", help: "In cents: 6500 is $65.00." },
+  { column: "status" },
+  { column: "issued_on", label: "Issued" },
+  { column: "payment_ref", label: "Payment reference" },
+];
+
 /** For practice managers, with no code: money, visits and stock across the group. */
 export const performance = defineInterface({
   path: "screens/performance",
@@ -130,6 +156,7 @@ export const performance = defineInterface({
           at: { x: 0, y: 3, w: 3, h: 3 },
           data: { value: invoiceValue("invoiced", "sum") },
           config: { format: DOLLARS, caption: "Issued in the range chosen" },
+          on: { click: { steps: [{ do: "rows" }] } },
         },
         {
           id: "unpaid",
@@ -140,6 +167,7 @@ export const performance = defineInterface({
             value: invoiceValue("unpaid", "sum", [{ column: "status", op: "eq", value: "unpaid" }]),
           },
           config: { format: DOLLARS, caption: "Not yet paid" },
+          on: { click: { steps: [{ do: "rows" }] } },
         },
         {
           id: "average",
@@ -175,6 +203,7 @@ export const performance = defineInterface({
           at: { x: 0, y: 6, w: 8, h: 8 },
           data: invoicesBy({ column: "issued_on", bucket: "week" }),
           config: { mark: "line", format: DOLLARS },
+          on: { pointClick: { steps: [{ do: "rows" }] } },
         },
         {
           id: "by-clinic",
@@ -183,12 +212,29 @@ export const performance = defineInterface({
           at: { x: 8, y: 6, w: 4, h: 8 },
           data: invoicesBy({ column: "clinic" }),
           config: { mark: "bar", format: DOLLARS },
+          on: { pointClick: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
+        },
+        {
+          id: "managers",
+          type: "core/text",
+          at: { x: 0, y: 14, w: 12, h: 3 },
+          config: {
+            text: ":::alert[For practice managers]{type=info}\nOwners are texted about invoices unpaid for two weeks every Monday morning. Press an invoice to see it, mark it paid, or change it.\n:::",
+          },
+          rules: { showWhen: [{ user: "in", group: "Practice managers" }] },
+        },
+        {
+          id: "new-invoice",
+          type: "core/button",
+          at: { x: 9, y: 17, w: 3, h: 1 },
+          config: { label: "New invoice", tone: "primary" },
+          on: { click: { steps: [{ do: "open", page: "new-invoice" }] } },
         },
         {
           id: "list",
           type: "core/table",
           title: "Invoices",
-          at: { x: 0, y: 14, w: 12, h: 10 },
+          at: { x: 0, y: 18, w: 12, h: 10 },
           data: {
             rows: {
               source: {
@@ -208,6 +254,7 @@ export const performance = defineInterface({
               { column: "issued_on", label: "Issued" },
             ],
           },
+          on: openSheet("invoice"),
         },
       ],
     },
@@ -280,6 +327,7 @@ export const performance = defineInterface({
               { column: "status" },
             ],
           },
+          on: openSheet("visit"),
         },
         {
           id: "latest",
@@ -304,6 +352,7 @@ export const performance = defineInterface({
             meta: ["starts_at", "clinic"],
             status: "status",
           },
+          on: openSheet("visit"),
         },
       ],
     },
@@ -339,6 +388,35 @@ export const performance = defineInterface({
               { column: "reorder_at", label: "Reorder at" },
               { column: "reorder_pending", label: "Ordering" },
             ],
+            rowActions: [
+              {
+                id: "reorder",
+                label: "Reorder",
+                action: {
+                  when: [{ field: "reorder_pending", of: "event", test: "is_not", value: true }],
+                  confirm: {
+                    title: "Order more?",
+                    text: "Order {reorder_qty} more of {item} for {clinic}? An order over the threshold waits for a practice manager.",
+                    button: "Order",
+                  },
+                  steps: [
+                    {
+                      do: "flow",
+                      path: "inventory/reorder",
+                      input: {
+                        line: { record: "id", of: "event" },
+                        clinic: { record: "clinic", of: "event" },
+                        sku: { record: "sku", of: "event" },
+                        item: { record: "item", of: "event" },
+                        on_hand: { record: "on_hand", of: "event" },
+                        quantity: { record: "reorder_qty", of: "event" },
+                      },
+                    },
+                    { do: "message", text: "The order is on its way to be priced." },
+                  ],
+                },
+              },
+            ],
           },
         },
         {
@@ -369,6 +447,127 @@ export const performance = defineInterface({
         },
       ],
     },
+
+    {
+      id: "invoice",
+      title: "Invoice detail",
+      kind: "sheet",
+      record: { table: "invoices" },
+      widgets: [
+        {
+          id: "detail",
+          type: "core/detail",
+          at: { x: 0, y: 0, w: 12, h: 12 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            heading: "number",
+            status: "status",
+            fields: INVOICE_FIELDS,
+            actions: [
+              {
+                id: "mark-paid",
+                label: "Mark paid",
+                tone: "primary",
+                action: {
+                  when: [{ field: "status", test: "is", value: "unpaid" }],
+                  confirm: {
+                    title: "Mark as paid?",
+                    text: "Mark {number} as paid?",
+                    button: "Mark paid",
+                  },
+                  steps: [
+                    {
+                      do: "update",
+                      record: "this",
+                      set: { status: { value: "paid" }, paid_at: { now: true } },
+                    },
+                    { do: "message", text: "Invoice marked paid", tone: "success" },
+                  ],
+                },
+              },
+              {
+                id: "edit",
+                label: "Edit",
+                tone: "default",
+                action: { steps: [{ do: "open", page: "edit-invoice", record: "this" }] },
+              },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      id: "edit-invoice",
+      title: "Edit invoice",
+      kind: "modal",
+      record: { table: "invoices" },
+      widgets: [
+        {
+          id: "form",
+          type: "core/form",
+          at: { x: 0, y: 0, w: 12, h: 12 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            mode: "edit",
+            fields: INVOICE_FORM_FIELDS,
+            submitLabel: "Save",
+            submit: {
+              steps: [{ do: "close" }, { do: "message", text: "Invoice saved", tone: "success" }],
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: "new-invoice",
+      title: "New invoice",
+      kind: "modal",
+      widgets: [
+        {
+          id: "form",
+          type: "core/form",
+          at: { x: 0, y: 0, w: 12, h: 14 },
+          data: { record: { source: { visual: { table: "invoices" } } } },
+          config: {
+            mode: "create",
+            fields: [{ column: "number" }, ...INVOICE_FORM_FIELDS],
+            submitLabel: "Create invoice",
+            submit: {
+              steps: [{ do: "close" }, { do: "message", text: "Invoice created", tone: "success" }],
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: "visit",
+      title: "The visit chosen",
+      kind: "sheet",
+      record: { table: "appointments" },
+      widgets: [
+        {
+          id: "detail",
+          type: "core/detail",
+          at: { x: 0, y: 0, w: 12, h: 12 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            heading: "pet_name",
+            status: "status",
+            fields: [
+              { column: "number", label: "Visit" },
+              { column: "starts_at", label: "When" },
+              { column: "minutes", label: "Booked for" },
+              { column: "clinic" },
+              { column: "vet" },
+              { column: "reason" },
+              { column: "client_code", label: "Client" },
+              { column: "checked_in_at", label: "Checked in" },
+              { column: "notes" },
+            ],
+          },
+        },
+      ],
+    },
   ],
 });
 
@@ -377,6 +576,163 @@ export const performanceApp = defineApp({
   title: "Clinic performance",
   description: "Money, visits and stock across the group.",
   interface: "screens/performance",
+});
+
+/**
+ * For pet owners, with no code: their pets, with a way to ask for a visit, and their
+ * invoices. The tables' rules give each owner their own rows. Asking for a visit is
+ * an action: it adds one row to `visit_requests`, with the pet's own details, and
+ * changes nothing else.
+ */
+export const myAccount = defineInterface({
+  path: "screens/my-account",
+  title: "My Fernhill account",
+  description: "Your pets, your invoices, and asking for a visit.",
+  pages: [
+    {
+      id: "pets",
+      title: "My pets",
+      widgets: [
+        {
+          id: "pets",
+          type: "core/table",
+          title: "My pets",
+          at: { x: 0, y: 0, w: 12, h: 8 },
+          data: { rows: { source: { visual: { table: "pets", sort: [{ by: "name" }] } } } },
+          config: {
+            columns: [
+              { column: "name" },
+              { column: "species" },
+              { column: "breed" },
+              { column: "clinic" },
+            ],
+            rowActions: [
+              {
+                id: "request",
+                label: "Request an appointment",
+                action: {
+                  confirm: {
+                    title: "Request an appointment",
+                    text: "Your clinic will call you to settle a time for {name}.",
+                    button: "Send request",
+                    ask: [
+                      {
+                        name: "reason",
+                        label: "Why is your pet coming in?",
+                        type: "choice",
+                        required: true,
+                        choices: [...REASONS],
+                      },
+                      { name: "preferred_on", label: "A day that suits you", type: "date" },
+                    ],
+                  },
+                  steps: [
+                    {
+                      do: "create",
+                      table: "visit_requests",
+                      set: {
+                        client_code: { record: "client_code", of: "event" },
+                        pet_name: { record: "name", of: "event" },
+                        clinic: { record: "clinic", of: "event" },
+                        reason: { asked: "reason" },
+                        preferred_on: { asked: "preferred_on" },
+                      },
+                    },
+                    {
+                      do: "message",
+                      text: "Asked for. Your clinic will call you.",
+                      tone: "success",
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        {
+          id: "asked",
+          type: "core/table",
+          title: "Visits you have asked for",
+          at: { x: 0, y: 8, w: 12, h: 6 },
+          data: {
+            rows: {
+              source: {
+                visual: { table: "visit_requests", sort: [{ by: "created_at", descending: true }] },
+              },
+            },
+          },
+          config: {
+            columns: [
+              { column: "pet_name", label: "Pet" },
+              { column: "reason" },
+              { column: "preferred_on", label: "Day" },
+              { column: "status" },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      id: "invoices",
+      title: "My invoices",
+      widgets: [
+        {
+          id: "list",
+          type: "core/table",
+          title: "My invoices",
+          at: { x: 0, y: 0, w: 12, h: 12 },
+          data: {
+            rows: {
+              source: {
+                visual: { table: "invoices", sort: [{ by: "issued_on", descending: true }] },
+              },
+            },
+          },
+          config: {
+            columns: [
+              { column: "number" },
+              { column: "clinic" },
+              { column: "total", label: "Total", format: DOLLARS },
+              { column: "status" },
+              { column: "issued_on", label: "Issued" },
+            ],
+          },
+          on: openSheet("invoice"),
+        },
+      ],
+    },
+    {
+      id: "invoice",
+      title: "Invoice",
+      kind: "sheet",
+      record: { table: "invoices" },
+      widgets: [
+        {
+          id: "detail",
+          type: "core/detail",
+          at: { x: 0, y: 0, w: 12, h: 10 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            heading: "number",
+            status: "status",
+            fields: [
+              { column: "clinic" },
+              { column: "total", label: "Total", format: DOLLARS },
+              { column: "issued_on", label: "Issued" },
+              { column: "paid_at", label: "Paid on" },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+});
+
+export const myAccountApp = defineApp({
+  path: "my-account",
+  title: "My Fernhill account",
+  description: "Your pets, your invoices, and asking for a visit.",
+  interface: "screens/my-account",
 });
 
 /** Fernhill's own colors, for its apps and its portal pages. */
@@ -488,6 +844,13 @@ export const ownersOpen = defineBinding({
   role: opensApp,
   principal: { type: "end_users" },
   resource: petPortal,
+});
+/** The no-code account pages open for every signed-in owner, as the portal does. */
+export const ownersOpenAccount = defineBinding({
+  path: "access/owners-account",
+  role: opensApp,
+  principal: { type: "end_users" },
+  resource: myAccountApp,
 });
 export const ownersRead = defineBinding({
   path: "access/owners-rows",

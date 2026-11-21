@@ -2,13 +2,13 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
 import { resolveFilters } from "../kernel/data/query/filters.js";
 import { readWidget } from "../kernel/data/query/inputs.js";
-import { locatePage, UUID } from "../kernel/data/query/locate.js";
 import { runQuery } from "../kernel/data/query/run.js";
 import { workspaceCatalog, writeVisual } from "../kernel/data/query/widget.js";
 import { scopeFor } from "../kernel/data/rows.js";
 import { badRequest, forbidden, notFound } from "../kernel/errors.js";
 import { access, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { locatePage, UUID } from "../kernel/pages/locate.js";
 import { AnyObject, Id } from "./shared.js";
 
 /** The most values a choice filter offers. */

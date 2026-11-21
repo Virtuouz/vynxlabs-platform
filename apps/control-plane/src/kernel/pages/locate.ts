@@ -4,6 +4,7 @@ import {
   type InterfaceBody,
   PATH_PATTERN,
   type Page,
+  type PageFilter,
   type PageWidget,
 } from "@volvel/manifest";
 import { badRequest, forbidden, notFound } from "../errors.js";
@@ -11,13 +12,14 @@ import { findWorkspace, type RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 
 const pathPattern = new RegExp(PATH_PATTERN);
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface PageRequest {
   of: "interface" | "dashboard";
   path: string;
   page?: string | undefined;
-  draft?: boolean | undefined;
+  /** A boolean, or the query string's `1` / `true`. */
+  draft?: boolean | string | undefined;
 }
 
 export interface LocatedPage {
@@ -26,6 +28,11 @@ export interface LocatedPage {
   /** The page an interface's widget is on; a dashboard has none. */
   page: Page | undefined;
   widgets: readonly PageWidget[];
+  filters: readonly PageFilter[];
+  /** For a record page, a sheet or a modal: the table of its record. */
+  recordTable: string | undefined;
+  /** What a recorded query follows: the deployed resource, and an interface's page. */
+  follow: { pageId: string; page?: string } | undefined;
   /** The app that serves the interface, for saying where an action came from. */
   app: string | null;
   /** The path of the interface or the dashboard, or a member's dashboard's ID. */
@@ -46,7 +53,7 @@ export async function locatePage(
   const { db } = kernel;
   const workspace = await findWorkspace(kernel, params.t, params.w);
   const at = { tenantId: params.t, workspaceId: params.w };
-  const wantsDraft = query.draft === true;
+  const wantsDraft = query.draft === true || query.draft === "1" || query.draft === "true";
 
   const stored = async (
     kind: "interface" | "dashboard",
@@ -67,7 +74,7 @@ export async function locatePage(
       .where("id", "=", workspace.id)
       .executeTakeFirstOrThrow();
     if (where.type !== "dev" || !(await mayEdit())) {
-      throw forbidden("to edit this page, in a dev workspace, which a draft is run by");
+      throw forbidden("to edit this page, in a dev workspace, which a draft is read or run by");
     }
     const draft = await db
       .selectFrom("resource_draft")
@@ -117,12 +124,23 @@ export async function locatePage(
     const body = found.body as unknown as InterfaceBody;
     const page = body.pages.find((one) => one.id === query.page);
     if (!page) throw notFound("The page");
-    return { at, surface: "app", page, widgets: page.widgets, app, path: query.path };
+    return {
+      at,
+      surface: "app",
+      page,
+      widgets: page.widgets,
+      filters: page.filters ?? [],
+      recordTable: page.record?.table,
+      follow: found.deployed && found.id ? { pageId: found.id, page: page.id } : undefined,
+      app,
+      path: query.path,
+    };
   }
 
   await ctx.authorize("dashboard:read", at);
   const me = ctx.principal.type === "member" ? ctx.principal.id : null;
   let body: DashboardBody | undefined;
+  let follow: LocatedPage["follow"];
   if (UUID.test(query.path) && me) {
     // A member's own dashboard: theirs, shared with everyone, or with a group of theirs.
     const mine = await db
@@ -151,7 +169,10 @@ export async function locatePage(
   }
   if (!body) {
     const found = await stored("dashboard", query.path, () => ctx.allowed("resource:write", at));
-    if (found) body = found.body as unknown as DashboardBody;
+    if (found) {
+      body = found.body as unknown as DashboardBody;
+      if (found.deployed && found.id) follow = { pageId: found.id };
+    }
   }
   if (!body) throw notFound("The dashboard");
   return {
@@ -159,6 +180,9 @@ export async function locatePage(
     surface: "dashboard",
     page: undefined,
     widgets: body.widgets,
+    filters: body.filters ?? [],
+    recordTable: undefined,
+    follow,
     app: null,
     path: query.path,
   };

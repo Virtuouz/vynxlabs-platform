@@ -56,6 +56,7 @@ import { locationRoutes } from "./routes/locations.js";
 import { masterKeyRoutes } from "./routes/master-key.js";
 import { mcpRoutes } from "./routes/mcp.js";
 import { operationsRoutes } from "./routes/operations.js";
+import { pageActionRoutes } from "./routes/page-actions.js";
 import { permissionRoutes } from "./routes/permissions.js";
 import { poolRoutes } from "./routes/pools.js";
 import { portabilityRoutes } from "./routes/portability.js";
@@ -280,6 +281,7 @@ export async function buildApp(options: AppOptions) {
       await api.register(docRoutes(kernel));
       await api.register(dashboardRoutes(kernel));
       await api.register(widgetDataRoutes(kernel));
+      await api.register(pageActionRoutes(kernel));
       await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));
       await api.register(searchRoutes(kernel));

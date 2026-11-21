@@ -37,6 +37,56 @@ export const petPortal = defineApp({
   reads: ["pets", "appointments", "invoices", "clinics", "clients"],
 });
 
+/** The page filters an input of `table` is narrowed by: the clinic, and a date range on `dateColumn`. */
+const narrowedBy = (dateFilter: string, dateColumn: string, clinic = true) => [
+  ...(clinic ? [{ filter: "clinic", column: "clinic" }] : []),
+  { filter: dateFilter, column: dateColumn },
+];
+
+/** One value of the invoices, over the page's Issued range. */
+const invoiceValue = (
+  as: string,
+  fn: "sum" | "avg",
+  only: { column: string; op: "eq"; value: unknown }[] = [],
+) => ({
+  source: {
+    visual: {
+      table: "invoices",
+      ...(only.length > 0 ? { filters: only } : {}),
+      measures: [{ fn, column: "total", as }],
+    },
+  },
+  filters: narrowedBy("issued", "issued_on"),
+});
+
+/** Invoices totalled by one breakdown. */
+const invoicesBy = (group: { column: string; bucket?: "week" }) => ({
+  rows: {
+    source: {
+      visual: {
+        table: "invoices",
+        groupBy: [group],
+        measures: [{ fn: "sum", column: "total", as: "invoiced" }],
+      },
+    },
+    filters: narrowedBy("issued", "issued_on"),
+  },
+});
+
+/** Visits counted by one breakdown. */
+const visitsBy = (column: string) => ({
+  rows: {
+    source: {
+      visual: {
+        table: "appointments",
+        groupBy: [{ column }],
+        measures: [{ fn: "count", as: "visits" }],
+      },
+    },
+    filters: narrowedBy("when", "starts_at"),
+  },
+});
+
 /** For practice managers, with no code: money, visits and stock across the group. */
 export const performance = defineInterface({
   path: "screens/performance",
@@ -47,78 +97,96 @@ export const performance = defineInterface({
       id: "money",
       title: "Money",
       filters: [
-        { id: "clinic", label: "Clinic", column: "clinic", type: "value" },
-        { id: "issued", label: "Issued", column: "issued_on", type: "date" },
+        {
+          name: "clinic",
+          label: "Clinic",
+          type: "choice",
+          from: { table: "invoices", column: "clinic" },
+        },
+        { name: "issued", label: "Issued", type: "date_range", default: "last_30_days" },
       ],
       widgets: [
         {
+          id: "note",
+          type: "core/text",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            text: ":::alert[In dollars]{type=info}\nEvery amount here is in dollars, as the clinics invoice. Change **Issued** to look at another stretch of time.\n:::",
+          },
+        },
+        {
           id: "invoiced",
-          type: "figure",
+          type: "core/stat",
           title: "Invoiced",
-          table: "invoices",
-          summary: { groupBy: [], aggregates: [{ fn: "sum", column: "total", as: "invoiced" }] },
-          options: { format: DOLLARS },
-          at: { x: 0, y: 0, w: 4, h: 3 },
+          at: { x: 0, y: 2, w: 3, h: 3 },
+          data: { value: invoiceValue("invoiced", "sum") },
+          config: { format: DOLLARS, caption: "Issued in the range chosen" },
         },
         {
           id: "unpaid",
-          type: "figure",
+          type: "core/stat",
           title: "Unpaid",
-          table: "invoices",
-          filter: { column: "status", value: "unpaid" },
-          summary: { groupBy: [], aggregates: [{ fn: "sum", column: "total", as: "unpaid" }] },
-          options: { format: DOLLARS },
-          at: { x: 4, y: 0, w: 4, h: 3 },
+          at: { x: 3, y: 2, w: 3, h: 3 },
+          data: {
+            value: invoiceValue("unpaid", "sum", [{ column: "status", op: "eq", value: "unpaid" }]),
+          },
+          config: { format: DOLLARS, caption: "Not yet paid" },
         },
         {
           id: "average",
-          type: "figure",
+          type: "core/stat",
           title: "Average invoice",
-          table: "invoices",
-          summary: { groupBy: [], aggregates: [{ fn: "avg", column: "total", as: "average" }] },
-          options: { format: DOLLARS },
-          at: { x: 8, y: 0, w: 4, h: 3 },
+          at: { x: 6, y: 2, w: 3, h: 3 },
+          data: { value: invoiceValue("average", "avg") },
+          config: { format: DOLLARS },
+        },
+        {
+          id: "goal",
+          type: "labs/goal",
+          title: "Invoiced this month",
+          at: { x: 9, y: 2, w: 3, h: 3 },
+          data: { value: invoiceValue("invoiced", "sum") },
+          // $60,000, kept in cents like the invoices.
+          config: { target: 6000000, format: DOLLARS, label: "Invoiced this month" },
         },
         {
           id: "by-week",
-          type: "chart",
+          type: "core/chart",
           title: "Invoiced by week",
-          table: "invoices",
-          summary: {
-            groupBy: [{ column: "issued_on", bucket: "week" }],
-            aggregates: [{ fn: "sum", column: "total", as: "invoiced" }],
-          },
-          options: { mark: "line", x: "issued_on", y: "invoiced", format: DOLLARS },
-          at: { x: 0, y: 3, w: 8, h: 8 },
+          at: { x: 0, y: 5, w: 8, h: 8 },
+          data: invoicesBy({ column: "issued_on", bucket: "week" }),
+          config: { mark: "line", format: DOLLARS },
         },
         {
           id: "by-clinic",
-          type: "chart",
+          type: "core/chart",
           title: "By clinic",
-          table: "invoices",
-          summary: {
-            groupBy: [{ column: "clinic" }],
-            aggregates: [{ fn: "sum", column: "total", as: "invoiced" }],
-          },
-          options: { mark: "bar", x: "clinic", y: "invoiced", format: DOLLARS },
-          at: { x: 8, y: 3, w: 4, h: 8 },
+          at: { x: 8, y: 5, w: 4, h: 8 },
+          data: invoicesBy({ column: "clinic" }),
+          config: { mark: "bar", format: DOLLARS },
         },
         {
           id: "list",
-          type: "table",
+          type: "core/table",
           title: "Invoices",
-          table: "invoices",
-          fields: [
-            { column: "number" },
-            { column: "clinic" },
-            { column: "client_code", label: "Client" },
-            { column: "total", label: "Total", format: DOLLARS },
-            { column: "status" },
-            { column: "issued_on", label: "Issued" },
-          ],
-          sort: [{ column: "issued_on", desc: true }],
-          pageSize: 25,
-          at: { x: 0, y: 11, w: 12, h: 10 },
+          at: { x: 0, y: 13, w: 12, h: 10 },
+          data: {
+            rows: {
+              source: { visual: { table: "invoices", sort: [{ by: "issued_on", descending: true }] } },
+              filters: narrowedBy("issued", "issued_on"),
+            },
+          },
+          config: {
+            pageSize: 25,
+            columns: [
+              { column: "number" },
+              { column: "clinic" },
+              { column: "client_code", label: "Client" },
+              { column: "total", label: "Total", format: DOLLARS },
+              { column: "status" },
+              { column: "issued_on", label: "Issued" },
+            ],
+          },
         },
       ],
     },
@@ -126,99 +194,154 @@ export const performance = defineInterface({
       id: "visits",
       title: "Visits",
       filters: [
-        { id: "clinic", label: "Clinic", column: "clinic", type: "value" },
-        { id: "when", label: "When", column: "starts_at", type: "date" },
+        {
+          name: "clinic",
+          label: "Clinic",
+          type: "choice",
+          from: { table: "appointments", column: "clinic" },
+        },
+        { name: "when", label: "When", type: "date_range", default: "last_30_days" },
       ],
       widgets: [
         {
           id: "count",
-          type: "figure",
+          type: "core/stat",
           title: "Visits",
-          table: "appointments",
-          summary: { groupBy: [], aggregates: [{ fn: "count", as: "visits" }] },
           at: { x: 0, y: 0, w: 4, h: 3 },
+          data: {
+            value: {
+              source: {
+                visual: { table: "appointments", measures: [{ fn: "count", as: "visits" }] },
+              },
+              filters: narrowedBy("when", "starts_at"),
+            },
+          },
+          config: { caption: "In the range chosen" },
         },
         {
           id: "by-status",
-          type: "chart",
+          type: "core/chart",
           title: "How visits ended",
-          table: "appointments",
-          summary: { groupBy: [{ column: "status" }], aggregates: [{ fn: "count", as: "visits" }] },
-          options: { mark: "pie", x: "status", y: "visits" },
           at: { x: 4, y: 0, w: 4, h: 9 },
+          data: visitsBy("status"),
+          config: { mark: "pie" },
         },
         {
           id: "by-reason",
-          type: "chart",
+          type: "core/chart",
           title: "Why they came",
-          table: "appointments",
-          summary: { groupBy: [{ column: "reason" }], aggregates: [{ fn: "count", as: "visits" }] },
-          options: { mark: "bar", x: "reason", y: "visits" },
           at: { x: 8, y: 0, w: 4, h: 9 },
+          data: visitsBy("reason"),
+          config: { mark: "bar" },
         },
         {
           id: "list",
-          type: "table",
+          type: "core/table",
           title: "Visits",
-          table: "appointments",
-          fields: [
-            { column: "number" },
-            { column: "starts_at", label: "When" },
-            { column: "clinic" },
-            { column: "pet", label: "Pet", show: "name" },
-            { column: "vet" },
-            { column: "reason" },
-            { column: "status", editable: true },
-          ],
-          sort: [{ column: "starts_at", desc: true }],
-          pageSize: 25,
           at: { x: 0, y: 9, w: 8, h: 12 },
+          data: {
+            rows: {
+              source: {
+                visual: { table: "appointments", sort: [{ by: "starts_at", descending: true }] },
+              },
+              filters: narrowedBy("when", "starts_at"),
+            },
+          },
+          config: {
+            pageSize: 25,
+            columns: [
+              { column: "number" },
+              { column: "starts_at", label: "When" },
+              { column: "clinic" },
+              { column: "pet_name", label: "Pet" },
+              { column: "vet" },
+              { column: "reason" },
+              { column: "status" },
+            ],
+          },
         },
         {
-          id: "chosen",
-          type: "card",
-          title: "The visit chosen",
-          table: "appointments",
-          link: { from: "list", type: "same" },
+          id: "latest",
+          type: "core/list",
+          title: "Latest visits",
           at: { x: 8, y: 9, w: 4, h: 12 },
+          data: {
+            rows: {
+              source: {
+                visual: {
+                  table: "appointments",
+                  sort: [{ by: "starts_at", descending: true }],
+                  limit: 20,
+                },
+              },
+              filters: narrowedBy("when", "starts_at"),
+            },
+          },
+          config: {
+            primary: "pet_name",
+            secondary: "reason",
+            meta: ["starts_at", "clinic"],
+            status: "status",
+          },
         },
       ],
     },
     {
       id: "stock",
       title: "Stock",
-      filters: [{ id: "clinic", label: "Clinic", column: "clinic", type: "value" }],
+      filters: [
+        {
+          name: "clinic",
+          label: "Clinic",
+          type: "choice",
+          from: { table: "inventory", column: "clinic" },
+        },
+      ],
       widgets: [
         {
           id: "lines",
-          type: "table",
+          type: "core/table",
           title: "Stock",
-          table: "inventory",
-          fields: [
-            { column: "clinic" },
-            { column: "item" },
-            { column: "category" },
-            { column: "on_hand", label: "On hand", editable: true },
-            { column: "reorder_at", label: "Reorder at", editable: true },
-            { column: "reorder_pending", label: "Ordering" },
-          ],
-          sort: [{ column: "on_hand" }],
           at: { x: 0, y: 0, w: 8, h: 14 },
+          data: {
+            rows: {
+              source: { visual: { table: "inventory", sort: [{ by: "on_hand" }] } },
+              filters: [{ filter: "clinic", column: "clinic" }],
+            },
+          },
+          config: {
+            columns: [
+              { column: "clinic" },
+              { column: "item" },
+              { column: "category" },
+              { column: "on_hand", label: "On hand" },
+              { column: "reorder_at", label: "Reorder at" },
+              { column: "reorder_pending", label: "Ordering" },
+            ],
+          },
         },
         {
           id: "orders",
-          type: "table",
+          type: "core/table",
           title: "Orders to VetSupply",
-          table: "purchase_orders",
-          fields: [
-            { column: "number" },
-            { column: "clinic" },
-            { column: "item" },
-            { column: "total", label: "Total", format: DOLLARS },
-            { column: "status" },
-          ],
-          sort: [{ column: "created_at", desc: true }],
           at: { x: 8, y: 0, w: 4, h: 14 },
+          data: {
+            rows: {
+              source: {
+                visual: { table: "purchase_orders", sort: [{ by: "created_at", descending: true }] },
+              },
+              filters: [{ filter: "clinic", column: "clinic" }],
+            },
+          },
+          config: {
+            columns: [
+              { column: "number" },
+              { column: "clinic" },
+              { column: "item" },
+              { column: "total", label: "Total", format: DOLLARS },
+              { column: "status" },
+            ],
+          },
         },
       ],
     },

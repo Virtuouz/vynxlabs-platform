@@ -1,112 +1,65 @@
-# The students' pages: ask for a device, and see requests and loans.
-schemaVersion: 1
+# The students' pages: what they have asked for and what they have out. Asking
+# for a device is a form and a button, which pages have from phase 26.
+schemaVersion: 2
 body:
   title: Borrow a device
-  description: Ask for a laptop, hotspot or calculator, and see what you have out.
+  description: See what you have asked for and what you have out.
   pages:
     - id: mine
       title: My devices
       widgets:
         - id: intro
-          type: text
-          options:
-            text: Ask for a device and the Tech Desk will set one aside for you. Calculators and chargers are approved at once. Bring your student card when you collect it.
-          at:
-            x: 0
-            y: 0
-            w: 8
-            h: 2
-        - id: ask
-          type: action
-          action:
-            label: Ask for a device
-            target:
-              kind: script
-              path: requests/submit
-            result:
-              show: toast
-              refresh:
-                - requests
-          at:
-            x: 8
-            y: 0
-            w: 4
-            h: 2
+          type: core/text
+          at: { x: 0, y: 0, w: 12, h: 2 }
+          config:
+            text: Ask the Tech Desk for a device and they will set one aside for you. Calculators and chargers are approved at once. Bring your student card when you collect it.
         - id: requests
           title: My requests
-          type: table
-          table: requests
-          fields:
-            - column: number
-            - column: kind
-            - column: status
-            - column: device_tag
-              label: Device
-            - column: location
-              label: Collect from
-            - column: decision_note
-              label: Note
-          sort:
-            - column: created_at
-              desc: true
-          pageSize: 10
-          actions:
-            - label: Cancel
-              target:
-                kind: script
-                path: requests/cancel
-              input:
-                request: row.number
-              confirm: Withdraw {{row.number}}?
-              result:
-                refresh:
-                  - requests
-          at:
-            x: 0
-            y: 2
-            w: 12
-            h: 7
+          type: core/table
+          at: { x: 0, y: 2, w: 12, h: 7 }
+          data:
+            rows:
+              source:
+                visual:
+                  table: requests
+                  sort: [{ by: created_at, descending: true }]
+          config:
+            pageSize: 10
+            columns:
+              - { column: number }
+              - { column: kind }
+              - { column: status }
+              - { column: device_tag, label: Device }
+              - { column: location, label: Collect from }
+              - { column: decision_note, label: Note }
         - id: loans
           title: On loan to me
-          type: table
-          table: loans
-          fields:
-            - column: device_tag
-              label: Device
-            - column: kind
-            - column: due_on
-              label: Due back
-            - column: overdue
-          sort:
-            - column: due_on
-          filter:
-            column: status
-            value: out
-          pageSize: 10
-          at:
-            x: 0
-            y: 9
-            w: 12
-            h: 5
+          type: core/table
+          at: { x: 0, y: 9, w: 12, h: 5 }
+          data:
+            rows:
+              source:
+                visual:
+                  table: loans
+                  filters: [{ column: status, op: eq, value: out }]
+                  sort: [{ by: due_on }]
+          config:
+            pageSize: 10
+            columns:
+              - { column: device_tag, label: Device }
+              - { column: kind }
+              - { column: due_on, label: Due back }
+              - { column: overdue }
         - id: free
           title: Free to borrow now
-          type: chart
-          table: devices
-          summary:
-            groupBy:
-              - column: kind
-            aggregates:
-              - fn: count
-                as: free
-          filter:
-            column: status
-            value: available
-          options:
-            mark: bar
-            x: kind
-            y: free
-          at:
-            x: 0
-            y: 14
-            w: 12
-            h: 7
+          type: core/chart
+          at: { x: 0, y: 14, w: 12, h: 7 }
+          data:
+            rows:
+              source:
+                visual:
+                  table: devices
+                  filters: [{ column: status, op: eq, value: available }]
+                  groupBy: [{ column: kind }]
+                  measures: [{ fn: count, as: free }]
+          config: { mark: bar }

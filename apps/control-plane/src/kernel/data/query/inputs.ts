@@ -5,6 +5,7 @@ import {
   groupName,
   type PageFilter,
   type PageWidget,
+  type VisualCondition,
   type VisualQuery,
   widgetRegistry,
 } from "@volvel/manifest";
@@ -14,7 +15,7 @@ import type { RequestContext } from "../../http.js";
 import type { Kernel } from "../../kernel.js";
 import { describeTable, findRows, type RowTarget, scopeFor, withData } from "../rows.js";
 import { openSource, sourceTable } from "../sources.js";
-import { type FilterValues, previousRange, rangeOf } from "./filters.js";
+import { dayAfter, type FilterValues, isDay, previousRange, rangeOf } from "./filters.js";
 import { QueryRefused } from "./parse.js";
 import { checkFor, QUERY_ROWS, type QueryResult, refusal, runQuery } from "./run.js";
 import {
@@ -61,6 +62,8 @@ export type WireData =
       shape: "record";
       columns: ColumnInfo[];
       record: Record<string, unknown> | null;
+      /** For reference columns: the name of the row each id points to. */
+      names?: Record<string, Record<string, string>>;
       followed?: { names: string; now: string };
     };
 
@@ -81,7 +84,88 @@ export interface ReadRequest {
   only?: { input: string; cursor?: string | undefined };
   /** The deployed page, whose recorded keys a saved query falls back on, and the page of the widget on an interface. */
   follow?: { pageId: string; page?: string };
+  /** For a record page, a sheet or a modal: the table of its record. */
+  recordTable?: string;
+  /** The record the page is open on, by its ID. */
+  record?: string;
+  /** With `only`: read the rows behind one group of that summary, by the groups' names. */
+  behind?: Record<string, unknown>;
 }
+
+/** A condition no row meets: no row has an empty `id`. */
+const NOTHING: VisualCondition = { column: "id", op: "is_null" };
+
+/** The first day after the period that begins on `day`. */
+function periodEnd(day: string, bucket: string): string {
+  if (bucket === "day") return dayAfter(day);
+  const next = new Date(`${day}T00:00:00Z`);
+  if (bucket === "week") next.setUTCDate(next.getUTCDate() + 7);
+  else if (bucket === "month") next.setUTCMonth(next.getUTCMonth() + 1);
+  else next.setUTCFullYear(next.getUTCFullYear() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
+const refused = (name: string, message: string) =>
+  badRequest("The rows behind a group are not valid.", [{ path: `/behind/${name}`, message }]);
+
+/**
+ * What a group is, as conditions on its source column: its value, or for a period the days it
+ * covers. A value the group cannot have is refused.
+ */
+function groupConditions(visual: VisualQuery, behind: Record<string, unknown>): VisualCondition[] {
+  const groups = new Map((visual.groupBy ?? []).map((group) => [groupName(group), group]));
+  const out: VisualCondition[] = [];
+  for (const [name, value] of Object.entries(behind)) {
+    const group = groups.get(name);
+    if (!group) throw refused(name, "this is not a group of the summary");
+    if (value === null) {
+      out.push({ column: group.column, op: "is_null" });
+    } else if (group.bucket) {
+      const day = typeof value === "string" ? value.slice(0, 10) : "";
+      if (!isDay(day)) throw refused(name, "is a day as YYYY-MM-DD");
+      out.push({ column: group.column, op: "gte", value: day });
+      out.push({ column: group.column, op: "lt", value: periodEnd(day, group.bucket) });
+    } else if (typeof value === "object") {
+      throw refused(name, "is one value");
+    } else {
+      out.push({ column: group.column, op: "eq", value });
+    }
+  }
+  return out;
+}
+
+const isRef = (value: unknown) =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  ("record" in value || "user" in value);
+
+/**
+ * A condition's `{ record: column }` and `{ user: "id" }` as the values they stand for. What
+ * is not there (no record, a record the caller may not read, an empty column, no signed-in
+ * person) narrows to no rows rather than to every row.
+ */
+function resolveRefs(
+  conditions: readonly VisualCondition[],
+  record: Record<string, unknown> | null,
+  user: string | null,
+): VisualCondition[] {
+  return conditions.map((one) => {
+    const value = one.value;
+    if (!isRef(value)) return one;
+    const ref = value as { record?: unknown; user?: unknown };
+    const found =
+      typeof ref.record === "string" ? record?.[ref.record] : ref.user === "id" ? user : undefined;
+    if (found === null || found === undefined || typeof found === "object") return NOTHING;
+    return { ...one, value: found };
+  });
+}
+
+/** The column that stands for a row of a table where another table points to it. */
+export const displayColumn = (described: RowTarget): string | undefined =>
+  described.display && described.columns.some((one) => one.name === described.display)
+    ? described.display
+    : displayGuess(described.columns);
 
 export const humanize = (name: string) => {
   const text = name.replace(/[._]+/g, " ").trim();
@@ -136,6 +220,8 @@ function columnInfoOf(
       name,
       label,
       type: one.referenceTable ? "reference" : one.type,
+      required: one.required,
+      ...(one.referenceTable ? { references: one.referenceTable } : {}),
       ...(description ? { description } : {}),
       ...(values && values.length > 0
         ? {
@@ -306,10 +392,7 @@ export async function readWidget(
       // What stands for a row is read as the caller reads that table: with their permission there, and through its policy.
       if (!pointed || !(await ctx.allowed("data:read", where))) continue;
       const described = await describeTable(owner, workspaceId, target);
-      const display =
-        described.display && described.columns.some((one) => one.name === described.display)
-          ? described.display
-          : displayGuess(described.columns);
+      const display = displayColumn(described);
       if (!display) continue;
       const pointedScope = await scopeFor(
         kernel,
@@ -386,13 +469,72 @@ export async function readWidget(
     return { columns, rows, nextOffset: page.nextOffset };
   };
 
+  /** The caller, as `{ user: "id" }` names them. */
+  const me = ctx.principal.id ?? null;
+  const recordTable = request.recordTable;
+  /** The page's record, as the caller may read it: null when it is not there or they may not read it. */
+  let recordRead: Promise<Record<string, unknown> | null> | undefined;
+  const pageRecord = (): Promise<Record<string, unknown> | null> => {
+    recordRead ??= (async () => {
+      if (!recordTable || request.record === undefined) return null;
+      const visual: VisualQuery = {
+        table: recordTable,
+        filters: [{ column: "id", op: "eq", value: request.record }],
+        limit: 1,
+      };
+      const asked = await inputQuery(
+        kernel,
+        at,
+        { source: { visual } },
+        { filters: request.filters, values: request.values, catalog: catalog.visual },
+        { shape: "rows" },
+      );
+      try {
+        const result = await run(asked, { limit: 1, offset: 0 });
+        return asRecords(result, asked.columns)[0] ?? null;
+      } catch (error) {
+        if (error instanceof HttpError && error.statusCode === 403) return null;
+        throw error;
+      }
+    })();
+    return recordRead;
+  };
+
   const out: Record<string, WireData> = {};
   for (const name of wanted) {
-    const input = (widget.data as Record<string, DataInput>)[name] as DataInput;
+    let input = (widget.data as Record<string, DataInput>)[name] as DataInput;
     const declared: DataInputDeclaration | undefined = definition.data[name];
     if (!declared) throw badRequest(`${definition.title} takes no data called "${name}".`);
     if ("sql" in input.source && request.surface === "app") {
       throw badRequest("SQL is written on dashboards, not on an app's page.");
+    }
+    // The record the page is open on, as a table to read.
+    const ofThisRecord = "record" in input.source;
+    if ("record" in input.source) {
+      if (!recordTable) throw badRequest("This page is not open on a record.");
+      input = { ...input, source: { visual: { table: recordTable } } };
+    }
+    // What a condition names of the record or of the caller is filled in.
+    if (
+      "visual" in input.source &&
+      (input.source.visual.filters ?? []).some((one) => isRef(one.value))
+    ) {
+      const needsRecord = (input.source.visual.filters ?? []).some(
+        (one) => typeof one.value === "object" && one.value !== null && "record" in one.value,
+      );
+      input = {
+        ...input,
+        source: {
+          visual: {
+            ...input.source.visual,
+            filters: resolveRefs(
+              input.source.visual.filters ?? [],
+              needsRecord ? await pageRecord() : null,
+              me,
+            ),
+          },
+        },
+      };
     }
     const place = `${request.follow?.page ? `${request.follow.page}/` : ""}${widget.id}/${name}`;
     const page = {
@@ -402,7 +544,69 @@ export async function readWidget(
       ...(request.follow ? { follow: { pageId: request.follow.pageId, place } } : {}),
     };
     const offset = decodeCursor(request.only?.input === name ? request.only.cursor : undefined);
-    const visual = "visual" in input.source ? input.source.visual : undefined;
+    let visual = "visual" in input.source ? input.source.visual : undefined;
+
+    // The rows behind one group of a summary: the table, filters and page filters, and that group.
+    if (request.behind && request.only?.input === name) {
+      if (!visual || (visual.groupBy?.length ?? 0) === 0) {
+        throw badRequest("Only a table's figures broken down by something have rows behind them.");
+      }
+      const base: VisualQuery = {
+        table: visual.table,
+        ...(visual.joins ? { joins: visual.joins } : {}),
+        filters: [...(visual.filters ?? []), ...groupConditions(visual, request.behind)],
+      };
+      const asked = await inputQuery(kernel, at, { ...input, source: { visual: base } }, page, {
+        shape: "rows",
+      });
+      const result = await run(asked, { limit: ROWS_PAGE, offset });
+      const rows = asRecords(result, asked.columns);
+      const columns = visualColumns(
+        base,
+        catalog,
+        asked.columns ?? result.columns.map((one) => one.name),
+      );
+      const pointed = await namesOf(asRows(base), rows, columns);
+      out[name] = {
+        shape: "rows",
+        columns,
+        rows,
+        ...(result.truncated ? { next: encodeCursor(offset + rows.length) } : {}),
+        ...(Object.keys(pointed).length > 0 ? { names: pointed } : {}),
+      };
+      continue;
+    }
+
+    // The record the page is open on: its row, or for a form that makes one, only its columns.
+    let mustFind = false;
+    if (visual && (ofThisRecord || declared.shape === "record")) {
+      const here = ofThisRecord || visual.table === recordTable;
+      if (declared.shape === "record" && !(here && request.record !== undefined)) {
+        const table = catalog.tables.get(visual.table);
+        if (!table) throw notFound(`The table ${visual.table}`);
+        await mayRead({ name: table.name, resourceId: table.resourceId ?? null });
+        const asked = await inputQuery(kernel, at, input, page, { shape: "rows" });
+        out[name] = {
+          shape: "record",
+          columns: visualColumns(visual, catalog, asked.columns ?? []),
+          record: null,
+        };
+        continue;
+      }
+      if (here) {
+        visual = {
+          ...visual,
+          filters: [
+            ...(visual.filters ?? []),
+            request.record !== undefined
+              ? { column: "id", op: "eq", value: request.record }
+              : NOTHING,
+          ],
+        };
+        input = { ...input, source: { visual } };
+        mustFind = declared.shape === "record";
+      }
+    }
 
     if (declared.shape === "summary") {
       if (offset > 0) throw badRequest("A summary has one page.");
@@ -510,16 +714,25 @@ export async function readWidget(
     }
     const asked = await inputQuery(kernel, at, input, page, { shape: declared.shape });
     const size = declared.shape === "record" ? 1 : ROWS_PAGE;
-    const result = await run(asked, { limit: size, offset });
+    const result = await run(asked, { limit: size, offset }).catch((error) => {
+      // A record the caller may not read is told as one that is not there.
+      if (mustFind && error instanceof HttpError && error.statusCode === 403)
+        throw notFound("The record");
+      throw error;
+    });
     const rows = asRecords(result, asked.columns);
+    if (mustFind && rows.length === 0) throw notFound("The record");
     const columns = visual
       ? visualColumns(visual, catalog, asked.columns ?? result.columns.map((one) => one.name))
       : resultColumns(result);
     if (declared.shape === "record") {
+      const pointedAt =
+        visual && rows[0] ? await namesOf(asRows(visual), rows.slice(0, 1), columns) : {};
       out[name] = {
         shape: "record",
         columns,
         record: rows[0] ?? null,
+        ...(Object.keys(pointedAt).length > 0 ? { names: pointedAt } : {}),
         ...(asked.followed ? { followed: asked.followed } : {}),
       };
       continue;

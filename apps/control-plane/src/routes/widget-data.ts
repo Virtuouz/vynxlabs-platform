@@ -1,27 +1,18 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { sql } from "@volvel/db";
-import {
-  type DashboardBody,
-  type InterfaceBody,
-  PATH_PATTERN,
-  type PageFilter,
-  type PageWidget,
-} from "@volvel/manifest";
 import { Type } from "typebox";
 import { resolveFilters } from "../kernel/data/query/filters.js";
 import { readWidget } from "../kernel/data/query/inputs.js";
+import { locatePage, UUID } from "../kernel/data/query/locate.js";
 import { runQuery } from "../kernel/data/query/run.js";
 import { workspaceCatalog, writeVisual } from "../kernel/data/query/widget.js";
 import { scopeFor } from "../kernel/data/rows.js";
 import { badRequest, forbidden, notFound } from "../kernel/errors.js";
-import { access, findWorkspace, guestLimit, type RequestContext } from "../kernel/http.js";
+import { access, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { AnyObject, Id } from "./shared.js";
 
 /** The most values a choice filter offers. */
 const MAX_OPTIONS = 200;
-const pathPattern = new RegExp(PATH_PATTERN);
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * What one widget of a page shows (S9, Reading data). The browser names the widget and sets
@@ -30,10 +21,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
-    const { db } = kernel;
-
-    /** Finds the page a request names, as the caller may read it: its widgets, filters and where it was deployed. */
-    const locate = async (
+    const locate = (
       ctx: RequestContext,
       params: { t: string; w: string },
       query: {
@@ -42,132 +30,7 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         page?: string | undefined;
         draft?: string | undefined;
       },
-    ) => {
-      const workspace = await findWorkspace(kernel, params.t, params.w);
-      const at = { tenantId: params.t, workspaceId: params.w };
-      const wantsDraft = query.draft === "1" || query.draft === "true";
-      /** The page as it is stored: the draft, for someone who may edit it, else what is deployed. */
-      const stored = async (
-        kind: "interface" | "dashboard",
-        path: string,
-        mayEdit: () => Promise<boolean>,
-      ) => {
-        const live = await db
-          .selectFrom("resource")
-          .select(["id", "key", "body"])
-          .where("workspace_id", "=", workspace.id)
-          .where("kind", "=", kind)
-          .where((eb) => (UUID.test(path) ? eb("id", "=", path) : eb("path", "=", path)))
-          .executeTakeFirst();
-        if (!wantsDraft) return live ? { id: live.id, body: live.body, deployed: true } : undefined;
-        const where = await db
-          .selectFrom("workspace")
-          .select("type")
-          .where("id", "=", workspace.id)
-          .executeTakeFirstOrThrow();
-        if (where.type !== "dev" || !(await mayEdit())) {
-          throw forbidden("to edit this page, in a dev workspace, which a draft is read by");
-        }
-        const draft = await db
-          .selectFrom("resource_draft")
-          .select(["body", "deleted"])
-          .where("workspace_id", "=", workspace.id)
-          .where("kind", "=", kind)
-          .where((eb) => (live ? eb("key", "=", live.key) : eb("path", "=", path)))
-          .executeTakeFirst();
-        if (draft?.deleted) return undefined;
-        if (draft) return { id: live?.id, body: draft.body, deployed: false };
-        return live ? { id: live.id, body: live.body, deployed: true } : undefined;
-      };
-
-      let widgets: readonly PageWidget[];
-      let filters: readonly PageFilter[];
-      let surface: "app" | "dashboard";
-      let follow: { pageId: string; page?: string } | undefined;
-
-      if (query.of === "interface") {
-        if (!pathPattern.test(query.path)) throw badRequest("The path is not valid.");
-        if (query.page === undefined)
-          throw badRequest("An interface's widget is on a page: say which with `page`.");
-        const found = await stored("interface", query.path, async () => {
-          return (
-            (await ctx.allowed("resource:write", at)) || (await ctx.allowed("interface:write", at))
-          );
-        });
-        // Someone who may open none of the apps that show it is told the same as when it is not there.
-        let allowed =
-          (await ctx.allowed("resource:read", at)) || (await ctx.allowed("interface:read", at));
-        if (!allowed && found) {
-          const apps = await db
-            .selectFrom("resource")
-            .select(["id", "body"])
-            .where("workspace_id", "=", workspace.id)
-            .where("kind", "=", "app")
-            .execute();
-          for (const candidate of apps) {
-            if ((candidate.body as { interface?: string }).interface !== query.path) continue;
-            if (await ctx.allowed("app:read", { ...at, resourceId: candidate.id })) {
-              allowed = true;
-              break;
-            }
-          }
-        }
-        if (!found || !allowed) throw notFound("The interface");
-        const body = found.body as unknown as InterfaceBody;
-        const page = body.pages.find((one) => one.id === query.page);
-        if (!page) throw notFound("The page");
-        widgets = page.widgets;
-        filters = page.filters ?? [];
-        surface = "app";
-        if (found.deployed && found.id) follow = { pageId: found.id, page: page.id };
-      } else {
-        await ctx.authorize("dashboard:read", at);
-        const me = ctx.principal.type === "member" ? ctx.principal.id : null;
-        let body: DashboardBody | undefined;
-        let kept: { id: string; deployed: boolean } | undefined;
-        if (UUID.test(query.path) && me) {
-          // A member's own dashboard: theirs, shared with everyone, or with a group of theirs.
-          const mine = await db
-            .selectFrom("member_dashboard")
-            .select(["id", "member_id", "body"])
-            .where("workspace_id", "=", workspace.id)
-            .where("id", "=", query.path)
-            .where(
-              sql<boolean>`(
-                  member_id = ${me}
-                  or shared
-                  or exists (
-                    select 1 from dashboard_share s
-                    join group_member g on g.group_id = s.group_id
-                    where s.dashboard_id = member_dashboard.id and g.member_id = ${me}
-                  )
-                )`,
-            )
-            .executeTakeFirst();
-          if (mine) {
-            if (wantsDraft && mine.member_id !== me) {
-              throw forbidden("to be the member whose dashboard this is");
-            }
-            body = mine.body as unknown as DashboardBody;
-          }
-        }
-        if (!body) {
-          const found = await stored("dashboard", query.path, () =>
-            ctx.allowed("resource:write", at),
-          );
-          if (found) {
-            body = found.body as unknown as DashboardBody;
-            if (found.deployed && found.id) kept = { id: found.id, deployed: true };
-          }
-        }
-        if (!body) throw notFound("The dashboard");
-        widgets = body.widgets;
-        filters = body.filters ?? [];
-        surface = "dashboard";
-        if (kept) follow = { pageId: kept.id };
-      }
-      return { at, surface, filters, widgets, follow };
-    };
+    ) => locatePage(kernel, ctx, params, query);
 
     app.get(
       "/tenants/:t/workspaces/:w/widget-data",
@@ -213,6 +76,20 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 description: "A rows input's `next`, for the page after.",
               }),
             ),
+            record: Type.Optional(
+              Type.String({
+                maxLength: 80,
+                description:
+                  'The record the page is open on, by its ID: it feeds a `{ record: "this" }` source and the `{ record: column }` values of a query\'s conditions. It is read as the caller reads the table.',
+              }),
+            ),
+            behind: Type.Optional(
+              Type.String({
+                maxLength: 2000,
+                description:
+                  'With `input`: for a summary of a table, the rows behind one group, as JSON by the group\'s name, e.g. {"team":"finance"}. The rows are read with the same filters and the page\'s filters, and answered as a `rows` input.',
+              }),
+            ),
             draft: Type.Optional(Type.String({ maxLength: 5 })),
           }),
           response: {
@@ -232,7 +109,27 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             throw badRequest("The filters must be JSON.");
           }
         }
-        const { at, surface, filters, widgets, follow } = await locate(ctx, params, query);
+        let behind: Record<string, unknown> | undefined;
+        if (query.behind !== undefined) {
+          if (query.input === undefined) {
+            throw badRequest(
+              "The rows behind a group are of one data input: say which with `input`.",
+            );
+          }
+          try {
+            const parsed: unknown = JSON.parse(query.behind);
+            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw 0;
+            behind = parsed as Record<string, unknown>;
+          } catch {
+            throw badRequest("`behind` must be a JSON object, by the groups' names.");
+          }
+        }
+        if (query.record !== undefined && !UUID.test(query.record)) throw notFound("The record");
+        const { at, surface, filters, widgets, follow, recordTable } = await locate(
+          ctx,
+          params,
+          query,
+        );
 
         const widget = widgets.find((one) => one.id === query.widget);
         if (!widget) throw notFound("The widget");
@@ -248,6 +145,9 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ? { only: { input: query.input, cursor: query.cursor } }
             : {}),
           ...(follow ? { follow } : {}),
+          ...(recordTable !== undefined ? { recordTable } : {}),
+          ...(query.record !== undefined ? { record: query.record } : {}),
+          ...(behind ? { behind } : {}),
         });
         return { inputs: inputs as unknown as Record<string, Record<string, unknown>> };
       },

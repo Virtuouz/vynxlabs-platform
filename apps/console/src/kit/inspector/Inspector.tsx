@@ -167,6 +167,7 @@ export function Inspector(props: InspectorProps) {
         />
       </div>
       <Tabs
+        dense
         label={`Settings of ${name}`}
         tabs={tabs.map((tab) => {
           const count = tabCount(definition, widget, tab);

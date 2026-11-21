@@ -16,22 +16,27 @@ export interface TabsProps {
   /** The open tab. Leave it out to let the tabs keep track themselves, starting at the first. */
   value?: string;
   onChange?: (id: string) => void;
+  /** Tighter tabs for a narrow panel (an inspector), so a row of four fits without scrolling. */
+  dense?: boolean;
 }
 
 /** Sections of one page, one visible at a time. The arrow keys move between the tabs. */
-export function Tabs({ label, tabs, value, onChange }: TabsProps) {
+export function Tabs({ label, tabs, value, onChange, dense = false }: TabsProps) {
   return (
     <Base.Root
       {...(value === undefined ? { defaultValue: tabs[0]?.id } : { value })}
       onValueChange={(next: string) => onChange?.(next)}
     >
-      <Base.List aria-label={label} className="flex gap-1 overflow-x-auto border-b border-line">
+      <Base.List
+        aria-label={label}
+        className={`flex ${dense ? "gap-0" : "gap-1"} overflow-x-auto border-b border-line`}
+      >
         {tabs.map((tab) => (
           <Base.Tab
             key={tab.id}
             value={tab.id}
             disabled={tab.disabled === true}
-            className="-mb-px border-b-2 border-transparent px-3 py-2 font-medium whitespace-nowrap text-ink-muted hover:text-ink data-[active]:border-action data-[active]:text-action data-[disabled]:opacity-50"
+            className={`-mb-px border-b-2 border-transparent ${dense ? "px-2 text-body-sm" : "px-3"} py-2 font-medium whitespace-nowrap text-ink-muted hover:text-ink data-[active]:border-action data-[active]:text-action data-[disabled]:opacity-50`}
           >
             {tab.label}
           </Base.Tab>

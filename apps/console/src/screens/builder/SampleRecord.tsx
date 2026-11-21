@@ -29,7 +29,16 @@ export function useSampleRecords(
   const table = page?.kind && page.kind !== "page" ? page.record?.table : undefined;
   const rows = useLoad<{ items: Row[] }>(table ? `${root}/rows/${table}?limit=${OFFERED}` : null);
   const columns = catalog.tables.find((one) => one.name === table)?.columns ?? [];
-  const named = displayGuess(columns.map((column) => ({ name: column.name, type: column.type })));
+  // A record is named as the page names it: by its Record detail's heading (an invoice's
+  // number), else by the column that names a row of its table.
+  const heading = page?.widgets
+    .map((widget) => widget.config?.heading)
+    .find(
+      (one): one is string =>
+        typeof one === "string" && columns.some((column) => column.name === one),
+    );
+  const named =
+    heading ?? displayGuess(columns.map((column) => ({ name: column.name, type: column.type })));
   const label = (row: Row): string => {
     const value = named ? row[named] : undefined;
     return typeof value === "string" && value !== "" ? value : String(row.id);

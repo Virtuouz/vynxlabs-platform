@@ -325,7 +325,8 @@ export function PageEditor({
       ) : null}
       {acts && pageInfo ? (
         <p className="m-0 mb-3 text-body-sm text-ink-muted">
-          Actions run for real in this workspace: a button that changes a record changes it here.
+          Buttons and row actions don't run while the page is being built. Published, they change
+          this workspace's records.
         </p>
       ) : null}
       <div

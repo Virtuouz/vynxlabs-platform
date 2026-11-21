@@ -223,7 +223,7 @@ function Card({
           >
             {number}
           </span>
-          <span className="min-w-0 truncate">
+          <span className="min-w-0 break-words">
             <span className="sr-only">Step {number}: </span>
             {title}
           </span>

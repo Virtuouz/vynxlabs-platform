@@ -8,10 +8,13 @@ import {
 } from "@volvel/widgets";
 import {
   ChartColumn,
+  ClipboardList,
   Grid3x3,
   Hash,
   List,
   type LucideIcon,
+  MousePointerClick,
+  PanelRight,
   Puzzle,
   Table,
   Type,
@@ -28,6 +31,9 @@ const ICONS: Record<string, LucideIcon> = {
   chart: ChartColumn,
   grid: Grid3x3,
   text: Type,
+  detail: PanelRight,
+  form: ClipboardList,
+  button: MousePointerClick,
 };
 
 export const widgetIcon = (name: string): LucideIcon => ICONS[name] ?? Puzzle;

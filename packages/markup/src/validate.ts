@@ -23,6 +23,7 @@ export interface Issue {
     | "component_unclosed"
     | "markdown_not_allowed"
     | "heading_too_shallow"
+    | "heading_too_deep"
     | "link_refused"
     | "image_refused"
     | "too_long";
@@ -92,6 +93,13 @@ export function validate(tree: Root, profile: ProfileName, options: ValidateOpti
             node,
             "heading_too_shallow",
             `A heading here starts at level ${rules.minHeading} (${"#".repeat(rules.minHeading)}). This one is level ${node.depth}.`,
+          );
+        }
+        if (rules.maxHeading !== undefined && node.depth > rules.maxHeading) {
+          report(
+            node,
+            "heading_too_deep",
+            `A heading here goes down to level ${rules.maxHeading} (${"#".repeat(rules.maxHeading)}). This one is level ${node.depth}.`,
           );
         }
         break;

@@ -1,0 +1,29 @@
+{
+  "name": "@volvel/widgets-labs",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "The labs pack: widgets Volvel tries before it ships them, written against exactly what a developer's widget is. It exists to prove the widget contract.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./views": "./views/index.ts"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b . && tsc -p views"
+  },
+  "dependencies": {
+    "@volvel/widgets": "workspace:*",
+    "react": "^19.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.3.0",
+    "happy-dom": "^21.0.4"
+  }
+}

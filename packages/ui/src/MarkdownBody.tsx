@@ -1,10 +1,17 @@
-import { parse } from "@volvel/markup";
+import { type ProfileName, parse } from "@volvel/markup";
 import { useMemo } from "react";
 import { Doc } from "./Doc.tsx";
 
 /** The part of `Markdown` that reads the text. It is loaded when there is Markdown to show. */
-export default function MarkdownBody({ text }: { text: string }) {
+export default function MarkdownBody({
+  text,
+  profile = "result",
+}: {
+  text: string;
+  profile?: ProfileName;
+}) {
   const tree = useMemo(() => parse(text), [text]);
+  // A page's text sits under its widget's title, so its level 2 is drawn as a level 3.
   // A result sits inside a page that has its own headings: its own start two levels down.
-  return <Doc tree={tree} profile="result" headingShift={2} />;
+  return <Doc tree={tree} profile={profile} headingShift={profile === "page" ? 1 : 2} />;
 }

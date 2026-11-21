@@ -72,28 +72,34 @@ test("an app served to a tenant's people looks as reviewed, at each width and in
   const widgets = [
     {
       id: "list",
-      type: "table",
+      type: "core/table",
       title: "Stock",
-      table: "stock",
-      fields: [{ column: "item" }, { column: "held" }, { column: "aisle" }],
       at: { x: 0, y: 0, w: 8, h: 6 },
+      data: { rows: { source: { visual: { table: "stock" } } } },
+      config: { columns: [{ column: "item" }, { column: "held" }, { column: "aisle" }] },
     },
     {
       id: "by_aisle",
-      type: "chart",
+      type: "core/chart",
       title: "Held by aisle",
-      table: "stock",
-      summary: {
-        groupBy: [{ column: "aisle" }],
-        aggregates: [{ fn: "sum", column: "held", as: "held" }],
-      },
-      options: { mark: "bar", x: "aisle", y: "held" },
       at: { x: 8, y: 0, w: 4, h: 6 },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "stock",
+              groupBy: [{ column: "aisle" }],
+              measures: [{ fn: "sum", column: "held", as: "held" }],
+            },
+          },
+        },
+      },
+      config: { mark: "bar" },
     },
   ];
   await call(page, "PUT", `${W}/drafts/screens/stock`, {
     kind: "interface",
-    schemaVersion: 1,
+    schemaVersion: 2,
     body: { title: "Stock", pages: [{ id: "main", title: "Stock", widgets }] },
   });
   await call(page, "PUT", `${W}/drafts/stock-app`, {

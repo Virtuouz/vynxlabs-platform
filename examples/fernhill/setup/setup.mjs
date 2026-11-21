@@ -517,23 +517,27 @@ PEOPLE.push({
 // sandbox removes them.
 step("The sandbox's visits query, a dashboard over it, and two docs sites");
 const shipSandbox = (paths, message) => maya.post(`${D}/changes/deploy`, { paths, message });
+// An interface is at schema version 2 and a dashboard at 3, since pages are made of widgets.
+const SCHEMA_VERSION = { interface: 2, dashboard: 3 };
 const draftInSandbox = (path, kind, body) =>
-  maya.put(`${D}/drafts/${path}`, { kind, schemaVersion: 1, body, create: true });
+  maya.put(`${D}/drafts/${path}`, {
+    kind,
+    schemaVersion: SCHEMA_VERSION[kind] ?? 1,
+    body,
+    create: true,
+  });
 await draftInSandbox("reports/visits-by-clinic", "query", {
   sql: "select clinic, count(*) as visits from appointments group by clinic order by visits desc",
 });
 await draftInSandbox("boards/clinic-visits", "dashboard", {
-  version: 2,
   title: "Visits by clinic",
-  filters: [],
   widgets: [
     {
       id: "by-clinic",
+      type: "core/table",
       title: "Visits by clinic",
-      type: "table",
-      width: 6,
-      source: { query: "reports/visits-by-clinic" },
-      filters: [],
+      at: { x: 0, y: 0, w: 6, h: 8 },
+      data: { rows: { source: { query: "reports/visits-by-clinic" } } },
     },
   ],
 });
@@ -541,6 +545,76 @@ await shipSandbox(
   ["reports/visits-by-clinic", "boards/clinic-visits"],
   "A visits query and the dashboard over it",
 );
+// An app made in the console as Maya would, left as a draft so the builder has something to open
+// (phase 25): a page with a stat and a table over the sandbox's visits. It is not deployed.
+await draftInSandbox("screens/front-desk-board", "interface", {
+  title: "Front desk board",
+  description: "Today's visits at a glance, made in the console.",
+  pages: [
+    {
+      id: "today",
+      title: "Today",
+      filters: [
+        {
+          name: "clinic",
+          label: "Clinic",
+          type: "choice",
+          from: { table: "appointments", column: "clinic" },
+        },
+        { name: "when", label: "When", type: "date_range", default: "today" },
+      ],
+      widgets: [
+        {
+          id: "visits",
+          type: "core/stat",
+          title: "Visits",
+          at: { x: 0, y: 0, w: 3, h: 3 },
+          data: {
+            value: {
+              source: {
+                visual: { table: "appointments", measures: [{ fn: "count", as: "visits" }] },
+              },
+              filters: [
+                { filter: "clinic", column: "clinic" },
+                { filter: "when", column: "starts_at" },
+              ],
+            },
+          },
+          config: { caption: "Today, at the clinic chosen" },
+        },
+        {
+          id: "list",
+          type: "core/table",
+          title: "Visits",
+          at: { x: 0, y: 3, w: 12, h: 9 },
+          data: {
+            rows: {
+              source: { visual: { table: "appointments", sort: [{ by: "starts_at" }] } },
+              filters: [
+                { filter: "clinic", column: "clinic" },
+                { filter: "when", column: "starts_at" },
+              ],
+            },
+          },
+          config: {
+            columns: [
+              { column: "starts_at", label: "When" },
+              { column: "pet_name", label: "Pet" },
+              { column: "clinic" },
+              { column: "reason" },
+              { column: "status" },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+});
+await draftInSandbox("front-desk-board", "app", {
+  title: "Front desk board",
+  description: "Today's visits at a glance.",
+  interface: "screens/front-desk-board",
+});
 // Two top-level folders, each published as a site, so that two sites can share one feedback table.
 for (const [folder, title, text] of [
   ["rota", "Fernhill rota guide", "How the rota is made, and who to ask for a swap."],

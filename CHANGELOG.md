@@ -2,6 +2,25 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 26, records, actions and forms in apps
+
+An app's pages open on a record, and buttons, row actions and forms change records through actions that run on the server (S9 "Records and actions", decision 0004). Nothing needs migrating; bodies written for phase 25 are still valid, except a form whose submit saves nothing, which is now refused.
+
+### For operators
+
+- **An app's action is its own grant.** Whoever may open a published app may run its deployed actions. Each changes only the fields it names, on rows the person may read, with its conditions checked again on the server, in one transaction; the audit names the app, page, widget and action (`page_action.update`, `.create`, `.delete`). People who can't write a table through the API can still press a button that changes it, and nothing else.
+- **`POST …/page-actions`** runs an action from the stored page (the draft only for someone who may edit it). **`GET …/widget-choices`** offers a reference's rows to a form. `GET …/widget-data` takes `record` and `behind`.
+- **Pages open on a record** as a page, a side sheet or a modal, in the address (`?sheet=invoice&record=…`), so Back closes them and a link opens them. A sheet steps through the rows that opened it ("2 of 100"). A modal opened from a sheet goes over it.
+- **The builder writes actions as steps** (ask to confirm, update, make, remove, open a page, close, say, start a workflow, run a script) and conditions as sentences, with no code. It makes a detail page for "When a row is clicked", a form from a table ("Add a form"), and previews a record page with a sample record.
+- **A number on a dashboard shows the rows behind it**, following the page's filters.
+
+### For tenant developers
+
+- A page has `kind` (`page`, `record`, `sheet`, `modal`) and, for the last three, `record: { table }`. A widget has `on` (its events mapped to actions) and `rules.showWhen`. An input may read `{ record: "this" }`.
+- `Action` is `{ confirm?, steps, when?, done? }`; values are a constant, today, now, the user, a field of a record, or what was asked, never an expression. The model's values are exported from `@volvel/manifest/action` as well, for code that runs where no validator may be compiled.
+- The core pack gains `core/button`, `core/detail` and `core/form`; Table and List take `rowActions`. A form field may take a `format` (money typed in dollars and kept in cents).
+- The widget contract gives views `act`, `can`, `why`, `listens`, `choices`, `close` and `selectedRecord`, and a definition may ask for no card (`layout.frame: "none"`).
+
 ## Unreleased: phase 25, apps and dashboards from one set of widgets
 
 Apps made in the console and dashboards are now one system: pages of widgets from packs, configured in one inspector, read on the server (S9, decisions 0004 to 0006). **Nothing made before is kept:** a migration (`0085`) deletes members' dashboards and their shares, and interfaces and dashboards written in the old shapes are refused. Re-run the examples' setup, or write pages in the new shape.
@@ -15,7 +34,7 @@ Apps made in the console and dashboards are now one system: pages of widgets fro
 - **Text on a page or a dashboard is Markdown**, with the documentation's alerts, steps, tabs and folds.
 - **A widget is carried from "Add to page" onto the page**, lands where it is let go, and what is in its way moves aside as it travels. A widget is moved the same way.
 - **A widget not yet finished is kept while a page is being made** (no source yet, a pivot broken down one way), and drawn as waiting; a deploy still refuses it.
-- **Not yet back:** forms, buttons, editing in a table, widgets that follow another's chosen row, the rows behind a number on a dashboard, and "See it as" (phase 29). The others return as record pages and actions run on the server, in phases 26 and 27.
+- **Not yet back:** forms, buttons, editing in a table, widgets that follow another's chosen row, the rows behind a number on a dashboard, and "See it as" (phase 29). Forms, buttons and the rows behind a number return in phase 26.
 
 ### For tenant developers
 

@@ -32,6 +32,8 @@ export interface Env {
   widget: PageWidget;
   surface: Surface;
   filters: readonly PageFilter[];
+  /** The page's other widgets: a filter narrows a table here as it does there. */
+  neighbours: readonly PageWidget[];
   catalog: Catalog;
   /** The widget's configuration with its definition's defaults filled in. */
   config: Record<string, unknown>;

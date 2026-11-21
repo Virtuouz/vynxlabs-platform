@@ -268,15 +268,33 @@ const hasColumn = (catalog: Catalog, table: string, column: string) =>
  * filter's column (contract, "Page filters"). An input already bound to it,
  * and one that is a saved query or SQL (which fills a parameter it names), is left as it is.
  */
-export function bindFilter(widget: PageWidget, filter: PageFilter, catalog: Catalog): PageWidget {
+export function bindFilter(
+  widget: PageWidget,
+  filter: PageFilter,
+  catalog: Catalog,
+  /** The page's other widgets: a filter already narrowing a table on this page narrows it the same way here. */
+  neighbours: readonly PageWidget[] = [],
+): PageWidget {
   if (!widget.data) return widget;
-  const column = filterColumn(filter);
+  const named = filterColumn(filter);
+  /** The column this filter narrows on `table`: as the page's other widgets bind it, else the filter's own. */
+  const columnFor = (table: string): string | undefined => {
+    for (const other of neighbours) {
+      for (const input of Object.values(other.data ?? {})) {
+        if (visualOf(input)?.table !== table) continue;
+        const bound = (input.filters ?? []).find((binding) => binding.filter === filter.name);
+        if (bound?.column) return bound.column;
+      }
+    }
+    return hasColumn(catalog, table, named) ? named : undefined;
+  };
   let changed = false;
   const data: Record<string, DataInput> = {};
   for (const [name, input] of Object.entries(widget.data)) {
     const visual = visualOf(input);
     const bound = (input.filters ?? []).some((binding) => binding.filter === filter.name);
-    if (visual && !bound && hasColumn(catalog, visual.table, column)) {
+    const column = visual && !bound ? columnFor(visual.table) : undefined;
+    if (column) {
       data[name] = {
         ...input,
         filters: [...(input.filters ?? []), { filter: filter.name, column }],

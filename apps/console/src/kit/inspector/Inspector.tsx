@@ -46,6 +46,8 @@ export interface InspectorProps {
   /** Where the page is: an app's, or a dashboard's. */
   surface: Surface;
   filters: readonly PageFilter[];
+  /** The page's other widgets: a filter narrows a table here as it does there. */
+  neighbours?: readonly PageWidget[];
   catalog: Catalog;
   /** Writes the widget as it should now be; `key` joins quick changes into one step to undo. */
   onChange: (next: PageWidget, label: string, key?: string) => void;
@@ -104,6 +106,7 @@ export function Inspector(props: InspectorProps) {
     widget,
     surface: props.surface,
     filters: props.filters,
+    neighbours: props.neighbours ?? [],
     catalog: props.catalog,
     config,
     write: props.onChange,

@@ -315,3 +315,47 @@ test("what a widget is placed on moves down out of its way, and what is under a 
     ["c", 2],
   ]);
 });
+
+test("a widget added to a page follows its filters as the page's other widgets on that table do", async () => {
+  const { bindFilter } = await import("./kit/inspector/model.ts");
+  const catalog = {
+    tables: [
+      {
+        path: "loans",
+        columns: [
+          { name: "lent_on", type: "date" },
+          { name: "fee", type: "integer" },
+        ],
+      },
+    ],
+    queries: [],
+    sql: false,
+  } as never;
+  const neighbour = {
+    id: "fees",
+    type: "core/stat",
+    at: { x: 0, y: 0, w: 3, h: 3 },
+    data: {
+      value: {
+        source: {
+          visual: { table: "loans", measures: [{ fn: "sum", column: "fee", as: "fees" }] },
+        },
+        filters: [{ filter: "lent", column: "lent_on" }],
+      },
+    },
+  } as never;
+  const fresh = {
+    id: "pivot",
+    type: "core/pivot",
+    at: { x: 0, y: 3, w: 6, h: 7 },
+    data: {
+      rows: { source: { visual: { table: "loans", measures: [{ fn: "count", as: "n" }] } } },
+    },
+  } as never;
+  const lent = { name: "lent", label: "Lent", type: "date_range" } as never;
+  // The filter is called "lent" and no column is: the page already says it narrows lent_on.
+  expect(bindFilter(fresh, lent, catalog, [neighbour]).data?.rows?.filters).toEqual([
+    { filter: "lent", column: "lent_on" },
+  ]);
+  expect(bindFilter(fresh, lent, catalog).data?.rows?.filters).toBeUndefined();
+});

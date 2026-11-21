@@ -219,7 +219,7 @@ function SourceControl({
       source: { visual: { table } },
     };
     let widget = withInput(env.widget, input, start);
-    for (const filter of env.filters) widget = bindFilter(widget, filter, catalog);
+    for (const filter of env.filters) widget = bindFilter(widget, filter, catalog, env.neighbours);
     env.write(widget, "choosing a table", key);
   };
   const options = [

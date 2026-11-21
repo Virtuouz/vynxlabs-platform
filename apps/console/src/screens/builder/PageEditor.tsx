@@ -122,7 +122,7 @@ export function PageEditor({
         : {}),
     };
     if (added.data && Object.keys(added.data).length === 0) delete added.data;
-    for (const filter of filters) added = bindFilter(added, filter, catalog);
+    for (const filter of filters) added = bindFilter(added, filter, catalog, widgets);
     const next = at ? placed([...widgets, added], id, at) : [...widgets, added];
     put(next, `adding ${definition.title.toLowerCase()}`);
     onSelect(id);
@@ -294,6 +294,7 @@ export function PageEditor({
               definition={definitionOf(widget.type)}
               surface={surface}
               filters={filters}
+              neighbours={widgets.filter((one) => one.id !== widget.id)}
               catalog={catalog}
               onChange={edit}
               onDuplicate={() => duplicate(widget.id)}

@@ -58,6 +58,9 @@ export function chartFor(
   const yTitle = axis?.note ? `${title(y)} (${axis.note})` : title(y);
   const valueAxis = axis ? { format: axis.format } : {};
   const temporal = TEMPORAL.has(typeOf(x) ?? "");
+  // A few periods are each named, by the day they begin: not ticked on hours the data does not have.
+  const few = temporal && rows.length <= 12 && mark !== "scatter";
+  const dayAxis = { labelOverlap: true, format: "%b %-d" };
   const legend = config.legend === "hidden" ? { legend: null } : {};
   const description = `${mark} chart of ${measured.map(title).join(", ")} by ${[x, ...others].map(title).join(" and ")}`;
   const xEncoding = {
@@ -69,13 +72,26 @@ export function chartFor(
           : temporal
             ? "temporal"
             : "nominal"
-        : temporal
-          ? "temporal"
-          : "nominal",
+        : few
+          ? "ordinal"
+          : temporal
+            ? "temporal"
+            : "nominal",
     title: title(x),
-    ...(temporal || typeOf(x) === "number"
-      ? {}
-      : { sort: null, axis: { labelAngle: 0, labelOverlap: true } }),
+    ...(few
+      ? {
+          sort: null,
+          axis: {
+            labelAngle: 0,
+            labelOverlap: true,
+            labelExpr: "utcFormat(toDate(datum.value), '%b %-d')",
+          },
+        }
+      : temporal
+        ? { axis: dayAxis }
+        : typeOf(x) === "number"
+          ? {}
+          : { sort: null, axis: { labelAngle: 0, labelOverlap: true } }),
   };
 
   if (mark === "heatmap") {
@@ -200,7 +216,7 @@ export function chartFor(
             },
             encoding: {
               x: xEncoding,
-              y: { field: BEFORE, type: "quantitative", title: "The period before" },
+              y: { field: BEFORE, type: "quantitative", title: null },
             },
           },
         ],

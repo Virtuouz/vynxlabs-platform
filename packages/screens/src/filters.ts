@@ -1,4 +1,5 @@
-import { type PageFilter, RELATIVE_RANGES, type RelativeRange } from "@volvel/manifest";
+// Types only: the manifest holds a checker that is not for a browser.
+import type { PageFilter, RelativeRange } from "@volvel/manifest";
 
 /** What a range of dates is called, in the words of the filter that offers it. */
 export const RANGE_LABELS: Record<RelativeRange, string> = {
@@ -19,7 +20,7 @@ export interface DateRange {
 }
 
 export const isRelative = (value: unknown): value is RelativeRange =>
-  typeof value === "string" && (RELATIVE_RANGES as readonly string[]).includes(value);
+  typeof value === "string" && Object.hasOwn(RANGE_LABELS, value);
 
 const day = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;

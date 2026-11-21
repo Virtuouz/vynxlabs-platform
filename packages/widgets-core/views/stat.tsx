@@ -44,7 +44,7 @@ export function StatView({ config, data }: WidgetViewProps<StatConfig>) {
   const line = trendOf(summary);
   const label = labelOf(summary.columns, name);
   return (
-    <div className="flex min-h-0 flex-1 flex-col justify-center gap-1">
+    <div className="my-auto flex flex-col gap-1">
       <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-display-lg font-semibold tabular-nums">
           {formatNumber(value, config.format)}

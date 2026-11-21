@@ -1,5 +1,7 @@
+import { RELATIVE_RANGES } from "@volvel/manifest";
 import { corePack } from "@volvel/widgets-core/views";
 import { expect, test } from "vitest";
+import { RANGE_LABELS } from "./filters.ts";
 import { viewRegistry, type WireData } from "./types.ts";
 import { isEmpty, toWidgetData } from "./wire.ts";
 
@@ -47,4 +49,8 @@ test("a read is empty when every input has nothing, and a figure with no groups 
   expect(isEmpty({ one: { shape: "record", columns: [], record: null } })).toBe(true);
   expect(isEmpty({ one: { shape: "record", columns: [], record: { id: "a" } } })).toBe(false);
   expect(isEmpty({})).toBe(false);
+});
+
+test("every range the manifest names has words, and nothing else does", () => {
+  expect(Object.keys(RANGE_LABELS)).toEqual([...RELATIVE_RANGES]);
 });

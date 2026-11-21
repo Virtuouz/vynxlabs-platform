@@ -1,6 +1,6 @@
 # Decision 0004: a page's actions run on the server
 
-Status: **accepted** by the owner, 2026-11-21 (phase 25 owner decision 2). Built in phase 26.
+Status: **accepted** by the owner, 2026-11-21 (phase 25 owner decision 2). The grant decided 2026-11-21 (phase 26 owner decision 1): **the action is the grant.** Built in phase 26.
 Date: 2026-11-21.
 Prompted by: the redesign boards, where a button's action is a list of steps ("Ask to confirm, Update the record, Run a workflow, Show a message"), and S9.
 
@@ -35,7 +35,8 @@ The old script/flow action becomes the "Start a flow" and "Run a script" steps; 
 
 ## Consequences
 
-- An end user needs no `data:write` that a button doesn't use: a person bound to the app may be given the button's effect without the power to edit every column. *This needs a grant tied to the action*, which phase 26 designs: the likely form is that a deployed action carries the permission of the app's binding (the action is the grant), and `data:write` is no longer needed for it.
+- **The action is the grant** (owner, 2026-11-21). Whoever may open the app may run the actions its deployed pages hold. An action changes only the fields it names, to the values it names, on rows the person's row policy lets them read, and its conditions are checked on the server against the record as it is. It needs no `data:write` or `flow_run:write` of the person: it is like a stored procedure, and the page that is deployed, reviewed by whoever promotes it, is what grants. A draft's actions are run only by someone who may edit the interface.
+- So a front-desk end user marks an invoice paid without being able to edit invoices through the API, and the API offers nothing a page did not say.
 - Confirmation, conditions and messages are drawn by the browser from the same body; the server is the authority.
 - Phase 26 must test: an action can't be run on a record the person can't read; a step can't set a field it doesn't name; a condition false on the server refuses; a draft's action can't be run by an end user.
 

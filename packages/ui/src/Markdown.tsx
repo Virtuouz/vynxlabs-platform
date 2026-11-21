@@ -1,5 +1,6 @@
 import { linkKind, type ProfileName } from "@volvel/markup";
 import { lazy, Suspense } from "react";
+import { Skeleton } from "./Surfaces.tsx";
 
 const Body = lazy(() => import("./MarkdownBody.tsx"));
 
@@ -14,11 +15,23 @@ const Body = lazy(() => import("./MarkdownBody.tsx"));
  * documentation's alerts, steps, tabs, details, terms and keys.
  *
  * The reader is loaded when it is first needed, so an app that never shows
- * Markdown never downloads it. Until it arrives the text is shown as written.
+ * Markdown never downloads it. Until it arrives a result is shown as written; a
+ * page's text, whose alerts and steps would read as code, is drawn as loading.
  */
 export function Markdown({ text, profile = "result" }: { text: string; profile?: ProfileName }) {
   return (
-    <Suspense fallback={<pre className="m-0 whitespace-pre-wrap font-sans">{text}</pre>}>
+    <Suspense
+      fallback={
+        profile === "page" ? (
+          <Skeleton
+            lines={Math.min(6, Math.max(2, text.split("\n").length))}
+            label="Loading the text"
+          />
+        ) : (
+          <pre className="m-0 whitespace-pre-wrap font-sans">{text}</pre>
+        )
+      }
+    >
       <Body text={text} profile={profile} />
     </Suspense>
   );

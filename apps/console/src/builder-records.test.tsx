@@ -307,6 +307,12 @@ test("Add a form writes the form, the modal it opens in and the button that open
   expect((await dialog.findAllByText("Picker · customers")).length).toBeGreaterThan(0);
   expect(dialog.getByText(/Set automatically/)).toBeTruthy();
   expect(dialog.getByText(/Also adds a “New invoice” button/)).toBeTruthy();
+  // A modal named as a page of the app already is said to be so.
+  const title = dialog.getByLabelText(/Title of the modal/);
+  expect(dialog.queryByText(/already called/)).toBeNull();
+  fireEvent.change(title, { target: { value: "Money" } });
+  expect(dialog.getByText(/already called “Money”/)).toBeTruthy();
+  fireEvent.change(title, { target: { value: "New invoice" } });
   fireEvent.click(dialog.getByRole("button", { name: "Create form" }));
   await saved((body) => pageOf("new-invoice") !== undefined);
   const modal = pageOf("new-invoice");

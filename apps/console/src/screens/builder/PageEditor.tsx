@@ -464,6 +464,7 @@ export function PageEditor({
           root={root}
           catalog={catalog}
           initialTable={suggested}
+          takenTitles={(pageInfo?.pages ?? []).map((one) => one.title)}
           onMake={makeForm}
         />
       ) : null}

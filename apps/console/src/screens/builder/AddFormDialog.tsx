@@ -33,6 +33,7 @@ export function AddFormDialog({
   root,
   catalog,
   initialTable,
+  takenTitles = [],
   onMake,
 }: {
   open: boolean;
@@ -41,6 +42,8 @@ export function AddFormDialog({
   catalog: Catalog;
   /** The table the page shows, when it shows one. */
   initialTable: string | undefined;
+  /** The titles of the app's pages: a modal named as one of them is said to be so. */
+  takenTitles?: string[];
   onMake: (plan: FormPlan) => void;
 }) {
   const [table, setTable] = useState(initialTable ?? catalog.tables[0]?.name);
@@ -78,6 +81,7 @@ export function AddFormDialog({
             key={`${info.name}:${mode}`}
             info={info}
             mode={mode}
+            takenTitles={takenTitles}
             onClose={onClose}
             onMake={onMake}
           />
@@ -92,11 +96,13 @@ export function AddFormDialog({
 function Plan({
   info,
   mode,
+  takenTitles,
   onClose,
   onMake,
 }: {
   info: TableInfo;
   mode: "create" | "edit";
+  takenTitles: string[];
   onClose: () => void;
   onMake: (plan: FormPlan) => void;
 }) {
@@ -183,6 +189,12 @@ function Plan({
         value={plan.title}
         maxLength={60}
         required
+        {...(plan.where === "modal" &&
+        takenTitles.some((one) => one.trim().toLowerCase() === plan.title.trim().toLowerCase())
+          ? {
+              hint: `A page of this app is already called “${plan.title.trim()}”. Another would have the same name in the pages list.`,
+            }
+          : {})}
         onChange={(title) => setPlan({ ...plan, title })}
       />
       <TextField

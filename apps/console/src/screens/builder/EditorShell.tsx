@@ -1,6 +1,7 @@
-import { Panel } from "@volvel/ui";
+import { Panel, SideSheet, useLast } from "@volvel/ui";
 import type { ReactNode } from "react";
 import { useShortcut } from "../../kit/keys.ts";
+import { useWide, WIDE } from "../../kit/layout.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { SplitPane } from "../../kit/SplitPane.tsx";
 import { UndoRedo } from "../../kit/UndoRedo.tsx";
@@ -17,12 +18,15 @@ export function savingWords(saving: Saving, saved: string): string {
 }
 
 /**
- * The one shell around both page editors, an app's and a dashboard's (08
- * §3.20): one toolbar with the name, how it is saved, undo and redo and the
+ * The one shell around the one page editor, in an app's builder and in a
+ * dashboard (08 §3.20, S9): one toolbar with the name, how it is saved, undo and redo and the
  * step that makes it reach people (Publish for an app, Share for a
  * dashboard); then the page in the middle, what is on it and what can be
  * added on the left, and the chosen widget's settings on the right, in a pane
  * whose width can be dragged.
+ *
+ * On a screen narrower than the panel needs, the chosen widget's settings
+ * are a sheet over the page instead, which opens when a widget is chosen.
  *
  * Changes save by themselves. ⌘Z and ⇧⌘Z undo and redo them, outside a field
  * being typed in. Leaving while a change is not yet saved asks first.
@@ -39,6 +43,8 @@ export function EditorShell({
   outline,
   canvas,
   inspector,
+  inspectorOpen,
+  onCloseInspector,
   saveNow,
 }: {
   title: string;
@@ -62,9 +68,16 @@ export function EditorShell({
   saveNow?: () => void;
   outline: ReactNode;
   canvas: ReactNode;
+  /** The settings of the chosen widget, or what to do to choose one. */
   inspector: ReactNode;
+  /** Whether a widget is chosen: on a narrow screen, whether the sheet of its settings is open. */
+  inspectorOpen: boolean;
+  onCloseInspector: () => void;
 }) {
   useNavigationGuard(saving !== "saved", "A change is not saved yet.");
+  const docked = useWide(WIDE.panel);
+  // The sheet keeps showing what it showed while it closes.
+  const lastInspector = useLast(inspectorOpen ? inspector : undefined);
   const { undo, redo } = history;
   useShortcut("undo", undo);
   useShortcut("redo", redo);
@@ -100,27 +113,38 @@ export function EditorShell({
         >
           {outline}
         </nav>
-        <SplitPane
-          id="page-editor"
-          label="Resize the page and its settings"
-          initial={74}
-          className="min-w-0 flex-1"
-          first={
-            <div data-canvas className="min-w-0 lg:pr-1">
-              {canvas}
-            </div>
-          }
-          second={
-            <Panel
-              as="aside"
-              aria-label="Settings"
-              className="p-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto"
-            >
-              {inspector}
-            </Panel>
-          }
-        />
+        {docked ? (
+          <SplitPane
+            id="page-editor"
+            label="Resize the page and its settings"
+            initial={72}
+            className="min-w-0 flex-1"
+            first={
+              <div data-canvas className="min-w-0 lg:pr-1">
+                {canvas}
+              </div>
+            }
+            second={
+              <Panel
+                as="aside"
+                aria-label="Settings"
+                className="p-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto"
+              >
+                {inspector}
+              </Panel>
+            }
+          />
+        ) : (
+          <div data-canvas className="min-w-0 flex-1">
+            {canvas}
+          </div>
+        )}
       </div>
+      {docked ? null : (
+        <SideSheet open={inspectorOpen} onClose={onCloseInspector} title="Settings">
+          {lastInspector}
+        </SideSheet>
+      )}
     </section>
   );
 }

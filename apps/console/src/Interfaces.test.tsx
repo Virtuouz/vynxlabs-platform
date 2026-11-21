@@ -27,8 +27,20 @@ const body = (): InterfaceBody => ({
       id: "main",
       title: "Sales",
       widgets: [
-        { id: "customers", type: "table", title: "Customers", table: "customers", at },
-        { id: "orders", type: "table", title: "Orders", table: "orders", at: { ...at, y: 8 } },
+        {
+          id: "customers",
+          type: "core/table",
+          title: "Customers",
+          at,
+          data: { rows: { source: { visual: { table: "customers" } } } },
+        },
+        {
+          id: "orders",
+          type: "core/table",
+          title: "Orders",
+          at: { ...at, y: 8 },
+          data: { rows: { source: { visual: { table: "orders" } } } },
+        },
       ],
     },
   ],
@@ -59,6 +71,27 @@ beforeEach(() => {
       },
     ],
     [`GET ${api}/apps`]: () => [200, { items: [] }],
+    [`GET ${api}/queries/schema`]: () => [
+      200,
+      {
+        tables: [
+          { name: "customers", columns: [{ name: "name", type: "text", references: null }] },
+          {
+            name: "orders",
+            columns: [
+              { name: "number", type: "text", references: null },
+              { name: "total", type: "number", references: null },
+              { name: "status", type: "enum", references: null },
+            ],
+          },
+        ],
+        functions: [],
+        maySql: false,
+      },
+    ],
+    [`GET ${api}/queries`]: () => [200, { items: [] }],
+    // Every widget asks the one endpoint for what it shows.
+    [`GET ${api}/widget-data`]: () => [200, { inputs: {} }],
   };
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
@@ -109,7 +142,7 @@ test("an app is made as an interface and the app that serves it, and is then bui
       `${api}/drafts/screens/stock-room`,
       {
         kind: "interface",
-        schemaVersion: 1,
+        schemaVersion: 2,
         body: { title: "Stock room", pages: [{ id: "main", title: "Stock room", widgets: [] }] },
         create: true,
       },
@@ -181,84 +214,6 @@ test("a workspace that is not a dev workspace lists its apps and builds none", a
   expect(screen.queryByRole("link", { name: "Sales" })).toBeNull();
 });
 
-test("a widget is made to follow another by choosing a sentence, and the change is saved by itself", async () => {
-  let stored = body();
-  routes[`GET ${api}/drafts/screens/sales`] = () => [200, { revision: 3, body: stored }];
-  routes[`GET ${api}/interfaces`] = () => [
-    200,
-    {
-      items: [
-        {
-          path: "screens/sales",
-          title: "Sales",
-          deployed: false,
-          draft: true,
-          removing: false,
-          app: "sales",
-        },
-      ],
-    },
-  ];
-  routes[`GET ${api}/drafts`] = () => [
-    200,
-    { items: [{ path: "screens/sales" }, { path: "sales" }] },
-  ];
-  routes[`PUT ${api}/drafts/screens/sales`] = (saved) => {
-    stored = (saved as Any).body;
-    return [200, { revision: 4, body: stored, problems: [] }];
-  };
-  routes[`POST ${api}/changes/deploy`] = () => [201, { applied: ["screens/sales", "sales"] }];
-  show(<InterfaceBuilder root={root} link="/t/t1/workspaces/w1" path="screens/sales" />);
-
-  const orders = within(await screen.findByRole("region", { name: "Orders" }));
-  fireEvent.click(orders.getByRole("button", { name: "Edit" }));
-  const settings = within(screen.getByRole("complementary", { name: "Settings" }));
-  // What it can follow is offered as what it would show.
-  const follows = (await settings.findByLabelText("What it shows follows")) as HTMLSelectElement;
-  await waitFor(() =>
-    expect([...follows.options].map((option) => option.textContent)).toEqual([
-      "Nothing: it shows the table",
-      "Rows whose customer is the row chosen in Customers",
-    ]),
-  );
-  fireEvent.change(follows, { target: { value: follows.options[1]?.value } });
-  // The preview follows at once: nothing is chosen yet, so it says so.
-  await orders.findByText("Choose a row in Customers to see what goes with it.");
-  // The reference can be shown by the customer's name.
-  fireEvent.change(settings.getByLabelText("Add"), { target: { value: "customer" } });
-  fireEvent.change(await settings.findByLabelText("Shown as (customer)"), {
-    target: { value: "name" },
-  });
-
-  await waitFor(() => expect(sent("PUT", "/drafts/screens/sales").length).toBeGreaterThan(0), {
-    timeout: 4000,
-  });
-  await waitFor(
-    () =>
-      expect(stored.pages[0]?.widgets[1]).toMatchObject({
-        link: { from: "customers", type: "refersTo", via: "customer" },
-        fields: [{ column: "customer", show: "name" }],
-      }),
-    { timeout: 4000 },
-  );
-  // Each save carries the revision of the one before, so two people cannot overwrite each other.
-  expect(sent("PUT", "/drafts/screens/sales")[0]?.body).toMatchObject({ revision: 3 });
-  await screen.findByText("Saved. Not published yet.");
-
-  fireEvent.click(screen.getByRole("button", { name: "Publish" }));
-  // Publishing says what it would do first, and is done from there.
-  // The dialog loads its summary first; its Publish button comes with it.
-  fireEvent.click(
-    await within(await screen.findByRole("dialog")).findByRole("button", { name: "Publish" }),
-  );
-  await waitFor(() => expect(sent("POST", "/changes/deploy")).toHaveLength(1), { timeout: 4000 });
-  // Only this app is deployed: its interface, and the app that serves it.
-  expect(sent("POST", "/changes/deploy")[0]?.body).toEqual({
-    paths: ["screens/sales", "sales"],
-    message: "Publish Sales",
-  });
-});
-
 test("widgets are added and removed, and what is wrong is said before anything can be published", async () => {
   let stored: InterfaceBody = {
     title: "Sales",
@@ -283,28 +238,33 @@ test("widgets are added and removed, and what is wrong is said before anything c
   routes[`GET ${api}/drafts`] = () => [200, { items: [{ path: "screens/sales" }] }];
   routes[`PUT ${api}/drafts/screens/sales`] = (saved) => {
     stored = (saved as Any).body;
-    const chart = stored.pages[0]?.widgets.find((widget) => widget.type === "chart");
+    const chart = stored.pages[0]?.widgets.find((widget) => widget.type === "core/chart");
     return [
       200,
       {
         revision: 2,
         body: stored,
         problems: chart
-          ? [{ path: "/body/pages/0/widgets/0/options/mark", message: "a chart needs a shape" }]
+          ? [{ path: "/body/pages/0/widgets/0/config/mark", message: "a chart needs a shape" }]
           : [],
       },
     ];
   };
   show(<InterfaceBuilder root={root} link="/t/t1/workspaces/w1" path="screens/sales" />);
-  await screen.findByText("This page has nothing on it yet.");
+  await screen.findByText("Nothing on this page yet");
   // Nothing serves it yet, and the builder says so.
   expect(await screen.findByText("No app serves this yet, so nobody can open it.")).toBeTruthy();
 
-  fireEvent.click(
-    within(screen.getByRole("region", { name: "Add" })).getByRole("button", { name: "Chart" }),
-  );
-  // The new widget is the one being edited.
+  const addChart = async () => {
+    fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+    const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
+    fireEvent.click(dialog.getByRole("button", { name: /Chart/ }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  };
+  await addChart();
+  // The new widget is the one being changed.
   const settings = within(screen.getByRole("complementary", { name: "Settings" }));
+  fireEvent.click(await settings.findByRole("tab", { name: "Display" }));
   expect(((await settings.findByLabelText("Title")) as HTMLInputElement).value).toBe("Chart");
   await screen.findByText("Sales › Chart: a chart needs a shape.", undefined, { timeout: 4000 });
   expect((screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement).disabled).toBe(
@@ -312,39 +272,42 @@ test("widgets are added and removed, and what is wrong is said before anything c
   );
   expect(stored.pages[0]?.widgets[0]).toMatchObject({
     id: "chart",
-    type: "chart",
-    at: { x: 0, y: 0, w: 6, h: 8 },
+    type: "core/chart",
+    at: { x: 0, y: 0, w: 6, h: 6 },
   });
+  // The page reads two tables, so nothing is guessed: a chart reads nothing until it is told what.
+  expect(stored.pages[0]?.widgets[0]?.data).toBeUndefined();
 
   // A second of the same kind gets a name of its own, below the first.
-  fireEvent.click(
-    within(screen.getByRole("region", { name: "Add" })).getByRole("button", { name: "Chart" }),
-  );
+  await addChart();
   await waitFor(
-    () => expect(stored.pages[0]?.widgets.map((widget) => widget.id)).toEqual(["chart", "chart_2"]),
-    {
-      timeout: 4000,
-    },
+    () => expect(stored.pages[0]?.widgets.map((widget) => widget.id)).toEqual(["chart", "chart-2"]),
+    { timeout: 4000 },
   );
-  expect(stored.pages[0]?.widgets[1]?.at.y).toBe(8);
-  fireEvent.click(
-    within(screen.getByRole("complementary", { name: "Settings" })).getByRole("button", {
-      name: "Remove this widget",
-    }),
-  );
+  expect(stored.pages[0]?.widgets[1]?.at.y).toBe(6);
+  // The preview reads the draft, widget by widget, as the one building it.
+  await waitFor(() => expect(sent("GET", "/widget-data").length).toBeGreaterThan(0));
+  const read = new URL(sent("GET", "/widget-data").at(-1)?.url as string, "http://x").searchParams;
+  expect([read.get("of"), read.get("path"), read.get("page"), read.get("draft")]).toEqual([
+    "interface",
+    "screens/sales",
+    "main",
+    "1",
+  ]);
+
+  fireEvent.click(await screen.findByRole("button", { name: /More about Chart/ }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Remove" }));
   await waitFor(
     () => expect(stored.pages[0]?.widgets.map((widget) => widget.id)).toEqual(["chart"]),
-    {
-      timeout: 4000,
-    },
+    { timeout: 4000 },
   );
   // A removal can be taken back: the widget returns where it was, and is saved again.
   fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
   await waitFor(
-    () => expect(stored.pages[0]?.widgets.map((widget) => widget.id)).toEqual(["chart", "chart_2"]),
+    () => expect(stored.pages[0]?.widgets.map((widget) => widget.id)).toEqual(["chart", "chart-2"]),
     { timeout: 4000 },
   );
-  expect(stored.pages[0]?.widgets[1]?.at.y).toBe(8);
+  expect(stored.pages[0]?.widgets[1]?.at.y).toBe(6);
 
   // A page is added through a dialog of the console's own, never the browser's.
   fireEvent.click(screen.getByRole("button", { name: "Page" }));
@@ -465,7 +428,7 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
 // biome-ignore lint/suspicious/noExplicitAny: what was sent is inspected freely
 type Any = any;
 
-test("a figure is narrowed to some rows and its number written as dollars from cents", async () => {
+test("a stat is narrowed to some rows and its number written as dollars from cents", async () => {
   let stored: InterfaceBody = {
     title: "Sales",
     pages: [
@@ -475,11 +438,19 @@ test("a figure is narrowed to some rows and its number written as dollars from c
         widgets: [
           {
             id: "owed",
-            type: "figure",
+            type: "core/stat",
             title: "Owed",
-            table: "orders",
-            summary: { groupBy: [], aggregates: [{ fn: "sum", column: "total", as: "owed" }] },
             at,
+            data: {
+              value: {
+                source: {
+                  visual: {
+                    table: "orders",
+                    measures: [{ fn: "sum", column: "total", as: "owed" }],
+                  },
+                },
+              },
+            },
           },
         ],
       },
@@ -492,30 +463,41 @@ test("a figure is narrowed to some rows and its number written as dollars from c
     stored = (saved as Any).body;
     return [200, { revision: 2, body: stored, problems: [] }];
   };
-  routes[`GET ${api}/aggregate/orders`] = () => [
-    200,
-    { items: [{ by: {}, values: { "sum:total": 123456 } }], truncated: false },
-  ];
   show(<InterfaceBuilder root={root} link="/t/t1/workspaces/w1" path="screens/sales" />);
 
-  const figure = within(await screen.findByRole("region", { name: "Owed" }));
-  fireEvent.click(figure.getByRole("button", { name: "Edit" }));
-  const settings = within(screen.getByRole("complementary", { name: "Settings" }));
-  // Totals can be narrowed, and the builder says what for.
-  expect(settings.getByText(/only the invoices whose status is unpaid/)).toBeTruthy();
+  fireEvent.click(await screen.findByText("Owed", { selector: "p" }));
+  const settings = within(await screen.findByRole("complementary", { name: "Settings" }));
+  // The value it works out is a sentence: a sum of a column.
+  expect((settings.getByLabelText("What value 1 works out") as HTMLSelectElement).value).toBe(
+    "sum",
+  );
+  expect((settings.getByLabelText("Column value 1 is of") as HTMLSelectElement).value).toBe(
+    "total",
+  );
   fireEvent.click(settings.getByRole("button", { name: "Add a condition" }));
+  fireEvent.change(settings.getByLabelText("Test of condition 1"), { target: { value: "ne" } });
+  fireEvent.change(settings.getByLabelText("Value of condition 1"), { target: { value: "paid" } });
+
+  fireEvent.click(settings.getByRole("tab", { name: "Display" }));
+  fireEvent.click(settings.getByRole("button", { name: /As it comes/ }));
   fireEvent.change(settings.getByLabelText("Written as"), { target: { value: "currency" } });
   fireEvent.click(await settings.findByLabelText("Kept in cents"));
-  expect(await settings.findByText("Shown as $123,456.79")).toBeTruthy();
-  // The preview writes the total as dollars, and names the figure once.
-  expect(await figure.findByText("$1,234.56")).toBeTruthy();
-  expect(figure.getAllByText("Owed")).toHaveLength(1);
+  expect(await settings.findByText("Shown as $43,120.00")).toBeTruthy();
 
   await waitFor(
     () =>
       expect(stored.pages[0]?.widgets[0]).toMatchObject({
-        filter: { column: "number", op: "eq" },
-        options: { format: { style: "currency", currency: "USD", minorUnits: true } },
+        config: { format: { style: "currency", currency: "USD", minorUnits: true } },
+        data: {
+          value: {
+            source: {
+              visual: {
+                table: "orders",
+                filters: [{ column: "status", op: "ne", value: "paid" }],
+              },
+            },
+          },
+        },
       }),
     { timeout: 4000 },
   );

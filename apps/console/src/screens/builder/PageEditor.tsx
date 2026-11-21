@@ -1,332 +1,274 @@
-import type { InterfacePage, WidgetAction, WidgetType } from "@volvel/manifest";
-import { PageRenderer, settle, type TableInfo, type TargetInfo } from "@volvel/screens";
-import { Button, SelectField } from "@volvel/ui";
+import { MAX_PAGE_WIDGETS, newWidget, type PageFilter, type PageWidget } from "@volvel/manifest";
+import { Button, EmptyState } from "@volvel/ui";
+import type { Surface, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { useLoad } from "../../api.ts";
+import { type ReactNode, useMemo, useState } from "react";
 import { notify } from "../../ask.tsx";
-import type { TargetFacts } from "../ActionSettings.tsx";
-import { VIEWPORTS } from "./AppBuilder.tsx";
-import { clientFor, keyOf, pageActions, TYPES, tablesOf, useTables } from "./data.ts";
+import { useCatalog } from "../../kit/inspector/catalog.ts";
+import { Inspector } from "../../kit/inspector/Inspector.tsx";
+import {
+  bindFilter,
+  defaultInputs,
+  duplicated,
+  mainTable,
+  newId,
+  settleOnGrid,
+  withoutWidget,
+} from "../../kit/inspector/model.ts";
+import { AddToPage } from "./AddToPage.tsx";
+import { type PageSource, pageClient } from "./client.ts";
 import { EditorShell } from "./EditorShell.tsx";
-import { PageFilterSettings } from "./PageFilters.tsx";
-import { WidgetSettings } from "./WidgetSettings.tsx";
+import { type FilterChange, PageFilterSettings } from "./PageFilters.tsx";
+import { definitionOf, views } from "./registry.ts";
+import { type FilterValues, PageView } from "./stand-in.tsx";
 
-/** A page as it is, for someone who may look and not change it. */
-export function PageView({ root, page }: { root: string; page: InterfacePage }) {
-  const client = useMemo(() => clientFor(root), [root]);
-  const [known, setKnown] = useState<Record<string, TableInfo>>({});
-  const tables = useTables(root, tablesOf({ title: "", pages: [page] }, known));
-  useEffect(() => setKnown(tables), [tables]);
-  return <PageRenderer page={page} tables={known} client={client} />;
+/** What the editor changes: a page's widgets and its filters. Everything else about a page or a dashboard is its host's. */
+export interface PageValue {
+  widgets: PageWidget[];
+  filters: PageFilter[];
 }
 
-// ----- One page being worked on -----
-
 /**
- * A page drawn from the workspace's rows as the member may read them, beside
- * the settings of the widget that is chosen. The builder of an app uses it
- * for each of the app's pages, and a dashboard is one of these.
+ * The one editor of a page of widgets, in an app's builder and in a dashboard
+ * (S9): "On this page" and "Add to page" on the left, the page drawn from the
+ * workspace's rows in the middle, with its filters under it, and the chosen
+ * widget's settings on the right, generated from its definition.
+ *
+ * It is controlled: it is given the page and says what it should become. Its
+ * host keeps what is about the host (an app's pages and publishing, a
+ * dashboard's sharing and refresh), saves, and keeps undo (`shell.history`).
  */
 export function PageEditor({
   root,
-  page,
+  link,
+  surface,
+  source,
+  draft = false,
+  value,
+  onChange,
   selected,
   onSelect,
-  onChange,
-  interfacePath,
-  kinds,
   shell,
   pages,
+  canvasHead,
+  frame,
+  refreshKey,
 }: {
   root: string;
-  /** The interface the page is of, so the builder can say who would not see an action. */
-  interfacePath?: string | undefined;
-  page: InterfacePage;
+  /** The workspace's console address, for the links the settings give to other screens. */
+  link: string;
+  surface: Surface;
+  /** What the page's data is read for. */
+  source: PageSource;
+  /** Read the page as it is being built, not as it is published. */
+  draft?: boolean;
+  value: PageValue;
+  /** Every change goes through here, with words for Undo; `key` joins quick changes into one step. */
+  onChange: (next: PageValue, label: string, key?: string) => void;
   selected: string | undefined;
   onSelect: (widget: string | undefined) => void;
-  /** Every change goes through here, named for undo; `key` joins quick changes into one step. */
-  onChange: (apply: (page: InterfacePage) => void, label?: string, key?: string) => void;
-  /** The kinds of widget that can be added. Every kind when left out. */
-  kinds?: WidgetType[];
-  /** The toolbar and its notices, as the editor around the page has them. */
-  shell: Omit<Parameters<typeof EditorShell>[0], "outline" | "canvas" | "inspector">;
-  /** The pages of an app, above what is on this one. */
+  /** The toolbar and its notices, as the host around the page has them. */
+  shell: Omit<
+    Parameters<typeof EditorShell>[0],
+    "outline" | "canvas" | "inspector" | "inspectorOpen" | "onCloseInspector"
+  >;
+  /** An app's pages, above what is on this one. */
   pages?: ReactNode;
+  /** Above the page: for an app, the screen sizes it can be previewed at. */
+  canvasHead?: ReactNode;
+  /** The preview's width, when it is not the whole room. `name` marks which. */
+  frame?: { name: string; width: number | undefined };
+  /** Bumped by the host after a save, so each widget reads the page as it now is. */
+  refreshKey?: number;
 }) {
-  const tableList = useLoad<{ items: { name: string; status: string }[] }>(`${root}/tables`);
-  const [viewport, setViewport] = useState<keyof typeof VIEWPORTS>("desktop");
-  const [asGroup, setAsGroup] = useState("");
-  const tenantBase = root.split("/workspaces/")[0] ?? "";
-  const memberGroups = useLoad<{ items: { id: string; name: string }[] }>(
-    `${tenantBase}/groups?limit=200`,
-  );
-  const endUserGroups = useLoad<{ items: { id: string; name: string }[] }>(
-    `${tenantBase}/end-user-groups?limit=200`,
-  );
-  const client = useMemo(() => clientFor(root, asGroup || undefined), [root, asGroup]);
-  const [known, setKnown] = useState<Record<string, TableInfo>>({});
-  const tables = useTables(root, tablesOf({ title: "", pages: [page] }, known));
-  useEffect(() => setKnown(tables), [tables]);
-  const tableNames = (tableList.data?.items ?? [])
-    .filter((table) => table.status === "active")
-    .map((table) => table.name);
-  const widget = page.widgets.find((candidate) => candidate.id === selected);
+  const { catalog } = useCatalog(root);
+  const [adding, setAdding] = useState(false);
+  const [filterValues, setFilterValues] = useState<FilterValues>({});
+  // A host passes a new `source` object on every render; what it names is what matters.
+  const named = JSON.stringify(source);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `named` is `source` as one value
+  const client = useMemo(() => pageClient(root, source, draft), [root, draft, named]);
+  const { widgets, filters } = value;
+  const widget = widgets.find((one) => one.id === selected);
+  const full = widgets.length >= MAX_PAGE_WIDGETS;
 
-  // What the page's actions start, and who would not see them.
-  const keys = [...new Set(pageActions(page).map(keyOf))].sort();
-  const facts = useLoad<{ items: TargetFacts[] }>(
-    keys.length > 0
-      ? `${root}/interface-targets?targets=${encodeURIComponent(keys.join(","))}${
-          interfacePath ? `&interface=${encodeURIComponent(interfacePath)}` : ""
-        }`
-      : null,
-  );
-  const factsOf = (action: WidgetAction) =>
-    facts.data?.items.find((one) => one.key === keyOf(action));
-  const targets: Record<string, TargetInfo> = Object.fromEntries(
-    (facts.data?.items ?? []).map((one) => [
-      one.key,
-      {
-        canStart: one.found && one.startable,
-        description: one.description,
-        inputSchema: one.inputSchema,
-      },
-    ]),
-  );
-  const workspace = useLoad<{ type: string }>(root);
-  const consoleBase = root.replace(/^\/tenants\//, "/t/");
+  const put = (next: PageWidget[], label: string, key?: string) =>
+    onChange({ widgets: next, filters }, label, key);
 
-  const addWidget = (type: WidgetType) => {
-    let id: string = type;
-    for (let count = 2; page.widgets.some((one) => one.id === id); count += 1) {
-      id = `${type}_${count}`;
-    }
-    onChange(
-      (target) => {
-        const bottom = Math.max(0, ...target.widgets.map((one) => one.at.y + one.at.h));
-        const wide = type === "table" || type === "cards";
-        target.widgets.push({
-          id,
-          type,
-          title: TYPES.find((one) => one.type === type)?.label ?? type,
-          at: {
-            x: 0,
-            y: bottom,
-            w: wide ? 12 : type === "figure" || type === "action" ? 3 : 6,
-            h: type === "text" || type === "figure" ? 3 : type === "action" ? 2 : 8,
-          },
-          ...(type === "text" ? { options: { text: "Write something here." } } : {}),
-          ...(type === "figure"
-            ? { summary: { groupBy: [], aggregates: [{ fn: "count" as const, as: "count" }] } }
-            : {}),
-        });
-      },
-      `adding ${TYPES.find((one) => one.type === type)?.label.toLowerCase() ?? type}`,
-    );
-    onSelect(id);
+  /** A widget changed in the inspector; if its place changed, what it now lies on moves out of its way. */
+  const edit = (changed: PageWidget, label: string, key?: string) => {
+    const before = widgets.find((one) => one.id === changed.id);
+    const next = widgets.map((one) => (one.id === changed.id ? changed : one));
+    const moved = before && JSON.stringify(before.at) !== JSON.stringify(changed.at);
+    put(moved ? settleOnGrid(next, changed.id) : next, label, key);
   };
-  const offered = TYPES.filter((one) => !kinds || kinds.includes(one.type));
 
-  return (
-    <EditorShell
-      {...shell}
-      outline={
-        <>
-          {pages}
-          <section aria-labelledby="on-the-page" className="flex flex-col gap-1">
-            <h2 id="on-the-page" className="m-0 text-label text-ink-subtle uppercase">
-              On this page
-            </h2>
-            {page.widgets.length === 0 ? (
-              <p className="m-0 text-body-sm text-ink-muted">Nothing yet.</p>
-            ) : (
-              <ul className="m-0 flex list-none flex-col p-0">
-                {[...page.widgets]
-                  .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x)
-                  .map((one) => (
-                    <li key={one.id}>
-                      <button
-                        type="button"
-                        aria-current={one.id === selected ? "true" : undefined}
-                        onClick={() => onSelect(one.id)}
-                        className={`w-full truncate rounded-inner px-2 py-1 text-left text-body-sm ${
-                          one.id === selected
-                            ? "bg-selected text-action"
-                            : "text-ink hover:bg-sunken"
-                        }`}
-                      >
-                        {one.title || one.id}
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </section>
-          {page.widgets.length < 12 ? (
-            <section aria-labelledby="add-a-widget" className="flex flex-col gap-1">
-              <h2 id="add-a-widget" className="m-0 text-label text-ink-subtle uppercase">
-                Add
-              </h2>
-              <div className="flex flex-wrap gap-1 lg:flex-col">
-                {offered.map((one) => (
-                  <Button
-                    key={one.type}
-                    size="small"
-                    variant="quiet"
-                    className="lg:justify-start"
-                    tooltip={one.about}
-                    onClick={() => addWidget(one.type)}
-                  >
-                    <Plus size={14} aria-hidden="true" /> {one.label}
-                  </Button>
-                ))}
-              </div>
-            </section>
-          ) : null}
-        </>
-      }
-      canvas={
-        <>
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-            <div
-              role="radiogroup"
-              aria-label="Screen size"
-              className="flex rounded-control border border-line p-0.5"
-            >
-              {(Object.keys(VIEWPORTS) as (keyof typeof VIEWPORTS)[]).map((one) => {
-                const Icon = VIEWPORTS[one].icon;
-                return (
-                  // biome-ignore lint/a11y/useSemanticElements: a segmented control of toggle buttons
+  const add = (definition: WidgetDefinition) => {
+    const id = newId(definition.type, widgets);
+    let added: PageWidget = newWidget(definition, id, widgets);
+    added = {
+      ...added,
+      ...(Object.keys(definition.data).length > 0
+        ? { data: defaultInputs(definition, mainTable(widgets, catalog), catalog) }
+        : {}),
+    };
+    if (added.data && Object.keys(added.data).length === 0) delete added.data;
+    for (const filter of filters) added = bindFilter(added, filter, catalog);
+    put([...widgets, added], `adding ${definition.title.toLowerCase()}`);
+    onSelect(id);
+    setAdding(false);
+  };
+
+  const remove = (id: string) => {
+    const gone = widgets.find((one) => one.id === id);
+    const name = gone?.title ? `“${gone.title}”` : "the widget";
+    put(withoutWidget(widgets, id), `removing ${name}`);
+    onSelect(undefined);
+    notify.success(`Removed ${name}.`, { action: { label: "Undo", onClick: shell.history.undo } });
+  };
+
+  const duplicate = (id: string) => {
+    const copy = duplicated(widgets, id);
+    if (!copy) return;
+    put(copy.widgets, "duplicating a widget");
+    onSelect(copy.id);
+  };
+
+  const filtersChanged = (next: FilterChange, label: string, key?: string) =>
+    onChange({ widgets: next.widgets, filters: next.filters }, label, key);
+
+  const outline = (
+    <>
+      {pages}
+      <section aria-labelledby="on-the-page" className="flex flex-col gap-1">
+        <h2 id="on-the-page" className="m-0 text-label text-ink-subtle uppercase">
+          On this page
+        </h2>
+        {widgets.length === 0 ? (
+          <p className="m-0 text-body-sm text-ink-muted">Nothing yet.</p>
+        ) : (
+          <ul className="m-0 flex list-none flex-col p-0">
+            {[...widgets]
+              .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x)
+              .map((one) => (
+                <li key={one.id}>
                   <button
-                    key={one}
                     type="button"
-                    role="radio"
-                    aria-checked={viewport === one}
-                    onClick={() => setViewport(one)}
-                    className={`flex items-center gap-1.5 rounded-inner px-3 py-1 text-meta ${
-                      viewport === one ? "bg-selected text-ink" : "text-ink-muted hover:text-ink"
+                    aria-current={one.id === selected ? "true" : undefined}
+                    onClick={() => onSelect(one.id)}
+                    className={`w-full truncate rounded-inner px-2 py-1 text-left text-body-sm ${
+                      one.id === selected ? "bg-selected text-action" : "text-ink hover:bg-sunken"
                     }`}
                   >
-                    <Icon aria-hidden="true" size={14} /> {VIEWPORTS[one].label}
-                    {VIEWPORTS[one].width ? (
-                      <span className="font-mono text-tag text-ink-subtle">
-                        {VIEWPORTS[one].width}
-                      </span>
-                    ) : null}
+                    {one.title || definitionOf(one.type)?.title || one.id}
                   </button>
-                );
-              })}
-            </div>
-            <div className="w-64">
-              <SelectField
-                label="See it as"
-                name="as"
-                value={asGroup}
-                onChange={setAsGroup}
-                options={[
-                  { value: "", label: "You, as you may read it" },
-                  ...(endUserGroups.data?.items ?? []).map((group) => ({
-                    value: group.id,
-                    label: `End users in ${group.name}`,
-                  })),
-                  ...(memberGroups.data?.items ?? []).map((group) => ({
-                    value: group.id,
-                    label: `Members in ${group.name}`,
-                  })),
-                ]}
-              />
-            </div>
-          </div>
-          {asGroup ? (
-            <p className="mt-0 mb-3 text-meta text-ink-muted">
-              Rows as someone in this group who owns none would see them. Owner rules show nothing
-              here.
-            </p>
-          ) : null}
-          <div
-            data-preview={viewport}
-            className="mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 transition-[max-width] motion-slow"
-            style={{
-              maxWidth: VIEWPORTS[viewport].width ? `${VIEWPORTS[viewport].width}px` : undefined,
-            }}
-          >
-            <PageRenderer
-              page={page}
-              tables={known}
-              client={client}
-              targets={targets}
-              member
-              runLink={(run) => `${consoleBase}/runs/${run.id}`}
-              // Outside a dev workspace the preview says what an action would send, and starts nothing.
-              dryRun={workspace.data?.type !== "dev"}
-              editing={{
-                selected,
-                onSelect,
-                onMove: (id, to) =>
-                  onChange(
-                    (target) => {
-                      const moved = target.widgets.find((one) => one.id === id);
-                      if (moved) moved.at = to;
-                      // Whatever it was dropped on moves out of its way.
-                      settle(target.widgets, id);
-                    },
-                    "moving a widget",
-                    `move:${id}`,
-                  ),
-              }}
-            />
-          </div>
-          <PageFilterSettings page={page} known={known} onChange={onChange} />
-        </>
-      }
-      inspector={
-        widget ? (
-          <WidgetSettings
-            key={widget.id}
-            root={root}
-            factsOf={factsOf}
-            widget={widget}
-            page={page}
-            tables={known}
-            tableNames={tableNames}
-            onChange={(apply) =>
-              onChange(
-                (target) => {
-                  const changed = target.widgets.find((one) => one.id === widget.id);
-                  if (!changed) return;
-                  const before = JSON.stringify(changed.at);
-                  apply(changed);
-                  if (JSON.stringify(changed.at) !== before) settle(target.widgets, widget.id);
-                },
-                `changing ${widget.title ? `“${widget.title}”` : "the widget"}`,
-                `settings:${widget.id}`,
-              )
+                </li>
+              ))}
+          </ul>
+        )}
+      </section>
+      <div>
+        <Button
+          size="small"
+          variant="primary"
+          disabled={full}
+          tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
+          onClick={() => setAdding(true)}
+        >
+          <Plus aria-hidden="true" size={14} /> Add to page
+        </Button>
+      </div>
+    </>
+  );
+
+  const canvas = (
+    <>
+      {canvasHead}
+      <div
+        data-preview={frame?.name}
+        className={
+          frame
+            ? "mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 transition-[max-width] motion-slow"
+            : ""
+        }
+        style={frame?.width ? { maxWidth: `${frame.width}px` } : undefined}
+      >
+        {widgets.length === 0 ? (
+          <EmptyState
+            title="Nothing on this page yet"
+            action={
+              <Button variant="primary" onClick={() => setAdding(true)}>
+                <Plus aria-hidden="true" size={16} /> Add to page
+              </Button>
             }
-            onRemove={() => {
-              const name = widget.title ? `“${widget.title}”` : "the widget";
-              onChange((target) => {
-                target.widgets = target.widgets.filter((one) => one.id !== widget.id);
-                // Whatever followed it follows nothing now.
-                for (const one of target.widgets) {
-                  if (one.link?.from === widget.id) delete one.link;
-                }
-                // What was under it rises into the room it left.
-                settle(target.widgets, undefined);
-              }, `removing ${name}`);
-              onSelect(undefined);
-              notify.success(`Removed ${name}.`, {
-                action: { label: "Undo", onClick: shell.history.undo },
-              });
+          >
+            Add a table, a chart or a number. What you see is drawn from this workspace's rows, as
+            you may read them.
+          </EmptyState>
+        ) : (
+          <PageView
+            widgets={widgets}
+            filters={filters}
+            registry={views}
+            client={client}
+            filterValues={filterValues}
+            onFilterValues={setFilterValues}
+            {...(refreshKey !== undefined ? { refreshKey } : {})}
+            editing={{
+              selected,
+              onSelect,
+              onChange: (next, label) => put(next, label),
+              onRename: (id, title) =>
+                put(
+                  widgets.map((one) => (one.id === id ? { ...one, title } : one)),
+                  "renaming a widget",
+                  `title:${id}`,
+                ),
+              onColumn: (id) => onSelect(id),
             }}
           />
-        ) : (
-          <p className="m-0 text-ink-muted">
-            Press Edit on a widget to change it, or add one. What you see is drawn from this
-            workspace's rows, as you may read them.
-          </p>
-        )
-      }
-    />
+        )}
+      </div>
+      <PageFilterSettings
+        filters={filters}
+        widgets={widgets}
+        catalog={catalog}
+        onChange={filtersChanged}
+      />
+    </>
+  );
+
+  return (
+    <>
+      <EditorShell
+        {...shell}
+        outline={outline}
+        canvas={canvas}
+        inspectorOpen={widget !== undefined}
+        onCloseInspector={() => onSelect(undefined)}
+        inspector={
+          widget ? (
+            <Inspector
+              key={widget.id}
+              widget={widget}
+              definition={definitionOf(widget.type)}
+              surface={surface}
+              filters={filters}
+              catalog={catalog}
+              onChange={edit}
+              onDuplicate={() => duplicate(widget.id)}
+              onRemove={() => remove(widget.id)}
+              rowRules={(table) => `${link}/tables/${table}?view=definition`}
+            />
+          ) : (
+            <p className="m-0 text-ink-muted">
+              Choose a widget on the page to change it, or add one. What you see is drawn from this
+              workspace's rows, as you may read them.
+            </p>
+          )
+        }
+      />
+      <AddToPage open={adding} onClose={() => setAdding(false)} surface={surface} onAdd={add} />
+    </>
   );
 }

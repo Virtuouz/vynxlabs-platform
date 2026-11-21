@@ -21,6 +21,8 @@
     "@volvel/markup": "workspace:*",
     "@volvel/screens": "workspace:*",
     "@volvel/ui": "workspace:*",
+    "@volvel/widgets": "workspace:*",
+    "@volvel/widgets-core": "workspace:*",
     "@xyflow/react": "^12.12.1",
     "lucide-react": "^1.72.0",
     "mermaid": "11.17.2",

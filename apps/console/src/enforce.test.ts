@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { expect, test } from "vitest";
 
 /**
@@ -519,6 +519,45 @@ test("no key handler on a field stops every key", () => {
         found.push(`${where(path)}:${next + 1} stops every key`);
       }
     });
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * A widget's view is written against the contract and nothing else (decision 0005): a
+ * pack's views import `react`, `@volvel/widgets`, `@volvel/ui` (and their subpaths) and
+ * their own relative files. A view that reaches for the console, the renderer, the
+ * manifest or a library of its own would work in one host and not in another, and could
+ * not be shipped as a pack. Tests may import what they test with.
+ */
+test("a pack's views import only react, the widget contract, the kit and their own files", () => {
+  const roots = ["packages/widgets-core/views", "packages/widgets-labs"].map((path) =>
+    resolve(here, "../../..", path),
+  );
+  const allowed = /^(react|react\/jsx-runtime|@volvel\/widgets|@volvel\/ui)(\/.*)?$/;
+  const found: string[] = [];
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        if (entry.name === "node_modules" || entry.name === "dist") return [];
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) return walk(path);
+        return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+      });
+    for (const path of walk(root)) {
+      const text = readFileSync(path, "utf8");
+      for (const [, from] of text.matchAll(
+        /(?:\bfrom\s+|\bimport\s+|\bimport\(\s*|\brequire\(\s*)["']([^"']+)["']/g,
+      )) {
+        const name = from as string;
+        const own = name.startsWith(".")
+          ? resolve(join(path, ".."), name).startsWith(root + sep) ||
+            resolve(join(path, ".."), name) === root
+          : false;
+        if (!own && !allowed.test(name)) found.push(`${where(path)} imports "${name}"`);
+      }
+    }
   }
   expect(found).toEqual([]);
 });

@@ -198,7 +198,7 @@ export function Interfaces({
             try {
               await api.put(`${root}/drafts/${path}`, {
                 kind: "interface",
-                schemaVersion: 1,
+                schemaVersion: 2,
                 body: {
                   title: title.trim(),
                   pages: [{ id: "main", title: title.trim(), widgets: [] }],

@@ -4,5 +4,15 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../widget-sdk"
+    },
+    {
+      "path": "../widgets-core"
+    }
+  ]
 }

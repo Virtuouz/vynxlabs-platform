@@ -414,6 +414,12 @@ importers:
 
   packages/manifest:
     dependencies:
+      '@volvel/widgets':
+        specifier: workspace:*
+        version: link:../widget-sdk
+      '@volvel/widgets-core':
+        specifier: workspace:*
+        version: link:../widgets-core
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
@@ -546,6 +552,14 @@ importers:
       happy-dom:
         specifier: ^21.0.4
         version: 21.0.4
+
+  packages/widget-sdk: {}
+
+  packages/widgets-core:
+    dependencies:
+      '@volvel/widgets':
+        specifier: workspace:*
+        version: link:../widget-sdk
 
   packages/worker:
     dependencies:

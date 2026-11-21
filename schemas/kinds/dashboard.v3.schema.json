@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/dashboard.v3.schema.json",
+  "title": "dashboard body, version 3",
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "refresh": {
+      "enum": [
+        "off",
+        1,
+        5,
+        15,
+        60
+      ]
+    },
+    "filters": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,54}$"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "type": {
+            "enum": [
+              "date_range",
+              "choice",
+              "text",
+              "number"
+            ]
+          },
+          "default": {},
+          "choices": {
+            "type": "array",
+            "maxItems": 200,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "from": {
+            "type": "object",
+            "properties": {
+              "table": {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                "maxLength": 255
+              },
+              "column": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+              }
+            },
+            "required": [
+              "table",
+              "column"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "widgets": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+          },
+          "type": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,30}/[a-z][a-z0-9-]{0,40}$"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "subtitle": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "at": {
+            "type": "object",
+            "properties": {
+              "x": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 11
+              },
+              "y": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 399
+              },
+              "w": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              },
+              "h": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 40
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "w",
+              "h"
+            ],
+            "additionalProperties": false
+          },
+          "data": {
+            "type": "object",
+            "maxProperties": 4,
+            "propertyNames": {
+              "pattern": "^[a-z][a-zA-Z0-9]{0,40}$"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "source": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "visual": {
+                          "type": "object",
+                          "properties": {
+                            "table": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                              "maxLength": 255
+                            },
+                            "joins": {
+                              "type": "array",
+                              "maxItems": 6,
+                              "items": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                              }
+                            },
+                            "filters": {
+                              "type": "array",
+                              "maxItems": 20,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "column": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                                  },
+                                  "op": {
+                                    "enum": [
+                                      "eq",
+                                      "ne",
+                                      "gt",
+                                      "gte",
+                                      "lt",
+                                      "lte",
+                                      "in",
+                                      "contains",
+                                      "is_null",
+                                      "not_null"
+                                    ]
+                                  },
+                                  "value": {}
+                                },
+                                "required": [
+                                  "column",
+                                  "op"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "groupBy": {
+                              "type": "array",
+                              "maxItems": 4,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "column": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                                  },
+                                  "bucket": {
+                                    "enum": [
+                                      "day",
+                                      "week",
+                                      "month",
+                                      "quarter",
+                                      "year"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "column"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "measures": {
+                              "type": "array",
+                              "maxItems": 8,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "fn": {
+                                    "enum": [
+                                      "count",
+                                      "count_distinct",
+                                      "sum",
+                                      "avg",
+                                      "min",
+                                      "max"
+                                    ]
+                                  },
+                                  "column": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                                  },
+                                  "as": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]{0,54}$"
+                                  }
+                                },
+                                "required": [
+                                  "fn",
+                                  "as"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "columns": {
+                              "type": "array",
+                              "maxItems": 50,
+                              "items": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                              }
+                            },
+                            "sort": {
+                              "type": "array",
+                              "maxItems": 4,
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "by": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_.]{0,130}$"
+                                  },
+                                  "descending": {
+                                    "type": "boolean"
+                                  }
+                                },
+                                "required": [
+                                  "by"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "limit": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 10000
+                            }
+                          },
+                          "required": [
+                            "table"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "visual"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "query": {
+                          "type": "string",
+                          "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                          "maxLength": 255
+                        },
+                        "values": {
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "query"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "sql": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 20000
+                        },
+                        "values": {
+                          "type": "array",
+                          "maxItems": 20
+                        }
+                      },
+                      "required": [
+                        "sql"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "filters": {
+                  "type": "array",
+                  "maxItems": 16,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "filter": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{0,54}$"
+                      },
+                      "column": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                      },
+                      "parameter": {
+                        "type": "string",
+                        "pattern": "^(\\$[0-9]{1,2}|[a-z][a-z0-9_]{0,54})$"
+                      },
+                      "part": {
+                        "enum": [
+                          "from",
+                          "to"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "filter"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "source"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "config": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "at"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "widgets"
+  ],
+  "additionalProperties": false
+}

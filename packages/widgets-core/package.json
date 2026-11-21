@@ -1,0 +1,20 @@
+{
+  "name": "@volvel/widgets-core",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "The core pack: the widgets Volvel ships for pages and dashboards, written against @volvel/widgets.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./views": "./views/index.ts"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@volvel/widgets": "workspace:*"
+  }
+}

@@ -13,6 +13,8 @@
     "dist"
   ],
   "dependencies": {
+    "@volvel/widgets": "workspace:*",
+    "@volvel/widgets-core": "workspace:*",
     "ajv": "^8.20.0",
     "typebox": "^1.4.6",
     "yaml": "^2.9.1"

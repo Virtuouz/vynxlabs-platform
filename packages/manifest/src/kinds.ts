@@ -1,6 +1,5 @@
-import { dashboardKind } from "./dashboard.js";
 import { PATH_PATTERN } from "./envelope.js";
-import { interfaceBodySchema } from "./interface.js";
+import { dashboardKind, interfaceKind } from "./page.js";
 import type { KindDefinition, KindRegistry } from "./registry.js";
 
 export const PERMISSION_PATTERN = "^(\\*|[a-z][a-z0-9_]*):(\\*|read|write)$";
@@ -1298,12 +1297,6 @@ export const themeKind: KindDefinition = {
     },
     additionalProperties: false,
   },
-};
-
-export const interfaceKind: KindDefinition = {
-  kind: "interface",
-  schemaVersion: 1,
-  body: interfaceBodySchema,
 };
 
 export const appKind: KindDefinition = {

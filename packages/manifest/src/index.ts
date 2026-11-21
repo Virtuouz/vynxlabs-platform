@@ -153,6 +153,7 @@ export {
   type Page,
   type PageFilter,
   type PageFilterType,
+  type PageKind,
   type PageWidget,
   pageFilterSchema,
   pageSchema,

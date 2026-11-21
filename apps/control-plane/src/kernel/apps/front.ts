@@ -13,7 +13,7 @@ import {
 import { keyOf, readFormAnswer } from "@volvel/manifest";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
-import { ANONYMOUS, type Principal, writeAudit } from "../audit.js";
+import { ANONYMOUS, type Db, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
 import { describeTable, insertRows, withData } from "../data/rows.js";
 import { consoleDirectory, productNames } from "../docs/product.js";
@@ -1017,6 +1017,11 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
             name: principal.name ?? null,
             email: principal.email ?? null,
             ...(await endUserIdentity(db, tenant.id, principal)),
+            // A page made in the console shows some widgets only to some groups: a member's
+            // groups come too, named and keyed as an end user's are.
+            ...(generated && principal.type === "member" && principal.id
+              ? await memberGroups(db, tenant.id, principal.id)
+              : {}),
           },
         },
       });
@@ -1458,3 +1463,20 @@ const NO_SIGN_UP = (portal: string) => ({
 });
 
 export type { Notice };
+
+/** A member's groups in a tenant, by name and by key, as an end user's are given to an app. */
+async function memberGroups(
+  db: Db,
+  tenantId: string,
+  memberId: string,
+): Promise<{ groups: string[]; groupKeys: string[] }> {
+  const rows = await db
+    .selectFrom("group_member")
+    .innerJoin("principal_group", "principal_group.id", "group_member.group_id")
+    .select(["principal_group.name", "principal_group.key"])
+    .where("group_member.member_id", "=", memberId)
+    .where("principal_group.tenant_id", "=", tenantId)
+    .orderBy("principal_group.name")
+    .execute();
+  return { groups: rows.map((row) => row.name), groupKeys: rows.map((row) => row.key) };
+}

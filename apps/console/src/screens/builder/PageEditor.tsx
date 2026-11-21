@@ -12,7 +12,7 @@ import type { Surface, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { notify } from "../../ask.tsx";
-import { useCatalog } from "../../kit/inspector/catalog.ts";
+import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import { Inspector } from "../../kit/inspector/Inspector.tsx";
 import {
   bindFilter,
@@ -131,6 +131,7 @@ export function PageEditor({
   const [adding, setAdding] = useState(false);
   const [forming, setForming] = useState(false);
   const sample = useSampleRecords(root, pageInfo?.page, catalog, pageInfo?.record);
+  const lists = useActionLists(root);
   const [filterValues, setFilterValues] = useState<FilterValues>({});
   // A host passes a new `source` object on every render; what it names is what matters.
   const named = JSON.stringify(source);
@@ -413,6 +414,12 @@ export function PageEditor({
                 onDuplicate={() => duplicate(widget.id)}
                 onRemove={() => remove(widget.id)}
                 rowRules={(table) => `${link}/tables/${table}?view=definition`}
+                // What an action may touch and open: this page's kind and record, the app's pages,
+                // and the workspace's flows, scripts and groups.
+                {...(pageInfo ? { page: pageInfo.page, pages: pageInfo.pages } : {})}
+                flows={lists.flows}
+                scripts={lists.scripts}
+                groups={lists.groups}
               />
             </>
           ) : pageInfo ? (

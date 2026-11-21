@@ -1,6 +1,6 @@
-import { WidgetReadError } from "@volvel/screens";
+import { ActionError, WidgetReadError } from "@volvel/screens";
 import { ApiError, api } from "../../api.ts";
-import type { ActResponse, PageClientActions } from "./contract.ts";
+import type { ActResponse } from "./contract.ts";
 import type { FilterValues, PageDataClient, WireData } from "./renderer.ts";
 
 /** How many times, and how long apart, a draft read that finds no such widget waits for the save on its way. */
@@ -26,7 +26,7 @@ export function pageClient(
   draft = false,
   /** The record a page opened on one is drawn with: while building, a sample (phase 26). */
   record?: string,
-): PageDataClient & PageClientActions {
+): PageDataClient {
   /** Which page is asked about, as both endpoints name it. */
   const page = (params: URLSearchParams) => {
     params.set("of", source.of);
@@ -66,17 +66,29 @@ export function pageClient(
       }
     },
     // Preview actions really run in the dev workspace, from the draft, as whoever is building.
-    act: (widget, at, given) =>
-      api.post<ActResponse>(`${root}/page-actions`, {
-        of: source.of,
-        path: source.of === "interface" ? source.path : source.id,
-        ...(source.of === "interface" ? { page: source.page } : {}),
-        widget,
-        at,
-        records: { ...(record ? { this: record } : {}), ...given.records },
-        ...(given.inputs ? { inputs: given.inputs } : {}),
-        ...(draft ? { draft: true } : {}),
-      }),
+    act: async (widget, at, given) => {
+      try {
+        return await api.post<ActResponse>(`${root}/page-actions`, {
+          of: source.of,
+          path: source.of === "interface" ? source.path : source.id,
+          ...(source.of === "interface" ? { page: source.page } : {}),
+          widget,
+          at,
+          records: { ...(record ? { this: record } : {}), ...given.records },
+          ...(given.inputs ? { inputs: given.inputs } : {}),
+          ...(draft ? { draft: true } : {}),
+        });
+      } catch (error) {
+        // A refusal says what was wrong with what was typed, by field, as the served app's does.
+        if (!(error instanceof ApiError)) throw error;
+        const fields: Record<string, string> = {};
+        for (const one of error.fields) {
+          const name = one.path.replace(/^\/inputs\//, "");
+          if (name !== one.path) fields[name] = one.message;
+        }
+        throw new ActionError(error.message, error.status, fields);
+      }
+    },
     choices: async (widget, input, column, search) => {
       const params = page(new URLSearchParams({ widget, input, column, search }));
       const found = await api.get<{ choices: { value: string; label: string }[] }>(
@@ -84,12 +96,12 @@ export function pageClient(
       );
       return found.choices;
     },
-    behind: (widget, input, group) =>
-      api.get<WireData>(
-        `${root}/widget-data?${page(
-          new URLSearchParams({ widget, input, behind: JSON.stringify(group) }),
-        )}`,
-      ),
+    behind: (widget, input, group, filters) => {
+      const params = page(new URLSearchParams({ widget, input, behind: JSON.stringify(group) }));
+      if (filters && Object.keys(filters).length > 0)
+        params.set("filters", JSON.stringify(filters));
+      return api.get<WireData>(`${root}/widget-data?${params}`);
+    },
     options: async (filter) => {
       const found = await api.get<{ values: string[] }>(
         `${root}/filter-options?${page(new URLSearchParams({ filter }))}`,

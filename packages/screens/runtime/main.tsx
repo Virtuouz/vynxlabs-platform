@@ -219,13 +219,14 @@ function App() {
   // The page that is open, and its help: a page of documentation, when it names one this person may read.
   const open = pages.find((one) => one.id === address.page) ?? menu[0];
   const help = open?.help ? topics[open.help] : undefined;
-  // Who is acting, for what a page draws by who it is. A member has no groups; an end user's come with the page.
+  // Who is acting, for what a page draws by who it is. A condition names a group by its name or
+  // its key, as the server reads it.
   const user: ActingUser | undefined = who.id
     ? {
         id: who.id,
         ...(who.email ? { email: who.email } : {}),
         ...(who.name ? { name: who.name } : {}),
-        groups: who.groups ?? [],
+        groups: [...(who.groups ?? []), ...(who.groupKeys ?? [])],
       }
     : undefined;
   const draw = (page: Page, record?: string, over = false) =>

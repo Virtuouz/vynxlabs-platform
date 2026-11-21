@@ -22,8 +22,10 @@ export interface Principal {
   id: string | null;
   name: string | null;
   email: string | null;
-  /** The names of an end user's groups, such as their team. Empty for anyone else. */
+  /** The names of an end user's groups, such as their team; a member's too, in an app made in the console. */
   groups?: string[];
+  /** The same groups by key, which stays when a group is renamed. */
+  groupKeys?: string[];
   /** An end user's attributes, the ones tables' rules match. Empty for anyone else. */
   attributes?: Record<string, string>;
 }

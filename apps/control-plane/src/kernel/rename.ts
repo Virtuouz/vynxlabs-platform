@@ -78,6 +78,8 @@ export const PATH_EXEMPT: Record<string, string> = {
   "flow_run.flow_path": "history: the path it ran under. Flow runs are found by resource_id",
   "trigger_state.target_path":
     "a reference to the script or flow a trigger starts. The trigger's hook writes it from the trigger's body",
+  "dashboard_widget_query.path":
+    "the path as the dashboard wrote it, kept beside the key it named: a widget is followed by that key when the path no longer answers (phase 24 M1)",
 };
 
 /** A path no resource can have, for the middle of a swap. */

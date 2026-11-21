@@ -248,8 +248,9 @@ function EditableCell<Row extends Record<string, unknown>>({
 
   if (text === undefined && controlled) {
     return (
-      <span className="flex flex-col gap-0.5">
-        <span>{shown}</span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        {/* Cut short with its cell, which ends a long value in an ellipsis. */}
+        <span className="block truncate">{shown}</span>
         {error ? (
           <span role="alert" className="text-meta text-danger">
             {error}

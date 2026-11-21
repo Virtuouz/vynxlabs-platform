@@ -181,7 +181,7 @@ function IdentityForm({
     let current = true;
     api
       .get<{ dashboards: NamingDashboard[] }>(`${root}/rename-effects/${row.path}`)
-      .then((found) => current && setNaming(found.dashboards))
+      .then((found) => current && setNaming(found?.dashboards ?? []))
       // What a rename would change is a help, not a condition: without it the dialog still renames.
       .catch(() => undefined);
     return () => {

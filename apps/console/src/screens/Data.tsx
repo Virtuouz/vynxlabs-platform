@@ -2608,7 +2608,8 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
                 type="button"
                 key={item.name}
                 aria-current={item.name === table.name ? "true" : undefined}
-                className={`truncate rounded-control px-3 py-1.5 text-left ${
+                // A list held to a height scrolls: its entries keep theirs (on a phone it is a strip).
+                className={`shrink-0 truncate rounded-control px-3 py-1.5 text-left ${
                   item.name === table.name
                     ? "bg-action-soft font-medium text-action"
                     : "text-ink-muted hover:text-ink"

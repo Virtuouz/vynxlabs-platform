@@ -32,22 +32,30 @@ const ICONS: Record<string, LucideIcon> = {
 
 export const widgetIcon = (name: string): LucideIcon => ICONS[name] ?? Puzzle;
 
+/** How far a pointer travels from a widget in the list before it is carried, in pixels: as far as a drag on the page. */
+const CARRY_FROM = 4;
+
 /**
- * "Add to page": what can be put on the page, by what it is for. A widget is
- * added at the end of the page; to put it somewhere else, drag it there once it is on the page. It
- * lists what is registered for this kind of page, so a pack's widget is here
- * the day the pack is.
+ * "Add to page": what can be put on the page, by what it is for. A click adds
+ * a widget at the end of the page; dragging one out of the list carries it
+ * onto the page, where it lands where it is let go (the dialog closes as it is
+ * picked up). The keyboard's way is the click, then the arrows. It lists what
+ * is registered for this kind of page, so a pack's widget is here the day the
+ * pack is.
  */
 export function AddToPage({
   open,
   onClose,
   surface,
   onAdd,
+  onCarry,
 }: {
   open: boolean;
   onClose: () => void;
   surface: Surface;
   onAdd: (definition: WidgetDefinition) => void;
+  /** A widget was dragged out of the list: carry it onto the page from where the pointer is. */
+  onCarry?: (definition: WidgetDefinition, from: { x: number; y: number }) => void;
 }) {
   const [search, setSearch] = useState("");
   const needle = search.trim().toLowerCase();
@@ -66,6 +74,25 @@ export function AddToPage({
   const add = (definition: WidgetDefinition) => {
     onAdd(definition);
     setSearch("");
+  };
+  /** A press on a widget in the list that travels is a carry, not a click. A finger scrolls the list instead. */
+  const pickUp = (event: React.PointerEvent<HTMLButtonElement>, definition: WidgetDefinition) => {
+    if (!onCarry || event.button !== 0 || event.pointerType === "touch") return;
+    const from = { x: event.clientX, y: event.clientY };
+    const follow = (moving: PointerEvent) => {
+      if (Math.hypot(moving.clientX - from.x, moving.clientY - from.y) < CARRY_FROM) return;
+      stop();
+      setSearch("");
+      onCarry(definition, { x: moving.clientX, y: moving.clientY });
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", follow);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", follow);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
   };
   return (
     <Dialog
@@ -124,7 +151,11 @@ export function AddToPage({
                         <button
                           type="button"
                           onClick={() => add(definition)}
-                          className="flex w-full items-center gap-3 rounded-control px-2 py-2 text-left hover:bg-action-soft"
+                          onPointerDown={(event) => pickUp(event, definition)}
+                          draggable={false}
+                          className={`flex w-full items-center gap-3 rounded-control px-2 py-2 text-left select-none hover:bg-action-soft ${
+                            onCarry ? "cursor-grab active:cursor-grabbing" : ""
+                          }`}
                         >
                           <span className="flex size-8 shrink-0 items-center justify-center rounded-control border border-line text-ink-muted">
                             <Icon aria-hidden="true" size={16} />
@@ -152,7 +183,9 @@ export function AddToPage({
           })
         )}
         <p className="m-0 text-body-sm text-ink-muted">
-          Click to place at the end of the page, then drag it where you want it.
+          {onCarry
+            ? "Click to place at the end of the page, or drag it onto the page where you want it."
+            : "Click to place at the end of the page, then drag it where you want it."}
         </p>
       </div>
     </Dialog>

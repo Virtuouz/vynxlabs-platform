@@ -4,6 +4,8 @@
  */
 
 export type {
+  Box,
+  CarryRequest,
   FilterValues,
   PageDataClient,
   PageViewProps,
@@ -11,6 +13,6 @@ export type {
   WidgetPack,
   WireData,
 } from "@volvel/screens";
-export { FilterBar, PageView, viewRegistry } from "@volvel/screens";
+export { FilterBar, PageView, placed, viewRegistry } from "@volvel/screens";
 export { corePack } from "@volvel/widgets-core/views";
 export { labsPack } from "@volvel/widgets-labs/views";

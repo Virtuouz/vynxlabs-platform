@@ -1,3 +1,4 @@
+import { placed, without } from "@volvel/screens";
 /**
  * What the inspector does with a widget, with no React in it so it can be
  * tested by itself. It reads a widget's definition (`@volvel/widgets`) and
@@ -387,48 +388,19 @@ export function clampPlace(definition: WidgetDefinition | undefined, want: Place
   return { x, y, w, h };
 }
 
-const overlaps = (a: Place, b: Place) =>
-  a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-
 /**
- * The widgets with `movedId` where it is, and whatever it now lies on pushed
- * down out of its way, and that in turn, so nothing overlaps.
+ * The widgets with `movedId` where it is, whatever it now lies on pushed out of its
+ * way, and the rest risen as far as they go: the canvas's own rule (`placed`), so a
+ * place typed in the Layout panel settles exactly as a drag does (POLISH-013).
  */
 export function settleOnGrid(widgets: readonly PageWidget[], movedId: string): PageWidget[] {
-  const next = widgets.map((one) => ({ ...one, at: { ...one.at } }));
-  const fixed = next.find((one) => one.id === movedId);
-  if (!fixed) return next;
-  const queue = [fixed];
-  for (let guard = 0; queue.length > 0 && guard < 500; guard += 1) {
-    const pusher = queue.shift() as PageWidget;
-    for (const other of next) {
-      if (other.id === pusher.id || other.id === movedId) continue;
-      if (overlaps(pusher.at, other.at)) {
-        other.at.y = pusher.at.y + pusher.at.h;
-        queue.push(other);
-      }
-    }
-  }
-  return next;
+  const moved = widgets.find((one) => one.id === movedId);
+  return moved ? placed(widgets, movedId, moved.at) : widgets.map((one) => ({ ...one }));
 }
 
 /** What the widgets would be if one were removed: what was under it rises into the room it leaves. */
 export function withoutWidget(widgets: readonly PageWidget[], id: string): PageWidget[] {
-  const rest = widgets.filter((one) => one.id !== id).map((one) => ({ ...one, at: { ...one.at } }));
-  // Bring each widget up while there is room above it, top to bottom.
-  const order = [...rest].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x);
-  for (const widget of order) {
-    while (
-      widget.at.y > 0 &&
-      !rest.some(
-        (other) =>
-          other.id !== widget.id && overlaps({ ...widget.at, y: widget.at.y - 1 }, other.at),
-      )
-    ) {
-      widget.at.y -= 1;
-    }
-  }
-  return rest;
+  return without(widgets, id);
 }
 
 /** A copy of a widget just under the original, with an id of its own. */

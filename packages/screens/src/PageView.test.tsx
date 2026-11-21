@@ -1019,3 +1019,112 @@ describe("what the frame offers besides the view", () => {
     expect(screen.getByText("reports/new")).toBeTruthy();
   });
 });
+
+describe("carrying a widget onto the page (POLISH-008)", () => {
+  const stat: PageWidget = {
+    id: "s",
+    type: "core/text",
+    title: "Note",
+    at: { x: 0, y: 0, w: 6, h: 2 },
+    config: { text: "Hello" },
+  };
+  const card = {
+    title: "Chart",
+    kind: "A trend or a comparison",
+    size: { w: 6, h: 6 },
+    limits: { min: { w: 3, h: 4 }, max: { w: 12, h: 40 } },
+  };
+  // A grid 1188 pixels wide: columns of 100 with the gap, rows of 52.
+  const measured = { left: 0, top: 0, right: 1188, bottom: 520, width: 1188, height: 520 };
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      ...measured,
+      x: 0,
+      y: 0,
+      toJSON: () => measured,
+    } as DOMRect);
+  });
+
+  const carried = (onDrop: (at: unknown) => void) => (
+    <PageView
+      widgets={[stat]}
+      filters={[]}
+      registry={registry}
+      client={{ read: async () => ({ inputs: {} }) }}
+      filterValues={{}}
+      onFilterValues={() => undefined}
+      editing={{
+        selected: undefined,
+        onSelect: () => undefined,
+        onChange: () => undefined,
+        onRename: () => undefined,
+        carrying: { card, from: { x: 2000, y: 2000 }, onDrop },
+      }}
+    />
+  );
+
+  test("follows the pointer as a card, lands where it is let go, and what was there makes room", async () => {
+    const onDrop = vi.fn();
+    const { container } = render(carried(onDrop));
+    // Off the page: a card under the pointer, and no place on the grid yet.
+    expect(container.querySelector("[data-carried]")).toBeTruthy();
+    expect(container.querySelector("[data-landing]")).toBeNull();
+    act(() => {
+      window.dispatchEvent(new PointerEvent("pointermove", { clientX: 300, clientY: 10 }));
+    });
+    const landing = container.querySelector("[data-landing]");
+    expect(landing?.textContent).toContain("6 × 6 · col 1 · row 1");
+    expect(container.querySelector("[data-carried]")).toBeNull();
+    // The note was under where it would land: it is drawn below it while the chart is held.
+    const note = screen.getByRole("group", { name: "Note" });
+    expect(note.style.getPropertyValue("--row")).toBe("7 / span 2");
+    act(() => {
+      window.dispatchEvent(new PointerEvent("pointerup", { clientX: 300, clientY: 10 }));
+    });
+    expect(onDrop).toHaveBeenCalledWith({ x: 0, y: 0, w: 6, h: 6 });
+    expect(container.querySelector("[data-landing]")).toBeNull();
+  });
+
+  test("let go off the page, or Esc, adds nothing", () => {
+    const offPage = vi.fn();
+    const { unmount } = render(carried(offPage));
+    act(() => {
+      window.dispatchEvent(new PointerEvent("pointerup", { clientX: 2000, clientY: 2000 }));
+    });
+    expect(offPage).toHaveBeenCalledWith(undefined);
+    unmount();
+    const escaped = vi.fn();
+    render(carried(escaped));
+    act(() => {
+      window.dispatchEvent(new PointerEvent("pointermove", { clientX: 300, clientY: 10 }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(escaped).toHaveBeenCalledWith(undefined);
+  });
+
+  test("a widget new on the page fades in where it lands; those already there don't", () => {
+    const props = {
+      filters: [],
+      registry,
+      client: { read: async () => ({ inputs: {} }) },
+      filterValues: {},
+      onFilterValues: () => undefined,
+      editing: {
+        selected: undefined,
+        onSelect: () => undefined,
+        onChange: () => undefined,
+        onRename: () => undefined,
+      },
+    };
+    const { rerender } = render(<PageView widgets={[stat]} {...props} />);
+    expect(screen.getByRole("group", { name: "Note" }).className).not.toContain("animate-arrive");
+    rerender(
+      <PageView
+        widgets={[stat, { ...stat, id: "t", title: "Later", at: { x: 6, y: 0, w: 6, h: 2 } }]}
+        {...props}
+      />,
+    );
+    expect(screen.getByRole("group", { name: "Later" }).className).toContain("animate-arrive");
+    expect(screen.getByRole("group", { name: "Note" }).className).not.toContain("animate-arrive");
+  });
+});

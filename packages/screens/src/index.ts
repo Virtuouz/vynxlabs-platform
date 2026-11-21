@@ -19,8 +19,16 @@ export {
   sizeWords,
   without,
 } from "./layout.ts";
-export { PageView, type PageViewProps } from "./PageView.tsx";
-export { type Box, GRID, type Placement, usePlacement } from "./placement.ts";
+export { type CarryRequest, PageView, type PageViewProps } from "./PageView.tsx";
+export {
+  type Box,
+  CARRIED,
+  type Card,
+  type Carrying,
+  GRID,
+  type Placement,
+  usePlacement,
+} from "./placement.ts";
 export {
   type FilterValues,
   type PageDataClient,

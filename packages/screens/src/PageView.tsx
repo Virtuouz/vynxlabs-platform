@@ -1,5 +1,5 @@
 import type { PageFilter, PageWidget } from "@volvel/manifest";
-import { EmptyState, Panel } from "@volvel/ui";
+import { EmptyState, Panel, useFlip } from "@volvel/ui";
 import { GripHorizontal } from "@volvel/ui/icons";
 import type { EventPayload } from "@volvel/widgets";
 import type React from "react";
@@ -10,12 +10,21 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { FilterBar } from "./FilterBar.tsx";
 import { Frame, nameOf } from "./Frame.tsx";
 import { duplicated, limitsOf, placed, sizeWords, without } from "./layout.ts";
-import { type Box, type HowMoved, isControl, usePlacement } from "./placement.ts";
+import {
+  type Box,
+  CARRIED,
+  type Card,
+  type Carrying,
+  type HowMoved,
+  isControl,
+  usePlacement,
+} from "./placement.ts";
 import type { FilterValues, PageDataClient, ViewEntry, ViewRegistry } from "./types.ts";
 import { useWidgetData } from "./useWidgetData.ts";
 
@@ -41,7 +50,20 @@ export interface PageViewProps {
     onRename(id: string, title: string): void;
     /** A column heading was clicked in a table while building. */
     onColumn?(id: string, column: string): void;
+    /**
+     * Something carried onto the page from outside it ("Add to page"), from where the
+     * pointer was when the carrying began. A new value starts a new carry. `onDrop` is
+     * told where it landed, or nothing when it was let go off the page or Esc was pressed.
+     */
+    carrying?: CarryRequest | undefined;
   };
+}
+
+/** A widget not yet on the page, held by the pointer. */
+export interface CarryRequest {
+  card: Card;
+  from: { x: number; y: number };
+  onDrop(at: Box | undefined): void;
 }
 
 type Editing = NonNullable<PageViewProps["editing"]>;
@@ -74,6 +96,7 @@ function Cell({
   entry,
   at,
   held,
+  arriving,
   narrow,
   client,
   filterValues,
@@ -88,6 +111,8 @@ function Cell({
   entry: ViewEntry | undefined;
   at: Box;
   held: boolean;
+  /** It is new on the page since the page was opened: it fades in where it lands. */
+  arriving: boolean;
   narrow: boolean;
   client: PageDataClient;
   filterValues: FilterValues;
@@ -134,12 +159,13 @@ function Cell({
     <Panel
       as="section"
       aria-label={name}
-      data-flip-key={widget.id}
+      // What is held follows the pointer, and is not played from where it was.
+      data-flip-key={held ? undefined : widget.id}
       data-selected={selected ? "" : undefined}
       style={style}
       className={`relative flex min-h-0 min-w-0 flex-col @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
         selected ? "ring-2 ring-action" : ""
-      } ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${
+      } ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arriving ? "animate-arrive" : ""} ${
         building ? "cursor-grab touch-pan-y select-none active:cursor-grabbing" : ""
       }`}
       {...(building
@@ -246,8 +272,9 @@ export function PageView({
     [byId, registry],
   );
 
+  const gridRef = useRef<HTMLDivElement>(null);
   const placement = usePlacement({
-    places: JSON.stringify(widgets.map((widget) => [widget.id, widget.at])),
+    grid: gridRef,
     limits: (id) => limitsOf(registry.get(byId.get(id)?.type ?? "")?.definition),
     onGrabbed: (id) => editing?.onSelect(id),
     onMove: editing
@@ -275,8 +302,42 @@ export function PageView({
     setTold(`${name(id)} is copied.`);
   };
 
-  const gridRef = placement.grid;
   const narrow = useNarrow(gridRef);
+
+  // Where everything is drawn: while something is held or carried, where it would all be
+  // if it were let go now, so what is in the way is seen to move aside as it travels.
+  const carrying = placement.carrying;
+  const preview = useMemo(() => {
+    const boxes = widgets.map((widget) => ({ id: widget.id, at: widget.at }));
+    const held = placement.held;
+    if (held) return placed(boxes, held.id, held.at);
+    if (carrying?.at)
+      return placed([...boxes, { id: CARRIED, at: carrying.at }], CARRIED, carrying.at);
+    return boxes;
+  }, [widgets, placement.held, carrying?.at]);
+  const drawnAt = useMemo(() => new Map(preview.map((one) => [one.id, one.at])), [preview]);
+  useFlip(JSON.stringify(preview), { ref: gridRef });
+
+  // A widget that was not on the page when it was opened has arrived: added, copied or carried in.
+  const known = useRef<Set<string> | undefined>(undefined);
+  known.current ??= new Set(widgets.map((widget) => widget.id));
+  useEffect(() => {
+    for (const widget of widgets) known.current?.add(widget.id);
+  });
+
+  // A carry asked for by the host starts once per request.
+  const carryRequest = editing?.carrying;
+  const endRow = () => widgets.reduce((low, widget) => Math.max(low, widget.at.y + widget.at.h), 0);
+  const narrowNow = useRef(narrow);
+  narrowNow.current = narrow;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a request is started once, when it is new
+  useEffect(() => {
+    if (!carryRequest) return;
+    placement.carry(carryRequest.card, carryRequest.from, carryRequest.onDrop, {
+      narrow: () => narrowNow.current,
+      endRow,
+    });
+  }, [carryRequest]);
   const emptyMessage =
     filters.length > 0 ? "Nothing matches the filters above." : "There is nothing here yet.";
 
@@ -308,7 +369,7 @@ export function PageView({
             const entry = registry.get(widget.type);
             // On a phone a widget whose definition says so is not shown at all.
             if (!editing && narrow && entry?.definition.layout.phone === "hide") return null;
-            const at = placement.at(widget.id, widget.at);
+            const at = drawnAt.get(widget.id) ?? widget.at;
             const selected = editing?.selected === widget.id;
             return (
               <Cell
@@ -317,6 +378,7 @@ export function PageView({
                 entry={entry}
                 at={at}
                 held={placement.held?.id === widget.id}
+                arriving={editing !== undefined && !known.current?.has(widget.id)}
                 narrow={narrow}
                 client={client}
                 filterValues={filterValues}
@@ -355,7 +417,9 @@ export function PageView({
               />
             );
           })}
+          {carrying?.at ? <Landing card={carrying.card} at={carrying.at} /> : null}
         </div>
+        {carrying && !carrying.at ? <Carried carrying={carrying} /> : null}
         <span role="status" className="sr-only">
           {placement.said}
         </span>
@@ -401,5 +465,43 @@ function useFilterOptions(
   return useMemo(
     () => (given || Object.keys(read).length > 0 ? { ...read, ...given } : undefined),
     [given, read],
+  );
+}
+
+/** Where something carried onto the page would land, at its size, with what it is. */
+function Landing({ card, at }: { card: Card; at: Box }) {
+  const style = {
+    "--col": `${at.x + 1} / span ${at.w}`,
+    "--row": `${at.y + 1} / span ${at.h}`,
+  } as CSSProperties;
+  return (
+    <div
+      aria-hidden="true"
+      data-flip-key={CARRIED}
+      data-landing=""
+      style={style}
+      className="relative flex min-h-24 flex-col justify-center gap-0.5 rounded-panel border-2 border-dashed border-action bg-action-soft px-4 @2xl:min-h-0 @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)]"
+    >
+      <span className="truncate font-semibold text-ink">{card.title}</span>
+      <span className="text-body-sm text-ink-muted">{card.kind}</span>
+      <span className="pointer-events-none absolute right-2 -bottom-8 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta text-ink">
+        {sizeWords(at)}
+      </span>
+    </div>
+  );
+}
+
+/** What is being carried, under the pointer, while it is not over the page. */
+function Carried({ carrying }: { carrying: Carrying }) {
+  return (
+    <div
+      aria-hidden="true"
+      data-carried=""
+      style={{ left: carrying.pointer.x, top: carrying.pointer.y }}
+      className="pointer-events-none fixed layer-sticky flex -translate-x-1/2 translate-y-2 flex-col rounded-panel border border-line-strong bg-raised px-3 py-2 shadow-drag"
+    >
+      <span className="font-medium text-ink">{carrying.card.title}</span>
+      <span className="text-body-sm text-ink-muted">Over the page to place it · Esc to cancel</span>
+    </div>
   );
 }

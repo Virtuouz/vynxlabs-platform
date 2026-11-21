@@ -1,4 +1,11 @@
-import { MAX_PAGE_WIDGETS, newWidget, type PageFilter, type PageWidget } from "@volvel/manifest";
+import {
+  MAX_PAGE_WIDGETS,
+  MAX_WIDGET_HEIGHT,
+  newWidget,
+  PAGE_COLUMNS,
+  type PageFilter,
+  type PageWidget,
+} from "@volvel/manifest";
 import { Button, EmptyState } from "@volvel/ui";
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
@@ -20,7 +27,7 @@ import { type PageSource, pageClient } from "./client.ts";
 import { EditorShell } from "./EditorShell.tsx";
 import { type FilterChange, PageFilterSettings } from "./PageFilters.tsx";
 import { definitionOf, views } from "./registry.ts";
-import { type FilterValues, PageView } from "./renderer.ts";
+import { type Box, type CarryRequest, type FilterValues, PageView, placed } from "./renderer.ts";
 
 /** What the editor changes: a page's widgets and its filters. Everything else about a page or a dashboard is its host's. */
 export interface PageValue {
@@ -103,9 +110,11 @@ export function PageEditor({
     put(moved ? settleOnGrid(next, changed.id) : next, label, key);
   };
 
-  const add = (definition: WidgetDefinition) => {
+  /** Adds a widget: at the end of the page, or where it was carried to (`at`). */
+  const add = (definition: WidgetDefinition, at?: Box) => {
     const id = newId(definition.type, widgets);
     let added: PageWidget = newWidget(definition, id, widgets);
+    if (at) added = { ...added, at };
     added = {
       ...added,
       ...(Object.keys(definition.data).length > 0
@@ -114,9 +123,39 @@ export function PageEditor({
     };
     if (added.data && Object.keys(added.data).length === 0) delete added.data;
     for (const filter of filters) added = bindFilter(added, filter, catalog);
-    put([...widgets, added], `adding ${definition.title.toLowerCase()}`);
+    const next = at ? placed([...widgets, added], id, at) : [...widgets, added];
+    put(next, `adding ${definition.title.toLowerCase()}`);
     onSelect(id);
     setAdding(false);
+    setTold(
+      at
+        ? `${definition.title} is added at column ${at.x + 1}, row ${at.y + 1}.`
+        : `${definition.title} is added at the end of the page.`,
+    );
+  };
+
+  // A widget dragged out of "Add to page" is carried by the canvas until it is let go.
+  const [carrying, setCarrying] = useState<CarryRequest>();
+  const [told, setTold] = useState("");
+  const carry = (definition: WidgetDefinition, from: { x: number; y: number }) => {
+    setAdding(false);
+    setCarrying({
+      card: {
+        title: definition.title,
+        kind: definition.description,
+        size: definition.layout.default,
+        limits: {
+          min: definition.layout.min,
+          max: definition.layout.max ?? { w: PAGE_COLUMNS, h: MAX_WIDGET_HEIGHT },
+        },
+      },
+      from,
+      onDrop: (at) => {
+        setCarrying(undefined);
+        if (at) add(definition, at);
+        else setTold(`${definition.title} was not added.`);
+      },
+    });
   };
 
   const remove = (id: string) => {
@@ -225,6 +264,7 @@ export function PageEditor({
                   `title:${id}`,
                 ),
               onColumn: (id) => onSelect(id),
+              carrying,
             }}
           />
         )}
@@ -268,7 +308,16 @@ export function PageEditor({
           )
         }
       />
-      <AddToPage open={adding} onClose={() => setAdding(false)} surface={surface} onAdd={add} />
+      <AddToPage
+        open={adding}
+        onClose={() => setAdding(false)}
+        surface={surface}
+        onAdd={(definition) => add(definition)}
+        {...(widgets.length > 0 ? { onCarry: carry } : {})}
+      />
+      <span role="status" className="sr-only">
+        {told}
+      </span>
     </>
   );
 }

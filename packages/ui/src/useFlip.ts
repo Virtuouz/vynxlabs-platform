@@ -24,9 +24,14 @@ const still = () =>
  */
 export function useFlip<E extends HTMLElement>(
   order: string,
-  options: { paused?: boolean } = {},
+  options: {
+    paused?: boolean;
+    /** The holder, when the caller already has a ref for it: a canvas that measures it too. */
+    ref?: RefObject<E | null>;
+  } = {},
 ): RefObject<E | null> {
-  const holder = useRef<E>(null);
+  const own = useRef<E>(null);
+  const holder = options.ref ?? own;
   const before = useRef<{ order: string; places: Map<string, { x: number; y: number }> }>({
     order,
     places: new Map(),

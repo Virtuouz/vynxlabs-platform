@@ -40,6 +40,16 @@ export interface Catalog {
   queries: { path: string; description: string }[];
   maySql: boolean;
 }
+/** A flow that can be started by hand, and what its manual trigger takes (JSON Schema). */
+export interface FlowChoice {
+  path: string;
+  manualInput?: { properties?: Record<string, unknown> } | null;
+}
+/** A script of the workspace, and what it takes. */
+export interface ScriptChoice {
+  path: string;
+  inputSchema?: { properties?: Record<string, unknown> } | null;
+}
 export const EMPTY_CATALOG: Catalog = { tables: [], queries: [], maySql: false };
 
 const SYSTEM: CatalogColumn[] = [

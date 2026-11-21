@@ -4,7 +4,7 @@
  * `x-volvel` hint. A widget names a control; it never brings one of its own,
  * so a widget from any pack is drawn with no code here that knows it.
  */
-import type { PageFilter, PageWidget, ValueFormat } from "@volvel/manifest";
+import type { Page, PageFilter, PageWidget, ValueFormat } from "@volvel/manifest";
 import {
   Button,
   CheckboxField,
@@ -22,8 +22,10 @@ import {
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
 import { useState } from "react";
 import { amount } from "../format.ts";
+import { ActionControl, ActionsControl } from "./actionControls.tsx";
 import { DataControl } from "./dataControls.tsx";
-import type { Catalog, ConfigSetting } from "./model.ts";
+import { FieldsControl, PageControl } from "./fieldsControl.tsx";
+import type { Catalog, ConfigSetting, FlowChoice, ScriptChoice } from "./model.ts";
 import { heading, resultNames, visualOf, withConfig, withSystemColumns } from "./model.ts";
 
 /** What every control is given: the widget, its definition, and how to write it. */
@@ -39,6 +41,15 @@ export interface Env {
   config: Record<string, unknown>;
   /** Writes the widget as it should now be. `key` joins quick changes, such as typing, into one step to undo. */
   write: (next: PageWidget, label: string, key?: string) => void;
+  /** The page the widget is on, when it is an app's: its kind and the table of its record say what an action may touch. */
+  page?: Page | undefined;
+  /** The interface's pages: what "Open a page" and a page setting choose from. */
+  pages: readonly Page[];
+  /** The workspace's flows (only those with a manual trigger are offered) and scripts. */
+  flows: readonly FlowChoice[];
+  scripts: readonly ScriptChoice[];
+  /** The names of the groups of members, for "the current user is in …". */
+  groups: readonly string[];
 }
 
 /** The columns a column control offers for a data input. */
@@ -232,6 +243,47 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
         />
       );
     }
+    case "action":
+      return (
+        <ActionControl
+          env={env}
+          id={field}
+          label={hint.label}
+          help={help}
+          action={value as never}
+          onChange={(next, key) => set(next, key !== undefined)}
+        />
+      );
+    case "actions":
+      return (
+        <ActionsControl
+          env={env}
+          id={field}
+          setting={setting}
+          onChange={(next) => set(next, false)}
+        />
+      );
+    case "page":
+      return (
+        <PageControl
+          env={env}
+          field={field}
+          label={hint.label}
+          help={help}
+          value={typeof value === "string" ? value : ""}
+          onChange={(next) => set(next)}
+        />
+      );
+    case "fields":
+      return (
+        <FieldsControl
+          env={env}
+          field={field}
+          setting={setting}
+          value={Array.isArray(value) ? (value as never) : undefined}
+          onChange={(next) => set(next, false)}
+        />
+      );
     case "source":
     case "measure":
     case "breakdown":

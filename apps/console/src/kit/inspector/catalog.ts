@@ -1,5 +1,5 @@
 import { useLoad } from "../../api.ts";
-import { type Catalog, EMPTY_CATALOG } from "./model.ts";
+import { type Catalog, EMPTY_CATALOG, type FlowChoice, type ScriptChoice } from "./model.ts";
 
 interface Schema {
   tables: { name: string; columns: { name: string; type: string; references: string | null }[] }[];
@@ -28,4 +28,26 @@ export function useCatalog(root: string): {
         }
       : EMPTY_CATALOG;
   return { catalog, loading: !schema.data && !schema.error, error: schema.error?.message };
+}
+
+/**
+ * What an action can start and who it can name, read once for the editor: the
+ * workspace's flows that can be run by hand, its scripts, and the tenant's groups
+ * of members. Pass them to `Inspector` as `flows`, `scripts` and `groups`.
+ */
+export function useActionLists(root: string): {
+  flows: FlowChoice[];
+  scripts: ScriptChoice[];
+  groups: string[];
+} {
+  const flows = useLoad<{ items: (FlowChoice & { triggers: string[] })[] }>(`${root}/flows`);
+  const scripts = useLoad<{ items: ScriptChoice[] }>(`${root}/scripts`);
+  const groups = useLoad<{ items: { name: string }[] }>(
+    `${root.split("/workspaces/")[0] ?? ""}/groups?limit=200`,
+  );
+  return {
+    flows: (flows.data?.items ?? []).filter((one) => one.triggers.includes("manual")),
+    scripts: scripts.data?.items ?? [],
+    groups: (groups.data?.items ?? []).map((one) => one.name),
+  };
 }

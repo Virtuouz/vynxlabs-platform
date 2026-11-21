@@ -8,8 +8,8 @@
  * each showing its main settings and one "More … options" disclosure, never
  * deeper (08, S9 §inspector).
  */
-import type { PageFilter, PageWidget } from "@volvel/manifest";
-import { Button, Details, Menu, NumberField, Tabs, TextField } from "@volvel/ui";
+import type { Page, PageFilter, PageWidget } from "@volvel/manifest";
+import { Button, Details, Menu, NumberField, SegmentedControl, Tabs, TextField } from "@volvel/ui";
 import {
   type Surface,
   TAB_TITLES,
@@ -21,6 +21,9 @@ import { ArrowLeft, Copy, Ellipsis, LayoutGrid, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link } from "../../router.tsx";
 import { formatCombo } from "../keys.ts";
+import { ActionEditor, actionContext } from "./actionControls.tsx";
+import { type Action, type Condition, conditionSentence, firstCondition } from "./actionModel.ts";
+import { ConditionsEditor } from "./conditions.tsx";
 import { ConfigControl, type Env } from "./controls.tsx";
 import { DataControl } from "./dataControls.tsx";
 import {
@@ -31,8 +34,10 @@ import {
   configSettings,
   type DataPart,
   dataParts,
+  type FlowChoice,
   heading,
   isShown,
+  type ScriptChoice,
   tabCount,
   tabsOf,
   visualOf,
@@ -55,6 +60,15 @@ export interface InspectorProps {
   onRemove: () => void;
   /** Where a table's row rules are changed, if the reader may go there. */
   rowRules?: ((table: string) => string) | undefined;
+  /** The page the widget is on (its kind and the table of its record), when it is an app's. */
+  page?: Page | undefined;
+  /** The interface's pages, for "Open a page" and the `page` setting. */
+  pages?: readonly Page[];
+  /** The workspace's flows; only those with a manual trigger are offered to "Run a workflow". */
+  flows?: readonly FlowChoice[];
+  scripts?: readonly ScriptChoice[];
+  /** The names of the groups of members, for "the current user is in …". */
+  groups?: readonly string[];
 }
 
 const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
@@ -110,6 +124,11 @@ export function Inspector(props: InspectorProps) {
     catalog: props.catalog,
     config,
     write: props.onChange,
+    page: props.page,
+    pages: props.pages ?? [],
+    flows: props.flows ?? [],
+    scripts: props.scripts ?? [],
+    groups: props.groups ?? [],
   };
   const tabs = tabsOf(definition);
 
@@ -293,19 +312,35 @@ function TabBody({
 
 function ActionsTab({ env }: { env: Env }) {
   const events = Object.entries(env.definition.events);
+  const settings = configSettings(env.definition, "actions").filter((one) =>
+    isShown(one.hint, env.config),
+  );
+  const setEvent = (name: string, action: Action | undefined, key?: string) => {
+    const on = { ...(env.widget.on ?? {}) };
+    if (action) on[name] = action;
+    else delete on[name];
+    const { on: _before, ...rest } = env.widget;
+    env.write(
+      Object.keys(on).length > 0 ? { ...rest, on } : rest,
+      "changing what it does",
+      key ? `on:${env.widget.id}:${name}` : undefined,
+    );
+  };
   return (
     <div className="flex flex-col gap-4">
       {events.map(([name, event]) => (
-        <div key={name} className="flex flex-col gap-1">
-          <span className="text-body-sm font-medium text-ink">{event.label}</span>
-          <p className="m-0 flex h-control items-center rounded-control border border-line px-3 text-ink-muted">
-            Nothing
-          </p>
-        </div>
+        <ActionEditor
+          key={name}
+          env={env}
+          id={`${env.widget.id}-on-${name}`}
+          heading={event.label}
+          action={env.widget.on?.[name]}
+          onChange={(next, key) => setEvent(name, next, key)}
+        />
       ))}
-      <p className="m-0 text-body-sm text-ink-muted">
-        What these do is set here once actions come to pages. Until then they do nothing.
-      </p>
+      {settings.map((setting) => (
+        <ConfigControl key={setting.name} env={env} setting={setting} />
+      ))}
     </div>
   );
 }
@@ -320,16 +355,52 @@ function RulesTab({ env, rowRules }: { env: Env; rowRules: InspectorProps["rowRu
     ),
   ];
   const noun = env.surface === "app" ? "app" : "dashboard";
+  // A widget's own rules can read the record its page is open on, and no clicked one.
+  const ctx = { ...actionContext(env), eventTable: undefined, defaultRef: "this" as const };
+  const showWhen = env.widget.rules?.showWhen;
+  const setShowWhen = (next: Condition[] | undefined, key?: string) => {
+    const { rules: _before, ...rest } = env.widget;
+    env.write(
+      next && next.length > 0
+        ? { ...rest, rules: { ...(env.widget.rules ?? {}), showWhen: next } }
+        : rest,
+      "changing when it is shown",
+      key ? `showWhen:${env.widget.id}` : undefined,
+    );
+  };
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
         <span className="text-body-sm font-medium text-ink">Show this widget</span>
-        <p className="m-0 flex h-control items-center rounded-control border border-line px-3 text-ink-muted">
-          Always
-        </p>
-        <p className="m-0 text-body-sm text-ink-muted">
-          Showing a widget only sometimes comes later.
-        </p>
+        <div>
+          <SegmentedControl
+            label="Show this widget"
+            options={[
+              { value: "always", label: "Always" },
+              { value: "when", label: "Only when …" },
+            ]}
+            value={showWhen ? "when" : "always"}
+            onChange={(next) => {
+              if (next === "always") setShowWhen(undefined);
+              else if (!showWhen) setShowWhen([firstCondition(ctx, env.groups)]);
+            }}
+          />
+        </div>
+        {showWhen ? (
+          <>
+            <ConditionsEditor
+              id={`${env.widget.id}-show`}
+              noun="rule"
+              conditions={showWhen}
+              ctx={ctx}
+              groups={env.groups}
+              onChange={(next, key) => setShowWhen(next, key)}
+            />
+            <p className="m-0 text-body-sm text-ink-muted">
+              Shown only when {showWhen.map((one) => conditionSentence(one)).join(" and ")}.
+            </p>
+          </>
+        ) : null}
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-body-sm font-medium text-ink">Who can see it</span>

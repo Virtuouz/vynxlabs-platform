@@ -5,6 +5,7 @@ import {
   type Bundle,
   type BundleManifest,
   CORE_PREFIX,
+  type DashboardBody,
   entryFor,
   keyOf,
   movedFile,
@@ -12,6 +13,7 @@ import {
 } from "@volvel/manifest";
 import { CORE_RANGE, SDK_VERSION } from "@volvel/sdk";
 import { type Audit, type Db, mutate, type Principal, type Trx } from "./audit.js";
+import { dashboardsNaming, queryPathsOf, renamedQuery } from "./dashboard-queries.js";
 import { badRequest, conflict, HttpError, notFound } from "./errors.js";
 import { loadBundle, storeBundle } from "./execution/bundles.js";
 import { deployBundle } from "./execution/deploy.js";
@@ -51,6 +53,11 @@ export interface DraftInput {
   moveTo?: string | undefined;
   /** What people read. Null takes it away. Left as it is when not given. */
   title?: string | null | undefined;
+  /**
+   * With a rename of a query: also draft the console's dashboards that name its path, with the
+   * new one. Left to a caller who may write any resource, since it drafts resources beyond the query.
+   */
+  renameDashboards?: boolean | undefined;
   /** A create: refused, as `path_taken`, when the path holds a draft or a deployed resource. */
   create?: boolean | undefined;
 }
@@ -275,6 +282,19 @@ export async function saveDraft(
       ...(path !== input.path ? { renamedFrom: input.path } : {}),
     },
   });
+  // A query renamed: the dashboards made in the console that name its path are drafted with the
+  // new one, in this same transaction. A dashboard from the repository is changed there.
+  if (input.renameDashboards && input.kind === "query" && !input.deleted && path !== input.path) {
+    for (const dashboard of await dashboardsNaming(trx, workspace.id, input.path)) {
+      if (dashboard.ownership === "code") continue;
+      await saveDraft(kernel, trx, audit, workspace, principal, {
+        path: dashboard.path,
+        kind: "dashboard",
+        schemaVersion: dashboard.schemaVersion,
+        body: renamedQuery(dashboard.body, input.path, path) as unknown as Record<string, unknown>,
+      });
+    }
+  }
   return { draft: row, takesOver: resource?.ownership === "code" };
 }
 
@@ -329,6 +349,33 @@ async function keepInHistory(trx: Trx, draft: DraftRow, reason: "replaced" | "se
 /** Sets a draft aside: it stops being a draft, and is kept whole in its history. */
 export async function discardDraft(trx: Trx, audit: Audit, workspace: WorkspaceRef, path: string) {
   await holdWorkspace(trx, workspace.id);
+  const removed = await setAside(trx, audit, workspace, path);
+  // The draft that renamed a query drafted the console's dashboards that name it. They are
+  // set aside with it: a dashboard naming the new path whose deployed one names the old path
+  // is one the rename drafted, and is not left naming a path that is no longer there.
+  if (removed.kind !== "query") return;
+  const was = await trx
+    .selectFrom("resource")
+    .select("path")
+    .where("workspace_id", "=", workspace.id)
+    .where("key", "=", removed.key)
+    .executeTakeFirst();
+  if (!was || was.path === removed.path) return;
+  for (const dashboard of await dashboardsNaming(trx, workspace.id, removed.path)) {
+    if (!dashboard.drafted) continue;
+    const deployed = await trx
+      .selectFrom("resource")
+      .select("body")
+      .where("workspace_id", "=", workspace.id)
+      .where("key", "=", dashboard.key)
+      .executeTakeFirst();
+    const before = deployed ? queryPathsOf(deployed.body as unknown as DashboardBody) : undefined;
+    if (!before || !dashboard.widgets.some((id) => before.get(id) === was.path)) continue;
+    await setAside(trx, audit, workspace, dashboard.path);
+  }
+}
+
+async function setAside(trx: Trx, audit: Audit, workspace: WorkspaceRef, path: string) {
   const removed = await trx
     .deleteFrom("resource_draft")
     .where("workspace_id", "=", workspace.id)
@@ -345,6 +392,7 @@ export async function discardDraft(trx: Trx, audit: Audit, workspace: WorkspaceR
     workspaceId: workspace.id,
     details: { kind: removed.kind },
   });
+  return removed;
 }
 
 /**

@@ -86,6 +86,14 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["workspace_id", "path"],
     export: "always",
   },
+  // What each widget of a deployed dashboard named: it comes after the dashboard it is of.
+  {
+    table: "dashboard_widget_query",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["dashboard_id", "widget_id"],
+    export: "always",
+  },
   {
     table: "resource_draft",
     ofTenant: own,

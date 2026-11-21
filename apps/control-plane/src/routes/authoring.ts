@@ -20,6 +20,7 @@ import {
   isCodeKind,
   saveDraft,
 } from "../kernel/authoring.js";
+import { dashboardsNaming } from "../kernel/dashboard-queries.js";
 import { describeChange } from "../kernel/describe.js";
 import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { bundleManifest, storeBundle } from "../kernel/execution/bundles.js";
@@ -555,6 +556,49 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.get(
+      `${base}/rename-effects/*`,
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "What renaming a query would change",
+          description:
+            "The dashboards whose widgets name the query's path. Renaming the query in the " +
+            "console drafts the ones made in the console with the new path, in the same " +
+            "request, and sets those drafts aside when the rename's draft is. A dashboard from " +
+            "the repository is changed in the repository: until then its widgets reach the " +
+            "query by its key.",
+          tags: ["authoring"],
+          params: PathParams,
+          response: {
+            200: Type.Object({
+              dashboards: Type.Array(
+                Type.Object({
+                  path: Type.String(),
+                  title: Type.String(),
+                  ownership: Type.Union([Type.Literal("ui"), Type.Literal("code")]),
+                  widgets: Type.Integer({ description: "How many of its widgets name the path." }),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params }) => {
+        const { workspace, full } = await enter(ctx, params, "resource:read");
+        // What a rename drafts is the console's dashboards, which only a caller who may write any resource does.
+        const found = full ? await dashboardsNaming(db, workspace.id, pathOf(params)) : [];
+        return {
+          dashboards: found.map((one) => ({
+            path: one.path,
+            title: one.title,
+            ownership: one.ownership,
+            widgets: one.widgets.length,
+          })),
+        };
+      },
+    );
+
     app.put(
       `${base}/drafts/*`,
       {
@@ -620,6 +664,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             deleted: body.deleted,
             revision: body.revision,
             create: body.create,
+            renameDashboards: full,
             path,
             ...(body.path !== undefined && body.path !== path
               ? { moveTo: movedPath(body.path) }

@@ -249,6 +249,19 @@ export interface ResourceAliasTable {
   last_used_at: Date | null;
 }
 
+/** The query a dashboard's widget named when the dashboard was deployed, by its key. */
+export interface DashboardWidgetQueryTable {
+  dashboard_id: string;
+  widget_id: string;
+  workspace_id: string;
+  tenant_id: string;
+  dashboard_key: string;
+  /** The path the widget names, as written in the dashboard. */
+  path: string;
+  /** The key of the query that path named at deploy time. */
+  query_key: string;
+}
+
 export interface ResourceVersionTable {
   resource_id: string;
   version: number;
@@ -1282,6 +1295,7 @@ export interface PlatformSchema {
   deployment: DeploymentTable;
   resource_draft: ResourceDraftTable;
   resource_alias: ResourceAliasTable;
+  dashboard_widget_query: DashboardWidgetQueryTable;
   tenant_release: TenantReleaseTable;
   git_repository: GitRepositoryTable;
   workspace_git: WorkspaceGitTable;

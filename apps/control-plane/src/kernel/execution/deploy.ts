@@ -10,6 +10,7 @@ import {
   toolNameOf,
 } from "@volvel/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
+import { recordWidgetQueries } from "../dashboard-queries.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
 import { describeChanges } from "../data/plan.js";
 import { HttpError, notFound } from "../errors.js";
@@ -469,6 +470,9 @@ export async function deployBundle(
       note("updated", manifest.kind, manifest.path);
     }
   }
+
+  // What each dashboard widget names, by key: now that every query it may name is there.
+  await recordWidgetQueries(trx, workspace);
 
   // A binding or a role whose row is gone, though its definition did not change: a group
   // deleted and made again, for one. Its definition is applied again, so the access it gives

@@ -53,6 +53,8 @@ interface Summary {
   id: string;
   kind: "member" | "resource";
   path: string | null;
+  /** For a resource: who keeps it, the repository (`code`) or the console (`ui`). */
+  ownership?: "ui" | "code" | null;
   title: string;
   mine: boolean;
   owner: string;
@@ -565,6 +567,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
                   placed={placed}
                   held={placement.held?.id === widget.id}
                   every={every}
+                  fromRepository={loaded.kind === "resource" && loaded.ownership === "code"}
                   onAsOf={noteRead}
                   onShow={
                     edit && widget.type === "table"

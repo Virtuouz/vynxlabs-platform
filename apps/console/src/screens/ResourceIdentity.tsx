@@ -34,6 +34,50 @@ export function cannotRename(row: {
   return undefined;
 }
 
+interface NamingDashboard {
+  path: string;
+  title: string;
+  ownership: "ui" | "code";
+  widgets: number;
+}
+
+/** The dashboards a rename of a query touches: the console's are drafted, the repository's are not. */
+function NamingList({ dashboards }: { dashboards: NamingDashboard[] }) {
+  const drafted = dashboards.filter((one) => one.ownership === "ui");
+  const repository = dashboards.filter((one) => one.ownership === "code");
+  const line = (one: NamingDashboard) => (
+    <li key={one.path}>
+      {one.title} <code className="font-mono text-code text-ink-muted">{one.path}</code>
+      {one.widgets > 1 ? `, ${one.widgets} widgets` : ""}
+    </li>
+  );
+  return (
+    <div className="flex flex-col gap-2 text-body-sm" data-testid="naming">
+      {drafted.length > 0 ? (
+        <div>
+          <p className="m-0 font-medium">
+            {drafted.length === 1 ? "This dashboard is" : "These dashboards are"} saved as{" "}
+            {drafted.length === 1 ? "a draft" : "drafts"} with the new path:
+          </p>
+          <ul className="m-0 ps-5">{drafted.map(line)}</ul>
+        </div>
+      ) : null}
+      {repository.length > 0 ? (
+        <div>
+          <p className="m-0 font-medium">
+            {repository.length === 1 ? "This dashboard is" : "These dashboards are"} the
+            repository's, so {repository.length === 1 ? "it is" : "they are"} not changed here:
+          </p>
+          <ul className="m-0 ps-5">{repository.map(line)}</ul>
+          <p className="m-0 text-ink-muted">
+            Change the path in the repository. Until then its widgets find the query by its key.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** An app and an interface are titled where they are edited: the title is part of what they are. */
 const titledInBody = (kind: string) => kind === "app" || kind === "interface";
 
@@ -129,6 +173,21 @@ function IdentityForm({
   const [title, setTitle] = useState("");
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState(false);
+  // For a query: the dashboards whose widgets name it, which a rename changes or leaves to the repository.
+  const [naming, setNaming] = useState<NamingDashboard[]>([]);
+
+  useEffect(() => {
+    if (row.kind !== "query") return;
+    let current = true;
+    api
+      .get<{ dashboards: NamingDashboard[] }>(`${root}/rename-effects/${row.path}`)
+      .then((found) => current && setNaming(found.dashboards))
+      // What a rename would change is a help, not a condition: without it the dialog still renames.
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [root, row.kind, row.path]);
 
   useEffect(() => {
     let current = true;
@@ -222,6 +281,7 @@ function IdentityForm({
           hint="What people read in lists. Leave it empty for none."
         />
       )}
+      {moved && naming.length > 0 ? <NamingList dashboards={naming} /> : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
       <div className="flex flex-wrap justify-end gap-2">
         <Button type="button" onClick={onClose}>

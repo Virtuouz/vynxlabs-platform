@@ -401,3 +401,32 @@ test("a rename right after a move is saved on the revision the move made", async
   await waitFor(() => expect(sent("PUT")).toHaveLength(2));
   expect(sent("PUT").map((call) => (call.body as Any).revision)).toEqual([4, 5]);
 });
+
+test("a repository dashboard whose widget ran through a recorded key says what to change, and where", async () => {
+  routes[`GET ${api}/dashboards/d1`] = () => [
+    200,
+    {
+      ...mine,
+      kind: "resource",
+      path: "boards/stock",
+      ownership: "code",
+      mine: false,
+      shared: true,
+    },
+  ];
+  routes[`GET ${api}/dashboards/d1/widgets/held/data`] = () => [
+    200,
+    {
+      ...result([["item", "text"]], [["Bolts"]]),
+      followed: { names: "reports/held", now: "stock/held" },
+    },
+  ];
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  const held = within(await screen.findByRole("region", { name: "Held" }));
+  await held.findByText("Bolts");
+  expect(held.getByText(/Names/).textContent).toBe(
+    "Names reports/held, now stock/held: change it in the repository.",
+  );
+  // A widget that ran through its path says nothing.
+  expect(within(screen.getByRole("region", { name: "In stock" })).queryByText(/Names/)).toBeNull();
+});

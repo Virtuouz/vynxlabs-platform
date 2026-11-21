@@ -56,7 +56,7 @@ test("making an app at an address that is taken is refused, and the existing app
   };
   await call(page, "PUT", `${W}/drafts/screens/sales`, {
     kind: "interface",
-    schemaVersion: 1,
+    schemaVersion: 2,
     body,
   });
   await call(page, "PUT", `${W}/drafts/sales`, {

@@ -172,7 +172,9 @@ export const performance = defineInterface({
           at: { x: 0, y: 13, w: 12, h: 10 },
           data: {
             rows: {
-              source: { visual: { table: "invoices", sort: [{ by: "issued_on", descending: true }] } },
+              source: {
+                visual: { table: "invoices", sort: [{ by: "issued_on", descending: true }] },
+              },
               filters: narrowedBy("issued", "issued_on"),
             },
           },
@@ -328,7 +330,10 @@ export const performance = defineInterface({
           data: {
             rows: {
               source: {
-                visual: { table: "purchase_orders", sort: [{ by: "created_at", descending: true }] },
+                visual: {
+                  table: "purchase_orders",
+                  sort: [{ by: "created_at", descending: true }],
+                },
               },
               filters: [{ filter: "clinic", column: "clinic" }],
             },

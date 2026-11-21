@@ -280,7 +280,13 @@ test("POLISH-010: a file is replaced and then removed from the inspector, after 
 test("POLISH-003: a query is renamed where it is listed, and an app's title is changed with its address unchanged", async () => {
   test.setTimeout(180_000);
   const put = (path: string, kind: string, body: unknown) =>
-    ok(owner, "PUT", `${W}/drafts/${path}`, { kind, schemaVersion: 1, body, create: true });
+    ok(owner, "PUT", `${W}/drafts/${path}`, {
+      kind,
+      // An interface is at schema version 2, since pages are made of widgets (phase 25).
+      schemaVersion: kind === "interface" ? 2 : 1,
+      body,
+      create: true,
+    });
   const TITLE = `Orders ${ROOT}`;
   await put(`${ROOT}/query`, "query", { sql: "select 1" });
   await put(`screens/${ROOT}-app`, "interface", {

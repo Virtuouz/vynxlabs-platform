@@ -398,7 +398,11 @@ export const invoiceScreen = defineInterface({
             },
           },
           config: {
-            columns: [{ column: "number" }, { column: "customer_id", label: "Customer" }, { column: "total" }],
+            columns: [
+              { column: "number" },
+              { column: "customer_id", label: "Customer" },
+              { column: "total" },
+            ],
           },
         },
         {
@@ -408,7 +412,13 @@ export const invoiceScreen = defineInterface({
           at: { x: 8, y: 0, w: 4, h: 9 },
           data: {
             rows: {
-              source: { visual: { table: "invoices", sort: [{ by: "created_at", descending: true }], limit: 10 } },
+              source: {
+                visual: {
+                  table: "invoices",
+                  sort: [{ by: "created_at", descending: true }],
+                  limit: 10,
+                },
+              },
             },
           },
           config: { primary: "number", secondary: "customer_id", meta: ["total"] },

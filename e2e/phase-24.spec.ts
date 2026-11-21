@@ -248,14 +248,21 @@ test("POLISH-003: a query used by a console dashboard is renamed, and the dashbo
   const renamed = `${ROOT}/tally`;
   const board = `${ROOT}/board`;
   const put = (path: string, kind: string, body: unknown) =>
-    ok(owner, "PUT", `${W}/drafts/${path}`, { kind, schemaVersion: 1, body, create: true });
-  await put(query, "query", { sql: "select 1 as n" });
-  await put(board, "dashboard", {
-    version: 2,
-    title: `Counts ${ROOT}`,
-    filters: [],
-    widgets: [{ id: "n", type: "table", source: { query }, filters: [] }],
+    ok(owner, "PUT", `${W}/drafts/${path}`, {
+      kind,
+      // A dashboard is at schema version 3, since it is a page of widgets (phase 25).
+      schemaVersion: kind === "dashboard" ? 3 : 1,
+      body,
+      create: true,
+    });
+  const tableOver = (path: string) => ({
+    id: "n",
+    type: "core/table",
+    at: { x: 0, y: 0, w: 6, h: 6 },
+    data: { rows: { source: { query: path } } },
   });
+  await put(query, "query", { sql: "select 1 as n" });
+  await put(board, "dashboard", { title: `Counts ${ROOT}`, widgets: [tableOver(query)] });
   await ok(owner, "POST", `${W}/changes/deploy`, {
     paths: [query, board],
     message: "Phase 24 walk: a query and a dashboard over it",
@@ -278,33 +285,30 @@ test("POLISH-003: a query used by a console dashboard is renamed, and the dashbo
   await expect
     .poll(
       async () =>
-        (await call(owner, "GET", `${W}/drafts/${board}`)).body?.body?.widgets?.[0]?.source?.query,
+        (await call(owner, "GET", `${W}/drafts/${board}`)).body?.body?.widgets?.[0]?.data?.rows
+          ?.source?.query,
     )
     .toBe(renamed);
-  expect((await ok(owner, "GET", `${W}/resources/${board}`)).body.widgets[0].source.query).toBe(
-    query,
-  );
+  expect(
+    (await ok(owner, "GET", `${W}/resources/${board}`)).body.widgets[0].data.rows.source.query,
+  ).toBe(query);
 
   // Deployed together, the widget names the new path and runs.
   await ok(owner, "POST", `${W}/changes/deploy`, {
     paths: [renamed, board],
     message: "Phase 24 walk: the rename",
   });
-  const shown = await call(owner, "GET", `${W}/dashboards/${boardId}/widgets/n/data`);
+  const widgetData = (id: string) =>
+    call(owner, "GET", `${W}/widget-data?of=dashboard&path=${id}&widget=n`);
+  const shown = await widgetData(boardId);
   expect(shown.status, JSON.stringify(shown.body)).toBe(200);
-  expect(shown.body.rows).toEqual([[1]]);
-  expect(shown.body.followed).toBeUndefined();
+  expect(shown.body.inputs.rows.rows).toEqual([{ n: 1 }]);
 
   // A widget whose path was not updated: the query is renamed and deployed alone.
   const other = `${ROOT}/other`;
   const stale = `${ROOT}/stale`;
   await put(other, "query", { sql: "select 2 as n" });
-  await put(stale, "dashboard", {
-    version: 2,
-    title: `Stale ${ROOT}`,
-    filters: [],
-    widgets: [{ id: "n", type: "table", source: { query: other }, filters: [] }],
-  });
+  await put(stale, "dashboard", { title: `Stale ${ROOT}`, widgets: [tableOver(other)] });
   await ok(owner, "POST", `${W}/changes/deploy`, {
     paths: [other, stale],
     message: "Phase 24 walk: a dashboard to leave alone",
@@ -322,9 +326,9 @@ test("POLISH-003: a query used by a console dashboard is renamed, and the dashbo
     paths: [`${ROOT}/other-renamed`],
     message: "Phase 24 walk: a rename the dashboard did not follow",
   });
-  const still = await call(owner, "GET", `${W}/dashboards/${staleId}/widgets/n/data`);
+  const still = await widgetData(staleId);
   expect(still.status, JSON.stringify(still.body)).toBe(200);
-  expect(still.body.rows).toEqual([[2]]);
+  expect(still.body.inputs.rows.rows).toEqual([{ n: 2 }]);
   // The old path still answers, through its alias, for 90 days. Its expiry is not reachable from
   // a browser, so the key that takes over then is covered by dashboard-follow.test.ts.
   const aliases = (await ok(owner, "GET", `${W}/aliases`)).items as {

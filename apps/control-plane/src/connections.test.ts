@@ -57,13 +57,20 @@ const listed = async (path: string): Promise<any> =>
 
 // biome-ignore lint/suspicious/noExplicitAny: task bodies are inspected freely
 async function tried(path: string): Promise<any> {
+  // A check older than this test is not this test's.
+  const since = Date.now() - 1000;
   const queued = await alice.post(`${ws()}/connection-tests`, { path });
   expect(queued.status, JSON.stringify(queued.body)).toBe(202);
   for (let i = 0; i < 200; i++) {
     const task = (await alice.get(`${ws()}/tasks/${queued.body.id}`)).body;
     if (task.status === "succeeded" || task.status === "failed") {
-      // The health is kept just after the task ends.
-      await sleep(50);
+      // The health is kept just after the task ends: waited for, not guessed at. Under load
+      // (a CI runner) a fixed pause was sometimes too short.
+      for (let j = 0; j < 100; j++) {
+        const health = (await listed(path))?.health;
+        if (health?.checkedAt && Date.parse(health.checkedAt) >= since) break;
+        await sleep(50);
+      }
       return task;
     }
     await sleep(50);

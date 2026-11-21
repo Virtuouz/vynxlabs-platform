@@ -102,7 +102,8 @@ const RESULT_TYPES: Record<string, string> = {
 
 function decodeCursor(cursor: string | undefined): number {
   if (cursor === undefined) return 0;
-  const offset = Number(Buffer.from(cursor, "base64url").toString("utf8"));
+  const text = Buffer.from(cursor, "base64url").toString("utf8");
+  const offset = /^\d{1,9}$/.test(text) ? Number(text) : -1;
   if (!Number.isSafeInteger(offset) || offset < 0) throw badRequest("The cursor is not valid.");
   return offset;
 }

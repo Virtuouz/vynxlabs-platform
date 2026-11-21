@@ -15,6 +15,7 @@ const TableView = Type.Object({
   columns: Type.Array(
     Type.Object({
       name: Type.String(),
+      label: Type.String({ description: "What the column is called, in the reader's words." }),
       description: Type.Optional(
         Type.String({ description: "What the column holds, when its definition says." }),
       ),

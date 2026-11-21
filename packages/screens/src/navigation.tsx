@@ -46,12 +46,14 @@ export function parseAddress(base: string, pathname: string, search: string): Ad
   const on = query.get("record") ?? undefined;
   const sheet = query.get("sheet");
   const modal = query.get("modal");
+  // A modal opened from a sheet (an invoice's Edit) is over the sheet, which stays: its record
+  // is `modalRecord`. A modal on its own has `record`, as a sheet does.
+  const modalOn = (sheet ? query.get("modalRecord") : on) ?? undefined;
   return {
     ...(page ? { page } : {}),
     ...(record ? { record } : {}),
     ...(sheet ? { sheet: { page: sheet, ...(on ? { record: on } : {}) } } : {}),
-    // A sheet and a modal are not open together: the sheet is the one named first.
-    ...(modal && !sheet ? { modal: { page: modal, ...(on ? { record: on } : {}) } } : {}),
+    ...(modal ? { modal: { page: modal, ...(modalOn ? { record: modalOn } : {}) } } : {}),
   };
 }
 
@@ -63,10 +65,13 @@ export function addressOf(base: string, address: Address): string {
     .map(encodeURIComponent)
     .join("/");
   const query = new URLSearchParams();
-  const over = address.sheet ?? address.modal;
-  if (over) {
-    query.set(address.sheet ? "sheet" : "modal", over.page);
-    if (over.record) query.set("record", over.record);
+  if (address.sheet) {
+    query.set("sheet", address.sheet.page);
+    if (address.sheet.record) query.set("record", address.sheet.record);
+  }
+  if (address.modal) {
+    query.set("modal", address.modal.page);
+    if (address.modal.record) query.set(address.sheet ? "modalRecord" : "record", address.modal.record);
   }
   const text = query.toString();
   return `${root}${path}${text ? `?${text}` : ""}`;
@@ -142,8 +147,12 @@ export function useAddress(base: string) {
         if (!now.sheet && !now.modal) return;
         const history = window.history.state as Record<string, unknown> | null;
         if (history?.[OVER] === true) {
-          // Back is the way out: the entry the sheet was given is left, not stacked on.
+          // Back is the way out: the entry the sheet (or the modal over it) was given is left.
           window.history.back();
+        } else if (now.modal && now.sheet) {
+          // A modal over a sheet closes to the sheet.
+          const { modal: _modal, ...under } = now;
+          show(under, "replace", true);
         } else {
           show(
             {
@@ -167,6 +176,11 @@ export function useAddress(base: string) {
         ...(now.page ? { page: now.page } : {}),
         ...(now.record ? { record: now.record } : {}),
       };
+      if (to.as === "modal" && now.sheet && !now.modal) {
+        // A modal opened from a sheet goes over it, and closing it (or Back) returns to the sheet.
+        show({ ...under, sheet: now.sheet, modal: over }, "push", true);
+        return;
+      }
       const already = now.sheet !== undefined || now.modal !== undefined;
       if (to.as === "sheet") setAmong(to.among && to.among.length > 0 ? to.among : undefined);
       show(

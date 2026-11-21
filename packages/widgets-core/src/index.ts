@@ -550,7 +550,13 @@ export const button = defineWidget({
   },
   defaults: { label: "Do it", tone: "primary" },
   events: { click: { gives: "nothing", label: "When clicked" } },
-  layout: { min: { w: 2, h: 1 }, default: { w: 3, h: 1 }, max: { w: 12, h: 2 }, phone: "stack" },
+  layout: {
+    min: { w: 2, h: 1 },
+    default: { w: 3, h: 1 },
+    max: { w: 12, h: 2 },
+    phone: "stack",
+    frame: "none",
+  },
 });
 
 /** One record: its fields, and what can be done with it. */

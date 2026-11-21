@@ -145,3 +145,26 @@ describe("moving through the app", () => {
     expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
   });
 });
+
+test("a modal opened from a sheet is over it: both are in the address, each with its record", () => {
+  const address = parseAddress(
+    "/apps/a/w/perf/",
+    "/apps/a/w/perf/money",
+    "?sheet=invoice&record=r1&modal=edit-invoice&modalRecord=r1",
+  );
+  expect(address).toEqual({
+    page: "money",
+    sheet: { page: "invoice", record: "r1" },
+    modal: { page: "edit-invoice", record: "r1" },
+  });
+  expect(addressOf("/apps/a/w/perf/", address)).toBe(
+    "/apps/a/w/perf/money?sheet=invoice&record=r1&modal=edit-invoice&modalRecord=r1",
+  );
+  // A modal on its own takes `record`, as a sheet does.
+  expect(
+    parseAddress("/apps/a/w/perf/", "/apps/a/w/perf/money", "?modal=new&record=r2").modal,
+  ).toEqual({
+    page: "new",
+    record: "r2",
+  });
+});

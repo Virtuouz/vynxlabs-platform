@@ -174,6 +174,8 @@ function Cell({
   };
 }) {
   const definition = entry?.definition;
+  // A widget drawn on the page as it is, with no card: a button.
+  const bare = definition?.layout.frame === "none";
   // Whether it arrived is as of when it first drew: the next draw must not stop its fade.
   const [arrived] = useState(arriving);
   // A widget added before its source was chosen has nothing to ask for yet.
@@ -263,8 +265,9 @@ function Cell({
     "--row": `${at.y + 1} / span ${at.h}`,
   } as CSSProperties;
   return (
-    <Panel
-      as="section"
+    <Card
+      bare={bare}
+      building={building}
       aria-label={name}
       // What is held follows the pointer, and is not played from where it was.
       data-flip-key={held ? undefined : widget.id}
@@ -387,7 +390,7 @@ function Cell({
           </span>
         </>
       ) : null}
-    </Panel>
+    </Card>
   );
 }
 
@@ -703,5 +706,39 @@ function Carried({ carrying }: { carrying: Carrying }) {
       <span className="font-medium text-ink">{carrying.card.title}</span>
       <span className="text-body-sm text-ink-muted">Over the page to place it · Esc to cancel</span>
     </div>
+  );
+}
+
+/**
+ * What a widget is drawn on: a card (the kit's panel), or, for a widget whose definition says
+ * `frame: "none"`, the page itself. While building, a bare widget keeps a dashed outline, so it
+ * can be seen, chosen and moved.
+ */
+function Card({
+  bare,
+  building,
+  className = "",
+  children,
+  ...rest
+}: Omit<React.HTMLAttributes<HTMLElement>, "onSelect" | "title"> & {
+  bare: boolean;
+  building: boolean;
+  className?: string;
+  children?: React.ReactNode;
+} & Record<`data-${string}`, string | undefined>) {
+  if (!bare) {
+    return (
+      <Panel as="section" className={className} {...rest}>
+        {children}
+      </Panel>
+    );
+  }
+  return (
+    <section
+      {...rest}
+      className={`${className} ${building ? "rounded-panel border border-dashed border-line" : ""}`}
+    >
+      {children}
+    </section>
   );
 }

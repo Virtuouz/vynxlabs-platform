@@ -96,6 +96,11 @@ export interface LayoutDeclaration {
   default: CellSize;
   max?: CellSize;
   phone?: PhoneBehaviour;
+  /**
+   * How the page frames it: `card` (the default) draws it on a card with its title; `none`
+   * draws it on the page as it is, as a button stands (its title only while it is renamed).
+   */
+  frame?: "card" | "none";
 }
 
 /** The inspector's tabs, in order. */

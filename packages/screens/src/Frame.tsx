@@ -134,7 +134,9 @@ export function Frame({
   const state: WidgetState = definition ? reading.state : { status: "ready" };
   const kept = !building && state.status === "ready" ? resultOf(reading.read) : undefined;
   const followed = Object.values(reading.read ?? {}).find((wire) => wire.followed)?.followed;
-  const heading = widget.title || widget.subtitle || (building && selected);
+  // A widget drawn with no card (a button) shows its title only while it is being renamed.
+  const bare = definition?.layout.frame === "none";
+  const heading = bare ? building && selected : widget.title || widget.subtitle || (building && selected);
   const body = (() => {
     if (!definition) {
       return <Notice tone="danger">There is no widget called "{widget.type}".</Notice>;
@@ -208,8 +210,8 @@ export function Frame({
       <div
         tabIndex={tabbable ? 0 : undefined}
         aria-busy={reading.stale ? true : undefined}
-        className={`flex min-h-0 flex-1 flex-col gap-2 px-4 pb-4 @2xl:overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
-          heading ? "" : "pt-4"
+        className={`flex min-h-0 flex-1 flex-col gap-2 ${bare ? "justify-center" : "px-4 pb-4"} @2xl:overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
+          heading || bare ? "" : "pt-4"
         } ${reading.stale ? "opacity-50" : ""}`}
       >
         {reading.stale ? (

@@ -383,20 +383,43 @@ const dataInputSchema = {
 export const pageFilterSchema = {
   type: "object",
   properties: {
-    name: { type: "string", pattern: NAME },
-    label: { type: "string", minLength: 1, maxLength: 100 },
-    type: { enum: [...PAGE_FILTER_TYPES] },
-    default: {},
+    name: {
+      type: "string",
+      pattern: NAME,
+      description: "What the page's widgets name the filter by, and its key in the address.",
+    },
+    label: {
+      type: "string",
+      minLength: 1,
+      maxLength: 100,
+      description: "What the reader sees above the filter. Left out, the name.",
+    },
+    type: {
+      enum: [...PAGE_FILTER_TYPES],
+      description: "What is chosen: a stretch of days, a choice, a number or text.",
+    },
+    default: { description: "What the filter holds until the reader changes it." },
     choices: {
+      description: "The values a choice filter offers, when they are listed here.",
       type: "array",
       maxItems: 200,
       items: { type: "string", minLength: 1, maxLength: 200 },
     },
     from: {
+      description: "The column a choice filter offers the values of, read as the reader may.",
       type: "object",
       properties: {
-        table: { type: "string", pattern: PATH, maxLength: 255 },
-        column: { type: "string", pattern: "^[a-z][a-z0-9_]{0,62}$" },
+        table: {
+          type: "string",
+          pattern: PATH,
+          maxLength: 255,
+          description: "The table of that column.",
+        },
+        column: {
+          type: "string",
+          pattern: "^[a-z][a-z0-9_]{0,62}$",
+          description: "The column whose values are offered.",
+        },
       },
       required: ["table", "column"],
       additionalProperties: false,
@@ -409,35 +432,79 @@ export const pageFilterSchema = {
 export const pageWidgetSchema = {
   type: "object",
   properties: {
-    id: { type: "string", pattern: SLUG },
-    type: { type: "string", pattern: TYPE },
-    title: { type: "string", maxLength: 100 },
-    subtitle: { type: "string", maxLength: 200 },
+    id: {
+      type: "string",
+      pattern: SLUG,
+      description: "Names the widget on its page: what an action and a filter point at.",
+    },
+    type: {
+      type: "string",
+      pattern: TYPE,
+      description: "The widget, by its pack and name, as core/chart.",
+    },
+    title: {
+      type: "string",
+      maxLength: 100,
+      description: "The heading drawn on the widget. Left out, it has none.",
+    },
+    subtitle: { type: "string", maxLength: 200, description: "A line under the heading." },
     at: {
+      description: "Where it sits on the page's grid of twelve columns, and its size.",
       type: "object",
       properties: {
-        x: { type: "integer", minimum: 0, maximum: PAGE_COLUMNS - 1 },
-        y: { type: "integer", minimum: 0, maximum: MAX_PAGE_ROWS - 1 },
-        w: { type: "integer", minimum: 1, maximum: PAGE_COLUMNS },
-        h: { type: "integer", minimum: 1, maximum: MAX_WIDGET_HEIGHT },
+        x: {
+          type: "integer",
+          minimum: 0,
+          maximum: PAGE_COLUMNS - 1,
+          description: "The column it starts at, from 0.",
+        },
+        y: {
+          type: "integer",
+          minimum: 0,
+          maximum: MAX_PAGE_ROWS - 1,
+          description: "The row it starts at, from 0.",
+        },
+        w: {
+          type: "integer",
+          minimum: 1,
+          maximum: PAGE_COLUMNS,
+          description: "How many columns wide it is.",
+        },
+        h: {
+          type: "integer",
+          minimum: 1,
+          maximum: MAX_WIDGET_HEIGHT,
+          description: "How many rows tall it is.",
+        },
       },
       required: ["x", "y", "w", "h"],
       additionalProperties: false,
     },
     data: {
+      description:
+        "What the widget reads, by the name of each input its definition declares, read on the server as the reader may.",
       type: "object",
       maxProperties: 4,
       propertyNames: { pattern: "^[a-z][a-zA-Z0-9]{0,40}$" },
       additionalProperties: dataInputSchema,
     },
-    config: { type: "object" },
+    config: {
+      type: "object",
+      description: "The widget's settings, checked against its definition's schema.",
+    },
     on: {
+      description:
+        "What happens when the widget raises an event (a row clicked, a point clicked): an action, by the event's name.",
       type: "object",
       maxProperties: 10,
       propertyNames: { pattern: "^[a-z][a-zA-Z0-9]{0,40}$" },
       additionalProperties: actionSchema,
     },
-    rules: widgetRulesSchema,
+    rules: {
+      ...widgetRulesSchema,
+      description:
+        "When the widget is shown. Hiding a widget isn't security: the rows a person gets are decided by the tables' row rules.",
+    },
   },
   required: ["id", "type", "at"],
   additionalProperties: false,
@@ -457,18 +524,42 @@ const widgetsSchema = {
 export const pageSchema = {
   type: "object",
   properties: {
-    id: { type: "string", pattern: SLUG },
-    title: { type: "string", minLength: 1, maxLength: 100 },
-    kind: { enum: [...PAGE_KINDS] },
+    id: {
+      type: "string",
+      pattern: SLUG,
+      description: "Names the page in the app's address and in an action that opens it.",
+    },
+    title: {
+      type: "string",
+      minLength: 1,
+      maxLength: 100,
+      description: "The page's name in the menu and over its sheet or modal.",
+    },
+    kind: {
+      enum: [...PAGE_KINDS],
+      description:
+        "A page in the menu, or one that opens on a record: a record page, a side sheet or a modal.",
+    },
     record: {
+      description: "The table whose row a record page, side sheet or modal opens on.",
       type: "object",
-      properties: { table: { type: "string", pattern: PATH, maxLength: 255 } },
+      properties: {
+        table: { type: "string", pattern: PATH, maxLength: 255, description: "The table." },
+      },
       required: ["table"],
       additionalProperties: false,
     },
-    help: { type: "string", minLength: 1, maxLength: 255 },
-    filters: filtersSchema,
-    widgets: widgetsSchema,
+    help: {
+      type: "string",
+      minLength: 1,
+      maxLength: 255,
+      description: "A topic of the workspace's documentation, shown by the page's Help button.",
+    },
+    filters: {
+      ...filtersSchema,
+      description: "What the reader narrows every widget by, above the page.",
+    },
+    widgets: { ...widgetsSchema, description: "What is on the page." },
   },
   required: ["id", "title", "widgets"],
   additionalProperties: false,
@@ -477,9 +568,24 @@ export const pageSchema = {
 export const interfaceBodySchema = {
   type: "object",
   properties: {
-    title: { type: "string", minLength: 1, maxLength: 100 },
-    description: { type: "string", maxLength: 500 },
-    pages: { type: "array", minItems: 1, maxItems: MAX_PAGES, items: pageSchema },
+    title: {
+      type: "string",
+      minLength: 1,
+      maxLength: 100,
+      description: "The app's name, over its pages.",
+    },
+    description: {
+      type: "string",
+      maxLength: 500,
+      description: "What the app is for, for those who build it.",
+    },
+    pages: {
+      type: "array",
+      minItems: 1,
+      maxItems: MAX_PAGES,
+      items: pageSchema,
+      description: "The app's pages, in the order of its menu.",
+    },
   },
   required: ["title", "pages"],
   additionalProperties: false,
@@ -488,11 +594,21 @@ export const interfaceBodySchema = {
 export const dashboardBodySchema = {
   type: "object",
   properties: {
-    title: { type: "string", minLength: 1, maxLength: 100 },
-    description: { type: "string", maxLength: 500 },
-    refresh: { enum: [...DASHBOARD_REFRESH] },
-    filters: filtersSchema,
-    widgets: widgetsSchema,
+    title: { type: "string", minLength: 1, maxLength: 100, description: "The dashboard's name." },
+    description: {
+      type: "string",
+      maxLength: 500,
+      description: "What the dashboard is for, under its name.",
+    },
+    refresh: {
+      enum: [...DASHBOARD_REFRESH],
+      description: "How often an open dashboard reads its widgets again.",
+    },
+    filters: {
+      ...filtersSchema,
+      description: "What the reader narrows every widget by, above the dashboard.",
+    },
+    widgets: { ...widgetsSchema, description: "What is on the dashboard." },
   },
   required: ["widgets"],
   additionalProperties: false,

@@ -29,11 +29,13 @@
         "title": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 100
+          "maxLength": 100,
+          "description": "The app's name, over its pages."
         },
         "description": {
           "type": "string",
-          "maxLength": 500
+          "maxLength": 500,
+          "description": "What the app is for, for those who build it."
         },
         "pages": {
           "type": "array",
@@ -44,12 +46,14 @@
             "properties": {
               "id": {
                 "type": "string",
-                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+                "description": "Names the page in the app's address and in an action that opens it."
               },
               "title": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 100
+                "maxLength": 100,
+                "description": "The page's name in the menu and over its sheet or modal."
               },
               "kind": {
                 "enum": [
@@ -57,15 +61,18 @@
                   "record",
                   "sheet",
                   "modal"
-                ]
+                ],
+                "description": "A page in the menu, or one that opens on a record: a record page, a side sheet or a modal."
               },
               "record": {
+                "description": "The table whose row a record page, side sheet or modal opens on.",
                 "type": "object",
                 "properties": {
                   "table": {
                     "type": "string",
                     "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                    "maxLength": 255
+                    "maxLength": 255,
+                    "description": "The table."
                   }
                 },
                 "required": [
@@ -76,7 +83,8 @@
               "help": {
                 "type": "string",
                 "minLength": 1,
-                "maxLength": 255
+                "maxLength": 255,
+                "description": "A topic of the workspace's documentation, shown by the page's Help button."
               },
               "filters": {
                 "type": "array",
@@ -86,12 +94,14 @@
                   "properties": {
                     "name": {
                       "type": "string",
-                      "pattern": "^[a-z][a-z0-9_]{0,54}$"
+                      "pattern": "^[a-z][a-z0-9_]{0,54}$",
+                      "description": "What the page's widgets name the filter by, and its key in the address."
                     },
                     "label": {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 100
+                      "maxLength": 100,
+                      "description": "What the reader sees above the filter. Left out, the name."
                     },
                     "type": {
                       "enum": [
@@ -99,10 +109,14 @@
                         "choice",
                         "text",
                         "number"
-                      ]
+                      ],
+                      "description": "What is chosen: a stretch of days, a choice, a number or text."
                     },
-                    "default": {},
+                    "default": {
+                      "description": "What the filter holds until the reader changes it."
+                    },
                     "choices": {
+                      "description": "The values a choice filter offers, when they are listed here.",
                       "type": "array",
                       "maxItems": 200,
                       "items": {
@@ -112,16 +126,19 @@
                       }
                     },
                     "from": {
+                      "description": "The column a choice filter offers the values of, read as the reader may.",
                       "type": "object",
                       "properties": {
                         "table": {
                           "type": "string",
                           "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                          "maxLength": 255
+                          "maxLength": 255,
+                          "description": "The table of that column."
                         },
                         "column": {
                           "type": "string",
-                          "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                          "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                          "description": "The column whose values are offered."
                         }
                       },
                       "required": [
@@ -136,7 +153,8 @@
                     "type"
                   ],
                   "additionalProperties": false
-                }
+                },
+                "description": "What the reader narrows every widget by, above the page."
               },
               "widgets": {
                 "type": "array",
@@ -146,42 +164,51 @@
                   "properties": {
                     "id": {
                       "type": "string",
-                      "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                      "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+                      "description": "Names the widget on its page: what an action and a filter point at."
                     },
                     "type": {
                       "type": "string",
-                      "pattern": "^[a-z][a-z0-9-]{0,30}/[a-z][a-z0-9-]{0,40}$"
+                      "pattern": "^[a-z][a-z0-9-]{0,30}/[a-z][a-z0-9-]{0,40}$",
+                      "description": "The widget, by its pack and name, as core/chart."
                     },
                     "title": {
                       "type": "string",
-                      "maxLength": 100
+                      "maxLength": 100,
+                      "description": "The heading drawn on the widget. Left out, it has none."
                     },
                     "subtitle": {
                       "type": "string",
-                      "maxLength": 200
+                      "maxLength": 200,
+                      "description": "A line under the heading."
                     },
                     "at": {
+                      "description": "Where it sits on the page's grid of twelve columns, and its size.",
                       "type": "object",
                       "properties": {
                         "x": {
                           "type": "integer",
                           "minimum": 0,
-                          "maximum": 11
+                          "maximum": 11,
+                          "description": "The column it starts at, from 0."
                         },
                         "y": {
                           "type": "integer",
                           "minimum": 0,
-                          "maximum": 399
+                          "maximum": 399,
+                          "description": "The row it starts at, from 0."
                         },
                         "w": {
                           "type": "integer",
                           "minimum": 1,
-                          "maximum": 12
+                          "maximum": 12,
+                          "description": "How many columns wide it is."
                         },
                         "h": {
                           "type": "integer",
                           "minimum": 1,
-                          "maximum": 40
+                          "maximum": 40,
+                          "description": "How many rows tall it is."
                         }
                       },
                       "required": [
@@ -193,6 +220,7 @@
                       "additionalProperties": false
                     },
                     "data": {
+                      "description": "What the widget reads, by the name of each input its definition declares, read on the server as the reader may.",
                       "type": "object",
                       "maxProperties": 4,
                       "propertyNames": {
@@ -446,9 +474,11 @@
                       }
                     },
                     "config": {
-                      "type": "object"
+                      "type": "object",
+                      "description": "The widget's settings, checked against its definition's schema."
                     },
                     "on": {
+                      "description": "What happens when the widget raises an event (a row clicked, a point clicked): an action, by the event's name.",
                       "type": "object",
                       "maxProperties": 10,
                       "propertyNames": {
@@ -1269,7 +1299,8 @@
                           }
                         }
                       },
-                      "additionalProperties": false
+                      "additionalProperties": false,
+                      "description": "When the widget is shown. Hiding a widget isn't security: the rows a person gets are decided by the tables' row rules."
                     }
                   },
                   "required": [
@@ -1278,7 +1309,8 @@
                     "at"
                   ],
                   "additionalProperties": false
-                }
+                },
+                "description": "What is on the page."
               }
             },
             "required": [
@@ -1287,7 +1319,8 @@
               "widgets"
             ],
             "additionalProperties": false
-          }
+          },
+          "description": "The app's pages, in the order of its menu."
         }
       },
       "required": [

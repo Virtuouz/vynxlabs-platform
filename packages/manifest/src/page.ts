@@ -548,7 +548,16 @@ function configChecker(definition: WidgetDefinition) {
   return check;
 }
 
-const actionChecker = configAjv.compile(actionSchema);
+// Compiled when first needed: a module that only imports this file for its types or helpers
+// compiles nothing (a served app's policy refuses eval).
+let actionCompiled: ReturnType<typeof configAjv.compile> | undefined;
+const actionChecker = (value: unknown) => {
+  actionCompiled ??= configAjv.compile(actionSchema);
+  const ok = actionCompiled(value) as boolean;
+  actionChecker.errors = actionCompiled.errors;
+  return ok;
+};
+actionChecker.errors = undefined as typeof configAjv.errors;
 /** Whether an action kept in a widget's configuration has an action's shape; what is wrong is said. */
 function validAction(
   value: unknown,

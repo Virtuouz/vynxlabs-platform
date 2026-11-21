@@ -1,13 +1,14 @@
+import type { Page, PageWidget } from "@volvel/manifest";
+// The action model by its own entry: nothing that compiles a validator, which a served app's
+// content security policy (no eval) would refuse.
 import {
   type ActingUser,
   type Action,
   type AskedField,
   type Condition,
   conditionsHold,
-  type Page,
-  type PageWidget,
   type Step,
-} from "@volvel/manifest";
+} from "@volvel/manifest/action";
 import {
   Button,
   Closing,
@@ -235,7 +236,9 @@ export function useActions(host: ActionsHost): {
         (): ActOutcome => ({ ok: true }),
         (error: unknown): ActOutcome => {
           const message = errorWords(error);
-          say(message, "danger");
+          // What was typed (a form's) is answered beside it by the view that asked; a press of a
+          // button with nothing typed is answered in a toast.
+          if (!request.inputs) say(message, "danger");
           const fields = error instanceof ActionError ? error.fields : undefined;
           return { ok: false, message, ...(fields ? { fields } : {}) };
         },

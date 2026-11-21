@@ -684,6 +684,7 @@ export const form = defineWidget({
             help: { type: "string", maxLength: 200 },
             section: { type: "string", maxLength: 60 },
             required: { type: "boolean" },
+            format: FORMAT,
           },
           required: ["column"],
           additionalProperties: false,

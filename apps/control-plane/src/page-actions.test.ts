@@ -158,6 +158,34 @@ const screen = {
       widgets: recordWidgets,
     },
     {
+      id: "edit",
+      title: "Edit invoice",
+      kind: "modal",
+      record: { table: "invoices" },
+      widgets: [
+        {
+          id: "editform",
+          type: "core/form",
+          at: { x: 0, y: 0, w: 6, h: 8 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            mode: "edit",
+            fields: [{ column: "number" }, { column: "total" }],
+            submit: {
+              steps: [
+                {
+                  do: "update",
+                  record: "this",
+                  set: { number: { asked: "number" }, total: { asked: "total" } },
+                },
+                { do: "close" },
+              ],
+            },
+          },
+        },
+      ],
+    },
+    {
       id: "add",
       title: "New invoice",
       kind: "modal",
@@ -573,6 +601,28 @@ describe("what is asked", () => {
     const id = await invoice({ total: 7 });
     expect((await press(ivy, "note", id, { inputs: { note: "x" } })).status).toBe(200);
     expect(await rowOf(id)).toMatchObject({ note: "x", total: 7 });
+  });
+});
+
+describe("a form changes a row", () => {
+  test("an edit sends only what changed: a required field left out stays, and one emptied is refused", async () => {
+    const id = await invoice({ total: 7 });
+    const before = await rowOf(id);
+    const edit = (inputs: object) =>
+      act(ivy, {
+        page: "edit",
+        widget: "editform",
+        at: "config/submit",
+        records: { this: id },
+        inputs,
+      });
+    const changed = await edit({ total: 9 });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+    expect(await rowOf(id)).toMatchObject({ number: before.number, total: 9 });
+    const emptied = await edit({ number: "" });
+    expect(emptied.status).toBe(400);
+    expect(emptied.body.errors).toEqual([{ path: "/inputs/number", message: "is required" }]);
+    expect(await rowOf(id)).toMatchObject({ number: before.number, total: 9 });
   });
 });
 

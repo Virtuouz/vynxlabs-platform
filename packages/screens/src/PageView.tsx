@@ -1,11 +1,5 @@
-import {
-  type ActingUser,
-  type Condition,
-  conditionWords,
-  type Page,
-  type PageFilter,
-  type PageWidget,
-} from "@volvel/manifest";
+import type { Page, PageFilter, PageWidget } from "@volvel/manifest";
+import { type ActingUser, type Condition, conditionWords } from "@volvel/manifest/action";
 import { EmptyState, Panel, useFlip } from "@volvel/ui";
 import { GripHorizontal } from "@volvel/ui/icons";
 import type { ActOutcome, Choice, EventPayload } from "@volvel/widgets";
@@ -54,6 +48,11 @@ export interface PageViewProps {
   onFilterValues(values: FilterValues): void;
   /** Bumped to make every widget read again. */
   refreshKey?: number;
+  /**
+   * An action ran here. A host that draws other pages at once (a side sheet over its page)
+   * tells them, so the table under a sheet shows what the sheet's button changed.
+   */
+  onActed?: () => void;
   /** For a choice filter that lists a table's column: what was read for it, by filter name. */
   filterOptions?: Readonly<Record<string, readonly string[]>>;
   /** A widget raised an event its definition declares. Told after the page has done what its widget says to do. */
@@ -228,7 +227,13 @@ function Cell({
   };
   // The rows the widget read, to find a row by its id and to step through them.
   const rowsRead = Object.values(reading.read ?? {}).find((wire) => wire.shape === "rows");
-  const lookup = (id: string) => rowsRead?.rows.find((row) => row.id === id);
+  // A record the widget read (a Record detail's) is found too, and the page's own record:
+  // a confirmation names what it is about ("Mark INV-9339 as paid?").
+  const recordRead = Object.values(reading.read ?? {}).find((wire) => wire.shape === "record");
+  const lookup = (id: string) =>
+    rowsRead?.rows.find((row) => row.id === id) ??
+    (recordRead?.shape === "record" && recordRead.record?.id === id ? recordRead.record : undefined) ??
+    (thisRow?.id === id ? thisRow : undefined);
   const amongIds = () =>
     rowsRead?.rows.map((row) => row.id).filter((id): id is string => typeof id === "string");
   // The summary input a clicked group belongs to: the rows behind it are read for that input.
@@ -402,6 +407,7 @@ export function PageView({
   filterValues,
   onFilterValues,
   refreshKey = 0,
+  onActed,
   filterOptions,
   onEvent,
   record,
@@ -424,7 +430,9 @@ export function PageView({
     filterValues,
     onFilterValues,
     onNavigate,
-    refresh: () => setRan((count) => count + 1),
+    // A host that hears of actions makes every page on screen read again, this one too;
+    // otherwise this page does it for itself.
+    refresh: () => (onActed ? onActed() : setRan((count) => count + 1)),
     label: (value) => value,
   };
   const actions = useActions(host);

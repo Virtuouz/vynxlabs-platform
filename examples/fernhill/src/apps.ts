@@ -114,7 +114,7 @@ const INVOICE_FIELDS = [
 const INVOICE_FORM_FIELDS = [
   { column: "client_code", label: "Client" },
   { column: "clinic" },
-  { column: "total", label: "Total", help: "In cents: 6500 is $65.00." },
+  { column: "total", label: "Total", format: DOLLARS },
   { column: "status" },
   { column: "issued_on", label: "Issued" },
   { column: "payment_ref", label: "Payment reference" },

@@ -139,6 +139,8 @@ function PageOf({
   onNavigate,
   over,
   overRecord,
+  changed,
+  onActed,
 }: {
   over?: boolean;
   overRecord?: string;
@@ -148,6 +150,9 @@ function PageOf({
   pages: readonly Page[];
   user: ActingUser | undefined;
   onNavigate(to: NavigateTo): void;
+  /** Bumped when an action ran on any page on screen: each reads again. */
+  changed: number;
+  onActed(): void;
 }) {
   const client = useMemo(() => clientFor(path, page.id, record), [path, page.id, record]);
   const [values, setValues] = useState<FilterValues>({});
@@ -161,6 +166,8 @@ function PageOf({
       onFilterValues={setValues}
       pages={pages}
       onNavigate={onNavigate}
+      refreshKey={changed}
+      onActed={onActed}
       {...(over ? { over } : {})}
       {...(overRecord ? { overRecord } : {})}
       {...(record ? { record } : {})}
@@ -175,6 +182,8 @@ const inMenu = (page: Page) => page.kind === undefined || page.kind === "page";
 function App() {
   const context = appContext();
   const [view, setView] = useState<InterfaceView>();
+  // An action that ran on any page on screen makes every page on screen read again.
+  const [changed, setChanged] = useState(0);
   const [problem, setProblem] = useState<string>();
   // What the workspace's words mean, as far as this person may know. An app works without it.
   const [glossary, setGlossary] = useState<Term[]>([]);
@@ -238,6 +247,8 @@ function App() {
         pages={pages}
         user={user}
         onNavigate={go}
+        changed={changed}
+        onActed={() => setChanged((count) => count + 1)}
         {...(record ? { record } : {})}
         {...(over ? { over } : {})}
         {...(!over && overRecord ? { overRecord } : {})}

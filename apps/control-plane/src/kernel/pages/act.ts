@@ -264,11 +264,15 @@ export async function runAction(
       continue;
     }
     const needed = field.required === true || (meta.required && !meta.hasDefault);
-    if (needed && EMPTY(inputs[field.column])) {
+    // An edit sends only what changed: a field left out stays as it is, and only one sent
+    // empty is refused. Making a record, every field it needs is given.
+    const editing = widget.config?.mode === "edit";
+    const given = Object.hasOwn(inputs, field.column);
+    if (needed && (editing ? given : true) && EMPTY(inputs[field.column])) {
       issues.push({ path: `/inputs/${field.column}`, message: "is required" });
     }
   }
-  if (issues.length > 0) throw badRequest("What was asked doesn't fit.", issues);
+  if (issues.length > 0) throw badRequest("Some of what was typed needs another look.", issues);
 
   // ---- A flow or a script the action starts must be there before anything changes.
   for (const step of action.steps) {
@@ -365,7 +369,7 @@ export async function runAction(
     const remap = (set: Record<string, ActionValue>, error: unknown): never => {
       if (error instanceof HttpError && error.issues) {
         throw badRequest(
-          "What was asked doesn't fit.",
+          "Some of what was typed needs another look.",
           error.issues.map((issue) => {
             const column = issue.path.replace(/^\//, "");
             const how = set[column];

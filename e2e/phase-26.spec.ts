@@ -81,6 +81,8 @@ const invoices = (page: Page) => page.getByRole("region", { name: "Invoices", ex
 const rowOf = (page: Page, number: string) =>
   invoices(page).getByRole("row", { name: new RegExp(number) });
 const sheet = (page: Page) => page.getByRole("dialog", { name: /Invoice detail/ });
+/** The table as it is drawn, whether or not a sheet over it has the reader's focus (a modal sheet takes the page out of the accessibility tree). */
+const invoicesDrawn = (page: Page) => page.locator('section[aria-label="Invoices"]');
 const modal = (page: Page, name: string) => page.getByRole("dialog", { name });
 /** The question an action asks first: a dialog over the sheet, with the button that goes ahead. */
 const asks = (page: Page, text: RegExp | string) =>
@@ -218,13 +220,17 @@ test.beforeAll(async ({ browser }) => {
       (resource.kind === "app" && resource.path === APP) ||
       (resource.kind === "table" && shared.includes(resource.path)),
   )) {
-    await ok(owner, "POST", `${T}/bindings`, {
+    // A table shared with Northside by an earlier walk is shared already: that is what is wanted.
+    const shared = await call(owner, "POST", `${T}/bindings`, {
       workspaceId: W.split("/").pop(),
       resourceId: one.id,
       principalType: "end_user_group",
       principalId: northside?.id,
       roleId: reader,
     });
+    if (shared.status >= 300 && shared.status !== 409) {
+      throw new Error(`Sharing ${one.id} with Northside: ${shared.status} ${JSON.stringify(shared.body)}`);
+    }
   }
   const apps = (await ok(owner, "GET", `${W}/apps`)).items as { url: string; path?: string }[];
   const app = apps.find((one) => one.url.includes(APP)) ?? apps[0];
@@ -257,7 +263,7 @@ test("pressing an invoice opens Invoice detail in a side sheet, Back closes it, 
   await expect(sheet(owner)).toContainText("$123.45");
   await expect(sheet(owner).getByRole("button", { name: "Mark paid" })).toBeVisible();
   await expect(sheet(owner).getByRole("button", { name: "Edit" })).toBeVisible();
-  await expect(invoices(owner)).toBeVisible();
+  await expect(invoicesDrawn(owner)).toBeVisible();
   const link = owner.url();
   expect(link).toContain("sheet=invoice");
   expect(link).toContain(`record=${invoice.open.id}`);
@@ -293,7 +299,12 @@ test("Mark paid asks first, changes the row, says so, and the table shows it", a
     .getByRole("button", { name: "Mark paid" })
     .click();
   await expect(owner.getByText("Invoice marked paid")).toBeVisible();
-  // The row in the table behind the sheet shows it, and so does the record.
+  // The record says so, and its button can't be pressed again: it is not unpaid now.
+  await expect(sheet(owner).getByText("paid", { exact: true })).toBeVisible();
+  await expect(sheet(owner).getByRole("button", { name: "Mark paid" })).toBeDisabled();
+  // Closed, the row in the table behind shows it too.
+  await owner.keyboard.press("Escape");
+  await expect(sheet(owner)).toHaveCount(0);
   await expect(rowOf(owner, invoice.paid.number)).toContainText(/paid/i);
   await expect(rowOf(owner, invoice.paid.number)).not.toContainText(/unpaid/i);
   const after = await stored(invoice.paid.number);
@@ -313,7 +324,8 @@ test("Edit saves through the form, and a required field is refused before anythi
   const form = modal(owner, "Edit invoice");
   await expect(form).toBeVisible();
   // The form starts as the record is.
-  await expect(form.getByLabel("Total")).toHaveValue("12345");
+  // Money kept in cents is typed as dollars.
+  await expect(form.getByLabel("Total")).toHaveValue("123.45");
   // Total is required: emptied, it is refused beside the field, and nothing is saved.
   await form.getByLabel("Total").fill("");
   await form.getByRole("button", { name: "Save" }).click();
@@ -321,11 +333,12 @@ test("Edit saves through the form, and a required field is refused before anythi
   await expect(form.getByLabel("Total")).toHaveAttribute("aria-invalid", "true");
   expect((await stored(invoice.edit.number)).total).toBe(12345);
   // Written again, it saves, closes, and says so.
-  await form.getByLabel("Total").fill("4321");
+  await form.getByLabel("Total").fill("43.21");
   await form.getByRole("button", { name: "Save" }).click();
   await expect(owner.getByText("Invoice saved")).toBeVisible();
   await expect(form).toHaveCount(0);
   await expect(sheet(owner)).toContainText("$43.21");
+  await owner.keyboard.press("Escape");
   await expect(rowOf(owner, invoice.edit.number)).toContainText("$43.21");
   expect((await stored(invoice.edit.number)).total).toBe(4321);
 });

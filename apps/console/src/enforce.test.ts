@@ -562,3 +562,44 @@ test("a pack's views import only react, the widget contract, the kit and their o
   }
   expect(found).toEqual([]);
 });
+
+/**
+ * A served app runs under a content security policy with no `eval`. The manifest's main
+ * entry compiles validators, which `eval` code, so what draws pages takes only types from it,
+ * and the action model's values from `@volvel/manifest/action`, which compiles nothing.
+ * (Phase 26: a served page went blank when the renderer took `conditionsHold` from the main entry.)
+ */
+test("what draws a served page takes only types from the manifest's main entry", () => {
+  const roots = [
+    "packages/screens/src",
+    "packages/screens/runtime",
+    "packages/widgets-core",
+    "packages/widgets-labs",
+  ].map((path) => resolve(here, "../../..", path));
+  const found: string[] = [];
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        if (entry.name === "node_modules" || entry.name === "dist") return [];
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) return walk(path);
+        return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+      });
+    for (const path of walk(root)) {
+      const text = readFileSync(path, "utf8");
+      for (const [statement] of text.matchAll(
+        /import\s+(?!type\b)[^;]*?from\s+["']@volvel\/manifest["']/g,
+      )) {
+        // `import { type A, type B } from` is types only too.
+        const names = statement.match(/\{([^}]*)\}/)?.[1] ?? "x";
+        const values = names
+          .split(",")
+          .map((one) => one.trim())
+          .filter((one) => one !== "" && !one.startsWith("type "));
+        if (values.length > 0) found.push(`${where(path)} imports ${values.join(", ")}`);
+      }
+    }
+  }
+  expect(found).toEqual([]);
+});

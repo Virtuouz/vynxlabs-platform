@@ -24,6 +24,8 @@ interface FieldConfig {
   help?: string;
   section?: string;
   required?: boolean;
+  /** How the value is typed in: money kept in cents is typed as dollars. */
+  format?: { style?: string; minorUnits?: boolean; currency?: string };
 }
 
 export interface FormConfig {
@@ -195,7 +197,17 @@ function FormBody({
 }: FormViewProps & { record: RecordData }) {
   const edit = config.mode === "edit";
   const columns = data.columns as readonly FormColumn[];
-  const byName = useMemo(() => new Map(columns.map((column) => [column.name, column])), [columns]);
+  // A field's own format (money kept in cents, say) is how its column is typed into here.
+  const byName = useMemo(
+    () =>
+      new Map(
+        columns.map((column) => {
+          const format = config.fields.find((field) => field.column === column.name)?.format;
+          return [column.name, format ? { ...column, format } : column];
+        }),
+      ),
+    [columns, config.fields],
+  );
   const fields = useMemo(
     () => config.fields.filter((field) => byName.has(field.column)),
     [config.fields, byName],

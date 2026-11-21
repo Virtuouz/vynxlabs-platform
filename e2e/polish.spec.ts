@@ -47,6 +47,12 @@ let failedRun: string;
 let waitingRun: string;
 let W: string;
 let prodWs: string;
+/**
+ * Whether a data source is bound to a database the console can read. A source is somebody
+ * else's database, so one is bound only when E2E_SOURCE_URL names a Postgres to read; the
+ * source page is measured when it is, and left out (and said so) when it is not.
+ */
+let sourceBound = false;
 
 const script = (code: string) => ({
   kind: "script",
@@ -135,6 +141,30 @@ test.beforeAll(async ({ browser }) => {
   ] as const) {
     await call(page, "POST", `${W}/rows/patients`, { name, visits });
   }
+  if (process.env.E2E_SOURCE_URL) {
+    try {
+      const url = new URL(process.env.E2E_SOURCE_URL);
+      await call(page, "PUT", `${W}/drafts/erp`, {
+        kind: "data_source",
+        schemaVersion: 1,
+        create: true,
+        body: { connector: "postgres" },
+      });
+      await call(page, "PUT", `${W}/data-source-bindings/erp`, {
+        config: {
+          host: url.hostname,
+          port: Number(url.port || 5432),
+          database: url.pathname.slice(1),
+          user: decodeURIComponent(url.username),
+        },
+        password: decodeURIComponent(url.password),
+      });
+      await call(page, "GET", `${W}/data-source-tables/erp`);
+      sourceBound = true;
+    } catch {
+      sourceBound = false;
+    }
+  }
   await call(page, "PUT", `${W}/drafts/reports/visits-by-patient`, {
     kind: "query",
     schemaVersion: 1,
@@ -214,6 +244,8 @@ const workbenches = () => [
   ["scripts", `${ws}/scripts`],
   ["apps", `${ws}/apps`],
   ["a table's rows", `${ws}/tables/patients`],
+  // A data source's tables beside its rows, when a source is bound (see `sourceBound`).
+  ...(sourceBound ? [["a data source's rows", `${ws}/sources/erp`]] : []),
   ["approvals", `/t/${tenant.id}/approvals`],
   ["members", `/t/${tenant.id}/members`],
   ["end-users", `/t/${tenant.id}/end-users`],
@@ -377,8 +409,12 @@ test("every workbench's first row starts within 160 px of the top", async () => 
 test("a table's screen has one scroller, and its page does not scroll", async () => {
   for (const width of [1440, 768, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const view of ["rows", "definition"]) {
-      await open(`${ws}/tables/patients?view=${view}`);
+    const views = [
+      ...["rows", "definition"].map((view) => [view, `${ws}/tables/patients?view=${view}`]),
+      ...(sourceBound ? [["a data source", `${ws}/sources/erp`]] : []),
+    ] as [string, string][];
+    for (const [view, address] of views) {
+      await open(address);
       const found = await page.evaluate(() => {
         const main = document.querySelector("main") as HTMLElement;
         const scrollers = [...main.querySelectorAll<HTMLElement>("*")].filter((el) => {
@@ -393,7 +429,10 @@ test("a table's screen has one scroller, and its page does not scroll", async ()
       });
       expect(found.pageScrolls, `${view} at ${width}: the page scrolls`).toBe(false);
       expect(found.sideways, `${view} at ${width}: the page scrolls sideways`).toBe(false);
-      expect(found.scrollers, `${view} at ${width}: scrollers`).toBeLessThanOrEqual(1);
+      // A source's list of tables scrolls on its own beside the rows, so it may be the second.
+      expect(found.scrollers, `${view} at ${width}: scrollers`).toBeLessThanOrEqual(
+        view === "a data source" ? 2 : 1,
+      );
     }
   }
 });

@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@volvel/db";
-import { PATH_PATTERN } from "@volvel/manifest";
+import { displayGuess, PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { loadCatalog, purgeRetired, workspaceSchema } from "../kernel/data/apply.js";
 import { updateRowKeepingFiles } from "../kernel/data/files.js";
@@ -538,7 +538,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 description:
                   "Reference columns, separated by commas, at most five. For each, `expanded` " +
                   "gives what stands for every row pointed to: the value of the target table's " +
-                  "`display` column, by the row's ID. A row the caller may not read is left out.",
+                  "`display` column (else its `name`, `title` or first text column), by the row's ID. A row the caller may not read is left out.",
               }),
             ),
             as: Type.Optional(
@@ -601,8 +601,13 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           } catch {
             continue;
           }
-          const display = pointed.target.display;
-          if (!display || !pointed.target.columns.some((one) => one.name === display)) continue;
+          // What the table says stands for a row, else the one rule the console's pickers use.
+          const named = pointed.target.display;
+          const display =
+            named && pointed.target.columns.some((one) => one.name === named)
+              ? named
+              : displayGuess(pointed.target.columns);
+          if (!display) continue;
           const found = await withData(kernel, params.t, pointed.scope, (data) =>
             findRows(data, pointed.target, {
               filter: { column: "id", op: "in", value: ids },

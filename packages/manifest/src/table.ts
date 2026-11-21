@@ -84,6 +84,22 @@ export interface TableBody {
   display?: string;
 }
 
+/**
+ * The column that names a row where another table refers to it, when the table says none: its
+ * `name`, else its `title`, else its first text column. Retired columns are never chosen. The
+ * console's pickers and grid, and the server's `expanded` labels, all use this one rule.
+ */
+export function displayGuess(
+  columns: readonly { name: string; type: string; status?: string }[],
+): string | undefined {
+  const text = columns.filter((one) => one.type === "text" && one.status !== "retired");
+  return (
+    text.find((one) => one.name === "name")?.name ??
+    text.find((one) => one.name === "title")?.name ??
+    text[0]?.name
+  );
+}
+
 /** Whether a default can be stored in a column of this type. */
 function defaultFits(type: ColumnType, value: unknown, values: string[] = []): boolean {
   switch (type) {

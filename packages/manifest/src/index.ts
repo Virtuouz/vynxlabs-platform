@@ -222,6 +222,7 @@ export {
 export {
   checkTable,
   conditionColumn,
+  displayGuess,
   type EnumValue,
   enumColor,
   enumValues,

@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { staleSchemas } from "./emit.js";
 import { PATH_PATTERN } from "./envelope.js";
 import { KindRegistry } from "./registry.js";
+import { displayGuess } from "./table.js";
 
 const fixtureKind = {
   kind: "fixture",
@@ -126,4 +127,14 @@ describe("emitted schemas", () => {
     const dir = fileURLToPath(new URL("../../../schemas", import.meta.url));
     expect(await staleSchemas(dir)).toEqual([]);
   });
+});
+
+test("a reference names a row by its name or title when the table says nothing stands for it", () => {
+  const col = (name: string, type: string, status = "active") => ({ name, type, status });
+  expect(displayGuess([col("species", "text"), col("name", "text"), col("born", "date")])).toBe(
+    "name",
+  );
+  expect(displayGuess([col("code", "text"), col("title", "text")])).toBe("title");
+  expect(displayGuess([col("weight", "number"), col("breed", "text")])).toBe("breed");
+  expect(displayGuess([col("old", "text", "retired"), col("weight", "number")])).toBeUndefined();
 });

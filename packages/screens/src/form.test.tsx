@@ -449,3 +449,68 @@ describe("while building", () => {
     within(document.body).getByText(/Sends with:/);
   });
 });
+
+describe("a form in a side sheet or a modal", () => {
+  test("is drawn in a column at its own height, not at its rows of the grid", async () => {
+    const definition = corePack.definitions.find((one) => one.type === "core/form");
+    if (!definition) throw new Error("core/form has no definition");
+    const registry: ViewRegistry = new Map<string, ViewEntry>([
+      // biome-ignore lint/suspicious/noExplicitAny: the registry holds views of every widget's configuration
+      ["core/form", { definition, View: (props: WidgetViewProps<any>) => <FormView {...props} /> }],
+    ]);
+    const client: PageDataClient = { read: async () => ({ inputs: { record: wire({}) } }) };
+    const { container } = render(
+      <PageView
+        widgets={[widget({ mode: "create", fields: [{ column: "number" }] })]}
+        filters={[]}
+        registry={registry}
+        client={client}
+        filterValues={{}}
+        onFilterValues={() => {}}
+        over
+      />,
+    );
+    const cell = await waitFor(() => {
+      const found = container.querySelector('[aria-label="New invoice"]');
+      if (!found) throw new Error("not drawn yet");
+      return found;
+    });
+    expect(cell.className).not.toContain("grid-row");
+    expect(cell.parentElement?.className).not.toContain("auto-rows");
+  });
+
+  test("a field shown in dollars doesn't borrow the column's description of cents", async () => {
+    const described = columns.map((one) =>
+      one.name === "total" ? { ...one, description: "What is owed, in cents." } : one,
+    );
+    const definition = corePack.definitions.find((one) => one.type === "core/form");
+    if (!definition) throw new Error("core/form has no definition");
+    const registry: ViewRegistry = new Map<string, ViewEntry>([
+      // biome-ignore lint/suspicious/noExplicitAny: the registry holds views of every widget's configuration
+      ["core/form", { definition, View: (props: WidgetViewProps<any>) => <FormView {...props} /> }],
+    ]);
+    const client: PageDataClient = {
+      read: async () =>
+        ({
+          inputs: { record: { shape: "record", columns: described, record: {} } },
+        }) as never,
+    };
+    render(
+      <PageView
+        widgets={[
+          widget({
+            mode: "create",
+            fields: [{ column: "total", format: { style: "currency", minorUnits: true } }],
+          }),
+        ]}
+        filters={[]}
+        registry={registry}
+        client={client}
+        filterValues={{}}
+        onFilterValues={() => {}}
+      />,
+    );
+    await screen.findByLabelText(/Total/);
+    expect(screen.queryByText("What is owed, in cents.")).toBeNull();
+  });
+});

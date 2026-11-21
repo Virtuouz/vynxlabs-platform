@@ -43,6 +43,7 @@ export function ListView(props: WithSelected<ListConfig>) {
               pressable,
               () => emit("rowClick", { record: rowId(row, at) }),
               selectedRecord === rowId(row, at),
+              rowId(row, at),
             )}
           >
             <span className="flex items-start justify-between gap-2">

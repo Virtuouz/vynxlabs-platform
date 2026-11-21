@@ -126,6 +126,7 @@ function Cell({
   held,
   arriving,
   narrow,
+  flow,
   client,
   filterValues,
   refreshKey,
@@ -161,6 +162,8 @@ function Cell({
   /** It is new on the page since the page was opened: it fades in where it lands. */
   arriving: boolean;
   narrow: boolean;
+  /** Drawn in a column at its own height (a served side sheet or modal), not at its place on the grid. */
+  flow: boolean;
   client: PageDataClient;
   filterValues: FilterValues;
   refreshKey: number;
@@ -234,7 +237,9 @@ function Cell({
   const recordRead = Object.values(reading.read ?? {}).find((wire) => wire.shape === "record");
   const lookup = (id: string) =>
     rowsRead?.rows.find((row) => row.id === id) ??
-    (recordRead?.shape === "record" && recordRead.record?.id === id ? recordRead.record : undefined) ??
+    (recordRead?.shape === "record" && recordRead.record?.id === id
+      ? recordRead.record
+      : undefined) ??
     (thisRow?.id === id ? thisRow : undefined);
   const amongIds = () =>
     rowsRead?.rows.map((row) => row.id).filter((id): id is string => typeof id === "string");
@@ -274,7 +279,9 @@ function Cell({
       data-selected={selected ? "" : undefined}
       style={style}
       // A view may size what it draws by its cell's width: the container named `cell`.
-      className={`@container/cell relative flex min-h-0 min-w-0 flex-col @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
+      className={`@container/cell relative flex min-h-0 min-w-0 flex-col ${
+        flow ? "" : "@2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)]"
+      } ${
         selected ? "ring-2 ring-action" : ""
       } ${fade ? "opacity-60" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
         building ? "cursor-grab touch-pan-y select-none active:cursor-grabbing" : ""
@@ -488,6 +495,9 @@ export function PageView({
   };
 
   const narrow = useNarrow(gridRef);
+  // A served side sheet or modal is a column of its widgets, each as tall as what it holds:
+  // the grid's rows are sized for a page, and would leave a form's sheet half empty.
+  const flow = over === true && !editing;
 
   // Where everything is drawn: while something is held or carried, where it would all be
   // if it were let go now, so what is in the way is seen to move aside as it travels.
@@ -545,7 +555,11 @@ export function PageView({
         {/* biome-ignore lint/a11y/noStaticElementInteractions: as above */}
         <div
           ref={gridRef}
-          className="grid grid-cols-1 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12"
+          className={
+            flow
+              ? "grid grid-cols-1 gap-3"
+              : "grid grid-cols-1 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12"
+          }
           onClick={(event) => {
             if (editing && event.target === event.currentTarget) editing.onSelect(undefined);
           }}
@@ -574,6 +588,7 @@ export function PageView({
                 held={placement.held?.id === widget.id}
                 arriving={editing !== undefined && !known.current?.has(widget.id)}
                 narrow={narrow}
+                flow={flow}
                 client={client}
                 filterValues={filterValues}
                 refreshKey={refreshKey + ran}

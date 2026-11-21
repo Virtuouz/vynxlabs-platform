@@ -32,13 +32,20 @@ export const PRESSABLE =
  * What to spread onto an element so it is pressable when `on`: focusable, pressed with Enter
  * (or Space), marked when it is the open one. When not `on` it is only clickable, as before.
  */
-export function press(on: boolean, onPress: (() => void) | undefined, selected = false) {
+export function press(
+  on: boolean,
+  onPress: (() => void) | undefined,
+  selected = false,
+  /** The record the element stands for: a sheet closing on it gives the focus back here. */
+  record?: string,
+) {
   if (!onPress) return {};
   if (!on) return { onClick: onPress };
   return {
     tabIndex: 0,
     "data-selected": selected ? "" : undefined,
     "aria-current": selected ? ("true" as const) : undefined,
+    "data-record": record,
     onClick: onPress,
     onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
       // A key meant for a button inside it is not the row's.
@@ -103,7 +110,9 @@ export function RowActionButtons({
             variant={item.tone === "danger" ? "danger" : "quiet"}
             disabled={!allowed || running !== undefined}
             loading={running === item.id}
-            tooltip={!allowed && !props.building ? (props.why?.(where, row) ?? CANNOT_NOW) : undefined}
+            tooltip={
+              !allowed && !props.building ? (props.why?.(where, row) ?? CANNOT_NOW) : undefined
+            }
             onClick={(event) => {
               // Not the row's own press.
               event.stopPropagation();

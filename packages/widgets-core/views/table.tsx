@@ -71,7 +71,12 @@ export function RowCards({
             pressable ? `${PRESSABLE} data-[selected]:border-action` : ""
           }`}
           // biome-ignore lint/a11y/useKeyWithClickEvents: only a row something listens to is pressed, and that one takes Enter
-          {...press(pressable, () => onRow(rowId(row, at)), selected === rowId(row, at))}
+          {...press(
+            pressable,
+            () => onRow(rowId(row, at)),
+            selected === rowId(row, at),
+            rowId(row, at),
+          )}
         >
           <strong className="block truncate">
             {cellOf(head.spec, head.info, row[head.spec.column], data)}
@@ -187,6 +192,7 @@ export function TableView(props: WithSelected<TableConfig>) {
                 pressable,
                 () => emit("rowClick", { record: rowId(row, at) }),
                 selectedRecord === rowId(row, at),
+                rowId(row, at),
               )}
             >
               {shown.map(({ spec, info }) => (

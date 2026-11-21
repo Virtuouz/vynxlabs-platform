@@ -368,9 +368,11 @@ function FormBody({
       label,
       required,
       disabled: off,
+      // A field shown in another unit than it is kept in (dollars, kept as cents) doesn't
+      // borrow the column's description, which speaks of how it is kept.
       ...(field.help
         ? { hint: field.help }
-        : column.description
+        : column.description && !field.format
           ? { hint: column.description }
           : {}),
       error: errors[name],

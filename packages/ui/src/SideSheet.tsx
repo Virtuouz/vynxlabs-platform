@@ -15,6 +15,11 @@ export interface SideSheetProps {
   size?: "regular" | "wide" | "narrow";
   /** The edge it comes from. A menu comes from the left. */
   side?: "right" | "left";
+  /**
+   * Where the focus goes when it closes. Left out, or answering nothing, it goes back to what
+   * opened it. A sheet that steps through records gives the row of the one it was last on.
+   */
+  returnFocus?: () => HTMLElement | null;
   children: ReactNode;
 }
 
@@ -32,6 +37,7 @@ export function SideSheet({
   footer,
   size = "regular",
   side = "right",
+  returnFocus,
   children,
 }: SideSheetProps) {
   const width =
@@ -46,6 +52,7 @@ export function SideSheet({
       <Base.Portal>
         <Base.Backdrop className="fixed inset-0 layer-sheet bg-ink/30 transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Base.Popup
+          {...(returnFocus ? { finalFocus: () => returnFocus() ?? true } : {})}
           className={`fixed inset-y-0 layer-sheet flex w-full flex-col border-line bg-surface shadow-modal transition-transform motion-slow ${
             side === "left"
               ? "left-0 sm:border-r data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full"

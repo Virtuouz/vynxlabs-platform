@@ -351,6 +351,15 @@ function App() {
               <SideSheet
                 open={shown}
                 onClose={() => go({ close: true })}
+                // Back to the row of the record it was last on: it may have been stepped to,
+                // or opened by a reload or a shared link, with nothing on the page that opened it.
+                returnFocus={() =>
+                  held.record
+                    ? document.querySelector<HTMLElement>(
+                        `[data-record="${CSS.escape(held.record)}"]`,
+                      )
+                    : null
+                }
                 title={held.page.title}
                 size="wide"
                 {...(stepping ? { footer: <Stepper stepping={stepping} onStep={step} /> } : {})}

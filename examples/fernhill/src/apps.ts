@@ -118,7 +118,7 @@ export const performance = defineInterface({
         {
           id: "note",
           type: "core/text",
-          at: { x: 0, y: 0, w: 12, h: 2 },
+          at: { x: 0, y: 0, w: 12, h: 3 },
           config: {
             text: ":::alert[In dollars]{type=info}\nEvery amount here is in dollars, as the clinics invoice. Change **Issued** to look at another stretch of time.\n:::",
           },
@@ -127,7 +127,7 @@ export const performance = defineInterface({
           id: "invoiced",
           type: "core/stat",
           title: "Invoiced",
-          at: { x: 0, y: 2, w: 3, h: 3 },
+          at: { x: 0, y: 3, w: 3, h: 3 },
           data: { value: invoiceValue("invoiced", "sum") },
           config: { format: DOLLARS, caption: "Issued in the range chosen" },
         },
@@ -135,7 +135,7 @@ export const performance = defineInterface({
           id: "unpaid",
           type: "core/stat",
           title: "Unpaid",
-          at: { x: 3, y: 2, w: 3, h: 3 },
+          at: { x: 3, y: 3, w: 3, h: 3 },
           data: {
             value: invoiceValue("unpaid", "sum", [{ column: "status", op: "eq", value: "unpaid" }]),
           },
@@ -145,15 +145,15 @@ export const performance = defineInterface({
           id: "average",
           type: "core/stat",
           title: "Average invoice",
-          at: { x: 6, y: 2, w: 3, h: 3 },
+          at: { x: 6, y: 3, w: 3, h: 3 },
           data: { value: invoiceValue("average", "avg") },
           config: { format: DOLLARS },
         },
         {
           id: "goal",
           type: "labs/goal",
-          title: "Invoiced this month",
-          at: { x: 9, y: 2, w: 3, h: 3 },
+          title: "This month",
+          at: { x: 9, y: 3, w: 3, h: 3 },
           data: {
             value: {
               source: {
@@ -166,13 +166,13 @@ export const performance = defineInterface({
             },
           },
           // $60,000, kept in cents like the invoices.
-          config: { target: 6000000, format: DOLLARS, label: "of $60,000 this month" },
+          config: { target: 6000000, format: DOLLARS, label: "of a $60,000 goal" },
         },
         {
           id: "by-week",
           type: "core/chart",
           title: "Invoiced by week",
-          at: { x: 0, y: 5, w: 8, h: 8 },
+          at: { x: 0, y: 6, w: 8, h: 8 },
           data: invoicesBy({ column: "issued_on", bucket: "week" }),
           config: { mark: "line", format: DOLLARS },
         },
@@ -180,7 +180,7 @@ export const performance = defineInterface({
           id: "by-clinic",
           type: "core/chart",
           title: "By clinic",
-          at: { x: 8, y: 5, w: 4, h: 8 },
+          at: { x: 8, y: 6, w: 4, h: 8 },
           data: invoicesBy({ column: "clinic" }),
           config: { mark: "bar", format: DOLLARS },
         },
@@ -188,7 +188,7 @@ export const performance = defineInterface({
           id: "list",
           type: "core/table",
           title: "Invoices",
-          at: { x: 0, y: 13, w: 12, h: 10 },
+          at: { x: 0, y: 14, w: 12, h: 10 },
           data: {
             rows: {
               source: {

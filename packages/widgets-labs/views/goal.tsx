@@ -47,9 +47,9 @@ export function GoalView({ config, data, emit }: WidgetViewProps<GoalConfig>) {
     <button
       type="button"
       onClick={() => emit("click", {})}
-      className="flex h-full w-full cursor-pointer flex-col justify-center gap-2 border-0 bg-transparent p-0 text-left text-ink"
+      className="my-auto flex w-full cursor-pointer flex-col gap-1.5 border-0 bg-transparent p-0 text-left text-ink"
     >
-      <span className="text-3xl font-semibold tabular-nums">
+      <span className="text-display-lg font-semibold tabular-nums">
         {formatNumber(value, config.format)}
       </span>
       <span
@@ -63,7 +63,7 @@ export function GoalView({ config, data, emit }: WidgetViewProps<GoalConfig>) {
       >
         <span className={`block h-full ${FILL[band]}`} style={{ width: `${fill}%` }} />
       </span>
-      <span className="flex flex-wrap items-baseline justify-between gap-x-3 text-sm text-ink-muted">
+      <span className="flex flex-wrap items-baseline justify-between gap-x-3 text-body-sm text-ink-muted">
         <span>{config.label ?? ""}</span>
         <span className="tabular-nums">{shown}%</span>
       </span>

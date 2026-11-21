@@ -1,7 +1,12 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { HEARTBEAT_SECONDS } from "@volvel/db";
 import { Type } from "typebox";
-import { MAX_FILE_BYTES, readFile, storeFile } from "../kernel/data/files.js";
+import {
+  MAX_FILE_BYTES,
+  readFile,
+  storeFile,
+  updateRowKeepingFiles,
+} from "../kernel/data/files.js";
 import {
   aggregateQueryFrom,
   aggregateRows,
@@ -878,6 +883,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           data: Parameters<typeof findRows>[0],
           target: RowTarget,
           scope: DataScope,
+          own: boolean,
         ) => {
           switch (body.op) {
             case "find":
@@ -894,7 +900,19 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               return insertRows(data, target, rows, scope);
             }
             case "update":
-              return updateRow(data, target, String(args.id), args.patch);
+              // A workspace table's file column names files Volvel stores: a replaced one is
+              // noted, as when a person changes the row. A source table has none (see sources.ts).
+              return own
+                ? updateRowKeepingFiles(
+                    kernel,
+                    data,
+                    { tenantId: run.tenant_id, id: run.workspace_id },
+                    { type: "script", id: null },
+                    target,
+                    String(args.id),
+                    args.patch,
+                  )
+                : updateRow(data, target, String(args.id), args.patch);
             case "delete":
               await deleteRow(data, target, String(args.id));
               return null;
@@ -912,7 +930,9 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             const now = await pathNow(db, run.workspace_id, path, "data_source");
             const source = await openSource(kernel, db, run.tenant_id, run.workspace_id, now);
             const target = await sourceTable(source.db, source.schema, now, body.table);
-            return { result: await perform(source.db, target, { principalId: null, all: true }) };
+            return {
+              result: await perform(source.db, target, { principalId: null, all: true }, false),
+            };
           } catch (error) {
             throw sourceFailure(path, translate(error));
           }
@@ -937,7 +957,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ? await scopeFor(kernel, run.tenant_id, { type: person, id: body.as }, false)
             : { principalId: null, all: true };
         const result = await withData(kernel, run.tenant_id, scope, (data) =>
-          perform(data, target, scope),
+          perform(data, target, scope, true),
         );
         if (body.op !== "find" && body.op !== "get") {
           const ids =

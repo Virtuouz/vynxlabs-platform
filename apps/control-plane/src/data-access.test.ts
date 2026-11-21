@@ -85,6 +85,10 @@ export const filer = { execute: async (input, ctx) => {
   const row = await ctx.table("tasks").insert({ title: "with a file", attachment: stored.id });
   return { id: stored.id, name: read.name, type: read.contentType, text: Buffer.from(read.content).toString("utf8"), attachment: row.attachment };
 } };
+export const swapper = { execute: async (input, ctx) => {
+  const row = await ctx.table("tasks").update(input.row, { attachment: input.file });
+  return { attachment: row.attachment };
+} };
 export const sink = { execute: async (input) => ({ got: input }) };
 `;
 
@@ -117,6 +121,7 @@ function bundle(extra: BundleManifest[] = []): Bundle {
       script("undeclared", "undeclared"),
       script("erp-sync", "erpSync", { sources: ["erp"] }),
       script("filer", "filer", { tables: ["tasks"] }),
+      script("swapper", "swapper", { tables: ["tasks"] }),
       script("sink", "sink"),
       ...extra,
     ],
@@ -643,6 +648,40 @@ describe("files", () => {
         .where("file_id", "=", second)
         .execute(),
     ).toEqual([]);
+  });
+
+  test("a file a script's update replaces is kept and removed the same way", async () => {
+    const upload = async (name: string) =>
+      (await alice.upload(`${ws()}/files?name=${name}`, name, "text/plain")).body.id as string;
+    const old = await upload("old.txt");
+    const fresh = await upload("fresh.txt");
+    const row = (await alice.post(`${ws()}/rows/tasks`, { title: "Swapped", attachment: old })).body
+      .items[0];
+    const done = await ran("swapper", { row: row.id, file: fresh });
+    expect(done.status, JSON.stringify(done.error)).toBe("succeeded");
+    expect(done.output.attachment).toBe(fresh);
+
+    // The replaced file is noted, and a pass inside the window leaves it.
+    const notes = await t.db
+      .selectFrom("row_file_history")
+      .select(["row_id", "column_name", "replaced_by_type"])
+      .where("file_id", "=", old)
+      .execute();
+    expect(notes).toEqual([
+      { row_id: row.id, column_name: "attachment", replaced_by_type: "script" },
+    ]);
+    await pruneOnce(t.kernel);
+    expect((await alice.get(`${ws()}/files/${old}`)).status).toBe(200);
+
+    // Once the note has run out the file goes. The one the row names stays.
+    await t.db
+      .updateTable("row_file_history")
+      .set({ replaced_at: new Date(Date.now() - 500 * 86_400_000) })
+      .where("file_id", "=", old)
+      .execute();
+    await pruneOnce(t.kernel);
+    expect((await alice.get(`${ws()}/files/${old}`)).status).toBe(404);
+    expect((await alice.get(`${ws()}/files/${fresh}`)).status).toBe(200);
   });
 
   test("a deleted file is gone from the list and from storage", async () => {

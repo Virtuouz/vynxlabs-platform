@@ -2,6 +2,25 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 25, apps and dashboards from one set of widgets
+
+Apps made in the console and dashboards are now one system: pages of widgets from packs, configured in one inspector, read on the server (S9, decisions 0004 to 0006). **Nothing made before is kept:** a migration (`0085`) deletes members' dashboards and their shares, and interfaces and dashboards written in the old shapes are refused. Re-run the examples' setup, or write pages in the new shape.
+
+### For operators
+
+- **Members' dashboards are deleted** by migration `0085`. Resource dashboards and interfaces deployed before are refused at the next deploy until they are rewritten.
+- **One endpoint reads every widget**: `GET …/widget-data`, which reads the stored page (the draft only for someone who may edit it) and runs each widget's data under the viewer's row policies. `GET …/dashboards/:d/widgets/:w/data` and `GET …/interface-targets` are gone.
+- **A choice filter over a column** offers its values from `GET …/filter-options`, read as the viewer may.
+- **The builder's inspector is Data, Display, Actions and Rules**, made from each widget's definition; size and place live on the page (drag, the arrow keys, Shift and the arrows, ⌘D, Delete, Esc); "Add to page" lists widgets by what they are for.
+- **Text on a page or a dashboard is Markdown**, with the documentation's alerts, steps, tabs and folds.
+- **Not yet back:** forms, buttons, editing in a table and widgets that follow another's chosen row. They return as record pages and actions run on the server, in phases 26 and 27.
+
+### For tenant developers
+
+- `interface` bodies are version 2 and `dashboard` bodies version 3: `{ title, pages: [{ id, title, filters, widgets }] }` and `{ title, filters, widgets }`, where a widget is `{ id, type: "core/chart", title, at, data: { <input>: { source, filters } }, config }`.
+- `@volvel/sdk` exports the widget contract (`defineWidget`, the hints, the data shapes) from `@volvel/widgets`, `defineInterface` and `defineDashboard`. `InterfaceWidget` and the kit's widget registry are gone.
+- The core pack is `core/table`, `core/list`, `core/stat`, `core/chart`, `core/pivot` and `core/text`; `labs/goal` is the platform's trial pack.
+
 ## Unreleased: phase 24, the follow-through on phase 23's open items
 
 Five items phase 23 left, each as the owner chose. A migration (`0084`) adds the record of what each dashboard widget names. Nothing needs migrating by hand.

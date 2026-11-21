@@ -1,8 +1,37 @@
 import type { PageWidget } from "@volvel/manifest";
-import { Button, Notice, Skeleton } from "@volvel/ui";
+import { Button, Menu, Notice, Skeleton } from "@volvel/ui";
+import { Download } from "@volvel/ui/icons";
 import type { WidgetDefinition, WidgetState } from "@volvel/widgets";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { download, type Result, toCsv, toXlsx } from "./export.ts";
+import type { WireData } from "./types.ts";
 import type { Reading } from "./useWidgetData.ts";
+
+/** What a widget read as a table to keep: the first input that has rows, as its view was given them. */
+function resultOf(read: Readonly<Record<string, WireData>> | undefined): Result | undefined {
+  for (const wire of Object.values(read ?? {})) {
+    if (wire.shape === "record" || wire.rows.length === 0) continue;
+    const columns = wire.columns.map((column) => ({ name: column.label || column.name }));
+    const names = wire.shape === "rows" ? (wire.names ?? {}) : {};
+    const rows = wire.rows.map((row) =>
+      wire.columns.map((column) => {
+        const value = row[column.name];
+        return typeof value === "string" && names[column.name]?.[value] !== undefined
+          ? names[column.name]?.[value]
+          : value;
+      }),
+    );
+    return { columns, rows };
+  }
+  return undefined;
+}
+
+/** A file name from a widget's title: letters, digits and dashes. */
+const fileName = (title: string) =>
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "") || "widget";
 
 /** What a widget with no title is called where it needs a name: in the builder, and to a screen reader. */
 export const nameOf = (widget: PageWidget, definition: WidgetDefinition | undefined) =>
@@ -101,6 +130,8 @@ export function Frame({
 }) {
   const name = nameOf(widget, definition);
   const state: WidgetState = definition ? reading.state : { status: "ready" };
+  const kept = !building && state.status === "ready" ? resultOf(reading.read) : undefined;
+  const followed = Object.values(reading.read ?? {}).find((wire) => wire.followed)?.followed;
   const heading = widget.title || widget.subtitle || (building && selected);
   const body = (() => {
     if (!definition) {
@@ -140,6 +171,32 @@ export function Frame({
               renamable={building && selected && onRename !== undefined}
               onRename={(title) => onRename?.(title)}
             />
+            {kept ? (
+              <span className="ml-auto shrink-0">
+                <Menu
+                  ariaLabel={`Download ${name}`}
+                  align="end"
+                  triggerClassName="flex items-center rounded-control p-1 text-ink-muted hover:bg-sunken hover:text-ink"
+                  label={<Download aria-hidden="true" size={16} />}
+                  items={[
+                    {
+                      label: "Download as CSV",
+                      onSelect: () =>
+                        download(`${fileName(name)}.csv`, toCsv(kept), "text/csv;charset=utf-8"),
+                    },
+                    {
+                      label: "Download as a spreadsheet",
+                      onSelect: () =>
+                        download(
+                          `${fileName(name)}.xlsx`,
+                          toXlsx(kept, name.slice(0, 31)),
+                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        ),
+                    },
+                  ]}
+                />
+              </span>
+            ) : null}
           </div>
           {widget.subtitle ? (
             <p className="m-0 text-body-sm text-ink-muted">{widget.subtitle}</p>
@@ -157,6 +214,12 @@ export function Frame({
           <span role="status" className="text-body-sm text-ink-muted">
             Updating…
           </span>
+        ) : null}
+        {followed ? (
+          <Notice tone="attention">
+            Names <code>{followed.names}</code>, now <code>{followed.now}</code>: change it in the
+            repository.
+          </Notice>
         ) : null}
         {body}
         {reading.more?.loading ? (

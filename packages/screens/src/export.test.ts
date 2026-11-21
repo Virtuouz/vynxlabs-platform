@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { type Result, toCsv, toXlsx } from "./kit/export.ts";
+import { type Result, toCsv, toXlsx } from "./export.ts";
 
 const result = (names: [string, string][], rows: unknown[][]): Result => ({
   columns: names.map(([name]) => ({ name })),

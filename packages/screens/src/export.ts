@@ -1,8 +1,7 @@
 /**
  * A widget's rows as a file to keep: CSV, or a spreadsheet (.xlsx) written
- * here with no library. Kept from the dashboards screen before phase 25; the
- * page's renderer is what holds a widget's rows now, so wiring "Download" back
- * onto a widget is the renderer's frame to offer (see the phase 25 report).
+ * here with no library. Offered by every widget's frame, in the builder's
+ * pages, on dashboards and in served apps alike.
  */
 
 /** The columns and rows of what a widget read. */

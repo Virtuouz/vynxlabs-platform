@@ -4,10 +4,11 @@ import type { WireData } from "./types.ts";
 /** What the endpoint gave, as a view is given it. A rows input with a next page gets a `more` that asks for it. */
 export function toWidgetData(wire: WireData, more?: () => void): WidgetData {
   if (wire.shape === "rows") {
-    const { next, ...rest } = wire;
+    const { next, followed: _followed, ...rest } = wire;
     return { ...rest, ...(next !== undefined && more ? { more } : {}) };
   }
-  return wire;
+  const { followed: _followed, ...rest } = wire;
+  return rest;
 }
 
 /** Whether a read has nothing to draw: no rows, no groups, or no record. A figure with no groups is never empty. */

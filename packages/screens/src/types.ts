@@ -19,6 +19,7 @@ export type WireData =
       next?: string;
       /** For a reference column: the name of the row each id points to. */
       names?: Record<string, Record<string, string>>;
+      followed?: Followed;
     }
   | {
       shape: "summary";
@@ -29,8 +30,24 @@ export type WireData =
       previous?: Record<string, unknown>[];
       /** For a stat that has a line over time. */
       trend?: { at: string; value: number }[];
+      followed?: Followed;
     }
-  | { shape: "record"; columns: ColumnInfo[]; record: Record<string, unknown> | null };
+  | {
+      shape: "record";
+      columns: ColumnInfo[];
+      record: Record<string, unknown> | null;
+      followed?: Followed;
+    };
+
+/**
+ * A saved query the widget names by a path that answers nothing now, read
+ * through the key a deploy recorded (phase 24): `names` is the path the page
+ * says, `now` the query's path today.
+ */
+export interface Followed {
+  names: string;
+  now: string;
+}
 
 export interface PageDataClient {
   read(

@@ -937,3 +937,85 @@ describe("the canvas", () => {
     });
   });
 });
+
+describe("what the frame offers besides the view", () => {
+  test("offers a widget's rows as a file, and not while building", async () => {
+    const client: PageDataClient = {
+      read: async () => ({
+        inputs: {
+          rows: {
+            shape: "rows",
+            columns: [{ name: "clinic", label: "Clinic", type: "text" }],
+            rows: [{ clinic: "northside" }],
+          },
+        },
+      }),
+    };
+    const widget: PageWidget = {
+      id: "t",
+      type: "core/table",
+      title: "Invoices",
+      at: { x: 0, y: 0, w: 12, h: 8 },
+      data: { rows: { source: { visual: { table: "invoices" } } } },
+    };
+    const props = {
+      widgets: [widget],
+      filters: [],
+      registry: viewRegistry(corePack),
+      client,
+      filterValues: {},
+      onFilterValues: () => undefined,
+    };
+    const { unmount } = render(<PageView {...props} />);
+    expect(await screen.findByRole("button", { name: "Download Invoices" })).toBeTruthy();
+    unmount();
+    render(
+      <PageView
+        {...props}
+        editing={{
+          selected: undefined,
+          onSelect: () => undefined,
+          onChange: () => undefined,
+          onRename: () => undefined,
+        }}
+      />,
+    );
+    await screen.findByText("northside");
+    expect(screen.queryByRole("button", { name: "Download Invoices" })).toBeNull();
+  });
+
+  test("says when a saved query was read through the key a deploy recorded", async () => {
+    const client: PageDataClient = {
+      read: async () => ({
+        inputs: {
+          rows: {
+            shape: "rows",
+            columns: [{ name: "n", label: "N", type: "integer" }],
+            rows: [{ n: 1 }],
+            followed: { names: "reports/old", now: "reports/new" },
+          },
+        },
+      }),
+    };
+    render(
+      <PageView
+        widgets={[
+          {
+            id: "q",
+            type: "core/table",
+            title: "Saved",
+            at: { x: 0, y: 0, w: 12, h: 8 },
+            data: { rows: { source: { query: "reports/old" } } },
+          },
+        ]}
+        filters={[]}
+        registry={viewRegistry(corePack)}
+        client={client}
+        filterValues={{}}
+        onFilterValues={() => undefined}
+      />,
+    );
+    expect(await screen.findByText("reports/old")).toBeTruthy();
+    expect(screen.getByText("reports/new")).toBeTruthy();
+  });
+});

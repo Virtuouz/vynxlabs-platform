@@ -1,6 +1,9 @@
 @import "@volvel/ui/tokens.css";
 @source "./";
 @source "../../../packages/screens/src";
+/* The platform's widget packs draw with the kit's classes too. */
+@source "../../../packages/widgets-core/views";
+@source "../../../packages/widgets-labs/views";
 
 /* A screen of 1920 px and more: room for a third column, and logs beside what a run was given. */
 @theme {

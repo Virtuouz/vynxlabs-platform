@@ -14,6 +14,8 @@ export interface Reading {
   more: { loading: boolean; error?: string; retry: () => void } | undefined;
   /** Reads again. */
   retry: () => void;
+  /** Each input as it was read: for the frame's Download, and its notices. */
+  read: Readonly<Record<string, WireData>> | undefined;
 }
 
 const sentence = (error: unknown): { forbidden: boolean; message: string } => {
@@ -175,5 +177,6 @@ export function useWidgetData({
         ? { loading: more.loading, ...(more.error ? { error: more.error } : {}), retry: retryMore }
         : undefined,
     retry,
+    read: inputs,
   };
 }

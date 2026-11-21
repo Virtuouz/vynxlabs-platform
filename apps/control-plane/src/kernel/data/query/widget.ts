@@ -269,6 +269,9 @@ export async function inputQuery(
     };
   }
 
+  if ("record" in source)
+    throw badRequest("The page's record is read as a table, before it is asked.");
+
   // SQL written in the widget: its parameters are $1, $2 and so on.
   const fixed = source.values ?? [];
   const bound = (input.filters ?? [])

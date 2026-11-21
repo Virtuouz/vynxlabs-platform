@@ -306,6 +306,10 @@ export interface ColumnInfo {
   description?: string;
   /** For an enum: its values, and the colour each is drawn in. */
   values?: readonly { value: string; label?: string; color?: string }[];
+  /** Whether a row must have a value here, as its table's definition says. Left out for what is not a column of a table. */
+  required?: boolean;
+  /** For a reference column: the table it points to, by its path. */
+  references?: string;
 }
 
 export interface RowsData {
@@ -337,6 +341,8 @@ export interface RecordData {
   shape: "record";
   columns: readonly ColumnInfo[];
   record: Readonly<Record<string, unknown>> | null;
+  /** For a reference column: the name of the row each id points to. */
+  names?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
 export type WidgetData = RowsData | SummaryData | RecordData;

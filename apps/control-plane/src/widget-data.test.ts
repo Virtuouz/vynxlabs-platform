@@ -70,9 +70,121 @@ const filters = [
   { name: "status", type: "choice", from: { table: "invoices", column: "status" } },
   { name: "fixed", type: "choice", choices: ["a", "b"] },
 ];
+/** Totals by team that a page filter narrows, for the rows behind a group. */
+const byTeamNarrowed = {
+  ...byTeam,
+  id: "by_team_narrowed",
+  data: {
+    rows: {
+      ...byTeam.data.rows,
+      filters: [{ filter: "status", column: "status" }],
+    },
+  },
+};
+/** Totals by month, so that a period's rows are found by the days it covers. */
+const byMonth = {
+  ...byTeam,
+  id: "by_month",
+  data: {
+    rows: {
+      source: {
+        visual: {
+          table: "invoices",
+          groupBy: [{ column: "created_at", bucket: "month" }],
+          measures: [{ fn: "count", as: "n" }],
+        },
+      },
+    },
+  },
+};
+const recordPage = {
+  id: "invoice",
+  title: "Invoice",
+  kind: "record",
+  record: { table: "invoices" },
+  widgets: [
+    {
+      id: "detail",
+      type: "core/detail",
+      at,
+      data: { record: { source: { record: "this" } } },
+    },
+    {
+      id: "payments",
+      type: "core/table",
+      at: { x: 0, y: 6, w: 12, h: 5 },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "payments",
+              columns: ["amount"],
+              filters: [{ column: "invoice", op: "eq", value: { record: "id" } }],
+              sort: [{ by: "amount" }],
+            },
+          },
+        },
+      },
+    },
+    {
+      id: "mine",
+      type: "core/table",
+      at: { x: 0, y: 11, w: 12, h: 5 },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "payments",
+              columns: ["amount"],
+              filters: [{ column: "owner", op: "eq", value: { user: "id" } }],
+              sort: [{ by: "amount" }],
+            },
+          },
+        },
+      },
+    },
+  ],
+};
+/** A create form: its input is a table, and no record. */
+const newPayment = {
+  id: "new_payment",
+  title: "New payment",
+  kind: "modal",
+  widgets: [
+    {
+      id: "form",
+      type: "core/form",
+      at,
+      data: { record: { source: { visual: { table: "payments" } } } },
+      config: {
+        mode: "create",
+        fields: [{ column: "invoice" }, { column: "amount" }, { column: "method" }],
+        submit: { steps: [{ do: "close" }] },
+      },
+    },
+  ],
+};
 const screen = {
   title: "Invoices",
-  pages: [{ id: "main", title: "Invoices", filters, widgets: [list, byTeam] }],
+  pages: [
+    { id: "main", title: "Invoices", filters, widgets: [list, byTeam, byTeamNarrowed, byMonth] },
+    recordPage,
+    {
+      id: "payment",
+      title: "Payment",
+      kind: "record",
+      record: { table: "payments" },
+      widgets: [
+        {
+          id: "detail",
+          type: "core/detail",
+          at,
+          data: { record: { source: { record: "this" } } },
+        },
+      ],
+    },
+    newPayment,
+  ],
 };
 /** A dashboard of SQL, and one that narrows rows by when they were made. */
 const board = {
@@ -122,6 +234,14 @@ function bundle(): Bundle {
           rules: [{ allow: "read", when: { column: "team", in: "groups" } }],
         },
       }),
+      manifest("table", "payments", {
+        columns: {
+          invoice: { type: "reference", references: "invoices", required: true },
+          amount: { type: "number" },
+          owner: { type: "text" },
+          method: { type: "enum", values: ["card", "wire"] },
+        },
+      }),
       manifest("interface", "screens/invoices", screen),
       manifest("dashboard", "boards/by-team", board),
       manifest("app", "billing", { title: "Invoices", interface: "screens/invoices" }),
@@ -134,6 +254,11 @@ function bundle(): Bundle {
         role: "portal_user",
         principal: { type: "end_users" },
         resource: "invoices",
+      }),
+      manifest("binding", "bindings/payments", {
+        role: "portal_user",
+        principal: { type: "end_users" },
+        resource: "payments",
       }),
     ],
     code: "export {};",
@@ -188,7 +313,7 @@ async function endUser(email: string, group: string) {
   await alice.put(
     `/tenants/${tenant}/end-user-groups/${made.body.id}/members/${created.body.endUser.id}`,
   );
-  return { browser: visitor };
+  return { browser: visitor, id: created.body.endUser.id as string };
 }
 
 /** The data of a widget, as someone signed in with a browser (an end user) reads it. */
@@ -252,9 +377,9 @@ beforeAll(async () => {
   expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
   const seeded = await alice.post(`${ws()}/rows/invoices`, {
     rows: [
-      { number: "INV-1", team: "finance", total: 10 },
-      { number: "INV-2", team: "finance", total: 20 },
-      { number: "INV-3", team: "sales", total: 5 },
+      { number: "INV-1", team: "finance", total: 10, status: "open" },
+      { number: "INV-2", team: "finance", total: 20, status: "paid" },
+      { number: "INV-3", team: "sales", total: 5, status: "open" },
     ],
   });
   expect(seeded.status, JSON.stringify(seeded.body)).toBe(201);
@@ -480,7 +605,7 @@ describe("a draft", () => {
     ]);
     expect(
       (await alice.get(`${ws()}/interfaces/screens/invoices`)).body.body.pages[0].widgets,
-    ).toHaveLength(2);
+    ).toHaveLength(4);
     // A dashboard's draft is read the same way.
     expect(
       (await asked(alice, { of: "dashboard", path: "boards/by-team", widget: "sql", draft: "1" }))
@@ -550,5 +675,266 @@ describe("a rows input is read a page at a time", () => {
     // A cursor that was not given is refused, and so is a cursor with no input.
     expect((await asked(alice, onPage("list", { input: "rows", cursor: "!!" }))).status).toBe(400);
     expect((await asked(alice, onPage("list", { cursor: first.next }))).status).toBe(400);
+  });
+});
+
+/** The page a record is opened on, read as whoever asks. */
+const onRecord = (widget: string, more: Record<string, string | object> = {}) => ({
+  of: "interface",
+  path: "screens/invoices",
+  page: "invoice",
+  widget,
+  ...more,
+});
+
+describe("a record page", () => {
+  let ids: Record<string, string>;
+  let paymentId: string;
+
+  beforeAll(async () => {
+    const read = await alice.get(`${ws()}/rows/invoices?limit=1000`);
+    ids = Object.fromEntries(
+      read.body.items
+        .filter((row: Any) => /^INV-\d$/.test(row.number))
+        .map((row: Any) => [row.number, row.id]),
+    );
+    const made = await alice.post(`${ws()}/rows/payments`, {
+      rows: [
+        { invoice: ids["INV-1"], amount: 4, owner: "someone" },
+        { invoice: ids["INV-1"], amount: 6, owner: "someone" },
+        { invoice: ids["INV-1"], amount: 7, owner: ivy.id },
+        { invoice: ids["INV-2"], amount: 9, owner: "someone" },
+        { invoice: ids["INV-3"], amount: 11, owner: jon.id },
+      ],
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const paid = await asked(alice, {
+      of: "interface",
+      path: "screens/invoices",
+      page: "invoice",
+      widget: "payments",
+      record: ids["INV-2"] as string,
+    });
+    paymentId = paid.body.inputs.rows.rows[0].id;
+  });
+
+  const detail = (who: typeof alice | typeof ivy.browser, id: string, prefix = "") =>
+    asked(who, onRecord("detail", { record: id }), prefix);
+  const amounts = (read: { body: Any }, input = "rows") =>
+    read.body.inputs[input].rows.map((row: Any) => row.amount);
+
+  test("its detail reads its record, with the columns that say what each is", async () => {
+    const read = await detail(alice, ids["INV-1"] as string);
+    expect(read.status, JSON.stringify(read.body)).toBe(200);
+    const record = read.body.inputs.record;
+    expect(record.shape).toBe("record");
+    expect(record.record).toMatchObject({ id: ids["INV-1"], number: "INV-1", team: "finance" });
+    const number = record.columns.find((column: Any) => column.name === "number");
+    expect(number).toMatchObject({ type: "text", required: true });
+  });
+
+  test("gives the names of what its reference columns point to", async () => {
+    const read = await asked(
+      alice,
+      onRecord("detail", { page: "payment", record: paymentId, widget: "detail" }),
+    );
+    expect(read.status, JSON.stringify(read.body)).toBe(200);
+    expect(read.body.inputs.record.record.invoice).toBe(ids["INV-2"]);
+    expect(read.body.inputs.record.names).toEqual({
+      invoice: { [ids["INV-2"] as string]: "INV-2" },
+    });
+    expect(read.body.inputs.record.columns.find((c: Any) => c.name === "invoice")).toMatchObject({
+      type: "reference",
+      references: "invoices",
+    });
+  });
+
+  test("is a 404 for a record the caller may not read, and for one that is not there", async () => {
+    expect((await detail(ivy.browser, ids["INV-1"] as string, "/api/v1")).status).toBe(200);
+    expect((await detail(ivy.browser, ids["INV-3"] as string, "/api/v1")).status).toBe(404);
+    expect((await detail(jon.browser, ids["INV-1"] as string, "/api/v1")).status).toBe(404);
+    expect((await detail(alice, "00000000-0000-4000-8000-000000000000")).status).toBe(404);
+    expect((await detail(alice, "not-an-id")).status).toBe(404);
+  });
+
+  test("shows the payments where the invoice is this record", async () => {
+    const of = (number: string) =>
+      asked(alice, onRecord("payments", { record: ids[number] as string }));
+    expect(amounts(await of("INV-1"))).toEqual([4, 6, 7]);
+    expect(amounts(await of("INV-2"))).toEqual([9]);
+    // With no record, there is nothing that belongs to it.
+    expect(amounts(await asked(alice, onRecord("payments")))).toEqual([]);
+  });
+
+  test("narrows to the caller's own rows with the user's id", async () => {
+    expect(amounts(await asked(ivy.browser, onRecord("mine"), "/api/v1"))).toEqual([7]);
+    expect(amounts(await asked(jon.browser, onRecord("mine"), "/api/v1"))).toEqual([11]);
+    expect(amounts(await asked(alice, onRecord("mine")))).toEqual([]);
+  });
+});
+
+describe("the rows behind a group of a summary", () => {
+  const behind = (
+    group: object,
+    more: Record<string, string | object> = {},
+    who: Parameters<typeof asked>[0] = alice,
+    prefix = "",
+  ) => asked(who, onPage("by_team_narrowed", { input: "rows", behind: group, ...more }), prefix);
+  const numbers = (read: { body: Any }) =>
+    read.body.inputs.rows.rows.map((row: Any) => row.number).sort();
+
+  test("are exactly the rows of the group clicked, as a rows input", async () => {
+    const read = await behind({ team: "finance" });
+    expect(read.status, JSON.stringify(read.body)).toBe(200);
+    expect(read.body.inputs.rows.shape).toBe("rows");
+    expect(numbers(read)).toEqual(["INV-1", "INV-2"]);
+    expect(read.body.inputs.rows.columns.map((column: Any) => column.name)).toContain("number");
+    expect(numbers(await behind({ team: "sales" }))).toEqual(["INV-3"]);
+    expect(numbers(await behind({ team: "nobody" }))).toEqual([]);
+  });
+
+  test("still have the page's filters applied, and the caller's row policy", async () => {
+    expect(numbers(await behind({ team: "finance" }, { filters: { status: "open" } }))).toEqual([
+      "INV-1",
+    ]);
+    expect(numbers(await behind({ team: "finance" }, { filters: { status: "paid" } }))).toEqual([
+      "INV-2",
+    ]);
+    expect(numbers(await behind({ team: "finance" }, {}, jon.browser, "/api/v1"))).toEqual([]);
+    expect(numbers(await behind({ team: "sales" }, {}, jon.browser, "/api/v1"))).toEqual(["INV-3"]);
+  });
+
+  test("find a period's rows by the days it covers", async () => {
+    const month = new Date().toISOString().slice(0, 7);
+    const read = await asked(
+      ivy.browser,
+      onPage("by_month", { input: "rows", behind: { created_at_month: `${month}-01` } }),
+      "/api/v1",
+    );
+    expect(read.status, JSON.stringify(read.body)).toBe(200);
+    expect(numbers(read)).toEqual(["INV-1", "INV-2"]);
+    const before = await asked(
+      ivy.browser,
+      onPage("by_month", { input: "rows", behind: { created_at_month: "2001-01-01" } }),
+      "/api/v1",
+    );
+    expect(before.body.inputs.rows.rows).toEqual([]);
+  });
+
+  test("are refused for a name that is no group, a bad value, or no input", async () => {
+    expect((await behind({ status: "open" })).status).toBe(400);
+    expect((await behind({ team: { a: 1 } })).status).toBe(400);
+    expect(
+      (
+        await asked(
+          alice,
+          onPage("by_month", { input: "rows", behind: { created_at_month: "last week" } }),
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (await asked(alice, onPage("by_team_narrowed", { behind: { team: "finance" } }))).status,
+    ).toBe(400);
+    expect(
+      (await asked(alice, onPage("list", { input: "rows", behind: { team: "x" } }))).status,
+    ).toBe(400);
+    const notJson = await alice.get(
+      `${ws()}/widget-data?of=interface&path=screens/invoices&page=main&widget=by_team&input=rows&behind=%7B`,
+    );
+    expect(notJson.status).toBe(400);
+  });
+});
+
+describe("a form's input over a table", () => {
+  const onForm = (more: Record<string, string | object> = {}) => ({
+    of: "interface",
+    path: "screens/invoices",
+    page: "new_payment",
+    widget: "form",
+    ...more,
+  });
+
+  test("with no record gives the table's columns and no record", async () => {
+    const read = await asked(alice, onForm());
+    expect(read.status, JSON.stringify(read.body)).toBe(200);
+    const record = read.body.inputs.record;
+    expect(record.shape).toBe("record");
+    expect(record.record).toBeNull();
+    const column = (name: string) => record.columns.find((one: Any) => one.name === name);
+    expect(column("invoice")).toMatchObject({
+      type: "reference",
+      references: "invoices",
+      required: true,
+    });
+    expect(column("amount")).toMatchObject({ type: "number", required: false });
+    expect(column("method")).toMatchObject({
+      type: "enum",
+      values: [{ value: "card" }, { value: "wire" }],
+    });
+  });
+
+  test("is read by someone who may open the app, and as a draft only by an editor", async () => {
+    expect((await asked(ivy.browser, onForm(), "/api/v1")).status).toBe(200);
+    expect((await asked(browser(), onForm(), "/api/v1")).status).toBe(404);
+    expect((await asked(ivy.browser, onForm({ draft: "1" }), "/api/v1")).status).toBe(403);
+  });
+});
+
+describe("what a field may be set to", () => {
+  const choices = (
+    who: { get: (url: string) => Promise<{ status: number; body: Any }> },
+    column: string,
+    more = "",
+    prefix = "",
+    widget = "form",
+  ) =>
+    who.get(
+      `${prefix}${ws()}/widget-choices?of=interface&path=screens/invoices&page=new_payment&widget=${widget}&input=record&column=${column}${more}`,
+    );
+  const labels = (read: { body: Any }) => read.body.choices.map((one: Any) => one.label);
+
+  test("for a reference are the rows it may point to, by name, as the caller reads that table", async () => {
+    const all = await choices(alice, "invoice", "&search=INV");
+    expect(all.status, JSON.stringify(all.body)).toBe(200);
+    expect(all.body.choices.length).toBeGreaterThan(0);
+    expect(all.body.choices[0].value).toMatch(/^[0-9a-f-]{36}$/);
+    expect(labels(await choices(ivy.browser, "invoice", "&search=INV", "/api/v1"))).toEqual([
+      "INV-1",
+      "INV-2",
+    ]);
+    expect(labels(await choices(jon.browser, "invoice", "&search=INV", "/api/v1"))).toEqual([
+      "INV-3",
+    ]);
+  });
+
+  test("for a reference are searched by name, and at most 50", async () => {
+    expect(labels(await choices(alice, "invoice", "&search=inv-2"))).toEqual(["INV-2"]);
+    expect(labels(await choices(alice, "invoice", "&search=INV"))).toEqual([
+      "INV-1",
+      "INV-2",
+      "INV-3",
+    ]);
+    expect(labels(await choices(alice, "invoice", "&search=zzz"))).toEqual([]);
+    // The paging test made 120 more.
+    expect((await choices(alice, "invoice")).body.choices).toHaveLength(50);
+    expect(labels(await choices(alice, "invoice", "&search=B-05"))).toHaveLength(10);
+  });
+
+  test("for an enum are its values, searched", async () => {
+    expect((await choices(alice, "method")).body.choices).toEqual([
+      { value: "card", label: "card" },
+      { value: "wire", label: "wire" },
+    ]);
+    expect((await choices(alice, "method", "&search=wi")).body.choices).toEqual([
+      { value: "wire", label: "wire" },
+    ]);
+  });
+
+  test("is refused for a column that offers none, and for what the page lacks or the caller may not open", async () => {
+    expect((await choices(alice, "amount")).status).toBe(400);
+    expect((await choices(alice, "nope")).status).toBe(404);
+    expect((await choices(alice, "invoice", "", "", "nope")).status).toBe(404);
+    expect((await choices(browser(), "invoice", "", "/api/v1")).status).toBe(404);
+    expect((await choices(ivy.browser, "invoice", "&draft=1", "/api/v1")).status).toBe(403);
   });
 });

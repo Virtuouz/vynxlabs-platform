@@ -31,6 +31,8 @@ const unset = (value: unknown) => value === undefined || value === null || value
 export interface WorkspaceCatalog {
   visual: VisualCatalog;
   tables: Map<string, CatalogTable>;
+  /** What each table's definition says its columns hold, by table and column: the help behind a heading. */
+  described: Map<string, Map<string, string>>;
 }
 
 export async function workspaceCatalog(
@@ -52,7 +54,33 @@ export async function workspaceCatalog(
       ),
     });
   }
-  return { visual, tables };
+  // What a column holds is said in its table's definition, which is a resource of the workspace.
+  const described = new Map<string, Map<string, string>>();
+  const ids = [...tables.values()].flatMap((table) => (table.resourceId ? [table.resourceId] : []));
+  if (ids.length > 0) {
+    const bodies = await kernel.db
+      .selectFrom("resource")
+      .select(["id", "body"])
+      .where("id", "in", ids)
+      .execute();
+    const byId = new Map(
+      bodies.map((row) => [
+        row.id,
+        row.body as { columns?: Record<string, { description?: unknown }> },
+      ]),
+    );
+    for (const table of tables.values()) {
+      const columns = table.resourceId ? byId.get(table.resourceId)?.columns : undefined;
+      const said = new Map<string, string>();
+      for (const [name, column] of Object.entries(columns ?? {})) {
+        if (typeof column.description === "string" && column.description !== "") {
+          said.set(name, column.description);
+        }
+      }
+      if (said.size > 0) described.set(table.name, said);
+    }
+  }
+  return { visual, tables, described };
 }
 
 /** The workspace's tables and columns, for a visual query's names to be looked up in. */

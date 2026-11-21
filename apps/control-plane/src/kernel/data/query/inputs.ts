@@ -131,10 +131,12 @@ function columnInfoOf(
     );
     if (!one) return undefined;
     const values = one.options?.values;
+    const description = catalog.described.get(path as string)?.get(column);
     return {
       name,
       label,
       type: one.referenceTable ? "reference" : one.type,
+      ...(description ? { description } : {}),
       ...(values && values.length > 0
         ? {
             values: values.map((value) => {

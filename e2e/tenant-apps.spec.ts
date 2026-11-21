@@ -150,7 +150,8 @@ test("an app served to a tenant's people looks as reviewed, at each width and in
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/t/${tenant.id}/workspaces/${dev.id}/screens/screens/stock`);
   const canvas = page.locator("[data-canvas]");
-  await expect(canvas.getByRole("region", { name: "Stock" }).first()).toBeVisible({
+  // While building, a widget is a group that can be chosen, moved and sized.
+  await expect(canvas.getByRole("group", { name: "Stock" }).first()).toBeVisible({
     timeout: 30_000,
   });
   const share = await page.evaluate(() => {
@@ -160,8 +161,8 @@ test("an app served to a tenant's people looks as reviewed, at each width and in
   expect(share).toBeGreaterThanOrEqual(0.6);
   await page.getByRole("radio", { name: /Phone/ }).click();
   const stacked = async () => {
-    const list = await canvas.getByRole("region", { name: "Stock" }).first().boundingBox();
-    const chart = await canvas.getByRole("region", { name: "Held by aisle" }).boundingBox();
+    const list = await canvas.getByRole("group", { name: "Stock" }).first().boundingBox();
+    const chart = await canvas.getByRole("group", { name: "Held by aisle" }).boundingBox();
     return Boolean(list && chart && chart.y >= list.y + list.height - 1);
   };
   await expect.poll(stacked).toBe(true);

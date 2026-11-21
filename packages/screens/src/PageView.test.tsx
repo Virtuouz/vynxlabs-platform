@@ -1217,3 +1217,39 @@ test("a widget still waiting for its source asks for nothing and says what to do
   expect(await screen.findByText("Choose what it shows in Data.")).toBeTruthy();
   expect(read).not.toHaveBeenCalled();
 });
+
+test("a column's heading says what the column holds, when its table says (POLISH-010)", async () => {
+  const described: WireData = {
+    shape: "rows",
+    columns: [
+      {
+        name: "status",
+        label: "Status",
+        type: "text",
+        description: "Where the order is in its life.",
+      },
+    ],
+    rows: [{ id: "1", status: "open" }],
+  };
+  render(
+    <PageView
+      widgets={[
+        {
+          id: "orders",
+          type: "core/table",
+          title: "Orders",
+          at: { x: 0, y: 0, w: 12, h: 6 },
+          data: { rows: { source: { visual: { table: "orders" } } } },
+          config: { columns: [{ column: "status" }] },
+        },
+      ]}
+      filters={[]}
+      registry={registry}
+      client={{ read: async () => ({ inputs: { rows: described } }) }}
+      filterValues={{}}
+      onFilterValues={() => undefined}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: /^About Status/ }));
+  expect(await screen.findByText("Where the order is in its life.")).toBeTruthy();
+});

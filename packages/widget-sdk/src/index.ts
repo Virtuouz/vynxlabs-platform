@@ -294,6 +294,8 @@ export interface ColumnInfo {
   label: string;
   /** The column's type: text, integer, number, boolean, date, timestamp, enum, reference, json, uuid. */
   type: string;
+  /** What the column holds, as its table's definition says: the help behind its heading. */
+  description?: string;
   /** For an enum: its values, and the colour each is drawn in. */
   values?: readonly { value: string; label?: string; color?: string }[];
 }

@@ -75,7 +75,7 @@ export function Interfaces({
                 ) : (
                   <span className="font-medium">{row.title}</span>
                 )}
-                <code className="font-mono text-code text-ink-muted">{row.path}</code>
+                <code className="font-mono text-code break-all text-ink-muted">{row.path}</code>
               </span>
             ),
           },
@@ -85,7 +85,9 @@ export function Interfaces({
               <span className="flex flex-col">
                 <Mono>{row.pages ?? "—"}</Mono>
                 {row.tables && row.tables.length > 0 ? (
-                  <span className="text-meta text-ink-subtle">reads {row.tables.join(", ")}</span>
+                  <span className="text-meta break-words text-ink-subtle">
+                    reads {row.tables.join(", ")}
+                  </span>
                 ) : null}
               </span>
             ),

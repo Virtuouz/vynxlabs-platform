@@ -109,7 +109,7 @@ export function EditorShell({
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:items-start">
         <nav
           aria-label="On this page"
-          className="flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-44 lg:overflow-y-auto"
+          className="flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-40 lg:overflow-y-auto"
         >
           {outline}
         </nav>
@@ -117,7 +117,7 @@ export function EditorShell({
           <SplitPane
             id="page-editor"
             label="Resize the page and its settings"
-            initial={72}
+            initial={74}
             className="min-w-0 flex-1"
             first={
               <div data-canvas className="min-w-0 lg:pr-1">

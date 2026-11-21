@@ -331,6 +331,14 @@ describe("an app that serves an interface", () => {
         { name: "total", label: "Total", type: "number", required: false, references: null },
       ],
     });
+    // A widget's rows say what each column holds too: the help behind a heading in the app.
+    const rows = await ivy.browser.get(
+      `/api/v1${ws()}/widget-data?of=interface&path=screens/invoices&page=main&widget=list`,
+    );
+    expect(rows.status, JSON.stringify(rows.body)).toBe(200);
+    expect(
+      rows.body.inputs.rows.columns.find((column: { name: string }) => column.name === "number"),
+    ).toMatchObject({ label: "Number", description: "The number printed on it." });
     // A table that is gone is said to be gone. The page still loads.
     expect(seen.body.tables["not-there"]).toEqual({
       found: false,

@@ -1,4 +1,4 @@
-import { Button } from "@volvel/ui";
+import { Button, Toggletip } from "@volvel/ui";
 import type { RowsData, WidgetViewProps } from "@volvel/widgets";
 import {
   type ColumnSpec,
@@ -116,7 +116,17 @@ export function TableView({ config, data, size, emit, building }: WidgetViewProp
                       {text}
                     </button>
                   ) : (
-                    text
+                    <>
+                      {text}
+                      {info?.description ? (
+                        // What the column holds, as its table's definition says: the kit's grid does the same.
+                        <span className="ml-1 inline-flex align-middle font-normal normal-case">
+                          <Toggletip label={`About ${text}`} title={text}>
+                            {info.description}
+                          </Toggletip>
+                        </span>
+                      ) : null}
+                    </>
                   )}
                 </th>
               );

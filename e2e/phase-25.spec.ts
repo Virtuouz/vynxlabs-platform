@@ -207,19 +207,22 @@ test("POLISH-008: a chart is carried from Add to page onto the grid, lands where
   if (!first) throw new Error("Invoiced is not on the page");
   await owner.mouse.move(first.x + 20, first.y + 20, { steps: 8 });
   const landing = owner.locator("[data-landing]");
-  await expect(landing).toContainText(/6 × 6 · col \d+ · row 1/);
+  await expect(landing).toContainText(/6 × 6 · col \d+ · row \d+/);
+  // Where the placeholder says it lands is where it lands.
+  const said = (await landing.innerText()).match(/col (\d+) · row (\d+)/);
+  const [col, row] = [Number(said?.[1]), Number(said?.[2])];
   await owner.mouse.up();
   await expect(owner.locator("section[role=group]")).toHaveCount(count + 1);
   await expect(owner.locator("section[data-selected]")).toHaveAttribute("aria-label", "Chart");
   await expect
-    .poll(
-      async () =>
-        (await money()).widgets.find(
-          (one: { type: string; title?: string }) =>
-            one.type === "core/chart" && one.title === "Chart",
-        )?.at?.y,
-    )
-    .toBe(0);
+    .poll(async () => {
+      const chart = (await money()).widgets.find(
+        (one: { type: string; title?: string }) =>
+          one.type === "core/chart" && one.title === "Chart",
+      );
+      return chart && [chart.at.x + 1, chart.at.y + 1];
+    })
+    .toEqual([col, row]);
   // Picked up again and Esc: nothing is added.
   await pickUp("Stat");
   await owner.mouse.move(first.x + 20, first.y + 20, { steps: 6 });

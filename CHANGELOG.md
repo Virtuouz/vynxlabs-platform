@@ -13,7 +13,9 @@ Apps made in the console and dashboards are now one system: pages of widgets fro
 - **A choice filter over a column** offers its values from `GET …/filter-options`, read as the viewer may.
 - **The builder's inspector is Data, Display, Actions and Rules**, made from each widget's definition; size and place live on the page (drag, the arrow keys, Shift and the arrows, ⌘D, Delete, Esc); "Add to page" lists widgets by what they are for.
 - **Text on a page or a dashboard is Markdown**, with the documentation's alerts, steps, tabs and folds.
-- **Not yet back:** forms, buttons, editing in a table and widgets that follow another's chosen row. They return as record pages and actions run on the server, in phases 26 and 27.
+- **A widget is carried from "Add to page" onto the page**, lands where it is let go, and what is in its way moves aside as it travels. A widget is moved the same way.
+- **A widget not yet finished is kept while a page is being made** (no source yet, a pivot broken down one way), and drawn as waiting; a deploy still refuses it.
+- **Not yet back:** forms, buttons, editing in a table, widgets that follow another's chosen row, the rows behind a number on a dashboard, and "See it as" (phase 29). The others return as record pages and actions run on the server, in phases 26 and 27.
 
 ### For tenant developers
 

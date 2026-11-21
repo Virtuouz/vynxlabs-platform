@@ -1,6 +1,6 @@
 # Phase 25: apps and dashboards are built from one set of widgets, configured in the reader's words
 
-Status: built, pending the full `pnpm e2e` and one owner question (the rows behind a number), on branch `phase-25-one-widget-system`, off `main` at `35a61cc`.
+Status: built, pending one owner question (the rows behind a number on a dashboard), on branch `phase-25-one-widget-system`, off `main` at `35a61cc`.
 Last updated: 2026-11-21 (after the first walk)
 
 The owner's drawings in `temp/` (six boards on Fernhill's Clinic performance, `Volvel App Builder redesign.html`, and `research.md`) ask for the builder to become an application builder: a Data, Display, Actions and Rules inspector in task words, record pages, steps run by buttons, forms made from a table, phone layouts made for you, a check before publishing. The owner then asked that apps and dashboards be one system, that widgets come from a contract developers could later use, with the built-ins as a core pack, that text be Markdown with the docs' components, and that no compatibility be kept with what was built before.
@@ -182,7 +182,16 @@ Built by the integrator and five parallel work streams (control plane; renderer 
   - the help said to drag a widget "by its title", named the categories otherwise than the dialog does, and said the Actions tab is not shown.
 - **Untitled text** shows "Name this widget" when Tab reaches its title in the builder: an invitation, kept.
 
-**The suites.** `pnpm test`: 2,237 passed and 3 failed, all in `interfaces.test.ts`, where a member's dashboard was expected to refuse a widget not yet told what to ask. That is now kept on purpose, and the file passes. `pnpm e2e`: see below.
+**The suites.** `pnpm test`: 2,237 passed and 3 failed, all in `interfaces.test.ts`, where a member's dashboard was expected to refuse a widget not yet told what to ask. That is now kept on purpose, and the file passes.
+
+`pnpm e2e`, against a fresh instance on 8080 set up as CI sets one up (Keycloak, mail kept as files, Fernhill seeded): 107 passed, 4 failed, 3 skipped, 10 not run behind the failures. The four, and what was done:
+
+- `documentation.spec` found that a published app's table no longer had the help behind a column's heading ("About Status"), which the old renderer drew from the table's definition. It is back: the data endpoint gives each column's description, the contract's `ColumnInfo` carries it, and the table view draws it with the kit's Toggletip (tests in `interfaces.test.ts` and `PageView.test.tsx`).
+- `phase-25.spec`'s carry test assumed where the chart would land on a copy of the page it had walked before; it now checks the widget lands where its placeholder said.
+- `polish-layout.spec` found two things. The builder's list of apps overflowed a long path and its tables at 390 px; it has always done so, and the test set-up now makes an app for the first time, so the list has a row. It now wraps. The data-source row was this machine's `E2E_SOURCE_URL` naming another database; pointed at the instance's own, as CI does, it passes.
+- `tenant-apps.spec`: the served app's pictures are the new renderer's (frames, Download, a titled axis, a table as cards on a phone), reviewed and kept. It also found the builder's canvas had less than 60% of the work area at 1440; the outline is narrower and the split starts at 74%.
+
+The four files and the specs behind them were run again: 21 passed.
 
 **What the internal pack showed about the contract (M11).**
 

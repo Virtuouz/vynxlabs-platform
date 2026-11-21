@@ -1,4 +1,4 @@
-import { Button, Menu } from "@vynxlabs/ui";
+import { Button, Menu } from "@volvel/ui";
 import { ShieldAlert } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import { usePreference } from "../prefs.ts";

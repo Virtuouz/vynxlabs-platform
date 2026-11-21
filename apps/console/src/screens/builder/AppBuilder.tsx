@@ -1,10 +1,10 @@
-import type { InterfaceBody } from "@vynxlabs/manifest";
-import { heading } from "@vynxlabs/screens";
-import { Button, Notice, TextField } from "@vynxlabs/ui";
+import type { InterfaceBody } from "@volvel/manifest";
+import { heading } from "@volvel/screens";
+import { Button, Notice, TextField } from "@volvel/ui";
 import { Monitor, Plus, Smartphone, Tablet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../../api.ts";
-import { ask, failureText, notify } from "../../ask.tsx";
+import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { useHistory } from "../../kit/history.ts";
 import { Loading } from "../../kit/LoadState.tsx";
 import { type DraftAnswer, type Listed, slug } from "./data.ts";
@@ -228,25 +228,31 @@ export function AppBuilder({
             action={
               <Button
                 onClick={async () => {
+                  let made = false;
                   const address = await ask.prompt({
                     title: "Make an app for it",
                     text: "The app's address ends with this. Lower-case letters, digits and dashes.",
                     label: "Address",
                     initial: slug(body.title),
                     action: "Make the app",
+                    submit: async (value) => {
+                      try {
+                        await api.put(`${root}/drafts/${slug(value)}`, {
+                          kind: "app",
+                          schemaVersion: 1,
+                          body: { title: body.title, interface: path },
+                          create: true,
+                        });
+                        made = true;
+                        return undefined;
+                      } catch (error) {
+                        return takenText(error) ?? failureText(error);
+                      }
+                    },
                   });
-                  if (!address) return;
-                  try {
-                    await api.put(`${root}/drafts/${slug(address)}`, {
-                      kind: "app",
-                      schemaVersion: 1,
-                      body: { title: body.title, interface: path },
-                    });
-                    list.reload();
-                    drafts.reload();
-                  } catch (error) {
-                    notify.error(error);
-                  }
+                  if (!address || !made) return;
+                  list.reload();
+                  drafts.reload();
                 }}
               >
                 Make an app for it
@@ -350,6 +356,39 @@ export function AppBuilder({
                       }}
                     >
                       Rename
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="quiet"
+                      className="lg:justify-start"
+                      onClick={async () => {
+                        const topic = await ask.prompt({
+                          title: `Help for the page ${page.title}`,
+                          label: "Topic",
+                          hint: "The topic: of a page of your documentation. Whoever uses the app, and may open that documentation, gets a Help button that shows the page. Leave it empty for no help.",
+                          initial: page.help ?? "",
+                          action: "Save",
+                          required: false,
+                        });
+                        if (topic === null) return;
+                        const named = topic.trim();
+                        if (named !== "" && !/^[a-z0-9][a-z0-9_-]*$/.test(named)) {
+                          notify.error(
+                            new Error(
+                              "A topic is lowercase letters, digits, hyphens and underscores, as it is written in the page's frontmatter.",
+                            ),
+                          );
+                          return;
+                        }
+                        change((draft) => {
+                          const target = draft.pages.find((one) => one.id === page.id);
+                          if (!target) return;
+                          if (named === "") delete target.help;
+                          else target.help = named;
+                        }, "setting the page's help");
+                      }}
+                    >
+                      {page.help ? "Help: on" : "Help"}
                     </Button>
                     {body.pages.length > 1 ? (
                       <Button

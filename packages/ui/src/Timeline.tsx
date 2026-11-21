@@ -46,7 +46,9 @@ export function Timeline({ rows, now = Date.now(), selected, onSelect, legend }:
   );
 
   return (
-    <div className="flex flex-col gap-2">
+    // A container, not the window: the timeline sits in a column of any width. Under
+    // 32 rem each label stands above its bar and only the first and last ticks are named.
+    <div className="@container flex w-full flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-3 text-meta text-ink-muted">
         <span className="flex flex-wrap gap-3">
           {(["wait", "run", "hold"] as const)
@@ -69,7 +71,7 @@ export function Timeline({ rows, now = Date.now(), selected, onSelect, legend }:
           let cursor = row.start;
           const chosen = selected === row.id;
           const bar = (
-            <span className="relative block h-5 flex-1">
+            <span className="relative block h-5 min-w-0 flex-1">
               {ticks.map((tick) => (
                 <span
                   key={tick}
@@ -103,15 +105,17 @@ export function Timeline({ rows, now = Date.now(), selected, onSelect, legend }:
           );
           const inner = (
             <>
-              <span className="w-40 shrink-0 truncate text-left font-mono text-code-sm">
+              <span className="w-full shrink-0 truncate text-left font-mono text-code-sm @lg:w-40">
                 {row.label}
               </span>
-              {bar}
-              {/* Room for the duration printed after the longest bar. */}
-              <span aria-hidden="true" className="w-16 shrink-0" />
+              <span className="flex w-full min-w-0 items-center gap-3 @lg:flex-1">
+                {bar}
+                {/* Room for the duration printed after the longest bar. */}
+                <span aria-hidden="true" className="w-16 shrink-0" />
+              </span>
             </>
           );
-          const shape = `flex w-full items-center gap-3 rounded-control px-2 py-1.5 ${
+          const shape = `flex w-full flex-col items-start gap-1 @lg:flex-row @lg:items-center @lg:gap-3 rounded-control px-2 py-1.5 ${
             chosen ? "bg-action-soft" : ""
           }`;
           return (
@@ -133,12 +137,14 @@ export function Timeline({ rows, now = Date.now(), selected, onSelect, legend }:
         })}
       </ol>
       <div aria-hidden="true" className="flex gap-3 px-2 text-meta text-ink-muted">
-        <span className="w-40 shrink-0" />
-        <span className="relative block h-4 flex-1">
+        <span className="hidden w-40 shrink-0 @lg:block" />
+        <span className="relative block h-4 min-w-0 flex-1">
           {ticks.map((tick) => (
             <span
               key={tick}
-              className="absolute -translate-x-1/2 whitespace-nowrap first:translate-x-0 last:-translate-x-full"
+              className={`absolute -translate-x-1/2 whitespace-nowrap first:translate-x-0 last:-translate-x-full ${
+                tick === 0 || tick === 1 ? "" : "hidden @lg:block"
+              }`}
               style={{ left: `${tick * 100}%` }}
             >
               {duration(span * tick)}

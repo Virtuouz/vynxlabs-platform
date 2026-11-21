@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileSchemas } from "@vynxlabs/manifest";
+import { fileSchemas } from "@volvel/manifest";
 
 /** Where the schemas are written, from the repository's root. Ignored by git, as `.platform/` is. */
 export const SCHEMA_FOLDER = ".platform/schemas";

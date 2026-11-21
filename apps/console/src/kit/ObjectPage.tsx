@@ -1,4 +1,4 @@
-import { Tabs } from "@vynxlabs/ui";
+import { Tabs } from "@volvel/ui";
 import type { ReactNode } from "react";
 import { useUrlParam } from "../router.tsx";
 import { PageHeader } from "./PageHeader.tsx";

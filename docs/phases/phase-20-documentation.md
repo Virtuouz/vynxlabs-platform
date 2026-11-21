@@ -1,0 +1,607 @@
+# Phase 20: Volvel gets its name and its documentation system
+
+Status: built, on branch `phase-20-documentation`, off `main` at cdc16e8. The owner answered the decisions on 2026-11-19. M0 to M12 are built and were walked through in a browser on a local instance. Left to the owner: the first real publish, renaming the repository, and the walk-through on the rebuilt test instance.
+Last updated: 2026-11-19
+
+The product has a name, Volvel, and the owner wrote a high-level architecture for one documentation system: three packages, help inside the console, documentation sites that tenants write, and descriptions on resources. This phase renames the product and builds that system. The architecture was checked against `main` before planning, and the places where it describes something the code does not do are listed under "Where the document and the project disagree".
+
+Three things differ from the architecture as it was given:
+
+- The editor is Monaco, which the console already has, not CodeMirror.
+- The public website is not in this phase. It is a separate project in another repository. This phase leaves the packages in a state that site can use.
+- The rename from Vynxlabs to Volvel comes first, as M1.
+
+Writing the product's own documentation is not in this phase. `@volvel/docs` gets a page for every help topic, and a page may be a stub.
+
+**Exit criterion.** On `examples/fernhill`, deployed to the rebuilt test instance:
+
+- nothing a person or a program meets is named Vynxlabs, and `volvel deploy` from a packed install of the CLI deploys the example;
+- on Data, Tables, `F1` opens the help panel at the tables page, with the network blocked;
+- every section, editor and workbench of the console opens help of its own, and a check fails the build when one does not;
+- a column's description shows on its header, and a term the tenant defined is underlined in a label and opens its definition by keyboard;
+- an end user who may not start a script is told nothing of it by the terms API;
+- a handbook written as Markdown files in the repository is served as a docs app, signed out, with its navigation taken from its folders, and works with scripts turned off;
+- a member with only `doc:write` writes a page in the console with a live preview, saves, deploys it, and can deploy nothing else;
+- two people saving the same page get a conflict, not an overwrite;
+- a draft of a public docs app is seen at its preview address by a member and refused to everyone else;
+- a tenant page that extends the tables topic is listed under "From your team" in the help panel;
+- `npm pack` gives packages named `@volvel/*` that install in a clean folder.
+
+## Owner decisions
+
+Answered by the owner on 2026-11-19.
+
+| Area | Decision |
+|---|---|
+| Shape | One branch, `phase-20-documentation`, one phase, commits `Phase 20: …`. The owner looks after M5 and again after M9 |
+| Editor | Monaco, through the existing `CodeEditor` wrapper. No CodeMirror. |
+| Public site | Not in this phase. Packages are made ready for it, nothing more. |
+| Rename depth | `@vynxlabs/*` becomes `@volvel/*`. The CLI command `platform` becomes `volvel` and `PLATFORM_*` becomes `VOLVEL_*`. The tenant repo's `platform/` folder and the internal `vx` prefixes stay. |
+| Old data | No backwards compatibility. No other instance exists. The Fly test instance is rebuilt from scratch after this phase. |
+| Distribution | npm organisation `volvel` and Docker organisation `volvel` exist. The CLI must be installable as `volvel`. |
+| Images in docs | Repository images and images by URL. No console upload. |
+| Tenant terms in the console | Underlined automatically in labels only: column headers, field labels, resource titles and descriptions. Whole-word match on term and aliases, first use per screen. Never in cell values or free text. |
+| Dev workspace preview | Yes. A dev workspace's drafts of a docs app can be previewed at a private address. |
+| Term scope | Workspace-wide, filtered by what the reader may open. |
+| Product name | Volvel. `:product[]` resolves to the instance's brand in the console (`useBrand()`), and to "Volvel" elsewhere. |
+
+## Where the document and the project disagree
+
+These are the points where the architecture document describes something the code does not do. Each has the plan's answer.
+
+**Things the document assumes exist, and do not**
+
+| The document says | What is there | Plan |
+|---|---|---|
+| Schemas in zod (component props, frontmatter) | Kinds are plain JSON Schema checked with Ajv; envelope and routes are TypeBox. zod is only inside the SDK. `SchemaForm` and `schemas/kinds/` need JSON Schema. | JSON Schema (TypeBox) and Ajv for frontmatter and component props. No zod in the new packages. |
+| "confirm with `compat.test.ts` that no `schemaVersion` bump is needed" | `compat.test.ts` tests whether a core version can run a bundle. It says nothing about kind schemas. | Optional fields need no bump (every kind is at 1). The check is `pnpm check:schemas`. |
+| The spec already has an exception for console-made scripts and interfaces | No such exception. The deferred bullet "UI-managed resources in general" is simply stale: since phase 7 any kind can be drafted in the console (`saveDraft` has no allow-list). | Correct the stale bullet in the spec. No exception is needed. |
+| "as the release plan already says" | There is no release plan and no release workflow. The spec still lists "choose a product name" as open. | Tick the name in the spec. M11 writes the first release workflow. |
+| An `ERROR_CODES` registry to extend | None. About 60 codes are string literals across 31 files (`kernel/errors.ts`, `problem.ts`). | M7 builds the registry and moves the literals onto it. Larger than the document implies. |
+| A config table read by `loadConfig` | `loadConfig` (`config.ts:142`) reads about 50 variables by hand. Server variables have no prefix. | M7 turns it into a table. The docs link setting is `DOCS_URL`, not `VOLVEL_DOCS_URL`, to match the others. |
+| A lint for unwrapped glossary terms | Lint is Biome with no custom rules. | A source-scanning test in the style of `apps/console/src/enforce.test.ts`. |
+| A palette "Docs source" | `CommandPalette.tsx` has no source registry. It has hard-coded actions and one server search. | Docs come through the server search, plus one added action "Help for this page". |
+| Field toggletips from emitted kind schemas, "reusing SchemaForm's hint pattern" | The console never reads `schemas/kinds/`. `SchemaForm` only gets runtime schemas (connector config, script input). Most resource forms are hand-written. | M7 generates a descriptions module from `platformKinds`. Hand-written forms get toggletips field by field. |
+| Golden-file tests as an existing habit | The only precedents are Playwright screenshots and `check:schemas`. | New convention, set in M2: fixture `.md` in, `.json`/`.html` out, compared on disk. |
+| `Toggletip`, `Alert`, accordion and tree components | `packages/ui` has `Popover` (the toggletip in all but name), `Notice`, `Tabs`, `Kbd`. No accordion, no tree. | M4 adds `Term`, `Toggletip` (on `Popover`), `Details`, `Tree`. `alert` renders as `Notice`. |
+| Git sync opens PRs | It pushes one branch per dev workspace. Nothing calls a git host's API. | Unchanged. The docs say "push a branch", not "open a PR". |
+
+**Things that work differently from how the document describes them**
+
+| The document says | What is there | Plan |
+|---|---|---|
+| Saves go "through `draftManifests`" and are version-checked | `draftManifests` is a git overlay helper. Saves go through `saveDraft` (`kernel/authoring.ts:89`). The `revision` check only happens if the client sends one. Drafts exist only in dev workspaces. | The doc editor always sends `revision`. For `doc`, the server refuses a save without it. |
+| `doc:write` "modelled on `interface:write`" | `interface:write` is enforced only in `routes/authoring.ts` through a hard-coded `isScreen` test. | M9 turns that into a small table of "narrow write" kinds (interface, doc) rather than a second special case. |
+| Renames redirect for 90 days | Only apps get a real 308. Other resources answer at the old path with `Deprecation`/`Sunset` headers (`kernel/resolve.ts`). | The docs front door looks up the doc alias and answers 308 to the page's new address. |
+| "The CLI reading `.md` folders" as a small step | A resource file is `<path>.<kind>.yaml` only (`files.ts:594`). A second file form is new for the CLI, git sync push and pull, export and clone. | M8 adds the `.md` form in `packages/manifest/src/files.ts`, so every reader and writer gets it from one place. |
+| Adding a kind is one registry entry | About six places, including `KIND_ORDER` in both `deploy.ts:796` and `cli/src/build.ts:90`. `dashboard` is missing from both today. | M8 adds `doc` to all of them and fixes `dashboard` in passing. |
+| A hashed inline enhancement script | Platform pages allow no script at all (`PAGE_POLICY`); apps allow `script-src 'self'`. | Serve the enhancement script as a file from the app's own address. No inline script, no hash. |
+| `help: TopicId` on nav section, editor and workbench entries | Sections are `{slug,label,icon}` grouped by area. Editors and workbenches are private regex lists, not entries. | M5 gives sections a `help` field and turns the regex lists into entries that carry one. |
+| Extend PageHeader's ⓘ popover | The ⓘ exists only when a page passes `helpKey` (5 files). | Every page with a topic gets the ⓘ. "Learn more" opens the panel. |
+| `F1` and `⌘/` are free | Free in the console's registry, but Monaco binds both (command palette, toggle comment). | `F1` is overridden in `CodeEditor`. `⌘/` keeps toggling comments while an editor has focus. |
+| The help panel is a `SplitPane` variant | Right-hand space is already shared by the section panel (224px) and `Inspector`. | Docked from 1280px, a non-modal overlay from 768px, full-screen below. It yields to an open Inspector. |
+| End users see script and flow terms if "may start it" via `script:read`/`flow:read` | The real test is `run:write` / `flow_run:write` through `targetResource` and `audienceMay` (`kernel/apps/actions.ts`). | Use those. |
+| Only `markup`, `docs-engine` and `docs` lose `private` | `app` and `ui` are already public. The React renderer needs `ui`. An installable CLI needs `cli`, and tenant repos need `sdk`. | M11 publishes `markup`, `docs-engine`, `docs`, `ui`, `app`, `sdk`, `cli`. The CLI bundles `manifest` and `compose` so they stay private. |
+| Extract `@volvel/tokens` | Tokens live in `packages/ui/src/tokens.css` and are already exported. | Not in this phase. It only matters to the site. |
+
+**Things the document does not mention**
+
+- **A Markdown renderer already exists**: `packages/ui/src/Markdown.tsx`, hand-written, used by `ResultView` for script output. M4 replaces it with the markup package under a `result` profile, so there is one renderer.
+- **Images by URL meet two rules.** The app policy is `img-src 'self' data: blob:`, and the spec's "runs offline" principle. Docs apps get `img-src 'self' https:`. A URL image is the author's choice and shows a placeholder offline. Product docs may not use them (`docs:check`).
+- **Repository images need a home on the instance.** The app asset store (`kernel/apps/assets.ts`, by content hash, 25 MB) already does this. Docs reuse it.
+- **The spec says** "Adding a kind must not require changes to permissions, audit or sync." `doc` adds a permission kind and a file form. That sentence needs the owner's agreement to bend.
+
+## Milestones
+
+| # | Milestone | Size |
+|---|---|---|
+| M0 | Branch, the phase document, the spec changes, and the checks listed below | S |
+| M1 | Everything is named Volvel, and the CLI is `volvel` | L |
+| M2 | `@volvel/markup`: one page from Markdown to a checked tree to React, HTML and text | L |
+| M3 | `@volvel/docs-engine`: a folder of pages becomes collections, terms, topics, links and a search index | M |
+| M4 | The kit can show a term, a toggletip, a folded section and a tree, and has one Markdown renderer | M |
+| M5 | Every console screen has help: the panel, `F1`, "Learn more", and `docs:check` | L |
+| M6 | Columns and resources carry descriptions, and terms reach the console, apps and screens | M |
+| M7 | The reference writes itself: permissions, kinds, config, CLI, errors, API | L |
+| M8 | A page is a resource, and a folder of pages is served as a docs app | L |
+| M9 | Docs are read, written and previewed in the console | L |
+| M10 | Tenant pages join the help: attached pages and "From your team" | M |
+| M11 | The packages and the CLI can be published | M |
+| M12 | The example, the guides, the changelog, and the walk-through on the rebuilt test instance | M |
+
+Each milestone leaves the system deployable. M2 to M4 have no user-visible effect on their own. The owner's first look falls naturally after M5 and again after M9.
+
+## What each milestone holds
+
+### M0: branch, document, spec
+
+- Branch `phase-20-documentation` from `main` once phase 19 is merged.
+- This document.
+- Spec changes, each agreed and written into `docs/master-spec.md` first (see "Where this meets the master spec").
+- Run the checks under "To check before building".
+
+### M1: everything is named Volvel
+
+- **Packages and imports.** `@vynxlabs/*` to `@volvel/*` in every `package.json` (15 names, 44 dependency lines), 294 source files, root scripts' `--filter` arguments, `Dockerfile:27`, `deploy/image/*`, `deploy/worker/compose.yaml`. Root package becomes `volvel`.
+- **CLI.** Binary `volvel` (`packages/cli/package.json` `bin`, usage text in `cli.ts`). Settings in `~/.config/volvel/`. Worker binaries `volvel-worker`, `volvel-worker-host`; image script `volvel-start`.
+- **Environment.** `PLATFORM_URL`, `PLATFORM_TOKEN`, `PLATFORM_WORKER_*`, `PLATFORM_IMAGE`, `PLATFORM_ADMIN_*`, `PLATFORM_EMAIL/PASSWORD` become `VOLVEL_*`. `OTEL_SERVICE_NAME` defaults become `volvel` and `volvel-worker`.
+- **Tenant repositories.** `vynxlabs.yaml` becomes `volvel.yaml` (`packages/manifest/src/files.ts:541`). The `platform/` folder stays.
+- **Markers and wire names.** `Symbol.for("volvel.definitions")`, `__volvelResource`, export format `volvel-tenant-export`, header `Volvel-Resource-Moved`, flow clipboard marker, the `"@volvel/sdk"` specifier in console starter templates, the compose lockdown and Monaco's virtual module. Old spellings are not accepted.
+- **Names people see.** `DEFAULT_PRODUCT_NAME` (`routes/branding.ts:14`) and the console fallback (`kit/brand.tsx:13`) become "Volvel". Better Auth `appName`, the SSO certificate common name, the OpenAPI title, Postgres `application_name` values.
+- **Deploy files.** Compose project names, default image `volvel/volvel:local`, Keycloak dev client id, CI image tag, `deploy/fly/fly.toml` app name.
+- **Prose.** README, CONTRIBUTING, CHANGELOG, `docs/sdk-guide.md`, `docs/self-hosting.md`, the spec's title and product mentions, the examples. "Vynxlabs" stays where it means the company (the spec's licensing and operator passages), judged line by line. Past phase docs are a record and are left as written.
+- **Left alone:** the `vx` prefixes (database schema, cookies, CSS tokens, localStorage keys, DNS challenge), the `platform/` folder, the database/user/bucket name `platform`.
+- **Not done by the agent:** renaming the GitHub repository and the local folder, creating the new Fly app, and destroying the old one. Those are the owner's.
+
+Tests: the whole suite passes; a test fails if `vynxlabs` appears anywhere outside `docs/phases/`, `docs/evolution/`, `docs/uiux/`, the CHANGELOG's past sections and the company mentions on an allow-list.
+
+#### Built
+
+- Every package is `@volvel/*`, and 359 files changed with them. The root package is `volvel`.
+- The command is `volvel`, with its sign-in under `~/.config/volvel/`. The worker's are `volvel-worker` and `volvel-worker-host`, and the image starts with `volvel-start`.
+- The thirteen `PLATFORM_*` variables are `VOLVEL_*`. `PLATFORM_EVENT_PREFIX` is not one of them: it is a constant in the code for event names that start `platform/`, and it stays.
+- `volvel.yaml`, `volvel-tenant-export`, `Volvel-Resource-Moved`, `volvel.definitions`, `__volvelResource`, `volvelFlowSteps`, and `"@volvel/sdk"` in the console's starter scripts, the compile's lockdown and the editor.
+- An instance with no name of its own shows "Volvel". So do the API description, the sign-in library and the SSO certificate.
+- Compose projects are `volvel` and `volvel-dev`, the image is `volvel/volvel`, and the Keycloak development client is `volvel`.
+- `examples/higher-ed-devices/setup/setup.mjs` no longer falls back to the old test instance's address. It asks for `VOLVEL_URL`.
+- `packages/manifest/src/name.test.ts` fails when the old name comes back anywhere but the record of earlier phases, and allows the company's name only in the three documents that mean the company.
+- The changelog says what an operator and a tenant developer change.
+
+#### Findings
+
+- **Run on the final state:** lint over the tracked folders, typecheck, the whole suite (1,703 tests on Postgres), `check:schemas`, `check:migrations`, `check:licenses`, and the console's build.
+- **Not run:** the browser tests (`pnpm e2e`) and the image build. Both wait for the development stack to be brought up under its new name.
+- **The development stack on this machine still runs as `vynxlabs-platform-dev`.** The tests reach it by port, so they pass. `pnpm stack:up` would now start a second stack named `volvel-dev` on the same ports. The old one has to be taken down first, and its volumes hold whatever is in the local database. Left for the owner to say.
+- A shorter name let eight wrapped lines fit on one, and the formatter put them back. Nothing else moved.
+- One test chose the worker's variables by the old prefix and found none. It was the only failure.
+- Metric names (`platform_db_pool`), the database, its user and the bucket are still `platform`. They were not in the decision.
+- **For the owner:** the GitHub repository and the folder on disk are still named `vynxlabs-platform`, and `deploy/fly/fly.toml` now names an app, `volvel`, that does not exist yet.
+
+### M2: `@volvel/markup`
+
+`packages/markup`, no Volvel dependencies, runs in Node and the browser.
+
+- **Parse.** One markdown-it configuration: CommonMark, tables, strikethrough, task lists, heading anchors from one slug function, one generic directive plugin (`:inline[]{}`, `::leaf{}`, `:::container`). `html: false` for everyone. Links: http(s), mailto, relative, in-docs. Images: relative (repository) and https.
+- **DocTree.** A JSON tree with source lines, built from the token stream. It is what is stored, shipped and rendered.
+- **Registry.** Each component: name, kind (inline, leaf, container), a JSON Schema for props, allowed children, allowed profiles.
+- **Components:** `alert`, `term`, `field`, `steps`, `tabs`/`tab`, `details`, `kbd`, `product`, `screenshot`, `code-tabs`, `file-tree`.
+- **Profiles:** `product`, `docs`, `description`, `short`, and `result` (what `ResultView` shows today).
+- **Validate.** Errors with line and column for unknown components, bad props, components outside the profile, bad links.
+- **Renderers.** `react` with an injectable component map; `html`, escaped and script-free, with one small enhancement script file; `text`.
+- Dependencies pass `scripts/check-licenses.mjs` (markdown-it and its plugins are MIT).
+
+Tests: parse and tree round trips; each component's props; each profile; the link policy refuses `javascript:` and raw HTML; golden files for React and HTML output from the same fixtures.
+
+#### Built
+
+- `packages/markup`, with one dependency, markdown-it. It builds with the other packages (`tsc -b`) and runs in Node and in a browser.
+- **The grammar is the package's own**, about 200 lines in `directive.ts`, and not a plugin from npm. It knows no component by name. A container closes at a line of the same number of colons, so the architecture's example, where a tab has more colons than the tabs around it, reads as written, and so does the other way round.
+- **The tree** (`tree.ts`) is plain JSON with the line each node began on. Lines before the source, such as frontmatter, are counted in.
+- **Twelve components** in `registry.ts`, each with its form, what its braces take as JSON Schema, and the profiles it may be used in. Checking the braces needs no schema library: every value is text, and the few keywords used are checked by hand.
+- **Five profiles**: `product`, `docs`, `description`, `short`, and `result` for what a script gives back.
+- **`validate`** gives each issue a line, a column where the source is given, a code and a sentence.
+- **One drawing, three renderers.** `render.ts` turns a tree into elements. `renderHtml` writes them out and `renderReact` (`@volvel/markup/react`) makes them React elements. So the two cannot differ, and a test holds them to it for every fixture. `renderText` gives the words alone.
+- A renderer is given what it cannot know: what a term means, where a link or a picture goes, what a field's description is, the product's name. An answer of "nothing" draws the words alone, which is how a reader is kept from learning of something they may not see.
+- `ENHANCE_SCRIPT`, the one script a served page carries. Without it tabs are sections one under another.
+- Golden files in `packages/markup/fixtures`: for each `.md`, the tree, the HTML and the text. `UPDATE_GOLDEN=1` rewrites them. Biome leaves `fixtures` alone.
+
+#### Findings
+
+- **markdown-it 14, not 15.** Version 15 brings `argparse` 3, which is licensed PSF-2.0, and the allow-list has `Python-2.0` and not that. Version 14 brings `argparse` 2, which passes. M0 read the licences of the packages named and not of what they bring. Adding PSF-2.0 is the owner's to decide, and nothing needs it yet.
+- **No Ajv and no TypeBox in the package.** The plan said JSON Schema checked with Ajv. The schemas are JSON Schema, and can be drawn as reference pages, but a component's values are all text, and Ajv would have been the larger part of what an app's page downloads.
+- **A term is a button.** It was first a `span` with a role, and the linter, reading the golden HTML, said what a screen reader would have. The link behind a term reads "More about workspace", not "Learn more", for the same reason.
+- **`details` cannot be used for a term.** A `details` inside a paragraph ends the paragraph. A term opens by its stylesheet when it is pointed at or holds the keyboard, and by the script when it is pressed.
+- A link or picture that markdown-it would have dropped silently is read into the tree, so that its author is told. The renderers refuse it again when drawing, and refuse what a resolver gives back by the same rule.
+- 79 tests. One draws a page written to do harm under every profile and checks that no tag, handler or address of its own comes out.
+- **Not done:** the stylesheet for the `vd-` classes. It belongs with the docs app's pages in M8.
+
+### M3: `@volvel/docs-engine`
+
+`packages/docs-engine`, depends only on markup.
+
+- Frontmatter schema (JSON Schema): `title`, `description`, `order`, `topic`, `terms`, `about`, `extends`, `since`.
+- Doc set from `(path, frontmatter, tree)` entries: collections, the Uncategorized collection, groups, order, the depth cap, `index.md`, `x.md` beside `x/` refused.
+- Topic index, term registry, attachments, extensions.
+- Layering: product first, then the tenant layers the caller may see. Product term ids are reserved.
+- Link check across a set: links, anchors, topics, terms, attachments, with path and line.
+- Search index over the text renderer's output (MiniSearch, MIT, subject to the licence check).
+- Package output: `manifest.json`, one tree per page, the index.
+
+Tests: folder edge cases, ordering, collisions, broken links, layer resolution.
+
+#### Built
+
+- `packages/docs-engine`, on markup, `yaml` and MiniSearch.
+- **The frontmatter's schema** (`schema.ts`) is JSON Schema, with a description on every field for the reference page M7 makes from it. `icon` is added to the architecture's list, since a collection takes its icon from its index page.
+- **`readPage`** reads one file: frontmatter, body, and what is wrong with either, each on its line of the file. A page that fails is still given back, so its author can see it beside its problems.
+- **`buildDocSet`** works out collections, groups, order and the Uncategorized collection from paths alone, and refuses a page deeper than a group and a file beside a folder of its name.
+- Topics, terms, attachments (`about`) and extensions (`extends`), with the product's term and topic ids reserved.
+- **Links are checked across the set**: to a page, to a folder's index, to a heading, to a topic, and to a picture where the files are known. A link is written from where its file is, as on a git host, and the renderer is given the address to draw.
+- **A link can name a topic**, `[refunds](topic:support-refunds)`, and so survive the page moving. The architecture asks for this of help and attachments, and a page's own links needed a way to write it. Markup reads it as a link to another page and never draws one nobody resolved.
+- **Layers** (`stack.ts`): the product's set first, then the tenant's sets a reader may open. Finding a term or a topic, "From your team", the pages attached to a resource, and what two docs apps both define.
+- **Search**: one MiniSearch index for a set, by title, description, headings and words, with a few words around each hit.
+- **What is shipped**: `manifest.json`, `pages/<path>.json`, `search.json`.
+
+#### Findings
+
+- **The check of frontmatter is the engine's own**, about a hundred lines, for the same reason as in M2: it runs as an author types, and it can say "about[0] names 2 things (table, flow). It names one." where a schema library says which keyword failed.
+- **Whether a resource exists is asked, not known.** The engine is given a way to ask. Where nobody can answer, in the CLI's build with no workspace at hand, nothing is said either way, and the deploy says it.
+- A file's name is never changed to make it a path. `Refund Policy.md` is refused and told to be renamed.
+- 45 tests.
+- **Not done here:** the check that every product page is reached from somewhere, which needs the console's list of topics and is in M5's `docs:check`.
+
+### M4: the kit
+
+In `packages/ui`, so the console and the interface runtime (`packages/screens/runtime`) both get them.
+
+- `Toggletip` on `Popover`. `Term` (underlined, opens with Enter or Space, closes with Escape, focus returns, "Learn more"). A `TermScope` context that underlines only the first use per screen.
+- `Details` and `Tree` (with `role="tree"` and arrow keys).
+- The markup React component map, mapping `alert` to `Notice`, `tabs` to `Tabs`, `kbd` to `Kbd`.
+- `Markdown.tsx` becomes a thin call into markup with the `result` profile. `ResultView` output is unchanged for what it supported.
+- Each new component appears on `/instance/kit` (`screens/KitSheet.tsx`).
+
+Tests: keyboard and focus for `Term` and `Tree`; `ResultView` fixtures render as before; axe on the kit sheet.
+
+#### Built
+
+- In `packages/ui`: `Term` and `TermScope`, `Toggletip`, `Details`, `Tree`, and `Doc`, which draws a page's tree.
+- **`Term`** is a button that opens the kit's `Popover`. Inside a `TermScope` only the first use of a term on a screen is underlined.
+- **`Tree`** has `role="tree"`, one row that holds the keyboard, and the arrow keys, Home, End, Enter and Space.
+- **`Doc`** draws text from the stylesheet a served page uses, and alerts, tabs, folded sections, keys and terms with the kit's own components. `asServed` draws it with none of the kit, exactly as a docs app serves it, for the editor's preview in M9.
+- **One stylesheet for a page**, `DOC_CSS` in markup. It styles only what is inside `.vd-doc` and takes its colours from `--vd-*` properties, each with a default. `Doc` maps them onto the theme's tokens. The served pages of M8 use the same text.
+- **One Markdown renderer.** `Markdown` in the kit, which draws what a script gives back, is now the markup reader under the `result` profile. The hand-written one is gone.
+- `headingShift` in markup, so a result's `#` is an `h3` under the page's own headings, as before.
+- The new components are on `/instance/kit`.
+
+#### Findings
+
+- **What markup costs a tenant's app.** The interface runtime's first file went from 447.6 kB to 555.5 kB (145 to 193 kB gzipped) with the reader in it. `Markdown` now loads the reader when there is Markdown to show, and the first file is 484.0 kB (156.6 kB gzipped), 11.5 kB more than before. The reader is a file of its own, 49.3 kB gzipped. The console's build is 16.9 MB where it was 16.8.
+- **Two things a result draws differently now.** A link that may not be followed was shown as the Markdown that wrote it, `[this](javascript:…)`. It is now its words alone, with none of the address on the page. And a result can hold a table and struck-out text, which it could not.
+- Until the reader arrives, a result's Markdown is shown as it was written.
+- The console's own rule that every transition is timed by a motion token caught the tree's arrow, which had none.
+- The tree is `div`s, not a list: a list with the role of a tree is what the accessibility lint refuses.
+- The image's build lists each package's `package.json` by name. The two new packages are added, or the install inside the image would not have found them.
+- **Run:** lint, typecheck, licences, and the 700 tests of the kit, the console, the app renderer and the two new packages. **Not run:** the browser tests, and axe over the kit sheet, which is one of them.
+
+### M5: every console screen has help
+
+- `packages/docs` (`@volvel/docs`): `content/<collection>/<group>/<page>.md`, a first skeleton with one page per topic (stubs are allowed; writing the real docs is out of scope), built artifacts from M3.
+- `nav.ts`: `help` on every `Section`; `EDITORS` and the workbench lists become entries with `help`; `whereIs()` returns the topic.
+- `useHelpTopic(id)`, a store in the pattern of `kit/current.ts`. Innermost wins: dialog over page over section.
+- The help panel: docked from 1280px, overlay from 768px, full-screen below. It keeps its place when closed and reopened, follows navigation, and has "Open online" (`DOCS_URL`, default the public site).
+- Opened by: a header button, "Help for this page" in the account menu, a palette action, `F1` (also inside Monaco), `⌘/` outside editors, and `?help=<topic>` through `useUrlParam`.
+- `PageHeader`: every page with a topic gets the ⓘ; "Learn more" opens the panel.
+- Product trees and index are copied into `apps/console/dist` and fetched per topic. Works with the network blocked.
+- `pnpm docs:check`, added to the CI `check` job: a section, editor or workbench with no topic; a topic with no page; an orphan page; unknown terms; validation errors; broken links and anchors; a URL image in product docs; golden drift.
+- Shortcut sheet and `kit/shortcuts.ts` list the new keys.
+
+Tests: every nav entry resolves a topic; `F1` opens the panel at it; a dialog's topic overrides its page's; the panel is full-screen at phone width; e2e with egress blocked.
+
+#### Built
+
+- **`packages/docs`**: 64 pages under `content/`, one for every screen of the console and one of concepts, which defines thirteen terms. `build.mjs` reads them with the engine and writes `dist/`: the manifest, a tree for each page, and the search index. `pnpm build` runs it before the console's build.
+- **Every section has a topic.** `Section` in `nav.ts` has `help`, and it is not optional, so a section without one does not compile. `EDITORS` is a list of entries, each with the help of its own. `whereIs()` gives the topic: the editor's when the address is one, the section's otherwise.
+- **`useHelpTopic(id)`** and `<HelpTopic>` in `help/store.ts`, in the pattern of `kit/current.ts`. The topic said last wins, so a dialog's is over its page's and a page's over its section's.
+- **The help panel** (`help/HelpPanel.tsx`, `help/HelpDock.tsx`): docked beside the work from 1280 px, lying over the right edge from 768 px or while an inspector is docked on a screen under 1680 px, and the whole screen on a phone. It is not a dialog. It shows the screen's own page, follows the reader to another screen, and keeps what was followed inside it while the screen stays the same. Links between pages open inside it, a term says what it means and leads to its page, and it has its own search.
+- **Opened by** the header's button, "Help for this page" in the account menu, the palette's action, `F1` everywhere including a field and Monaco, and `⌘/` outside Monaco.
+- **`?help=<topic or page>`** opens the panel there. The panel's "copy a link" writes such an address.
+- **`PageHeader`**: a screen with a topic has the ⓘ. Where the description is folded behind it, "Learn more" follows the description. Where it is not, the ⓘ opens the help.
+- **The documentation ships in the console.** A Vite plugin serves `packages/docs/dist` at `/help` in development and copies it into the build. A page is fetched when it is first opened.
+- **`pnpm docs:check`**, in CI's `check` job after the schemas. It fails on a page that does not validate or link, a picture by URL, a topic the console asks for that no page has, and a page nothing leads to.
+
+#### Findings
+
+- **The address does not keep `?help=`.** The plan said to keep the parameter in the address while the panel is open. Moving to another screen drops every parameter, and a panel that closed itself on every move, or an address that had to be rewritten on every move, was worse than a link that opens the help and is then put back as it was.
+- **Workbenches have no topic of their own.** They are sections laid out edge to edge, and each has its section's. Only editors are screens no section names.
+- **A function key is not a "single key".** Single keys such as `?` are ignored in a field and can be turned off, and `F1` was caught by both rules. It types nothing, so it is exempt.
+- **`⌘/` in Monaco still comments a line.** Monaco takes the key first, as planned. `F1` is given to help there.
+- **The page's description says the same as the stub.** Each stub's body is its description. Writing the pages is not this phase.
+- **No "Open online".** There is no public site yet and no address to make up. It comes with `DOCS_URL` in M7 and is shown only when that is set.
+- **Screenshots are not resolved** in the panel yet: there are none until M12.
+- 33 tests of the help, and the console's shortcut test presses `F1` in a field and with single keys off. 1,876 tests in all.
+- **Not seen in a browser.** An instance was already running on this machine at port 8080, started before this work. It lists its files when it starts, so it serves neither the new help nor, since the first rebuild, the console's new script: its console is blank until it is restarted. Stopping it was refused, rightly, as it was not this work's to stop. The pictures in `e2e/snapshots` will differ by the header's new button and each page's ⓘ, and are not remade.
+
+### M6: descriptions and terms
+
+- `description` (max 500) on table columns, `binding`, `schedule`, `trigger` in `packages/manifest/src/kinds.ts`; `pnpm emit:schemas`; SDK `define*` types; console forms for them.
+- `GET /tenants/:t/workspaces/:w/terms`: tenant terms, column and resource descriptions the caller may see. Tables and columns need `table:read` and `data:read`. Scripts and flows need the member's read permission, or for an end user the `run:write` / `flow_run:write` test from `kernel/apps/actions.ts`. A caller who may not see a resource is told nothing of it.
+- Console: column headers show the column's description; resource pages show theirs; the Roles screen's native `title=` (`Roles.tsx:212`) becomes toggletips.
+- Automatic underlining in labels only, as decided, with a preference to turn it off.
+- `Term` works in the interface runtime through `packages/ui`, and `packages/app` gains a `terms()` call.
+- `:term[status]{table=… column=…}` resolves against the same API.
+
+Tests: the visibility matrix from the document's §18; nothing leaks to an end user without a binding.
+
+#### Built
+
+- **`description`**, 500 characters at most, on a table's columns, on `binding`, on `schedule`, and on the webhook and event forms of `trigger`. The SDK's `column.*()`, `defineSchedule`, `defineWebhook`, `defineEventTrigger` and `defineBinding` take it. The schemas are emitted again, and nothing's version moved.
+- **`GET /tenants/:t/workspaces/:w/terms`** (`routes/terms.ts`): the descriptions of tables and their columns, scripts, flows, apps, connections and queries, each given only to a caller who may already use what it describes. A table's goes to whoever holds `table:read` or `data:read`, at the workspace or at that table. A script's or a flow's goes to whoever may read it or start it. `resource:read` reads them all. An end user holds only the permissions apps use, so the member's half of each rule never answers for one.
+- **The table's own route and the interface's route give descriptions too**, the first to the console and the second to whoever may read the table's rows through an app.
+- **A grid's heading has an ⓘ** where its column says what it holds (`Grid` in the kit), in the console's rows and in a tenant's app alike. Pressing it does not sort.
+- **A column is described in the console**: "Describe" beside Rename, on a table managed there. The description shows under the column's name, and the table's own leads its page.
+- **Roles**: each permission has one toggletip that says what reading and changing allow, where each checkbox had a native `title`.
+- **A workspace's glossary** (`GlossaryProvider`, `TermText` in the kit; `help/glossary.tsx` in the console): a term is underlined where a grid's heading, a page's title-line description or a field's hint first uses it, as whole words, whatever its capitals, the longest term first. Never in a row's values. The help panel has the switch that turns it off.
+- **`terms()` in `@volvel/app`**, and the app that draws interfaces wraps what it draws in the glossary.
+
+#### Findings
+
+- **The terms list is empty until M10.** A glossary term is defined by a page of documentation, and pages are not resources until M8. The route, the matching and the underlining are built and tested with terms given by hand.
+- **A field's label is not underlined, and its hint is.** A term is a button, and a button inside a `label` is not allowed: a label may hold only the control it names. The decision said labels. The hint under the field is the nearest text that can hold one.
+- **A heading that sorts is already a button**, in the grid that is not edited in place. A term in it is explained behind the heading's ⓘ, not underlined. A heading that does not sort, and every heading of the grid that is edited in place, underlines it.
+- **The database keeps a table's columns in no order.** The route sorts them by name, or the same question gave two answers.
+- **A workspace with many resources that say nothing of themselves costs no permission checks**: only a resource with something to say is asked about.
+- **Not built:** a description field in the console's forms for a schedule and a trigger. Both are edited as their definition in the resource editor, where the new field is accepted. And nothing caches the route's answer by caller on the server yet: the console asks once for a workspace and keeps it.
+- **Not built here:** `:term[status]{table=… column=…}` drawn from this route. It needs somewhere a tenant's page is drawn, which is M9's reader.
+- 1,887 tests. The route's are in `interfaces.test.ts`, beside the apps and end users they need.
+
+### M7: the reference writes itself
+
+Each generator writes to `packages/docs/generated/` (git-ignored). `pnpm docs:generate` runs them; `docs:check` fails on stale output.
+
+- **Permissions** from `packages/manifest/src/permissions.ts`.
+- **Kinds**, one page each from `platformKinds`, with a ratchet so description coverage never drops.
+- **Config**: `loadConfig` reads a declarative table; the page renders from it; a test fails on an env var read outside it.
+- **CLI**: a declarative command table replaces the `switch` in `cli.ts:914`; `--help` and the pages come from it.
+- **Errors**: `ERROR_CODES` (code, status, title, topic); the scattered literals move onto it; a test fails on an unregistered code. Error toasts (`ask.tsx` `notify.error`) get "What does this mean?".
+- **API**: `openapi.json` written from the running app in the test harness (`startTestApp`), with `x-access` on each route.
+- **Doc kind and components**: the frontmatter schema and the registry rendered as pages.
+- A generated descriptions module for the console; toggletips on hand-written resource forms.
+
+#### Built
+
+- **Thirty-four pages of reference, written by nobody** (`packages/docs/generators/reference.mjs`), under `reference/` in the help: permissions, one page for each of the 24 kinds, settings, the `volvel` command, error codes, and the syntax of documentation itself, which is the frontmatter's schema and the components' registry. `pnpm build` writes them, into `packages/docs/generated`, which git ignores.
+- **Errors.** `ERROR_CODES` in `packages/manifest/src/errors.ts`: 59 codes, each with its status, a title, and what to do. `HttpError` takes only a code that is listed, so one that is not does not compile. That is stronger than the test the plan asked for. A failure's toast in the console offers "What does this mean?", which opens the help at that code.
+- **Settings.** `CONFIG_VARS` in `apps/control-plane/src/config-vars.ts`: all 53 environment variables, each with what it is for and what is used without it. The loader's helpers take only a name from the table. A test fails when the table lists one the loader never reads, and when anything but the loader reaches for the environment.
+- **`DOCS_URL`**, the first use of the table. With it the help panel offers each page online, at `<DOCS_URL>/docs/<version>/<page>`. Without it there is no such link.
+- **The CLI.** `COMMANDS` in `packages/cli/src/commands.ts`. `volvel --help` is drawn from it, and so is the page. `cli.ts` has a table of handlers in place of its `switch`, typed so that a command with no handler, or a handler with no command, does not compile.
+- **The API.** Each route's own `access` is written into the API's description as `x-access`, by one hook where the description is made. `pnpm docs:generate` starts the app on a throwaway database, asks it to describe itself, and writes `api.md`, 431 routes by tag with what each needs, and `openapi.json` beside it.
+- **Fields.** `fields.json`, what each field of each kind is, shipped with the help. `::field{path=…}` in a page draws from it, and `FieldAbout` puts it behind an ⓘ beside the label of a field in a form written by hand. The schedule's cron line and time zone have it.
+- **`docs:check`** now also fails when a generated page is not what the code says, and when fewer of the kinds' fields say what they are than `packages/docs/coverage.json` asks.
+
+#### Findings
+
+- **26.9% of the kinds' fields are described, not the third the architecture counted.** 129 of 479, counting every field at every depth once. That is the floor now.
+- **The sign-in library's codes are not the platform's.** A sign-in that fails was answered with whatever code the library gave, in lower case. It still is, by a field named for what it is, `passedOn`, and the page of errors says so. They are the only codes not in the list.
+- **`generated/` is ignored by git, as the architecture says, so "stale" can only be said of a copy that is there.** The build writes it afresh, and a checkout that has never been built is given it by the check. The check catches a page left behind after the code changed on a developer's machine. In CI it can never fail on that, since CI has just built them.
+- **The API's page needs Postgres and the rest need nothing**, so it is the one page the build does not write. The build keeps the one `docs:generate` last wrote. An instance built without it has no API page, and the reference's first page does not list one.
+- **The API's description is 1.7 MB.** It is kept beside the page for the website and left out of what the console carries: every instance serves its own.
+- **A toggletip in a form goes beside the label, by a wrapper** (`FieldHelp` in the kit), not by a property on each of the eight fields.
+- **The supervisor reads the environment, and is not reading a setting.** It copies a named few of the machine's own variables to the workers it starts. The test that the environment is read in one place names it.
+- **Not done:** toggletips on the other forms written by hand. `FieldAbout` is one line around a field. Which fields want it is a pass over each form, and only the schedule's is done.
+- **Not done:** a help topic for each error code in the registry. Every code has a section of one page, and the toast opens it there.
+- 1,897 tests.
+
+### M8: a page is a resource, and a folder of pages is a docs app
+
+- **Kind `doc`** in `kinds.ts`: body is frontmatter plus `source`, capped at `MAX_SOURCE_LENGTH`. Validation hook runs markup's `docs` profile and the engine's set checks at deploy; errors fail the deploy, warnings are shown. Added to both `KIND_ORDER` lists (and `dashboard` with it), `READ` in `routes/search.ts`, the emitted schemas.
+- **Permissions** `doc:read`, `doc:write` in `permissions.ts`.
+- **File form.** `packages/manifest/src/files.ts` reads and writes a doc as `<path>.md` with YAML frontmatter under a docs root named in `volvel.yaml` (`platform/docs` when it names none). Git sync push and pull, CLI build, export and clone get it from there. The round trip is byte-for-byte.
+- **Images.** Relative image paths are collected at build, stored through the app asset store, and rewritten at render. https images pass through.
+- **`app.docs`**: third mode beside `entry` and `interface`, exactly one of the three; overlapping prefixes refused.
+- **Serving** in `kernel/apps/front.ts`: server-rendered with the `html` renderer and the page shell pattern of `kernel/apps/pages.ts`, themed by `resolveTheme`; collection selector, group nav, in-page contents; works without JavaScript. Policy: `script-src 'self'`, `img-src 'self' https:`. Existing bindings, `app:read` and `limit.ts` apply unchanged.
+- **Search**: one index per docs app built at deploy; served only to those who may open the app.
+- **Renames**: a doc alias answers 308 for 90 days.
+- **Cache**: rendered pages and indexes per deployed version.
+- SDK: `defineApp({ docs })`.
+
+Tests: access for `anonymous`, `end_users`, groups; deploy fails on a bad page; rename redirects; file round trip; export and clone carry docs.
+
+#### Built
+
+- **The kind `doc`** (`packages/manifest/src/kinds.ts`). Its body is its file, whole: `{ source }`, the frontmatter and the Markdown as they were written, up to `MAX_SOURCE_LENGTH`. So what the console saves and what a repository holds are the same bytes. Permissions `doc:read` and `doc:write`.
+- **A page's file is `<path>.md` in a folder of pages** (`packages/manifest/src/files.ts`): the folders a repository names under `docs:` in `volvel.yaml`, or `platform/docs` when it names none. The CLI's build, git sync's push and pull, export and clone all read and write it through the functions they already used for YAML, so none of them has a second way of its own. Markdown anywhere else is nobody's page. A page's title and `key` are read from its own frontmatter.
+- **`app.docs`**, the third thing an app may be: `docs: handbook` serves every page whose path is under `handbook`. `defineApp({ docs })` in the SDK.
+- **A workspace's documentation is checked as a whole on every bundle** (`checkWorkspaceDocs` in the docs engine), where the control plane stores a bundle and where the CLI builds one. A page that does not read, a link, heading, topic or term that is not there, a picture that is not among the app's files, a page about a resource that is not there, two apps serving the same pages, an app serving none, a term or topic defined in two apps, and a term or topic that is the product's own: each refuses the bundle, naming the page and the line.
+- **Served here, as HTML** (`kernel/apps/docs.ts`, and `serveApp` in `front.ts`): the collections across the top, the collection's pages and groups down the side, the page, what is on it, and the pages before and after. It reads with scripts off. Its policy takes no inline script and no inline style. Bindings, `app:read`, the guest limit and hostnames apply as to any app, because it is one.
+- **Search is a form.** `<app>/_search?q=` answers with a page of results, from an index kept for each deployed bundle. So search needs no script either.
+- **A renamed page** answers at its old address with a 308 to its new one, for the 90 days its alias lasts.
+- **Pictures** kept beside the pages are the app's own files: the build collects them, the bundle lists them, and the app serves them as any app serves a file. A picture by `https` address is left to its address.
+- **The stylesheet and the script** are the platform's own, at `/_platform/docs.css` and `/_platform/docs.js`.
+- `doc` is in both deploy orders, with `query` and `dashboard`, which were in neither. The apps list says `docs` for how an app is built, and the console's Apps screen shows it. A page is found by the console's global search.
+
+#### Findings
+
+- **A page in a file is console-managed, as every resource written as a file is.** Only what the SDK defines is code-managed here. A page kept in a folder of the repository's own, outside where the console writes, carries where it was found, and the console already says of such a resource that it is the repository's to change. So the architecture's "code-managed docs are read-only" is that, and needed nothing new.
+- **`key` is in a page's frontmatter.** A page has no envelope to keep its identity in when it moves. The architecture's frontmatter did not have it.
+- **A table's alignment is a class.** The renderer wrote `style="text-align:right"`, and a policy with no inline style refuses that. The golden files changed with it.
+- **A term's link was resolved twice.** Where a term's page is, is given by whoever draws the page. The renderer then passed that address through the page's own link resolver, which took it for a link from this page and dropped it. And a term whose only content was a link that may not be followed drew an empty box. Both found by the served page's tests, both fixed in markup.
+- **A push failed once a workspace held any page.** A push reads the branch's files and the workspace's together, so an unchanged file is given twice. YAML files were kept by name, so twice was once. Pages were kept in a list, and the second was "already used". Found by taking one page through a pull and a push against a real repository, and not by the unit tests of the file form.
+- **A term that names a column is its word alone on a served page.** What a column is for is told to whoever may read the table. A reader of a public handbook may not, and the page cannot ask on their behalf. The console's reader, in M9, can.
+- **Search is on the server, not an index sent to the browser.** The plan had a static index for each app. A form and a page of results work with scripts off, and the browser is sent nothing but what was asked for.
+- **A page deeper than a group is counted from the app's folder**, not from the workspace: `handbook/a/b/c/page` is three folders down in the app that serves `handbook`.
+- **Not built:** a cache of the drawn page. The set and the index are kept for each bundle, and a page is drawn from its tree on each request, which is string building.
+- **Not seen in a browser**, for the reason M5 gives. What is asserted is the HTML.
+- 1,928 tests: 18 of the served app, 7 of the file form, 3 of the build, 1 through git.
+
+### M9: docs in the console
+
+- A **Docs** section under the Build area in `nav.ts`.
+- **Tree** by docs app, with collection and group levels; create page or folder, rename and move (existing rename), delete (`ask.typeToConfirm`).
+- **Reader**: the React renderer inside the shell.
+- **Editor** for UI-managed pages; code-managed pages are read-only and name their file:
+  - `CodeEditor` gains `"markdown"` in its language type and a way to set markers (today it can only read them);
+  - live preview from the same parse the server uses, side by side in `SplitPane`, stacked on narrow screens;
+  - validation as you type, shown as Monaco markers and a problems list;
+  - saves through `saveDraft`, always with `revision`; a conflict is shown, never overwritten;
+  - `useNavigationGuard` and `SaveBar` for unsaved changes.
+- **`doc:write`**: the narrow-write table in `routes/authoring.ts` covering interface and doc; deploy limited to doc paths.
+- **Preview**: a dev workspace's docs app, drafts included, at its app address for signed-in members with `doc:read` only, whatever the app's bindings say.
+- `GET …/docs/search?q=` for the palette, filtered on the server.
+
+Tests: two editors on one page conflict; the preview matches the served page; a member with only `doc:write` can deploy a page and nothing else; a non-member cannot reach the preview.
+
+#### Built
+
+- **Documentation**, a section under Build (`screens/docs/Docs.tsx`): the workspace's pages as a tree, by docs app, collection and group, and the chosen page drawn beside it. A page says whether it is deployed, changed or new, opens as its readers see it, and leads to its editor. New page, New docs app, and Deploy, which deploys the documentation's drafts by name and nothing else.
+- **The page editor** (`screens/docs/DocEditor.tsx`): Monaco on one side, and on the other the page drawn `asServed`, by the renderer and the stylesheet the docs app uses. Problems are marked on their lines and listed under, and pressing one goes to its line. Save makes a draft, Move renames, Remove asks for the page's name.
+- **`CodeEditor`** takes `markdown`, wraps lines when asked, and marks problems given from outside beside its own.
+- **A save says which draft it saw.** The editor always sends the revision. For a page, a save that sends none, over a draft that is there, is refused as a save over a newer one is.
+- **`doc:write`** by the same rule as `interface:write`, which is now one table of two kinds in `routes/authoring.ts`: whoever holds one writes and deploys that kind, and an app that serves it, and nothing else. A built-in role, `doc_writer`, holds it (migration 0081).
+- **`GET …/docs`**, the pages with drafts laid over what is deployed, and of each what another page's links are checked against: its topic, its terms and its headings. `GET …/docs/page/*`, one page with its revision. `GET …/docs/search`, searched on the server. For whoever holds `resource:read` or `doc:read`.
+- **A page kept in the repository** is read here and says where its file is. It has no Edit.
+- **In the reader, a term that names a column says what the column is for**, to whoever may read the table: the reader asks as the person reading.
+- A page is found by the palette's search and opens here.
+
+#### Findings
+
+- **A page is checked in the browser as it is typed, not by the server.** The plan had the server check it. Every answer of the API that is not a read must leave an audit entry, or the request is refused: a rule of the control plane's own. A check saves nothing, and an entry for every pause in typing would bury the entries that matter. So `checkPageAmong` in the docs engine checks one page beside an index of the others, with the rules and the code the deploy's check uses, and the console runs it. The deploy still checks everything, on the server, and is what refuses.
+- **The preview is in the console, not at the app's address.** The owner asked that drafts of a public docs app be seen at a private address. The editor's preview and the Documentation section are that: only members reach them, and the preview is drawn as the app draws the page. What they do not show is the app's own frame around the page, its header and navigation. Serving drafts at the app's address would have needed the front door to read drafts, which it has never done for any app.
+- **What only the server knows is left to the deploy**: whether a resource a page is about exists, where the writer may not see it. The editor says what it can and nothing false.
+- **Not built:** dragging a page to another folder (Move asks for the path), a form for the frontmatter, and a side-by-side view of a draft and what is deployed. The API gives both sources. The screen does not show them yet.
+- **Two of the console's own rules caught the new screens**: a paragraph that said "Loading…" and a second `h1`. And a rule of the control plane's caught a query that found a page by its exact path, which a renamed page would not have answered.
+- **Not seen in a browser**, as before. Monaco does not load in the tests, which type into the plain text box the editor falls back to, so the markers on Monaco's own lines are untested. What is tested is the list of problems they are made from.
+- 1,954 tests: 14 of the two screens, 8 of the writer's permissions and saves, 4 of the page checked beside an index.
+
+### M10: tenant pages join the help
+
+- `about:` pages listed on the resource's screen and object page, for callers who may open the docs app.
+- `extends:` pages listed under "From your team" in the help panel for that topic.
+- `topic:` on tenant pages; `packages/app` and the interface runtime can open a help panel at a tenant topic.
+- Tenant terms from `terms:` frontmatter served by `/terms`. A clash with a product term id, or between two docs apps in one workspace, fails the deploy.
+- A forbidden or missing `term`, `about` or link renders as plain text for readers.
+
+#### Built
+
+- **`GET …/terms` gives what the workspace's documentation adds**, beside the descriptions M6 gave: the glossary terms its pages define, the names it gives its own pages (`topics`), the pages that say they document a resource (`attachments`), and the pages that add notes to a topic of the product's help (`extensions`). Each comes with its page and where the page is served.
+- **Who is given what.** A term, a topic and a note are given to whoever may open the docs app the page is in: `app:read` at that app, or reading the workspace's resources or its documentation. A page attached to a resource is given only to a caller who may also know of the resource, by M6's rule. So a public handbook's page about a table says nothing of the table to someone who may not read it.
+- **Terms in the console.** The glossary M6 built now has terms in it. A term underlined in a heading or a description says what it means and leads to its page.
+- **"From your team"**: the help panel ends, for a topic, with the team's own pages that extend it.
+- **A table's screen lists the pages that document it** (`AttachedPages`).
+- **`@volvel/app`**: `terms()` gives all of the above, and `helpUrl(topic)` gives where the page with a topic is served, for a link to help from an app.
+
+#### Findings
+
+- **A page of the team's opens where it is served, in a new tab, and not inside the help panel.** The panel draws the product's pages from the files the console carries. A tenant's page would have to be fetched as its source, which only someone who may read the workspace's documentation in the console may have. A reader who may open the docs app, and no more, can still follow a link to it.
+- **What was already so, from M8**: a term or a topic defined in two apps, or taking one of the product's names, fails the deploy. A term, an `about` or a link that leads nowhere, or somewhere the reader may not go, is drawn as its words.
+- **Attached pages are on a table's screen only.** A script's and a flow's pages are in the route's answer, and `AttachedPages` is one line to add. Their screens are not done.
+- **Not built:** a help panel inside a tenant's app, opening at a tenant's own topic. `helpUrl` gives the address, and an app links to it. The interface builder has no place to name a topic yet.
+- **Nothing is kept between requests.** The route reads the workspace's pages and builds their sets each time it is asked. The console asks once for a workspace. An app that asks on every page would be the first reason to keep them, by the deployed bundle, as the served pages are.
+- The console's rule on icon sizes caught a 12 px icon on the new link. Icons are 14, 16 or 20.
+- 1,961 tests.
+
+### Seen in a browser, and what that changed
+
+After M10 the instance was rebuilt from nothing and everything from M5 on was used in a browser, by `e2e/documentation.spec.ts`, which is now part of the browser tests. It makes a workspace with a table, a handbook and an app, and then reads, writes, deploys and opens them as their people would. Its pictures are in `e2e/results/documentation/`.
+
+#### Found and put right
+
+- **`F1` did nothing on a table's screen.** The ⓘ on a column's heading stopped every key from reaching the page, to keep the grid's own keys from acting on it. It now stops none: the button handles its own.
+- **The docs app's navigation covered the page on a phone.** It folds there, and opens when pressed.
+- **A binding to an app that is only a draft is refused in the same deploy.** Not new, and not changed: the app is deployed first. The walk-through does it in that order.
+
+#### Built after it
+
+- **A docs app is previewed with its drafts at its own address**, `<app>/_draft/…`, which the owner asked for and M9 had left in the console. Members who may read the workspace's documentation get it, under a line that says it is a preview. Anyone else gets what a page that is not there gets. It is never cached and asks not to be indexed. The front door reads drafts for this and for nothing else (`serveDraftDocs`, and `kernel/docs/working.ts`, which the console's routes now share).
+- **A draft beside what is deployed**, in the editor: "Compare with deployed".
+- **Pages about a script or a flow** are listed on its screen, as a table's are.
+- **Help inside an app.** A page of an interface takes `help`, a topic. The builder has a Help button for it. Whoever uses the app, and may open that documentation, gets a Help button, and the page is shown beside the app as its docs app serves it.
+- **The documentation's sets are kept** by `/terms` for as long as the workspace runs the bundle they were built from, since an app now asks on every page.
+- **A schedule's description** says what a description is for, as other fields do.
+
+#### Built after that, at the owner's word
+
+- **A page is dragged onto a folder.** In the tree of pages a page can be picked up and let go on an app, a folder or another page, and goes there with its own name, as a draft, as Move in its editor would put it. `Tree` in the kit takes `onMove`, `canDrag` and `canDrop`. A page kept in the repository cannot be picked up, and nothing can where the workspace is not a dev one. A drag is a pointer's way: Move in the editor is the keyboard's.
+- **A form for what the top of a page says**: "Page details" in the editor, with the title, description, order, topic, the terms the page defines, the resources it is about and the topics of the help it adds notes to. It writes the page's own source, so the source is still the one thing saved. `setFrontmatter` in the docs engine changes the keys it is given and leaves the rest as it was written: the other keys, their order, the comments, and the page under them. Lines that cannot be read are mended in the source, and the form says so.
+- **A trigger says what it is for**, on its form, with what the schema says of the field beside it. A webhook's and a form's own settings rewrote the whole trigger and would have dropped it: they keep it.
+- **A help panel for an app written as code**: `<HelpPanel topic="…" />` and `useHelp(topic)` in `@volvel/app`. A button that opens the page beside the app, as its docs app serves it. It draws nothing when no page has the topic or the person may not open it. Fernhill's front desk has one on its booking screen.
+
+#### Findings
+
+- **An app shows help inside itself only from its own address.** An app's policy lets it frame only where it is served, and a docs app lets itself be framed only from there. Where the documentation is at another address, a hostname of its own, the button opens the page in a new tab.
+- **The walk-through had passed by luck.** It counted a grid's rows, and a grid's filters are a row. It waits for a row it knows now.
+- **The help panel in a code app is tested without a browser.** Deploying an app of files needs a built repository, which the browser tests do not make. Its page, its framing and its absence are tested in `packages/app`.
+- 1,975 tests, and 7 in a browser.
+
+#### Still not built
+
+- "What is this for" beside the fields of most hand-written forms. It is on a schedule's and a trigger's forms and the forms `SchemaForm` draws.
+- The older browser tests were not run again. Their pictures predate the help button in the header and the ⓘ on headings, and each needs looking at before it is replaced.
+
+### M11: the packages and the CLI can be published
+
+- `markup`, `docs-engine`, `docs`, `sdk`, `cli` lose `"private": true` and gain `publishConfig`, `files`, `exports`. The CLI's build bundles `manifest` and `compose`.
+- `.github/workflows/release.yml`: on `v*` tags build, generate docs, version, publish to npm with `latest`, push the image to the `volvel` Docker organisation. Pushes to `main` publish `x.y.z-next.<sha>` as `next`.
+- **Dry run only in this phase**: `npm pack` every published package, install the packed CLI in a clean folder and run `volvel --help`. The first real publish waits for the owner's word and the npm and Docker tokens.
+- The site's dispatch step is written but switched off until the site repository exists.
+
+#### Built
+
+- **Seven packages are published**: `@volvel/markup`, `docs-engine`, `docs`, `ui`, `app`, `sdk` and `cli`. Each says `Apache-2.0` and `access: public`, and packs without tests or source maps.
+- **The CLI is one file.** `packages/cli/bundle.mjs` puts `manifest`, `compose`, `nodes`, `markup`, `docs-engine` and what they need into `dist/volvel.mjs`, 1.5 MB. Its one dependency is esbuild, a program for the machine it is installed on. So `manifest`, `compose` and `nodes` stay private, and `npm install @volvel/cli` gives the command `volvel`.
+- **`pnpm release:check`** (`scripts/release-check.mjs`) rehearses a release: it packs all seven, reads each pack for what must be in it and what must not, refuses a dependency on a package that is not published, installs the packed CLI and SDK in an empty folder, and runs `volvel --help` and `volvel build` there on a repository with a table and a page. It passes.
+- **`.github/workflows/release.yml`**: a tag `v1.2.3` is that version under `latest`, a push to `main` is `1.2.3-next.<commit>` under `next`. It sets the version (`scripts/release-version.mjs`), generates the reference, builds, runs `docs:check` and the rehearsal, publishes to npm, and pushes `volvel/volvel` to the Docker organisation. It tells the website's repository when `DOCS_SITE_REPOSITORY` names one.
+
+#### Findings
+
+- **Nothing publishes until the repository says so.** The variable `RELEASE_ENABLED` must be `true`, and the secrets `NPM_TOKEN`, `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` set. Until then every run builds, checks, rehearses and builds the image without pushing it.
+- **The workflow has not run.** Nothing was pushed in this phase. The rehearsal ran on this machine. The image was not built here.
+- **The version in the repository stays as it is**, 0.5.0. A release writes its version into the packages before it builds, and commits nothing.
+
+### M12: example, guides, changelog, walk-through
+
+- `examples/fernhill` gets a handbook docs app, column descriptions, terms, one `about` and one `extends` page.
+- `docs/sdk-guide.md` and `docs/self-hosting.md` cover docs, `DOCS_URL` and the `volvel` CLI.
+- CHANGELOG section for phase 20, for operators and for tenant developers.
+- Playwright script that writes `screenshot` assets.
+- Walk-through on the rebuilt test instance, with the owner.
+
+#### Built
+
+- **Fernhill has a handbook**: four pages under `platform/docs/handbook`, served to the front desk by an app and a binding. Its pages define two terms, are about the `appointments` and `invoices` tables and the flow that chases invoices, and one adds its notes to the help for tables. Five columns say what they hold.
+- **The guides.** `docs/sdk-guide.md` has "Documentation": files, frontmatter, apps, components, descriptions, help from an app, and what the build refuses. `docs/self-hosting.md` has "Help and documentation", with `DOCS_URL`.
+- **The changelog** for phase 20, for operators and for tenant developers.
+- **Pictures for the documentation.** `pnpm docs:screenshots` (`e2e/screenshots.spec.ts`) takes them from a running instance into `packages/docs/assets/screenshots/`, which is not kept in git. The build ships what is there and lists it, and the help panel shows a picture that was taken and the words for one that was not. Three pages name one.
+
+#### Findings
+
+- **The example's bundle is now format 4**, since a page says its title. The test that held both examples under 4 holds the other one there.
+- **The walk-through was on a local instance, by the browser tests.** The test instance on Fly was not rebuilt: that, and looking at it, are the owner's.
+- 1,961 tests, and 6 in a browser.
+
+## Where this meets the master spec
+
+| Where | Says now | Would say |
+|---|---|---|
+| Title and product mentions | "Vynxlabs platform" | "Volvel". Vynxlabs remains the company. |
+| Open questions | "Choose a product name…" unticked | Chosen: Volvel. Trademark check still open. |
+| Deferred | "Visual editing of flows, and UI-managed resources in general." | "Visual editing of flows." Console-managed resources have existed since phase 7. |
+| Initial resource kinds | The list, and "Adding a kind must not require changes to permissions, audit or sync." | Adds `doc`. States that `doc` has its own permission kind and a Markdown file form, and why. |
+| Apps | `entry` or `interface` | `entry`, `interface` or `docs`. |
+| Core concepts | No docs terms | Doc, docs app, collection, topic, term. |
+| Files open question | "Decide whether files need an owner…" | Unchanged. Docs images come from the repository or a URL until it is decided. |
+| Principle 6 | Runs offline | Notes the one allowance: an author may link an image by URL in tenant docs. |
+
+## To check before building (M0)
+
+- Whether a resource path is unique across kinds or per kind, since a folder's `index.md` would take the folder's path and an app may sit at the same one.
+- Where the console's "own folder" for UI-managed files is in git sync, and that a `.md` there round-trips.
+- That markdown-it, its directive plugin and MiniSearch pass `check:licenses`, and the size they add to the console bundle.
+- That Monaco's Markdown highlighting chunk is enough, with no language service.
+- How `resolveTheme` output can style a full docs layout, not only the portal's single column.
+- Whether the interface runtime's bundle can take markup without a large size cost.
+
+## Tests
+
+- **Each milestone:** `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm check:schemas`, `pnpm check:migrations`, `pnpm check:licenses`, and from M5 `pnpm docs:check`.
+- **End to end (`pnpm e2e`):**
+  - Data, Tables, `F1` shows the tables page and a "From your team" page;
+  - a term popover opens by keyboard;
+  - the panel is full-screen at phone width;
+  - create a page in the console, save, deploy, open it in a public docs app signed out;
+  - a dev workspace draft is visible at the preview address to a member and refused to anyone else;
+  - help works with network egress blocked.
+- **Rename:** the name test in M1; `volvel --help` from a packed install; the compose stack comes up from scratch with the new names.
+- **Release dry run:** `npm pack` for all published packages.
+- **By hand, with the owner:** the M12 walk-through on the rebuilt test instance.
+
+## Findings
+
+### Milestone 0
+
+- **A path belongs to one resource in a workspace, whatever its kind** (`packages/db/migrations/0004_resources.sql:14`). The architecture gives a folder's `index.md` the folder's own path. An app `handbook` with `docs: handbook` is the natural thing to write, and its home page would then want the app's path. So a folder's page keeps `index` as the last part of its path (`handbook/index`), and only its address drops it. The file and the path still match one for one.
+- **Resource files are found by name, `<name>.<kind>.yaml`, under the roots a repository names**, and the console writes to `platform/`. A plain `.md` has no kind in its name, and a `README.md` in a root must not become a page. So docs have roots of their own: `docs:` in `volvel.yaml`, a list of folders, and `platform/docs` when it says nothing. The console writes pages there.
+- **Licences pass, as far as was read** (see M2 for what was missed): markdown-it and markdown-it-directive are MIT, markdown-it-task-lists and `yaml` ISC, markdown-it-anchor Unlicense, MiniSearch MIT. All are on the shipped allow-list in `scripts/check-licenses.mjs`.
+- **Monaco's Markdown highlighting is already built** as its own chunk in `apps/console/dist/assets`. `CodeEditor`'s `language` type leaves it out. There is no language service, and none is needed: the problems come from the markup package.
+- **A theme is tokens only** (`resolveTheme`). The docs layout needs a stylesheet of its own over those tokens, as the portal has `PORTAL_CSS`.
+- What markup adds to the console's and the interface runtime's bundles was measured in M4.
+- The master spec was changed first, as it asks: the name, the `doc` kind and its two exceptions, docs apps, the five new terms, the stale deferred line, and the allowance for an image by URL.

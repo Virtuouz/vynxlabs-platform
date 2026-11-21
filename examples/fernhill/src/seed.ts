@@ -1,4 +1,4 @@
-import { defineScript, z } from "@vynxlabs/sdk";
+import { defineScript, z } from "@volvel/sdk";
 import { type Reason, TIME_ZONE, VISIT_MINUTES } from "./constants.ts";
 import {
   appointments,

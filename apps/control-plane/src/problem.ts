@@ -1,5 +1,6 @@
 import { STATUS_CODES } from "node:http";
-import { isPoolTimeout } from "@vynxlabs/db";
+import { isPoolTimeout } from "@volvel/db";
+import type { ErrorCode } from "@volvel/manifest";
 import type { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import { type Static, Type } from "typebox";
 import { EgressRefused } from "./kernel/egress.js";
@@ -25,7 +26,7 @@ export const Problem = Type.Object(
 );
 export type Problem = Static<typeof Problem>;
 
-const CODES: Record<number, string> = {
+const CODES: Record<number, ErrorCode> = {
   400: "bad_request",
   401: "unauthenticated",
   403: "forbidden",
@@ -43,13 +44,24 @@ export function sendProblem(
   request: FastifyRequest,
   reply: FastifyReply,
   status: number,
-  fields: Partial<Pick<Problem, "code" | "detail" | "errors">> = {},
+  fields: Partial<Pick<Problem, "detail" | "errors">> & {
+    code?: ErrorCode;
+    /**
+     * A code that is not the platform's own, passed on as it was given: the
+     * sign-in library's, for a sign-in that failed. The only one there is.
+     */
+    passedOn?: string;
+  } = {},
 ) {
   const problem: Problem = {
     type: "about:blank",
     title: STATUS_CODES[status] ?? "Error",
     status,
-    code: fields.code ?? CODES[status] ?? (status >= 500 ? "internal_error" : "bad_request"),
+    code:
+      fields.code ??
+      fields.passedOn ??
+      CODES[status] ??
+      (status >= 500 ? "internal_error" : "bad_request"),
     ...(fields.detail ? { detail: fields.detail } : {}),
     instance: request.url.split("?")[0] as string,
     requestId: request.id,
@@ -65,7 +77,7 @@ export function notFoundHandler(request: FastifyRequest, reply: FastifyReply) {
 }
 
 /** Postgres error codes that are the caller's doing, not ours. */
-const DATABASE_ERRORS: Record<string, [number, string, string]> = {
+const DATABASE_ERRORS: Record<string, [number, ErrorCode, string]> = {
   "23505": [409, "conflict", "That already exists."],
   "23503": [
     409,

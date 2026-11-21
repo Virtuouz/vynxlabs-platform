@@ -1,5 +1,5 @@
-import type { ThemeValues } from "@vynxlabs/db";
-import { isThemeValue, THEME_TOKENS } from "@vynxlabs/manifest";
+import type { ThemeValues } from "@volvel/db";
+import { isThemeValue, THEME_TOKENS } from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest } from "../errors.js";
 

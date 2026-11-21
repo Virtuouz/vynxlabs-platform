@@ -6,7 +6,7 @@
  * is used. Only a hash of each token is kept.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import type { Actor, Db, Trx } from "../audit.js";
 import { mutate } from "../audit.js";
 import { check } from "../authorize.js";

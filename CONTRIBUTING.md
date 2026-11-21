@@ -10,6 +10,7 @@ Outside contributions are not accepted yet. A contributor agreement must be in p
 pnpm lint
 pnpm test
 pnpm check:schemas
+pnpm docs:check
 pnpm check:migrations
 pnpm check:licenses
 ```
@@ -96,7 +97,14 @@ The control plane knows nothing about TypeScript. It depends on the manifest for
 - The console and client apps use components from `packages/ui`. Do not style with raw colors or sizes: use the theme tokens, through the Tailwind utilities generated from them.
 - The interface runs on React. The console, the kit and tenant apps share one copy of it. Keep the kit small: tenant apps ship everything it imports.
 - The console calls only the public API.
-- An app calls only the public API too, through `@vynxlabs/app`. If an app needs something the API lacks, the API grows.
+- An app calls only the public API too, through `@volvel/app`. If an app needs something the API lacks, the API grows.
+
+## Phases
+
+- Work is planned and recorded as phases in `docs/phases/`, one document and one `phase-N-*` branch each. A new phase document starts from [docs/phases/TEMPLATE.md](docs/phases/TEMPLATE.md).
+- A milestone that changes anything a person sees is not marked **Built** until its **Polish gate** section is answered. That section holds the seven steps of [the gate](docs/polish/milestone-polish-quality-gate.md), checked against [the rules POLISH-001 to 015](docs/polish/polish-prevention-rules.md), and includes a browser walk on a throwaway instance seeded with `examples/fernhill`.
+- A fix goes in the shared piece, not only where the symptom was seen, and lists the other places that use it (POLISH-013).
+- `apps/console/src/enforce.test.ts` fails on a navigation section that `e2e/polish-setup.ts` neither measures nor lists in `NOT_MEASURED`. More guards from the gate come with the fixes that make them pass (phase 22).
 
 ## Apps, end users and addresses
 

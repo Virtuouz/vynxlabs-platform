@@ -1,4 +1,4 @@
-import { Grid, type GridColumn, type GridSort } from "@vynxlabs/ui";
+import { Grid, type GridColumn, type GridSort } from "@volvel/ui";
 import { ListFilter } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { count } from "./format.ts";

@@ -11,6 +11,7 @@ export {
 export { ContextMenu } from "./ContextMenu.tsx";
 export { type ChartTokens, chartConfig, readChartTokens } from "./chartTheme.ts";
 export { CONTRAST_NEEDED, contrastRatio, luminance } from "./contrast.ts";
+export { Details } from "./Details.tsx";
 export { Dialog } from "./Dialog.tsx";
 export {
   type ConfirmOptions,
@@ -20,12 +21,15 @@ export {
   type TypeToConfirmOptions,
   useDialogs,
 } from "./Dialogs.tsx";
+export { Doc, type DocProps } from "./Doc.tsx";
+export { reveal, servedComponents } from "./DocServed.tsx";
 export { type Fact, Facts } from "./Facts.tsx";
 export {
   CheckboxField,
   control as fieldControl,
   DateField,
   FieldFrame,
+  FieldHelp,
   NumberField,
   SelectField,
   TextAreaField,
@@ -81,6 +85,14 @@ export { Avatar, initialsOf, Skeleton } from "./Surfaces.tsx";
 export { type Column, Table } from "./Table.tsx";
 export { type TabItem, Tabs, type TabsProps } from "./Tabs.tsx";
 export {
+  GlossaryProvider,
+  type GlossaryTerm,
+  Term,
+  TermScope,
+  TermText,
+  Toggletip,
+} from "./Term.tsx";
+export {
   Timeline,
   type TimelineProps,
   type TimelineRow,
@@ -94,6 +106,7 @@ export {
   useToast,
 } from "./Toast.tsx";
 export { Kbd, Tooltip, TooltipProvider } from "./Tooltip.tsx";
+export { type DropPosition, Tree, type TreeNode } from "./Tree.tsx";
 export { useFlip, useKeys } from "./useFlip.ts";
 export {
   type CardsWidgetConfig,

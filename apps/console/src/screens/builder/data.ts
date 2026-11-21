@@ -1,5 +1,5 @@
-import type { InterfaceBody, InterfacePage, WidgetAction, WidgetType } from "@vynxlabs/manifest";
-import type { DataClient, TableInfo } from "@vynxlabs/screens";
+import type { InterfaceBody, InterfacePage, WidgetAction, WidgetType } from "@volvel/manifest";
+import type { DataClient, TableInfo } from "@volvel/screens";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api.ts";
 
@@ -9,6 +9,8 @@ export interface Listed {
   deployed: boolean;
   draft: boolean;
   removing: boolean;
+  /** `code` when the repository manages it: it is changed and removed there. */
+  ownership?: string;
   app: string | null;
   pages?: number;
   version?: number | null;

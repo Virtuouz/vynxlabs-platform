@@ -1,5 +1,5 @@
-import type { InterfaceBody } from "@vynxlabs/manifest";
-import { Button, Dialog, Notice } from "@vynxlabs/ui";
+import type { InterfaceBody } from "@volvel/manifest";
+import { Button, Dialog, Notice } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { api } from "../../api.ts";
 import { Loading } from "../../kit/LoadState.tsx";

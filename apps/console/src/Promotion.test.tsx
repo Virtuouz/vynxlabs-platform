@@ -72,7 +72,14 @@ beforeEach(() => {
       return new Response(null, { status: 204 });
     }
     if (address.includes("/promotion-requests?")) return json({ items: pending });
-    if (address.endsWith("/r1/preview")) return json(preview);
+    if (address.includes("/r1/preview")) {
+      // Once the review has said the deletion may go, the preview stops refusing it.
+      return json(
+        address.includes("allowDelete=") && preview.refusal
+          ? { ...preview, refusal: null, possible: true }
+          : preview,
+      );
+    }
     if (address.endsWith("/r1/decision")) {
       pending = [];
       return json(request({ status: body.decision === "promote" ? "promoted" : "declined" }));
@@ -207,6 +214,72 @@ test("a promoter reviews a request and promotes it in place", async () => {
     }),
   );
   await waitFor(() => expect(decided).toBe(1));
+});
+
+test("a request that renames what an agent calls is approved after its breaking names are shown and confirmed", async () => {
+  preview = {
+    ...preview,
+    summary: {
+      ...(preview.summary as object),
+      breaking: [{ path: "orders/lookup", message: "the tool agents call as lookup is removed" }],
+    },
+  };
+  show(<PromotionRequests tenantId="t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+  const sheet = await screen.findByRole("dialog");
+  expect(
+    await within(sheet).findByText(/changes a name that something outside calls/),
+  ).toBeTruthy();
+  expect(within(sheet).getByText(/The tool agents call as lookup is removed/)).toBeTruthy();
+  fireEvent.click(within(sheet).getByRole("button", { name: "Promote" }));
+  const asked = await answer("Promote");
+  expect(asked).toMatch(/It also changes what an agent calls: The tool agents call as lookup/);
+  await waitFor(() =>
+    expect(calls.find((call) => call.url.endsWith("/decision"))?.body).toEqual({
+      decision: "promote",
+      confirmBreaking: true,
+    }),
+  );
+});
+
+test("a request whose deletion looked like a rename offers Delete them anyway, and sends what was allowed", async () => {
+  preview = {
+    ...preview,
+    // The preview of a request does not say whether the caller may promote.
+    canPromote: undefined,
+    possible: false,
+    refusal: {
+      code: "rename_suspected",
+      detail: "It deletes orders/old and creates orders/new.",
+      errors: [{ path: "script/orders/old", message: "is deleted and holds runs" }],
+    },
+    summary: null,
+  };
+  show(<PromotionRequests tenantId="t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Review" }));
+  const sheet = await screen.findByRole("dialog");
+  expect(within(sheet).getByRole("button", { name: "Promote" })).toHaveProperty("disabled", true);
+  fireEvent.click(await within(sheet).findByRole("button", { name: "Delete them anyway" }));
+  await answer("Delete them and look again");
+  await waitFor(() =>
+    expect(
+      calls.some((call) => call.url.includes("/r1/preview?allowDelete=script%2Forders%2Fold")),
+    ).toBe(true),
+  );
+  await waitFor(() =>
+    expect(within(sheet).getByRole("button", { name: "Promote" })).toHaveProperty(
+      "disabled",
+      false,
+    ),
+  );
+  fireEvent.click(within(sheet).getByRole("button", { name: "Promote" }));
+  await answer("Promote");
+  await waitFor(() =>
+    expect(calls.find((call) => call.url.endsWith("/decision"))?.body).toEqual({
+      decision: "promote",
+      allowDelete: ["script/orders/old"],
+    }),
+  );
 });
 
 test("declining asks why", async () => {

@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { sql } from "@vynxlabs/db";
-import { type FlowBody, PATH_PATTERN } from "@vynxlabs/manifest";
+import { sql } from "@volvel/db";
+import { type FlowBody, PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
 import { cancelFlowRuns } from "../kernel/execution/bulk-cancel.js";
@@ -19,6 +19,7 @@ import {
   approverTitles,
   describeApprovers,
   isApprover,
+  mayDecide,
 } from "../kernel/flows/approvers.js";
 import { expressionContext } from "../kernel/flows/context.js";
 import {
@@ -376,6 +377,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       description: "Whether a draft changes or removes it, waiting to be deployed.",
                     },
                   ),
+                  ownership: Type.String({
+                    description:
+                      "`code` for the repository, `ui` for the console. A flow the repository " +
+                      "manages is changed and removed there.",
+                  }),
                   starts: Type.Array(
                     Type.Object({
                       type: Type.String(),
@@ -400,7 +406,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ params }) => {
         const flows = await db
           .selectFrom("resource")
-          .select(["path", "body"])
+          .select(["path", "body", "ownership"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "flow")
           .orderBy("path")
@@ -450,7 +456,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           group by flow_path
         `.execute(db);
         const countOf = new Map(counts.rows.map((row) => [row.flow_path, row]));
-        const describe = (path: string, body: FlowBody, version: number | null) => {
+        const describe = (
+          path: string,
+          body: FlowBody,
+          version: number | null,
+          ownership: string,
+        ) => {
           const last = byFlow.get(path);
           const count = countOf.get(path);
           const draft = drafts.find((one) => one.path === path);
@@ -477,6 +488,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               : null,
             version,
             draft: draft ? (draft.deleted ? ("removed" as const) : ("changed" as const)) : null,
+            ownership,
             starts: Object.values(body.nodes ?? {}).flatMap((node) => {
               if (node.type !== "trigger") return [];
               const trigger = node.trigger as { type: string; event?: string; cron?: string };
@@ -490,12 +502,17 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           };
         };
         const deployed = flows.map((flow) =>
-          describe(flow.path, flow.body as unknown as FlowBody, versions.get(flow.path) ?? null),
+          describe(
+            flow.path,
+            flow.body as unknown as FlowBody,
+            versions.get(flow.path) ?? null,
+            flow.ownership,
+          ),
         );
         // A flow drawn in the console and not yet deployed is listed too, as a draft.
         const onlyDrafts = drafts
           .filter((draft) => !draft.deleted && !versions.has(draft.path))
-          .map((draft) => describe(draft.path, draft.body as unknown as FlowBody, null));
+          .map((draft) => describe(draft.path, draft.body as unknown as FlowBody, null, "ui"));
         return {
           items: [...deployed, ...onlyDrafts].sort((a, b) => a.path.localeCompare(b.path)),
         };
@@ -1451,14 +1468,10 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .execute();
         if (!query.mine) return { items: await Promise.all(rows.map(toApproval)) };
         const at = { tenantId: params.t, workspaceId: params.w };
-        if (!(await ctx.allowed("approval:write", at))) return { items: [] };
-        const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
         const items = [];
         for (const row of rows) {
           // A step that names its approvers is shown only to them.
-          const named = approversOf(row.detail);
-          if (named && !(await isApprover(db, at, memberId, named))) continue;
-          items.push(await toApproval(row));
+          if (await mayDecide(db, ctx, at, row.detail)) items.push(await toApproval(row));
         }
         return { items };
       },
@@ -1492,13 +1505,15 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Approvals surfaced to the tenant that the caller may decide",
           description:
             "Those whose step said `surface: tenant`, from every workspace. An approval that " +
-            "says nothing is listed in its workspace only.",
+            "says nothing is listed in its workspace only. With `all=true`, every one the " +
+            "caller may read, decided by them or not: to see what waits for someone else.",
           tags: ["flows"],
           params: TenantParams,
+          querystring: Type.Object({ all: Type.Optional(Type.Boolean()) }),
           response: { 200: Type.Object({ items: Type.Array(Approval) }) },
         },
       },
-      async ({ ctx, params }) => {
+      async ({ ctx, params, query }) => {
         const rows = await pending(params.t).where(SURFACED).execute();
         const allowed = new Map<string, boolean>();
         const items = [];
@@ -1507,7 +1522,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!allowed.has(row.workspace_id)) {
             allowed.set(
               row.workspace_id,
-              await ctx.allowed("approval:write", {
+              await ctx.allowed(query.all ? "approval:read" : "approval:write", {
                 tenantId: params.t,
                 workspaceId: row.workspace_id,
               }),
@@ -1517,6 +1532,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           // A step that names its approvers is shown only to them.
           const named = approversOf(row.detail);
           if (
+            !query.all &&
             named &&
             !(await isApprover(
               db,
@@ -1637,6 +1653,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ...PageQuery.properties,
             name: Type.Optional(Type.String()),
             run: Type.Optional(Id),
+            id: Type.Optional(Id),
           }),
           response: { 200: pageOf(Event) },
         },
@@ -1645,6 +1662,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const args = pageArgs(query);
         let select = db.selectFrom("event").selectAll().where("workspace_id", "=", params.w);
         if (query.name) select = select.where("name", "=", query.name);
+        // One event by its ID: a link to one that the page does not reach.
+        if (query.id) select = select.where("id", "=", query.id);
         // What one script run published.
         if (query.run)
           select = select.where("source_type", "=", "script").where("source_id", "=", query.run);

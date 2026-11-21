@@ -1,4 +1,4 @@
-@import "@vynxlabs/ui/tokens.css";
+@import "@volvel/ui/tokens.css";
 @source "./";
 @source "../../../packages/screens/src";
 
@@ -37,4 +37,15 @@ body,
   height: 24px;
   transform: translate(-50%, -50%);
   border-radius: 9999px;
+}
+
+/* The documentation editor: what its preview follows, and what is said beside a folded top of a page. */
+.vx-following {
+  outline: 1px dashed var(--vx-action);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+.vx-editor-hint {
+  color: var(--vx-ink-subtle);
+  font-style: italic;
 }

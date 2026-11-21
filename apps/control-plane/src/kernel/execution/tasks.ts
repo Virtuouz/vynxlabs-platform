@@ -5,7 +5,7 @@
  * and a worker that takes that kind claims it, does it in a process of its own,
  * and reports what it found.
  */
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import type { Db, Trx } from "../audit.js";
 import { conflict, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";

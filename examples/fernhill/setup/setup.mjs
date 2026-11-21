@@ -4,8 +4,8 @@
 //
 //   node setup/setup.mjs [--reset]
 //
-// PLATFORM_URL (default http://localhost:8080), and the instance's first
-// operator in PLATFORM_ADMIN_EMAIL and PLATFORM_ADMIN_PASSWORD. The stand-ins
+// VOLVEL_URL (default http://localhost:8080), and the instance's first
+// operator in VOLVEL_ADMIN_EMAIL and VOLVEL_ADMIN_PASSWORD. The stand-ins
 // must be running: node stand-ins/server.mjs. --reset deletes an existing
 // fernhill tenant first. What to sign in with is written to .platform/demo.json.
 import { execFileSync } from "node:child_process";
@@ -15,15 +15,17 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(dirname(fileURLToPath(import.meta.url)));
 const CLI = join(HERE, "../../packages/cli/dist/bin.js");
-const URL_ = (process.env.PLATFORM_URL ?? "http://localhost:8080").replace(/\/$/, "");
+const URL_ = (process.env.VOLVEL_URL ?? "http://localhost:8080").replace(/\/$/, "");
 const ADMIN = {
-  email: process.env.PLATFORM_ADMIN_EMAIL ?? "admin@example.com",
-  password: process.env.PLATFORM_ADMIN_PASSWORD ?? "change-me-please",
+  email: process.env.VOLVEL_ADMIN_EMAIL ?? "admin@example.com",
+  password: process.env.VOLVEL_ADMIN_PASSWORD ?? "change-me-please",
 };
 const STAND_INS = process.env.STAND_INS ?? "http://127.0.0.1:4020";
 const PASSWORD = "fernhill-demo-2026";
 const SLUG = "fernhill";
 const PAYFERN_SECRET = "whsec_fernhill_demo";
+const LOCUMS = 60;
+const SUPPLIERS = 220;
 
 const step = (text) => console.log(`\n▸ ${text}`);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -191,6 +193,21 @@ for (const person of PEOPLE) {
     roleId: builtin[person.role],
   });
 }
+// Locums: sixty more members with no role, so that the member list has a second page
+// (it loads fifty at a time). Named Locum 01 to Locum 60, at locum.NN@fernhill.example.
+step(`Adding ${LOCUMS} locum members, so the members list pages`);
+for (let from = 1; from <= LOCUMS; from += 10) {
+  await Promise.all(
+    Array.from({ length: Math.min(10, LOCUMS - from + 1) }, (_, i) => {
+      const number = String(from + i).padStart(2, "0");
+      return admin.post(`${T}/members`, {
+        email: `locum.${number}@fernhill.example`,
+        name: `Locum ${number}`,
+        password: PASSWORD,
+      });
+    }),
+  );
+}
 const managers = await admin.post(`${T}/groups`, {
   name: "Practice managers",
   description: "Decide stock orders over the threshold.",
@@ -281,7 +298,7 @@ const mayaKey = await maya.post("/api-keys", { name: "Maya's CLI" });
 const cli = (args, token) =>
   execFileSync("node", [CLI, ...args], {
     cwd: HERE,
-    env: { ...process.env, PLATFORM_URL: URL_, PLATFORM_TOKEN: token },
+    env: { ...process.env, VOLVEL_URL: URL_, VOLVEL_TOKEN: token },
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -419,6 +436,126 @@ if (hook && unpaid.length >= 3) {
 const chased = await flowRun(P, "billing/chase-unpaid");
 console.log(`   chasing unpaid invoices: ${chased.status}`);
 
+// ----- A long list to choose from, and someone who only writes documentation -----
+
+step(`The sandbox's ${SUPPLIERS} suppliers, and a table that refers to them`);
+// More than the picker's first 50 and the grid's first 200, so a reference is found by typing.
+// The tables are the console's own (`ui`): a CLI deploy of this repository to the sandbox
+// removes them, as it removes anything the repository does not name.
+await admin.put(`${D}/resources/suppliers`, {
+  kind: "table",
+  schemaVersion: 1,
+  ownership: "ui",
+  body: {
+    description: "Who Fernhill buys from.",
+    columns: { name: { type: "text", required: true }, city: { type: "text" } },
+    display: "name",
+  },
+});
+await admin.put(`${D}/resources/supplier_contacts`, {
+  kind: "table",
+  schemaVersion: 1,
+  ownership: "ui",
+  body: {
+    description: "A person to call at a supplier.",
+    columns: {
+      contact: { type: "text", required: true },
+      supplier: { type: "reference", references: "suppliers" },
+    },
+  },
+});
+const CITIES = ["Portland", "Beaverton", "Salem", "Eugene", "Vancouver", "Bend"];
+const SUPPLIER_WORDS = ["Alder", "Birch", "Cedar", "Dunmore", "Elm", "Fir", "Gresham", "Hollis"];
+const supplierNames = Array.from(
+  { length: SUPPLIERS },
+  (_, n) =>
+    `${SUPPLIER_WORDS[n % SUPPLIER_WORDS.length]} ${String(n + 1).padStart(3, "0")} Veterinary Supply`,
+);
+for (let from = 0; from < SUPPLIERS; from += 100) {
+  await admin.post(`${D}/rows/suppliers`, {
+    rows: supplierNames
+      .slice(from, from + 100)
+      .map((name, i) => ({ name, city: CITIES[(from + i) % CITIES.length] })),
+  });
+}
+const lastSupplier = (
+  await admin.get(
+    `${D}/rows/suppliers?filter=${encodeURIComponent(
+      JSON.stringify({ column: "name", value: supplierNames[SUPPLIERS - 1] }),
+    )}&limit=1`,
+  )
+).items[0];
+await admin.post(`${D}/rows/supplier_contacts`, {
+  contact: "Pat Lindqvist",
+  supplier: lastSupplier.id,
+});
+
+// A doc writer: writes and deploys documentation in the sandbox, and nothing else there.
+step("Adding Sam Reyes, who writes documentation in the sandbox");
+const sam = await admin.post(`${T}/members`, {
+  email: "sam.reyes@fernhill.example",
+  name: "Sam Reyes",
+  password: PASSWORD,
+});
+await admin.post(`${T}/bindings`, {
+  principalType: "member",
+  principalId: sam.id,
+  roleId: builtin.doc_writer,
+  workspaceId: dev.id,
+});
+PEOPLE.push({
+  email: "sam.reyes@fernhill.example",
+  name: "Sam Reyes",
+  role: "doc_writer",
+  about: "Writes the clinics' handbook",
+});
+
+// A query and a dashboard over it, made in the console as Maya would, and two docs sites, for the
+// walk of phase 24: rename the query and see the dashboard drafted; turn feedback on for both
+// sites and see them share one table. Nothing here asks for feedback: Sam turns it on in the walk.
+// Like the suppliers, they are the console's own, and a CLI deploy of this repository to the
+// sandbox removes them.
+step("The sandbox's visits query, a dashboard over it, and two docs sites");
+const shipSandbox = (paths, message) => maya.post(`${D}/changes/deploy`, { paths, message });
+const draftInSandbox = (path, kind, body) =>
+  maya.put(`${D}/drafts/${path}`, { kind, schemaVersion: 1, body, create: true });
+await draftInSandbox("reports/visits-by-clinic", "query", {
+  sql: "select clinic, count(*) as visits from appointments group by clinic order by visits desc",
+});
+await draftInSandbox("boards/clinic-visits", "dashboard", {
+  version: 2,
+  title: "Visits by clinic",
+  filters: [],
+  widgets: [
+    {
+      id: "by-clinic",
+      title: "Visits by clinic",
+      type: "table",
+      width: 6,
+      source: { query: "reports/visits-by-clinic" },
+      filters: [],
+    },
+  ],
+});
+await shipSandbox(
+  ["reports/visits-by-clinic", "boards/clinic-visits"],
+  "A visits query and the dashboard over it",
+);
+// Two top-level folders, each published as a site, so that two sites can share one feedback table.
+for (const [folder, title, text] of [
+  ["rota", "Fernhill rota guide", "How the rota is made, and who to ask for a swap."],
+  ["supplies", "Fernhill supplies guide", "How stock is ordered, and what a manager approves."],
+]) {
+  await draftInSandbox(`${folder}/index`, "doc", {
+    source: `---\ntitle: ${title}\ndescription: ${text}\n---\n\n${text}\n`,
+  });
+  await draftInSandbox(`${folder}-site`, "app", { title, docs: folder });
+}
+await shipSandbox(
+  ["rota/index", "rota-site", "supplies/index", "supplies-site"],
+  "Two docs sites, with feedback off",
+);
+
 step("A portal hostname for everything, and the tenant's portal settings");
 const domain = await admin.post(`${T}/domains`, {
   workspaceId: prod.id,
@@ -438,6 +575,11 @@ const demo = {
   workspaces: { clinics: prod.id, sandbox: dev.id },
   password: PASSWORD,
   members: PEOPLE.map(({ email, name, about, role }) => ({ email, name, about, role })),
+  locums: {
+    count: LOCUMS,
+    first: "locum.01@fernhill.example",
+    last: `locum.${LOCUMS}@fernhill.example`,
+  },
   frontDesk: desk.map(([email, name, clinic]) => ({ email, name, clinic })),
   owners,
   apps: {

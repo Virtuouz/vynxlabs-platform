@@ -1,17 +1,50 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { KeyboardEvent, ReactNode } from "react";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { TermText, Toggletip, useGlossaryMatch } from "./Term.tsx";
 
 export interface GridColumn {
   name: string;
   /** What the heading says. The name, when left out. */
   label?: string | undefined;
+  /** What the column holds, behind a small ⓘ beside its heading. */
+  description?: string | undefined;
   /** What the column holds: text, integer, number, boolean, timestamp, date, json and so on. */
   type: string;
   /** Lets a cell be changed in place. */
   editable?: boolean;
   sortable?: boolean;
   filterable?: boolean;
+}
+
+/**
+ * The ⓘ beside a column's heading that says what the column holds. Pressing it
+ * does not sort. `term` is for a heading that is itself a button and so cannot
+ * underline a word: a term of the glossary it uses is then explained here.
+ */
+function About({ column, term = false }: { column: GridColumn; term?: boolean }) {
+  const name = column.label ?? column.name;
+  const found = useGlossaryMatch(name);
+  const meaning = term && found ? found : undefined;
+  if (!column.description && !meaning) return null;
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: only keeps the press from reaching the heading, which sorts.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the button inside takes the keys.
+    <span
+      className="ml-1 inline-flex align-middle font-normal normal-case"
+      // Only the press: a key pressed here still reaches the page, so F1 and ⌘K work from it.
+      onClick={(event) => event.stopPropagation()}
+    >
+      <Toggletip label={`About ${name}`} title={name}>
+        {column.description}
+        {meaning ? (
+          <p className={column.description ? "m-0 mt-2" : "m-0"}>
+            <span className="font-medium text-ink">{meaning.term}:</span> {meaning.short}
+          </p>
+        ) : null}
+      </Toggletip>
+    </span>
+  );
 }
 
 export interface GridSort {
@@ -54,6 +87,12 @@ export interface GridProps<Row extends Record<string, unknown>> {
    * grid is scrolled sideways. It does unless this says otherwise.
    */
   lockFirst?: boolean;
+  /**
+   * The grid is the one scroller of a screen that fills the window: it takes the height
+   * left, in a parent that is a column with `min-h-0`, and scrolls inside it, with its header
+   * row and filters pinned. Without it, it is as tall as its rows, to 70% of the window.
+   */
+  fill?: boolean;
   /** Row height, with `navigation="grid"`: compact rows are 28 px. */
   density?: "compact" | "standard";
   /** Rows chosen with checkboxes, with `navigation="grid"`, for something done to all of them. */
@@ -62,6 +101,15 @@ export interface GridProps<Row extends Record<string, unknown>> {
 }
 
 const NUMERIC = new Set(["integer", "number"]);
+
+/**
+ * Whether a key typed into a field of the grid stays there. The grid's own keys do;
+ * the page's, F1 for help and ⌘K for the palette, go on to the shortcuts above.
+ */
+export function keepsKey(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey">): boolean {
+  if (event.key === "F1") return false;
+  return !((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k");
+}
 
 /** A stored value as text a person can read and edit. */
 export function showValue(type: string, value: unknown): string {
@@ -144,7 +192,7 @@ function EditableCell<Row extends Record<string, unknown>>({
   const cancelled = useRef(false);
   const controlled = editing !== undefined;
   const text = controlled
-    ? editing
+    ? editing && column.type !== "boolean"
       ? (own ?? editText(column.type, row[column.name]))
       : undefined
     : own;
@@ -165,6 +213,18 @@ function EditableCell<Row extends Record<string, unknown>>({
       setBusy(false);
     }
   };
+
+  // In a navigable grid, a yes/no cell is not typed into: Enter, F2 and a double-click all toggle
+  // it here, and a refusal is said in the cell instead of being dropped.
+  const toggling = useRef<() => void>(() => {});
+  toggling.current = () => {
+    onEnd?.(false);
+    void save(value !== true);
+  };
+  const flipping = controlled && editing === true && column.type === "boolean";
+  useEffect(() => {
+    if (flipping) toggling.current();
+  }, [flipping]);
 
   if (column.type === "boolean" && !controlled) {
     return (
@@ -188,8 +248,9 @@ function EditableCell<Row extends Record<string, unknown>>({
 
   if (text === undefined && controlled) {
     return (
-      <span className="flex flex-col gap-0.5">
-        <span>{shown}</span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        {/* Cut short with its cell, which ends a long value in an ellipsis. */}
+        <span className="block truncate">{shown}</span>
         {error ? (
           <span role="alert" className="text-meta text-danger">
             {error}
@@ -245,8 +306,8 @@ function EditableCell<Row extends Record<string, unknown>>({
         }}
         onBlur={commit}
         onKeyDown={(event) => {
-          // The grid's own keys are not for a cell being edited.
-          event.stopPropagation();
+          // The grid's own keys are not for a cell being edited. The page's are: F1 and ⌘K go on.
+          if (keepsKey(event)) event.stopPropagation();
           if (event.key === "Enter") event.currentTarget.blur();
           if (event.key === "Escape") {
             // What was there before is put back, and the cell keeps focus.
@@ -359,10 +420,6 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
     }
     if (!row) return;
     if (column?.editable && onEdit && props.cell?.(row, column) === undefined) {
-      if (column.type === "boolean") {
-        void onEdit(row, column.name, row[column.name] !== true);
-        return;
-      }
       setEditing(`${r}:${c}`);
       return;
     }
@@ -378,7 +435,11 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
   });
 
   return (
-    <div className="max-h-[70vh] overflow-auto rounded-panel border border-line bg-surface">
+    <div
+      className={`overflow-auto rounded-panel border border-line bg-surface ${
+        props.fill ? "min-h-0 flex-1" : "max-h-[70vh]"
+      }`}
+    >
       <table
         ref={table}
         // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: a table navigated cell by cell is a grid (WAI-ARIA grid pattern)
@@ -418,7 +479,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                   onClick={() => column.sortable && props.onSort?.(column.name)}
                   {...cellProps(0, index + offset)}
                 >
-                  {column.label ?? column.name}
+                  <TermText>{column.label ?? column.name}</TermText>
+                  <About column={column} />
                   {sorted ? (
                     <span aria-hidden="true" className="ml-1 inline-flex align-middle text-action">
                       {sorted.descending ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
@@ -430,21 +492,21 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
           </tr>
           {filterable ? (
             <tr>
-              {checking ? <td className={`${head} sticky left-0 pb-2`} /> : null}
+              {checking ? <td className={`${head} sticky left-0 pb-1`} /> : null}
               {columns.map((column, index) => (
                 <td
                   key={column.name}
-                  className={`${head} pb-2 font-normal ${lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : ""}`}
+                  className={`${head} pb-1 font-normal ${lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"}` : ""}`}
                 >
                   {column.filterable ? (
                     <input
                       aria-label={`Filter by ${column.label ?? column.name}`}
                       placeholder="Filter"
                       value={filters?.[column.name] ?? ""}
-                      className="h-7 w-full min-w-20 rounded-inner border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
+                      className="h-6 w-full min-w-20 rounded-inner border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
                       onChange={(event) => onFilter?.(column.name, event.currentTarget.value)}
                       onKeyDown={(event) => {
-                        event.stopPropagation();
+                        if (keepsKey(event)) event.stopPropagation();
                         if (event.key === "Enter") event.currentTarget.blur();
                       }}
                     />
@@ -471,7 +533,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
               return (
                 <tr
                   key={key}
-                  aria-rowindex={r + 1}
+                  // The header row is the first of `aria-rowcount`: rows of data count from 2.
+                  aria-rowindex={r + 2}
                   aria-selected={checking ? ticked : chosen}
                   className={`${ground} hover:bg-sunken/60`}
                   onClick={(event) => {
@@ -594,8 +657,9 @@ function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
                       </span>
                     </button>
                   ) : (
-                    (column.label ?? column.name)
+                    <TermText>{column.label ?? column.name}</TermText>
                   )}
+                  <About column={column} term={Boolean(column.sortable && props.onSort)} />
                 </th>
               );
             })}

@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import type { Database } from "@vynxlabs/db";
+import type { Database } from "@volvel/db";
 import { Type } from "typebox";
 import { access } from "../kernel/http.js";
 import type { ObjectStore } from "../storage.js";

@@ -1,9 +1,18 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { keepsKey } from "./Grid.tsx";
 import { Grid, type GridColumn, parseValue, showValue } from "./index.ts";
 
 afterEach(cleanup);
+
+test("a field of the grid keeps the grid's keys, and lets F1 and the palette's key go on", () => {
+  expect(keepsKey({ key: "ArrowDown", metaKey: false, ctrlKey: false })).toBe(true);
+  expect(keepsKey({ key: "Enter", metaKey: false, ctrlKey: false })).toBe(true);
+  expect(keepsKey({ key: "F1", metaKey: false, ctrlKey: false })).toBe(false);
+  expect(keepsKey({ key: "k", metaKey: true, ctrlKey: false })).toBe(false);
+  expect(keepsKey({ key: "K", metaKey: false, ctrlKey: true })).toBe(false);
+});
 
 const columns: GridColumn[] = [
   { name: "title", type: "text", editable: true, sortable: true, filterable: true },
@@ -17,6 +26,31 @@ const rows = [
 ];
 
 describe("grid", () => {
+  test("with fill, the grid is the one scroller of the height left; without it, it stops at 70vh", () => {
+    const grid = (fill?: boolean) => (
+      <Grid
+        label="Rows of orders"
+        columns={columns}
+        rows={rows}
+        rowKey={(r) => r.id}
+        empty="None"
+        navigation="grid"
+        {...(fill ? { fill } : {})}
+      />
+    );
+    const { container, rerender } = render(grid());
+    const box = () => container.querySelector("table")?.parentElement as HTMLElement;
+    expect(box().className).toContain("max-h-[70vh]");
+    expect(box().className).not.toContain("flex-1");
+    rerender(grid(true));
+    expect(box().className).toContain("min-h-0");
+    expect(box().className).toContain("flex-1");
+    expect(box().className).toContain("overflow-auto");
+    expect(box().className).not.toContain("max-h-[70vh]");
+    // The header row stays pinned inside it.
+    expect(container.querySelector("thead")?.className).toContain("sticky");
+  });
+
   test("shows rows, says when there are none, and marks an empty value", () => {
     const { rerender } = render(
       <Grid
@@ -221,6 +255,21 @@ describe("grid navigation (the WAI-ARIA grid pattern)", () => {
     fireEvent.keyDown(again, { key: "Enter" });
     fireEvent.blur(again);
     await waitFor(() => expect(onEdit).toHaveBeenCalledWith(rows[0], "title", "Renamed"));
+  });
+
+  test("a yes/no cell toggles on Enter and on a double-click, and says why a refusal failed (A2-05)", async () => {
+    const onEdit = vi.fn(async () => {
+      throw new Error("Not allowed.");
+    });
+    const { grid } = mount({ onEdit });
+    const cell = grid.querySelector('[data-cell="1:3"]') as HTMLElement;
+    fireEvent.doubleClick(cell);
+    await waitFor(() => expect(onEdit).toHaveBeenCalledWith(rows[0], "done", true));
+    expect((await screen.findByRole("alert")).textContent).toBe("Not allowed.");
+    cell.focus();
+    fireEvent.keyDown(cell, { key: "Enter" });
+    await waitFor(() => expect(onEdit).toHaveBeenCalledTimes(2));
+    expect(cell.querySelector("input")).toBeNull();
   });
 
   test("Space checks a row, and Enter on a heading sorts by it", async () => {

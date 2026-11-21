@@ -1,4 +1,4 @@
-import { Button, TextField } from "@vynxlabs/ui";
+import { Button, TextField } from "@volvel/ui";
 import { KeyRound } from "lucide-react";
 import { useState } from "react";
 import { ago } from "../kit/format.ts";

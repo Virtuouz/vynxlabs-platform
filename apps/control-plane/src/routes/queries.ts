@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { DASHBOARD_VERSION, enumColor, type QueryBody, type VisualQuery } from "@vynxlabs/manifest";
+import { DASHBOARD_VERSION, enumColor, type QueryBody, type VisualQuery } from "@volvel/manifest";
 import { Type } from "typebox";
 import { loadCatalog } from "../kernel/data/apply.js";
 import { ALLOWED_FUNCTIONS } from "../kernel/data/query/allowed.js";

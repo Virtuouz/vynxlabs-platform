@@ -98,6 +98,11 @@ export const bindingKind: KindDefinition = {
         type: "string",
         description: "Path of one resource to bind at. Omit to bind at the workspace.",
       },
+      description: {
+        type: "string",
+        maxLength: 500,
+        description: "Why the grant is there, for whoever reads it later.",
+      },
     },
     required: ["role", "principal"],
     additionalProperties: false,
@@ -302,6 +307,11 @@ export const scheduleKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
+      description: {
+        type: "string",
+        maxLength: 500,
+        description: "What the schedule is for.",
+      },
       script: { ...path, description: "The script it starts. Give this or `flow`." },
       flow: {
         ...path,
@@ -454,6 +464,7 @@ export const triggerKind: KindDefinition = {
         type: "object",
         properties: {
           type: { const: "webhook" },
+          description: { type: "string", maxLength: 500, description: "What the trigger is for." },
           script: path,
           enabled: { type: "boolean" },
           tags: tagExpressions,
@@ -466,6 +477,7 @@ export const triggerKind: KindDefinition = {
         type: "object",
         properties: {
           type: { const: "event" },
+          description: { type: "string", maxLength: 500, description: "What the trigger is for." },
           script: path,
           event: { ...path, description: "The event to listen for." },
           filter: {
@@ -1029,6 +1041,12 @@ export const tableKind: KindDefinition = {
           type: "object",
           properties: {
             type: { enum: [...COLUMN_TYPES] },
+            description: {
+              type: "string",
+              maxLength: 500,
+              description:
+                "What the column holds, in plain text. Shown on the column's heading and wherever a page of documentation names the column.",
+            },
             required: { type: "boolean" },
             unique: { type: "boolean" },
             default: {
@@ -1307,7 +1325,35 @@ export const appKind: KindDefinition = {
         maxLength: 255,
         description:
           "An interface of the workspace to serve as this app, in place of files of its own. " +
-          "An app has an entry or an interface, never both.",
+          "An app has an entry, an interface or docs, and only one of them.",
+      },
+      docs: {
+        type: "string",
+        pattern: PATH_PATTERN,
+        maxLength: 255,
+        description:
+          "A top-level folder of the workspace's pages of documentation to serve as this app: " +
+          "every page whose path is under it. Its `index` page is the home page, each folder " +
+          "directly under it is a collection, and folders go as deep as they are written.",
+      },
+      feedback: {
+        type: "object",
+        description:
+          "For an app that serves documentation: ask readers whether a page helped, and keep each " +
+          "answer as a row of a table of the workspace's. The table needs the columns `page` " +
+          "(text), `helpful` (boolean), `version` (text) and `at` (timestamp). A reader answers " +
+          "once for each page, and nothing about who they are is kept.",
+        properties: {
+          table: { ...path, description: "The table the answers are kept in." },
+        },
+        required: ["table"],
+        additionalProperties: false,
+      },
+      published: {
+        type: "boolean",
+        description:
+          "For an app that serves documentation: false stops serving it, and keeps its pages and " +
+          "the app. It is served again once this is left out or true, from the next deploy. Default true.",
       },
       fallback: {
         type: "boolean",
@@ -1326,7 +1372,35 @@ export const appKind: KindDefinition = {
       },
     },
     required: ["title"],
-    oneOf: [{ required: ["entry"] }, { required: ["interface"] }],
+    oneOf: [{ required: ["entry"] }, { required: ["interface"] }, { required: ["docs"] }],
+    // Only documentation asks its readers whether it helped.
+    dependentRequired: { feedback: ["docs"], published: ["docs"] },
+    additionalProperties: false,
+  },
+};
+
+/**
+ * One page of documentation. Its body is its file, as it is: a few lines of
+ * frontmatter, then Markdown. Nothing in it is code and nothing in it runs.
+ * What it says is checked when it is deployed, together with the pages
+ * around it, since a link is only right or wrong beside what it leads to.
+ */
+export const docKind: KindDefinition = {
+  kind: "doc",
+  schemaVersion: 1,
+  body: {
+    type: "object",
+    description:
+      "A page of documentation. Kept in a repository as a Markdown file, `<path>.md`, in a folder of pages, and not as YAML.",
+    properties: {
+      source: {
+        type: "string",
+        maxLength: MAX_SOURCE_LENGTH,
+        description:
+          "The page as its file holds it: its title and what else it says of itself between two lines of `---`, then its Markdown.",
+      },
+    },
+    required: ["source"],
     additionalProperties: false,
   },
 };
@@ -1350,6 +1424,7 @@ export const platformKinds: KindDefinition[] = [
   themeKind,
   interfaceKind,
   dashboardKind,
+  docKind,
   appKind,
   bindingKind,
 ];

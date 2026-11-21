@@ -1,4 +1,4 @@
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import type { Db, Trx } from "../audit.js";
 
 export interface Approvers {
@@ -259,4 +259,25 @@ export async function approverMembers(
     });
   }
   return { members, more };
+}
+
+type Caller = {
+  allowed(permission: string, at: { tenantId: string; workspaceId: string }): Promise<boolean>;
+  principal: { type: string; id: string | null };
+};
+
+/**
+ * Whether the caller may decide a waiting step: they hold `approval:write` here and
+ * are among the step's approvers, if it names any. One rule for the approvals list's
+ * `mine=true` and for the summary's count, so the two cannot disagree.
+ */
+export async function mayDecide(
+  db: Db | Trx,
+  ctx: Caller,
+  at: { tenantId: string; workspaceId: string },
+  detail: Record<string, unknown>,
+): Promise<boolean> {
+  if (!(await ctx.allowed("approval:write", at))) return false;
+  const memberId = ctx.principal.type === "member" ? ctx.principal.id : null;
+  return isApprover(db, at, memberId, approversOf(detail));
 }

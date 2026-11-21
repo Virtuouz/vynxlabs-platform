@@ -2,7 +2,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import {
   formatMachine,
   type MachineProbe,
@@ -10,7 +10,7 @@ import {
   MemoryGuard,
   machineShare,
   procProbe,
-} from "@vynxlabs/worker";
+} from "@volvel/worker";
 import type { Kernel } from "../kernel.js";
 import {
   hasOutsideCodeWriters,
@@ -145,7 +145,7 @@ export class WorkerSupervisor {
   readonly #kernel: Kernel;
   readonly #options: SupervisorOptions;
   readonly #workers = new Map<string, Managed>();
-  readonly #bin = fileURLToPath(import.meta.resolve("@vynxlabs/worker/bin"));
+  readonly #bin = fileURLToPath(import.meta.resolve("@volvel/worker/bin"));
   readonly #node = plainNode();
   readonly #writers = new Map<string, { outside: boolean; at: number }>();
   /** Tenants refused a managed worker, each told once in the log. */
@@ -205,9 +205,9 @@ export class WorkerSupervisor {
     }
     return {
       ...env,
-      PLATFORM_URL: this.#options.url,
-      PLATFORM_WORKER_IDLE_EXIT: String(this.#options.idleExitSeconds ?? 60),
-      PLATFORM_WORKER_MACHINE: formatMachine(this.machine),
+      VOLVEL_URL: this.#options.url,
+      VOLVEL_WORKER_IDLE_EXIT: String(this.#options.idleExitSeconds ?? 60),
+      VOLVEL_WORKER_MACHINE: formatMachine(this.machine),
     };
   }
 

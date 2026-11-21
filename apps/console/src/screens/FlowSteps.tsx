@@ -10,7 +10,7 @@ import {
   TextField,
   useFlip,
   useKeys,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import type { GraphNode } from "../FlowGraph.tsx";
 import { ExpressionField } from "./ExpressionField.tsx";
 

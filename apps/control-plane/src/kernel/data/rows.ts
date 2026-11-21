@@ -1,5 +1,5 @@
-import { type Kysely, newId, sql } from "@vynxlabs/db";
-import type { TablePolicy } from "@vynxlabs/manifest";
+import { type Kysely, newId, sql } from "@volvel/db";
+import type { TablePolicy } from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";

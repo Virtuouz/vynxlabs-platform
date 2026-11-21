@@ -1,8 +1,8 @@
-import { sql } from "@vynxlabs/db";
-import { APP_FACING_KINDS, isExplicitKind } from "@vynxlabs/manifest";
+import { sql } from "@volvel/db";
+import { APP_FACING_KINDS, isExplicitKind } from "@volvel/manifest";
 import type { Db, Principal, Trx } from "./audit.js";
 
-export { PERMISSION_PATTERN } from "@vynxlabs/manifest";
+export { PERMISSION_PATTERN } from "@volvel/manifest";
 
 export interface Target {
   tenantId?: string | undefined;

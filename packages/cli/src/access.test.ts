@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Client, startTestApp, type TestApp } from "@vynxlabs/control-plane/testing";
+import { type Client, startTestApp, type TestApp } from "@volvel/control-plane/testing";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { run } from "./cli.js";
 
@@ -101,7 +101,7 @@ describe("a tenant's access, from its repository", () => {
       "created  service_account  helpdesk-assistant  (Helpdesk assistant)",
     );
     expect(planned.out).toContain("developer to group tech-desk in main");
-    expect(planned.out).toContain('Nothing was changed. Run "platform tenant release" to do it.');
+    expect(planned.out).toContain('Nothing was changed. Run "volvel tenant release" to do it.');
     expect((await tenant("releases")).out).toBe("");
   });
 

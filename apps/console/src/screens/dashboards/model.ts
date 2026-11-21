@@ -4,7 +4,7 @@ import type {
   DashboardWidgetOptions,
   RelativeRange,
   ValueFormat,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { amount } from "../../kit/format.ts";
 
 /**
@@ -22,6 +22,8 @@ export interface Result {
   sql: string;
   /** For a query built from menus: the SQL the platform wrote for it. */
   written?: { sql: string; parameters: unknown[] };
+  /** The path the widget names answered nothing: its query was found by the key recorded at deploy. */
+  followed?: { names: string; now: string };
 }
 
 export interface DateRange {

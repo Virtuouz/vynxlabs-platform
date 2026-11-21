@@ -51,7 +51,7 @@ export function openExternalPostgres(config: ExternalPostgres): Kysely<any> {
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 5_000,
     options: "-c statement_timeout=15000",
-    application_name: "vynxlabs-platform",
+    application_name: "volvel",
     ...(config.lookup ? { stream: socketWith(config.lookup) } : {}),
   });
   // An idle connection the source closes must not take the control plane down.

@@ -1,4 +1,4 @@
-import { Closing, SideSheet } from "@vynxlabs/ui";
+import { Closing, SideSheet } from "@volvel/ui";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
 import { DiffView } from "../kit/DiffView.tsx";

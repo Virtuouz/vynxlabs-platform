@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Bundle, bundleDigest } from "@vynxlabs/manifest";
+import { type Bundle, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { claimRun } from "./kernel/execution/runs.js";
 import { claimTask, queueTask } from "./kernel/execution/tasks.js";

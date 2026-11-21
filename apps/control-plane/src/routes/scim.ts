@@ -2,7 +2,7 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { Type } from "typebox";
 import { type Audit, SYSTEM, type Trx, writeAudit } from "../kernel/audit.js";

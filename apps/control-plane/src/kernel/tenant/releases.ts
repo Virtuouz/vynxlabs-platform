@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { newId, sql, type TenantResource } from "@vynxlabs/db";
-import { checkTenantResources, tenantName, tenantOrder } from "@vynxlabs/manifest";
+import { newId, sql, type TenantResource } from "@volvel/db";
+import { checkTenantResources, tenantName, tenantOrder } from "@volvel/manifest";
 import type { Audit, Db, Principal, Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 
@@ -132,7 +132,7 @@ const labelOf = (resource: TenantResource): string => {
 
 /**
  * The tenant's access as it is now, as resources: what a release would be set
- * against, and what `platform tenant pull` writes. Groups an identity provider
+ * against, and what `volvel tenant pull` writes. Groups an identity provider
  * made are left out: they are the provider's to make and remove.
  */
 export async function currentAccess(db: Db | Trx, tenantId: string): Promise<TenantResource[]> {
@@ -891,7 +891,7 @@ async function editsUndone(trx: Trx, tenantId: string, steps: readonly Step[]): 
     warnings.push(
       `the ${tenantName(one)} was last changed in release ${number}, outside the repository. This ${
         step.op === "delete" ? "removes it" : "puts it back as the repository has it"
-      }. To keep that change, pull the tenant's access into the repository first (platform tenant pull).`,
+      }. To keep that change, pull the tenant's access into the repository first (volvel tenant pull).`,
     );
   }
   return warnings;
@@ -1075,13 +1075,14 @@ export async function rollbackAsks(db: Db | Trx, tenantId: string, releaseId: st
   }
   const current = await currentAccess(db, tenantId);
   const kept = new Set(release.snapshot.map((one) => `${one.kind}/${one.key}`));
+  const removed = current.filter((one) => !kept.has(`${one.kind}/${one.key}`));
   return {
+    /** What going back removes, each as a name a person reads. */
+    removes: removed.map((one) => ({ kind: one.kind, key: one.key, label: labelOf(one) })),
     number: release.number,
     asks: release.snapshot.map((resource): AccessAsk => ({ op: "put", resource })),
     // Going back removes what was made since. That is what going back means, so each is allowed.
-    allowDelete: current
-      .filter((one) => !kept.has(`${one.kind}/${one.key}`))
-      .map((one) => `${one.kind}/${one.key}`),
+    allowDelete: removed.map((one) => `${one.kind}/${one.key}`),
   };
 }
 

@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { InterfacePage, PageWidget } from "@vynxlabs/manifest";
+import type { InterfacePage, PageWidget } from "@volvel/manifest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { DataClient, Filter, Row, TableInfo } from "./data.ts";
 import { InterfaceRenderer, LOOKUP_BATCH, PageRenderer } from "./Renderer.tsx";
@@ -314,7 +314,7 @@ test("a table that is gone, unreadable or changed says so, and the rest of the p
   ).toBeTruthy();
   expect(
     within(screen.getByRole("region", { name: "Closed" })).getByText(
-      'You may not read the table "closed".',
+      /You may not read the table "closed"\. Ask whoever looks after this app/,
     ),
   ).toBeTruthy();
   expect(
@@ -666,5 +666,62 @@ describe("actions", () => {
     expect(orders.queryByRole("button", { name: "Refund" })).toBeNull();
     fireEvent.click(orders.getAllByRole("button", { name: "Remind" })[2] as HTMLElement);
     await waitFor(() => expect(started[0]?.input).toEqual({ order: "A-3" }), { timeout: 3000 });
+  });
+});
+
+describe("more rows", () => {
+  const paged = (second: () => Promise<{ items: Row[]; nextCursor: string | null }>) => {
+    const { client } = fake();
+    client.find = vi.fn(async (_table, options) =>
+      options.cursor ? second() : { items: (data.orders as Row[]).slice(0, 2), nextCursor: "next" },
+    );
+    return client;
+  };
+
+  test("shows busy while the next page is asked for and adds its rows", async () => {
+    let answer: (page: { items: Row[]; nextCursor: string | null }) => void = () => {};
+    const client = paged(() => new Promise((done) => (answer = done)));
+    render(
+      <PageRenderer
+        tables={tables}
+        client={client}
+        page={page([widget("orders", { title: "Orders", fields: [{ column: "number" }] })])}
+      />,
+    );
+    await screen.findByText("A-1");
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /Show more/ }).getAttribute("aria-busy")).toBe(
+        "true",
+      ),
+    );
+    answer({ items: [(data.orders as Row[])[2] as Row], nextCursor: null });
+    await screen.findByText("A-3");
+    expect(screen.queryByRole("button", { name: /Show more/ })).toBeNull();
+  });
+
+  test("a page that fails says so, keeps the rows and offers Try again", async () => {
+    let fail = true;
+    const client = paged(async () => {
+      if (fail) throw new Error("The server is not answering.");
+      return { items: [(data.orders as Row[])[2] as Row], nextCursor: null };
+    });
+    render(
+      <PageRenderer
+        tables={tables}
+        client={client}
+        page={page([widget("orders", { title: "Orders", fields: [{ column: "number" }] })])}
+      />,
+    );
+    await screen.findByText("A-1");
+    fireEvent.click(screen.getByRole("button", { name: "Show more" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("More rows could not be loaded.");
+    expect(alert.textContent).toContain("The server is not answering.");
+    expect(screen.getByText("A-1")).toBeTruthy();
+    fail = false;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("A-3");
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

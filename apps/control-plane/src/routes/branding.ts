@@ -2,7 +2,7 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import { Type } from "typebox";
 import { cleanTheme, themeCss } from "../kernel/apps/theme.js";
 import { badRequest, notFound } from "../kernel/errors.js";
@@ -11,7 +11,7 @@ import type { Kernel } from "../kernel/kernel.js";
 import { NoContent } from "./shared.js";
 
 /** What the console calls itself when the operator has not named it. */
-export const DEFAULT_PRODUCT_NAME = "Vynxlabs";
+export const DEFAULT_PRODUCT_NAME = "Volvel";
 
 const LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
 const MAX_LOGO_BYTES = 512 * 1024;
@@ -24,6 +24,10 @@ const Branding = Type.Object({
   theme: Type.Object({
     tokens: ThemeTokens,
     dark: ThemeTokens,
+  }),
+  docsUrl: Type.Union([Type.String(), Type.Null()], {
+    description:
+      "Where the documentation is on the web, when the operator set DOCS_URL. The console's help then offers each page online.",
   }),
 });
 
@@ -43,6 +47,7 @@ export function brandingRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         named: Boolean(found?.product_name),
         logo: Boolean(found?.logo_key),
         theme: { tokens: found?.theme.tokens ?? {}, dark: found?.theme.dark ?? {} },
+        docsUrl: kernel.config.docsUrl ?? null,
       };
     };
 

@@ -1,15 +1,18 @@
-import { ENUM_COLORS, enumColor } from "@vynxlabs/manifest";
+import { displayGuess, ENUM_COLORS, enumColor } from "@volvel/manifest";
 import {
   Button,
   Closing,
+  ComboboxField,
   Dialog,
   EmptyState,
   Grid,
   type GridColumn,
   type GridSort,
+  Menu,
   MoveButtons,
   MultiSelectField,
   Notice,
+  Popover,
   parseValue,
   SelectField,
   SideSheet,
@@ -18,19 +21,25 @@ import {
   TextField,
   useFlip,
   ValueChip,
-} from "@vynxlabs/ui";
-import { Download } from "lucide-react";
-import { useEffect, useState } from "react";
+} from "@volvel/ui";
+import { Download, Ellipsis, Keyboard } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, failureText, notify } from "../ask.tsx";
+import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { count } from "../kit/format.ts";
+import { HealthCell } from "../kit/health.tsx";
+import { useHistory } from "../kit/history.ts";
+import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
+import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
-import { CreateDialog, ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
-import { Link, navigate, useUrlParam, useUrlState } from "../router.tsx";
+import { type CreateConfig, CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
+import { Link, navigate, useNavigationGuard, useUrlParam, useUrlState } from "../router.tsx";
+import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import {
   type Policy,
   policyText,
@@ -75,6 +84,8 @@ const typeLabel = (type: string) => TYPES.find((entry) => entry.value === type)?
 
 interface RowColumn {
   name: string;
+  /** What the column holds, shown behind its heading's ⓘ. */
+  description?: string | undefined;
   type: string;
   required: boolean;
   /** False for columns the platform fills in, and for types it only reads. */
@@ -133,7 +144,13 @@ const ROWS_URL = {
   row: { type: "string", push: true },
 } as const;
 
-function RowsBrowser(props: RowsBrowserProps) {
+function RowsBrowser(
+  props: RowsBrowserProps & {
+    fill?: boolean;
+    /** What leads the toolbar's row, such as the table's tabs, so they take no row of their own. */
+    lead?: ReactNode;
+  },
+) {
   const { columns, keyColumn, rowPath } = props;
   const [url, setUrl] = useUrlState(ROWS_URL);
   const sort: GridSort | undefined = url.sort
@@ -209,6 +226,22 @@ function RowsBrowser(props: RowsBrowserProps) {
   const total = useLoad<{ items: { values: { count?: number } }[] }>(totalPath);
   const counted = total.data?.items[0]?.values.count;
   const open = rows.find((row) => keyOf(row) === url.row);
+  // Edits typed in the inspector and not saved: another row, or closing it, asks first.
+  const unsaved = useRef(false);
+  const choose = async (next: string | undefined) => {
+    if (next !== url.row && unsaved.current) {
+      const leave = await ask.confirm({
+        title: "Leave without saving?",
+        text: "Your changes to this row are not saved.",
+        action: "Leave",
+        cancel: "Stay",
+        danger: true,
+      });
+      if (!leave) return;
+    }
+    unsaved.current = false;
+    setUrl({ row: next });
+  };
   // Several rows are deleted at once in the platform's own tables; a source's rows one by one.
   const canBatch = canChange && custom;
   const exportQuery = new URLSearchParams();
@@ -221,6 +254,7 @@ function RowsBrowser(props: RowsBrowserProps) {
     .flatMap((name) => columns.find((column) => column.name === name) ?? [])
     .map((column) => ({
       name: column.name,
+      description: column.description,
       type: column.type,
       editable: canChange && column.writable && column.type !== "file",
       sortable: !["json", "enum_list"].includes(column.type),
@@ -259,14 +293,33 @@ function RowsBrowser(props: RowsBrowserProps) {
     }
   };
 
+  const fill = props.fill === true;
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="m-0 text-body-sm text-ink-muted">
-          {props.readOnlyNote ??
-            "Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a filter, type text to look for, or a comparison such as > 100. Type empty to find rows with no value."}
-        </p>
-        <span className="flex flex-wrap items-center gap-2">
+    <div className={`flex flex-col gap-3 ${fill ? "min-h-0 flex-1" : ""}`}>
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+        {props.lead}
+        {/* What a read-only table says stands in the row. The keys are behind a button: two
+            lines above every grid kept its first row far from the top (P4-1). */}
+        {props.readOnlyNote ? (
+          <p className="m-0 text-body-sm text-ink-muted">{props.readOnlyNote}</p>
+        ) : null}
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {props.readOnlyNote ? null : (
+            <Popover
+              title="Keys in the table"
+              trigger={
+                <Button size="small" variant="quiet">
+                  <Keyboard aria-hidden="true" size={14} /> Keys
+                </Button>
+              }
+            >
+              <p className="m-0">
+                Arrow keys move between cells; Enter or F2 changes one, Escape puts it back. In a
+                filter, type text to look for, or a comparison such as &gt; 100. Type empty to find
+                rows with no value.
+              </p>
+            </Popover>
+          )}
           <ColumnsMenu
             columns={columns.map((column) => ({ key: column.name, label: column.name }))}
             shown={order.length === columns.length && chosen.length === 0 ? undefined : order}
@@ -329,10 +382,11 @@ function RowsBrowser(props: RowsBrowserProps) {
           </Button>
         </div>
       ) : null}
-      <div className="flex min-h-0 gap-4">
-        <div className="min-w-0 flex-1">
+      <div className={`flex min-h-0 gap-4 ${fill ? "flex-1" : ""}`}>
+        <div className={`min-w-0 flex-1 ${fill ? "flex min-h-0 flex-col" : ""}`}>
           {/* grid-allowed: a table's own rows, edited in place and filtered by the server */}
           <Grid<DataRow>
+            fill={fill}
             navigation="grid"
             lockFirst={lockFirst}
             density={compact ? "compact" : "standard"}
@@ -341,7 +395,7 @@ function RowsBrowser(props: RowsBrowserProps) {
             rows={rows}
             rowKey={keyOf}
             selectedKey={url.row}
-            onSelect={(row) => setUrl({ row: keyOf(row) })}
+            onSelect={(row) => void choose(keyOf(row))}
             {...(canBatch ? { checked, onCheck: setChecked } : {})}
             sort={sort}
             onSort={(column) => {
@@ -414,7 +468,7 @@ function RowsBrowser(props: RowsBrowserProps) {
           title="Row"
           eyebrow={open ? keyOf(open) : undefined}
           subject={url.row}
-          onClose={() => setUrl({ row: undefined })}
+          onClose={() => void choose(undefined)}
           footer={
             open && canChange && rowPath ? (
               <RemoveButton
@@ -435,12 +489,17 @@ function RowsBrowser(props: RowsBrowserProps) {
               row={open}
               columns={columns}
               editable={canChange}
+              rowsPath={props.rowsPath}
+              filesPath={props.filesPath}
               onSave={(values) => saveRow(open, values)}
+              onDirty={(now) => {
+                unsaved.current = now;
+              }}
             />
           ) : null}
         </Inspector>
       </div>
-      <div className="flex items-center justify-between gap-3 text-body-sm text-ink-muted">
+      <div className="flex shrink-0 items-center justify-between gap-3 text-body-sm text-ink-muted">
         <span>
           {rows.length === 0
             ? ""
@@ -511,6 +570,219 @@ const listOf = (text: string) =>
     .map((one) => one.trim())
     .filter(Boolean);
 
+/** A yes/no column: one control in every form, a select, since a typed word is only refused at save. */
+function BooleanField({
+  column,
+  value,
+  error,
+  onChange,
+}: {
+  column: RowColumn;
+  value: string;
+  error?: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <SelectField
+      name={column.name}
+      label={column.name}
+      value={value}
+      options={[
+        { value: "", label: column.required ? "Choose" : "No value" },
+        { value: "true", label: "Yes" },
+        { value: "false", label: "No" },
+      ]}
+      error={error}
+      onChange={onChange}
+    />
+  );
+}
+
+/** How many rows of the table a reference points to are offered by name, before the typing. */
+const OFFERED = 50;
+/** How long after the last key what is typed is sent to the server. */
+const TYPING_MS = 250;
+
+/**
+ * A reference column: the row it points to is chosen by what its table says stands for a row,
+ * as the grid shows it, and the ID is not typed. What is typed is sent to the server, which
+ * finds the rows whose name contains it, so a row past the first page can be found. Where the
+ * table cannot be read, the ID is typed.
+ */
+function ReferenceField({
+  column,
+  rowsPath,
+  value,
+  error,
+  onChange,
+}: {
+  column: RowColumn;
+  rowsPath: string;
+  value: string;
+  error?: string | undefined;
+  onChange: (value: string) => void;
+}) {
+  const target = column.references ?? "";
+  const root = rowsPath.includes("/rows/") ? rowsPath.split("/rows/")[0] : undefined;
+  const table = useLoad<{
+    display?: string | null;
+    columns?: { name: string; type: string; status?: string }[];
+  }>(root ? `${root}/tables/${target}` : null);
+  // What stands for a row, or, when the table names none, its name or title, or its first text
+  // column: a person picks a pet by its name, never by an ID (A2-06; Fernhill's pets name none).
+  const display = table.data?.display ?? displayGuess(table.data?.columns ?? []);
+  const [typed, setTyped] = useState("");
+  const [sent, setSent] = useState("");
+  useEffect(() => {
+    if (typed === sent) return;
+    const timer = setTimeout(() => setSent(typed), TYPING_MS);
+    return () => clearTimeout(timer);
+  }, [typed, sent]);
+  const filter =
+    display && sent
+      ? `&filter=${encodeURIComponent(JSON.stringify({ column: display, op: "contains", value: sent }))}`
+      : "";
+  const rows = useLoad<{ items: DataRow[]; nextCursor: string | null }>(
+    root && table.data ? `${root}/rows/${target}?limit=${OFFERED}${filter}` : null,
+  );
+  const labelOf = (row: DataRow) => {
+    const named = display ? row[display] : undefined;
+    return named === undefined || named === null ? String(row.id) : String(named);
+  };
+  // The same list until the server answers again: a list that changes under the box resets what is typed in it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: labelOf follows display
+  const options = useMemo(
+    () => (rows.data?.items ?? []).map((row) => ({ value: String(row.id), label: labelOf(row) })),
+    [rows.data, display],
+  );
+  const held = value !== "" && !options.some((one) => one.value === value);
+  // The row now chosen is shown by its name even when it is not among those listed.
+  const heldRow = useLoad<DataRow>(
+    root && table.data && held ? `${root}/row/${value}/${target}` : null,
+  );
+  const heldLabel = heldRow.data ? labelOf(heldRow.data) : value;
+  const offered = useMemo(
+    () => (held ? [{ value, label: heldLabel }, ...options] : options),
+    [held, value, heldLabel, options],
+  );
+  if (!root || table.error || rows.error) {
+    return (
+      <TextField
+        name={column.name}
+        label={column.name}
+        value={value}
+        required={false}
+        hint={`The ID of a row of ${target}`}
+        error={error}
+        onChange={onChange}
+      />
+    );
+  }
+  const chosen = options.find((one) => one.value === value)?.label ?? heldLabel;
+  return (
+    <ComboboxField
+      label={column.name}
+      options={offered}
+      value={value || undefined}
+      error={error}
+      hint={
+        rows.data?.nextCursor
+          ? `A row of ${target}. Type to find more.`
+          : `A row of ${target}${column.required ? "" : ", optional"}`
+      }
+      placeholder={rows.data ? "Choose a row" : "Loading…"}
+      onChange={(next) => onChange(next ?? "")}
+      // Choosing a row puts its name in the box: that is not a search for it.
+      {...(display ? { onSearch: (text: string) => setTyped(text === chosen ? "" : text) } : {})}
+    />
+  );
+}
+
+/**
+ * The file in a file column, replaced or removed from the inspector. Each is asked about first,
+ * and says that the old file stays in the row's history, so nothing is lost by saying yes.
+ */
+function FileField({
+  column,
+  value,
+  filesPath,
+  editable,
+  onSave,
+}: {
+  column: RowColumn;
+  value: unknown;
+  filesPath: string | undefined;
+  editable: boolean;
+  onSave: (values: Record<string, unknown>) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const has = typeof value === "string" && value !== "";
+  const change = async (next: File | null) => {
+    const sure = await ask.confirm({
+      title: next ? `Replace the file in ${column.name}?` : `Remove the file from ${column.name}?`,
+      text: `${
+        next ? `${next.name} takes its place. ` : "The row will have no file. "
+      }The old file stays in this row's history, until that history expires.`,
+      action: next ? "Replace" : "Remove",
+      danger: next === null,
+    });
+    if (!sure) return;
+    setBusy(true);
+    try {
+      const stored = next
+        ? await api.upload<{ id: string }>(
+            `${filesPath}?name=${encodeURIComponent(next.name)}`,
+            next,
+          )
+        : null;
+      await onSave({ [column.name]: stored ? stored.id : null });
+      notify.success(next ? "File replaced." : "File removed.");
+    } catch (error) {
+      notify.error(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <span className="text-body-sm text-ink-muted">{column.name}</span>
+      <div className="flex flex-wrap items-center gap-2">
+        {has && filesPath ? (
+          <a className="text-action" href={`/api/v1${filesPath}/${value}/content`}>
+            Download
+          </a>
+        ) : (
+          <span className="font-mono text-code">{has ? String(value) : "—"}</span>
+        )}
+        {editable && filesPath ? (
+          <>
+            <input
+              ref={input}
+              type="file"
+              hidden
+              aria-label={`New file for ${column.name}`}
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (file) void change(file);
+              }}
+            />
+            <Button loading={busy} onClick={() => input.current?.click()}>
+              Replace
+            </Button>
+            {has ? (
+              <Button disabled={busy} onClick={() => void change(null)}>
+                Remove
+              </Button>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 /** Text longer than this is edited in a text area, as the kit's forms do. */
 const LONG_TEXT = 200;
 
@@ -518,12 +790,19 @@ function RowEditor({
   row,
   columns,
   editable,
+  rowsPath,
+  filesPath,
   onSave,
+  onDirty,
 }: {
   row: DataRow;
   columns: RowColumn[];
   editable: boolean;
+  rowsPath: string;
+  filesPath?: string | undefined;
   onSave: (values: Record<string, unknown>) => Promise<void>;
+  /** Whether there are edits not saved, for the table to ask before another row is chosen. */
+  onDirty: (dirty: boolean) => void;
 }) {
   const [text, setText] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -539,6 +818,11 @@ function RowEditor({
           ? ""
           : String(row[column.name]);
   const dirty = Object.keys(text).length > 0;
+  useNavigationGuard(dirty, "Your changes to this row are not saved.");
+  useEffect(() => {
+    onDirty(dirty);
+    return () => onDirty(false);
+  }, [dirty, onDirty]);
   // JSON, and text that is already long or runs over lines, gets room to be read.
   const roomy = (column: RowColumn) => {
     const value = shown(column);
@@ -575,7 +859,24 @@ function RowEditor({
       }}
     >
       {columns.map((column) =>
-        editable && column.writable && column.type === "enum" ? (
+        editable && column.writable && column.type === "boolean" ? (
+          <BooleanField
+            key={column.name}
+            column={column}
+            value={text[column.name] ?? shown(column)}
+            error={errors[column.name]}
+            onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
+        ) : editable && column.writable && column.type === "reference" && column.references ? (
+          <ReferenceField
+            key={column.name}
+            column={column}
+            rowsPath={rowsPath}
+            value={text[column.name] ?? shown(column)}
+            error={errors[column.name]}
+            onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
+        ) : editable && column.writable && column.type === "enum" ? (
           <SelectField
             key={column.name}
             name={column.name}
@@ -615,6 +916,15 @@ function RowEditor({
             required={false}
             error={errors[column.name]}
             onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
+          />
+        ) : column.type === "file" ? (
+          <FileField
+            key={column.name}
+            column={column}
+            value={row[column.name]}
+            filesPath={filesPath}
+            editable={editable && column.writable}
+            onSave={onSave}
           />
         ) : (
           <div key={column.name} className="flex flex-col gap-0.5">
@@ -750,16 +1060,19 @@ function AddRow({
             </p>
           ) : null,
           column.type === "boolean" ? (
-            <SelectField
+            <BooleanField
               key={column.name}
-              name={column.name}
-              label={column.name}
+              column={column}
               value={values[column.name] ?? ""}
-              options={[
-                { value: "", label: column.required ? "Choose" : "No value" },
-                { value: "true", label: "Yes" },
-                { value: "false", label: "No" },
-              ]}
+              error={errors[column.name]}
+              onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
+            />
+          ) : column.type === "reference" && column.references ? (
+            <ReferenceField
+              key={column.name}
+              column={column}
+              rowsPath={rowsPath}
+              value={values[column.name] ?? ""}
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
@@ -862,14 +1175,16 @@ export function Tables({ root, link }: { root: string; link: string }) {
         },
         {
           header: "What it holds",
+          priority: 2,
           cell: (row) => <span className="text-ink-muted">{row.description}</span>,
         },
         {
           header: "Managed in",
+          priority: 3,
           cell: (row) => (row.managedIn === "code" ? "Repository" : "Console"),
         },
-        { header: "Who sees rows", cell: (row) => policyText(row.policy) },
-        { header: "Columns", cell: (row) => row.columnCount, align: "end" },
+        { header: "Who sees rows", priority: 3, cell: (row) => policyText(row.policy) },
+        { header: "Columns", priority: 2, cell: (row) => row.columnCount, align: "end" },
         { header: "Rows", cell: (row) => count(row.rowCount), align: "end" },
       ]}
       empty={{
@@ -910,6 +1225,8 @@ export function Tables({ root, link }: { root: string; link: string }) {
 
 interface TableColumn {
   name: string;
+  /** What the column holds, when its definition says. */
+  description?: string;
   type: string;
   required: boolean;
   unique: boolean;
@@ -926,6 +1243,8 @@ interface TableColumn {
 
 interface TableDetail {
   name: string;
+  /** What the table is for, when its definition says. */
+  description?: string;
   status: "active" | "retired";
   managedIn: "code" | "ui";
   policy: { type: string; column?: string; rules?: Rule[] };
@@ -945,8 +1264,21 @@ const SYSTEM_COLUMNS: RowColumn[] = [
 export function TableView({ root, name, link }: { root: string; name: string; link: string }) {
   const table = useLoad<TableDetail>(`${root}/tables/${name}`);
   const [view, setView] = useUrlParam<"rows" | "definition">("view", "rows", { push: true });
-  if (table.error) return <ErrorState error={table.error} onRetry={table.reload} />;
-  if (!table.data) return <Pending of={table} />;
+  // A workbench has no page padding of its own, so these two carry it.
+  if (table.error) {
+    return (
+      <div className="px-4 py-4 md:px-8">
+        <ErrorState error={table.error} onRetry={table.reload} />
+      </div>
+    );
+  }
+  if (!table.data) {
+    return (
+      <div className="px-4 py-4 md:px-8">
+        <Pending of={table} />
+      </div>
+    );
+  }
   const data = table.data;
   const retired = data.status === "retired";
   const active = data.columns.filter((column) => column.status === "active");
@@ -963,9 +1295,12 @@ export function TableView({ root, name, link }: { root: string; name: string; li
 
   return (
     <Page
+      fill
+      helpKey="table"
       title={data.name}
-      description={`${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
+      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
     >
+      <AttachedPages {...workspaceOf(root)} kind="table" path={data.name} />
       {retired ? (
         <Notice
           tone="attention"
@@ -977,14 +1312,21 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           {count(data.rowCount)} rows are kept. Deploying a definition with this name brings it
           back.
         </Notice>
-      ) : (
-        <div className="flex gap-1">
+      ) : view === "rows" ? null : (
+        <div className="flex shrink-0 gap-1">
           {tab("rows", "Rows")}
           {tab("definition", "Definition")}
         </div>
       )}
       {!retired && view === "rows" ? (
         <RowsBrowser
+          fill
+          lead={
+            <div className="flex shrink-0 gap-1">
+              {tab("rows", "Rows")}
+              {tab("definition", "Definition")}
+            </div>
+          }
           key={active.map((column) => column.name).join(",")}
           label={`Rows of ${data.name}`}
           rowsPath={`${root}/rows/${data.name}`}
@@ -994,6 +1336,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           columns={[
             ...active.map((column) => ({
               name: column.name,
+              description: column.description,
               type: column.type,
               required:
                 column.required && (column.default === null || column.default === undefined),
@@ -1005,7 +1348,10 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           ]}
         />
       ) : (
-        <Definition root={root} link={link} table={data} reload={table.reload} />
+        // The one scroller of this tab: the page itself does not scroll.
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Definition root={root} link={link} table={data} reload={table.reload} />
+        </div>
       )}
     </Page>
   );
@@ -1066,6 +1412,8 @@ function OnDeleteDialog({
 }) {
   const [rule, setRule] = useState(column.onDelete ?? "restrict");
   const [busy, setBusy] = useState(false);
+  // Why the save was refused: said here, with the choice kept, until it is saved or canceled.
+  const [error, setError] = useState<string>();
   return (
     <Dialog open={open} onClose={onClose} title={`When a row ${column.name} points to is deleted`}>
       <div className="flex flex-col gap-4">
@@ -1081,6 +1429,7 @@ function OnDeleteDialog({
             Deleting a row of {column.references} will delete every row here that points to it.
           </Notice>
         ) : null}
+        {error ? <Notice tone="danger">{error}</Notice> : null}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button
@@ -1088,13 +1437,14 @@ function OnDeleteDialog({
             loading={busy}
             onClick={async () => {
               setBusy(true);
+              setError(undefined);
               try {
                 await onSave(rule);
-              } catch {
-                // The definition says what went wrong, above the columns.
+                onClose();
+              } catch (caught) {
+                setError(failureText(caught));
               } finally {
                 setBusy(false);
-                onClose();
               }
             }}
           >
@@ -1140,6 +1490,8 @@ function ValuesDialog({
     })),
   );
   const [busy, setBusy] = useState(false);
+  // Why the save was refused: said here, with everything typed kept, until it is saved or canceled.
+  const [error, setError] = useState<string>();
   const edit = (key: number, change: Partial<EditedValue>) =>
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...change } : row)));
   const move = (at: number, by: -1 | 1) =>
@@ -1279,7 +1631,11 @@ function ValuesDialog({
             {gone.length === 1 ? "it" : "them"} keep {gone.length === 1 ? "it" : "them"}.
           </Notice>
         ) : null}
-        {problem ? <Notice tone="danger">{problem}</Notice> : null}
+        {problem ? (
+          <Notice tone="danger">{problem}</Notice>
+        ) : error ? (
+          <Notice tone="danger">{error}</Notice>
+        ) : null}
         <div className="flex justify-end gap-2">
           <Button onClick={onClose}>Cancel</Button>
           <Button
@@ -1288,6 +1644,7 @@ function ValuesDialog({
             disabled={problem !== undefined}
             onClick={async () => {
               setBusy(true);
+              setError(undefined);
               try {
                 await onSave(
                   rows.map((row) => {
@@ -1303,11 +1660,11 @@ function ValuesDialog({
                     return Object.keys(full).length === 1 ? value : full;
                   }),
                 );
-              } catch {
-                // The definition says what went wrong, above the columns.
+                onClose();
+              } catch (caught) {
+                setError(failureText(caught));
               } finally {
                 setBusy(false);
-                onClose();
               }
             }}
           >
@@ -1324,6 +1681,13 @@ interface TableBody {
   columns: Record<string, Record<string, unknown>>;
   policy?: { type: string; column?: string; rules?: Rule[] };
   [key: string]: unknown;
+}
+
+interface ColumnAction {
+  label: string;
+  onSelect: () => void;
+  danger?: boolean;
+  disabled?: boolean;
 }
 
 function Definition({
@@ -1344,15 +1708,97 @@ function Definition({
   // The column whose values, or whose rule for a delete, are being changed.
   const [optionsOf, setOptionsOf] = useState<TableColumn>();
   const [failure, setFailure] = useState<string>();
+  // What was chosen for "What stands for a row" shows at once, until the save has answered.
+  const [chosenDisplay, setChosenDisplay] = useState<string>();
+  // The rules editor is started afresh when the rules change from elsewhere (an undo, a deploy),
+  // and not when its own save comes back: it would lose its "Saved" and its place.
+  const rules = useRef<{ json: string; own: string | undefined; version: number }>({
+    json: JSON.stringify(table.policy),
+    own: undefined,
+    version: 0,
+  });
+  const policyNow = JSON.stringify(table.policy);
+  if (policyNow !== rules.current.json) {
+    rules.current.json = policyNow;
+    if (policyNow !== rules.current.own) rules.current.version += 1;
+  }
   const active = table.columns.filter((column) => column.status === "active");
   const retired = table.columns.filter((column) => column.status === "retired");
+  // The definition as last saved from here, and every change made to it, for ⌘Z.
+  const stored = useRef<TableBody>(undefined);
+  const restoring = useRef<(state: TableBody) => void>(() => {});
+  const history = useHistory<TableBody | undefined>(
+    () => stored.current,
+    (state) => state && restoring.current(state),
+  );
+  restoring.current = async (state) => {
+    setFailure(undefined);
+    const now = stored.current;
+    // A column renamed since keeps its data when it goes back: the one it was called is named.
+    const back = structuredClone(state);
+    for (const [name, column] of Object.entries(now?.columns ?? {})) {
+      const from = column.renamedFrom;
+      if (typeof from === "string" && back.columns[from] && !back.columns[name]) {
+        back.columns[from] = { ...back.columns[from], renamedFrom: name };
+      }
+    }
+    try {
+      await api.put(`${root}/resources/${table.name}`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        body: back,
+      });
+      stored.current = back;
+    } catch (error) {
+      // What is saved is not what the history thinks it is: it cannot be trusted any more.
+      history.clear();
+      setFailure(failureText(error));
+    }
+    reload();
+  };
+  useShortcut("undo", history.undo, { enabled: editable });
+  useShortcut("redo", history.redo, { enabled: editable });
+  const describeTable = async () => {
+    const next = await ask.prompt({
+      title: `What ${table.name} is for`,
+      label: "Description",
+      hint: "In plain words, 500 characters at most. Shown under the table's name. Leave it empty to say nothing.",
+      initial: table.description ?? "",
+      action: "Save",
+      required: false,
+      multiline: true,
+    });
+    if (next === null) return;
+    const said = next.trim().slice(0, 500);
+    if (said === (table.description ?? "")) return;
+    await change(
+      (body) => {
+        if (said === "") delete body.description;
+        else body.description = said;
+      },
+      { label: `the description of ${table.name}` },
+    ).catch(() => undefined);
+  };
 
   /** Loads the stored definition, changes it, and saves it. The platform works out what to do. */
-  const change = async (edit: (body: TableBody) => void) => {
+  const change = async (
+    edit: (body: TableBody) => void,
+    {
+      report = true,
+      label = "the change",
+    }: {
+      /** Off where a dialog says what went wrong itself, so it is not said twice. */
+      report?: boolean;
+      /** What undoing it is called: "the rename of status". */
+      label?: string;
+    } = {},
+  ) => {
     setFailure(undefined);
     try {
       const resource = await api.get<{ body: TableBody }>(`${root}/resources/${table.name}`);
       const body = structuredClone(resource.body);
+      const before = structuredClone(resource.body);
       edit(body);
       await api.put(`${root}/resources/${table.name}`, {
         kind: "table",
@@ -1360,15 +1806,107 @@ function Definition({
         ownership: "ui",
         body,
       });
+      // What it was before is what undoing takes back to; what it is now, what redoing does.
+      stored.current = before;
+      history.record(label);
+      stored.current = body;
       reload();
     } catch (error) {
-      const caught = error as ApiError;
-      const first = caught.fields?.[0];
-      setFailure(first ? `${caught.message} ${first.message}` : caught.message);
+      if (report) {
+        const caught = error as ApiError;
+        const first = caught.fields?.[0];
+        setFailure(first ? `${caught.message} ${first.message}` : caught.message);
+      }
       throw error;
     }
   };
   const quietly = (run: Promise<unknown>) => run.catch(() => undefined);
+
+  /** What can be done to a column, as buttons where there is room and as one menu on a phone. */
+  const columnActions = (row: TableColumn): ColumnAction[] => [
+    ...(row.values || row.references
+      ? [
+          {
+            label: row.values ? "Values" : "On delete",
+            onSelect: () => setOptionsOf(row),
+          },
+        ]
+      : []),
+    {
+      label: "Describe",
+      onSelect: async () => {
+        const next = await ask.prompt({
+          title: `What ${row.name} holds`,
+          label: "Description",
+          hint: "In plain words, 500 characters at most. Shown on the column's heading. Leave it empty to say nothing.",
+          initial: row.description ?? "",
+          action: "Save",
+          required: false,
+          multiline: true,
+        });
+        if (next === null) return;
+        const said = next.trim().slice(0, 500);
+        if (said === (row.description ?? "")) return;
+        void quietly(
+          change(
+            (body) => {
+              const column = body.columns[row.name];
+              if (!column) return;
+              if (said === "") delete column.description;
+              else column.description = said;
+            },
+            { label: `the description of ${row.name}` },
+          ),
+        );
+      },
+    },
+    {
+      label: "Rename",
+      onSelect: async () => {
+        const next = await ask.prompt({
+          title: `Rename ${row.name}`,
+          label: "New name",
+          initial: row.name,
+          action: "Rename",
+        });
+        if (!next || next === row.name) return;
+        void quietly(
+          change(
+            (body) => {
+              const { renamedFrom: _old, ...kept } = body.columns[row.name] ?? {};
+              delete body.columns[row.name];
+              body.columns[next] = { ...kept, renamedFrom: row.name };
+              if (body.policy?.column === row.name) body.policy.column = next;
+              // A rule that looks at the column follows it to its new name.
+              for (const rule of body.policy?.rules ?? []) {
+                if ("column" in rule.when && rule.when.column === row.name) {
+                  rule.when.column = next;
+                }
+              }
+            },
+            { label: `renaming ${row.name} to ${next}` },
+          ),
+        );
+      },
+    },
+    {
+      label: "Retire",
+      danger: true,
+      disabled: active.length === 1,
+      onSelect: async () => {
+        const sure = await ask.confirm({
+          title: `Retire ${row.name}?`,
+          text: "It is hidden and its data kept. You can bring it back.",
+          action: "Retire",
+          danger: true,
+        });
+        if (!sure) return;
+        void quietly(
+          change((body) => delete body.columns[row.name], { label: `retiring ${row.name}` }),
+        );
+      },
+    },
+  ];
 
   return (
     <div className="flex flex-col gap-5">
@@ -1379,6 +1917,23 @@ function Definition({
         </Notice>
       ) : null}
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
+      {editable ? (
+        <section className="flex flex-wrap items-center gap-2" aria-label="About this table">
+          <ResourceIdentity
+            root={root}
+            link={link}
+            row={{ path: table.name, kind: "table", ownership: "ui" }}
+            label="Rename table"
+            onDone={() => {}}
+          />
+          <Button size="small" onClick={() => void describeTable()}>
+            {table.description ? "Describe the table again" : "Describe the table"}
+          </Button>
+          <span className="ml-auto">
+            <UndoRedo history={history} />
+          </span>
+        </section>
+      ) : null}
       <section className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
           <h2 className="m-0 text-title font-semibold">Columns</h2>
@@ -1392,7 +1947,19 @@ function Definition({
           rowKey={(row) => row.name}
           empty={<p className="m-0 text-ink-muted">No columns.</p>}
           columns={[
-            { header: "Column", cell: (row) => <Code>{row.name}</Code> },
+            {
+              header: "Column",
+              cell: (row) => (
+                <span className="flex flex-col gap-0.5">
+                  <Code>{row.name}</Code>
+                  {row.description ? (
+                    <span className="max-w-measure text-meta text-ink-muted">
+                      {row.description}
+                    </span>
+                  ) : null}
+                </span>
+              ),
+            },
             {
               header: "Holds",
               cell: (row) =>
@@ -1426,6 +1993,7 @@ function Definition({
             },
             {
               header: "Rules",
+              priority: 2,
               cell: (row) =>
                 [row.required ? "Required" : "", row.unique ? "No two rows alike" : ""]
                   .filter(Boolean)
@@ -1433,6 +2001,7 @@ function Definition({
             },
             {
               header: "When not given",
+              priority: 3,
               cell: (row) =>
                 row.default === null || row.default === undefined ? (
                   ""
@@ -1445,61 +2014,36 @@ function Definition({
                   {
                     header: "",
                     align: "end" as const,
-                    cell: (row: TableColumn) => (
-                      <span className="inline-flex gap-1">
-                        {row.values || row.references ? (
-                          <Button size="small" variant="quiet" onClick={() => setOptionsOf(row)}>
-                            {row.values ? "Values" : "On delete"}
-                          </Button>
-                        ) : null}
-                        <Button
-                          size="small"
-                          variant="quiet"
-                          onClick={async () => {
-                            const next = await ask.prompt({
-                              title: `Rename ${row.name}`,
-                              label: "New name",
-                              initial: row.name,
-                              action: "Rename",
-                            });
-                            if (!next || next === row.name) return;
-                            void quietly(
-                              change((body) => {
-                                const { renamedFrom: _old, ...kept } = body.columns[row.name] ?? {};
-                                delete body.columns[row.name];
-                                body.columns[next] = { ...kept, renamedFrom: row.name };
-                                if (body.policy?.column === row.name) body.policy.column = next;
-                                // A rule that looks at the column follows it to its new name.
-                                for (const rule of body.policy?.rules ?? []) {
-                                  if ("column" in rule.when && rule.when.column === row.name) {
-                                    rule.when.column = next;
-                                  }
-                                }
-                              }),
-                            );
-                          }}
-                        >
-                          Rename
-                        </Button>
-                        <Button
-                          size="small"
-                          variant="danger"
-                          disabled={active.length === 1}
-                          onClick={async () => {
-                            const sure = await ask.confirm({
-                              title: `Retire ${row.name}?`,
-                              text: "It is hidden and its data kept. You can bring it back.",
-                              action: "Retire",
-                              danger: true,
-                            });
-                            if (!sure) return;
-                            void quietly(change((body) => delete body.columns[row.name]));
-                          }}
-                        >
-                          Retire
-                        </Button>
-                      </span>
-                    ),
+                    cell: (row: TableColumn) => {
+                      const actions = columnActions(row);
+                      return (
+                        <>
+                          <span className="hidden gap-1 sm:inline-flex">
+                            {actions.map((one) => (
+                              <Button
+                                key={one.label}
+                                size="small"
+                                variant={one.danger ? "danger" : "quiet"}
+                                {...(one.disabled ? { disabled: true } : {})}
+                                onClick={one.onSelect}
+                              >
+                                {one.label}
+                              </Button>
+                            ))}
+                          </span>
+                          {/* A phone has no room for four buttons: one menu holds them. */}
+                          <span className="sm:hidden">
+                            <Menu
+                              ariaLabel={`Actions for ${row.name}`}
+                              align="end"
+                              triggerClassName="inline-flex size-9 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
+                              label={<Ellipsis aria-hidden="true" size={16} />}
+                              items={actions.filter((one) => !one.disabled)}
+                            />
+                          </span>
+                        </>
+                      );
+                    },
                   },
                 ]
               : []),
@@ -1543,16 +2087,19 @@ function Definition({
                         variant="quiet"
                         onClick={() =>
                           void quietly(
-                            change((body) => {
-                              body.columns[row.name] = {
-                                type: row.type,
-                                ...(row.references ? { references: row.references } : {}),
-                                // An enum comes back with every value its rows may hold.
-                                ...(row.values
-                                  ? { values: [...row.values, ...(row.retiredValues ?? [])] }
-                                  : {}),
-                              };
-                            }),
+                            change(
+                              (body) => {
+                                body.columns[row.name] = {
+                                  type: row.type,
+                                  ...(row.references ? { references: row.references } : {}),
+                                  // An enum comes back with every value its rows may hold.
+                                  ...(row.values
+                                    ? { values: [...row.values, ...(row.retiredValues ?? [])] }
+                                    : {}),
+                                };
+                              },
+                              { label: `bringing back ${row.name}` },
+                            ),
                           )
                         }
                       >
@@ -1580,21 +2127,25 @@ function Definition({
               name="display"
               label="The column that stands for a row"
               labelHidden
-              value={table.display ?? ""}
+              value={chosenDisplay ?? table.display ?? ""}
               options={[
                 { value: "", label: "None: the row's ID" },
                 ...active
                   .filter((column) => !["json", "file", "enum_list"].includes(column.type))
                   .map((column) => ({ value: column.name, label: column.name })),
               ]}
-              onChange={(display) =>
+              onChange={(display) => {
+                setChosenDisplay(display);
                 void quietly(
-                  change((body) => {
-                    if (display) body.display = display;
-                    else delete body.display;
-                  }),
-                )
-              }
+                  change(
+                    (body) => {
+                      if (display) body.display = display;
+                      else delete body.display;
+                    },
+                    { label: "the change to what stands for a row" },
+                  ),
+                ).finally(() => setChosenDisplay(undefined));
+              }}
             />
           </div>
         ) : (
@@ -1606,14 +2157,18 @@ function Definition({
         <h2 className="m-0 text-title font-semibold">Who sees rows</h2>
         {editable ? (
           <RowRulesEditor
-            key={JSON.stringify(table.policy)}
+            key={`${table.name}:${rules.current.version}`}
             policy={table.policy as Policy}
             columns={active}
-            onSave={(policy) =>
-              change((body) => {
-                body.policy = policy;
-              })
-            }
+            onSave={(policy) => {
+              rules.current.own = JSON.stringify(policy);
+              return change(
+                (body) => {
+                  body.policy = policy;
+                },
+                { label: "the change to who sees rows" },
+              );
+            }}
           />
         ) : (
           <div className="max-w-measure">
@@ -1635,8 +2190,8 @@ function Definition({
       <section className="flex flex-col gap-2">
         <h2 className="m-0 text-title font-semibold">Where it is stored</h2>
         <p className="m-0 max-w-measure text-ink-muted">
-          In Postgres, as <Code>{`${table.stored.schema}.${table.stored.table}`}</Code>. It is your
-          data: you can read it there directly at any time.
+          In Postgres, as <Code wrap>{`${table.stored.schema}.${table.stored.table}`}</Code>. It is
+          your data: you can read it there directly at any time.
         </p>
       </section>
 
@@ -1663,10 +2218,13 @@ function Definition({
               column={optionsOf}
               onClose={() => setOptionsOf(undefined)}
               onSave={(values) =>
-                change((body) => {
-                  const column = body.columns[optionsOf.name];
-                  if (column) column.values = values;
-                })
+                change(
+                  (body) => {
+                    const column = body.columns[optionsOf.name];
+                    if (column) column.values = values;
+                  },
+                  { report: false, label: `the values of ${optionsOf.name}` },
+                )
               }
             />
           ) : (
@@ -1675,12 +2233,15 @@ function Definition({
               column={optionsOf}
               onClose={() => setOptionsOf(undefined)}
               onSave={(onDelete) =>
-                change((body) => {
-                  const column = body.columns[optionsOf.name];
-                  if (!column) return;
-                  if (onDelete === "restrict") delete column.onDelete;
-                  else column.onDelete = onDelete;
-                })
+                change(
+                  (body) => {
+                    const column = body.columns[optionsOf.name];
+                    if (!column) return;
+                    if (onDelete === "restrict") delete column.onDelete;
+                    else column.onDelete = onDelete;
+                  },
+                  { report: false, label: `what happens on delete for ${optionsOf.name}` },
+                )
               }
             />
           )
@@ -1746,20 +2307,23 @@ function Definition({
             required,
             fallback,
           }) =>
-            change((body) => {
-              body.columns[name] = {
-                type,
-                ...(type === "reference" && references ? { references } : {}),
-                ...(type === "reference" && onDelete && onDelete !== "restrict"
-                  ? { onDelete }
-                  : {}),
-                ...(type === "enum" || type === "enum_list"
-                  ? { values: listOf(values ?? "") }
-                  : {}),
-                ...(required === "yes" ? { required: true } : {}),
-                ...(fallback ? { default: parseValue(type, fallback) } : {}),
-              };
-            }),
+            change(
+              (body) => {
+                body.columns[name] = {
+                  type,
+                  ...(type === "reference" && references ? { references } : {}),
+                  ...(type === "reference" && onDelete && onDelete !== "restrict"
+                    ? { onDelete }
+                    : {}),
+                  ...(type === "enum" || type === "enum_list"
+                    ? { values: listOf(values ?? "") }
+                    : {}),
+                  ...(required === "yes" ? { required: true } : {}),
+                  ...(fallback ? { default: parseValue(type, fallback) } : {}),
+                };
+              },
+              { label: `adding ${name}` },
+            ),
         }}
       />
     </div>
@@ -1785,8 +2349,137 @@ interface SourceBinding {
     database?: string;
     user?: string;
     schema?: string;
+    ssl?: boolean;
   } | null;
   hasPassword: boolean;
+}
+
+const SOURCE_FIELDS = [
+  { name: "host", label: "Host", placeholder: "db.example.com" },
+  { name: "port", label: "Port", type: "number", placeholder: "5432", required: false },
+  { name: "database", label: "Database" },
+  { name: "user", label: "User" },
+  { name: "password", label: "Password", type: "password", required: false },
+  {
+    name: "schema",
+    label: "Schema",
+    placeholder: "public",
+    required: false,
+    hint: "The schema whose tables are offered.",
+  },
+  {
+    name: "ssl",
+    label: "Encrypt the connection",
+    options: [
+      { value: "no", label: "No" },
+      { value: "yes", label: "Yes" },
+    ],
+  },
+] satisfies CreateConfig["fields"];
+
+/** What a form of a source's details sends. */
+function sourceBody({
+  host,
+  port,
+  database,
+  user,
+  password,
+  schema,
+  ssl,
+}: Record<string, string | undefined>) {
+  return {
+    config: {
+      host,
+      port: port ? Number(port) : 5432,
+      database,
+      user,
+      ...(schema ? { schema } : {}),
+      ...(ssl === "yes" ? { ssl: true } : {}),
+    },
+    ...(password ? { password } : {}),
+  };
+}
+
+/** Changes how a connected source is reached, from what it is now. The password stays unless one is typed. */
+function ChangeSource({
+  root,
+  row,
+  onDone,
+}: {
+  root: string;
+  row: SourceBinding;
+  onDone: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const config = row.config;
+  return (
+    <>
+      <Button size="small" onClick={() => setOpen(true)}>
+        Change
+      </Button>
+      <CreateDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        initial={{
+          host: config?.host ?? "",
+          port: config?.port !== undefined ? String(config.port) : "",
+          database: config?.database ?? "",
+          user: config?.user ?? "",
+          schema: config?.schema ?? "",
+          ssl: config?.ssl ? "yes" : "no",
+        }}
+        onCreated={() => {
+          setOpen(false);
+          onDone();
+        }}
+        config={{
+          action: `Change ${row.path}`,
+          description: `How ${row.path} is reached. Leave the password empty to keep the stored one. Scripts that use it read the new details at once.`,
+          fields: SOURCE_FIELDS,
+          done: () => `${row.path} was changed.`,
+          submit: (values) =>
+            api.put(`${root}/data-source-bindings/${row.path}`, sourceBody(values)),
+        }}
+      />
+    </>
+  );
+}
+
+/** Tests a data source from the server. The same word and the same busy state as a connection's Test. */
+function TestSource({
+  root,
+  row,
+  onDone,
+}: {
+  root: string;
+  row: SourceBinding;
+  onDone: () => void;
+}) {
+  const [testing, setTesting] = useState(false);
+  return (
+    <Button
+      size="small"
+      loading={testing}
+      onClick={async () => {
+        setTesting(true);
+        try {
+          const result = await api.post<{ ok: boolean; problem: string | null }>(
+            `${root}/data-source-checks/${row.path}`,
+            {},
+          );
+          if (result.ok) notify.success(`${row.path}: reached.`);
+          else notify.error(new Error(`${row.path}: ${result.problem ?? "not reached"}`));
+          onDone();
+        } catch (caught) {
+          notify.error(caught);
+        } finally {
+          setTesting(false);
+        }
+      }}
+    >
+      {testing ? "Testing…" : "Test"}
+    </Button>
+  );
 }
 
 export function Sources({ root, link }: { root: string; link: string }) {
@@ -1808,59 +2501,40 @@ export function Sources({ root, link }: { root: string; link: string }) {
               <Code>{row.path}</Code>
             ),
         },
-        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
+        // On a phone a source keeps its name and its health; where it points, from a tablet up.
+        {
+          header: "For",
+          priority: 3,
+          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+        },
         {
           header: "Points to",
+          priority: 2,
           cell: (row) =>
             row.bound ? (
               `${row.config?.database} on ${row.config?.host}, as ${row.config?.user}`
             ) : (
-              <StatePill state="disconnected" />
+              <StatePill state="unbound" />
             ),
         },
-        { header: "Password", cell: (row) => (row.hasPassword ? "Set" : row.bound ? "None" : "") },
         {
-          header: "Reached",
-          cell: (row) =>
-            !row.bound ? (
-              ""
-            ) : !row.health ? (
-              <span className="text-ink-muted">Not checked yet</span>
-            ) : row.health.ok ? (
-              <span className="text-success" title={`Checked ${when(row.health.checkedAt)}`}>
-                Yes{row.health.latencyMs !== null ? `, ${row.health.latencyMs} ms` : ""}
-              </span>
-            ) : (
-              <span className="text-danger" title={row.health.problem ?? ""}>
-                No: {row.health.problem}
-              </span>
-            ),
+          header: "Password",
+          priority: 3,
+          cell: (row) => (row.hasPassword ? "Set" : row.bound ? "None" : ""),
+        },
+        {
+          header: "Health",
+          cell: (row) => (row.bound ? <HealthCell health={row.health} /> : ""),
         },
       ]}
       rowActions={(row, reload) =>
         row.bound ? (
           <span className="inline-flex gap-2">
-            <Button
-              size="small"
-              onClick={async () => {
-                try {
-                  const result = await api.post<{ ok: boolean; problem: string | null }>(
-                    `${root}/data-source-checks/${row.path}`,
-                    {},
-                  );
-                  if (result.ok) notify.success(`${row.path} answered.`);
-                  else notify.error(new Error(`${row.path} did not answer: ${result.problem}`));
-                  reload();
-                } catch (caught) {
-                  notify.error(caught);
-                }
-              }}
-            >
-              Test connection
-            </Button>
+            <TestSource root={root} row={row} onDone={reload} />
+            <ChangeSource root={root} row={row} onDone={reload} />
             <RemoveButton
-              label="Disconnect"
-              confirm={`Disconnect "${row.path}"? Scripts that use it will fail until it is connected again. Nothing in that database changes.`}
+              label="Unbind"
+              confirm={`Unbind "${row.path}"? Scripts that use it will fail until it is bound again. Nothing in that database changes.`}
               run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
               onDone={reload}
             />
@@ -1889,39 +2563,10 @@ export function Sources({ root, link }: { root: string; link: string }) {
               }),
             },
           },
-          { name: "host", label: "Host", placeholder: "db.example.com" },
-          { name: "port", label: "Port", type: "number", placeholder: "5432", required: false },
-          { name: "database", label: "Database" },
-          { name: "user", label: "User" },
-          { name: "password", label: "Password", type: "password", required: false },
-          {
-            name: "schema",
-            label: "Schema",
-            placeholder: "public",
-            required: false,
-            hint: "The schema whose tables are offered.",
-          },
-          {
-            name: "ssl",
-            label: "Encrypt the connection",
-            options: [
-              { value: "no", label: "No" },
-              { value: "yes", label: "Yes" },
-            ],
-          },
+          ...SOURCE_FIELDS,
         ],
-        submit: ({ path = "", host, port, database, user, password, schema, ssl }) =>
-          api.put(`${root}/data-source-bindings/${path}`, {
-            config: {
-              host,
-              port: port ? Number(port) : 5432,
-              database,
-              user,
-              ...(schema ? { schema } : {}),
-              ...(ssl === "yes" ? { ssl: true } : {}),
-            },
-            ...(password ? { password } : {}),
-          }),
+        submit: ({ path = "", ...details }) =>
+          api.put(`${root}/data-source-bindings/${path}`, sourceBody(details)),
       }}
     />
   );
@@ -1941,6 +2586,8 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
 
   return (
     <Page
+      fill
+      helpKey="source"
       title={path}
       description="An external database. Rows are read and written there directly. The platform does not change its structure, and its own access rules apply."
       action={
@@ -1960,14 +2607,19 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
           The database was reached, but the schema it is connected to has no tables.
         </EmptyState>
       ) : (
-        <div className="grid gap-4 md:grid-cols-[12rem_minmax(0,1fr)]">
-          <nav aria-label="Tables of this source" className="flex flex-col gap-0.5">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row md:gap-4">
+          {/* The list of tables scrolls on its own, beside the rows (A2-08). */}
+          <nav
+            aria-label="Tables of this source"
+            className="flex max-h-32 shrink-0 flex-col gap-0.5 overflow-y-auto md:max-h-none md:w-48"
+          >
             {items.map((item) => (
               <button
                 type="button"
                 key={item.name}
                 aria-current={item.name === table.name ? "true" : undefined}
-                className={`truncate rounded-control px-3 py-1.5 text-left ${
+                // A list held to a height scrolls: its entries keep theirs (on a phone it is a strip).
+                className={`shrink-0 truncate rounded-control px-3 py-1.5 text-left ${
                   item.name === table.name
                     ? "bg-action-soft font-medium text-action"
                     : "text-ink-muted hover:text-ink"
@@ -1978,24 +2630,27 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
               </button>
             ))}
           </nav>
-          <RowsBrowser
-            key={table.name}
-            label={`Rows of ${table.name}`}
-            rowsPath={`${root}/source-rows/${table.name}/${path}`}
-            rowPath={
-              table.key
-                ? (key) => `${root}/source-row/${table.name}/${encodeURIComponent(key)}/${path}`
-                : null
-            }
-            keyColumn={table.key}
-            columns={table.columns}
-            {...(table.key
-              ? {}
-              : {
-                  readOnlyNote:
-                    "This table has no primary key, so rows can be read and added but not changed or deleted.",
-                })}
-          />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <RowsBrowser
+              fill
+              key={table.name}
+              label={`Rows of ${table.name}`}
+              rowsPath={`${root}/source-rows/${table.name}/${path}`}
+              rowPath={
+                table.key
+                  ? (key) => `${root}/source-row/${table.name}/${encodeURIComponent(key)}/${path}`
+                  : null
+              }
+              keyColumn={table.key}
+              columns={table.columns}
+              {...(table.key
+                ? {}
+                : {
+                    readOnlyNote:
+                      "This table has no primary key, so rows can be read and added but not changed or deleted.",
+                  })}
+            />
+          </div>
         </div>
       )}
     </Page>

@@ -1,4 +1,4 @@
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import type { FastifyBaseLogger } from "fastify";
 import { mutate, SYSTEM } from "./audit.js";
 import type { Kernel } from "./kernel.js";

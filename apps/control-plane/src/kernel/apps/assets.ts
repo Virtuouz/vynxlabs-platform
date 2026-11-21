@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { Bundle, BundleAsset } from "@vynxlabs/manifest";
+import type { Bundle, BundleAsset } from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";

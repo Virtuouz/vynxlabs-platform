@@ -1,12 +1,12 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import {
   checkDashboard,
   DASHBOARD_VERSION,
   type DashboardBody,
   isOldDashboard,
   upgradeDashboard,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { Type } from "typebox";
 import { checkQuery, QueryRefused } from "../kernel/data/query/parse.js";
 import { checkFor, QUERY_ROWS, refusal, runQuery } from "../kernel/data/query/run.js";
@@ -40,6 +40,12 @@ const Summary = Type.Object({
       "resource: deployed, promoted, and changed where resources are.",
   }),
   path: Type.Union([NullableString], { description: "For a resource: its path." }),
+  ownership: Type.Optional(
+    Type.Union([Type.Literal("ui"), Type.Literal("code"), Type.Null()], {
+      description:
+        "For a resource: `code` when the repository keeps it, `ui` when it is changed in the console.",
+    }),
+  ),
 });
 const Dashboard = Type.Object({
   ...Summary.properties,
@@ -55,6 +61,20 @@ const Dashboard = Type.Object({
   }),
 });
 const Params = Type.Object({ ...WorkspaceParams.properties, d: Id });
+const WidgetResultSchema = Type.Object({
+  ...QueryResultSchema.properties,
+  followed: Type.Optional(
+    Type.Object(
+      { names: Type.String(), now: Type.String() },
+      {
+        description:
+          "The path the widget names answered nothing, and the query it named when the " +
+          "dashboard was deployed was found by its key: `names` is the path the dashboard " +
+          "has, `now` the query's path. A dashboard from the repository is changed there.",
+      },
+    ),
+  ),
+});
 
 /** A member's own dashboards in a workspace. */
 export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
@@ -144,13 +164,14 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     const kept = (workspace: WorkspaceRef) =>
       db
         .selectFrom("resource")
-        .select(["id", "path", "title", "body", "updated_at"])
+        .select(["id", "path", "title", "body", "ownership", "updated_at"])
         .where("workspace_id", "=", workspace.id)
         .where("kind", "=", "dashboard");
     type Kept = Awaited<ReturnType<ReturnType<typeof kept>["execute"]>>[number];
     const keptSummary = (row: Kept) => ({
       kind: "resource" as const,
       path: row.path,
+      ownership: row.ownership === "code" ? ("code" as const) : ("ui" as const),
       id: row.id,
       title: row.title || (row.body as { title?: string }).title || row.path,
       mine: false,
@@ -371,7 +392,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }),
             ),
           }),
-          response: { 200: QueryResultSchema },
+          response: { 200: WidgetResultSchema },
         },
       },
       async ({ ctx, params, query }) => {
@@ -392,7 +413,15 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
         }
         const at = { tenantId: workspace.tenantId, workspaceId: workspace.id };
-        const asked = await widgetQuery(kernel, at, found.body, widget, values, query.part);
+        const asked = await widgetQuery(
+          kernel,
+          at,
+          found.body,
+          widget,
+          values,
+          query.part,
+          found.resource?.id,
+        );
         // A parameter nothing fills is empty, so that the query can say what an empty one means.
         const needs = await checkFor(kernel, at.tenantId, at.workspaceId, asked.text).catch(
           (error) => {
@@ -409,7 +438,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ctx.principal,
           await ctx.allowed("data_all:read", at),
         );
-        return runQuery(kernel, {
+        const answer = await runQuery(kernel, {
           ...at,
           scope,
           text: asked.text,
@@ -429,6 +458,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }
           },
         });
+        return asked.followed ? { ...answer, followed: asked.followed } : answer;
       },
     );
 

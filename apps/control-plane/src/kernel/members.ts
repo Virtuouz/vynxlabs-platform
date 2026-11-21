@@ -1,4 +1,4 @@
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import type { Audit, Trx } from "./audit.js";
 import { conflict } from "./errors.js";
 import type { Kernel } from "./kernel.js";

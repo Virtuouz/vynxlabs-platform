@@ -1,5 +1,5 @@
-import { sql } from "@vynxlabs/db";
-import type { FlowBody, InterfaceBody, WidgetAction } from "@vynxlabs/manifest";
+import { sql } from "@volvel/db";
+import type { FlowBody, InterfaceBody, WidgetAction } from "@volvel/manifest";
 import type { Db } from "../audit.js";
 import { appFacing, grants } from "../authorize.js";
 

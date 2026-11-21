@@ -1,4 +1,4 @@
-import type { ValueFormat } from "@vynxlabs/manifest";
+import type { ValueFormat } from "@volvel/manifest";
 
 /** A number from a row: totals can come back as text, from the database's exact numbers. */
 function numberOf(value: unknown): number | undefined {

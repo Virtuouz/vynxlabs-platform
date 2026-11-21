@@ -1,14 +1,19 @@
-/** An error that maps directly to an HTTP problem response. */
+import type { ErrorCode } from "@volvel/manifest";
+
+/**
+ * An error that maps directly to an HTTP problem response. Its code is one of the
+ * registered ones (`ERROR_CODES`): a new code is added there first, with what it means.
+ */
 export class HttpError extends Error {
   readonly statusCode: number;
-  readonly problemCode: string;
+  readonly problemCode: ErrorCode;
   readonly issues: { path: string; message: string }[] | undefined;
   /** Headers the response carries, such as `retry-after`. */
   readonly headers: Record<string, string> | undefined;
 
   constructor(
     statusCode: number,
-    problemCode: string,
+    problemCode: ErrorCode,
     detail: string,
     issues?: { path: string; message: string }[],
     headers?: Record<string, string>,

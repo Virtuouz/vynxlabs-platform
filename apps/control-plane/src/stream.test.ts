@@ -1,5 +1,5 @@
 import { get, type IncomingMessage } from "node:http";
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { StreamHub } from "./kernel/stream.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";

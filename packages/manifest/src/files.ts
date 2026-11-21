@@ -27,6 +27,66 @@ import type { KindDefinition } from "./registry.js";
 /** The folder the files live in, relative to the repository's root, unless a repository says otherwise. */
 export const RESOURCE_FOLDER = "platform";
 
+/** The kind of a page of documentation. Its file is Markdown, not YAML. */
+export const DOC_KIND = "doc";
+
+/**
+ * A page of documentation is kept as it is read: one Markdown file,
+ * `<path>.md`, under a folder of pages. The file is the page's whole source,
+ * frontmatter and all, so what the console saves and what a repository holds
+ * are the same bytes. Its path comes from where it is under that folder.
+ *
+ * The folders of pages are the ones a repository names under `docs:` in its
+ * configuration. When it names none, there is one: `docs` inside the folder
+ * the console writes to.
+ */
+export function docsRoots(config: Pick<RepositoryConfig, "docs"> | undefined, folder: string) {
+  return config?.docs && config.docs.length > 0 ? config.docs : [`${folder}/docs`];
+}
+
+/** The page a Markdown file is, by where it is under a folder of pages. None when it is under none. */
+function docStem(file: string, docs: readonly string[]): string | undefined {
+  if (!file.endsWith(".md")) return undefined;
+  const root = [...docs]
+    .sort((a, b) => b.length - a.length)
+    .find((one) => file.startsWith(`${one}/`));
+  return root === undefined ? undefined : file.slice(root.length + 1, -".md".length);
+}
+
+const FENCE = /^---[ \t]*$/;
+
+/** What the top of a page says of its own identity and title, when it can be read. */
+function docNames(source: string): { key?: unknown; title?: unknown } {
+  const lines = source.replace(/\r\n?/g, "\n").split("\n");
+  if (!FENCE.test(lines[0] ?? "")) return {};
+  const close = lines.findIndex((line, index) => index > 0 && FENCE.test(line));
+  if (close === -1) return {};
+  try {
+    const read = parse(lines.slice(1, close).join("\n"), { version: "1.2" });
+    return read !== null && typeof read === "object" && !Array.isArray(read)
+      ? (read as { key?: unknown; title?: unknown })
+      : {};
+  } catch {
+    // What is wrong with it is said when the page itself is checked.
+    return {};
+  }
+}
+
+/** A page's file read into its manifest. Its body is the file. */
+function docManifest(path: string, source: string): BundleManifest {
+  const { key, title } = docNames(source);
+  const identity = typeof key === "string" && new RegExp(PATH_PATTERN).test(key) ? key : path;
+  return {
+    kind: DOC_KIND,
+    schemaVersion: 1,
+    path,
+    ...(identity !== path ? { key: identity } : {}),
+    ...(typeof title === "string" && title.trim() !== "" ? { title: title.trim() } : {}),
+    ownership: "ui",
+    body: { source },
+  };
+}
+
 export interface ResourceFile {
   /** Relative to the reserved folder, with forward slashes: `orders/sync.script.yaml`. */
   path: string;
@@ -91,6 +151,10 @@ function renderOne(
   /** Whether the file has to say the path, because where it is kept does not. */
   saysPath: boolean,
 ): ResourceFile[] {
+  // A page is its own file: nothing is put around it and nothing in it is reordered.
+  if (manifest.kind === DOC_KIND) {
+    return [{ path: file, content: String((manifest.body as { source?: unknown }).source ?? "") }];
+  }
   const schema = kinds.find(
     (kind) => kind.kind === manifest.kind && kind.schemaVersion === manifest.schemaVersion,
   )?.body as Schema | undefined;
@@ -147,7 +211,14 @@ export function renderResourceFiles(
       // The platform's own nodes are added again on every compose. They are not the repository's.
       .filter((manifest) => !manifest.path.startsWith("core/"))
       .flatMap((manifest) =>
-        renderOne(manifest, kinds, `${manifest.path}.${manifest.kind}.yaml`, false),
+        renderOne(
+          manifest,
+          kinds,
+          manifest.kind === DOC_KIND
+            ? `docs/${manifest.path}.md`
+            : `${manifest.path}.${manifest.kind}.yaml`,
+          false,
+        ),
       )
       .sort(byPath)
   );
@@ -172,6 +243,9 @@ function pathFromPlace(stem: string, roots: readonly string[]): string | undefin
  */
 export function fileOf(manifest: BundleManifest, folder: string): string {
   const found = manifest.source && !manifest.source.generated ? manifest.source.file : undefined;
+  if (manifest.kind === DOC_KIND) {
+    return found?.endsWith(".md") ? found : `${folder}/docs/${manifest.path}.md`;
+  }
   return found?.endsWith(`.${manifest.kind}.yaml`)
     ? found
     : `${folder}/${manifest.path}.${manifest.kind}.yaml`;
@@ -183,6 +257,11 @@ export function fileOf(manifest: BundleManifest, folder: string): string {
  * it is, and says the new one.
  */
 export function movedFile(file: string, kind: string, from: string, to: string): string {
+  if (kind === DOC_KIND) {
+    // A page has no way to say its path, so its file always moves with it.
+    const page = `/${from}.md`;
+    return file.endsWith(page) ? `${file.slice(0, -page.length)}/${to}.md` : file;
+  }
   const named = `/${from}.${kind}.yaml`;
   return file.endsWith(named) ? `${file.slice(0, -named.length)}/${to}.${kind}.yaml` : file;
 }
@@ -193,6 +272,8 @@ export function movedFile(file: string, kind: string, from: string, to: string):
  */
 export function sameResourceFile(path: string, a: string, b: string): boolean {
   if (a === b) return true;
+  // A page is its text: the same but for how its lines end is the same.
+  if (path.endsWith(".md")) return a.replace(/\r\n?/g, "\n") === b.replace(/\r\n?/g, "\n");
   if (!path.endsWith(".yaml")) return false;
   const sorted = (value: unknown): unknown =>
     Array.isArray(value)
@@ -330,6 +411,7 @@ export function renderRepositoryFiles(
     .filter((manifest) => !manifest.path.startsWith("core/"))
     .flatMap((manifest) => {
       const file = fileOf(manifest, options.folder);
+      if (manifest.kind === DOC_KIND) return renderOne(manifest, kinds, file, false);
       const stem = file.slice(0, -`.${manifest.kind}.yaml`.length);
       return renderOne(manifest, kinds, file, pathFromPlace(stem, roots) !== manifest.path);
     })
@@ -357,7 +439,14 @@ export function parseResourceFiles(files: readonly ResourceFile[]): ParsedResour
   const pathPattern = new RegExp(PATH_PATTERN);
   const kindPattern = new RegExp(KIND_PATTERN);
 
+  // By file, as YAML files are kept: a file given twice is one file, and the later one is it.
+  const pages = new Map<string, Page>();
   for (const file of [...files].sort((a, b) => (a.path < b.path ? -1 : 1))) {
+    const page = docStem(file.path, ["docs"]);
+    if (page !== undefined) {
+      pages.set(file.path, { file, path: page });
+      continue;
+    }
     const match = FILE_NAME.exec(file.path);
     if (!match) {
       problems.push(`${file.path}: is not named <path>.<kind>.yaml or <path>.<kind>.ts.`);
@@ -373,7 +462,13 @@ export function parseResourceFiles(files: readonly ResourceFile[]): ParsedResour
     if (extension === "ts") sources.set(`${resource}.${kind}`, file);
     else yaml.set(`${resource}.${kind}`, { ...file, resource, kind, stem: `${resource}.${kind}` });
   }
-  return read(yaml, sources, problems);
+  return read(yaml, sources, problems, { pages: [...pages.values()] });
+}
+
+/** A page's file, and the path its place gives it. */
+interface Page {
+  file: ResourceFile;
+  path: string;
 }
 
 /** A resource's YAML file, with the path its place gives it, if its place gives one. */
@@ -397,6 +492,9 @@ function read(
   options: {
     roots?: readonly string[];
     note?: (manifest: BundleManifest, file: Located) => void;
+    /** Pages of documentation, read after everything else and held to the same rules of path and key. */
+    pages?: readonly Page[];
+    notePage?: (manifest: BundleManifest, file: ResourceFile) => void;
   } = {},
 ): ParsedResources {
   const pathPattern = new RegExp(PATH_PATTERN);
@@ -519,6 +617,32 @@ function read(
     if (!yaml.has(stem)) problems.push(`${file.path}: has no ${stem}.yaml beside it.`);
     else if (!CODE_KINDS.has(kind)) problems.push(`${file.path}: a ${kind} has no source.`);
   }
+  for (const { file, path } of options.pages ?? []) {
+    if (!pathPattern.test(path)) {
+      problems.push(
+        `${file.path}: a page's name and its folders are written in lowercase letters, digits, hyphens and underscores. Rename the file: nothing renames it for you.`,
+      );
+      continue;
+    }
+    const manifest = docManifest(path, file.content);
+    const other = seen.get(path);
+    if (other) {
+      problems.push(`${file.path}: the path ${path} is already used by ${other}.`);
+      continue;
+    }
+    seen.set(path, file.path);
+    const identity = manifest.key ?? path;
+    const sameKey = keys.get(identity);
+    if (sameKey) {
+      problems.push(
+        `${file.path}: the key ${identity} is already the key of ${sameKey}. A key belongs to one resource.`,
+      );
+      continue;
+    }
+    keys.set(identity, file.path);
+    options.notePage?.(manifest, file);
+    manifests.push(manifest);
+  }
   return { manifests, problems };
 }
 
@@ -535,17 +659,23 @@ export interface RepositoryConfig {
   roots: string[];
   /** Folders to leave unread, beside those never read: `node_modules`, `dist`, `build`, and any whose name starts with a dot. */
   ignore: string[];
+  /**
+   * Folders of pages of documentation: under `handbook`, the file
+   * `handbook/support/refunds.md` is the page `support/refunds`. When none is
+   * named, the one folder of pages is `docs` inside the folder the console writes to.
+   */
+  docs: string[];
 }
 
 /** The name of the file at a repository's root that says where its resource files are. */
-export const REPOSITORY_CONFIG = "vynxlabs.yaml";
+export const REPOSITORY_CONFIG = "volvel.yaml";
 
-/** Reads `vynxlabs.yaml`. A repository without one keeps its resource files in the one folder. */
+/** Reads `volvel.yaml`. A repository without one keeps its resource files in the one folder. */
 export function parseRepositoryConfig(text: string | undefined): {
   config: RepositoryConfig;
   problems: string[];
 } {
-  const config: RepositoryConfig = { roots: [], ignore: [] };
+  const config: RepositoryConfig = { roots: [], ignore: [], docs: [] };
   if (text === undefined) return { config, problems: [] };
   let document: unknown;
   try {
@@ -559,15 +689,20 @@ export function parseRepositoryConfig(text: string | undefined): {
     };
   }
   const problems: string[] = [];
-  const { roots, ignore, ...unknown } = (document ?? {}) as { roots?: unknown; ignore?: unknown };
+  const { roots, ignore, docs, ...unknown } = (document ?? {}) as {
+    roots?: unknown;
+    ignore?: unknown;
+    docs?: unknown;
+  };
   if (Object.keys(unknown).length > 0) {
     problems.push(
-      `${REPOSITORY_CONFIG}: has keys other than roots and ignore: ${Object.keys(unknown).join(", ")}.`,
+      `${REPOSITORY_CONFIG}: has keys other than roots, ignore and docs: ${Object.keys(unknown).join(", ")}.`,
     );
   }
   for (const [name, value] of [
     ["roots", roots],
     ["ignore", ignore],
+    ["docs", docs],
   ] as const) {
     if (value === undefined) continue;
     if (!Array.isArray(value) || value.some((one) => typeof one !== "string" || one === "")) {
@@ -591,7 +726,13 @@ export function ignoredFolder(path: string, config: RepositoryConfig): boolean {
  * for a kind there is, or the `.ts` beside such a file for a kind that has
  * code. So `vite.config.ts` and `orders.test.ts` are nobody's.
  */
-export function isResourceFile(path: string, kinds: ReadonlySet<string>): boolean {
+export function isResourceFile(
+  path: string,
+  kinds: ReadonlySet<string>,
+  /** The folders of pages. A Markdown file under one is a page; anywhere else it is nobody's. */
+  docs: readonly string[] = [],
+): boolean {
+  if (docStem(path, docs) !== undefined) return true;
   const match = FILE_NAME.exec(path);
   if (!match) return false;
   const [, , kind = "", extension] = match;
@@ -609,8 +750,17 @@ export function isResourceFile(path: string, kinds: ReadonlySet<string>): boolea
  */
 export function parseRepositoryFiles(
   files: readonly ResourceFile[],
-  options: { folder: string; roots: readonly string[]; kinds: ReadonlySet<string> },
+  options: {
+    folder: string;
+    roots: readonly string[];
+    kinds: ReadonlySet<string>;
+    /** The folders of pages, as `docsRoots` gives them. Left out, the one inside `folder`. */
+    docs?: readonly string[];
+  },
 ): ParsedResources & { files: Map<string, string> } {
+  const docs = options.docs ?? docsRoots(undefined, options.folder);
+  // By file, as YAML files are kept: a file given twice is one file, and the later one is it.
+  const pages = new Map<string, Page>();
   const roots = [...new Set([options.folder, ...options.roots])].sort(
     (a, b) => b.length - a.length,
   );
@@ -618,6 +768,11 @@ export function parseRepositoryFiles(
   const yaml = new Map<string, Located>();
   const sources = new Map<string, ResourceFile>();
   for (const file of [...files].sort((a, b) => (a.path < b.path ? -1 : 1))) {
+    const page = docStem(file.path, docs);
+    if (page !== undefined) {
+      if (options.kinds.has(DOC_KIND)) pages.set(file.path, { file, path: page });
+      continue;
+    }
     if (!isResourceFile(file.path, options.kinds)) continue;
     const [, stem = "", kind = "", extension] = FILE_NAME.exec(file.path) as RegExpExecArray;
     const name = `${stem}.${kind}`;
@@ -632,6 +787,14 @@ export function parseRepositoryFiles(
   const found = new Map<string, string>();
   const parsed = read(yaml, sources, problems, {
     roots,
+    pages: [...pages.values()],
+    notePage: (manifest, file) => {
+      found.set(manifest.key ?? manifest.path, file.path);
+      // Kept where the console would not have written it: it is the repository's to change.
+      if (file.path !== `${options.folder}/docs/${manifest.path}.md`) {
+        manifest.source = { file: file.path, generated: false };
+      }
+    },
     note: (manifest, file) => {
       found.set(manifest.key ?? manifest.path, file.path);
       if (file.path !== `${options.folder}/${manifest.path}.${manifest.kind}.yaml`) {

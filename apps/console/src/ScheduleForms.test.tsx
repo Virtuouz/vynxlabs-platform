@@ -8,9 +8,11 @@ import { show } from "./testing.tsx";
 const root = "/tenants/t1/workspaces/w1";
 const link = "/t/t1/workspaces/w1";
 let sent: { method: string; url: string; body: unknown }[];
+let taken = false;
 
 beforeEach(() => {
   sent = [];
+  taken = false;
   vi.stubGlobal("matchMedia", (query: string) => ({
     matches: true,
     media: query,
@@ -23,6 +25,15 @@ beforeEach(() => {
     if (method !== "GET")
       sent.push({ method, url, body: JSON.parse((init.body as string) ?? "null") });
     const path = url.split("?")[0];
+    if (method === "PUT" && taken) {
+      return new Response(
+        JSON.stringify({
+          code: "path_taken",
+          detail: "orders/sync-schedule is the path of a schedule.",
+        }),
+        { status: 409, headers: { "content-type": "application/problem+json" } },
+      );
+    }
     const value =
       path === root
         ? { id: "w1", name: "Dev", type: "dev", timeZone: "Europe/Berlin" }
@@ -68,8 +79,30 @@ test("a schedule made from a script's page starts it, in the workspace's zone, i
     body: {
       kind: "schedule",
       body: { script: "orders/sync", cron: "0 9 * * *", timezone: "Europe/Berlin" },
+      create: true,
     },
   });
+});
+
+test("a schedule added at a path that is held is refused on the path, and nothing typed is lost", async () => {
+  taken = true;
+  show(
+    <NewScheduleSheet
+      root={root}
+      link={link}
+      open
+      onClose={() => {}}
+      target={{ kind: "script", path: "orders/sync" }}
+    />,
+  );
+  const save = screen.getByRole("button", { name: "Save draft" }) as HTMLButtonElement;
+  await waitFor(() => expect(save.disabled).toBe(false));
+  fireEvent.click(save);
+  expect(await screen.findByText(/Something already exists at this path/)).toBeTruthy();
+  expect((screen.getByLabelText("Path") as HTMLInputElement).value).toBe("orders/sync-schedule");
+  // Choosing another path clears it.
+  fireEvent.change(screen.getByLabelText("Path"), { target: { value: "orders/nightly" } });
+  expect(screen.queryByText(/Something already exists at this path/)).toBeNull();
 });
 
 function Existing({ overlapDefault }: { overlapDefault: "allow" | "skip" }) {

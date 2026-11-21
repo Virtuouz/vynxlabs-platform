@@ -1,0 +1,489 @@
+{
+  "type": "root",
+  "v": 1,
+  "children": [
+    {
+      "type": "heading",
+      "depth": 1,
+      "id": "deploying",
+      "children": [
+        {
+          "type": "text",
+          "value": "Deploying",
+          "line": 1
+        }
+      ],
+      "line": 1
+    },
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "text",
+          "value": "Each ",
+          "line": 3
+        },
+        {
+          "type": "component",
+          "name": "term",
+          "form": "inline",
+          "props": {
+            "id": "workspace"
+          },
+          "children": [
+            {
+              "type": "text",
+              "value": "workspace",
+              "line": 3
+            }
+          ],
+          "line": 3
+        },
+        {
+          "type": "text",
+          "value": " belongs to one tenant, and ",
+          "line": 3
+        },
+        {
+          "type": "component",
+          "name": "product",
+          "form": "inline",
+          "props": {},
+          "children": [],
+          "line": 3
+        },
+        {
+          "type": "text",
+          "value": " keeps them apart.",
+          "line": 3
+        }
+      ],
+      "line": 3
+    },
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "text",
+          "value": "The ",
+          "line": 5
+        },
+        {
+          "type": "component",
+          "name": "term",
+          "form": "inline",
+          "props": {
+            "table": "sales/orders",
+            "column": "status"
+          },
+          "children": [
+            {
+              "type": "text",
+              "value": "status",
+              "line": 5
+            }
+          ],
+          "line": 5
+        },
+        {
+          "type": "text",
+          "value": " column drives the board. An ",
+          "line": 5
+        },
+        {
+          "type": "component",
+          "name": "term",
+          "form": "inline",
+          "props": {
+            "id": "rma"
+          },
+          "children": [
+            {
+              "type": "text",
+              "value": "RMA",
+              "line": 5
+            }
+          ],
+          "line": 5
+        },
+        {
+          "type": "text",
+          "value": " has no page.",
+          "line": 5
+        },
+        {
+          "type": "break",
+          "hard": false,
+          "line": 5
+        },
+        {
+          "type": "text",
+          "value": "Press ",
+          "line": 6
+        },
+        {
+          "type": "component",
+          "name": "kbd",
+          "form": "inline",
+          "props": {},
+          "children": [
+            {
+              "type": "text",
+              "value": "Ctrl+K",
+              "line": 6
+            }
+          ],
+          "line": 6
+        },
+        {
+          "type": "text",
+          "value": " to search.",
+          "line": 6
+        }
+      ],
+      "line": 5
+    },
+    {
+      "type": "component",
+      "name": "alert",
+      "form": "container",
+      "props": {
+        "type": "warning"
+      },
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "Deleting a table drops its data.",
+              "line": 9
+            }
+          ],
+          "line": 9
+        }
+      ],
+      "line": 8,
+      "endLine": 10
+    },
+    {
+      "type": "component",
+      "name": "alert",
+      "form": "container",
+      "props": {},
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "You need a dev workspace.",
+              "line": 13
+            }
+          ],
+          "line": 13
+        }
+      ],
+      "label": "Before you start",
+      "line": 12,
+      "endLine": 14
+    },
+    {
+      "type": "component",
+      "name": "field",
+      "form": "leaf",
+      "props": {
+        "path": "table.columns.*.type"
+      },
+      "children": [],
+      "line": 16
+    },
+    {
+      "type": "component",
+      "name": "field",
+      "form": "leaf",
+      "props": {
+        "path": "table.columns.*.missing"
+      },
+      "children": [],
+      "line": 18
+    },
+    {
+      "type": "component",
+      "name": "tabs",
+      "form": "container",
+      "props": {},
+      "children": [
+        {
+          "type": "component",
+          "name": "tab",
+          "form": "container",
+          "props": {
+            "label": "CLI"
+          },
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "inlineCode",
+                  "value": "volvel deploy",
+                  "line": 22
+                }
+              ],
+              "line": 22
+            }
+          ],
+          "line": 21,
+          "endLine": 23
+        },
+        {
+          "type": "component",
+          "name": "tab",
+          "form": "container",
+          "props": {
+            "label": "Console"
+          },
+          "children": [
+            {
+              "type": "paragraph",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Open ",
+                  "line": 25
+                },
+                {
+                  "type": "strong",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "Deploy",
+                      "line": 25
+                    }
+                  ],
+                  "line": 25
+                },
+                {
+                  "type": "text",
+                  "value": " in the header.",
+                  "line": 25
+                }
+              ],
+              "line": 25
+            },
+            {
+              "type": "component",
+              "name": "alert",
+              "form": "container",
+              "props": {
+                "type": "info"
+              },
+              "children": [
+                {
+                  "type": "paragraph",
+                  "children": [
+                    {
+                      "type": "text",
+                      "value": "An alert inside a tab.",
+                      "line": 28
+                    }
+                  ],
+                  "line": 28
+                }
+              ],
+              "line": 27,
+              "endLine": 29
+            }
+          ],
+          "line": 24,
+          "endLine": 30
+        }
+      ],
+      "line": 20,
+      "endLine": 31
+    },
+    {
+      "type": "component",
+      "name": "steps",
+      "form": "container",
+      "props": {},
+      "children": [
+        {
+          "type": "list",
+          "ordered": true,
+          "children": [
+            {
+              "type": "listItem",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Write the page.",
+                  "line": 34
+                }
+              ],
+              "line": 34
+            },
+            {
+              "type": "listItem",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "Deploy it.",
+                  "line": 35
+                }
+              ],
+              "line": 35
+            }
+          ],
+          "line": 34
+        }
+      ],
+      "line": 33,
+      "endLine": 36
+    },
+    {
+      "type": "component",
+      "name": "details",
+      "form": "container",
+      "props": {
+        "summary": "Why a deploy?"
+      },
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "Because production changes arrive only by deploy.",
+              "line": 39
+            }
+          ],
+          "line": 39
+        }
+      ],
+      "line": 38,
+      "endLine": 40
+    },
+    {
+      "type": "component",
+      "name": "code-tabs",
+      "form": "container",
+      "props": {},
+      "children": [
+        {
+          "type": "code",
+          "value": "export default defineScript({});",
+          "lang": "ts",
+          "line": 43
+        },
+        {
+          "type": "code",
+          "value": "kind: script",
+          "lang": "yaml",
+          "meta": "title=\"YAML\"",
+          "line": 46
+        }
+      ],
+      "line": 42,
+      "endLine": 49
+    },
+    {
+      "type": "component",
+      "name": "file-tree",
+      "form": "container",
+      "props": {},
+      "children": [
+        {
+          "type": "list",
+          "ordered": false,
+          "children": [
+            {
+              "type": "listItem",
+              "children": [
+                {
+                  "type": "text",
+                  "value": "docs/",
+                  "line": 52
+                },
+                {
+                  "type": "list",
+                  "ordered": false,
+                  "children": [
+                    {
+                      "type": "listItem",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "index.md",
+                          "line": 53
+                        }
+                      ],
+                      "line": 53
+                    },
+                    {
+                      "type": "listItem",
+                      "children": [
+                        {
+                          "type": "text",
+                          "value": "guides/",
+                          "line": 54
+                        },
+                        {
+                          "type": "list",
+                          "ordered": false,
+                          "children": [
+                            {
+                              "type": "listItem",
+                              "children": [
+                                {
+                                  "type": "text",
+                                  "value": "refunds.md",
+                                  "line": 55
+                                }
+                              ],
+                              "line": 55
+                            }
+                          ],
+                          "line": 55
+                        }
+                      ],
+                      "line": 54
+                    }
+                  ],
+                  "line": 53
+                }
+              ],
+              "line": 52
+            }
+          ],
+          "line": 52
+        }
+      ],
+      "line": 51,
+      "endLine": 56
+    },
+    {
+      "type": "component",
+      "name": "screenshot",
+      "form": "leaf",
+      "props": {
+        "name": "console/deploy",
+        "alt": "The deploy dialog"
+      },
+      "children": [],
+      "line": 58
+    },
+    {
+      "type": "component",
+      "name": "screenshot",
+      "form": "leaf",
+      "props": {
+        "name": "console/missing",
+        "alt": "A picture that is not there"
+      },
+      "children": [],
+      "line": 60
+    }
+  ]
+}

@@ -4,15 +4,16 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
-import { type Database, newId } from "@vynxlabs/db";
+import { type Database, newId } from "@volvel/db";
 import Fastify, { type RouteOptions } from "fastify";
 import { Type } from "typebox";
 import type { Config, LogLevel } from "./config.js";
 import { installFrontDoor } from "./kernel/apps/front.js";
 import { SYSTEM } from "./kernel/audit.js";
 import { closeAllSources } from "./kernel/data/sources.js";
+import { consoleDirectory } from "./kernel/docs/product.js";
 import { pushTenantAccess } from "./kernel/git.js";
-import { access, installAccessControl } from "./kernel/http.js";
+import { type Access, access, installAccessControl } from "./kernel/http.js";
 import { defaultIcon, icoOf, webManifest } from "./kernel/icons.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
 import { observe } from "./kernel/metrics.js";
@@ -38,6 +39,7 @@ import { brandingRoutes } from "./routes/branding.js";
 import { compareRoutes } from "./routes/compare.js";
 import { dashboardRoutes } from "./routes/dashboards.js";
 import { dataRoutes } from "./routes/data.js";
+import { docRoutes } from "./routes/docs.js";
 import { driftRoutes } from "./routes/drift.js";
 import { endUserRoutes } from "./routes/endusers.js";
 import { environmentRoutes } from "./routes/environments.js";
@@ -67,6 +69,7 @@ import { ssoRoutes } from "./routes/sso.js";
 import { streamRoutes } from "./routes/stream.js";
 import { summaryRoutes } from "./routes/summary.js";
 import { tenantRoutes } from "./routes/tenants.js";
+import { termRoutes } from "./routes/terms.js";
 import { workerRoutes } from "./routes/worker.js";
 import { workerHostRoutes } from "./routes/worker-host.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
@@ -88,12 +91,6 @@ export interface AppOptions {
 }
 
 /** The built console, when there is one to serve. */
-function consoleDirectory(config: Config): string | undefined {
-  if (config.consoleDir) return config.consoleDir;
-  const inRepo = fileURLToPath(new URL("../../console/dist", import.meta.url));
-  return existsSync(inRepo) ? inRepo : undefined;
-}
-
 export async function buildApp(options: AppOptions) {
   const app = Fastify({
     logger: options.logLevel ? { level: options.logLevel } : false,
@@ -201,14 +198,25 @@ export async function buildApp(options: AppOptions) {
     openapi: {
       openapi: "3.1.0",
       info: {
-        title: "Vynxlabs platform API",
+        title: "Volvel API",
         version: options.version,
         description:
           "The one public API of the platform. Errors are RFC 9457 problem details " +
           "(application/problem+json) with a stable `code` and the `requestId`. " +
           "Sign in through `/api/v1/auth/sign-in/email` for a session cookie, or send " +
-          "`Authorization: Bearer <api key>`.",
+          "`Authorization: Bearer <api key>`. Each route says what it needs under `x-access`: " +
+          "a permission and where it is checked, or that it is public, for anyone signed in, " +
+          "or decided by the route itself from what is asked for.",
       },
+    },
+    // What a route needs is in its own configuration. It is written into the description
+    // from there, so the two cannot differ.
+    transform: ({ schema, url, route }) => {
+      const needs = (route.config as { access?: Access } | undefined)?.access;
+      return {
+        url,
+        schema: needs ? ({ ...schema, "x-access": needs } as typeof schema) : schema,
+      };
     },
   });
 
@@ -267,6 +275,8 @@ export async function buildApp(options: AppOptions) {
       await api.register(ssoRoutes(kernel));
       await api.register(scimRoutes(kernel));
       await api.register(interfaceRoutes(kernel));
+      await api.register(termRoutes(kernel));
+      await api.register(docRoutes(kernel));
       await api.register(dashboardRoutes(kernel));
       await api.register(appRoutes(kernel));
       await api.register(workerRoutes(kernel));

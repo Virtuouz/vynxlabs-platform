@@ -98,7 +98,7 @@ test("a member signs in through single sign-on, and is given a tenant to look af
       audience: "members",
       protocol: "oidc",
       name: "Acme Keycloak",
-      config: { issuer: `${KEYCLOAK}/realms/acme`, clientId: "vynxlabs-platform" },
+      config: { issuer: `${KEYCLOAK}/realms/acme`, clientId: "volvel" },
       clientSecret: "dev-only-oidc-secret",
       provision: true,
     }),

@@ -1,4 +1,4 @@
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
@@ -15,7 +15,7 @@ const timestamps = { createdAt: "created_at", updatedAt: "updated_at" };
 /** The authentication options, shared by the running service and the schema test. */
 export function authOptions(db: Db, config: Pick<Config, "publicUrl" | "authSecret">) {
   return {
-    appName: "Vynxlabs platform",
+    appName: "Volvel",
     baseURL: config.publicUrl,
     basePath: "/api/v1/auth",
     secret: config.authSecret,

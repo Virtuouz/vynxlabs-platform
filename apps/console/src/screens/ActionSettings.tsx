@@ -1,5 +1,5 @@
-import type { InterfacePage, PageWidget, WidgetAction } from "@vynxlabs/manifest";
-import type { TableInfo } from "@vynxlabs/screens";
+import type { InterfacePage, PageWidget, WidgetAction } from "@volvel/manifest";
+import type { TableInfo } from "@volvel/screens";
 import {
   Button,
   CheckboxField,
@@ -9,7 +9,7 @@ import {
   SelectField,
   TextAreaField,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { useLoad } from "../api.ts";
 
 /** What the builder knows of an action's target. */

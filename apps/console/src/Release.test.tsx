@@ -230,3 +230,63 @@ test("a file that differs from the branch says how: new, removed or changed, and
   // An instance from before it said so.
   expect(differenceLabel({ here: true })).toBe("Changed here");
 });
+
+test("Versions is the one list: a repeated version rolls back from its row, and a bundle never run sits below", async () => {
+  const row = (id: string, bundleId: string, version: number) => ({
+    id,
+    bundleId,
+    bundleVersion: version,
+    message: `Version ${version}`,
+    createdBy: "ana@fernhill.test",
+    createdAt: "2026-11-13T00:00:00Z",
+    promotedFromWorkspaceId: null,
+    runningIn: [],
+    summary: {},
+  });
+  const bundle = (id: string, version: number, active: boolean) => ({
+    id,
+    version,
+    digest: String(version).repeat(16),
+    active,
+    createdAt: "2026-11-13T00:00:00Z",
+  });
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    const method = init.method ?? "GET";
+    calls.push({
+      method,
+      url: address,
+      body: init.body ? JSON.parse(init.body as string) : undefined,
+    });
+    const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
+    if (method === "POST") return json({}, 201);
+    // After a rollback, version 1 is listed twice, and version 2 is the one running.
+    if (address.endsWith("/deployments"))
+      return json({ items: [row("d3", "b1", 1), row("d2", "b2", 2), row("d1", "b1", 1)] });
+    if (address.endsWith("/bundles"))
+      return json({
+        items: [bundle("b3", 3, false), bundle("b2", 2, true), bundle("b1", 1, false)],
+      });
+    return json({ items: [] });
+  });
+  show(
+    <Release
+      base="/tenants/t1"
+      root={root}
+      link={link}
+      workspace={production}
+      step="deploy"
+      reload={() => {}}
+    />,
+  );
+  await screen.findByText("Versions of Clinics");
+  // Two history rows for version 1 and one bundle never run: three Activates, none on the running one.
+  const buttons = await screen.findAllByRole("button", { name: "Activate this version" });
+  expect(buttons).toHaveLength(3);
+  expect(screen.getByText("Not yet run here")).toBeTruthy();
+  expect(screen.queryByText("Bundles and rollback")).toBeNull();
+  fireEvent.click(buttons[0] as HTMLElement);
+  expect(await answer("Activate in production")).toContain("Clinics stops running");
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "POST")?.body).toEqual({ bundleId: "b1" }),
+  );
+});

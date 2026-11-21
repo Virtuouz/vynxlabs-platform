@@ -35,7 +35,7 @@ Fill in `deploy/compose/.env`:
 | `WORKER_HOST_TOKEN` | `openssl rand -hex 32`. Lets the worker host, which starts tenants' workers, ask for work |
 | `APPS_URL` | A second hostname for apps written as code, for example `https://apps.example.com`. Optional, but without it they are not served |
 | `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD` | The first operator. At least 12 characters. Remove both after the first start |
-| `PLATFORM_BIND` | Where it listens on the host. Default `127.0.0.1:8080` |
+| `VOLVEL_BIND` | Where it listens on the host. Default `127.0.0.1:8080` |
 
 ```sh
 docker compose -f deploy/compose/compose.yaml up -d --wait
@@ -181,7 +181,7 @@ A script that names a pool runs only on a worker of that pool. A script that nam
 
 A run that is waiting with no worker connected that could take it says so on its page.
 
-A worker's credential is best handed to it on its standard input, `platform-worker --url … --token-stdin < credential`, rather than in `PLATFORM_WORKER_TOKEN` or `--token`. A script's process runs as the worker's own user, and that user can read a process's environment and command line. Whatever way it arrives, the credential is never given to the process a script runs in.
+A worker's credential is best handed to it on its standard input, `volvel-worker --url … --token-stdin < credential`, rather than in `VOLVEL_WORKER_TOKEN` or `--token`. A script's process runs as the worker's own user, and that user can read a process's environment and command line. Whatever way it arrives, the credential is never given to the process a script runs in.
 
 ## Workers the instance starts
 
@@ -191,7 +191,7 @@ Where those workers run is set by `MANAGED_WORKERS`.
 
 ### `host`: in a worker host (the default in `deploy/compose`)
 
-A worker host is the same image, started as `platform-worker-host`, in a container of its own. It asks the control plane for a tenant with work, gets a credential for it, and starts a worker with it, as `vxrun` (uid and gid 10001). The compose file puts it on a network, `execution`, with the control plane and nothing else of the instance's: the database and the object store are on another network, `data`, which it is not on. A tenant's script can reach the control plane and the internet, and not the database, the object store, or the control plane's environment.
+A worker host is the same image, started as `volvel-worker-host`, in a container of its own. It asks the control plane for a tenant with work, gets a credential for it, and starts a worker with it, as `vxrun` (uid and gid 10001). The compose file puts it on a network, `execution`, with the control plane and nothing else of the instance's: the database and the object store are on another network, `data`, which it is not on. A tenant's script can reach the control plane and the internet, and not the database, the object store, or the control plane's environment.
 
 The host runs as root in its container, holding only `CAP_SETUID` and `CAP_SETGID`, to start workers as `vxrun`, and `CAP_NET_ADMIN`. With `NET_ADMIN` it adds firewall rules at start that refuse `vxrun` loopback, private and link-local addresses, cloud metadata among them, other than the control plane and the container's name servers. Without it, it says so in its log, and only the network keeps workers from the instance's services: block `169.254.169.254` at the machine if the instance runs in a cloud. The rules are made once, at start, for the control plane's address then; restart the worker host if the control plane's container is recreated with another address.
 
@@ -244,7 +244,7 @@ Plan on 2 GB for a machine that runs the control plane and scripts together. Giv
 Every tenant's table requests on the platform database share one pool of connections per replica. Each tenant has a share of it:
 - A tenant's requests past its share wait their turn, so one tenant's slow searches leave the others room.
 - After 5 seconds of waiting, a request is answered 503 with `Retry-After`, never 500. Nothing was done, so it is safe to try again.
-- `@vynxlabs/app` and scripts try again by themselves, twice.
+- `@volvel/app` and scripts try again by themselves, twice.
 
 Every data request has a time limit. Past it, the statement is stopped and the request is answered 422 `too_slow`, saying to narrow the filter or add an index. Totals keep their own limit of 5 seconds.
 
@@ -287,7 +287,7 @@ To stop everything at once, pause every trigger in the instance under **Instance
 
 `TRIGGERS_PAUSED=true` does the same from where the instance runs, and the console cannot undo it. Use it when the instance cannot stay up long enough to pause from the console.
 
-To clear a backlog, use **Cancel queued runs** on a workspace's Runs, or `platform runs cancel --tenant <slug> --workspace <slug>`. `--all` cancels what is going too, flow runs included.
+To clear a backlog, use **Cancel queued runs** on a workspace's Runs, or `volvel runs cancel --tenant <slug> --workspace <slug>`. `--all` cancels what is going too, flow runs included.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -323,8 +323,8 @@ A tenant can be taken out of an instance at any time, and brought into another. 
 A tenant's own admin can do this. An operator cannot, without an access grant the tenant can see.
 
 ```sh
-export PLATFORM_EXPORT_PASSPHRASE='a long passphrase'
-platform tenant export --tenant acme --out acme.tar --history
+export VOLVEL_EXPORT_PASSPHRASE='a long passphrase'
+volvel tenant export --tenant acme --out acme.tar --history
 ```
 
 Or in the console, under the tenant's Export page.
@@ -338,8 +338,8 @@ The passphrase protects the secrets, not the whole file. The tenant's rows, file
 An operator of the instance it is going to does this. Both instances must be at the same version.
 
 ```sh
-platform login --url https://new.example.com --token <an operator's API key>
-platform tenant import acme.tar --location acme-db    # or leave --location out for the instance's own database
+volvel login --url https://new.example.com --token <an operator's API key>
+volvel tenant import acme.tar --location acme-db    # or leave --location out for the instance's own database
 ```
 
 The whole file is checked before anything is written, and the tenant arrives entirely or not at all.
@@ -490,7 +490,7 @@ A provider can also push the people and groups it holds, and say when someone ha
 - **Limits.** Users and groups, with `userName`, `externalId`, `displayName` and `members` filters, and PATCH. No bulk, no password sync, no sorting, and no attributes for end users from a push. A member's email here does not change when the provider changes it.
 - **Tested against** the request shapes Entra ID and Okta send, as recorded. It has not been run against a live tenant of either.
 
-To try it locally, the development stack has Keycloak behind a profile, with a realm of two people, `ada` and `ben`, and an OIDC client `vynxlabs-platform` whose secret is `dev-only-oidc-secret`:
+To try it locally, the development stack has Keycloak behind a profile, with a realm of two people, `ada` and `ben`, and an OIDC client `volvel` whose secret is `dev-only-oidc-secret`:
 
 ```
 docker compose -f deploy/compose/compose.dev.yaml --profile sso up -d keycloak
@@ -504,9 +504,19 @@ A tenant sets its colors, corner radii, fonts and logo under **Branding**. They 
 
 The console keeps its own look whichever tenant is open. An operator brands it once for the instance under **Instance → Branding**, with a product name, a logo and the same tokens.
 
+## Help and documentation
+
+The console's help is part of the image. It is the help of the version that is running, and it needs nothing beyond the instance: no page of it is fetched from anywhere else. `F1` opens it beside any screen. Every setting an instance reads is listed there, under Reference, written from the same table the instance reads its settings by.
+
+| Variable | What it does |
+|---|---|
+| `DOCS_URL` | The address of the documentation on the web, when you keep a copy there. Each page of the help then offers to open online, at `<DOCS_URL>/docs/<version>/<page>`. Without it there is no such link |
+
+A tenant's own documentation is served by the instance as docs apps, at the addresses apps are served at, under a policy that runs no script of the tenant's and takes no inline style. A page may show a picture from an `https` address its author gave, which is the one thing a reader's browser is ever sent elsewhere for. Nothing in the instance fetches it.
+
 ## Environments inside a tenant
 
-- A dev workspace is linked to the workspace it promotes to. Promoting activates there the same bundle that runs here, without rebuilding it. `platform promote --preview` shows what would change first.
+- A dev workspace is linked to the workspace it promotes to. Promoting activates there the same bundle that runs here, without rebuilding it. `volvel promote --preview` shows what would change first.
 - A workspace can be cloned into a new dev workspace, with or without its rows and files. By default the clone gets no connection, data source or secret value and its triggers are paused, so it cannot act on a real system. Turning that safety off is recorded in the audit log. Clones with rows copy one at a time across the instance, in pages, so a large one does not slow every tenant's tables; the others wait as `queued`.
 - A workspace's triggers can be paused at any time.
 
@@ -564,7 +574,7 @@ The platform sends traces and metrics by OTLP to an endpoint you name, and ships
 | --- | --- |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Where to send, such as `http://collector:4318`. `/v1/traces` and `/v1/metrics` are added to it |
 | `OTEL_EXPORTER_OTLP_HEADERS` | Headers to send with it, as `name=value,name=value`: a vendor's API key goes here |
-| `OTEL_SERVICE_NAME` | What the instance calls itself. Default `platform` |
+| `OTEL_SERVICE_NAME` | What the instance calls itself. Default `volvel` |
 | `OTEL_TRACES_EXPORTER=none`, `OTEL_METRICS_EXPORTER=none` | Send only the other |
 | `OTEL_METRIC_EXPORT_INTERVAL` | How often metrics are sent, in milliseconds. Default 60000 |
 

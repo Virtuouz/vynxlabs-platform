@@ -1,4 +1,4 @@
-import { newId, type Ownership, type ResourceMeta } from "@vynxlabs/db";
+import { newId, type Ownership, type ResourceMeta } from "@volvel/db";
 import type { Audit, Db, Trx } from "./audit.js";
 import { badRequest, conflict, HttpError, notFound } from "./errors.js";
 import type { WorkspaceRef } from "./http.js";

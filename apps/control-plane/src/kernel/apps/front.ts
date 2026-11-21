@@ -1,10 +1,23 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
-import { readFormAnswer } from "@vynxlabs/manifest";
+import { join } from "node:path";
+import {
+  buildApp,
+  buildSearchIndex,
+  type DocsApp,
+  loadSearchIndex,
+  type ResourceLike,
+  urlOf,
+} from "@volvel/docs-engine";
+import { keyOf, readFormAnswer } from "@volvel/manifest";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
 import { ANONYMOUS, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
+import { describeTable, insertRows, withData } from "../data/rows.js";
+import { consoleDirectory, productNames } from "../docs/product.js";
+import { workingDocs } from "../docs/working.js";
 import {
   checkEndUserPassword,
   createEndUser,
@@ -19,6 +32,7 @@ import { loadBundle } from "../execution/bundles.js";
 import { findForm, submitForm } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
 import { resolvePrincipal } from "../principal.js";
+import { pathNow } from "../resolve.js";
 import { answer, begin, finish, stateCookie } from "../sso/flow.js";
 import { endUserPasswordRefusedBy, SsoRefusal } from "../sso/people.js";
 import {
@@ -32,6 +46,19 @@ import {
 import { samlMetadata } from "../sso/saml.js";
 import { appBasePath, portalPath, portalUrl } from "./address.js";
 import { appFiles, readAsset } from "./assets.js";
+import {
+  DOCS_CSS,
+  DOCS_POLICY,
+  DOCS_SCRIPT,
+  docPage,
+  docsKept,
+  docsOf,
+  notFoundPage,
+  pageAt,
+  pageMarkdown,
+  searchAnswer,
+  searchPage,
+} from "./docs.js";
 import type { Place } from "./hosts.js";
 import { Limiter } from "./limit.js";
 import {
@@ -78,6 +105,9 @@ const PAGE_POLICY = [
   "base-uri 'none'",
   "frame-ancestors 'none'",
 ].join("; ");
+
+/** Which pages a reader said whether they helped: short marks of them, kept in their own browser. */
+const VOTE_COOKIE = "vd_said";
 
 /** A file whose name carries a hash of its content never changes, so a browser may keep it. */
 const HASHED_NAME = /[-.][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
@@ -126,6 +156,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
   /** How often someone who is not signed in may ask for pages and files, and send forms. */
   const guestPages = new Limiter(600, 60);
   const forms = new Limiter(20, 60);
+  /** Readers' answers to whether a page helped: a reader answers a few at most in a minute. */
+  const votes = new Limiter(30, 60);
 
   const tenantBy = (column: "slug" | "id", value: string) =>
     db
@@ -168,6 +200,28 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       .send(`${text}\n`);
   const redirect = (reply: FastifyReply, to: string, status = 303) =>
     reply.code(status).header("location", to).header("cache-control", "no-store").send();
+
+  const drawings = new Map<string, { body: Buffer; encoding?: string } | undefined>();
+  /**
+   * The diagram script, read once from the console's files, compressed as asked when a
+   * compressed copy is there. Nothing when the console was not built.
+   */
+  const diagramsScript = (encoding: "br" | "gzip" | undefined) => {
+    const key = encoding ?? "identity";
+    if (drawings.has(key)) return drawings.get(key);
+    const directory = consoleDirectory(kernel.config);
+    const file = directory ? join(directory, "_platform", "diagrams.js") : undefined;
+    let found: { body: Buffer; encoding?: string } | undefined;
+    if (file && existsSync(file)) {
+      const packed = encoding ? `${file}.${encoding === "br" ? "br" : "gz"}` : undefined;
+      found =
+        packed && existsSync(packed)
+          ? { body: readFileSync(packed), encoding: encoding as string }
+          : { body: readFileSync(file) };
+    }
+    drawings.set(key, found);
+    return found;
+  };
 
   /** A form must come from a page of the address it is sent to. */
   const ownForm = (request: FastifyRequest) => {
@@ -724,7 +778,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         resourceId: row.id,
       });
       if (!decision.allowed) continue;
-      const body = row.body as { title?: string; description?: string };
+      const body = row.body as { title?: string; description?: string; published?: boolean };
+      if (body.published === false) continue;
       apps.push({
         href: appBasePath(place, {
           tenantSlug: tenant.slug,
@@ -754,6 +809,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const look = await frame(tenant, workspace.id);
     const home = place.kind === "domain" ? "/" : `${portalPath(place, tenant.slug)}/`;
     const missing = () => html(reply, 404, messagePage(look, NOT_FOUND(home)));
+    // A docs app with the workspace's drafts laid over it, under `_draft`: a preview for its
+    // writers. It is looked for first, since an app that is only a draft is in no bundle.
+    const preview =
+      fixedApp !== undefined
+        ? /^_draft(?:\/(.*))?$/.exec(rest)
+        : /^(.+?)\/_draft(?:\/(.*))?$/.exec(rest);
+    if (preview) {
+      const appPath = fixedApp ?? (preview[1] as string);
+      const file = (fixedApp !== undefined ? preview[1] : preview[2]) ?? "";
+      return serveDraftDocs(request, reply, place, tenant, workspace, appPath, file, look, missing);
+    }
     if (!workspace.active_bundle_id) return missing();
     const stored = await db
       .selectFrom("bundle")
@@ -795,9 +861,23 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       entry?: string;
       /** Set on an app that serves an interface: its files are the platform's own. */
       interface?: string;
+      /** Set on an app that serves documentation: its pages are drawn here, from the workspace's own. */
+      docs?: string;
+      /** Set on a docs app that asks its readers whether a page helped: where the answers go. */
+      feedback?: { table?: unknown };
+      /** False on a docs app that is switched off: its pages and the app are kept, and it is not served. */
+      published?: boolean;
       fallback?: boolean;
     };
-    const generated = typeof body.interface === "string";
+    const documents = typeof body.docs === "string";
+    if (documents && body.published === false) return missing();
+    // The one answer an app takes is a docs app's, from its readers.
+    if (!(request.method === "GET" || request.method === "HEAD") && !documents) {
+      return plain(reply, 405, "Method not allowed.");
+    }
+    // Neither runs anything a tenant wrote: an interface is drawn by the platform's own
+    // files, and documentation is drawn here.
+    const generated = typeof body.interface === "string" || documents;
     // An app written as code runs only at an address of its own, never where the console's
     // sign-in is, unless the operator knowingly allowed it (decision 0001).
     if (
@@ -859,7 +939,32 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       return html(reply, 403, messagePage(look, NOT_ALLOWED, { portal, who: who(principal) }));
     }
 
-    const runtime = generated ? await kernel.screens.files() : undefined;
+    if (documents) {
+      // A picture kept beside the pages is one of the app's files, and is served as any app's file is.
+      const pictures = appFiles(bundle, manifest.path);
+      if (!pictures.has(file))
+        return serveDocs(request, reply, {
+          look,
+          tenantId: tenant.id,
+          workspaceId: workspace.id,
+          bundleId: stored.id,
+          resources: bundle.manifests,
+          app: {
+            path: manifest.path,
+            key: keyOf(manifest),
+            title: body.title,
+            docs: body.docs as string,
+            ...(typeof body.feedback?.table === "string" ? { feedback: body.feedback.table } : {}),
+          },
+          base,
+          file,
+          pictures,
+        });
+    }
+
+    // The files that draw an interface. A docs app has none of them: what is left to serve
+    // of one, past this point, is a picture of its own.
+    const runtime = generated && !documents ? await kernel.screens.files() : undefined;
     if (runtime && runtime.size === 0) {
       return html(
         reply,
@@ -931,6 +1036,281 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     return reply.code(200).header("content-type", asset.contentType).send(content);
   }
 
+  /** A page's source among resources, by its path in the workspace. */
+  function sourceIn(resources: readonly ResourceLike[], path: string): string | undefined {
+    const found = resources.find((one) => one.kind === "doc" && one.path === path);
+    const source = (found?.body as { source?: unknown } | undefined)?.source;
+    return typeof source === "string" ? source : undefined;
+  }
+
+  /** What a docs app answers its own script with. Private, as the page it was asked from. */
+  function sendJson(reply: FastifyReply, body: unknown, preview = false) {
+    return reply
+      .code(200)
+      .header("content-type", "application/json; charset=utf-8")
+      .header("x-content-type-options", "nosniff")
+      .header("cache-control", preview ? "no-store" : "private, no-cache")
+      .send(JSON.stringify(body));
+  }
+
+  /** A page's Markdown, for whoever may read the page. */
+  function sendMarkdown(reply: FastifyReply, body: string, preview = false) {
+    return reply
+      .code(200)
+      .header("content-type", "text/markdown; charset=utf-8")
+      .header("x-content-type-options", "nosniff")
+      .header("content-security-policy", "default-src 'none'; sandbox")
+      .header("cache-control", preview ? "no-store" : "private, no-cache")
+      .send(body);
+  }
+
+  /**
+   * Answers an address under a docs app, for someone who may open the app:
+   * a page, a search, or the page a renamed one moved to.
+   */
+  async function serveDocs(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    at: {
+      look: PageFrame;
+      tenantId: string;
+      workspaceId: string;
+      bundleId: string;
+      resources: readonly ResourceLike[];
+      app: DocsApp;
+      base: string;
+      /** What follows the app's own address. */
+      file: string;
+      /** The app's own files: the pictures its pages show. */
+      pictures: ReadonlyMap<string, unknown>;
+    },
+  ) {
+    // When each page last changed: read once for each deployed bundle, with its pages.
+    const updated = docsKept(at.bundleId, at.app)
+      ? undefined
+      : new Map(
+          (
+            await db
+              .selectFrom("resource")
+              .select(["path", "updated_at"])
+              .where("workspace_id", "=", at.workspaceId)
+              .where("kind", "=", "doc")
+              .where("path", "like", `${at.app.docs}/%`)
+              .execute()
+          ).map((row) => [row.path, row.updated_at] as const),
+        );
+    const docs = docsOf(at.bundleId, at.app, at.resources, productNames(kernel.config), updated);
+    // The pages this reader said whether they helped, kept in their browser and nowhere else.
+    const voted = new Set((readCookie(request, VOTE_COOKIE) ?? "").split(".").filter(Boolean));
+    const voteOf = (page: string) =>
+      createHash("sha256").update(`${at.app.path}:${page}`).digest("hex").slice(0, 10);
+    const drawn = {
+      frame: at.look,
+      app: at.app,
+      base: at.base,
+      set: docs.built.set,
+      asset: (file: string) => (at.pictures.has(file) ? `${at.base}${file}` : undefined),
+      ...(at.app.feedback
+        ? { feedback: { said: (page: string) => voted.has(voteOf(page)), recording: true } }
+        : {}),
+    };
+    const send = (status: number, body: string) =>
+      reply
+        .code(status)
+        .header("content-type", "text/html; charset=utf-8")
+        .header("content-security-policy", DOCS_POLICY)
+        .header("x-content-type-options", "nosniff")
+        .header("referrer-policy", "same-origin")
+        // Private: it was drawn for someone who may open the app. Checked again each time.
+        .header("cache-control", "private, no-cache")
+        .send(body);
+
+    if (at.file === "_feedback") {
+      if (request.method !== "POST" || !at.app.feedback) return send(404, notFoundPage(drawn));
+      if (!ownForm(request)) return plain(reply, 403, "This form was sent from another site.");
+      if (!votes.allow(`${request.ip} ${at.workspaceId}`)) {
+        return plain(reply, 429, "Too many answers. Wait a minute and try again.");
+      }
+      const form = await readForm(request.raw, 2048);
+      const page = pageAt(docs.built.set, String(form.page ?? ""));
+      if (page === undefined || (form.helpful !== "yes" && form.helpful !== "no")) {
+        return plain(reply, 400, "Say which page, and whether it helped.");
+      }
+      const id = voteOf(page);
+      // A field no person sees, filled in, is a robot's: it is thanked, and nothing is kept.
+      if (!form.website && !voted.has(id)) {
+        try {
+          const table = await pathNow(db, at.workspaceId, at.app.feedback, "table");
+          const target = await describeTable(
+            (await kernel.data.forTenant(at.tenantId)).owner,
+            at.workspaceId,
+            table,
+          );
+          // Kept as the workspace keeps a row its own code writes: nothing says who the reader is.
+          const scope = { principalId: null, all: true };
+          await withData(kernel, at.tenantId, scope, (data) =>
+            insertRows(
+              data,
+              target,
+              [
+                {
+                  // The app's key, which a rename keeps; and its name, for people to read.
+                  site_key: at.app.key ?? at.app.path,
+                  site: at.app.title,
+                  page,
+                  helpful: form.helpful === "yes",
+                  version: at.bundleId,
+                  at: new Date().toISOString(),
+                },
+              ],
+              scope,
+            ),
+          );
+        } catch (error) {
+          request.log.warn({ err: error }, "A reader's answer could not be kept.");
+          return plain(reply, 503, "Your answer could not be kept. Try again later.");
+        }
+      }
+      const kept = [...voted, id].filter((one, at, all) => all.indexOf(one) === at).slice(-200);
+      reply.header(
+        "set-cookie",
+        [
+          `${VOTE_COOKIE}=${kept.join(".")}`,
+          `Path=${at.base}`,
+          "HttpOnly",
+          "SameSite=Lax",
+          `Max-Age=${60 * 60 * 24 * 365}`,
+          ...(request.protocol === "https" ? ["Secure"] : []),
+        ].join("; "),
+      );
+      if ((request.headers.accept ?? "").includes("application/json")) {
+        return sendJson(reply, { kept: true });
+      }
+      return redirect(reply, `${at.base}${urlOf(page)}#feedback`);
+    }
+    const asked = request.query as { q?: unknown; in?: unknown } | undefined;
+    const query = String(asked?.q ?? "").slice(0, 200);
+    if (at.file === "_search") {
+      return send(200, searchPage(drawn, query, docs.search.search(query, 30)));
+    }
+    if (at.file === "_search.json") {
+      const collection = typeof asked?.in === "string" ? asked.in.slice(0, 255) : undefined;
+      return sendJson(
+        reply,
+        searchAnswer(drawn, docs.search.grouped(query, collection ? { collection } : {})),
+      );
+    }
+    const markdown = pageMarkdown(docs.built.set, at.file, (page) =>
+      sourceIn(at.resources, `${at.app.docs}/${page}`),
+    );
+    if (markdown !== undefined) return sendMarkdown(reply, markdown);
+    const path = pageAt(docs.built.set, at.file);
+    if (path !== undefined) return send(200, docPage(drawn, path));
+
+    // A page that was renamed: its old address sends the browser to the new one, for good.
+    const wanted = `${at.app.docs}/${at.file.replace(/\/+$/, "")}`;
+    const moved = await db
+      .selectFrom("resource_alias")
+      .innerJoin("resource", "resource.id", "resource_alias.resource_id")
+      .select("resource.path as now")
+      .where("resource_alias.workspace_id", "=", at.workspaceId)
+      .where("resource_alias.kind", "=", "doc")
+      .where("resource_alias.path", "in", [wanted, `${wanted}/index`])
+      .where("resource_alias.expires_at", ">", new Date())
+      .executeTakeFirst();
+    if (moved?.now.startsWith(`${at.app.docs}/`)) {
+      const now = moved.now.slice(at.app.docs.length + 1);
+      if (docs.built.set.pages.has(now)) return redirect(reply, `${at.base}${urlOf(now)}`, 308);
+    }
+    return send(404, notFoundPage(drawn));
+  }
+
+  /**
+   * A docs app as it would be if every draft of the workspace's documentation
+   * were deployed now. Only a member who may read the workspace's
+   * documentation in the console sees it, whoever the app itself is bound to:
+   * a draft is not for the app's readers yet. To anyone else it is not there.
+   */
+  async function serveDraftDocs(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    place: Place,
+    tenant: Tenant,
+    workspace: { id: string; slug: string; active_bundle_id: string | null },
+    appPath: string,
+    file: string,
+    look: PageFrame,
+    missing: () => unknown,
+  ) {
+    const principal = await resolvePrincipal(kernel, request, tenant.id);
+    if (principal.type !== "member") return missing();
+    const at = { tenantId: tenant.id, workspaceId: workspace.id };
+    const reads =
+      (await check(db, principal, "doc:read", at)).allowed ||
+      (await check(db, principal, "resource:read", at)).allowed;
+    if (!reads) return missing();
+    const { resources, apps } = await workingDocs(db, workspace.id);
+    const app = apps.find((one) => one.path === appPath);
+    if (!app) return missing();
+    const { set } = buildApp(
+      app,
+      resources.filter((one) => one.state !== "removed"),
+    );
+    // Pictures are the deployed app's: a picture is not drafted in the console.
+    const stored = workspace.active_bundle_id
+      ? await db
+          .selectFrom("bundle")
+          .select(["id", "storage_key"])
+          .where("id", "=", workspace.active_bundle_id)
+          .executeTakeFirst()
+      : undefined;
+    const pictures = stored
+      ? appFiles(await loadBundle(kernel, stored), app.path)
+      : new Map<string, unknown>();
+    const served = appBasePath(place, {
+      tenantSlug: tenant.slug,
+      workspaceSlug: workspace.slug,
+      path: app.path,
+    });
+    const drawn = {
+      frame: look,
+      app,
+      base: `${served}_draft/`,
+      set,
+      asset: (picture: string) => (pictures.has(picture) ? `${served}${picture}` : undefined),
+      notice:
+        "A preview, with the workspace's drafts. Only members who may read its documentation see this. Its readers see what is deployed.",
+      // Readers are asked whether a page helped. Nothing said in a preview is kept.
+      ...(app.feedback ? { feedback: { said: () => false, recording: false } } : {}),
+    };
+    const send = (status: number, body: string) =>
+      reply
+        .code(status)
+        .header("content-type", "text/html; charset=utf-8")
+        .header("content-security-policy", DOCS_POLICY)
+        .header("x-content-type-options", "nosniff")
+        .header("x-robots-tag", "noindex")
+        .header("referrer-policy", "same-origin")
+        .header("cache-control", "no-store")
+        .send(body);
+    const asked = request.query as { q?: unknown; in?: unknown } | undefined;
+    const query = String(asked?.q ?? "").slice(0, 200);
+    if (file === "_search" || file === "_search.json") {
+      const index = loadSearchIndex(buildSearchIndex(set));
+      if (file === "_search") return send(200, searchPage(drawn, query, index.search(query, 30)));
+      const collection = typeof asked?.in === "string" ? asked.in.slice(0, 255) : undefined;
+      return sendJson(
+        reply,
+        searchAnswer(drawn, index.grouped(query, collection ? { collection } : {})),
+        true,
+      );
+    }
+    const markdown = pageMarkdown(set, file, (page) => sourceIn(resources, `${app.docs}/${page}`));
+    if (markdown !== undefined) return sendMarkdown(reply, markdown, true);
+    const path = pageAt(set, file);
+    return path === undefined ? send(404, notFoundPage(drawn)) : send(200, docPage(drawn, path));
+  }
+
   // ----- Which is which -----
 
   app.addHook("onRequest", async (request, reply) => {
@@ -943,6 +1323,38 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       if (place.kind === "main" && !path.startsWith("/apps/") && !path.startsWith("/portal/"))
         return;
       return plain(reply, 405, "Method not allowed.");
+    }
+
+    if (path === "/_platform/docs.css" || path === "/_platform/docs.js") {
+      const script = path.endsWith(".js");
+      return reply
+        .code(200)
+        .header("content-type", `${script ? "text/javascript" : "text/css"}; charset=utf-8`)
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "public, max-age=3600")
+        .send(script ? DOCS_SCRIPT : DOCS_CSS);
+    }
+
+    // What draws a diagram on a page of documentation: Mermaid, and the instance's own pan and
+    // zoom. It is built with the console and fetched only by a page that has a diagram.
+    if (path === "/_platform/diagrams.js") {
+      // The console's build writes compressed copies beside it: the best the browser takes is sent.
+      const accepts = String(request.headers["accept-encoding"] ?? "");
+      const encoding = /\bbr\b/.test(accepts)
+        ? "br"
+        : /\bgzip\b/.test(accepts)
+          ? "gzip"
+          : undefined;
+      const drawing = diagramsScript(encoding);
+      if (drawing === undefined) return plain(reply, 404, "Not found.");
+      if (drawing.encoding) reply.header("content-encoding", drawing.encoding);
+      return reply
+        .code(200)
+        .header("content-type", "text/javascript; charset=utf-8")
+        .header("vary", "accept-encoding")
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "public, max-age=3600")
+        .send(drawing.body);
     }
 
     if (path === "/_platform/portal.css") {
@@ -970,7 +1382,8 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       if (everything && path === "/") {
         return portal(request, reply, place, tenant, "", url.searchParams);
       }
-      if (!isPage) return plain(reply, 405, "Method not allowed.");
+      // A docs app takes one answer of its readers: whether a page helped.
+      if (!isPage && !path.endsWith("/_feedback")) return plain(reply, 405, "Method not allowed.");
       const segments = decodeSegments(path.slice(1));
       if (!segments) return plain(reply, 400, "That address is not valid.");
       return serveApp(
@@ -1004,7 +1417,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       const sub = segments.slice(2).join("/");
       return portal(request, reply, place, tenant, sub === "" ? "" : `/${sub}`, url.searchParams);
     }
-    if (!isPage) return plain(reply, 405, "Method not allowed.");
+    if (!isPage && !path.endsWith("/_feedback")) return plain(reply, 405, "Method not allowed.");
     const workspace = segments[2]
       ? await db
           .selectFrom("workspace")

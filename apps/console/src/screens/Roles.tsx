@@ -1,13 +1,14 @@
-import { Button, Closing, Notice, SideSheet, TextField } from "@vynxlabs/ui";
+import { Button, Closing, Notice, SideSheet, TextField, Toggletip, Tooltip } from "@volvel/ui";
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, SectionLabel } from "../kit/layout.tsx";
+import { consoleLink } from "../kit/objects.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { RemoveButton } from "../ListScreen.tsx";
-import { useUrlParam } from "../router.tsx";
+import { Link, useUrlParam } from "../router.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
 
 export interface Role {
@@ -190,6 +191,18 @@ export function PermissionPicker({
                       <span className="flex flex-wrap items-center gap-2">
                         {entry.label}
                         <code className="font-mono text-code-sm text-ink-muted">{entry.kind}</code>
+                        <Toggletip label={`What ${entry.label} allows`} title={entry.label}>
+                          <dl className="m-0 flex flex-col gap-2">
+                            {entry.verbs.map((verb) => (
+                              <div key={verb.verb}>
+                                <dt className="font-medium text-ink">
+                                  {verb.verb === "read" ? "Read" : "Change"}
+                                </dt>
+                                <dd className="m-0">{verb.description}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        </Toggletip>
                         {entry.appFacing ? (
                           <span className="text-meta text-ink-muted">End users can hold it</span>
                         ) : null}
@@ -209,7 +222,6 @@ export function PermissionPicker({
                               type="checkbox"
                               className={box}
                               aria-label={found.permission}
-                              title={found.description}
                               checked={allows(value, entry.kind, verb)}
                               onChange={(event) =>
                                 onChange(
@@ -224,8 +236,9 @@ export function PermissionPicker({
                               }
                             />
                           ) : (
-                            <span className="text-ink-muted" title="Nothing checks this">
-                              –
+                            <span className="text-ink-muted">
+                              <span aria-hidden="true">–</span>
+                              <span className="sr-only">Nothing checks this</span>
                             </span>
                           )}
                         </td>
@@ -277,10 +290,12 @@ function Summary({ role, kinds }: { role: Role; kinds: readonly PermissionKind[]
       allows(role.permissions, entry.kind, "write"),
   ).length;
   return (
-    <span className="text-ink-muted" title={role.permissions.join("  ")}>
-      Reads {read === kinds.length ? "everything" : `${read} of ${kinds.length}`}
-      {write > 0 ? `, changes ${write}` : ""}
-    </span>
+    <Tooltip label={role.permissions.join("  ")}>
+      <span className="text-ink-muted">
+        Reads {read === kinds.length ? "everything" : `${read} of ${kinds.length}`}
+        {write > 0 ? `, changes ${write}` : ""}
+      </span>
+    </Tooltip>
   );
 }
 
@@ -422,6 +437,11 @@ export function inShort(role: Role, kinds: readonly PermissionKind[]): string[] 
 export function Roles({ base, framed }: { base: string; framed?: Framed }) {
   const roles = useLoad<{ items: Role[] }>(`${base}/roles`);
   const catalog = useLoad<{ items: PermissionKind[] }>("/permissions");
+  // Who holds a role decides whether it can be deleted. Someone who may not read bindings sees
+  // no list, and the server's refusal says it if the role is still held.
+  const bindings = useLoad<{ items: { roleName: string; principalLabel: string }[] }>(
+    `${base}/bindings`,
+  );
   const [open, setOpen] = useState<Role | "new">();
   const [selected, setSelected] = useUrlParam("role", undefined, { push: true });
   const [show, setShow] = useUrlParam<Show>("show", "all");
@@ -434,6 +454,9 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
       : undefined;
   const chosen = all?.find((role) => role.id === selected);
   const fixed = chosen ? chosen.builtin || chosen.managedByResource : false;
+  const held = chosen
+    ? (bindings.data?.items ?? []).filter((one) => one.roleName === chosen.name)
+    : [];
 
   return (
     <>
@@ -508,10 +531,19 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
                   <Button size="small" onClick={() => setOpen(chosen)}>
                     {fixed ? "View" : "Change"}
                   </Button>
-                  {fixed ? null : (
+                  {fixed ? null : held.length > 0 ? (
+                    <Button
+                      size="small"
+                      variant="danger"
+                      disabled
+                      title="A role that is held cannot be deleted. Remove its bindings first."
+                    >
+                      Delete
+                    </Button>
+                  ) : (
                     <RemoveButton
                       label="Delete"
-                      confirm={`The role ${chosen.name} is deleted. Whoever held it loses what it allowed.`}
+                      confirm={`The role ${chosen.name} is deleted. Nobody holds it.`}
                       run={() => api.delete(`${base}/roles/${chosen.id}`)}
                       onDone={() => {
                         setSelected(undefined);
@@ -527,6 +559,24 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
               <div className="flex flex-col gap-5">
                 {chosen.description ? (
                   <p className="m-0 text-ink-muted">{chosen.description}</p>
+                ) : null}
+                {bindings.data ? (
+                  <div className="flex flex-col gap-2">
+                    <SectionLabel>Held by</SectionLabel>
+                    {held.length > 0 ? (
+                      <p className="m-0">
+                        {held.map((one) => one.principalLabel).join(", ")}.{" "}
+                        {fixed ? null : (
+                          <>
+                            It cannot be deleted while it is held. Remove its bindings in{" "}
+                            <Link to={`${consoleLink(base)}/members`}>Members and access</Link>.
+                          </>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="m-0 text-ink-muted">Nobody holds it.</p>
+                    )}
+                  </div>
                 ) : null}
                 <div className="flex flex-col gap-2">
                   <SectionLabel>In short</SectionLabel>

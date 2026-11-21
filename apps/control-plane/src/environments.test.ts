@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { sql } from "@vynxlabs/db";
-import { createTestDatabase } from "@vynxlabs/db/testing";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
+import { sql } from "@volvel/db";
+import { createTestDatabase } from "@volvel/db/testing";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { workspaceSchema } from "./kernel/data/apply.js";
 import { readConnection } from "./kernel/execution/bindings.js";

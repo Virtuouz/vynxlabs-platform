@@ -46,6 +46,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm check:schemas
+      - run: pnpm docs:check
       - run: pnpm check:migrations
       - name: Shipped migrations are unchanged
         if: github.event_name == 'pull_request'
@@ -99,9 +100,33 @@ jobs:
         if: failure()
         run: docker compose -f deploy/compose/compose.yaml logs
 
-  browser:
-    name: The exit criterion, in a browser
+  e2e-image:
+    name: The image the browser tests run
+    # Built once and handed to each shard, so every shard runs the same image and the
+    # build is paid for once rather than three times.
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t volvel/volvel:e2e .
+      - name: Save it
+        run: docker save volvel/volvel:e2e | gzip -1 > volvel-e2e.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: volvel-e2e-image
+          path: volvel-e2e.tar.gz
+          retention-days: 1
+
+  browser:
+    name: The exit criterion, in a browser (${{ matrix.group }})
+    needs: e2e-image
+    runs-on: ubuntu-latest
+    strategy:
+      # One shard failing does not stop the others: each says what it found.
+      fail-fast: false
+      matrix:
+        # Three groups cut by how long their tests take (e2e/playwright.config.ts).
+        group: [a, b, c]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -120,8 +145,11 @@ jobs:
             sleep 2
           done
           exit 1
-      - name: Build the image
-        run: docker build -t vynxlabs-platform:e2e .
+      - uses: actions/download-artifact@v4
+        with:
+          name: volvel-e2e-image
+      - name: Load the image
+        run: gunzip -c volvel-e2e.tar.gz | docker load
       - name: Run the image beside them
         # On the host's network, so that the instance, the browser and the test's own git
         # server all reach each other and Keycloak at localhost, as its realm expects. The
@@ -140,26 +168,42 @@ jobs:
             -e MANAGED_WORKERS=process -e MANAGED_WORKER_USER=same \
             -e EGRESS_ALLOW=127.0.0.0/8,::1,localhost \
             -e MAIL_CAPTURE_DIR=/mail -v /tmp/vx-mail:/mail \
-            vynxlabs-platform:e2e
+            volvel/volvel:e2e
           for i in $(seq 1 60); do
             curl -fsS http://localhost:8080/api/v1/readyz > /dev/null && exit 0
             sleep 1
           done
           docker logs platform
           exit 1
-      - name: Walk the exit criterion
+      - name: Build the CLI that seeds Fernhill
+        run: pnpm exec tsc -b
+      - name: Seed Fernhill, the example the walk-throughs use
+        # The phase walk-throughs sign in as Fernhill's people and use its data. Its outside
+        # systems are stand-ins on 4020, which the instance reaches on the host's network.
+        run: |
+          node examples/fernhill/stand-ins/server.mjs > /tmp/stand-ins.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:4020/ > /dev/null && break
+            sleep 1
+          done
+          cd examples/fernhill
+          XDG_CONFIG_HOME="$RUNNER_TEMP/xdg" VOLVEL_URL=http://localhost:8080 node setup/setup.mjs
+      - name: Walk the exit criterion, one group of it
         # Approval mail is kept as files the test reads, as a developer's machine can.
         env:
           E2E_MAIL_DIR: /tmp/vx-mail
-        run: pnpm e2e
+          # A source the data screens bind to: the stack's own Postgres.
+          E2E_SOURCE_URL: postgres://platform:platform@localhost:54329/platform
+        run: E2E_GROUP=${{ matrix.group }} pnpm e2e
       - name: Logs
         if: failure()
         run: |
           docker logs platform
           docker compose -f deploy/compose/compose.dev.yaml logs keycloak | tail -50
+          cat /tmp/stand-ins.log || true
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-test-results
+          name: browser-test-results-${{ matrix.group }}
           path: e2e/results
           retention-days: 7

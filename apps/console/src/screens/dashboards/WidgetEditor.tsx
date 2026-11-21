@@ -12,7 +12,7 @@ import {
   type VisualCondition,
   type VisualQuery,
   type WidgetSource,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import {
   Button,
   CheckboxField,
@@ -22,11 +22,13 @@ import {
   SideSheet,
   TextAreaField,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../../api.ts";
+import { ask } from "../../ask.tsx";
 import { Loading } from "../../kit/LoadState.tsx";
 import { SectionLabel } from "../../kit/layout.tsx";
+import { useNavigationGuard } from "../../router.tsx";
 import { parametersIn } from "../Queries.tsx";
 import type { Result } from "./model.ts";
 import { ResultTable, visualPath } from "./Widgets.tsx";
@@ -1022,6 +1024,24 @@ export function WidgetEditor({
 }) {
   const [widget, setWidget] = useState(opened);
   const [busy, setBusy] = useState(false);
+  // Cancel, Esc, a click outside and leaving the page ask before a changed widget is given up.
+  const changed = open && JSON.stringify(widget) !== JSON.stringify(opened);
+  useNavigationGuard(changed, "Your changes to this widget are not saved.");
+  const close = async () => {
+    if (
+      changed &&
+      !(await ask.confirm({
+        title: "Leave without saving?",
+        text: "Your changes to this widget are not saved.",
+        action: "Leave",
+        cancel: "Stay",
+        danger: true,
+      }))
+    ) {
+      return;
+    }
+    onClose();
+  };
   const schema = useLoad<Schema>(`${root}/queries/schema`);
   // SQL is offered to whoever may write it. The server says so, and refuses the rest on a save.
   const canWriteSql = schema.data?.maySql === true;
@@ -1143,12 +1163,12 @@ export function WidgetEditor({
     <SideSheet
       open={open}
       size="wide"
-      onClose={onClose}
+      onClose={() => void close()}
       title={opened.title || "A new widget"}
       description="What it asks, and how the answer is drawn."
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={() => void close()}>Cancel</Button>
           <Button
             variant="primary"
             loading={busy}

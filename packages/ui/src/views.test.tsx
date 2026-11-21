@@ -196,6 +196,28 @@ test("a timeline puts rows on one axis, cuts them into parts, and says how long 
   expect(screen.getAllByText("1m 0s").length).toBeGreaterThan(0);
 });
 
+test("a timeline stands each label above its bar, and names only the first and last ticks, under a container width", () => {
+  const { container } = render(
+    <Timeline now={61_000} rows={[{ id: "a", label: "extract", start: 1000, end: 22_000 }]} />,
+  );
+  // It is a container: what moves is moved by its own width, not the window's.
+  expect(container.firstElementChild?.className).toContain("@container");
+  const row = container.querySelector("li > div") as HTMLElement;
+  expect(row.className).toMatch(/\bflex-col\b/);
+  expect(row.className).toContain("@lg:flex-row");
+  expect(row.querySelector("span")?.className).toContain("w-full");
+  // Five ticks stand on the axis; the three between are hidden until it is wide.
+  const axis = container.querySelector('[aria-hidden="true"].flex.gap-3') as HTMLElement;
+  const ticks = [...axis.querySelectorAll<HTMLElement>("span.absolute")];
+  expect(ticks.map((tick) => tick.className.includes("hidden @lg:block"))).toEqual([
+    false,
+    true,
+    true,
+    true,
+    false,
+  ]);
+});
+
 test("lengths of time read as a person would say them", () => {
   expect(duration(400)).toBe("400 ms");
   expect(duration(13_800)).toBe("13.8 s");

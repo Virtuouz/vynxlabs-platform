@@ -1,4 +1,4 @@
-import { Notice } from "@vynxlabs/ui";
+import { Notice } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { api, type Me, useLoad } from "./api.ts";
 import { loadPreferences } from "./prefs.ts";

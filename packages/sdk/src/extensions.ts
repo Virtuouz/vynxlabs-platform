@@ -63,7 +63,7 @@ export interface WidgetContext {
   /** Called with the row a person chose to look at. Other widgets may follow it. */
   onSelect?(row: Record<string, unknown>): void;
   /** Whether there are more rows than the ones given, and how to ask for them. */
-  page?: { hasMore: boolean; onMore(): void };
+  page?: { hasMore: boolean; onMore(): void; loading?: boolean; error?: string };
   /** Saves one changed value of a row. A rejection's message is shown where the value is. */
   onEdit?(row: Record<string, unknown>, column: string, value: unknown): Promise<void>;
   /** Removes a row. */

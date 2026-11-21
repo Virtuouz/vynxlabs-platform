@@ -25,7 +25,7 @@ export const submit = defineScript({
 });
 ```
 
-The deploy reports `renamed script requests/submit -> lending/requests/file`. It is the same resource: its run history, its rows if it is a table, what the workspace bound to it and what it was given access to all stay. `requests/submit` keeps answering for 90 days, with `Deprecation`, `Sunset` and `Vynx-Resource-Moved` on the answer.
+The deploy reports `renamed script requests/submit -> lending/requests/file`. It is the same resource: its run history, its rows if it is a table, what the workspace bound to it and what it was given access to all stay. `requests/submit` keeps answering for 90 days, with `Deprecation`, `Sunset` and `Volvel-Resource-Moved` on the answer.
 
 Without `key` a new path is a delete and a create. The instance refuses that when the old resource holds runs, rows or access given by hand, and tells you the key to add. `--allow-delete <path>` is for when you mean it.
 
@@ -57,7 +57,7 @@ A resource has one owner: the code that defines it, or a file. Which one decides
 | In git sync | No. Sync never reads or writes TypeScript | Yes |
 | Right for | Tables, scripts and flows that share code | What has no code: apps, screens, themes, variables, schedules, triggers, connections |
 
-The console cannot edit TypeScript. Saving a draft of something the code defines, and deploying it, **takes it over**: it becomes a file the console owns, with the same key, history and bindings. The definition is still in your code, so the next `platform deploy` takes it back, and so on until you remove it from one side. A script the code defines cannot be taken over at all, because its code leans on the rest of yours: the console can only replace it with one written there, at the same path.
+The console cannot edit TypeScript. Saving a draft of something the code defines, and deploying it, **takes it over**: it becomes a file the console owns, with the same key, history and bindings. The definition is still in your code, so the next `volvel deploy` takes it back, and so on until you remove it from one side. A script the code defines cannot be taken over at all, because its code leans on the rest of yours: the console can only replace it with one written there, at the same path.
 
 Keep what the console should edit as files from the start and none of this comes up.
 
@@ -73,15 +73,15 @@ body:
   default: "5"
 ```
 
-- A script, connector or trigger source keeps its code beside the file, as `<name>.<kind>.ts`. That code may import only `@vynxlabs/sdk` and `node:` modules.
-- Files can be kept anywhere. Under `platform/`, or under a folder listed in `vynxlabs.yaml`, a file's path is where it is. Anywhere else it says `path:`.
+- A script, connector or trigger source keeps its code beside the file, as `<name>.<kind>.ts`. That code may import only `@volvel/sdk` and `node:` modules.
+- Files can be kept anywhere. Under `platform/`, or under a folder listed in `volvel.yaml`, a file's path is where it is. Anywhere else it says `path:`.
 - A file may say `key:` and `title:` beside its body.
 - Write comments in these files and order them as you like. When the console changes one, only what it changed is rewritten; your comments and your order stay. A comment inside a list stays at its position in the list.
-- `platform schemas` makes your editor complete and check these files as you type. It writes each kind's schema to `.platform/schemas/` and adds the mapping to `.vscode/settings.json`, for the YAML extension of VS Code. Run it again after upgrading the CLI.
+- `volvel schemas` makes your editor complete and check these files as you type. It writes each kind's schema to `.platform/schemas/` and adds the mapping to `.vscode/settings.json`, for the YAML extension of VS Code. Run it again after upgrading the CLI.
 - In the console, the editor of a resource that code defines offers "Move to a file" for the kinds without code. Once that is deployed, remove the definition from the code: a deploy that still has it takes the resource back.
 
 ```yaml
-# vynxlabs.yaml, at the repository's root
+# volvel.yaml, at the repository's root
 roots: [src]
 ignore: [vendor]
 ```
@@ -89,7 +89,7 @@ ignore: [vendor]
 The console edits these files wherever you keep them. With git sync, a change made in the console is committed to the file it came from, on the workspace's branch; a rename moves the file, or changes its `path:` if it says one. A resource made in the console is written under `platform/`.
 
 - A file is rewritten only when the resource was changed in the console. It is then written in the console's form, so comments in it are lost.
-- Without git sync, `platform pull` writes the console's changes into the same files. It does not overwrite one you changed and never pulled unless you pass `--force`.
+- Without git sync, `volvel pull` writes the console's changes into the same files. It does not overwrite one you changed and never pulled unless you pass `--force`.
 - Code is different. A resource made by `define*` in TypeScript is not a file the console can write, and the console shows it read-only.
 
 A resource is defined once. The build refuses one that is both in the code and in a file, by path or by key, and names both places.
@@ -130,12 +130,12 @@ body:
 The file's name is the key. Who is in a group is never in the repository: people belong to the identity provider.
 
 ```sh
-platform tenant plan --tenant <slug>      # what a release would change
-platform tenant release --tenant <slug>
-platform tenant pull --tenant <slug>      # write what the tenant has now
+volvel tenant plan --tenant <slug>      # what a release would change
+volvel tenant release --tenant <slug>
+volvel tenant pull --tenant <slug>      # write what the tenant has now
 ```
 
-A release makes the tenant's access what the files say. It removes what the files lack only with `--allow-delete <kind>/<key>`, and never while a workspace's bundle still gives the group or service account access. If the tenant asks for a second person, the release waits until someone else approves it (`platform tenant approve <number>`).
+A release makes the tenant's access what the files say. It removes what the files lack only with `--allow-delete <kind>/<key>`, and never while a workspace's bundle still gives the group or service account access. If the tenant asks for a second person, the release waits until someone else approves it (`volvel tenant approve <number>`).
 
 Then name them by key in the workspace's code, so that what they are called can change:
 
@@ -228,6 +228,148 @@ body:
 - A filter reaches a widget only where the widget binds it: to a `column` of its table, or to a `parameter` of its query.
 - A date grouped by `month` comes back as `<column>_month`.
 - The easiest way to write one is to build it in the console and choose **Keep it as a resource**.
+
+## Documentation
+
+A workspace's documentation is pages of Markdown, kept in the repository beside everything else and served as a site.
+
+### A page is a file
+
+A page is a Markdown file in the folder of pages, which is `platform/docs` unless `volvel.yaml` names others:
+
+```yaml
+# volvel.yaml
+docs: [docs]
+```
+
+Under that folder, a file's place is its path: `docs/handbook/support/refunds.md` is the page `handbook/support/refunds`. A file's name is never changed to make it fit, so name files in lowercase letters, digits, hyphens and underscores. Markdown anywhere else in the repository is nobody's page.
+
+A page says what it is at its top:
+
+```md
+---
+title: Refund an order
+description: How support issues a full or partial refund.
+topic: support-refunds
+terms:
+  - id: rma
+    term: RMA
+    short: A return authorisation, issued before a refund.
+about:
+  - table: sales/orders
+extends: [data-tables]
+---
+
+Ask for the :term[RMA]{id=rma} first.
+```
+
+- `pages`, on a folder's own page (`index.md`), lists the order of what is in the folder by name: a page's file name without `.md`, a folder's own name. What it does not list comes after, by title.
+- `topic` is a name that stays when the page moves. Link to it as `[refunds](topic:support-refunds)`.
+- `terms` are glossary terms the page defines. Any page of the workspace can use one with `:term[RMA]{id=rma}`, and the console underlines it where a heading or a description uses the word.
+- `about` lists resources the page documents. The page is listed on each one's screen in the console.
+- `extends` adds the page to a topic of the product's own help, under "From your team".
+- `key` keeps the page the same page when you move its file: give it the path it had.
+
+### An app serves a folder
+
+```ts
+export const handbook = defineApp({ path: "handbook", title: "Handbook", docs: "handbook" });
+export const open = defineBinding({
+  path: "access/handbook",
+  role: "portal_user",
+  principal: { type: "anonymous" },
+  resource: handbook,
+});
+```
+
+Every page whose path is under `handbook` is a page of the site, and `handbook` is a top-level folder: a site never serves a folder inside another. `index` is its home page, each folder directly under it is a collection, and folders inside them go as deep as they are written. A folder's own page with nothing written in it lists what is in the folder. Who may open the site is decided by bindings, as for any app: nobody outside without one.
+
+A site can ask its readers whether a page helped, and keep each answer as a row of a table of yours. A workspace keeps the answers of all its sites in one table, `docs-feedback`, where each row says which site it is from by `site_key`, the key of the site's app, which a rename keeps:
+
+```ts
+export const votes = defineTable({
+  path: "docs-feedback",
+  columns: {
+    site_key: column.text({ required: true }),
+    site: column.text(),
+    page: column.text({ required: true }),
+    helpful: column.boolean({ required: true }),
+    version: column.text(),
+    at: column.timestamp(),
+  },
+});
+export const handbook = defineApp({
+  path: "handbook",
+  title: "Handbook",
+  docs: "handbook",
+  feedback: { table: "docs-feedback" },
+});
+```
+
+A deploy refuses a site whose table is not there or lacks those columns. Nothing about who answered is kept, and a reader answers once for each page.
+
+A picture kept beside the pages, `docs/handbook/img/till.png`, is written `![The till](img/till.png)` from the home page. A picture by `https` address is allowed too, and is not shown offline.
+
+### Components
+
+What Markdown cannot say is written one way, whichever component it is:
+
+```md
+:::alert[Before you start]{type=warning}
+A refund over 500 needs a second person.
+:::
+
+:::tabs
+::::tab{label="Card"}
+Refund to the card.
+::::
+::::tab{label="Cash"}
+Refund at the till.
+::::
+:::
+```
+
+The components are `alert`, `term`, `field`, `steps`, `tabs` and `tab`, `details`, `kbd`, `code-tabs`, `file-tree` and `pages`. Each may sit inside any other, as deep as you like: a container inside another is written with more colons, so that it reads as inside it, and a container inside a list item is indented with the item's words. Only a `tab` goes in `tabs`, and `code-tabs` holds code blocks. `::pages` lists what is in the page's folder, and `::glossary` every term the pages of the page's collection define, from A to Z, with the page that defines each (`::glossary{scope=site}` for the whole site's). Every instance lists what each takes in its help, under Reference. There is no HTML in a page and nothing in it runs.
+
+A block of code written as `mermaid` is a diagram:
+
+````md
+```mermaid
+flowchart LR
+  A[Customer asks] --> B{Has an RMA?}
+  B -- yes --> C[Refund]
+```
+````
+
+It is drawn in the site's own colours, again when the reader's theme changes, and the reader can move and zoom it: drag, ⌘ or Ctrl and scroll, two fingers, or the keys + − 0 and the arrows. Without script it is its source. Mermaid is served by the instance, and fetched only by a page that has a diagram.
+
+### What columns and resources are for
+
+A column takes a `description`, and so do a schedule, a trigger and a binding:
+
+```ts
+status: column.text({ description: "Where the order is in its life." }),
+```
+
+A column's description is shown behind an ⓘ on its heading, in the console and in apps, to whoever may read the table. `:term[status]{table=sales/orders column=status}` in a page draws on the same words.
+
+### Help from an app
+
+A page of an interface can name a topic as its help. Whoever uses the app, and may open the documentation, gets a Help button that shows the page.
+
+An app written as code has the same from `@volvel/app`:
+
+```tsx
+import { HelpPanel } from "@volvel/app";
+
+<HelpPanel topic="support-refunds" />
+```
+
+It is a button that opens the page beside the app, as its docs app serves it. It draws nothing when no page has the topic or the person may not open it, so it can go on a screen before its help is written. Give it a `className` to make the button one of your own. Where the documentation is served at another address than the app, the button opens the page in a new tab, since one address may not show another's page inside it. `useHelp(topic)` gives the page's title and address to draw your own, `helpUrl(topic)` the address alone, and `terms()` the glossary.
+
+### What the build checks
+
+`volvel build` and every deploy refuse a workspace whose documentation does not hold together: a page that does not read, a link to a page or a heading that is not there, a term nobody defines, a page about a resource that is not there, two apps serving the same pages. Each is named with its page and its line.
 
 ## What the build stops
 

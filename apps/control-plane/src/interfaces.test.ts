@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -51,9 +51,10 @@ function bundle(): Bundle {
     core: { min: "0.0.0", below: "99.0.0" },
     manifests: [
       manifest("table", "invoices", {
+        description: "What customers have been billed.",
         columns: {
-          number: { type: "text", required: true },
-          team: { type: "text" },
+          number: { type: "text", required: true, description: "The number printed on it." },
+          team: { type: "text", description: "The team that sent it." },
           total: { type: "number" },
         },
         policy: {
@@ -61,7 +62,11 @@ function bundle(): Bundle {
           rules: [{ allow: "read", when: { column: "team", in: "groups" } }],
         },
       }),
-      manifest("table", "secrets", { columns: { note: { type: "text" } } }),
+      manifest("table", "secrets", {
+        description: "Notes nobody outside may read.",
+        columns: { note: { type: "text", description: "The note." } },
+      }),
+      manifest("table", "plain", { columns: { note: { type: "text" } } }),
       manifest("interface", "screens/invoices", screen),
       manifest("interface", "screens/private", {
         title: "Private",
@@ -262,8 +267,21 @@ describe("an app that serves an interface", () => {
         { name: "id", type: "uuid", required: true, references: null },
         { name: "created_at", type: "timestamp", required: true, references: null },
         { name: "updated_at", type: "timestamp", required: true, references: null },
-        { name: "number", type: "text", required: true, references: null },
-        { name: "team", type: "text", required: false, references: null },
+        {
+          name: "number",
+          description: "The number printed on it.",
+          type: "text",
+          required: true,
+          references: null,
+        },
+        {
+          name: "team",
+          description: "The team that sent it.",
+          type: "text",
+          required: false,
+          references: null,
+        },
+        // A column that says nothing of itself has no description at all.
         { name: "total", type: "number", required: false, references: null },
       ],
     });
@@ -323,6 +341,74 @@ describe("an app that serves an interface", () => {
     expect(await totals(jon)).toEqual([
       { by: { team: "sales" }, values: { count: 1, "sum:total": 5 } },
     ]);
+  });
+
+  test("what a table and its columns are for is told to whoever may read the table or its rows, and to nobody else", async () => {
+    const terms = async (who: { get: (url: string) => Promise<Any> }, prefix = "") =>
+      (await who.get(`${prefix}${ws()}/terms`)).body;
+    // This workspace has no documentation: no terms of its own, and no pages to list.
+    const NOTHING = { terms: [], resources: [], extensions: [], attachments: [], topics: [] };
+    const invoices = {
+      kind: "table",
+      path: "invoices",
+      title: null,
+      description: "What customers have been billed.",
+      columns: [
+        { name: "number", description: "The number printed on it." },
+        { name: "team", description: "The team that sent it." },
+      ],
+    };
+    const secrets = {
+      kind: "table",
+      path: "secrets",
+      title: null,
+      description: "Notes nobody outside may read.",
+      columns: [{ name: "note", description: "The note." }],
+    };
+    // A member who reads the workspace is told of both, and not of a table that says nothing.
+    const all = await terms(alice);
+    expect(all.terms).toEqual([]);
+    expect(all.resources.filter((one: Any) => one.kind === "table")).toEqual([invoices, secrets]);
+    // Apps are described by their titles alone here, and have nothing to say.
+    expect(all.resources.every((one: Any) => one.kind === "table")).toBe(true);
+
+    // A member who may read tables' definitions, and no rows, is told the same.
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "table_reader",
+      permissions: ["table:read"],
+    });
+    expect(role.status, JSON.stringify(role.body)).toBe(201);
+    const made = await alice.post(`/tenants/${tenant}/members`, {
+      email: "tess@acme.example",
+      name: "Tess",
+      password: PASSWORD,
+    });
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "member",
+      principalId: made.body.id,
+      roleId: role.body.id,
+      workspaceId: prod,
+    });
+    const tess = await t.signIn("tess@acme.example", PASSWORD);
+    expect((await terms(tess)).resources).toEqual([invoices, secrets]);
+
+    // A member bound to nothing is told nothing, and not that there is anything to tell.
+    await alice.post(`/tenants/${tenant}/members`, {
+      email: "nora@acme.example",
+      name: "Nora",
+      password: PASSWORD,
+    });
+    const nora = await t.signIn("nora@acme.example", PASSWORD);
+    expect(await terms(nora)).toEqual(NOTHING);
+
+    // An end user is told of the table whose rows an app shows them, and not of the other.
+    const forIvy = await terms(ivy.browser, "/api/v1");
+    expect(forIvy).toEqual({ ...NOTHING, resources: [invoices] });
+    expect(JSON.stringify(forIvy)).not.toContain("secrets");
+    // Someone not signed in is told nothing.
+    expect(await terms(browser(), "/api/v1")).toEqual(NOTHING);
+    // A workspace that is not there is not there.
+    expect((await alice.get(`/tenants/${tenant}/workspaces/${tenant}/terms`)).status).toBe(404);
   });
 
   test("an instance without the files says so in place of the app", async () => {
@@ -454,6 +540,21 @@ describe("actions on a page", () => {
     expect(await seenBy(jon)).toEqual({
       "script:invoices/remind": { canStart: false, description: null, inputSchema: null },
     });
+
+    // What the script is for is told on the same terms: to who may start it, and to nobody else.
+    const scripts = async (who: { browser: ReturnType<typeof browser> }) =>
+      (await who.browser.get(`/api/v1${ws()}/terms`)).body.resources.filter(
+        (one: Any) => one.kind === "script",
+      );
+    expect(await scripts(ivy)).toEqual([
+      {
+        kind: "script",
+        path: "invoices/remind",
+        title: null,
+        description: "A reminder is on its way.",
+      },
+    ]);
+    expect(await scripts(jon)).toEqual([]);
 
     // The builder says the app's audience at large would not all see it.
     const facts = await alice.get(
@@ -629,7 +730,7 @@ describe("someone who maintains apps made in the console, and is not a developer
   test("they deploy what they made by name, and cannot deploy everything", async () => {
     const everything = await mona.post(`${devWs()}/changes/deploy`, {});
     expect(everything.status).toBe(403);
-    expect(everything.body.detail).toContain("Say which interfaces to deploy");
+    expect(everything.body.detail).toContain("Say which interfaces or pages to deploy");
     expect(
       (await mona.post(`${devWs()}/changes/deploy`, { paths: ["screens/stock", "limits/batch"] }))
         .status,
@@ -675,6 +776,8 @@ describe("someone who maintains apps made in the console, and is not a developer
       deployed: true,
       draft: true,
       removing: true,
+      // The app that served it is still named, so taking the removal back finds it.
+      app: "stock-app",
     });
     const removed = await mona.post(`${devWs()}/changes/deploy`, {
       paths: ["screens/stock", "stock-app"],

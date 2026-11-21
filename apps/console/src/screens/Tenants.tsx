@@ -1,11 +1,11 @@
-import { Button } from "@vynxlabs/ui";
+import { Button } from "@volvel/ui";
 import { api, isOperator, type Me } from "../api.ts";
 import { ListCollection } from "../kit/ListCollection.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Link, navigate } from "../router.tsx";
-import { DeleteTenantButton } from "./Environments.tsx";
+import { DeleteTenantButton, RenameTenantButton } from "./Environments.tsx";
 
 interface TenantRow {
   id: string;
@@ -27,9 +27,9 @@ export function Tenants({ me }: { me: Me }) {
           ? "Every client organization on this instance. Opening one needs an access grant unless you are a member of it."
           : "The organizations you belong to."
       }
-      path="/tenants?limit=200"
+      path="/tenants"
       rowKey={(row) => row.id}
-      search={(row) => `${row.name} ${row.slug}`}
+      paged
       columns={[
         {
           header: "Name",
@@ -108,6 +108,7 @@ export function Tenants({ me }: { me: Me }) {
             <Button variant="primary" onClick={() => navigate(`/t/${row.id}`)}>
               Open
             </Button>
+            <RenameTenantButton tenant={row} onDone={reload} />
             {operator ? (
               <DeleteTenantButton
                 tenant={row}

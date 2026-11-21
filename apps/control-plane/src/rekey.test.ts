@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { loadConfig } from "./config.js";
 import { fingerprint, Vault } from "./kernel/crypto.js";

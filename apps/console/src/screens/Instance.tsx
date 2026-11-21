@@ -1,4 +1,4 @@
-import { Button } from "@vynxlabs/ui";
+import { Button } from "@volvel/ui";
 import { api } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { ListCollection } from "../kit/ListCollection.tsx";
@@ -49,9 +49,9 @@ export function InstanceMembers() {
     <ListCollection<MemberRow>
       title="All members"
       description="Every person with an identity on this instance, across all tenants."
-      path="/members?limit=200"
+      path="/members"
       rowKey={(row) => row.id}
-      search={(row) => `${row.name} ${row.email}`}
+      paged
       columns={[
         {
           header: "Name",
@@ -148,7 +148,8 @@ export function Operators() {
             label: "Member",
             placeholder: "Find a member by email",
             choose: {
-              path: "/members?limit=200",
+              path: "/members",
+              search: true,
               option: (item: { id: string; email: string; name?: string }) => ({
                 value: item.id,
                 label: item.email,

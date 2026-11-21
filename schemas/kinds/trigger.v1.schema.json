@@ -9,6 +9,11 @@
         "type": {
           "const": "webhook"
         },
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "What the trigger is for."
+        },
         "script": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
@@ -110,6 +115,11 @@
       "properties": {
         "type": {
           "const": "event"
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "What the trigger is for."
         },
         "script": {
           "type": "string",

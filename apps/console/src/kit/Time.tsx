@@ -1,4 +1,4 @@
-import { Tooltip } from "@vynxlabs/ui";
+import { Tooltip } from "@volvel/ui";
 import { ago, clock, fullTime, stamp, type When } from "./format.ts";
 
 /**

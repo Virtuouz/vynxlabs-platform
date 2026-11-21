@@ -1,4 +1,4 @@
-import { Button, Notice, SideSheet, TextField } from "@vynxlabs/ui";
+import { Button, Notice, SideSheet, TextField } from "@volvel/ui";
 import { ArrowRight, History, Rocket, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
@@ -16,13 +16,15 @@ import {
   Stepper,
 } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
+import { kindName, objectHref } from "../kit/objects.tsx";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { DriftView } from "./Drift.tsx";
-import { Deployments } from "./Execution.tsx";
+import { ActivateVersion } from "./Execution.tsx";
 import { type PromotionRequest, RequestPromotion } from "./Promotion.tsx";
+import { breakingOf, PromotionConfirm, sentence } from "./PromotionConfirm.tsx";
 
 interface Workspace {
   id: string;
@@ -59,9 +61,6 @@ interface Summary {
 export const isOld = (row: { updatedAt: string }, now = Date.now()) =>
   now - new Date(row.updatedAt).getTime() > 86_400_000;
 
-/** A message from the API starts in lower case, to follow a path. Alone, it is a sentence. */
-const sentence = (message: string) => `${message.charAt(0).toUpperCase()}${message.slice(1)}`;
-
 interface Refusal {
   code: string;
   detail: string;
@@ -70,6 +69,7 @@ interface Refusal {
 
 interface Ledger {
   id: string;
+  bundleId: string;
   bundleVersion: number;
   message?: string | null;
   createdBy?: string;
@@ -101,14 +101,11 @@ const CHANGE_TAG: Record<DraftRow["change"], [string, "draft" | "live" | "danger
     rename: ["Renamed", "draft"],
   };
 
-const KIND_LABEL: Record<string, string> = {
-  flow: "Flows",
-  script: "Scripts",
-  interface: "Apps",
-  app: "Apps",
-  table: "Tables",
-  connector: "Connectors",
-  trigger_source: "Trigger sources",
+/** A section's heading: the kind's name, in the plural. */
+const kindHeading = (kind: string) => {
+  if (kind === "interface") return "Apps";
+  const name = kindName(kind);
+  return name.endsWith("y") ? `${name.slice(0, -1)}ies` : `${name}s`;
 };
 
 export type ReleaseStep = "review" | "deploy" | "promote";
@@ -287,7 +284,7 @@ function ReviewStep({
       </div>
     );
 
-  const groups = [...new Set(drafts.map((row) => KIND_LABEL[row.kind] ?? row.kind))];
+  const groups = [...new Set(drafts.map((row) => kindHeading(row.kind)))];
   // With none chosen, every draft is deployed: one saved days ago goes with the rest.
   const old = chosen.size === 0 && drafts.length > 1 ? drafts.filter((row) => isOld(row)) : [];
   const editLink = (row: DraftRow) =>
@@ -299,7 +296,7 @@ function ReviewStep({
           ? `${link}/scripts/edit/${row.path}`
           : row.kind === "interface"
             ? `${link}/screens/${row.path}`
-            : undefined;
+            : objectHref(link, row.kind, row.path);
 
   return (
     <div className="flex flex-col gap-6">
@@ -344,7 +341,7 @@ function ReviewStep({
                 <SectionLabel>{group}</SectionLabel>
                 <Panel as="div" className="divide-y divide-line">
                   {drafts
-                    .filter((row) => (KIND_LABEL[row.kind] ?? row.kind) === group)
+                    .filter((row) => kindHeading(row.kind) === group)
                     .map((row) => {
                       const to = editLink(row);
                       return (
@@ -605,15 +602,30 @@ function DraftHistory({
   );
 }
 
+interface BundleItem {
+  id: string;
+  version: number;
+  active: boolean;
+  createdAt: string;
+}
+
 function LedgerStep({ root, workspace }: { root: string; workspace: Workspace }) {
   const ledger = useLoad<{ items: Ledger[] }>(`${root}/deployments`);
+  const bundles = useLoad<{ items: BundleItem[] }>(`${root}/bundles`);
+  const reload = () => {
+    ledger.reload();
+    bundles.reload();
+  };
+  const running = bundles.data?.items.find((one) => one.active)?.id;
+  const ran = new Set(ledger.data?.items.map((row) => row.bundleId));
+  const neverRun = (bundles.data?.items ?? []).filter((one) => !ran.has(one.id));
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
         <SectionLabel>Versions of {workspace.name}</SectionLabel>
         {ledger.error ? (
           <ErrorState error={ledger.error} onRetry={ledger.reload} />
-        ) : !ledger.data ? (
+        ) : !ledger.data || !bundles.data ? (
           <Loading />
         ) : ledger.data.items.length === 0 ? (
           <EmptyCanvas title="Nothing deployed here yet" />
@@ -635,17 +647,66 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
                     </Tag>
                   ))}
                 </span>
+                {row.bundleId !== running ? (
+                  <ActivateVersion
+                    root={root}
+                    workspace={workspace}
+                    bundleId={row.bundleId}
+                    version={row.bundleVersion}
+                    onDone={reload}
+                  />
+                ) : null}
               </div>
             ))}
           </Panel>
         )}
       </section>
-      <section className="flex flex-col gap-2">
-        <SectionLabel>Bundles and rollback</SectionLabel>
-        <Deployments root={root} />
-      </section>
+      {neverRun.length > 0 ? (
+        <section className="flex flex-col gap-2">
+          <SectionLabel>Not yet run here</SectionLabel>
+          <Panel as="div" className="divide-y divide-line">
+            {neverRun.map((one) => (
+              <div key={one.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
+                <Mono className="w-12 shrink-0 text-ink">v{one.version}</Mono>
+                <span className="min-w-0 flex-1 text-ink-muted">
+                  Uploaded {ago(one.createdAt)}, never activated
+                </span>
+                {one.active ? null : (
+                  <ActivateVersion
+                    root={root}
+                    workspace={workspace}
+                    bundleId={one.id}
+                    version={one.version}
+                    onDone={reload}
+                  />
+                )}
+              </div>
+            ))}
+          </Panel>
+        </section>
+      ) : null}
     </div>
   );
+}
+
+/** What the promote button says: "production" for production, the workspace's own name otherwise. */
+export function promoteLabel(target: { name: string; type: string }): string {
+  return `Promote to ${target.type === "production" ? "production" : target.name}`;
+}
+
+/** The confirm for a promotion: it names the workspace it really reaches. */
+export function promoteConfirm(
+  target: { name: string; type: string },
+  version: number | undefined,
+  breaking: string[],
+): { title: string; text: string; action: string } {
+  return {
+    title: `Promote to ${target.name}?`,
+    text: `${target.name} starts running version ${version} at once. Runs in progress there finish on the version they started with.${
+      breaking.length > 0 ? ` It also changes what an agent calls: ${breaking.join(" ")}` : ""
+    }`,
+    action: promoteLabel(target),
+  };
 }
 
 function PromoteStep({
@@ -676,7 +737,7 @@ function PromoteStep({
   const [problem, setProblem] = useState<string>();
   const data = preview.data;
   // Only production has agents that were told a name and cannot be told another at once.
-  const breaking = target.type === "production" ? (data?.summary?.breaking ?? []) : [];
+  const breaking = breakingOf(data);
 
   return (
     <div className="flex flex-col gap-5">
@@ -712,36 +773,13 @@ function PromoteStep({
       ) : (
         <PreviewPanels data={data} targetName={target.name} link={link} />
       )}
-      {data?.refusal?.code === "rename_suspected" && data.canPromote !== false ? (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            variant="danger"
-            onClick={async () => {
-              const paths = data.refusal?.errors.map((one) => one.path) ?? [];
-              const sure = await ask.confirm({
-                title: `Delete ${paths.join(", ")} in ${target.name}?`,
-                text: "What each one holds there is cut off from whatever is created in its place. If one of them was renamed, give the new one its key in the repository instead, and nothing is lost.",
-                action: "Delete them and look again",
-                danger: true,
-              });
-              if (sure) setAllowed([...allowed, ...paths]);
-            }}
-          >
-            Delete them anyway
-          </Button>
-        </div>
-      ) : null}
-      {breaking.length > 0 ? (
-        <Notice tone="attention">
-          <strong>
-            This changes {breaking.length === 1 ? "a name" : "names"} that something outside calls.
-          </strong>
-          <ul className="mt-2 mb-0 pl-5">
-            {breaking.map((one) => (
-              <li key={`${one.path} ${one.message}`}>{sentence(one.message)}</li>
-            ))}
-          </ul>
-        </Notice>
+      {data ? (
+        <PromotionConfirm
+          data={data}
+          targetName={target.name}
+          allowed={allowed}
+          onAllow={setAllowed}
+        />
       ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
       {result ? (
@@ -778,13 +816,11 @@ function PromoteStep({
             disabled={!data?.possible}
             onClick={async () => {
               const sure = await ask.confirm({
-                title: `Promote to ${target.name}?`,
-                text: `${target.name} starts running version ${data?.bundle.version} at once. Runs in progress there finish on the version they started with.${
-                  breaking.length > 0
-                    ? ` It also changes what an agent calls: ${breaking.map((one) => sentence(one.message)).join(" ")}`
-                    : ""
-                }`,
-                action: "Promote to production",
+                ...promoteConfirm(
+                  target,
+                  data?.bundle.version,
+                  breaking.map((one) => sentence(one.message)),
+                ),
                 danger: true,
               });
               if (!sure) return;
@@ -834,8 +870,7 @@ function PromoteStep({
               }
             }}
           >
-            <Rocket aria-hidden="true" size={16} /> Promote to{" "}
-            {target.type === "production" ? "production" : target.name}
+            <Rocket aria-hidden="true" size={16} /> {promoteLabel(target)}
           </Button>
         )}
         <Button variant="quiet" onClick={() => navigate(`${link}/settings`)}>

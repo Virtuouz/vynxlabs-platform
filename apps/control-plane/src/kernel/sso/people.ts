@@ -1,4 +1,4 @@
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import { type Actor, type Audit, type Db, type Trx, writeAudit } from "../audit.js";
 import { createEndUser } from "../endusers.js";
 import { HttpError } from "../errors.js";

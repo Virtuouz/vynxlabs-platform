@@ -1,4 +1,4 @@
-import { column, defineEvent, defineTable, z } from "@vynxlabs/sdk";
+import { column, defineEvent, defineTable, z } from "@volvel/sdk";
 
 /**
  * Lakeshore State University lends laptops, hotspots, calculators and the like

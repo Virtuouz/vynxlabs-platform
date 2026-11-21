@@ -1,9 +1,10 @@
 import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { sql } from "@vynxlabs/db";
-import { PATH_PATTERN } from "@vynxlabs/manifest";
+import { sql } from "@volvel/db";
+import { displayGuess, PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { loadCatalog, purgeRetired, workspaceSchema } from "../kernel/data/apply.js";
+import { updateRowKeepingFiles } from "../kernel/data/files.js";
 import {
   aggregateQueryFrom,
   aggregateRows,
@@ -17,7 +18,6 @@ import {
   insertRows,
   type Row,
   scopeFor,
-  updateRow,
   withData,
 } from "../kernel/data/rows.js";
 import { badRequest, forbidden } from "../kernel/errors.js";
@@ -160,6 +160,9 @@ export const toRowsPage = (found: {
 
 const Column = Type.Object({
   name: Type.String(),
+  description: Type.Optional(
+    Type.String({ description: "What the column holds, when its definition says." }),
+  ),
   type: Type.String(),
   required: Type.Boolean(),
   unique: Type.Boolean(),
@@ -397,6 +400,9 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: {
             200: Type.Object({
               name: Type.String(),
+              description: Type.Optional(
+                Type.String({ description: "What the table is for, when its definition says." }),
+              ),
               status: Type.String(),
               managedIn: Type.String(),
               policy: AnyObject,
@@ -425,11 +431,16 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!table) return describeTable(data, params.w, name) as never;
         const resource = await db
           .selectFrom("resource")
-          .select("ownership")
+          .select(["ownership", "body"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "table")
           .where("path", "=", name)
           .executeTakeFirst();
+        // What the table and its columns are for is in its definition, not in the catalog.
+        const defined = (resource?.body ?? {}) as {
+          description?: string;
+          columns?: Record<string, { description?: string }>;
+        };
         const schema = workspaceSchema(params.w);
         const count = await sql<{
           n: string;
@@ -445,6 +456,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         return {
           name,
+          ...(defined.description ? { description: defined.description } : {}),
           status: table.status,
           managedIn: resource?.ownership ?? "code",
           policy: table.policy as Record<string, unknown>,
@@ -453,6 +465,9 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           stored: { schema, table: table.physicalName },
           columns: table.columns.map((column) => ({
             name: column.name,
+            ...(defined.columns?.[column.name]?.description
+              ? { description: defined.columns[column.name]?.description as string }
+              : {}),
             type: column.type,
             required: column.required,
             unique: column.unique,
@@ -523,7 +538,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 description:
                   "Reference columns, separated by commas, at most five. For each, `expanded` " +
                   "gives what stands for every row pointed to: the value of the target table's " +
-                  "`display` column, by the row's ID. A row the caller may not read is left out.",
+                  "`display` column (else its `name`, `title` or first text column), by the row's ID. A row the caller may not read is left out.",
               }),
             ),
             as: Type.Optional(
@@ -586,8 +601,13 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           } catch {
             continue;
           }
-          const display = pointed.target.display;
-          if (!display || !pointed.target.columns.some((one) => one.name === display)) continue;
+          // What the table says stands for a row, else the one rule the console's pickers use.
+          const named = pointed.target.display;
+          const display =
+            named && pointed.target.columns.some((one) => one.name === named)
+              ? named
+              : displayGuess(pointed.target.columns);
+          if (!display) continue;
           const found = await withData(kernel, params.t, pointed.scope, (data) =>
             findRows(data, pointed.target, {
               filter: { column: "id", op: "in", value: ids },
@@ -738,7 +758,15 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }) => {
         const { target, scope } = await enter(ctx, params, wildPath(params), "write");
         const row = await withData(kernel, params.t, scope, (data) =>
-          updateRow(data, target, params.id, body),
+          updateRowKeepingFiles(
+            kernel,
+            data,
+            { tenantId: params.t, id: params.w },
+            ctx.principal,
+            target,
+            params.id,
+            body,
+          ),
         );
         ctx.mutated = true;
         await announceRows(kernel, params.t, params.w, target.name, "updated", [params.id]);

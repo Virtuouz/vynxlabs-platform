@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { CacheProvider } from "@node-saml/node-saml";
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import { type Actor, ANONYMOUS, type Db, mutate, writeAudit } from "../audit.js";
 import type { Kernel } from "../kernel.js";
 import { summarize } from "./claims.js";

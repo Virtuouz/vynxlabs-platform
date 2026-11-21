@@ -1,4 +1,4 @@
-import type { InterfaceBody, InterfacePage, PageWidget, WidgetField } from "@vynxlabs/manifest";
+import type { InterfaceBody, InterfacePage, PageWidget, WidgetField } from "@volvel/manifest";
 import {
   Button,
   chartSpecFor,
@@ -11,7 +11,7 @@ import {
   useDialogs,
   Widget,
   type WidgetContext,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import type React from "react";
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionButton, type PageScope, selectedBy, useActions } from "./actions.tsx";
@@ -157,6 +157,8 @@ function WidgetView({
   const [formKey, setFormKey] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [problem, setProblem] = useState<string>();
+  // The next page of rows: asked for, or why it did not come. The rows already shown stay.
+  const [more, setMore] = useState<{ loading: boolean; error?: string }>({ loading: false });
 
   const table = widget.table;
   const link = linkFilter(widget, source, chosen);
@@ -177,6 +179,7 @@ function WidgetView({
       return;
     }
     let current = true;
+    setMore({ loading: false });
     setData((before) => ({ ...before, loading: true }));
     const summary = widget.summary;
     const reading = summary
@@ -278,7 +281,12 @@ function WidgetView({
   if (widget.type === "action") {
     if (!widget.action) return null;
     if (!actions.canStart(widget.action)) {
-      return <p className="m-0 text-body-sm text-ink-muted">You may not do this here.</p>;
+      return (
+        <p className="m-0 text-body-sm text-ink-muted">
+          You may not {widget.action.label ? `"${widget.action.label}"` : "do this"} here. Ask
+          whoever looks after this app to give you access.
+        </p>
+      );
     }
     return <ActionButton action={widget.action} scope={scope} actions={actions} />;
   }
@@ -290,7 +298,12 @@ function WidgetView({
     );
   }
   if (!info.canRead) {
-    return <Notice tone="attention">You may not read the table "{table}".</Notice>;
+    return (
+      <Notice tone="attention">
+        You may not read the table "{table}". Ask whoever looks after this app to give you access to
+        it.
+      </Notice>
+    );
   }
   const missing = fields.filter(
     (field) => !widget.summary && !info.columns.some((column) => column.name === field.column),
@@ -308,6 +321,7 @@ function WidgetView({
   const kitFields: KitField[] = fields.map((field) => ({
     name: field.column,
     label: field.label ?? heading(field.column),
+    description: info.columns.find((column) => column.name === field.column)?.description,
     type: typeOf(widget, info, field.column),
     editable: field.editable === true && canWrite && !SYSTEM.has(field.column),
   }));
@@ -335,7 +349,12 @@ function WidgetView({
 
   if (widget.type === "form") {
     if (!info.canWrite) {
-      return <Notice tone="attention">You may not add rows to the table "{table}".</Notice>;
+      return (
+        <Notice tone="attention">
+          You may not add rows to the table "{table}". Ask whoever looks after this app to give you
+          access to it.
+        </Notice>
+      );
     }
     if (held === "waiting") return <p className="m-0 text-ink-muted">{waitingText}</p>;
     return (
@@ -369,8 +388,11 @@ function WidgetView({
       ? {
           page: {
             hasMore: true,
+            loading: more.loading,
+            ...(more.error ? { error: more.error } : {}),
             onMore: () => {
               const cursor = data.cursor as string;
+              setMore({ loading: true });
               client
                 .find(table as string, {
                   ...(filter ? { filter } : {}),
@@ -378,12 +400,20 @@ function WidgetView({
                   limit,
                   cursor,
                 })
-                .then((page) =>
-                  setData((before) => ({
-                    ...before,
-                    rows: [...before.rows, ...page.items],
-                    cursor: page.nextCursor,
-                  })),
+                .then(
+                  (page) => {
+                    setMore({ loading: false });
+                    setData((before) => ({
+                      ...before,
+                      rows: [...before.rows, ...page.items],
+                      cursor: page.nextCursor,
+                    }));
+                  },
+                  (error: unknown) =>
+                    setMore({
+                      loading: false,
+                      error: `More rows could not be loaded. ${failure(error).message}`,
+                    }),
                 );
             },
           },

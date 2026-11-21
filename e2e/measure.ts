@@ -19,7 +19,7 @@ export function firstRowTop(page: Page): Promise<number | null> {
     const candidates = [
       ...main.querySelectorAll("tbody tr[data-row]"),
       ...main.querySelectorAll(
-        '[role="grid"] [role="row"][aria-rowindex]:not([aria-rowindex="1"])',
+        '[role="grid"] [role="row"][aria-rowindex]:not([aria-rowindex="1"]), [role="grid"] tbody tr[aria-rowindex]',
       ),
       ...main.querySelectorAll("[data-list] > li, [data-list] > a"),
       ...main.querySelectorAll("[data-empty-state]"),
@@ -74,14 +74,21 @@ export function overdraws(page: Page): Promise<string[]> {
 /**
  * Bordered containers inside bordered containers (07 §7.5): block boxes with a
  * border on at least three sides, larger than a control, that have such a box
- * as an ancestor. Theme previews (`data-preview`) and dialogs are left out.
+ * as an ancestor. Theme previews (`data-preview`), a sheet of the kit's samples, each in
+ * its own panel (`data-samples`), and dialogs are left out.
  */
 export function nested(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const main = document.querySelector("main");
     if (!main) return [];
     const bordered = (element: Element) => {
-      if (element.matches("input, select, textarea, button, hr, a, kbd, td, th, tr, table")) {
+      // A field, a table's parts, and a recessed well (`data-well`: code, JSON, a log) have a
+      // border of their own at any depth (07 §7.5): they are not panels.
+      if (
+        element.matches(
+          "input, select, textarea, button, hr, a, kbd, td, th, tr, table, [data-well]",
+        )
+      ) {
         return false;
       }
       const style = getComputedStyle(element);
@@ -110,7 +117,7 @@ export function nested(page: Page): Promise<string[]> {
     };
     const found: string[] = [];
     for (const element of main.querySelectorAll("*")) {
-      if (element.closest("[data-preview], [role='dialog']")) continue;
+      if (element.closest("[data-preview], [data-samples], [role='dialog']")) continue;
       if (!bordered(element)) continue;
       let parent = element.parentElement;
       while (parent && parent !== main) {

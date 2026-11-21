@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { isId } from "@vynxlabs/db";
+import { isId } from "@volvel/db";
 import { fromNodeHeaders } from "better-auth/node";
 import type { FastifyRequest } from "fastify";
 import type { Place } from "./apps/hosts.js";

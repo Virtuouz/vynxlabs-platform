@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { readPreference, usePreference } from "../prefs.ts";
 import { SHORTCUTS, type ShortcutId } from "./shortcuts.ts";
 
@@ -64,12 +64,15 @@ function pressed(event: KeyboardEvent, combo: string): boolean {
 
 /** Whether a combination is a single key a person may turn off: no ⌘, Ctrl or Alt. */
 export const isSingle = (combo: string) =>
-  !/(^|\+)(Mod|Ctrl|Alt)\+/.test(combo) && combo !== "Escape";
+  // A function key types nothing, so it is safe in a field and is no "single key" to turn off.
+  !/(^|\+)(Mod|Ctrl|Alt)\+/.test(combo) && combo !== "Escape" && !/^F\d+$/.test(combo);
 
 interface Binding {
   id: ShortcutId;
   /** Returns `false` when it did nothing, so the key goes on to the next binding and the page. */
   run: (event: KeyboardEvent) => unknown;
+  /** Whether it is on now: read at the key press, not at the last render. */
+  on: () => boolean;
 }
 
 const bindings: Binding[] = [];
@@ -115,10 +118,12 @@ function dispatch(event: KeyboardEvent) {
   }
   // The first key of a chord: kept for a second, waiting for the second.
   if (!typing && singles && !event.metaKey && !event.ctrlKey && !event.altKey) {
-    const starts = bindings.some((binding) =>
-      SHORTCUTS[binding.id].keys.some(
-        (combo) => combo.split(" ").length === 2 && combo.startsWith(`${event.key} `),
-      ),
+    const starts = bindings.some(
+      (binding) =>
+        binding.on() &&
+        SHORTCUTS[binding.id].keys.some(
+          (combo) => combo.split(" ").length === 2 && combo.startsWith(`${event.key} `),
+        ),
     );
     chord = starts ? { first: event.key, at: Date.now() } : undefined;
   }
@@ -136,20 +141,31 @@ export function useShortcut(
   { enabled = true }: { enabled?: boolean } = {},
 ) {
   const latest = useRef(handler);
-  latest.current = handler;
+  const allowed = useRef(enabled);
+  // Taken before the browser paints, so that a key pressed right after typing runs this render's
+  // handler, not the previous one.
+  useLayoutEffect(() => {
+    latest.current = handler;
+    allowed.current = enabled;
+  });
   useEffect(() => {
-    if (!enabled) return;
     if (!listening) {
       addEventListener("keydown", dispatch);
       listening = true;
     }
-    const binding: Binding = { id, run: (event) => latest.current(event) };
+    // Always bound, and asked whether it is on at the key press: a shortcut turned on by the
+    // last keystroke (a draft that just became unsaved) works before the next render.
+    const binding: Binding = {
+      id,
+      run: (event) => (allowed.current ? latest.current(event) : false),
+      on: () => allowed.current,
+    };
     bindings.push(binding);
     return () => {
       const at = bindings.indexOf(binding);
       if (at >= 0) bindings.splice(at, 1);
     };
-  }, [id, enabled]);
+  }, [id]);
 }
 
 const NAMES: Record<string, [mac: string, other: string]> = {

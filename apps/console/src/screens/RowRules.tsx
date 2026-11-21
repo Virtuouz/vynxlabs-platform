@@ -1,4 +1,4 @@
-import { Button, ComboboxField, SelectField, TextField } from "@vynxlabs/ui";
+import { Button, ComboboxField, SelectField, TextField } from "@volvel/ui";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
 import { DataTable } from "../kit/DataTable.tsx";

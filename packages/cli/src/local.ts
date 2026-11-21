@@ -31,7 +31,7 @@ export async function runLocally(args: string[], io: Io) {
     allowPositionals: true,
   });
   const [path] = positionals;
-  if (!path) throw new CliError("Say which script to run: platform run <script path>");
+  if (!path) throw new CliError("Say which script to run: volvel run <script path>");
   const directory = resolve(values.dir ?? ".");
 
   let input: unknown = {};
@@ -96,7 +96,7 @@ export async function runLocally(args: string[], io: Io) {
       { execute(input: unknown, ctx: unknown): Promise<unknown> }
     >;
     const sdk = await import(
-      pathToFileURL(createRequire(join(directory, "package.json")).resolve("@vynxlabs/sdk")).href
+      pathToFileURL(createRequire(join(directory, "package.json")).resolve("@volvel/sdk")).href
     );
     const abort = new AbortController();
     const log = (level: string) => (message: string, fields?: Record<string, unknown>) =>
@@ -151,13 +151,13 @@ const STARTER: Record<string, string> = {
       name: "tenant-repository",
       private: true,
       type: "module",
-      dependencies: { "@vynxlabs/sdk": "^0.5.0" },
+      dependencies: { "@volvel/sdk": "^0.5.0" },
     },
     null,
     2,
   )}\n`,
   ".gitignore": "node_modules/\n.platform/\n",
-  "src/index.ts": `import { defineSchedule, defineScript, z } from "@vynxlabs/sdk";
+  "src/index.ts": `import { defineSchedule, defineScript, z } from "@volvel/sdk";
 
 // Everything this file exports becomes a resource in the workspace you deploy to.
 
@@ -197,5 +197,5 @@ export async function init(args: string[], io: Io) {
     await writeFile(file, contents);
   }
   io.out(`Created a tenant repository in ${directory}`);
-  io.out("Next: install dependencies, then try `platform run hello` and `platform build`.");
+  io.out("Next: install dependencies, then try `volvel run hello` and `volvel build`.");
 }

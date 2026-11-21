@@ -73,6 +73,9 @@ test("an address says which area and screen it is, and whether it is an editor",
     section: "flows",
     editor: true,
   });
+  // A table's own screen fills the window; the list of tables is a page.
+  expect(whereIs("/t/t1/workspaces/w1/tables/orders", false).workbench).toBe(true);
+  expect(whereIs("/t/t1/workspaces/w1/tables", false).workbench).toBe(false);
   expect(whereIs("/t/t1/roles", false)).toMatchObject({ area: "tenant", section: "members" });
   expect(whereIs("/t/t1", false)).toMatchObject({ area: "tenant", section: "overview" });
   expect(whereIs("/", true).area).toBe("instance");
@@ -200,7 +203,7 @@ test("a chosen theme is put on the page and remembered, and the system's is the 
 });
 
 test("without a logo the mark is the name's initials", () => {
-  expect(monogram("Vynxlabs")).toBe("vy");
+  expect(monogram("Volvel")).toBe("vo");
   expect(monogram("Northwind Ops")).toBe("no");
 });
 
@@ -211,19 +214,19 @@ test("each page's tab title says what is open, the section, the workspace and th
     </Shell>
   );
   const { rerender } = show(at("/t/t1/workspaces/w2/runs"));
-  await waitFor(() => expect(document.title).toBe("Runs · Sandbox · Vynxlabs"));
+  await waitFor(() => expect(document.title).toBe("Runs · Sandbox · Volvel"));
   rerender(at("/t/t1/workspaces/w2/scripts/edit/orders/sync"));
-  await waitFor(() => expect(document.title).toBe("orders/sync · Scripts · Sandbox · Vynxlabs"));
+  await waitFor(() => expect(document.title).toBe("orders/sync · Scripts · Sandbox · Volvel"));
   rerender(at("/t/t1/workspaces/w2/scripts/new"));
-  await waitFor(() => expect(document.title).toBe("New script · Scripts · Sandbox · Vynxlabs"));
+  await waitFor(() => expect(document.title).toBe("New script · Scripts · Sandbox · Volvel"));
   rerender(at("/t/t1/roles"));
-  await waitFor(() => expect(document.title).toBe("Members & access · Acme · Vynxlabs"));
+  await waitFor(() => expect(document.title).toBe("Members & access · Acme · Volvel"));
   rerender(
     <Shell me={operator} path="/instance/branding" tenantId={undefined} onSignOut={() => {}}>
       <p>Screen</p>
     </Shell>,
   );
-  await waitFor(() => expect(document.title).toBe("Console branding · Vynxlabs"));
+  await waitFor(() => expect(document.title).toBe("Console branding · Volvel"));
 });
 
 test("the first tab stop skips to the content, and a new page takes focus to its heading", async () => {

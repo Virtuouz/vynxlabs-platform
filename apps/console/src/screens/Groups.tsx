@@ -1,20 +1,14 @@
-import {
-  Button,
-  Closing,
-  ComboboxField,
-  Dialog,
-  EmptyState,
-  Notice,
-  TextField,
-} from "@vynxlabs/ui";
-import { useState } from "react";
+import { Button, Closing, ComboboxField, Dialog, EmptyState, Notice, TextField } from "@volvel/ui";
+import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { ErrorState } from "../kit/LoadState.tsx";
+import { usePagedList } from "../kit/paged.tsx";
 import { Code, Mono, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
+import { useUrlParam } from "../router.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
 
 interface Person {
@@ -46,19 +40,27 @@ function MembersDialog({
   onClose: () => void;
 }) {
   const detail = useLoad<{ members: Person[] }>(path);
-  const everyone = useLoad<{ items: Person[] }>(candidates);
+  const [typed, setTyped] = useState("");
+  // The server searches the people who could be added, so no one past the first page is out of reach.
+  const everyone = usePagedList<Person>(candidates, { search: typed });
   const [adding, setAdding] = useState<string>();
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState(false);
   const members = detail.data?.members ?? [];
   const inGroup = new Set(members.map((person) => person.id));
-  const options = (everyone.data?.items ?? [])
+  const options = (everyone.items ?? [])
     .filter((person) => !inGroup.has(person.id))
     .map((person) => ({
       value: person.id,
       label: person.email,
       ...(person.name ? { hint: person.name } : {}),
     }));
+  // A page of people who are all in the group already is not the end of the list.
+  const { hasMore, loadMore, loading: finding, loadingMore } = everyone;
+  const nobodyYet = options.length === 0 && !finding && !loadingMore && !everyone.moreError;
+  useEffect(() => {
+    if (nobodyYet && hasMore) void loadMore();
+  }, [nobodyYet, hasMore, loadMore]);
 
   return (
     <Dialog
@@ -94,12 +96,16 @@ function MembersDialog({
               options={options}
               value={adding}
               placeholder="Search by email"
+              hint={hasMore && options.length > 0 && !typed ? "Type to find others." : undefined}
               empty={
-                everyone.loading
+                finding || loadingMore || hasMore
                   ? "Loading…"
-                  : `Every ${noun} of this tenant is already in the group.`
+                  : typed
+                    ? `No ${noun} matches that, or the ones that do are in the group already.`
+                    : `Every ${noun} of this tenant is already in the group.`
               }
               onChange={setAdding}
+              onSearch={setTyped}
             />
           </div>
           <Button type="submit" variant="primary" loading={busy} disabled={!adding}>
@@ -161,7 +167,9 @@ interface MemberGroup {
 /** Groups of members: staff who are given access together. */
 export function Groups({ base, framed }: { base: string; framed?: Framed }) {
   const groups = useLoad<{ items: MemberGroup[] }>(`${base}/groups`);
-  const [open, setOpen] = useState<{ id: string; name: string }>();
+  // The open group is in the address, so a link reaches it and Back closes it.
+  const [openId, setOpenId] = useUrlParam("group", undefined, { push: true });
+  const open = groups.data?.items.find((row) => row.id === openId);
   const [creating, setCreating] = useState(false);
   return (
     <>
@@ -211,7 +219,7 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
             align: "end",
             cell: (row) => (
               <span className="inline-flex gap-1">
-                <Button size="small" onClick={() => setOpen(row)}>
+                <Button size="small" onClick={() => setOpenId(row.id)}>
                   Members
                 </Button>
                 <Button
@@ -271,9 +279,9 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
             key={open.id}
             group={open}
             path={`${base}/groups/${open.id}`}
-            candidates={`${base}/members?limit=200`}
+            candidates={`${base}/members`}
             noun="member"
-            onClose={() => setOpen(undefined)}
+            onClose={() => setOpenId(undefined)}
           />
         )}
       </Closing>
@@ -291,7 +299,8 @@ interface EndUserGroup {
 /** Groups of end users: the people of the tenant's apps, sorted by what they may see and do. */
 export function EndUserGroups({ base, framed }: { base: string; framed?: Framed }) {
   const groups = useLoad<{ items: EndUserGroup[] }>(`${base}/end-user-groups`);
-  const [open, setOpen] = useState<EndUserGroup>();
+  const [openId, setOpenId] = useUrlParam("group", undefined, { push: true });
+  const open = groups.data?.items.find((row) => row.id === openId);
   const [creating, setCreating] = useState(false);
   return (
     <>
@@ -327,8 +336,54 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
             align: "end",
             cell: (row) => (
               <span className="inline-flex gap-1">
-                <Button size="small" onClick={() => setOpen(row)}>
+                <Button size="small" onClick={() => setOpenId(row.id)}>
                   People
+                </Button>
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    const name = await ask.prompt({
+                      title: `Rename ${row.name}`,
+                      text: "Access given to the group, and rules that name it by its key, are not touched. A rule that holds the old name stops matching its people: have rows hold the key.",
+                      label: "Name",
+                      initial: row.name,
+                      action: "Rename",
+                    });
+                    if (!name || name.trim() === row.name) return;
+                    try {
+                      await api.patch(`${base}/end-user-groups/${row.id}`, { name: name.trim() });
+                      groups.reload();
+                    } catch (error) {
+                      notify.error(error);
+                    }
+                  }}
+                >
+                  Rename
+                </Button>
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    const next = await ask.prompt({
+                      title: `What ${row.name} is for`,
+                      label: "Description",
+                      hint: "In plain words, 500 characters at most. Leave it empty to say nothing.",
+                      initial: row.description,
+                      action: "Save",
+                      required: false,
+                      multiline: true,
+                    });
+                    if (next === null || next.trim() === row.description) return;
+                    try {
+                      await api.patch(`${base}/end-user-groups/${row.id}`, {
+                        description: next.trim().slice(0, 500),
+                      });
+                      groups.reload();
+                    } catch (error) {
+                      notify.error(error);
+                    }
+                  }}
+                >
+                  Describe
                 </Button>
                 <RemoveButton
                   label="Delete"
@@ -375,10 +430,10 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
             key={open.id}
             group={open}
             path={`${base}/end-user-groups/${open.id}`}
-            candidates={`${base}/end-users?limit=200`}
+            candidates={`${base}/end-users`}
             noun="end user"
             onClose={() => {
-              setOpen(undefined);
+              setOpenId(undefined);
               // The count on the list is of the people just added or taken out.
               groups.reload();
             }}

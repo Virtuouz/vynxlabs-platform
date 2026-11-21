@@ -1,5 +1,5 @@
-import { sql } from "@vynxlabs/db";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
+import { sql } from "@volvel/db";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 

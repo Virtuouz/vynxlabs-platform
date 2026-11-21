@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { type Bundle, bundleDigest } from "@vynxlabs/manifest";
+import { type Bundle, bundleDigest } from "@volvel/manifest";
 import { afterEach, describe, expect, it } from "vitest";
 import { allowedCall, type Job } from "./context.js";
 import { type MachineProbe, procProbe } from "./machine.js";
@@ -57,7 +57,7 @@ export const nosy = {
       environ = readFileSync("/proc/self/environ", "utf8");
     } catch {}
     return {
-      token: process.env.PLATFORM_WORKER_TOKEN ?? null,
+      token: process.env.VOLVEL_WORKER_TOKEN ?? null,
       environHasToken: environ.includes("wt-secret"),
       keys: Object.keys(process.env).sort(),
     };

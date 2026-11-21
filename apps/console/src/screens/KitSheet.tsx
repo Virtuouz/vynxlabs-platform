@@ -1,16 +1,24 @@
+import { parse } from "@volvel/markup";
 import {
   Badge,
   Button,
   CheckboxField,
   ComboboxField,
   ContextMenu,
+  Details,
+  Doc,
   Grid,
   Kbd,
   Notice,
   SelectField,
   Skeleton,
+  Term,
+  TermScope,
   TextField,
-} from "@vynxlabs/ui";
+  Toggletip,
+  Tree,
+  type TreeNode,
+} from "@volvel/ui";
 import { GitCompareArrows } from "lucide-react";
 import { useState } from "react";
 import { Identifier } from "../kit/copy.tsx";
@@ -69,11 +77,59 @@ const SWATCHES = [
  * field in each of its states, the ways something loads and fails, and a list
  * at each density. Its pictures, light and dark, are compared on every change.
  */
+const KIT_TREE: TreeNode[] = [
+  {
+    id: "support",
+    label: "Support",
+    children: [
+      { id: "support/refunds", label: "Refunds" },
+      {
+        id: "support/escalations",
+        label: "Escalations",
+        children: [{ id: "support/escalations/tier-two", label: "Tier two" }],
+      },
+    ],
+  },
+  { id: "faq", label: "Questions" },
+];
+
+const KIT_DOC = parse(
+  [
+    "# Deploying",
+    "",
+    "Press :kbd[Ctrl+K] and choose **Deploy**, or run `volvel deploy`.",
+    "",
+    ":::alert[Before you deploy]{type=warning}",
+    "Deleting a table drops its data.",
+    ":::",
+    "",
+    ":::tabs",
+    "::::tab{label=CLI}",
+    "```sh",
+    "volvel deploy --tenant acme --workspace sandbox",
+    "```",
+    "::::",
+    "::::tab{label=Console}",
+    "1. Open **Release**.",
+    "2. Choose **Deploy**.",
+    "::::",
+    ":::",
+    "",
+    "| Workspace | Changes by |",
+    "| --- | --- |",
+    "| Dev | Saving, then deploy |",
+    "| Production | Deploy or promotion only |",
+  ].join("\n"),
+);
+
 export function KitSheet() {
+  const [page, setPage] = useState("support/refunds");
   const [chip, setChip] = useState("all");
   const [stage, setStage] = useState("review");
   return (
-    <div className="flex flex-col gap-8">
+    // Each sample of the kit is shown in a panel of its own: the polish measure of boxes in
+    // boxes leaves the sheet out (e2e/measure.ts), and still measures what draws over what.
+    <div className="flex flex-col gap-8" data-samples>
       <PageHeader
         eyebrow="Instance"
         title="Component kit"
@@ -435,6 +491,48 @@ export function KitSheet() {
             shown={undefined}
             onChange={() => {}}
           />
+        </Panel>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <SectionLabel>Help beside a word, a folded section and a tree</SectionLabel>
+        <Panel className="grid gap-6 p-4 md:grid-cols-2">
+          <TermScope>
+            <div className="flex flex-col gap-3">
+              <p className="m-0">
+                Each{" "}
+                <Term
+                  id="workspace"
+                  word="workspace"
+                  short="A place where a tenant's resources live: a dev workspace, or production."
+                >
+                  workspace
+                </Term>{" "}
+                belongs to one tenant. A second mention of the workspace is plain:{" "}
+                <Term id="workspace" word="workspace" short="Not shown.">
+                  workspace
+                </Term>
+                .
+              </p>
+              <p className="m-0 flex items-center gap-1">
+                Timezone
+                <Toggletip label="About the timezone" title="Timezone">
+                  A schedule runs at this zone's clock time, whatever the daylight-saving rules do.
+                </Toggletip>
+              </p>
+              <Details summary="Why does production change only by deploy?">
+                So that what runs is always what a repository or a release says.
+              </Details>
+            </div>
+          </TermScope>
+          <Tree label="Example pages" selected={page} onSelect={setPage} nodes={KIT_TREE} />
+        </Panel>
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <SectionLabel>A page of documentation</SectionLabel>
+        <Panel className="p-4">
+          <Doc tree={KIT_DOC} headingShift={2} />
         </Panel>
       </section>
 

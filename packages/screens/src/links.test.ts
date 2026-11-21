@@ -1,4 +1,4 @@
-import type { PageWidget } from "@vynxlabs/manifest";
+import type { PageWidget } from "@volvel/manifest";
 import { describe, expect, test } from "vitest";
 import {
   all,

@@ -29,8 +29,8 @@
   ],
   "clients": [
     {
-      "clientId": "vynxlabs-platform",
-      "name": "Vynxlabs platform, over OIDC",
+      "clientId": "volvel",
+      "name": "Volvel, over OIDC",
       "protocol": "openid-connect",
       "publicClient": false,
       "secret": "dev-only-oidc-secret",

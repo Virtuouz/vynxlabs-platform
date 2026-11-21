@@ -1,4 +1,4 @@
-import { TextAreaField, TextField } from "@vynxlabs/ui";
+import { TextAreaField, TextField } from "@volvel/ui";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { failureText } from "../ask.tsx";

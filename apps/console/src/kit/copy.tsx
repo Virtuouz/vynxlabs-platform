@@ -1,4 +1,4 @@
-import { Tooltip } from "@vynxlabs/ui";
+import { Tooltip } from "@volvel/ui";
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 import { middle } from "./format.ts";
@@ -83,10 +83,7 @@ const shell = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
  */
 export function curlFor(method: string, path: string, body?: unknown): string {
   const url = path.startsWith("http") ? path : `${location.origin}/api/v1${path}`;
-  const lines = [
-    `curl -X ${method} ${shell(url)}`,
-    `  -H "authorization: Bearer $PLATFORM_API_KEY"`,
-  ];
+  const lines = [`curl -X ${method} ${shell(url)}`, `  -H "authorization: Bearer $VOLVEL_API_KEY"`];
   if (body !== undefined) {
     lines.push(`  -H "content-type: application/json"`, `  -d ${shell(JSON.stringify(body))}`);
   }

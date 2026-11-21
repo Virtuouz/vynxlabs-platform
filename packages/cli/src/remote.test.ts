@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Client, startTestApp, type TestApp } from "@vynxlabs/control-plane/testing";
-import { Worker } from "@vynxlabs/worker";
+import { type Client, startTestApp, type TestApp } from "@volvel/control-plane/testing";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { run } from "./cli.js";
 import { SseParser } from "./follow.js";
@@ -39,7 +39,7 @@ async function cli(args: string[], env: Record<string, string> = {}) {
 }
 
 const SOURCE = `
-import { defineFlow, defineScript, step, trigger, z } from "@vynxlabs/sdk";
+import { defineFlow, defineScript, step, trigger, z } from "@volvel/sdk";
 
 export const greet = defineScript({
   path: "greet",
@@ -82,10 +82,10 @@ beforeAll(async () => {
   home = await mkdtemp(join(tmpdir(), "cli-remote-"));
   repo = await mkdtemp(join(tmpdir(), "cli-remote-repo-"));
   await mkdir(join(repo, "src"));
-  await mkdir(join(repo, "node_modules", "@vynxlabs"), { recursive: true });
+  await mkdir(join(repo, "node_modules", "@volvel"), { recursive: true });
   await symlink(
-    join(example, "node_modules", "@vynxlabs", "sdk"),
-    join(repo, "node_modules", "@vynxlabs", "sdk"),
+    join(example, "node_modules", "@volvel", "sdk"),
+    join(repo, "node_modules", "@volvel", "sdk"),
   );
   await writeFile(join(repo, "package.json"), '{"type":"module"}');
   await writeFile(join(repo, "src", "index.ts"), SOURCE);

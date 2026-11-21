@@ -10,8 +10,8 @@ import {
   RELATIVE_RANGES,
   WIDGET_SIZE,
   type WidgetPlace,
-} from "@vynxlabs/manifest";
-import { settle, usePlacement } from "@vynxlabs/screens";
+} from "@volvel/manifest";
+import { settle, usePlacement } from "@volvel/screens";
 import {
   Button,
   CheckboxField,
@@ -23,11 +23,11 @@ import {
   Notice,
   SelectField,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { Ellipsis, Move, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, invalidatePrefix, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
@@ -53,6 +53,8 @@ interface Summary {
   id: string;
   kind: "member" | "resource";
   path: string | null;
+  /** For a resource: who keeps it, the repository (`code`) or the console (`ui`). */
+  ownership?: "ui" | "code" | null;
   title: string;
   mine: boolean;
   owner: string;
@@ -97,10 +99,10 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
       action={action}
     >
       {list.error ? (
-        <Notice tone="danger" action={<Button onClick={list.reload}>Try again</Button>}>
-          {list.error.message}
-        </Notice>
-      ) : list.data ? (
+        <ErrorState what="dashboards" error={list.error} onRetry={list.reload} />
+      ) : !list.data ? (
+        <Loading what="dashboards" />
+      ) : (
         <DataTable<Summary>
           variant="static"
           framed
@@ -143,7 +145,7 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
             { header: "Changed", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
           ]}
         />
-      ) : null}
+      )}
     </Page>
   );
 }
@@ -165,6 +167,8 @@ const slug = (text: string, taken: string[], fallback: string, separator: "_" | 
 export function DashboardView({ root, link, id }: { root: string; link: string; id: string }) {
   const [loaded, setLoaded] = useState<Dashboard>();
   const [missing, setMissing] = useState<ApiError>();
+  /** Counted up by Try again, so the read is made once more. */
+  const [attempt, setAttempt] = useState(0);
   const [mode, setMode] = useUrlParam("edit");
   const [set, setSet] = useUrlParam("f");
   const [editing, setEditing] = useState<DashboardWidget>();
@@ -181,9 +185,11 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   );
   const forget = history.clear;
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is Try again: it asks once more
   useEffect(() => {
     let current = true;
     setLoaded(undefined);
+    setMissing(undefined);
     forget();
     api.get<Dashboard>(`${root}/dashboards/${id}`).then(
       (dashboard) => current && setLoaded(dashboard),
@@ -192,7 +198,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     return () => {
       current = false;
     };
-  }, [root, id, forget]);
+  }, [root, id, forget, attempt]);
 
   // What the filters are set to, kept in the address so a link shows the same thing.
   const settings = useMemo<Record<string, FilterSetting>>(() => {
@@ -240,30 +246,60 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     [gridRef],
   );
 
-  if (missing) return <ErrorState error={missing} />;
+  if (missing) {
+    return (
+      <ErrorState what="this dashboard" error={missing} onRetry={() => setAttempt((n) => n + 1)} />
+    );
+  }
   if (!loaded || !body) return <Loading />;
   const mine = loaded.kind === "member" && loaded.mine;
   const edit = mine && mode === "1";
 
+  /**
+   * Every save goes through one queue, one after another, each on the revision the one before it
+   * made. A rename, a share, the widget editor and a drag made just before it are saved in the
+   * order they were made, and none is refused as saved elsewhere because another of this
+   * screen's own was still in flight. Only the last answer is shown as saved: an earlier one
+   * would draw over a later change.
+   */
+  const send = (
+    change: { body?: DashboardBody; title?: string; shared?: boolean; sharedWith?: string[] },
+    onFailure?: () => Promise<void>,
+  ): Promise<boolean> => {
+    const queue = moves.current;
+    queue.waiting += 1;
+    const run = queue.last.then(async () => {
+      try {
+        const saved = await api.put<Dashboard>(`${root}/dashboards/${id}`, {
+          ...change,
+          revision: queue.revision,
+        });
+        queue.revision = saved.revision;
+        queue.waiting -= 1;
+        if (queue.waiting === 0) setLoaded(saved);
+        return true;
+      } catch (error) {
+        queue.waiting -= 1;
+        notify.error(error);
+        await onFailure?.();
+        return false;
+      }
+    });
+    queue.last = run.then(() => undefined);
+    return run;
+  };
+  /** After a save that was refused: what was drawn was not kept, so show what the server has. */
+  const showWhatIsKept = async () => {
+    const kept = await api.get<Dashboard>(`${root}/dashboards/${id}`).catch(() => undefined);
+    if (kept && moves.current.waiting === 0) setLoaded(kept);
+  };
   /** Saves the dashboard with what changed, and shows it as saved. */
-  const save = async (change: {
+  const save = (change: {
     body?: DashboardBody;
     title?: string;
     shared?: boolean;
     sharedWith?: string[];
-  }) => {
-    try {
-      const saved = await api.put<Dashboard>(`${root}/dashboards/${id}`, {
-        ...change,
-        revision: loaded.revision,
-      });
-      setLoaded(saved);
-      return true;
-    } catch (error) {
-      notify.error(error);
-      return false;
-    }
-  };
+  }) => send(change, showWhatIsKept);
   const withWidgets = (widgets: DashboardWidget[]) => save({ body: { ...body, widgets } });
   /**
    * A change to what the dashboard holds, drawn at once and saved after. Waiting for the save
@@ -276,28 +312,9 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
    */
   if (moves.current.waiting === 0) moves.current.revision = loaded.revision;
   const keep = (next: DashboardBody) => {
-    const queue = moves.current;
-    queue.waiting += 1;
     const known = new Set(body.widgets.map((one) => one.id));
     if (next.widgets.every((one) => known.has(one.id))) setLoaded({ ...loaded, body: next });
-    queue.last = queue.last.then(async () => {
-      try {
-        const saved = await api.put<Dashboard>(`${root}/dashboards/${id}`, {
-          body: next,
-          revision: queue.revision,
-        });
-        queue.revision = saved.revision;
-        queue.waiting -= 1;
-        // Only the last of them is shown as saved: one before it would undo a later one on screen.
-        if (queue.waiting === 0) setLoaded(saved);
-      } catch (error) {
-        queue.waiting -= 1;
-        notify.error(error);
-        // What was drawn was not kept: show what the server has.
-        const kept = await api.get<Dashboard>(`${root}/dashboards/${id}`).catch(() => undefined);
-        if (kept && queue.waiting === 0) setLoaded(kept);
-      }
-    });
+    void send({ body: next }, showWhatIsKept);
   };
   restoring.current = keep;
   // Every widget with a place: its own, or one given to it in order if it has none yet.
@@ -327,8 +344,12 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   // Nothing asks again under someone who is changing it.
   const every = refresh === "off" || edit ? undefined : refresh * 60_000;
   const asking = widgets.filter((one) => one.type !== "text").map((one) => one.id);
-  const times = asking.map((one) => readAt[one]).filter((at): at is number => at !== undefined);
-  const asOf = times.length === asking.length && times.length > 0 ? Math.min(...times) : undefined;
+  // A widget that could not be read is told as -1: it does not hold the age back, and is counted.
+  const answered = asking.filter((one) => readAt[one] !== undefined);
+  const unread = answered.filter((one) => (readAt[one] ?? 0) < 0).length;
+  const times = answered.map((one) => readAt[one] ?? 0).filter((at) => at > 0);
+  const asOf =
+    answered.length === asking.length && times.length > 0 ? Math.min(...times) : undefined;
   const audience = loaded.shared
     ? "Everyone in this workspace"
     : (loaded.sharedWith ?? []).length > 0
@@ -378,25 +399,31 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
                   {
                     label: "Keep it as a resource of the workspace…",
                     onSelect: async () => {
+                      let made = "";
                       const path = await ask.prompt({
                         title: "Keep it as a resource",
                         text: "A copy is saved as a draft of a dashboard resource: versioned, deployed and promoted with the rest of the workspace, and open to everyone who may see dashboards. Yours stays as it is.",
                         label: "Its path, such as boards/lending",
                         action: "Save the draft",
+                        submit: async (value) => {
+                          try {
+                            await api.put(`${root}/drafts/${value.trim()}`, {
+                              kind: "dashboard",
+                              schemaVersion: 1,
+                              body: { ...body, title: loaded.title },
+                              create: true,
+                            });
+                            made = value.trim();
+                            return undefined;
+                          } catch (error) {
+                            return takenText(error) ?? failureText(error);
+                          }
+                        },
                       });
-                      if (!path) return;
-                      try {
-                        await api.put(`${root}/drafts/${path}`, {
-                          kind: "dashboard",
-                          schemaVersion: 1,
-                          body: { ...body, title: loaded.title },
-                        });
-                        notify.success(`${path} is saved as a draft. Deploy it to keep it.`, {
-                          link: { label: "Review and deploy", href: `${link}/release` },
-                        });
-                      } catch (error) {
-                        notify.error(error);
-                      }
+                      if (!path || !made) return;
+                      notify.success(`${made} is saved as a draft. Deploy it to keep it.`, {
+                        link: { label: "Review and deploy", href: `${link}/release` },
+                      });
                     },
                   },
                   {
@@ -433,6 +460,9 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
         >
           <span>
             Last refreshed {asOf ? <Time value={new Date(asOf)} mode="clock" /> : "…"}
+            {unread > 0
+              ? ` · ${unread === 1 ? "1 widget" : `${unread} widgets`} could not be read`
+              : ""}
             {" · "}
             {refresh === "off"
               ? "Does not refresh by itself"
@@ -537,6 +567,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
                   placed={placed}
                   held={placement.held?.id === widget.id}
                   every={every}
+                  fromRepository={loaded.kind === "resource" && loaded.ownership === "code"}
                   onAsOf={noteRead}
                   onShow={
                     edit && widget.type === "table"
@@ -743,7 +774,10 @@ function FiltersDialog({
         if (index !== at) return one;
         const merged = { ...one, ...next } as Record<string, unknown>;
         for (const key of Object.keys(merged)) {
-          if (merged[key] === undefined || merged[key] === "") delete merged[key];
+          // The label may be empty while it is typed; the name stands in for it on save.
+          if (merged[key] === undefined || (merged[key] === "" && key !== "label")) {
+            delete merged[key];
+          }
         }
         return merged as unknown as DashboardFilter;
       }),
@@ -770,6 +804,7 @@ function FiltersDialog({
                     name={`label-${filter.name}`}
                     label="Called"
                     value={filter.label ?? filter.name}
+                    hint="Left empty, it is called by its name."
                     onChange={(label) => change(at, { label })}
                   />
                 </div>
@@ -920,7 +955,15 @@ function FiltersDialog({
                 const { filters: _filters, ...rest } = body;
                 await onSave({
                   ...rest,
-                  ...(filters.length > 0 ? { filters } : {}),
+                  ...(filters.length > 0
+                    ? {
+                        filters: filters.map((one) => {
+                          if (one.label?.trim()) return one;
+                          const { label: _label, ...bare } = one;
+                          return bare as DashboardFilter;
+                        }),
+                      }
+                    : {}),
                   // A widget no longer names a filter that is gone.
                   widgets: body.widgets.map((widget) => {
                     const { filters: bound, options, ...bare } = widget;

@@ -8,6 +8,9 @@ import { answer, show } from "./testing.tsx";
 const base = "/tenants/t1";
 let calls: { method: string; url: string; body: unknown }[];
 let approval: boolean;
+let who: string;
+let mayChange: boolean;
+let removes: { kind: string; key: string; label: string }[];
 const release = (number: number, extra: object = {}) => ({
   id: `r${number}`,
   number,
@@ -22,6 +25,8 @@ const release = (number: number, extra: object = {}) => ({
     changes: [{ change: "created", kind: "group", key: "night-shift", label: "Night shift" }],
   },
   createdBy: "Alice",
+  createdByType: "member",
+  createdById: "alice",
   createdAt: "2026-11-17T10:00:00.000Z",
   decidedBy: null,
   comment: null,
@@ -31,6 +36,9 @@ const release = (number: number, extra: object = {}) => ({
 beforeEach(() => {
   calls = [];
   approval = true;
+  who = "bob";
+  mayChange = true;
+  removes = [{ kind: "group", key: "late", label: "Late shift" }];
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     calls.push({
@@ -47,7 +55,10 @@ beforeEach(() => {
         ],
       });
     }
-    if (method === "GET" && address.endsWith("/access")) return json({ approval });
+    if (method === "GET" && address.endsWith("/rollback")) return json({ removes });
+    if (method === "GET" && address.endsWith("/me"))
+      return json({ principal: { type: "member", id: who, name: who, email: null } });
+    if (method === "GET" && address.endsWith("/access")) return json({ approval, mayChange });
     if (method === "PUT") {
       approval = false;
       return json({ required: false });
@@ -82,7 +93,7 @@ test("a release that waits says what it would do, and is approved after asking",
   ).toBeTruthy();
 
   fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-  expect(await answer("Approve")).toContain("Makes the group Night shift. It applies at once.");
+  expect(await answer("Approve")).toContain("It applies at once, and does all of this:");
   await waitFor(() =>
     expect(calls.find((call) => call.method === "POST")).toMatchObject({
       url: `/api/v1${base}/access/releases/r2/decision`,
@@ -94,14 +105,40 @@ test("a release that waits says what it would do, and is approved after asking",
 test("an applied release can be gone back to, and asking for a second person can be stopped", async () => {
   show(<AccessReleases base={base} />);
   fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
-  expect(await answer("Go back")).toContain("It waits for a second person.");
+  const sure = await answer("Go back");
+  expect(sure).toContain("It waits for a second person.");
+  expect(sure).toContain("groups an identity provider made are left alone");
+  expect(sure).toContain("Makes the group Night shift");
+  expect(sure).toContain("These are removed:");
+  expect(sure).toContain("the group Late shift");
   await waitFor(() =>
     expect(calls.some((call) => call.url.endsWith("/access/releases/r1/rollback"))).toBe(true),
   );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // It asks first, saying what changes and what becomes of the release that waits.
   fireEvent.click(screen.getByRole("button", { name: "Stop asking for a second person" }));
+  const said = await answer("Cancel");
+  expect(said).toContain("applies as soon as it is made, with nobody else approving it");
+  expect(said).toContain("The 1 release that waits now stays waiting");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(calls.some((call) => call.method === "PUT")).toBe(false);
+  fireEvent.click(screen.getByRole("button", { name: "Stop asking for a second person" }));
+  await answer("Stop asking");
   await waitFor(() =>
     expect(calls.find((call) => call.method === "PUT")?.body).toEqual({ required: false }),
   );
+});
+
+test("asking for a second person is turned on without a question", async () => {
+  approval = false;
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ask for a second person" }));
+  await waitFor(() =>
+    expect(
+      calls.find((call) => call.method === "PUT" && !call.url.includes("/me/preferences"))?.body,
+    ).toEqual({ required: true }),
+  );
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
 
 test("a change that waits is told to whoever made it, in place of the thing they asked for", async () => {
@@ -111,4 +148,44 @@ test("a change that waits is told to whoever made it, in place of the thing they
   expect((made as ApiError).message).toBe(
     "This tenant asks for a second person. Nothing changed yet.",
   );
+});
+
+test("whoever asked for a release is offered only to withdraw it, and told why", async () => {
+  who = "alice";
+  show(<AccessReleases base={base} />);
+  expect(await screen.findByText("You asked for this. Someone else approves it.")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Withdraw" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Decline" })).toBeNull();
+});
+
+test("someone who may only read a release is offered nothing to answer it with", async () => {
+  mayChange = false;
+  show(<AccessReleases base={base} />);
+  expect(await screen.findByText("You may read this, not answer it.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Withdraw" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Go back to this" })).toBeNull();
+});
+
+test("a decline takes a comment and sends it", async () => {
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Decline" }));
+  await answer("Decline", "Wrong group");
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "POST")).toMatchObject({
+      url: `/api/v1${base}/access/releases/r2/decision`,
+      body: { decision: "decline", comment: "Wrong group" },
+    }),
+  );
+});
+
+test("going back says when it removes nothing, and asks as a danger only when it removes", async () => {
+  removes = [];
+  show(<AccessReleases base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
+  const sure = await answer("Cancel");
+  expect(sure).toContain("Nothing is removed.");
+  expect(sure).not.toContain("These are removed:");
+  expect(calls.some((call) => call.method === "POST")).toBe(false);
 });

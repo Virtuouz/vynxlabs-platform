@@ -19,7 +19,7 @@ export const SCRIPT_STARTERS: ScriptStarter[] = [
     label: "Greet someone",
     about: "Takes a name and says hello. The smallest script there is.",
     input: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
-    code: `import { type ScriptContext, z } from "@vynxlabs/sdk";
+    code: `import { type ScriptContext, z } from "@volvel/sdk";
 
 /** What it takes. Saving reads it, so a run's input is checked against it, and forms ask for it. */
 export const input = z.object({
@@ -42,7 +42,7 @@ export default async function (given: z.infer<typeof input>, ctx: ScriptContext)
       properties: { amounts: { type: "array", items: { type: "number" } } },
       required: ["amounts"],
     },
-    code: `import { type ScriptContext, z } from "@vynxlabs/sdk";
+    code: `import { type ScriptContext, z } from "@volvel/sdk";
 
 export const input = z.object({
   amounts: z.array(z.number()).describe("The amounts to add up").default([12.5, 30, 7.25]),
@@ -63,7 +63,7 @@ export default async function (given: Partial<z.infer<typeof input>>, ctx: Scrip
     label: "A job on a schedule",
     about: "Takes nothing, says when it ran and what started it: the shape of a nightly job.",
     input: { type: "object", properties: {} },
-    code: `import type { ScriptContext } from "@vynxlabs/sdk";
+    code: `import type { ScriptContext } from "@volvel/sdk";
 
 /**
  * A job a schedule starts. Give it a schedule from its page once it is

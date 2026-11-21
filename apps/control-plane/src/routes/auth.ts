@@ -52,7 +52,7 @@ export function authRoutes(kernel: Kernel): FastifyPluginAsync {
             // Not JSON. The status code alone describes the problem.
           }
           return sendProblem(request, reply, response.status, {
-            ...(parsed.code ? { code: parsed.code.toLowerCase() } : {}),
+            ...(parsed.code ? { passedOn: parsed.code.toLowerCase() } : {}),
             ...(parsed.message ? { detail: parsed.message } : {}),
           });
         }

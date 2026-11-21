@@ -25,13 +25,13 @@ pnpm install
 pnpm build                                        # the CLI and the SDK this uses
 node examples/fernhill/stand-ins/server.mjs &     # TextLine and VetSupply on :4020
 cd examples/fernhill
-PLATFORM_URL=http://localhost:8080 node setup/setup.mjs          # --reset to start over
+VOLVEL_URL=http://localhost:8080 node setup/setup.mjs          # --reset to start over
 ```
 
 `setup.mjs` does what Fernhill's people would do:
 
 1. The operator creates the tenant and opens access to set it up.
-2. Four members, a "Practice managers" group, two workspaces (`clinics` in production, `sandbox` in dev), end-user groups and front-desk accounts.
+2. Four members and sixty locums (`locum.01` to `locum.60`, no role, so the members list has a second page), a "Practice managers" group, two workspaces (`clinics` in production, `sandbox` in dev), end-user groups and front-desk accounts.
 3. Connects TextLine and VetSupply in both workspaces and stores PayFern's signing secret.
 4. Devi deploys the repository with the CLI, and Maya promotes it.
 5. Seeds six weeks of history: about 2,900 visits and 2,100 invoices.
@@ -41,7 +41,9 @@ PLATFORM_URL=http://localhost:8080 node setup/setup.mjs          # --reset to st
    - today's first visits are checked in, seen and invoiced
    - PayFern sends two good payments, one for the wrong amount, and one with a bad signature
    - unpaid invoices are chased
-7. Registers `fernhill.localhost` to serve the portal and every app, uploads the logo, and ends operator access.
+7. In the sandbox, makes two tables of the console's own: `suppliers` (220 rows, shown by their `name`, so the picker has more than the first 50 to search) and `supplier_contacts`, whose `supplier` column refers to it. Adds Sam Reyes, a doc writer in the sandbox.
+   Also made by Maya in the sandbox: a query `reports/visits-by-clinic`, the dashboard `boards/clinic-visits` over it, and two docs sites, `rota` and `supplies` ("Fernhill rota guide", "Fernhill supplies guide"), with feedback off.
+8. Registers `fernhill.localhost` to serve the portal and every app, uploads the logo, and ends operator access.
 
 Sign-ins and addresses are written to `.platform/demo.json`. Every account's password is `fernhill-demo-2026`.
 
@@ -50,6 +52,7 @@ Sign-ins and addresses are written to `.platform/demo.json`. Every account's pas
 | Practice owner | `maya.brooks@fernhill.example` (console) | The console; Clinic performance through "Staff sign-in" |
 | Practice manager | `rowan.ellis@fernhill.example` (console) | Approvals |
 | Developer | `devi.shah@fernhill.example` (console) | The sandbox, deploys |
+| Doc writer | `sam.reyes@fernhill.example` (console) | The sandbox's documentation; deploys pages, sites and the workspace's feedback table (`docs-feedback`) |
 | Front desk, Northside | `jess.morgan@fernhill.example` (portal) | `/apps/fernhill/clinics/front-desk/` |
 | Front desk, Riverside, Hilltop | `omar.haddad@…`, `lena.fischer@…` | the same app, their own clinic's rows |
 | Pet owner | `george.lewis@example.net` (portal) | `/apps/fernhill/clinics/pet-portal/` |
@@ -87,10 +90,31 @@ The agent is offered exactly the scripts and the flow it is bound to (`src/apps.
 9. **Ship a change as Devi.** Change the reminder text in `src/scripts.ts` and deploy it to the sandbox:
 
    ```sh
-   PLATFORM_URL=… PLATFORM_TOKEN=<Devi's key> node ../../packages/cli/dist/bin.js deploy --tenant fernhill --workspace sandbox
+   VOLVEL_URL=… VOLVEL_TOKEN=<Devi's key> node ../../packages/cli/dist/bin.js deploy --tenant fernhill --workspace sandbox
    ```
 
    Then, as Maya, review it in Release and promote it. Repository scripts are read-only in the console's editor.
+
+## What phase 23 walks here
+
+`e2e/phase-23.spec.ts` uses the sandbox's `suppliers` and `supplier_contacts`, and Sam. By hand:
+
+- **Tables.** Open `supplier_contacts` in the sandbox: the rows are the one scroller, with the header pinned. Open the row, and type `Veterinary Supply` or a number such as `219` in `supplier`: the picker asks the server, shows 50 and says "Type to find more".
+- **Release, as Maya.** One list of deploys with "Activate this version", and "Not yet run here" for bundles never run.
+- **Documentation, as Sam.** Write a page, publish a folder as a site that asks for feedback, and deploy: the workspace's one feedback table, `docs-feedback`, is drafted with it the first time, and a second site only changes itself. A table of any other kind is refused.
+
+The tables, the query, the dashboard and the two sites are the console's own, so a CLI deploy of this repository to the sandbox removes them. Run `setup.mjs --reset` to bring them back.
+
+## What phase 24 walks here
+
+`e2e/phase-24.spec.ts` makes its own queries, dashboards and sites under names of its own. By hand, in the sandbox:
+
+- **A rename follows.** As Maya, open Queries, choose `reports/visits-by-clinic`, **Name and path**, and change the path. The dialog lists "Visits by clinic" as a dashboard saved as a draft with the new path. Save, and the dashboard is a draft too. Deploy both: the dashboard still shows its rows. Discard instead, and both drafts go.
+- **A repository dashboard** says "Names `old`, now `new`: change it in the repository" once its query's alias has run out. Fernhill's repository has no dashboard over a console query, so this is covered by the control plane's tests.
+- **One feedback table, as Sam.** In Documentation, turn on page feedback for "Fernhill rota guide": the dialog says it makes the table `docs-feedback`. Deploy. Turn it on for "Fernhill supplies guide": the dialog says only the site changes. Answer a page in each: the two sites' answers are rows of one table, told apart by `site_key`.
+- **A data source's page** fills the window, as a table's rows do (bind one with `E2E_SOURCE_URL` in the browser tests, or in Data sources).
+- **A reference by name.** Make a table with a reference column to `supplier_contacts`, which names no display column and has no `name` or `title`: its grid shows each contact by its first text column, `contact`, not by an ID. `suppliers` names `name`, so it was always shown by name.
+
 
 ## Findings from building it, and what became of them
 
@@ -135,7 +159,7 @@ Building Fernhill and using it as its people and its agent turned up these probl
 
 **The UI kit, for custom apps**
 
-- **Fixed: icons.** They come from `@vynxlabs/ui/icons`.
+- **Fixed: icons.** They come from `@volvel/ui/icons`.
 - **Fixed: missing pieces.** There are now `SegmentedControl`, `Card` (since phase 16, `Panel`), `Avatar`, `Skeleton` and `DateStepper`, and `Button` takes `href`.
 - **Fixed: `PageShell` suits apps that switch screens in the browser.** Its navigation takes `onSelect`, and it takes `width="full"`.
 - **Fixed: `DateField` takes `timeZone`.**

@@ -1,7 +1,9 @@
 {
-  "name": "@vynxlabs/ui",
+  "name": "@volvel/ui",
   "version": "0.5.0",
   "type": "module",
+  "description": "Volvel's component kit: the components the console and tenants' apps are drawn with, on theme tokens.",
+  "license": "Apache-2.0",
   "exports": {
     ".": "./src/index.ts",
     "./tokens.css": "./src/tokens.css",
@@ -10,6 +12,10 @@
   "files": [
     "dist"
   ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node -e \"fs.copyFileSync('src/tokens.css', 'dist/tokens.css')\"",
+    "typecheck": "tsc -p ."
+  },
   "publishConfig": {
     "exports": {
       ".": {
@@ -21,15 +27,13 @@
         "types": "./dist/icons.d.ts",
         "default": "./dist/icons.js"
       }
-    }
-  },
-  "scripts": {
-    "build": "tsc -p tsconfig.build.json && node -e \"fs.copyFileSync('src/tokens.css', 'dist/tokens.css')\"",
-    "typecheck": "tsc -p ."
+    },
+    "access": "public"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@tanstack/react-virtual": "3.13.12",
+    "@volvel/markup": "workspace:*",
     "lucide-react": "^1.72.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

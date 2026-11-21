@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { newId, type StepStatus, sql } from "@vynxlabs/db";
+import { newId, type StepStatus, sql } from "@volvel/db";
 import {
   type FlowBody,
   type FlowEdge,
@@ -10,7 +10,7 @@ import {
   OTHERWISE,
   reachableFrom,
   validateJson,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import type { Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { bundleManifest } from "../execution/bundles.js";

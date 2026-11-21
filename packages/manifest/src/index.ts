@@ -81,8 +81,11 @@ export {
   SLUG_PATTERN,
   StoredResource,
 } from "./envelope.js";
+export { ERROR_CODES, type ErrorCode, type ErrorCodeEntry, isErrorCode } from "./errors.js";
 export { fileSchemas } from "./file-schema.js";
 export {
+  DOC_KIND,
+  docsRoots,
   entryFor,
   fileOf,
   ignoredFolder,
@@ -169,6 +172,7 @@ export {
   connectionKind,
   connectorKind,
   dataSourceKind,
+  docKind,
   ENUM_COLORS,
   eventKind,
   flowKind,
@@ -218,6 +222,7 @@ export {
 export {
   checkTable,
   conditionColumn,
+  displayGuess,
   type EnumValue,
   enumColor,
   enumValues,

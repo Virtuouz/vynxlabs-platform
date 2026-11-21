@@ -26,6 +26,8 @@ const ALLOWED: Record<string, number> = {
   "kernel/resolve.ts": 1,
   "kernel/resources.ts": 4,
   "routes/apps.ts": 2,
+  // Phase 24 M2: the doc writer's deploy exception looked a table up by path; it is now the shared
+  // `fits` check, so one of the two is gone.
   "routes/authoring.ts": 1,
   "routes/data.ts": 1,
   "routes/execution.ts": 2,

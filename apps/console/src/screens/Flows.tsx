@@ -9,12 +9,13 @@ import {
   Tabs,
   Timeline,
   type TimelineRow,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { ListChecks, Play, Workflow } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../FlowGraph.tsx";
+import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
@@ -25,6 +26,7 @@ import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { FilterChips, HeadNote, Inspector, KeyValues, Panel } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { Reconnecting } from "../kit/Reconnecting.tsx";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { ReferenceList } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
 import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
@@ -36,6 +38,7 @@ import { useStreamConnected, useStreamEvents } from "../stream.ts";
 import { LogWindowNote, useLiveRun, wholeLogDownload } from "./Execution.tsx";
 import { TriggersOf } from "./ObjectPages.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
+import { detailSummary } from "./Operate.tsx";
 
 type FlowStatus = "running" | "succeeded" | "failed" | "cancelled";
 /** How a run began, as the end of a sentence. */
@@ -63,6 +66,8 @@ interface FlowRow {
   lastRun: { id: string; status: FlowStatus; state: RunState; createdAt: string } | null;
   version: number | null;
   draft: "changed" | "removed" | null;
+  /** `code` when the repository manages it, and it is changed and removed there. */
+  ownership?: string;
   starts: { type: string; detail: string | null }[];
   runs: { lastDay: number; failedLastDay: number; waiting: number };
 }
@@ -264,6 +269,24 @@ export function Flows({
                 {editable && open.draft !== "removed" ? (
                   <Button onClick={() => navigate(`${link}/flows/edit/${open.path}`)}>Edit</Button>
                 ) : null}
+                {editable ? (
+                  <RemoveDraftButton
+                    root={root}
+                    kind="flow"
+                    path={open.path}
+                    noun="flow"
+                    state={
+                      open.draft === "removed"
+                        ? "removed"
+                        : open.draft === "changed"
+                          ? "draft"
+                          : open.ownership === "code"
+                            ? "repository"
+                            : "deployed"
+                    }
+                    onDone={() => list.reload()}
+                  />
+                ) : null}
               </>
             }
           >
@@ -405,6 +428,7 @@ export function FlowView({
         </span>
       }
     >
+      <AttachedPages {...workspaceOf(root)} kind="flow" path={data.path} />
       <Current
         object={{
           heading: "This flow",
@@ -483,7 +507,7 @@ export function FlowView({
           : saved === "saved"
             ? "Arrangement saved. The flow itself is unchanged."
             : (saved ??
-              "Drag a step to arrange the graph. Arranging changes nothing about how the flow runs.")}
+              "Drag a step, or focus it and use the arrow keys, to arrange the graph. Arranging changes nothing about how the flow runs.")}
       </p>
       {data.triggers.length > 0 ? (
         <section>
@@ -504,6 +528,14 @@ export function FlowView({
                       a webhook. Its address is shown to those who manage triggers.
                     </span>
                   )
+                ) : trigger.type === "schedule" ? (
+                  <span className="text-ink-muted">
+                    a schedule with no next time: it is paused, or not deployed yet
+                  </span>
+                ) : trigger.type === "form" ? (
+                  <span className="text-ink-muted">
+                    a form. Its address is in the triggers below.
+                  </span>
                 ) : (
                   <span>starts when its event is published</span>
                 )}
@@ -518,7 +550,9 @@ export function FlowView({
           variant="static"
           framed
           label="Recent runs"
-          rows={runs.data?.items ?? []}
+          rows={runs.data?.items}
+          error={runs.error}
+          onRetry={runs.reload}
           rowKey={(row) => row.id}
           empty={<EmptyState title="This flow has not run yet" />}
           columns={[
@@ -539,7 +573,7 @@ export function FlowView({
         <h2 id="flow-triggers" className="mt-2 mb-2 text-title font-semibold">
           Schedules and triggers that start it
         </h2>
-        <TriggersOf root={root} link={link} kind="flow" path={path} />
+        <TriggersOf root={root} link={link} kind="flow" path={path} production={!editable} />
       </section>
       <section aria-labelledby="flow-used-by">
         <h2 id="flow-used-by" className="mt-2 mb-2 text-title font-semibold">
@@ -718,6 +752,15 @@ export function FlowRunView({
   const flow = useLoad<FlowDetail>(run ? `${root}/flows/${run.flow}` : null);
   // The graph as it ran: the flow at this run's version, which may differ from today's.
   const drawn = useLoad<RunDefinition>(run ? `${root}/flow-runs/${id}/definition` : null);
+  // Who may decide a waiting step is the approvals queue's own answer, asked before the
+  // buttons are drawn: the same list "Decide" opens, and the list of everyone's for who decides.
+  const hasApproval = run?.steps.some((step) => step.status === "waiting" && step.detail.title);
+  const mine = useLoad<{ items: { flowRunId: string; node: string }[] }>(
+    hasApproval ? `${root}/approvals?mine=true` : null,
+  );
+  const everyone = useLoad<{
+    items: { flowRunId: string; node: string; approvers: { text: string } | null }[];
+  }>(hasApproval ? `${root}/approvals` : null);
 
   if (error && !run) return <Notice tone="danger">{error}</Notice>;
   if (!run) return <Loading />;
@@ -740,9 +783,9 @@ export function FlowRunView({
   const items = run.steps.filter((step) => step.node === selected && step.item !== "");
   const waitingApprovals = steps.filter((step) => step.status === "waiting" && step.detail.title);
 
-  const decide = async (node: string, decision: "approve" | "reject") => {
+  const decide = async (node: string, decision: "approve" | "reject", title: string) => {
     const comment = await ask.prompt({
-      title: decision === "approve" ? "Approve" : "Reject",
+      title: decision === "approve" ? `Approve “${title}”?` : `Reject “${title}”?`,
       label: decision === "approve" ? "Note (optional)" : "Why is it rejected?",
       required: decision === "reject",
       multiline: true,
@@ -815,27 +858,51 @@ export function FlowRunView({
           )}
         </Notice>
       ) : null}
-      {waitingApprovals.map((step) => (
-        <Notice
-          key={step.node}
-          tone="attention"
-          action={
-            <span className="flex gap-2">
-              <Button size="small" variant="primary" onClick={() => decide(step.node, "approve")}>
-                Approve
-              </Button>
-              <Button size="small" onClick={() => decide(step.node, "reject")}>
-                Reject
-              </Button>
+      {waitingApprovals.map((step) => {
+        const may = mine.data?.items.some((one) => one.flowRunId === id && one.node === step.node);
+        const who = everyone.data?.items.find(
+          (one) => one.flowRunId === id && one.node === step.node,
+        )?.approvers?.text;
+        return (
+          <Notice
+            key={step.node}
+            tone="attention"
+            action={
+              may ? (
+                <span className="flex gap-2">
+                  <Button
+                    size="small"
+                    variant="primary"
+                    onClick={() => decide(step.node, "approve", String(step.detail.title))}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    size="small"
+                    onClick={() => decide(step.node, "reject", String(step.detail.title))}
+                  >
+                    Reject
+                  </Button>
+                </span>
+              ) : undefined
+            }
+          >
+            <strong>Waiting for approval:</strong> {String(step.detail.title)}
+            {detailSummary(step.detail.detail) ? (
+              <span className="ml-2 text-ink-muted">{detailSummary(step.detail.detail)}</span>
+            ) : null}
+            <span className="mt-1 block text-meta text-ink-muted">
+              {mine.data
+                ? may
+                  ? "You may decide this."
+                  : `You may not decide this${who ? `: it waits for ${who}` : ""}.`
+                : mine.error
+                  ? "You may not decide this."
+                  : "Checking whether you may decide this…"}
             </span>
-          }
-        >
-          <strong>Waiting for approval:</strong> {step.detail.title}
-          {step.detail.detail ? (
-            <span className="ml-2 font-mono text-code">{JSON.stringify(step.detail.detail)}</span>
-          ) : null}
-        </Notice>
-      ))}
+          </Notice>
+        );
+      })}
       {/* From 1920 px the timeline stands beside the chosen step's logs, input and output. */}
       <div className="flex flex-col gap-4 3xl:grid 3xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] 3xl:items-start">
         <div className="min-w-0">

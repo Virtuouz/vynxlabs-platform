@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { Worker } from "@vynxlabs/worker";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { startTestApp, type TestApp } from "./testing.js";
 

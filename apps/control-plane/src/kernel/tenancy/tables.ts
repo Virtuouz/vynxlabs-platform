@@ -1,4 +1,4 @@
-import { type PlatformSchema, sql } from "@vynxlabs/db";
+import { type PlatformSchema, sql } from "@volvel/db";
 import type { Db, Trx } from "../audit.js";
 
 type Condition = ReturnType<typeof sql>;
@@ -84,6 +84,14 @@ export const OWNED_TABLES: OwnedTable[] = [
     ofTenant: own,
     ofWorkspace: inWorkspace,
     key: ["workspace_id", "path"],
+    export: "always",
+  },
+  // What each widget of a deployed dashboard named: it comes after the dashboard it is of.
+  {
+    table: "dashboard_widget_query",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["dashboard_id", "widget_id"],
     export: "always",
   },
   {
@@ -218,6 +226,13 @@ export const OWNED_TABLES: OwnedTable[] = [
     key: ["id"],
     export: "always",
     stored: ["storage_key"],
+  },
+  {
+    table: "row_file_history",
+    ofTenant: own,
+    ofWorkspace: inWorkspace,
+    key: ["id"],
+    export: "history",
   },
   {
     table: "flow_run",

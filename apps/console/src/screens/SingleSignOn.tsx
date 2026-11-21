@@ -12,12 +12,13 @@ import {
   Tabs,
   TextAreaField,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
+import { listOf } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Stepper } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
@@ -1075,16 +1076,34 @@ function ProviderDetail({
             <Button
               variant="primary"
               loading={busy}
-              onClick={() =>
-                patch(
-                  { enabled: !(provider.enabled && !provider.paused) },
-                  provider.enabled && !provider.paused
-                    ? "The provider is off."
-                    : "The provider is on.",
-                )
-              }
+              onClick={async () => {
+                if (on) {
+                  // Turning it off ends sign-in through it for everyone it covers: that is said first.
+                  const proved = (domains.data?.items ?? [])
+                    .filter((domain) => domain.verified)
+                    .map((domain) => domain.domain);
+                  const covers =
+                    proved.length > 0
+                      ? `It signs in ${who} with an email in ${listOf(proved)}.`
+                      : provider.audience === "members"
+                        ? "It has no proved domain, so it signs in no member now."
+                        : "It has no domain, so it signs in every end user of this tenant.";
+                  const sure = await ask.confirm({
+                    title: `Turn off ${provider.name}?`,
+                    text: `Nobody signs in through it until it is turned on again. ${covers} ${
+                      provider.enforce
+                        ? `It is required now, and stops being required: those ${who} can use a password again.`
+                        : `Those ${who} can still use a password.`
+                    } Anyone who has no password needs one, or another provider, to get in.`,
+                    action: "Turn off",
+                    danger: true,
+                  });
+                  if (!sure) return;
+                }
+                await patch({ enabled: !on }, on ? "The provider is off." : "The provider is on.");
+              }}
             >
-              {provider.enabled && !provider.paused ? "Turn off" : "Turn on"}
+              {on ? "Turn off" : "Turn on"}
             </Button>
           </>
         }

@@ -1,4 +1,4 @@
-import { Panel, SideSheet } from "@vynxlabs/ui";
+import { Panel, SideSheet } from "@volvel/ui";
 import { CircleAlert, X } from "lucide-react";
 import {
   cloneElement,
@@ -11,6 +11,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { usePreference } from "../prefs.ts";
 import { ErrorBoundary } from "./ErrorBoundary.tsx";
@@ -76,6 +77,7 @@ interface InspectorProps {
  */
 export function Inspector(props: InspectorProps) {
   const wide = useWide(WIDE.inspector);
+  useSayDocked(wide && props.open);
   // What it last showed. A screen stops passing the title and the details the
   // moment nothing is chosen, and the panel still has to show them while it shuts.
   const shown = useRef(props);
@@ -115,6 +117,36 @@ export function Inspector(props: InspectorProps) {
       )}
     </Docking>
   );
+}
+
+let docked = 0;
+const dockedListeners = new Set<() => void>();
+
+/**
+ * Whether an inspector is open beside a list. The help panel asks, so that the
+ * two do not both take room from the list on a screen too narrow for three.
+ */
+export function useInspectorDocked(): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      dockedListeners.add(listener);
+      return () => dockedListeners.delete(listener);
+    },
+    () => docked > 0,
+    () => false,
+  );
+}
+
+function useSayDocked(open: boolean) {
+  useEffect(() => {
+    if (!open) return;
+    docked += 1;
+    for (const listener of dockedListeners) listener();
+    return () => {
+      docked -= 1;
+      for (const listener of dockedListeners) listener();
+    };
+  }, [open]);
 }
 
 /** As long as `motion-slow` and a little more, in case the browser never says the move ended. */

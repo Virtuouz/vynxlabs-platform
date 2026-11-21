@@ -5,7 +5,7 @@ import type { Me } from "./api.ts";
 import { nextEditorKey } from "./kit/editorKey.ts";
 import { usePath } from "./router.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
-import { show } from "./testing.tsx";
+import { answer, show } from "./testing.tsx";
 
 configure({ asyncUtilTimeout: 5000 });
 
@@ -279,4 +279,35 @@ test("opened from a failed run elsewhere, the editor carries its input and says 
   expect(
     within(said).getByRole("link", { name: "the run in Production" }).getAttribute("href"),
   ).toBe("/t/t1/workspaces/w9/runs/r7");
+});
+
+test("a draft of a script is discarded, after saying what that does", async () => {
+  routes[`DELETE ${base}/drafts/hello/greet`] = () => ({});
+  openSaved();
+  fireEvent.click(await screen.findByRole("button", { name: "Discard draft" }));
+  expect(await answer("Discard")).toContain("goes back to how it was last deployed");
+  await waitFor(() =>
+    expect(
+      calls.some((one) => one.method === "DELETE" && one.url === `${base}/drafts/hello/greet`),
+    ).toBe(true),
+  );
+});
+
+test("a deployed script is removed as a draft that removes it, and the Changes screen shows it", async () => {
+  const saved: unknown[] = [];
+  routes[`PUT ${base}/drafts/hello/greet`] = (body) => {
+    saved.push(body);
+    return {};
+  };
+  routes[`GET ${base}/resources/hello/greet`] = () => ({
+    ownership: "ui",
+    body: draftOf("export default async () => ({});\n").body,
+  });
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts/edit/hello/greet");
+  show(<AtAddress />);
+  fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+  expect(await answer("Remove")).toContain("Nothing changes until that draft is deployed");
+  await waitFor(() => expect(saved).toHaveLength(1));
+  expect(saved[0]).toEqual({ kind: "script", schemaVersion: 1, body: {}, deleted: true });
+  await waitFor(() => expect(location.pathname).toBe("/t/t1/workspaces/w1/changes"));
 });

@@ -1,6 +1,6 @@
-# Vynxlabs platform
+# Volvel
 
-One self-hostable foundation for custom internal apps, business workflows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md). Work is delivered in phases, each with a design doc under [docs/phases](docs/phases).
+Volvel is one self-hostable foundation for custom internal apps, business workflows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md). Work is delivered in phases, each with a design doc under [docs/phases](docs/phases).
 
 The platform is at phase 6, apps. A developer defines scripts, flows, tables, data sources and apps in a tenant's repository and deploys them. An app is served by the instance to the tenant's staff, to its own pool of end users, or to anyone, as its bindings say, with the tenant's branding. Changes move from a dev workspace to production as the same bundle, a tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another. Editing by end users is the next track.
 
@@ -34,11 +34,11 @@ The API describes itself at http://localhost:8080/api/v1/openapi.json.
 ```sh
 alias platform="node $PWD/packages/cli/dist/bin.js"
 
-platform login --url http://localhost:8080 --token <api key>   # create the key in the console, under your account menu
+volvel login --url http://localhost:8080 --token <api key>   # create the key in the console, under your account menu
 cd examples/acme
-platform build                                    # lists what the repository contains
-platform deploy --tenant <slug> --workspace <slug>
-platform runs --tenant <slug> --workspace <slug>
+volvel build                                    # lists what the repository contains
+volvel deploy --tenant <slug> --workspace <slug>
+volvel runs --tenant <slug> --workspace <slug>
 ```
 
 The first deploy tells you which connections and secrets the workspace still needs. Bind them in the console, under the workspace's Connections and Secrets tabs, then deploy again.
@@ -52,21 +52,21 @@ An existing Postgres database can be connected under the workspace's Data source
 The example has two apps. After a deploy, the workspace's Apps tab lists them with their addresses: a portal at `/apps/<tenant>/<workspace>/portal/`, where staff see every order and a customer sees their own, and a public page of notices. Invite a customer under the tenant's End users page and open the link it gives you. To work on an app with reload, against a workspace's real data:
 
 ```sh
-platform dev portal --tenant <slug> --workspace <slug>
+volvel dev portal --tenant <slug> --workspace <slug>
 ```
 
-An app is a directory with an `index.html`, named by `defineApp` in `src/index.ts`. It uses `@vynxlabs/app` for rows, scripts and the session, and `@vynxlabs/ui` for its components. Who may open it, and whose rows it shows, is said with `defineBinding` in the same file.
+An app is a directory with an `index.html`, named by `defineApp` in `src/index.ts`. It uses `@volvel/app` for rows, scripts and the session, and `@volvel/ui` for its components. Who may open it, and whose rows it shows, is said with `defineBinding` in the same file.
 
-To move a change between environments, link a dev workspace to the one it promotes to, deploy to dev, and run `platform promote --tenant <slug> --workspace <dev slug> --preview` to see what would change, then without `--preview` to do it. The same bundle is activated: nothing is rebuilt.
+To move a change between environments, link a dev workspace to the one it promotes to, deploy to dev, and run `volvel promote --tenant <slug> --workspace <dev slug> --preview` to see what would change, then without `--preview` to do it. The same bundle is activated: nothing is rebuilt.
 
-`platform init <directory>` writes a starter repository, and `platform run <script>` runs one script on your machine.
+`volvel init <directory>` writes a starter repository, and `volvel run <script>` runs one script on your machine.
 
 ### Working from a terminal
 
 ```sh
-platform pull --tenant <slug> --workspace <dev slug>       # what was made in the console, drafts included, into platform/ and the files it changed elsewhere
-platform run orders/handle --remote --tenant <slug> --workspace <dev slug> --input '{"id":"A-1"}'
-platform logs <run id> -f --tenant <slug> --workspace <slug>
+volvel pull --tenant <slug> --workspace <dev slug>       # what was made in the console, drafts included, into platform/ and the files it changed elsewhere
+volvel run orders/handle --remote --tenant <slug> --workspace <dev slug> --input '{"id":"A-1"}'
+volvel logs <run id> -f --tenant <slug> --workspace <slug>
 ```
 
 - **`pull`** writes every resource made in the console as files under `platform/`, with its drafts, and remembers what it wrote. A file you changed since is kept, and pull exits 1 until you keep your change or pass `--force`. `platform/` holds the workspace's whole console set: a deploy of the repository replaces the set with it, and clears the drafts the pull took. So pull, edit, deploy, and nothing is left on the console's Changes screen.
@@ -108,7 +108,7 @@ For Fly.io, see [deploy/fly](deploy/fly/README.md).
 | `apps/control-plane` | The control plane service |
 | `apps/console` | The admin console, a React single-page app |
 | `packages/ui` | The component kit and theme tokens |
-| `packages/cli` | The `platform` command: build, deploy, run |
+| `packages/cli` | The `volvel` command: build, deploy, run |
 | `packages/sdk` | What a tenant repository imports to define scripts and other resources |
 | `packages/worker` | The worker that runs a tenant's scripts |
 | `examples/acme` | A sample tenant repository |

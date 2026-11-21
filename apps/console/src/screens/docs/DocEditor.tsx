@@ -1,0 +1,1108 @@
+import {
+  asDirectory,
+  checkPageAmong,
+  type DocIssue,
+  frontmatterOf,
+  nameProblem,
+  planMove,
+  planRename,
+  setFrontmatter,
+} from "@volvel/docs-engine";
+import { Button, Doc, Notice, Panel, Popover, reveal as revealIn, TextField } from "@volvel/ui";
+import {
+  Bold,
+  CircleAlert,
+  CircleCheck,
+  Code as CodeIcon,
+  ExternalLink,
+  FilePen,
+  Heading,
+  Italic,
+  Link as LinkIcon,
+  List,
+  Pencil,
+  Plus,
+  Search,
+} from "lucide-react";
+import {
+  type KeyboardEvent,
+  lazy,
+  Suspense,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { ApiError, api, useLoad } from "../../api.ts";
+import { ask, failureText, notify, takenText } from "../../ask.tsx";
+import { Diagram } from "../../diagrams/Diagram.tsx";
+import type { CodeEditorHandle, Marker } from "../../editor/CodeEditor.tsx";
+import { useWorkspaceTerms } from "../../help/glossary.tsx";
+import { useHelpTopic } from "../../help/store.ts";
+import { useBrand } from "../../kit/brand.tsx";
+import { DiffView } from "../../kit/DiffView.tsx";
+import { useDraftSave } from "../../kit/draftSave.ts";
+import { useShortcut } from "../../kit/keys.ts";
+import { ErrorState, Pending } from "../../kit/LoadState.tsx";
+import { PageHeader } from "../../kit/PageHeader.tsx";
+import { useTitleObject } from "../../kit/title.ts";
+import { UndoRedo } from "../../kit/UndoRedo.tsx";
+import { navigate, useNavigationGuard, useQueryValue } from "../../router.tsx";
+import { deletePage, folderItems, MoveDialog, PATH, useProduct } from "./Docs.tsx";
+import {
+  where as containersWhere,
+  type Insertable,
+  insertables,
+  insertInto,
+  nameOf,
+  surround,
+  togglePrefix,
+} from "./insert.ts";
+import {
+  appFor,
+  type DocPage,
+  type DocsList,
+  findRow,
+  folderId,
+  glossaryFor,
+  inApp,
+  indexOf,
+  resolvers,
+  rowsOf,
+  sourcesOf,
+  termsOf,
+} from "./model.ts";
+import { PageDetails } from "./PageDetails.tsx";
+
+const CodeEditor = lazy(() =>
+  import("../../editor/CodeEditor.tsx").then((module) => ({ default: module.CodeEditor })),
+);
+
+interface Opened {
+  page: DocPage;
+  source: string;
+  revision: number | null;
+  deployedSource: string | null;
+}
+
+const starter = (title: string) =>
+  `---\ntitle: ${JSON.stringify(title)}\ndescription: \n---\n\nWrite here.\n`;
+
+type Mode = "source" | "split" | "preview";
+
+/** What the top of a page holds, in a few words, for beside it when it is folded. */
+function topSays(source: string): string {
+  const top = frontmatterOf(source);
+  if (!top) return "";
+  const said: string[] = [];
+  if (top.title) said.push("Title");
+  if (top.description) said.push("description");
+  if (top.topic) said.push("topic");
+  const count = (list: unknown, one: string, many: string) => {
+    const n = Array.isArray(list) ? list.length : 0;
+    if (n > 0) said.push(`${n} ${n === 1 ? one : many}`);
+  };
+  count(top.terms, "term", "terms");
+  count(top.about, "resource", "resources");
+  count(top.pages, "page listed", "pages listed");
+  return said.length > 0 ? `${said.join(", ")} · Edit in Page details` : "Edit in Page details";
+}
+
+/**
+ * Where a page of documentation is written: its source on one side, and on
+ * the other the page as it will be served, drawn from the same reading the
+ * server makes, following the cursor. What is wrong with it is marked on its
+ * lines as it is typed, by the rules a deploy holds it to. Every change, typed
+ * or made by the form beside it, is undone and redone the same way.
+ */
+export function DocEditor({
+  root,
+  link,
+  tenantId,
+  workspaceId,
+  path,
+}: {
+  root: string;
+  link: string;
+  tenantId: string;
+  workspaceId: string;
+  /** The page being changed. None for a page being made. */
+  path: string | undefined;
+}) {
+  useHelpTopic("build-docs-editor");
+  const list = useLoad<DocsList>(`${root}/docs`);
+  const opened = useLoad<Opened>(path ? `${root}/docs/page/${path}` : null);
+  const [at] = useQueryValue("at");
+  const startAt = at ?? "";
+  const [named] = useQueryValue("title");
+  const startTitle = named ?? "New page";
+  const [compareAsked] = useQueryValue("compare");
+  const [where, setWhere] = useState(path ?? startAt);
+  const [source, setSource] = useState<string>();
+  const [saved, setSaved] = useState<string>();
+  // What was typed last is what a save sends, and what is typed while one is in flight is
+  // saved after it. The page's revision is the newest the hook has been given.
+  const sent = useRef({ title: "", fresh: false, problems: false, path: path ?? startAt });
+  const draft = useDraftSave<string, { revision: number }>({
+    send: (text, at) =>
+      api.put<{ revision: number }>(`${root}/drafts/${sent.current.path}`, {
+        kind: "doc",
+        schemaVersion: 1,
+        title: frontmatterOf(text)?.title || sent.current.title,
+        body: { source: text },
+        // A new page is a create: a path that is taken is refused, never overwritten.
+        ...(at !== undefined ? { revision: at } : sent.current.fresh ? { create: true } : {}),
+      }),
+    applied: (_answer, text, newest) => {
+      setSaved(text);
+      setClash(false);
+      list.reload();
+      if (newest) {
+        notify.success(
+          sent.current.problems
+            ? "Saved as a draft. It has problems to mend before it can be deployed."
+            : "Saved as a draft. Deploy it from Documentation when it is ready.",
+        );
+      }
+      if (sent.current.fresh) navigate(`${link}/docs/edit/${sent.current.path}`, { replace: true });
+    },
+    failed: (error) => {
+      // Someone else saved it since it was opened: say so, and keep what was typed.
+      if (error instanceof ApiError && error.code === "draft_changed") setClash(true);
+      else if (takenText(error)) setTaken(takenText(error));
+      else notify.error(error);
+    },
+  });
+  const saving = draft.saving;
+  /** The text changed, in the editor or from outside it. */
+  const typeSource = (next: string) => {
+    setSource(next);
+    draft.edit(next);
+  };
+  const [clash, setClash] = useState(false);
+  const [taken, setTaken] = useState<string>();
+  const [reveal, setReveal] = useState<{ line: number; at: number }>();
+  const [comparing, setComparing] = useState(compareAsked === "1");
+  const [side, setSide] = useState<"preview" | "details">("preview");
+  const [mode, setMode] = useState<Mode>(() =>
+    typeof matchMedia === "function" && matchMedia("(min-width: 1024px)").matches
+      ? "split"
+      : "source",
+  );
+  const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  const [can, setCan] = useState({ undo: false, redo: false });
+  const [inserting, setInserting] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const [retitling, setRetitling] = useState(false);
+  const handle = useRef<CodeEditorHandle | null>(null);
+  const product = useProduct();
+  const brand = useBrand();
+  const { resources } = useWorkspaceTerms(tenantId, workspaceId);
+
+  // What was opened is what is edited, once. Typing is never overwritten by a reload.
+  useEffect(() => {
+    if (source !== undefined) return;
+    if (!path) {
+      setSource(starter(startTitle));
+      draft.reset(starter(startTitle));
+      setSaved(undefined);
+    } else if (opened.data) {
+      setSource(opened.data.source);
+      setSaved(opened.data.source);
+      draft.reset(opened.data.source, opened.data.revision ?? undefined);
+    }
+  }, [path, opened.data, source, startTitle, draft.reset]);
+
+  const typed = useDeferredValue(source ?? "");
+  const app = list.data ? appFor(list.data.apps, where) : undefined;
+  const checked = useMemo(() => {
+    if (!list.data) return undefined;
+    const workspaceTerms = termsOf(list.data).map((term) => term.id);
+    return checkPageAmong(inApp(app, where) || "untitled", typed, indexOf(list.data, app), {
+      ...(product
+        ? { reservedTerms: Object.keys(product.terms), reservedTopics: Object.keys(product.topics) }
+        : {}),
+      knownTerms: workspaceTerms,
+      // Said only of what this writer may see. The deploy says the rest.
+      resource: (kind, at, column) => {
+        const found = resources.find((one) => one.kind === kind && one.path === at);
+        if (!found) return undefined;
+        if (column === undefined || kind !== "table") return true;
+        return found.columns?.some((one) => one.name === column) ? true : undefined;
+      },
+    });
+  }, [list.data, app, where, typed, product, resources]);
+  const issues: DocIssue[] = checked?.issues ?? [];
+  const errors = issues.filter((issue) => issue.severity === "error");
+  const problems = useMemo<Marker[]>(
+    () =>
+      issues.map((issue) => ({
+        line: issue.line,
+        column: issue.column,
+        message: issue.message,
+        severity: issue.severity,
+      })),
+    [issues],
+  );
+  const drawn = useMemo(
+    () =>
+      list.data
+        ? resolvers({
+            list: list.data,
+            page: { path: where },
+            address: (to) => `${link}/docs/${to}`,
+            product,
+            described: resources,
+          })
+        : {},
+    [list.data, where, link, product, resources],
+  );
+  const rows = useMemo(() => (list.data ? rowsOf(list.data) : []), [list.data]);
+  const within = useMemo(
+    () => containersWhere(checked?.entry.tree, cursor.line),
+    [checked, cursor.line],
+  );
+  const offered = useMemo(() => insertables(within), [within]);
+  const dirty = source !== undefined && source !== saved;
+  useNavigationGuard(
+    dirty,
+    `Your changes to the page ${where || "you are writing"} are not saved.`,
+  );
+
+  // The preview follows the cursor: the block it is in is marked, and kept in view.
+  const preview = useRef<HTMLElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the preview is drawn anew from `checked`, and the mark goes on what is drawn.
+  useEffect(() => {
+    const shown = preview.current;
+    if (!shown) return;
+    for (const old of shown.querySelectorAll(".vx-following")) old.classList.remove("vx-following");
+    let best: Element | undefined;
+    let bestLine = 0;
+    for (const one of shown.querySelectorAll("[data-line]")) {
+      const from = Number(one.getAttribute("data-line"));
+      const to = Number(one.getAttribute("data-end-line") ?? from);
+      const holds =
+        from <= cursor.line && (one.hasAttribute("data-end-line") ? to >= cursor.line : true);
+      if (holds && from >= bestLine) {
+        best = one;
+        bestLine = from;
+      }
+    }
+    if (best) {
+      // A tab or a fold the cursor is in shows itself, as the cursor goes in.
+      revealIn(best);
+      best.classList.add("vx-following");
+      if (typeof best.scrollIntoView === "function") best.scrollIntoView({ block: "nearest" });
+    }
+  }, [cursor.line, checked]);
+
+  const save = async () => {
+    if (placed || source === undefined) return;
+    setTaken(undefined);
+    sent.current = { title, fresh, problems: errors.length > 0, path: where };
+    await draft.save(fresh);
+  };
+  // ⌘S saves what is typed now: the text is the hook's, not the last render's.
+  useShortcut("save", () => {
+    void save();
+  });
+
+  // The crumb and the tab name the page by its title, as it is typed.
+  useTitleObject(
+    checked?.entry.frontmatter.title ||
+      (path === undefined ? "New page" : (opened.data?.page.title ?? where)),
+  );
+
+  if (list.error) return <ErrorState error={list.error} onRetry={list.reload} />;
+  if (opened.error) return <ErrorState error={opened.error} onRetry={opened.reload} />;
+  if (!list.data) return <Pending of={list} />;
+  if (source === undefined) return path ? <Pending of={opened} /> : null;
+  const data = list.data;
+
+  const page = opened.data?.page;
+  const fresh = path === undefined;
+  // What readers see now, when this page has been deployed before: what was deployed under
+  // the draft that was opened, or, with no draft yet, the page as it was opened.
+  const deployed = fresh
+    ? null
+    : (opened.data?.deployedSource ??
+      (opened.data?.page.state === "deployed" ? opened.data.source : null));
+  const wherePage = data.pages.find((one) => one.path === where);
+  const placed = fresh
+    ? !PATH.test(where)
+      ? "A path is lowercase letters, digits, hyphens and underscores, in folders."
+      : wherePage
+        ? "There is a page at that path already."
+        : !where.includes("/")
+          ? "A page goes in a folder: handbook/refunds."
+          : undefined
+    : undefined;
+  const title = checked?.entry.frontmatter.title || (fresh ? "New page" : (page?.title ?? where));
+  const folder = where.split("/").slice(0, -1).join("/");
+  const name = where.split("/").at(-1) ?? "";
+  const trail = folder
+    .split("/")
+    .filter(Boolean)
+    .map((_, index, parts) => {
+      const at = parts.slice(0, index + 1).join("/");
+      return findRow(rows, folderId(at))?.title ?? at;
+    });
+
+  const retitle = (typed: string) => {
+    setRetitling(false);
+    const next = typed.trim();
+    if (next === "" || next === title) return;
+    const written = setFrontmatter(source, { title: next });
+    if (written === undefined) {
+      notify.error(new Error("The top of this page cannot be read. Mend it in the source first."));
+      return;
+    }
+    change(written);
+  };
+
+  /** Changes the text as one step of its history, through the editor where it is there. */
+  const change = (next: string, select?: { start: number; end: number }) => {
+    if (handle.current) handle.current.apply(next, select);
+    else typeSource(next);
+  };
+  const selection = () =>
+    handle.current?.selection() ?? { start: source.length, end: source.length };
+  const insert = (item: Insertable) => {
+    const made = insertInto(source, selection(), item, within);
+    change(made.text, made.select);
+    setInserting(false);
+  };
+  const format = (made: { text: string; select: { start: number; end: number } }) =>
+    change(made.text, made.select);
+
+  /** The pages as they would be with this one as it is typed: what a rename or a move is planned over. */
+  const withThis = () =>
+    sourcesOf(data).map((one) => (one.path === where ? { path: where, source } : one));
+
+  const relocate = async (plan: ReturnType<typeof planRename>, done: string) => {
+    if ("problem" in plan) return plan.problem;
+    try {
+      const revisions = new Map(data.pages.map((one) => [one.path, one.revision]));
+      await api.post(`${root}/drafts/batch`, {
+        changes: plan.changes.map((one) => {
+          const rev = one.path === where ? draft.known() : revisions.get(one.path);
+          return {
+            path: one.path,
+            ...(one.to !== undefined ? { to: one.to } : {}),
+            ...(one.source !== undefined ? { source: one.source } : {}),
+            ...(one.deleted ? { deleted: true } : {}),
+            ...(rev ? { revision: rev } : {}),
+          };
+        }),
+      });
+      const own = plan.changes.find((one) => one.path === where);
+      const next = own?.to ?? where;
+      setSaved(own?.source ?? source);
+      if (own?.source !== undefined) typeSource(own.source);
+      draft.reset(own?.source ?? source);
+      list.reload();
+      notify.success(done);
+      if (next !== where) {
+        setWhere(next);
+        navigate(`${link}/docs/edit/${next}`, { replace: true });
+      }
+      return undefined;
+    } catch (error) {
+      return failureText(error);
+    }
+  };
+
+  return (
+    <section className="flex min-h-0 flex-col gap-3">
+      <PageHeader
+        compact
+        eyebrow={
+          trail.length > 0 ? (
+            <span>
+              <a
+                href={`${link}/docs`}
+                className="text-ink-muted no-underline hover:text-ink"
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate(`${link}/docs`);
+                }}
+              >
+                Documentation
+              </a>
+              {trail.map((one) => ` › ${one}`).join("")}
+            </span>
+          ) : undefined
+        }
+        title={
+          retitling ? (
+            <input
+              aria-label="Page title"
+              // biome-ignore lint/a11y/noAutofocus: it is opened by pressing its pencil, to be typed in.
+              autoFocus
+              defaultValue={title}
+              maxLength={120}
+              onBlur={(event) => retitle(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") retitle(event.currentTarget.value);
+                if (event.key === "Escape") setRetitling(false);
+              }}
+              className="w-full min-w-[16rem] rounded-control border border-action bg-surface px-2 text-ink outline-none"
+            />
+          ) : (
+            title
+          )
+        }
+        state={
+          <span className="flex items-center gap-2">
+            {retitling ? null : (
+              <Button
+                size="small"
+                variant="quiet"
+                aria-label="Change the title"
+                onClick={() => setRetitling(true)}
+              >
+                <Pencil aria-hidden size={14} />
+              </Button>
+            )}
+            {fresh ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-attention/60 bg-attention-soft px-2 py-0.5 text-meta text-attention">
+                <FilePen aria-hidden="true" size={14} />
+                Not saved yet
+              </span>
+            ) : page && page.state !== "deployed" ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-attention/60 bg-attention-soft px-2 py-0.5 text-meta text-attention">
+                <FilePen aria-hidden="true" size={14} />
+                Draft
+              </span>
+            ) : null}
+          </span>
+        }
+        after={
+          fresh ? (
+            <div className="max-w-[40rem]">
+              <TextField
+                label="Path"
+                name="path"
+                value={where}
+                required
+                hint="Where the page is: its folder, then its file's name. A page goes in a folder."
+                {...(where !== "" && (placed ?? taken) ? { error: placed ?? taken } : {})}
+                onChange={(value) => {
+                  setTaken(undefined);
+                  setWhere(value);
+                }}
+              />
+            </div>
+          ) : (
+            <FileName
+              folder={folder}
+              name={name}
+              locked={name === "index"}
+              onRename={(next) =>
+                relocate(planRename(withThis(), where, { name: next }), `Renamed to ${next}.md.`)
+              }
+              onMove={() => setMoving(true)}
+            />
+          )
+        }
+        actions={
+          <>
+            {deployed !== null ? (
+              <Button aria-pressed={comparing} onClick={() => setComparing((now) => !now)}>
+                {comparing ? "Hide what is deployed" : "Compare with deployed"}
+              </Button>
+            ) : null}
+            {app?.preview && !fresh ? (
+              <a
+                href={`${app.preview}${inApp(app, where).replace(/(^|\/)index$/, "")}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-control items-center gap-1 rounded-control border border-line px-3 text-meta text-ink no-underline hover:bg-sunken"
+              >
+                Preview in the app
+                <ExternalLink aria-hidden="true" size={14} />
+              </a>
+            ) : null}
+            {!fresh && page ? (
+              <Button
+                variant="danger"
+                onClick={async () => {
+                  const problem = await deletePage({
+                    root,
+                    data,
+                    reload: list.reload,
+                    path: where,
+                    title,
+                    name: where.split("/").at(-1) as string,
+                    folder: undefined,
+                    after: () => navigate(`${link}/docs`),
+                  });
+                  if (problem) notify.error(new Error(problem));
+                }}
+              >
+                Delete…
+              </Button>
+            ) : null}
+            <Button
+              variant="primary"
+              onClick={() => navigate(fresh ? `${link}/docs` : `${link}/docs/${where}`)}
+            >
+              {dirty ? "Close" : "Done"}
+            </Button>
+          </>
+        }
+      />
+      {clash ? (
+        <Notice
+          tone="danger"
+          action={
+            <Button
+              size="small"
+              onClick={async () => {
+                const theirs = await api.get<Opened>(`${root}/docs/page/${where}`);
+                const sure = await ask.confirm({
+                  title: "Take their version?",
+                  text: "What you typed since you opened the page is replaced by what they saved. Copy anything you want to keep first.",
+                  action: "Take theirs",
+                  danger: true,
+                });
+                if (!sure) return;
+                change(theirs.source);
+                setSaved(theirs.source);
+                draft.reset(theirs.source, theirs.revision ?? undefined);
+                setClash(false);
+              }}
+            >
+              See what they saved
+            </Button>
+          }
+        >
+          Someone else saved this page after you opened it. Nothing of theirs was overwritten, and
+          what you typed is still here.
+        </Notice>
+      ) : null}
+
+      <Panel className="flex min-h-0 flex-col overflow-hidden p-0">
+        <div
+          role="toolbar"
+          aria-label="Write"
+          className="flex flex-wrap items-center gap-1 border-line border-b px-2 py-1.5"
+        >
+          <UndoRedo
+            history={{
+              undo: () => handle.current?.undo(),
+              redo: () => handle.current?.redo(),
+              undoLabel: can.undo ? "the last change" : undefined,
+              redoLabel: can.redo ? "the change undone" : undefined,
+            }}
+          />
+          <span aria-hidden className="mx-1 h-5 w-px bg-line" />
+          <Popover
+            title="Insert a component"
+            titleHidden
+            wide
+            open={inserting}
+            onOpenChange={(next) => {
+              setInserting(next);
+              if (!next) handle.current?.focus();
+            }}
+            trigger={
+              <Button size="small" variant="quiet">
+                <Plus aria-hidden="true" size={14} />
+                Insert
+                <kbd className="ml-1 rounded-inner border border-line px-1 font-mono text-code-sm text-ink-subtle">
+                  /
+                </kbd>
+              </Button>
+            }
+          >
+            <InsertMenu
+              items={offered}
+              within={within}
+              onPick={insert}
+              onClose={() => {
+                setInserting(false);
+                handle.current?.focus();
+              }}
+            />
+          </Popover>
+          <span aria-hidden className="mx-1 h-5 w-px bg-line" />
+          <ToolButton
+            label="Heading"
+            onClick={() => format(togglePrefix(source, selection(), "## "))}
+          >
+            <Heading aria-hidden size={16} />
+          </ToolButton>
+          <ToolButton
+            label="Bold"
+            onClick={() => format(surround(source, selection(), "**", "**", "bold"))}
+          >
+            <Bold aria-hidden size={16} />
+          </ToolButton>
+          <ToolButton
+            label="Italic"
+            onClick={() => format(surround(source, selection(), "_", "_", "italic"))}
+          >
+            <Italic aria-hidden size={16} />
+          </ToolButton>
+          <ToolButton
+            label="Link"
+            onClick={() => format(surround(source, selection(), "[", "](address)", "words"))}
+          >
+            <LinkIcon aria-hidden size={16} />
+          </ToolButton>
+          <ToolButton label="List" onClick={() => format(togglePrefix(source, selection(), "- "))}>
+            <List aria-hidden size={16} />
+          </ToolButton>
+          <ToolButton
+            label="Code"
+            onClick={() => format(surround(source, selection(), "`", "`", "code"))}
+          >
+            <CodeIcon aria-hidden size={16} />
+          </ToolButton>
+          <p
+            className="m-0 ml-2 hidden min-w-0 truncate text-meta text-ink-muted md:block"
+            aria-live="polite"
+          >
+            {within.length > 0 ? (
+              <>
+                Cursor in{" "}
+                <span className="font-mono text-code-sm text-ink">
+                  {within.map(nameOf).join(" › ")}
+                </span>
+              </>
+            ) : null}
+          </p>
+          <fieldset
+            aria-label="What is shown"
+            className="m-0 ml-auto flex min-w-0 items-center rounded-control border border-line p-0.5"
+          >
+            {(["source", "split", "preview"] as const).map((one) => (
+              <button
+                key={one}
+                type="button"
+                aria-pressed={mode === one}
+                onClick={() => setMode(one)}
+                className={`rounded-inner px-2 py-1 text-meta ${one === "split" ? "hidden lg:inline-block" : ""} ${
+                  mode === one
+                    ? "bg-selected font-medium text-ink"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                {one === "source" ? "Source" : one === "split" ? "Split" : "Preview"}
+              </button>
+            ))}
+          </fieldset>
+        </div>
+
+        <div className={`grid min-h-0 ${mode === "split" ? "lg:grid-cols-2" : "grid-cols-1"}`}>
+          <div
+            className={mode === "preview" ? "hidden" : mode === "split" ? "hidden lg:block" : ""}
+          >
+            <Suspense fallback={<p className="p-3 text-ink-muted">Loading the editor…</p>}>
+              <CodeEditor
+                label={`Source of ${where || "the new page"}`}
+                language="markdown"
+                path={`docs/${where || "new"}.md`}
+                value={source}
+                onChange={typeSource}
+                onSave={save}
+                problems={problems}
+                wrap
+                height="68vh"
+                reveal={reveal}
+                handle={handle}
+                onCursor={setCursor}
+                onHistory={setCan}
+                onSlash={() => setInserting(true)}
+                frontmatter={{ hint: topSays(source) }}
+              />
+            </Suspense>
+          </div>
+          <div
+            className={`flex min-h-0 flex-col border-line lg:border-l ${
+              mode === "source" ? "hidden" : mode === "split" ? "hidden lg:flex" : ""
+            }`}
+          >
+            <div
+              role="tablist"
+              aria-label="Beside the source"
+              className="flex gap-1 border-line border-b px-3"
+            >
+              {(["preview", "details"] as const).map((one) => (
+                <button
+                  key={one}
+                  type="button"
+                  role="tab"
+                  aria-selected={side === one}
+                  onClick={() => setSide(one)}
+                  className={`-mb-px border-b-2 px-2 py-2 text-meta ${
+                    side === one
+                      ? "border-action font-medium text-ink"
+                      : "border-transparent text-ink-muted hover:text-ink"
+                  }`}
+                >
+                  {one === "preview" ? "Preview" : "Page details"}
+                </button>
+              ))}
+            </div>
+            {side === "preview" ? (
+              <section
+                ref={preview}
+                className="h-[64vh] overflow-y-auto p-6"
+                aria-label="The page as it will be served"
+              >
+                {/* The served page's own title. Here it is a part of this screen, which has its heading already. */}
+                <h2 className="m-0 mb-1 text-display-lg">{title}</h2>
+                {checked?.entry.frontmatter.description ? (
+                  <p className="m-0 mb-5 text-ink-muted">{checked.entry.frontmatter.description}</p>
+                ) : (
+                  <div className="mb-5" />
+                )}
+                {checked ? (
+                  <Doc
+                    tree={asDirectory(inApp(app, where), checked.entry.tree)}
+                    profile="docs"
+                    headingShift={1}
+                    productName={brand.productName}
+                    asServed
+                    lines
+                    idPrefix="preview"
+                    folder={() => folderItems(rows, { path: where }, link)}
+                    glossary={(scope) =>
+                      glossaryFor(data, { path: where }, scope, (to) => `${link}/docs/${to}`)
+                    }
+                    {...drawn}
+                    components={{
+                      code: ({ value, lang }) =>
+                        lang === "mermaid" ? <Diagram source={value} /> : undefined,
+                    }}
+                  />
+                ) : null}
+                {within.length > 0 ? (
+                  <p className="m-0 mt-3 text-meta text-action">
+                    Following the cursor · {nameOf(within.at(-1) as (typeof within)[number])}
+                  </p>
+                ) : null}
+              </section>
+            ) : (
+              <section aria-label="Page details" className="h-[64vh] overflow-y-auto p-4">
+                <PageDetails
+                  source={source}
+                  onChange={change}
+                  index={where === "index" || where.endsWith("/index")}
+                  product={product}
+                />
+              </section>
+            )}
+          </div>
+        </div>
+      </Panel>
+
+      {comparing && deployed !== null ? (
+        <section aria-label="What changes" className="flex flex-col gap-2">
+          <h2 className="m-0 text-label text-ink-subtle uppercase">What changes</h2>
+          {deployed === source ? (
+            <p className="m-0 text-ink-muted">Nothing: this is what is deployed.</p>
+          ) : (
+            <DiffView
+              before={deployed}
+              after={source}
+              beforeLabel="Deployed"
+              afterLabel="As it is here"
+              maxHeight="40vh"
+            />
+          )}
+        </section>
+      ) : null}
+
+      <div className="sticky bottom-0 layer-sticky flex flex-col gap-1 rounded-panel border border-line bg-raised px-3 py-2">
+        <section aria-label="Problems" className="flex flex-col gap-1">
+          {issues.length > 0 ? (
+            <ul className="m-0 flex max-h-40 list-none flex-col gap-0.5 overflow-y-auto p-0">
+              {issues.map((issue, index) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: two problems may be on one line with one message.
+                <li key={index}>
+                  <button
+                    type="button"
+                    className="flex w-full items-baseline gap-3 rounded-control border-0 bg-transparent px-2 py-1 text-left hover:bg-sunken"
+                    onClick={() => setReveal({ line: issue.line, at: Date.now() })}
+                  >
+                    <span className="shrink-0 font-mono text-code-sm text-ink-subtle">
+                      Line {issue.line}
+                    </span>
+                    <span>{issue.message}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <h2
+              className={`m-0 flex items-center gap-1.5 text-meta font-medium ${
+                errors.length > 0
+                  ? "text-danger"
+                  : issues.length > 0
+                    ? "text-attention"
+                    : "text-success"
+              }`}
+            >
+              {issues.length === 0 ? (
+                <CircleCheck aria-hidden size={14} />
+              ) : (
+                <CircleAlert aria-hidden size={14} />
+              )}
+              {issues.length === 0
+                ? "No problems"
+                : `${issues.length} ${issues.length === 1 ? "problem" : "problems"}`}
+            </h2>
+            <p className="m-0 text-meta text-ink-muted">
+              {errors.length === 0
+                ? "This page would deploy as it is."
+                : "Mend these before it can be deployed."}
+            </p>
+            <span className="font-mono text-code-sm text-ink-subtle">
+              Ln {cursor.line}, Col {cursor.column}
+            </span>
+          </div>
+        </section>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {dirty ? (
+            <span className="flex items-center gap-1.5 text-meta text-ink">
+              <span aria-hidden className="size-2 rounded-full bg-attention" />
+              Unsaved changes
+            </span>
+          ) : null}
+          <Button
+            size="small"
+            disabled={!dirty || saving}
+            onClick={() => change(saved ?? starter(startTitle))}
+          >
+            Discard
+          </Button>
+          <Button
+            size="small"
+            variant="primary"
+            disabled={!dirty || saving || placed !== undefined}
+            onClick={save}
+          >
+            Save draft
+          </Button>
+        </div>
+      </div>
+      <MoveDialog
+        row={
+          moving
+            ? {
+                id: where,
+                kind: "page",
+                path: where,
+                name,
+                title,
+                page: data.pages.find((one) => one.path === where),
+                site: undefined,
+              }
+            : undefined
+        }
+        rows={rows}
+        onClose={() => setMoving(false)}
+        onMove={async (into) => {
+          const problem = await relocate(
+            planMove(withThis(), where, { folder: into }),
+            `Moved to ${findRow(rows, folderId(into))?.title ?? into}.`,
+          );
+          if (!problem) setMoving(false);
+          return problem;
+        }}
+      />
+    </section>
+  );
+}
+
+function ToolButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button size="small" variant="quiet" aria-label={label} tooltip={label} onClick={onClick}>
+      {children}
+    </Button>
+  );
+}
+
+/** The page's folder, and its file's name, which can be changed in place. */
+function FileName({
+  folder,
+  name,
+  locked,
+  onRename,
+  onMove,
+}: {
+  folder: string;
+  name: string;
+  locked: boolean;
+  onRename: (name: string) => Promise<string | undefined>;
+  onMove: () => void;
+}) {
+  const [typed, setTyped] = useState(name);
+  const [problem, setProblem] = useState<string>();
+  useEffect(() => setTyped(name), [name]);
+  const commit = async () => {
+    if (typed === name) return;
+    const wrong = nameProblem(typed);
+    if (wrong) {
+      setProblem(wrong);
+      return;
+    }
+    setProblem(await onRename(typed));
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <p className="m-0 flex flex-wrap items-center gap-1 font-mono text-code-sm text-ink-subtle">
+        <span>{folder}/</span>
+        <span className="inline-flex items-center rounded-inner border border-dashed border-line-strong px-1">
+          <input
+            aria-label="File name"
+            value={typed}
+            disabled={locked}
+            size={Math.max(4, typed.length)}
+            onChange={(event) => {
+              setTyped(event.currentTarget.value);
+              setProblem(undefined);
+            }}
+            onBlur={() => void commit()}
+            onKeyDown={(event: KeyboardEvent) => {
+              if (event.key === "Enter") void commit();
+              if (event.key === "Escape") setTyped(name);
+            }}
+            className="bg-transparent text-ink outline-none disabled:text-ink-muted"
+          />
+          <span>.md</span>
+        </span>
+        <button
+          type="button"
+          onClick={onMove}
+          className="ml-1 font-sans text-meta text-action underline"
+        >
+          Move…
+        </button>
+      </p>
+      {problem ? <p className="m-0 text-meta text-danger">{problem}</p> : null}
+    </div>
+  );
+}
+
+/** What can be inserted where the cursor is, found by typing. */
+function InsertMenu({
+  items,
+  within,
+  onPick,
+  onClose,
+}: {
+  items: readonly Insertable[];
+  within: readonly ReturnType<typeof insertables>[number]["spec"][] | readonly unknown[];
+  onPick: (item: Insertable) => void;
+  onClose: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const [active, setActive] = useState(0);
+  const found = items.filter((one) =>
+    `${one.name} ${one.spec.summary} ${one.spec.name}`
+      .toLowerCase()
+      .includes(typed.trim().toLowerCase()),
+  );
+  const groups = [
+    { label: "Blocks", list: found.filter((one) => one.block) },
+    { label: "Inline", list: found.filter((one) => !one.block) },
+  ].filter((group) => group.list.length > 0);
+  const ordered = groups.flatMap((group) => group.list);
+  const holder = within.at(-1) as
+    | { name: string; props: Record<string, string>; label?: string }
+    | undefined;
+  return (
+    <div className="flex flex-col">
+      <label className="flex items-center gap-2 border-line border-b px-3 py-2 text-ink-muted">
+        <Search aria-hidden size={14} />
+        <input
+          // biome-ignore lint/a11y/noAutofocus: the menu is opened to be typed in.
+          autoFocus
+          aria-label="Find a component"
+          placeholder="Find a component"
+          value={typed}
+          onChange={(event) => {
+            setTyped(event.currentTarget.value);
+            setActive(0);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setActive((now) => Math.min(ordered.length - 1, now + 1));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setActive((now) => Math.max(0, now - 1));
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              const chosen = ordered[active];
+              if (chosen) onPick(chosen);
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              onClose();
+            }
+          }}
+          className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-subtle"
+        />
+      </label>
+      <div className="max-h-[22rem] overflow-y-auto p-1.5">
+        {groups.length === 0 ? (
+          <p className="m-0 p-3 text-meta text-ink-muted">Nothing is called that.</p>
+        ) : null}
+        {groups.map((group) => (
+          <section key={group.label} aria-label={group.label}>
+            <p className="m-0 px-2 pt-2 pb-1 text-label text-ink-subtle uppercase">{group.label}</p>
+            {group.list.map((one) => {
+              const index = ordered.indexOf(one);
+              return (
+                <button
+                  key={one.spec.name}
+                  type="button"
+                  onMouseEnter={() => setActive(index)}
+                  onClick={() => onPick(one)}
+                  className={`flex w-full items-center gap-3 rounded-control px-2 py-1.5 text-left ${
+                    index === active ? "bg-sunken" : ""
+                  }`}
+                >
+                  <span
+                    aria-hidden
+                    className="inline-flex size-8 shrink-0 items-center justify-center rounded-control border border-line font-mono text-code-sm text-ink-muted"
+                  >
+                    {one.glyph}
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="font-medium text-ink">{one.name}</span>
+                    <span className="truncate text-meta text-ink-muted">{one.spec.summary}</span>
+                  </span>
+                  <span className="shrink-0 font-mono text-code-sm text-ink-subtle">
+                    {one.syntax}
+                  </span>
+                </button>
+              );
+            })}
+          </section>
+        ))}
+      </div>
+      <p className="m-0 border-line border-t px-3 py-2 text-meta text-ink-muted">
+        Inserts at the cursor
+        {holder
+          ? `, inside ${holder.props.label ? `${holder.name} “${holder.props.label}”` : holder.name}`
+          : ""}
+        .
+      </p>
+    </div>
+  );
+}

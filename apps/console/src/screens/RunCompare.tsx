@@ -1,13 +1,14 @@
-import { Button, Panel } from "@vynxlabs/ui";
+import { Button, Panel } from "@volvel/ui";
 import { GitCompareArrows } from "lucide-react";
 import { useState } from "react";
 import { useLoad } from "../api.ts";
 import { DiffView } from "../kit/DiffView.tsx";
 import { ago, duration } from "../kit/format.ts";
 import { ErrorState, Pending } from "../kit/LoadState.tsx";
-import { KeyValues } from "../kit/layout.tsx";
+import { EmptyCanvas, KeyValues } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { Mono } from "../kit/status.tsx";
+import { useTitleObject } from "../kit/title.ts";
 import { Link } from "../router.tsx";
 
 /**
@@ -176,17 +177,18 @@ export function RunComparePage({
   const flowThen = useLoad<{ nodes: unknown; edges: unknown; bundleVersion: number | null }>(
     isFlow ? `${root}/flow-runs/${other}/definition` : null,
   );
+  useTitleObject(path ? `Compare ${path}` : undefined);
   const failed = script.error && flowRun.error ? flowRun.error : (now.error ?? then.error);
   return (
     <div className="flex flex-col gap-5">
       <PageHeader
         eyebrow="Compare runs"
         title={path ? `${path}` : "Comparing runs"}
-        description="The run that failed, against the last run that succeeded before it."
+        description="This run, against the last run that succeeded before it."
       />
       <p className="m-0 flex flex-wrap gap-4 text-meta">
         <Link to={`${link}/runs/${id}`}>
-          The run that failed <Mono>{id.slice(-8)}</Mono>
+          This run <Mono>{id.slice(-8)}</Mono>
         </Link>
         <Link to={`${link}/runs/${other}`}>
           The last success <Mono>{other.slice(-8)}</Mono>
@@ -199,7 +201,7 @@ export function RunComparePage({
             before={{ nodes: flowThen.data.nodes, edges: flowThen.data.edges }}
             after={{ nodes: flowNow.data.nodes, edges: flowNow.data.edges }}
             beforeLabel={`v${flowThen.data.bundleVersion ?? "?"}, the last success`}
-            afterLabel={`v${flowNow.data.bundleVersion ?? "?"}, the run that failed`}
+            afterLabel={`v${flowNow.data.bundleVersion ?? "?"}, this run`}
             testId="source-diff"
             maxHeight="70vh"
           />
@@ -212,10 +214,27 @@ export function RunComparePage({
             const paths = [
               ...new Set([...then.data.files, ...now.data.files].map((file) => file.path)),
             ].sort();
-            return paths.map((file) => {
+            const differing = paths.filter(
+              (file) =>
+                (then.data?.files.find((one) => one.path === file)?.content ?? "") !==
+                (now.data?.files.find((one) => one.path === file)?.content ?? ""),
+            );
+            if (differing.length === 0)
+              return (
+                <EmptyCanvas
+                  title="The code is the same in both"
+                  text={`Both runs used version ${now.data.bundleVersion ?? "?"}. What differs is the input or the environment, not the code.`}
+                  action={
+                    <span className="flex flex-wrap justify-center gap-4 text-meta">
+                      <Link to={`${link}/runs/${id}`}>Input of this run</Link>
+                      <Link to={`${link}/runs/${other}`}>Input of the last success</Link>
+                    </span>
+                  }
+                />
+              );
+            return differing.map((file) => {
               const before = then.data?.files.find((one) => one.path === file)?.content ?? "";
               const after = now.data?.files.find((one) => one.path === file)?.content ?? "";
-              if (before === after) return null;
               return (
                 <section key={file} aria-label={file} className="flex flex-col gap-2">
                   <h2 className="m-0 font-mono text-code">{file}</h2>
@@ -223,7 +242,7 @@ export function RunComparePage({
                     before={before}
                     after={after}
                     beforeLabel={`v${then.data?.bundleVersion ?? "?"}, the last success`}
-                    afterLabel={`v${now.data?.bundleVersion ?? "?"}, the run that failed`}
+                    afterLabel={`v${now.data?.bundleVersion ?? "?"}, this run`}
                     testId="source-diff"
                     maxHeight="70vh"
                   />

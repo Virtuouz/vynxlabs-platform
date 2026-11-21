@@ -1,5 +1,5 @@
-import { RunError, runScript, table } from "@vynxlabs/app";
-import { Badge, type BadgeTone, Skeleton } from "@vynxlabs/ui";
+import { RunError, runScript, table } from "@volvel/app";
+import { Badge, type BadgeTone, Skeleton } from "@volvel/ui";
 import { useEffect, useState } from "react";
 // These two files import nothing, so they are safe in the browser.
 import {

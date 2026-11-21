@@ -8,7 +8,7 @@ import {
   type VisualCondition,
   type VisualQuery,
   type WidgetPlace,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import {
   Button,
   Chart,
@@ -20,7 +20,7 @@ import {
   SelectField,
   Sparkline,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { ArrowDownRight, ArrowUpRight, Ellipsis, Minus } from "lucide-react";
 import {
   type CSSProperties,
@@ -640,9 +640,12 @@ export function WidgetCard({
   onShow,
   every,
   onAsOf,
+  fromRepository = false,
 }: {
   root: string;
   dashboard: string;
+  /** The dashboard is the repository's: what names an old path is changed there. */
+  fromRepository?: boolean;
   revision: number;
   body: DashboardBody;
   widget: DashboardWidget;
@@ -673,9 +676,13 @@ export function WidgetCard({
   const { updatedAt } = loaded;
   const asOf = useRef(onAsOf);
   asOf.current = onAsOf;
+  // A widget that could not be read is told as -1, and is left out of the age.
+  const failed = Boolean(loaded.error);
   useEffect(() => {
-    if (asks && updatedAt) asOf.current?.(widget.id, updatedAt);
-  }, [asks, widget.id, updatedAt]);
+    if (!asks) return;
+    if (failed) asOf.current?.(widget.id, -1);
+    else if (updatedAt) asOf.current?.(widget.id, updatedAt);
+  }, [asks, widget.id, updatedAt, failed]);
   // A figure that is compared asks again, for the period before the one its date filter is set to.
   // So does a chart that draws the period before.
   const compared =
@@ -705,6 +712,7 @@ export function WidgetCard({
       : undefined;
   const title = widget.title || (widget.type === "text" ? "" : widget.id);
   const result = loaded.data;
+  const stale = Boolean(result && loaded.stale && loaded.loading && !loaded.error);
   const file = (title || widget.id).replace(/[^\w-]+/g, "-").toLowerCase();
   const [inside, room] = useHeight<HTMLDivElement>();
 
@@ -783,12 +791,37 @@ export function WidgetCard({
         {...(placed ? { tabIndex: 0 } : {})}
         className={`flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
           title || tools ? "" : "pt-4"
-        } ${placed ? "overflow-auto" : ""}`}
+        } ${placed ? "overflow-auto" : ""} ${stale ? "opacity-50 transition-opacity" : ""}`}
+        // The answer shown is for the filters before this change, until the new one arrives.
+        {...(stale ? { "aria-busy": true } : {})}
       >
+        {stale ? (
+          <span role="status" className="text-body-sm text-ink-muted">
+            Updating…
+          </span>
+        ) : null}
+        {result?.followed ? (
+          <Notice tone="attention">
+            Names <code className="font-mono text-code">{result.followed.names}</code>, now{" "}
+            <code className="font-mono text-code">{result.followed.now}</code>:{" "}
+            {fromRepository
+              ? "change it in the repository."
+              : "change the widget to name the new path."}
+          </Notice>
+        ) : null}
         {widget.type === "text" ? (
           <p className="m-0 whitespace-pre-wrap">{widget.options?.text}</p>
         ) : loaded.error ? (
-          <Notice tone="danger">{loaded.error.fields?.[0]?.message ?? loaded.error.message}</Notice>
+          <Notice
+            tone="danger"
+            action={
+              <Button size="small" onClick={loaded.reload}>
+                Try again
+              </Button>
+            }
+          >
+            {loaded.error.fields?.[0]?.message ?? loaded.error.message}
+          </Notice>
         ) : !result ? (
           <Loading what={title || "the widget"} />
         ) : widget.type === "figure" ? (

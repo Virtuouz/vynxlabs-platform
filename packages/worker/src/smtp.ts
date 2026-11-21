@@ -1,5 +1,5 @@
-import type { Connector, MailMessage, SmtpClient, SmtpConfig } from "@vynxlabs/sdk";
-import { smtpConfigSchema } from "@vynxlabs/sdk";
+import type { Connector, MailMessage, SmtpClient, SmtpConfig } from "@volvel/sdk";
+import { smtpConfigSchema } from "@volvel/sdk";
 import { createTransport } from "nodemailer";
 
 /**

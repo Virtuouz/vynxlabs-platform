@@ -1,6 +1,6 @@
-import type { InterfacePage, WidgetAction, WidgetType } from "@vynxlabs/manifest";
-import { PageRenderer, settle, type TableInfo, type TargetInfo } from "@vynxlabs/screens";
-import { Button, SelectField } from "@vynxlabs/ui";
+import type { InterfacePage, WidgetAction, WidgetType } from "@volvel/manifest";
+import { PageRenderer, settle, type TableInfo, type TargetInfo } from "@volvel/screens";
+import { Button, SelectField } from "@volvel/ui";
 import { Plus } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useLoad } from "../../api.ts";

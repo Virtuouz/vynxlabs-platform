@@ -1,5 +1,5 @@
-import type { InterfacePage, PageWidget, WidgetLink } from "@vynxlabs/manifest";
-import { heading, type TableInfo } from "@vynxlabs/screens";
+import type { InterfacePage, PageWidget, WidgetLink } from "@volvel/manifest";
+import { heading, type TableInfo } from "@volvel/screens";
 
 export interface LinkChoice {
   value: string;

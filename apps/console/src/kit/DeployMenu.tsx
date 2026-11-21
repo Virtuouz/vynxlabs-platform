@@ -1,4 +1,4 @@
-import { Menu } from "@vynxlabs/ui";
+import { Menu } from "@volvel/ui";
 import { ChevronDown, Rocket } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";

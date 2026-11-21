@@ -38,6 +38,8 @@ describe("the console's branding", () => {
       named: false,
       logo: false,
       theme: { tokens: {}, dark: {} },
+      // No address was given for the documentation on the web.
+      docsUrl: null,
     });
     const css = await t.anonymous.get("/instance/theme.css");
     expect(css.headers["content-type"]).toContain("text/css");

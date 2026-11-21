@@ -1,4 +1,4 @@
-import { Panel } from "@vynxlabs/ui";
+import { Panel } from "@volvel/ui";
 import type { ReactNode } from "react";
 import { useShortcut } from "../../kit/keys.ts";
 import { PageHeader } from "../../kit/PageHeader.tsx";

@@ -196,9 +196,9 @@ export class WorkerHost {
       env: {
         ...env,
         HOME: "/tmp",
-        PLATFORM_URL: this.#url,
-        PLATFORM_WORKER_IDLE_EXIT: String(lease.idleExitSeconds),
-        PLATFORM_WORKER_MACHINE: formatMachine(this.machine),
+        VOLVEL_URL: this.#url,
+        VOLVEL_WORKER_IDLE_EXIT: String(lease.idleExitSeconds),
+        VOLVEL_WORKER_MACHINE: formatMachine(this.machine),
       },
       stdio: ["pipe", "pipe", "pipe"],
       uid,

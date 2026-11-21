@@ -1,4 +1,4 @@
-import { Button, ComboboxField, Notice, SelectField, SideSheet } from "@vynxlabs/ui";
+import { Button, ComboboxField, Notice, SelectField, SideSheet } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";

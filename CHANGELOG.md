@@ -2,6 +2,140 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 24, the follow-through on phase 23's open items
+
+Five items phase 23 left, each as the owner chose. A migration (`0084`) adds the record of what each dashboard widget names. Nothing needs migrating by hand.
+
+### For operators
+
+- **A dashboard follows a renamed query, for good.** A widget names a query by its readable path, and a deploy records the key of the query that path named. A widget whose path no longer resolves (its alias has run out) runs the query by that key.
+- **A rename drafts the console's dashboards.** The rename dialog lists the console-made dashboards that name the query, and saves each as a draft with the new path. Discarding the rename sets aside only the dashboard drafts it wrote and that are unchanged; one edited since is kept.
+- **A repository dashboard says what to change.** Its widget shows "Names `old`, now `new`: change it in the repository". It is not drafted from the console.
+- **One feedback table for a workspace's sites.** `docs-feedback` is made the first time a site turns feedback on, and every site with feedback on writes to it, naming itself by `site_key` (the site app's key, which a rename keeps) and, for people, `site`. A second site only changes itself, and the dialog says which it does. Per-site `<site>-feedback` tables are no longer made, and ones made before are not read.
+- **A doc writer turns feedback on alone.** They may draft and deploy `docs-feedback` with exactly its columns, and no other table.
+- **A file a worker script replaces is kept like one replaced in the console:** until the tenant's audit retention ends, then removed. A source table's files belong to the source, so none are kept.
+- **A data source's page fills the window.** The rows are the one scroller, the list of tables scrolls beside them.
+- **A reference is named in the grid** when its table names no display column: `name`, else `title`, else the first text column, the same rule as the picker.
+
+### For tenant developers
+
+- `GET …/rename-effects/<path>` answers the dashboards that name a query, with their `ownership` and the number of widgets that do.
+- A widget's data answer has `followed: { names, now }` when it ran through a recorded key.
+- The rows API's `expanded` names rows by the shared rule `displayGuess` (exported from `@volvel/manifest`) when the table names no display column.
+- `PUT drafts/docs-feedback` as a `table` is allowed for a caller who may change a docs site, when its columns are exactly `site_key`, `site`, `page`, `helpful`, `version` and `at`.
+- The served docs site writes `site_key` and `site` with each answer.
+
+## Unreleased: phase 23, what the owner chose for phase 22's open items
+
+Eight decisions, built. Nothing needs migrating by hand, and a new migration only rewords the `doc_writer` role's description.
+
+### For operators
+
+- **A table's rows scroll in one place.** The table screen fills the window, with the header pinned, at any width. The Rows and Definition tabs both do.
+- **A reference is found by typing.** The picker asks the server for rows whose display column contains what was typed, so a row past the first 200 is found. It shows 50 and says "Type to find more". A table with no display column is searched by `name`, `title` or its first text column.
+- **A file in a row is replaced and removed from the row inspector,** after asking. The old file stays in the row's history (`row_file_history`) until the tenant's audit retention (400 days by default), then goes.
+- **Release is one list of deploys,** with "Activate this version" on each, through the confirm that is a danger in production. Bundles never run in the workspace are under it, "Not yet run here". The "Bundles and rollback" table is gone.
+- **Going back to an access release lists what it removes** ("These are removed") before it is done, and is a danger confirm when anything is.
+- **A doc writer may deploy a site's feedback table,** and only that table, in the same deploy as the site that names it. Any other table is refused, as before.
+- **The tenant overview counts what you may decide.** "Waiting for you" and "for someone else" are counted apart, and the tenant's queue lists the same; **Waiting for others** is read-only.
+- **A list's filters are on a row of their own** under the title, in the shared header: the audit log, runs, events and every other list.
+- **Queries are renamed** ("Name and path"), and an App Builder app's title is changed ("Rename"). An app's address is unchanged: changing it is for a later phase.
+
+### For tenant developers
+
+- `GET …/summary` of a tenant answers `approvalsWaitingMine`, as a workspace's does, counting the approvals surfaced to the tenant that the caller may decide.
+- A route answers what going back to an access release would remove, before the rollback is sent.
+- A caller with `doc:write` and without `deployment:write` may deploy a `table` draft that a `docs` site in the same deploy names as its feedback table, when its columns are exactly the feedback columns.
+- Rows accept a filter `{"column": …, "op": "contains", "value": …}`, as before; the console now sends one for every typed search of a reference.
+
+## Unreleased: phase 22, what the polish audit found
+
+Corrections made once where they are shared, instead of again on each screen. Nothing needs migrating.
+
+### For operators
+
+- **Removal is everywhere.** A script, a flow, an extension, an App Builder app and a query are removed where they are listed, as a draft, and **Keep** takes the removal back before it is deployed. A flow, app or query that the repository manages is not offered for removal, since the server refuses it, and lists say who manages each.
+- **A docs site has a publishing switch.** Off stops serving it and keeps its pages and its app; on serves it again at the next deploy. Removing the site's app also unpublishes it, and says so first. Page feedback can be turned off from the site's menu. Undo of a move restores the address, and a publish offers Undo.
+- **Deploying a site that asks for feedback deploys its table too**, and the count says so. A member with only `interface:write` cannot deploy a table: if a developer leaves the feedback table as a draft, that member's docs deploy is refused.
+- **Retention asks first** when any period gets shorter, naming the kind and its old and new days. It saves from the bar, as Branding does.
+- **Approvals say for whom.** The overview counts what waits for you apart from what waits for others, and "Decide" opens exactly that queue. **Waiting for others** is a read-only view. A viewer is not offered Approve, a flow run says per step whether you may decide, and access releases show every change before approve or roll back and take a comment on a decline.
+- **"Stop asking for a second person" and an SSO provider's "Turn off"** confirm, and say what they change. Nothing changes on the server: turning off two-person approval still does not wait for a second person.
+- **Lists page.** Members, tenants, instance members, group pickers and events load fifty at a time, and search asks the server. A list that does not yet page says "Showing the first 200".
+- **Git sync has one set of controls.** The page's own side-by-side choice for each file changed on both sides, with no default, and "Push with drafts". Push takes a commit message, with a default. The panel beside other screens keeps only "no repository" and "Follow this branch", and no longer defaults to keeping this workspace's version.
+- **One promotion confirmation** in the Promote step and in a request's review, so a request with breaking names can be approved. A rollback in production is a danger confirm naming the workspace.
+- **Renames.** A workspace, a tenant, an end-user group and a table are renamed from their screens, and a table's definition and row rules have undo and redo. A data source has "Change".
+- **Editors save what was typed.** ⌘S right after typing, or typing during an autosave, no longer saves the text from before. Closing the widget editor or the row inspector with unsaved edits asks first.
+- **Served sites.** Help in code apps stays open with motion and follows the theme. The docs phone sheet takes focus and returns it, the search list is a well-formed listbox, and a failed search, vote, copy or "Load more" says so and whom to ask.
+- Runs, saved queries and App Builder show loading and failure before "none yet". The audit log's cut text and raw targets read as words. The release screen has one heading, and Promote names its real target.
+
+### For tenant developers
+
+- **A create never overwrites.** `PUT drafts/<path>` takes `create: true`: a path held by a draft or a deployed resource is refused with 409 `path_taken`. The console sends it for New script, New flow, New resource, Make an app and Add a schedule, and shows the refusal on the path field. A save without the flag, a save with a revision, the CLI and git sync are as they were.
+- **A trigger's key on a script or flow page is `path#node`.** Its link opens that trigger.
+- `GET …/summary` answers `approvalsWaitingMine` beside `approvalsWaiting`.
+- A text area in a generated form is for `format: "textarea"`, or a `maxLength` above 1000 with no format. A one-line field is one line.
+
+## Unreleased: phase 21, documentation that reads and writes like a documentation product
+
+Documentation sites look and work like a documentation product, and the console changes pages and folders in place.
+
+### For operators
+
+- A docs app's pages are drawn in a new frame: the navigation, a home page, search that answers as it is typed, and a phone layout. Its stylesheet and script are still the instance's own files, under the same policy.
+- A docs app takes one kind of POST, at `<app>/_feedback`: a reader's answer to "Was this page helpful?", for an app that asks. It is rate limited by address, refused from another site, and kept as a row of the workspace's own table, not in the audit log.
+- `<app>/_search.json` and `<page>.md` answer the site's own script, to whoever may open the app.
+- Docs sites now allow inline styles (`style-src 'self' 'unsafe-inline'`), as other apps already do, so that Mermaid can draw diagrams. Scripts are still the instance's own only.
+- `/_platform/diagrams.js` is Mermaid and the instance's drawing, built with the console (3.4 MB, sent compressed when the browser takes it), and fetched only by a page that has a diagram. Nothing is fetched from another site.
+- No migration.
+
+### For tenant developers
+
+- **A folder's order is its own page's `pages:` list.** `order:` is gone from a page's top: list the folder's pages and folders, by name, in its `index.md`. What is not listed comes after, by title. A page that still says `order:` is refused, naming the line.
+- **Folders go as deep as they are written.** A page is no longer refused for being more than two folders down.
+- **A docs app serves a top-level folder.** `docs: handbook/support` is refused: serve `handbook`.
+- `::glossary` lists every term a collection's pages define, from A to Z. A block of code written as `mermaid` is a diagram, in the site's colours, that the reader can move and zoom.
+- `::pages` lists what is in a page's folder. A folder's own page with nothing written in it does the same.
+- Every component may sit inside any other. The editor's Insert writes it one level deeper inside another.
+- `defineApp({ docs, feedback: { table } })` asks readers whether a page helped. The table needs `page` (text), `helpful` (boolean), `version` (text) and `at` (timestamp).
+- `POST …/drafts/batch` saves several drafts at once, all or none: what the console uses for a change to the tree of pages.
+
+## Unreleased: phase 20, the name Volvel, and documentation
+
+The product is named Volvel. Every name that said Vynxlabs or `platform` where a person or a program meets it has changed, and no old name is accepted. There was no published version and no instance to keep working.
+
+The console has help beside every screen, and a workspace has documentation of its own: pages of Markdown, served as sites.
+
+### For operators
+
+- The image's entry scripts are `volvel-start` and `volvel-worker-host`, and the worker's commands are `volvel-worker` and `volvel-worker-host`.
+- In the Compose files: `PLATFORM_IMAGE` is `VOLVEL_IMAGE` and `PLATFORM_BIND` is `VOLVEL_BIND`. The project is named `volvel`, so Compose looks for volumes under that name. An install made under the old name keeps its data in the old volumes: start from new, or pass `-p vynxlabs-platform`.
+- A worker reads `VOLVEL_URL`, `VOLVEL_WORKER_TOKEN`, `VOLVEL_WORKER_IDLE_EXIT` and `VOLVEL_WORKER_MACHINE`.
+- `OTEL_SERVICE_NAME` is `volvel` when it is not set, and `volvel-worker` for a worker.
+- An instance with no product name of its own shows "Volvel".
+- A tenant export is stamped `volvel-tenant-export`. An export made before this is not read.
+- One migration, `0081`, adds a built-in role, `doc_writer`. Nothing else in the database changes.
+- **Help is in the image.** `F1` opens it beside any screen. It is fetched from the instance alone.
+- `DOCS_URL`, new and optional: where the documentation is on the web. With it each page of the help offers to open online.
+- Every setting the instance reads is listed in the help under Reference, from the table it reads them by. An environment variable the instance does not know is still ignored.
+- Docs apps are served under a policy of their own: no script but the instance's own file, no inline style, and pictures from the app or from an `https` address.
+- The API's description says what each route needs, under `x-access`.
+
+### For tenant developers
+
+- The packages are `@volvel/sdk`, `@volvel/app` and `@volvel/ui`. Change every import.
+- The command is `volvel`, not `platform`: `volvel deploy`, `volvel dev`. It reads `VOLVEL_URL`, `VOLVEL_TOKEN` and `VOLVEL_EXPORT_PASSPHRASE`, and keeps its sign-in in `~/.config/volvel/`. Sign in again.
+- A repository says where its files are in `volvel.yaml`, not `vynxlabs.yaml`. The `platform/` folder keeps its name.
+- A resource that was renamed answers at its old path with the header `Volvel-Resource-Moved`.
+- **Documentation.** A page is a Markdown file under `platform/docs`, or under the folders `docs:` names in `volvel.yaml`. `defineApp({ docs: "handbook" })` serves a folder of pages as a site. See "Documentation" in the SDK guide.
+- A build, and every deploy, now refuses documentation that does not hold together: a link that leads nowhere, a term nobody defines, a page about a resource that is not there.
+- `description` on a table's columns, and on `defineSchedule`, `defineWebhook`, `defineEventTrigger` and `defineBinding`. A column's is shown on its heading in the console and in apps.
+- A page of an interface takes `help`, a topic of the documentation, and the app then offers that page as its help.
+- `@volvel/app`: `terms()` gives the workspace's glossary, what its tables and scripts are for, and the pages that go with them, as far as the person using the app may know. `helpUrl(topic)` gives a page's address. `<HelpPanel topic="…" />` is a Help button that opens that page beside the app, and draws nothing for someone who may not read it.
+- In the console, a page is moved by dragging it onto a folder of the tree, and what its top says is a form, "Page details", that writes the page's own source.
+- New permissions: `doc:read` and `doc:write`. Whoever holds `doc:write` writes and deploys pages and nothing else. The built-in role `doc_writer` holds it.
+- An error's `code` is one of a published list, in the help under Reference, and keeps its meaning. A sign-in that fails still carries the sign-in library's own code.
+- A push through git sync writes a page as its Markdown file, and a pull reads one.
+
 ## Unreleased: phase 19, dashboards placed by drag, and motion that is kept
 
 ### For operators

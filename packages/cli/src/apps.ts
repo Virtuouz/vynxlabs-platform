@@ -4,7 +4,7 @@ import { readdir, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { extname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
-import type { BundleAsset } from "@vynxlabs/manifest";
+import type { BundleAsset } from "@volvel/manifest";
 import { BuildError } from "./errors.js";
 
 /** An app as the repository defines it: its path, and the directory its page is in. */
@@ -120,7 +120,7 @@ export async function buildApps(directory: string, apps: AppSource[]): Promise<B
       throw new BuildError([`${app.path} (app): ${app.source}/index.html does not exist.`]);
     }
     // A directory of this build's own: two builds of one repository at once, such as a
-    // build beside `platform dev`, must not write each other's files.
+    // build beside `volvel dev`, must not write each other's files.
     const out = join(
       directory,
       ".platform",

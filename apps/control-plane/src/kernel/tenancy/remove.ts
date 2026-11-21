@@ -1,4 +1,4 @@
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import type { Audit, Trx } from "../audit.js";
 import { workspaceSchema } from "../data/apply.js";
 import { conflict } from "../errors.js";

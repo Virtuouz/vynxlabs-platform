@@ -1,4 +1,4 @@
-import { Button, Notice } from "@vynxlabs/ui";
+import { Button, Notice, TextField } from "@volvel/ui";
 import { ArrowDownToLine, ArrowUpFromLine, GitBranch, GitCommitHorizontal } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
@@ -33,7 +33,7 @@ interface Compare {
 }
 
 interface Status {
-  repository: { url: string } | null;
+  repository: { url: string; paused?: boolean } | null;
   branch: string | null;
   state: string | null;
   updatedAt: string | null;
@@ -55,10 +55,12 @@ export function differenceLabel(file: { here: boolean; change?: string }): strin
   }
 }
 
+const DEFAULT_MESSAGE = "Deploy from the console";
+
 /**
  * The workspace beside its branch: what each side changed since they last
  * agreed, and every file changed on both, set side by side to choose from.
- * Nothing is overwritten without a choice.
+ * Nothing is overwritten without a choice. Push and pull are here and only here.
  */
 export function GitSync({ root, link }: { root: string; link: string }) {
   const status = useLoad<Status>(`${root}/git`);
@@ -66,6 +68,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
   const compare = useLoad<Compare>(following ? `${root}/git/compare` : null);
   const [choices, setChoices] = useState<Record<string, "mine" | "theirs">>({});
   const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(DEFAULT_MESSAGE);
   const [said, setSaid] = useState<{ tone: "success" | "danger" | "attention"; text: string }>();
   const tenantLink = link.split("/workspaces/")[0] as string;
 
@@ -99,6 +102,8 @@ export function GitSync({ root, link }: { root: string; link: string }) {
   const conflicts = (compare.data?.files ?? []).filter((file) => file.conflict);
   const stems = [...new Set(conflicts.map((file) => file.resource))];
   const allChosen = stems.every((stem) => choices[stem]);
+  const paused = Boolean(status.data?.repository?.paused);
+  const commitMessage = message.trim() || DEFAULT_MESSAGE;
 
   return (
     <div className="flex flex-col gap-6">
@@ -115,7 +120,11 @@ export function GitSync({ root, link }: { root: string; link: string }) {
               ? "This workspace follows no branch yet"
               : "No repository is connected"
           }
-          text="Connect the tenant's repository, then choose a branch below for this dev workspace."
+          text={
+            status.data.repository
+              ? "Choose a branch below for this workspace to follow."
+              : "Connect the tenant's repository below, then choose a branch for this workspace."
+          }
         />
       ) : null}
       {compare.error ? <ErrorState error={compare.error} onRetry={compare.reload} /> : null}
@@ -165,14 +174,28 @@ export function GitSync({ root, link }: { root: string; link: string }) {
             </Panel>
           </div>
 
+          {paused ? (
+            <Notice tone="attention">
+              Sync is paused for this tenant. Save its repository settings to turn it on.
+            </Notice>
+          ) : null}
+          <div className="max-w-md">
+            <TextField
+              name="message"
+              label="Commit message"
+              hint="Used by Push and Push with drafts."
+              value={message}
+              onChange={setMessage}
+            />
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="primary"
               loading={busy}
-              disabled={compare.data.ahead === 0 || compare.data.conflicts > 0}
+              disabled={paused || compare.data.ahead === 0 || compare.data.conflicts > 0}
               onClick={() =>
                 act(
-                  () => api.post(`${root}/git/push`, {}),
+                  () => api.post(`${root}/git/push`, { message: commitMessage }),
                   "Committed what is deployed here to the branch.",
                 )
               }
@@ -182,7 +205,10 @@ export function GitSync({ root, link }: { root: string; link: string }) {
             </Button>
             <Button
               disabled={
-                busy || compare.data.behind === 0 || (compare.data.conflicts > 0 && !allChosen)
+                busy ||
+                paused ||
+                compare.data.behind === 0 ||
+                (compare.data.conflicts > 0 && !allChosen)
               }
               onClick={() =>
                 act(
@@ -200,13 +226,16 @@ export function GitSync({ root, link }: { root: string; link: string }) {
             </Button>
             <Button
               variant="quiet"
-              disabled={busy || compare.data.conflicts > 0}
+              disabled={busy || paused || compare.data.conflicts > 0}
               onClick={() =>
                 act(
                   () =>
                     api.post(`${root}/git/push`, {
                       drafts: true,
-                      message: "Drafts from the console",
+                      message:
+                        commitMessage === DEFAULT_MESSAGE
+                          ? "Drafts from the console"
+                          : commitMessage,
                     }),
                   "Committed what is deployed and what is drafted, for a developer to pick up.",
                 )
@@ -307,10 +336,9 @@ export function GitSync({ root, link }: { root: string; link: string }) {
           />
         </>
       ) : null}
-      <section className="flex flex-col gap-2">
-        <SectionLabel>Branch and history</SectionLabel>
-        <GitPanel root={root} tenantLink={tenantLink} onPulled={compare.reload} />
-      </section>
+      {following ? null : (
+        <GitPanel root={root} tenantLink={tenantLink} onFollowed={status.reload} />
+      )}
     </div>
   );
 }

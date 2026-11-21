@@ -1,4 +1,4 @@
-import { Notice } from "@vynxlabs/ui";
+import { Notice } from "@volvel/ui";
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
 import { Link } from "../router.tsx";
@@ -41,6 +41,14 @@ export function objectHref(link: string, kind: string, path: string): string {
       return `${link}/resources/edit/${kind}/${at}`;
   }
 }
+
+/**
+ * A trigger as the Triggers screen and runs name it: its path, and the node
+ * for one inside a flow (`path#node`). A link to one carries this, so that
+ * Triggers opens with it chosen.
+ */
+export const triggerKey = (trigger: { path: string; node?: string | null }) =>
+  trigger.node ? `${trigger.path}#${trigger.node}` : trigger.path;
 
 /** A thing's name, as a link to its home. */
 export function ObjectLink({

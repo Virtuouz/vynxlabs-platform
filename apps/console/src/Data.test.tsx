@@ -285,6 +285,81 @@ test("a table made in the console is changed by saving its definition", async ()
   );
 });
 
+test("a refused save of an enum's values or a reference's rule keeps its dialog open, with what was typed", async () => {
+  const table = orders("ui");
+  const columns = table.columns as Record<string, unknown>[];
+  columns.push(
+    {
+      name: "state",
+      type: "enum",
+      values: [{ value: "open" }, { value: "closed" }],
+      required: false,
+      unique: false,
+      default: null,
+      references: null,
+      status: "active",
+      held: null,
+    },
+    {
+      name: "customer",
+      type: "uuid",
+      required: false,
+      unique: false,
+      default: null,
+      references: "customers",
+      status: "active",
+      held: null,
+    },
+  );
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [
+    200,
+    {
+      body: {
+        columns: {
+          state: { type: "enum", values: ["open", "closed"] },
+          customer: { type: "uuid", references: "customers" },
+        },
+      },
+    },
+  ];
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [
+    400,
+    { status: 400, code: "invalid", detail: "A row rule needs the value open." },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+
+  fireEvent.click(await screen.findByRole("button", { name: "Values" }));
+  let dialog = await screen.findByRole("dialog");
+  const first = within(dialog).getAllByLabelText("Value")[0] as HTMLInputElement;
+  fireEvent.input(first, { target: { value: "opened" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(await within(dialog).findByText(/A row rule needs the value open\./)).toBeTruthy();
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  expect((within(dialog).getAllByLabelText("Value")[0] as HTMLInputElement).value).toBe("opened");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // It was said in the dialog, and is not said again over the columns.
+  expect(screen.queryByText(/A row rule needs the value open\./)).toBeNull();
+
+  fireEvent.click(await screen.findByRole("button", { name: "On delete" }));
+  dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText(/What happens to the row/), {
+    target: { value: "cascade" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(await within(dialog).findByText(/A row rule needs the value open\./)).toBeTruthy();
+  expect(
+    (within(dialog).getByLabelText(/What happens to the row/) as HTMLSelectElement).value,
+  ).toBe("cascade");
+
+  // Saved, it closes.
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [200, {}];
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+});
+
 test("an external source's tables are browsed, and one without a key cannot be changed", async () => {
   routes[`GET /api/v1${root}/data-source-tables/erp`] = () => [
     200,
@@ -362,7 +437,249 @@ test("a data source that does not answer its test says so as a failure", async (
     { ok: false, problem: "connection refused" },
   ];
   show(<Sources root={root} link="/t/t1/workspaces/w1" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Test connection" }));
-  const said = await screen.findByText("erp did not answer: connection refused");
+  fireEvent.click(await screen.findByRole("button", { name: "Test" }));
+  const said = await screen.findByText("erp: connection refused");
   expect(said.closest("[role]")?.className).toContain("bg-danger-soft");
+});
+
+test("a row's unsaved edits are not dropped by choosing another row without asking", async () => {
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByText("A-1"));
+  const field = await screen.findByLabelText("number", { selector: "input[name=number]" });
+  fireEvent.input(field, { target: { value: "A-1 changed" } });
+  // Another row is asked about first, and Stay keeps the edit.
+  fireEvent.click(screen.getByText("A-2"));
+  expect(await answer("Stay")).toContain("Your changes to this row are not saved.");
+  await waitFor(() => expect(screen.queryByText("Leave without saving?")).toBeNull());
+  expect(
+    (screen.getByLabelText("number", { selector: "input[name=number]" }) as HTMLInputElement).value,
+  ).toBe("A-1 changed");
+  // Leave goes on to the other row, with its own values.
+  fireEvent.click(screen.getByText("A-2"));
+  await answer("Leave");
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("number", { selector: "input[name=number]" }) as HTMLInputElement)
+        .value,
+    ).toBe("A-2"),
+  );
+  // With nothing typed, another row is chosen at once.
+  fireEvent.click(screen.getByText("A-1"));
+  await waitFor(() =>
+    expect(
+      (screen.getByLabelText("number", { selector: "input[name=number]" }) as HTMLInputElement)
+        .value,
+    ).toBe("A-1"),
+  );
+  expect(screen.queryByText("Leave without saving?")).toBeNull();
+});
+
+test("a table made in the console is renamed and described where it is edited", async () => {
+  const body = {
+    description: "What customers bought.",
+    columns: { number: { type: "text" }, total: { type: "number" }, owner_id: { type: "uuid" } },
+    policy: { type: "owner", column: "owner_id" },
+  };
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("ui")];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [
+    200,
+    { kind: "table", schemaVersion: 1, key: "k1", title: null, body },
+  ];
+  routes[`GET /api/v1${root}/drafts/orders`] = () => [404, { status: 404, detail: "none" }];
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [200, {}];
+  routes[`PUT /api/v1${root}/drafts/orders`] = () => [200, { revision: 1 }];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+
+  fireEvent.click(await screen.findByRole("button", { name: "Describe the table" }));
+  await answer("Save", "Orders from the shop.");
+  const lastPut = () =>
+    calls.filter((call) => call.method === "PUT").at(-1)?.body as
+      | { body: { description?: string } }
+      | undefined;
+  await waitFor(() => expect(lastPut()?.body.description).toBe("Orders from the shop."));
+
+  fireEvent.click(screen.getByRole("button", { name: "Rename table" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(await within(dialog).findByLabelText("Path"), { target: { value: "purchases" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save as a draft" }));
+  await waitFor(() =>
+    expect(
+      calls.find((call) => call.method === "PUT" && call.url === `/api/v1${root}/drafts/orders`)
+        ?.body,
+    ).toMatchObject({
+      kind: "table",
+      path: "purchases",
+    }),
+  );
+});
+
+test("a change to a table's definition is taken back and made again, a rename included", async () => {
+  const start = {
+    columns: { number: { type: "text" }, total: { type: "number" }, owner_id: { type: "uuid" } },
+    policy: { type: "owner", column: "owner_id" },
+  };
+  let stored: Record<string, unknown> = structuredClone(start);
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("ui")];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [200, { body: stored }];
+  routes[`PUT /api/v1${root}/resources/orders`] = (sent) => {
+    stored = (sent as { body: Record<string, unknown> }).body;
+    return [200, {}];
+  };
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  const undo = () => screen.getByRole("button", { name: /^Undo/ }) as HTMLButtonElement;
+  const redo = () => screen.getByRole("button", { name: /^Redo/ }) as HTMLButtonElement;
+  expect(undo().disabled).toBe(true);
+
+  fireEvent.click(screen.getAllByRole("button", { name: "Rename" })[1] as HTMLElement);
+  await answer("Rename", "amount");
+  await waitFor(() => expect(undo().disabled).toBe(false));
+  expect(undo().getAttribute("aria-label")).toBe("Undo renaming total to amount");
+  expect(Object.keys((stored as typeof start).columns)).toContain("amount");
+
+  fireEvent.click(undo());
+  await waitFor(() => expect(Object.keys((stored as typeof start).columns)).toContain("total"));
+  // It goes back to the column's old name, and says the one it has now so its data comes along.
+  expect((stored as { columns: Record<string, unknown> }).columns.total).toEqual({
+    type: "number",
+    renamedFrom: "amount",
+  });
+  expect(undo().disabled).toBe(true);
+
+  fireEvent.click(redo());
+  await waitFor(() => expect(Object.keys((stored as typeof start).columns)).toContain("amount"));
+});
+
+test("a connected data source is changed from what it is, and the stored password stays", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          description: "The ERP",
+          bound: true,
+          config: { host: "erp.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${root}/data-source-bindings/erp`] = () => [200, {}];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Change" }));
+  const dialog = await screen.findByRole("dialog");
+  const host = within(dialog).getByLabelText("Host") as HTMLInputElement;
+  expect(host.value).toBe("erp.internal");
+  expect((within(dialog).getByLabelText("Port") as HTMLInputElement).value).toBe("5433");
+  expect((within(dialog).getByLabelText("Password") as HTMLInputElement).value).toBe("");
+  fireEvent.input(host, { target: { value: "erp2.internal" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+      config: { host: "erp2.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+    }),
+  );
+});
+
+/** An orders table with a reference to customers and a file, and its first row open in the inspector. */
+function openOrderWithCustomerAndFile(row: Record<string, unknown>) {
+  const table = orders("ui");
+  const extra = (name: string, type: string, references: string | null) => ({
+    name,
+    type,
+    required: false,
+    unique: false,
+    default: null,
+    references,
+    status: "active",
+    held: null,
+  });
+  (table.columns as unknown[]).push(
+    extra("customer", "reference", "customers"),
+    extra("attachment", "file", null),
+  );
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`GET /api/v1${root}/tables/customers`] = () => [200, { display: "name" }];
+  routes[`GET /api/v1${root}/rows/orders`] = () => [
+    200,
+    { items: [{ ...rows[0], customer: null, attachment: null, ...row }], nextCursor: null },
+  ];
+  history.replaceState(history.state, "", "?row=r1");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+}
+
+test("a reference is found by typing: the server is asked for the rows whose name has what was typed", async () => {
+  const everyone = Array.from({ length: 50 }, (_, n) => ({ id: `c${n}`, name: `Customer ${n}` }));
+  routes[`GET /api/v1${root}/rows/customers`] = (_body, url) => {
+    const filter = url.searchParams.get("filter");
+    return filter
+      ? [200, { items: [{ id: "c900", name: "Zelda Corp" }], nextCursor: null }]
+      : [200, { items: everyone, nextCursor: "NTA" }];
+  };
+  openOrderWithCustomerAndFile({});
+  const box = await screen.findByRole("combobox");
+  // The first 50 are asked for, and there are more.
+  await screen.findByText(/Type to find more/);
+  const first = calls.find((call) => call.url.includes("/rows/customers"));
+  expect(new URL(first?.url ?? "", "http://x").searchParams.get("limit")).toBe("50");
+
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: "Zel" } });
+  await waitFor(() => {
+    const found = calls.filter(
+      (call) => call.url.includes("/rows/customers") && call.url.includes("filter="),
+    );
+    expect(found.length).toBeGreaterThan(0);
+    const sent = new URL(found.at(-1)?.url ?? "", "http://x").searchParams;
+    expect(JSON.parse(sent.get("filter") ?? "null")).toEqual({
+      column: "name",
+      op: "contains",
+      value: "Zel",
+    });
+  });
+  fireEvent.click(await screen.findByRole("option", { name: "Zelda Corp" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Save row" }));
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PATCH")?.body).toEqual({ customer: "c900" }),
+  );
+});
+
+test("a file in the inspector is replaced and removed after asking, and the old one is said to stay in history", async () => {
+  routes[`POST /api/v1${root}/files`] = () => [201, { id: "f2", name: "new.txt" }];
+  routes[`PATCH /api/v1${root}/row/r1/orders`] = (body) => [
+    200,
+    { ...rows[0], ...(body as object) },
+  ];
+  openOrderWithCustomerAndFile({ attachment: "f1" });
+  const input = (await screen.findByLabelText("New file for attachment")) as HTMLInputElement;
+  const file = new File(["hello"], "new.txt", { type: "text/plain" });
+  fireEvent.change(input, { target: { files: [file] } });
+  const said = await answer("Replace");
+  expect(said).toMatch(/old file stays in this row's history/);
+  await waitFor(() => {
+    expect(
+      calls.some((call) => call.method === "POST" && call.url.includes("/files?name=new.txt")),
+    ).toBe(true);
+    expect(calls.find((call) => call.method === "PATCH")?.body).toEqual({ attachment: "f2" });
+  });
+
+  fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+  expect(await answer("Remove")).toMatch(/old file stays in this row's history/);
+  await waitFor(() =>
+    expect(calls.filter((call) => call.method === "PATCH").at(-1)?.body).toEqual({
+      attachment: null,
+    }),
+  );
+});
+
+test("a removal that is not confirmed changes nothing", async () => {
+  openOrderWithCustomerAndFile({ attachment: "f1" });
+  fireEvent.click(await screen.findByRole("button", { name: "Remove" }));
+  await answer("Cancel");
+  await waitFor(() => expect(screen.queryByText(/Remove the file from/)).toBeNull());
+  expect(calls.some((call) => call.method === "PATCH")).toBe(false);
 });

@@ -1,11 +1,4 @@
-import {
-  column,
-  defineConnection,
-  defineEvent,
-  defineTable,
-  defineVariable,
-  z,
-} from "@vynxlabs/sdk";
+import { column, defineConnection, defineEvent, defineTable, defineVariable, z } from "@volvel/sdk";
 import { APPOINTMENT_STATES, CLINICS } from "./constants.ts";
 
 export { APPOINTMENT_STATES, CLINICS, REASONS } from "./constants.ts";
@@ -103,9 +96,21 @@ export const appointments = defineTable({
     clinic: column.text({ required: true }),
     vet: column.text(),
     starts_at: column.timestamp({ required: true }),
-    minutes: column.integer({ required: true, default: 20 }),
-    reason: column.text({ required: true }),
-    status: column.text({ required: true, default: "booked" }),
+    minutes: column.integer({
+      required: true,
+      default: 20,
+      description: "How long the visit is booked for. A recheck is 10, a first visit 30.",
+    }),
+    reason: column.text({
+      required: true,
+      description: "Why the pet is coming in, in the owner's words.",
+    }),
+    status: column.text({
+      required: true,
+      default: "booked",
+      description:
+        "Where the visit stands: booked, checked in, with the vet, finished, or cancelled.",
+    }),
     checked_in_at: column.timestamp(),
     reminded_at: column.timestamp(),
     notes: column.text(),
@@ -129,9 +134,12 @@ export const invoices = defineTable({
     appointment: column.reference("appointments"),
     client_code: column.text({ required: true }),
     clinic: column.text({ required: true }),
-    /** In cents. */
-    total: column.integer({ required: true }),
-    status: column.text({ required: true, default: "unpaid" }),
+    total: column.integer({ required: true, description: "What is owed, in cents." }),
+    status: column.text({
+      required: true,
+      default: "unpaid",
+      description: "Unpaid until the payment provider says it was paid.",
+    }),
     issued_on: column.date({ required: true }),
     paid_at: column.timestamp(),
     payment_ref: column.text(),

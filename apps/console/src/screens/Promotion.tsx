@@ -1,4 +1,4 @@
-import { Button, Closing, Notice, SideSheet, TextAreaField } from "@vynxlabs/ui";
+import { Button, Closing, Notice, SideSheet, TextAreaField } from "@volvel/ui";
 import { GitPullRequestArrow } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
@@ -7,6 +7,7 @@ import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
 import { Panel, SectionLabel } from "../kit/layout.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
+import { breakingOf, breakingText, PromotionConfirm } from "./PromotionConfirm.tsx";
 import { PreviewPanels, type PromotionPreview } from "./Release.tsx";
 
 /** A request for a promotion, as the API shows it. */
@@ -245,9 +246,12 @@ function ReviewRequest({
   onDecided: () => void;
 }) {
   const at = `/tenants/${tenantId}/promotion-requests/${request.id}`;
+  /** Paths whoever decides said may be deleted, after the preview refused to delete them. */
+  const [allowed, setAllowed] = useState<string[]>([]);
   const preview = useLoad<PromotionPreview & { tried?: PromotionPreview["tried"] }>(
-    `${at}/preview`,
+    `${at}/preview${allowed.length > 0 ? `?allowDelete=${encodeURIComponent(allowed.join(","))}` : ""}`,
   );
+  const breaking = breakingOf(preview.data);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
   const link = `/t/${tenantId}/workspaces/${request.source.id}`;
@@ -266,7 +270,7 @@ function ReviewRequest({
     } else {
       const sure = await ask.confirm({
         title: `Promote v${request.version} to ${request.target.name}?`,
-        text: `${request.target.name} starts running it at once. Runs in progress there finish on the version they started with.`,
+        text: `${request.target.name} starts running it at once. Runs in progress there finish on the version they started with.${breakingText(preview.data)}`,
         action: "Promote",
         danger: true,
       });
@@ -275,7 +279,13 @@ function ReviewRequest({
     setBusy(true);
     setProblem(undefined);
     try {
-      await api.post(`${at}/decision`, { decision, ...(comment ? { comment } : {}) });
+      await api.post(`${at}/decision`, {
+        decision,
+        ...(comment ? { comment } : {}),
+        // Each was shown in the review and in the question just answered.
+        ...(decision === "promote" && breaking.length > 0 ? { confirmBreaking: true } : {}),
+        ...(decision === "promote" && allowed.length > 0 ? { allowDelete: allowed } : {}),
+      });
       notify.success(
         decision === "promote"
           ? `${request.target.name} now runs v${request.version}.`
@@ -323,6 +333,14 @@ function ReviewRequest({
         ) : null}
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
         {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
+        {preview.data ? (
+          <PromotionConfirm
+            data={preview.data}
+            targetName={request.target.name}
+            allowed={allowed}
+            onAllow={setAllowed}
+          />
+        ) : null}
         {preview.data ? (
           preview.data.tried ? (
             <PreviewPanels data={preview.data} targetName={request.target.name} link={link} />

@@ -1,16 +1,17 @@
-import { Button, Closing, JsonView } from "@vynxlabs/ui";
+import { Button, Closing, JsonView } from "@volvel/ui";
 import { FileCode2, ListChecks } from "lucide-react";
 import { useState } from "react";
-import { api, useCacheEdit, useLoad } from "../api.ts";
+import { api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
+import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
 import { ObjectPage } from "../kit/ObjectPage.tsx";
-import { kindName, ObjectLink } from "../kit/objects.tsx";
+import { kindName, ObjectLink, objectHref, triggerKey } from "../kit/objects.tsx";
 import { ReferenceList } from "../kit/references.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill } from "../kit/status.tsx";
@@ -18,7 +19,9 @@ import { Time } from "../kit/Time.tsx";
 import { when } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { RecentRuns } from "./Authoring.tsx";
+import { RunButton } from "./Execution.tsx";
 import { NotFound } from "./NotFound.tsx";
+import { type Trigger, TriggerState, useTriggerPause } from "./Operate.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
 
 /**
@@ -358,68 +361,47 @@ interface ScriptSummary {
   description: string;
   ownership: string;
   lastRun: { id: string; state: import("../kit/status.tsx").RunState; createdAt: string } | null;
+  inputSchema?: Record<string, unknown>;
+  draft?: boolean;
+  deployed?: boolean;
 }
-interface TriggerRow {
-  path: string;
-  node: string;
-  type: string;
-  script: string;
-  targetKind: "script" | "flow";
-  enabled: boolean;
-  cron: string | null;
-  timezone: string | null;
-  nextFireAt: string | null;
-  paused: { at: string } | null;
-}
-
 /** The triggers that start a script or a flow, each a link to its own. */
 export function TriggersOf({
   root,
   link,
   kind,
   path,
+  production = false,
 }: {
   root: string;
   link: string;
   kind: "script" | "flow";
   path: string;
+  /** In production a trigger is not drafted: the server refuses it, so it is not offered. */
+  production?: boolean;
 }) {
-  const triggers = useLoad<{ items: TriggerRow[] }>(
+  const triggers = useLoad<{ items: Trigger[] }>(
     `${root}/triggers?${new URLSearchParams({ target: path })}`,
   );
   const rows = triggers.data?.items.filter(
     (one) => one.script === path && (one.targetKind ?? "script") === kind,
   );
   const [adding, setAdding] = useState(false);
-  const pauseUrl = (one: TriggerRow) =>
-    `${root}/trigger-pauses/${one.path}${one.node ? `?node=${encodeURIComponent(one.node)}` : ""}`;
-  const editCache = useCacheEdit();
   const listPath = `${root}/triggers?${new URLSearchParams({ target: path })}`;
-  /** Pauses or resumes at once on screen, and puts it back if the server refuses. */
-  const setPaused = async (one: TriggerRow, paused: boolean) => {
-    const undo = editCache<{ items: TriggerRow[] }>(listPath, (data) => ({
-      ...data,
-      items: data.items.map((row) =>
-        row.path === one.path && row.node === one.node
-          ? { ...row, paused: paused ? { at: new Date().toISOString() } : null }
-          : row,
-      ),
-    }));
-    try {
-      await (paused ? api.put(pauseUrl(one), {}) : api.delete(pauseUrl(one)));
-      notify.success(paused ? `${one.path} is paused.` : `${one.path} runs again.`);
-    } catch (error) {
-      undo();
-      notify.error(error);
-    }
-  };
+  const { pause, resume } = useTriggerPause({ root, production, listPath });
   return (
     <div className="flex flex-col gap-3">
-      <div>
-        <Button size="small" onClick={() => setAdding(true)}>
-          Add a schedule
-        </Button>
-      </div>
+      {production ? (
+        <p className="m-0 text-meta text-ink-muted">
+          Triggers change in a dev workspace and reach production by promotion.
+        </p>
+      ) : (
+        <div>
+          <Button size="small" onClick={() => setAdding(true)}>
+            Add a schedule
+          </Button>
+        </div>
+      )}
       <Closing subject={adding}>
         {(_adding, shown) => (
           <NewScheduleSheet
@@ -434,7 +416,7 @@ export function TriggersOf({
           />
         )}
       </Closing>
-      <DataTable<TriggerRow>
+      <DataTable<Trigger>
         actions={(one) => [
           ...(one.type === "schedule"
             ? [
@@ -451,8 +433,8 @@ export function TriggersOf({
               ]
             : []),
           one.paused
-            ? { label: "Resume", onSelect: () => void setPaused(one, false) }
-            : { label: "Pause", onSelect: () => void setPaused(one, true) },
+            ? { label: "Resume", onSelect: () => void resume(one) }
+            : { label: "Pause…", onSelect: () => void pause(one) },
         ]}
         variant="inset"
         label={`Triggers of ${path}`}
@@ -460,30 +442,31 @@ export function TriggersOf({
         rowKey={(one) => `${one.path}:${one.node}`}
         error={triggers.error}
         onRetry={triggers.reload}
-        onOpen={(one) => navigate(`${link}/triggers?trigger=${encodeURIComponent(one.path)}`)}
+        onOpen={(one) => navigate(objectHref(link, "trigger", triggerKey(one)))}
         empty={{ title: "Nothing starts it on its own", text: "It runs when started by hand." }}
         columns={[
           {
             header: "Trigger",
-            cell: (one) => <ObjectLink link={link} kind="trigger" path={one.path} />,
+            cell: (one) => (
+              <ObjectLink link={link} kind="trigger" path={triggerKey(one)}>
+                {one.path}
+              </ObjectLink>
+            ),
           },
           { header: "Kind", cell: (one) => kindName(one.type) },
           {
-            header: "When",
-            cell: (one) =>
-              one.paused ? (
-                <span className="text-attention">Paused</span>
-              ) : one.cron ? (
-                <span>
-                  <Mono>{one.cron}</Mono>
-                  {one.timezone ? <span className="text-ink-muted"> {one.timezone}</span> : null}
-                  {one.nextFireAt ? (
-                    <span className="text-ink-muted"> · next {ago(one.nextFireAt)}</span>
-                  ) : null}
-                </span>
-              ) : (
-                <span className="text-ink-muted">When it is called</span>
-              ),
+            header: "State",
+            cell: (one) => (
+              <span className="flex flex-col">
+                <TriggerState row={one} workspacePaused={false} />
+                {one.cron ? (
+                  <span className="text-meta text-ink-muted">
+                    <Mono>{one.cron}</Mono>
+                    {one.timezone ? ` ${one.timezone}` : ""}
+                  </span>
+                ) : null}
+              </span>
+            ),
           },
         ]}
       />
@@ -552,7 +535,17 @@ function SourceAt({ root, link, path }: { root: string; link: string; path: stri
   );
 }
 
-export function ScriptPage({ root, link, path }: { root: string; link: string; path: string }) {
+export function ScriptPage({
+  root,
+  link,
+  path,
+  production = false,
+}: {
+  root: string;
+  link: string;
+  path: string;
+  production?: boolean;
+}) {
   const scripts = useLoad<{ items: ScriptSummary[] }>(`${root}/scripts`);
   const one = scripts.data?.items.find((script) => script.path === path);
   const found: Loaded<ScriptSummary> = {
@@ -608,17 +601,31 @@ export function ScriptPage({ root, link, path }: { root: string; link: string; p
               )
             }
             actions={
-              <Button
-                variant="primary"
-                onClick={() => navigate(`${link}/scripts/edit/${script.path}`)}
-              >
-                Open the code
-              </Button>
+              <>
+                <RunButton
+                  root={root}
+                  script={script.path}
+                  schema={script.inputSchema ?? {}}
+                  runsLink={`${link}/runs`}
+                  deployed={script.deployed !== false}
+                  draft={script.draft === true}
+                  size="regular"
+                />
+                <Button
+                  variant="primary"
+                  onClick={() => navigate(`${link}/scripts/edit/${script.path}`)}
+                >
+                  Open the code
+                </Button>
+              </>
             }
             meta={
-              script.description ? (
-                <p className="m-0 max-w-measure text-ink-muted">{script.description}</p>
-              ) : null
+              <span className="flex flex-col gap-1.5">
+                {script.description ? (
+                  <p className="m-0 max-w-measure text-ink-muted">{script.description}</p>
+                ) : null}
+                <AttachedPages {...workspaceOf(root)} kind="script" path={script.path} />
+              </span>
             }
             tabs={[
               {
@@ -629,7 +636,15 @@ export function ScriptPage({ root, link, path }: { root: string; link: string; p
               {
                 id: "triggers",
                 label: "Triggers",
-                content: <TriggersOf root={root} link={link} kind="script" path={script.path} />,
+                content: (
+                  <TriggersOf
+                    root={root}
+                    link={link}
+                    kind="script"
+                    path={script.path}
+                    production={production}
+                  />
+                ),
               },
               {
                 id: "used-by",

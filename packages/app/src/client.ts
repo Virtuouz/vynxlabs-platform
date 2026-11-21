@@ -56,14 +56,14 @@ let cached: AppContext | undefined;
 
 /**
  * The context the platform put in the page. It is read from an element the
- * platform adds when it serves the app, and when `platform dev` serves it.
+ * platform adds when it serves the app, and when `volvel dev` serves it.
  */
 export function appContext(): AppContext {
   if (cached) return cached;
   const element = globalThis.document?.getElementById("vx-context");
   if (!element?.textContent) {
     throw new Error(
-      "This page was not served by the platform. Open the app at its address, or run it with: platform dev",
+      "This page was not served by the platform. Open the app at its address, or run it with: volvel dev",
     );
   }
   cached = JSON.parse(element.textContent) as AppContext;
@@ -439,6 +439,73 @@ export async function runFlow<Output = unknown>(
   }
   if (run.status !== "succeeded") throw new FlowRunError(run);
   return run.output as Output;
+}
+
+// ----- What the workspace's words mean -----
+
+/** A page of a docs app the person may open, and where it is served. */
+export interface DocPage {
+  /** The docs app the page is in, by the app's path. */
+  app: string;
+  /** The page, by its path in the workspace. */
+  path: string;
+  title: string;
+  url: string;
+}
+
+/** A glossary term the workspace's documentation defines. */
+export interface Term {
+  id: string;
+  /** The term as it is written in text. */
+  term: string;
+  aliases: string[];
+  /** What it means, in plain text. */
+  short: string;
+  /** Where to read more. */
+  page: DocPage | null;
+}
+
+/** What a resource of the workspace is for. */
+export interface Described {
+  kind: string;
+  path: string;
+  title: string | null;
+  description: string | null;
+  /** For a table: its columns that say what they hold. */
+  columns?: { name: string; description: string }[];
+}
+
+export interface Terms {
+  terms: Term[];
+  resources: Described[];
+  /** The pages that say they document a resource. */
+  attachments: { kind: string; resource: string; page: DocPage }[];
+  /** The pages that add notes to a topic of the product's own help. */
+  extensions: { topic: string; page: DocPage }[];
+  /** The names the workspace's documentation gives its own pages. */
+  topics: { topic: string; page: DocPage }[];
+}
+
+/**
+ * The glossary terms of the app's workspace, what its tables, columns,
+ * scripts and flows are for, and the pages of documentation that go with
+ * them, as far as the person using the app may know: a table's and its
+ * columns' when they may read its rows, a script's or a flow's when they may
+ * start it, a page when they may open the docs app it is in. Nothing is said
+ * of anything else.
+ */
+export function terms(): Promise<Terms> {
+  return api.get(`${workspacePath()}/terms`);
+}
+
+/**
+ * Where the page of documentation with a topic is served, for a link to help
+ * from an app: `helpUrl("support-refunds")`. Null when no page has that topic,
+ * or the person may not open it. The topic stays the same when the page moves.
+ */
+export async function helpUrl(topic: string): Promise<string | null> {
+  const found = (await terms()).topics.find((one) => one.topic === topic);
+  return found?.page.url ?? null;
 }
 
 // ----- Who is using the app -----

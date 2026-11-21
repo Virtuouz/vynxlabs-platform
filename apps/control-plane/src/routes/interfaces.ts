@@ -5,7 +5,7 @@ import {
   type InterfaceBody,
   interfaceTables,
   type TableBody,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { type Static, Type } from "typebox";
 import {
   actionsOf,
@@ -27,6 +27,9 @@ const TableView = Type.Object({
   columns: Type.Array(
     Type.Object({
       name: Type.String(),
+      description: Type.Optional(
+        Type.String({ description: "What the column holds, when its definition says." }),
+      ),
       type: Type.String(),
       required: Type.Boolean(),
       references: Type.Union([Type.String(), Type.Null()]),
@@ -141,6 +144,11 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   deployed: Type.Boolean(),
                   draft: Type.Boolean({ description: "A change is saved and not yet deployed." }),
                   removing: Type.Boolean({ description: "The draft removes it." }),
+                  ownership: Type.String({
+                    description:
+                      "`code` for the repository, `ui` for the console. One the repository " +
+                      "manages is changed and removed there.",
+                  }),
                   app: Type.Union([Type.String(), Type.Null()], {
                     description: "The path of an app that serves it, deployed or in draft.",
                   }),
@@ -170,7 +178,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const [live, drafts] = await Promise.all([
           db
             .selectFrom("resource")
-            .select(["path", "kind", "body", "version"])
+            .select(["path", "kind", "body", "version", "ownership"])
             .where("workspace_id", "=", workspace.id)
             .where("kind", "in", ["interface", "app"])
             .execute(),
@@ -182,8 +190,8 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .execute(),
         ]);
         const servedBy = new Map<string, string>();
-        const removed = new Set(drafts.filter((draft) => draft.deleted).map((draft) => draft.path));
-        for (const row of [...live.filter((row) => !removed.has(row.path)), ...drafts]) {
+        // An app drafted for removal still names the screen it serves, so the removal can be taken back.
+        for (const row of [...live, ...drafts.filter((draft) => !draft.deleted)]) {
           const served = (row.body as { interface?: unknown } | null)?.interface;
           if (row.kind === "app" && typeof served === "string") servedBy.set(served, row.path);
         }
@@ -204,6 +212,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             deployed: boolean;
             draft: boolean;
             removing: boolean;
+            ownership: string;
             pages: number;
             version: number | null;
             tables: string[];
@@ -216,6 +225,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             deployed: true,
             draft: false,
             removing: false,
+            ownership: row.ownership,
             ...shapeOf(row.body),
             version: row.version,
             editedAt: null,
@@ -230,6 +240,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             deployed: known?.deployed ?? false,
             draft: true,
             removing: draft.deleted,
+            ownership: known?.ownership ?? "ui",
             ...(draft.deleted
               ? { pages: known?.pages ?? 0, tables: known?.tables ?? [] }
               : shapeOf(draft.body)),
@@ -321,6 +332,19 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
           const where = { ...at, resourceId: table.resource_id ?? undefined };
           const canRead = await ctx.allowed("data:read", where);
+          // What each column is for, from the table's definition, for whoever may read its rows.
+          const said =
+            canRead && table.resource_id
+              ? ((
+                  (
+                    await db
+                      .selectFrom("resource")
+                      .select("body")
+                      .where("id", "=", table.resource_id)
+                      .executeTakeFirst()
+                  )?.body as TableBody | undefined
+                )?.columns ?? {})
+              : {};
           const columns = canRead
             ? await data
                 .selectFrom("data_column")
@@ -345,6 +369,9 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 : []),
               ...columns.map((column) => ({
                 name: column.name,
+                ...(said[column.name]?.description
+                  ? { description: said[column.name]?.description as string }
+                  : {}),
                 type: column.type,
                 required: column.required,
                 references: column.reference_table,

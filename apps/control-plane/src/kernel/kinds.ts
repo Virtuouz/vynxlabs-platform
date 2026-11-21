@@ -1,4 +1,4 @@
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
 import {
   checkTable,
   type KindRegistry,
@@ -7,7 +7,7 @@ import {
   type TableBody,
   TENANT_FOLDER,
   TENANT_KINDS,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import type { Trx } from "./audit.js";
 import { applyTable, retireTable } from "./data/apply.js";
 import { checkQuery, QueryRefused } from "./data/query/parse.js";
@@ -145,7 +145,7 @@ const bindingHook: KindHook = {
         throw principal.key !== undefined
           ? fail(
               "/body/principal/key",
-              `no ${what} has the key "${principal.key}" in this tenant. Add ${TENANT_FOLDER}/${folderOf(principal.type)}/${principal.key}.${principal.type}.yaml to the repository and run \`platform tenant release\`, or make it in the console`,
+              `no ${what} has the key "${principal.key}" in this tenant. Add ${TENANT_FOLDER}/${folderOf(principal.type)}/${principal.key}.${principal.type}.yaml to the repository and run \`volvel tenant release\`, or make it in the console`,
             )
           : fail("/body/principal/name", `no ${what} has that name`);
       }

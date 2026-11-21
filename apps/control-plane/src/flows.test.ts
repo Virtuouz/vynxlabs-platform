@@ -1,8 +1,8 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { Worker } from "@vynxlabs/worker";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { fireDueSchedules } from "./kernel/execution/triggers.js";
 import { advanceDueFlows, startFlowRun } from "./kernel/flows/engine.js";
@@ -1030,6 +1030,31 @@ describe("waiting", () => {
       }),
     ]);
     expect((await alice.get(`/tenants/${tenant}/approvals`)).body.items).toHaveLength(1);
+    // The summary counts what waits, and apart from it what the caller may decide: the
+    // same ones `?mine=true` lists, so the overview's count opens a queue that matches.
+    for (const [who, mine] of [
+      [alice, 1],
+      [bob, 0],
+    ] as const) {
+      const summary = (await who.get(`${ws()}/summary`)).body;
+      expect(summary.approvalsWaiting).toBe(1);
+      expect(summary.approvalsWaitingMine).toBe(mine);
+      expect((await who.get(`${ws()}/approvals?mine=true`)).body.items).toHaveLength(mine);
+    }
+    // The tenant's summary counts the same way: what waits, and what this caller may decide,
+    // so the tenant overview's count opens a queue that matches.
+    const tenantSummary = (await alice.get(`/tenants/${tenant}/summary`)).body;
+    expect(tenantSummary.approvalsWaiting).toBe(1);
+    expect(tenantSummary.approvalsWaitingMine).toBe(
+      (await alice.get(`/tenants/${tenant}/approvals`)).body.items.length,
+    );
+    // `all=true` lists what waits for anyone, which the queue's read-only "others" view takes
+    // less what the caller may decide.
+    expect((await alice.get(`/tenants/${tenant}/approvals?all=true`)).body.items).toHaveLength(1);
+    const bobSummary = await bob.get(`/tenants/${tenant}/summary`);
+    if (bobSummary.status === 200 && bobSummary.body.approvalsWaiting !== null) {
+      expect(bobSummary.body.approvalsWaitingMine).toBe(0);
+    }
     // A developer started it, sees it, but cannot approve it.
     expect((await bob.get(`${ws()}/approvals`)).status).toBe(200);
     expect((await bob.get(`/tenants/${tenant}/approvals`)).status).toBe(403);

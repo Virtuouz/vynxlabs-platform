@@ -152,7 +152,23 @@ test("where a member is is sent once it settles, and only when it changes", asyn
 });
 
 test("tenants are found by name, and one opens in the inspector", async () => {
-  routes["GET /api/v1/tenants?limit=200"] = () => [
+  // The server searches: typing "glob" asks it, and it answers with Globex alone.
+  routes["GET /api/v1/tenants?limit=50&search=glob"] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "t2",
+          slug: "globex",
+          name: "Globex",
+          dataLocation: "eu",
+          createdAt: "2026-11-11T00:00:00.000Z",
+        },
+      ],
+      nextCursor: null,
+    },
+  ];
+  routes["GET /api/v1/tenants?limit=50"] = () => [
     200,
     {
       items: [
@@ -186,8 +202,8 @@ test("tenants are found by name, and one opens in the inspector", async () => {
   expect(within(table).getByText("Member")).toBeTruthy();
   expect(within(table).getByText("Through a grant")).toBeTruthy();
   fireEvent.input(screen.getByLabelText("Search tenants"), { target: { value: "glob" } });
-  expect(within(table).queryByText("Acme Corp")).toBeNull();
-  fireEvent.click(within(table).getByText("eu"));
+  await waitFor(() => expect(within(table).queryByText("Acme Corp")).toBeNull());
+  fireEvent.click(await within(table).findByText("eu"));
   const inspector = await screen.findByRole("dialog");
   expect(within(inspector).getByText(/operator access grant/)).toBeTruthy();
   expect(within(inspector).getByRole("button", { name: "Delete" })).toBeTruthy();
@@ -195,7 +211,7 @@ test("tenants are found by name, and one opens in the inspector", async () => {
 
 test("disabling a member from the list asks first, and does not open the inspector", async () => {
   let disabled = false;
-  routes["GET /api/v1/members?limit=200"] = () => [
+  routes["GET /api/v1/members?limit=50"] = () => [
     200,
     {
       items: [
@@ -218,4 +234,42 @@ test("disabling a member from the list asks first, and does not open the inspect
   await answer("Disable");
   expect(await screen.findByText("Disabled")).toBeTruthy();
   expect(screen.queryByRole("complementary")).toBeNull();
+});
+
+test("a tenant is renamed from the inspector, keeping its slug", async () => {
+  routes["GET /api/v1/tenants?limit=50"] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "t1",
+          slug: "acme",
+          name: "Acme Corp",
+          dataLocation: null,
+          createdAt: "2026-11-11T00:00:00.000Z",
+        },
+      ],
+      nextCursor: null,
+    },
+  ];
+  routes["PATCH /api/v1/tenants/t1"] = () => [200, {}];
+  show(
+    <Tenants
+      me={{
+        principal: { type: "member", id: "m1", name: "Op", email: "op@example.com" },
+        instancePermissions: [],
+        tenants: [{ id: "t1", slug: "acme", name: "Acme Corp" }],
+      }}
+    />,
+  );
+  fireEvent.click((await screen.findAllByText("acme")).at(-1) as HTMLElement);
+  const inspector = await screen.findByRole("dialog");
+  fireEvent.click(within(inspector).getByRole("button", { name: "Rename" }));
+  await answer("Rename", "Acme Inc");
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PATCH")).toMatchObject({
+      url: "/api/v1/tenants/t1",
+      body: { name: "Acme Inc" },
+    }),
+  );
 });

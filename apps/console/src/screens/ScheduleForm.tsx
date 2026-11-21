@@ -10,15 +10,18 @@ import {
   SelectField,
   SideSheet,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText, notify } from "../ask.tsx";
+import { failureText, notify, takenText } from "../ask.tsx";
+import { FieldAbout } from "../help/FieldAbout.tsx";
 import { inZone } from "../kit/format.ts";
 import { Link } from "../router.tsx";
 
 /** A schedule's body, as the manifest has it. */
 export interface ScheduleBody {
+  /** What the schedule is for. */
+  description?: string | undefined;
   script?: string | undefined;
   flow?: string | undefined;
   cron?: string | undefined;
@@ -137,6 +140,17 @@ export function ScheduleFields({
           });
         }}
       />
+      <FieldAbout path="schedule.description" name="what it is for">
+        <TextField
+          name="description"
+          label="What it is for"
+          value={body.description ?? ""}
+          disabled={readOnly}
+          required={false}
+          maxLength={500}
+          onChange={(next) => change({ description: next === "" ? undefined : next })}
+        />
+      </FieldAbout>
       <WhenFields
         root={root}
         value={body}
@@ -259,29 +273,33 @@ export function WhenFields({
             if (next) change({ cron: next });
           }}
         />
-        <TextField
-          name="cron"
-          label="When, as a cron line"
-          value={value.cron ?? ""}
-          disabled={readOnly}
-          hint="Minute, hour, day of month, month, day of week."
-          onChange={(next) => change({ cron: next })}
-        />
+        <FieldAbout path="schedule.cron" name="the cron line">
+          <TextField
+            name="cron"
+            label="When, as a cron line"
+            value={value.cron ?? ""}
+            disabled={readOnly}
+            hint="Minute, hour, day of month, month, day of week."
+            onChange={(next) => change({ cron: next })}
+          />
+        </FieldAbout>
       </div>
-      <ComboboxField
-        label="Time zone"
-        options={timeZones()}
-        value={zone}
-        disabled={readOnly}
-        hint={
-          zone === workspaceZone
-            ? "This workspace's zone."
-            : workspaceZone
-              ? `This workspace's zone is ${workspaceZone}.`
-              : undefined
-        }
-        onChange={(next) => change({ timezone: next ?? "UTC" })}
-      />
+      <FieldAbout path="schedule.timezone" name="the time zone">
+        <ComboboxField
+          label="Time zone"
+          options={timeZones()}
+          value={zone}
+          disabled={readOnly}
+          hint={
+            zone === workspaceZone
+              ? "This workspace's zone."
+              : workspaceZone
+                ? `This workspace's zone is ${workspaceZone}.`
+                : undefined
+          }
+          onChange={(next) => change({ timezone: next ?? "UTC" })}
+        />
+      </FieldAbout>
       <div className="flex flex-col gap-1" aria-live="polite">
         <span className="text-body-sm font-medium text-ink">Next times, in {zone}</span>
         {!cron ? (
@@ -348,26 +366,32 @@ export function NewScheduleSheet({
   }));
   const [problems, setProblems] = useState<string[]>([]);
   const [failure, setFailure] = useState<string>();
+  const [taken, setTaken] = useState<string>();
   const [busy, setBusy] = useState(false);
   const pathProblem =
-    path && !PATH.test(path)
+    taken ??
+    (path && !PATH.test(path)
       ? "Lowercase letters, digits, hyphens and underscores, in folders, such as reports/daily."
-      : undefined;
+      : undefined);
   const ready = PATH.test(path) && problems.length === 0;
 
   const save = async () => {
     setFailure(undefined);
+    setTaken(undefined);
     setBusy(true);
     try {
       await api.put(`${root}/drafts/${path}`, {
         kind: "schedule",
         schemaVersion: 1,
         body: tidy(body),
+        create: true,
       });
-      notify.success(`${path} is saved as a draft. Deploy it from Changes.`);
+      notify.success(`${path} is saved as a draft. Deploy it from Releases.`);
       onClose();
     } catch (error) {
-      setFailure(failureText(error));
+      const refused = takenText(error);
+      if (refused) setTaken(refused);
+      else setFailure(failureText(error));
     } finally {
       setBusy(false);
     }
@@ -402,7 +426,10 @@ export function NewScheduleSheet({
           placeholder="reports/daily"
           hint="Its name in this workspace. It can be renamed later, and stays the same resource."
           error={pathProblem}
-          onChange={setPath}
+          onChange={(value) => {
+            setTaken(undefined);
+            setPath(value);
+          }}
         />
         <ScheduleFields
           root={root}
@@ -413,7 +440,7 @@ export function NewScheduleSheet({
           fresh
         />
         <p className="m-0 text-body-sm text-ink-muted">
-          Drafts are deployed from <Link to={`${link}/changes`}>Changes</Link>.
+          Drafts are deployed from <Link to={`${link}/release`}>Releases</Link>.
         </p>
       </div>
     </SideSheet>

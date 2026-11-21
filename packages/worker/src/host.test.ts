@@ -83,8 +83,8 @@ describe("the worker host", () => {
     const seen = JSON.parse(await readFile(join(scratch, "seen.json"), "utf8"));
     expect(seen.args).toEqual(["--token-stdin"]);
     expect(seen.stdin).toBe("vxw_tenant-1\n");
-    expect(seen.env.PLATFORM_URL).toBe(url);
-    expect(seen.env.PLATFORM_WORKER_IDLE_EXIT).toBe("7");
+    expect(seen.env.VOLVEL_URL).toBe(url);
+    expect(seen.env.VOLVEL_WORKER_IDLE_EXIT).toBe("7");
     // The host's token never reaches a worker.
     expect(JSON.stringify(seen.env)).not.toContain(TOKEN);
     expect(seen.env.WORKER_HOST_TOKEN).toBeUndefined();

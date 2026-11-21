@@ -109,7 +109,7 @@ A resource, each of its versions, a draft and each kept version of a draft carry
 
 | Field | Meaning |
 | --- | --- |
-| `format` | `vynxlabs-tenant-export` |
+| `format` | `volvel-tenant-export` |
 | `formatVersion` | `1` |
 | `coreVersion` | The version of the platform that wrote the file |
 | `migrationLevel` | Its database level |

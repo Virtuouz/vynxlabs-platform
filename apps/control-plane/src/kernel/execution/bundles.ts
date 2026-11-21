@@ -1,4 +1,5 @@
-import { newId } from "@vynxlabs/db";
+import { newId } from "@volvel/db";
+import { checkWorkspaceDocs } from "@volvel/docs-engine";
 import {
   Bundle,
   type BundleManifest,
@@ -7,9 +8,10 @@ import {
   checkBundleAssets,
   checkBundleManifests,
   validateJson,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { missingAssets } from "../apps/assets.js";
 import type { Audit, Principal, Trx } from "../audit.js";
+import { productNames } from "../docs/product.js";
 import { badRequest, HttpError } from "../errors.js";
 import { ExpressionError } from "../flows/expressions.js";
 import type { WorkspaceRef } from "../http.js";
@@ -68,7 +70,17 @@ export async function storeBundle(
     throw badRequest("The bundle's digest does not match its contents. Build it again.");
   }
   // The build runs these same checks. The control plane does not take its word for it.
-  const problems = [...checkBundleManifests(bundle.manifests), ...checkBundleAssets(bundle)];
+  const problems = [
+    ...checkBundleManifests(bundle.manifests),
+    ...checkBundleAssets(bundle),
+    // Pages are checked together: a link is only right or wrong beside what it leads to.
+    ...checkWorkspaceDocs(bundle.manifests, {
+      product: productNames(kernel.config),
+      // A picture a page shows is one of its app's files.
+      asset: (app, file) =>
+        (bundle.assets ?? []).some((asset) => asset.app === app && asset.path === file),
+    }),
+  ];
   for (const { where, expression } of bundleExpressions(bundle.manifests)) {
     await kernel.expressions.check(expression).catch((error) => {
       if (!(error instanceof ExpressionError)) throw error;

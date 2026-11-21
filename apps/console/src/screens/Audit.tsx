@@ -1,4 +1,4 @@
-import { Button, JsonView, Notice } from "@vynxlabs/ui";
+import { Button, JsonView, Notice } from "@volvel/ui";
 import { Download } from "lucide-react";
 import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
@@ -9,6 +9,7 @@ import { stamp } from "../kit/format.ts";
 import { Inspector, KeyValues, SectionLabel, useWide, WIDE } from "../kit/layout.tsx";
 import { Tag, type TagTone } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, useUrlState } from "../router.tsx";
 
@@ -105,6 +106,20 @@ interface Facets {
   actions: { value: string; count: number }[];
   actors: { type: string; id: string | null; label: string | null; count: number }[];
   targetTypes: { value: string; count: number }[];
+}
+
+const OPERATOR_ACCESS = "operator.access";
+
+/**
+ * What an entry was done to, in words. An operator's first request into a tenant is
+ * recorded with the request itself as its target ("PUT /api/v1/tenants/…"), which
+ * is for the log's reader to open, not to read in a column.
+ */
+export function targetName(
+  entry: Pick<Entry, "action" | "targetLabel" | "targetId" | "targetType">,
+) {
+  if (entry.action === OPERATOR_ACCESS) return "the tenant's API";
+  return entry.targetLabel ?? entry.targetId ?? entry.targetType;
 }
 
 /** Where an entry's target is in the console, when it has a page. */
@@ -279,17 +294,16 @@ export function AuditTable({
       header: "To",
       priority: 3,
       cell: (entry) => {
-        const name = entry.targetLabel ?? entry.targetId ?? entry.targetType;
+        const name = targetName(entry);
         const href = targetHref(entry, tenantId);
+        const mono = !entry.targetLabel && entry.action !== OPERATOR_ACCESS;
         return href ? (
-          <Link to={href} className="block max-w-56 truncate text-action">
-            {name}
+          <Link to={href} className="block max-w-56 text-action">
+            <Truncate mode="middle">{name}</Truncate>
           </Link>
         ) : (
-          <span
-            className={`block max-w-56 truncate ${entry.targetLabel ? "" : "font-mono text-code"}`}
-          >
-            {name}
+          <span className={`block max-w-56 ${mono ? "font-mono text-code" : ""}`}>
+            <Truncate mode="middle">{name}</Truncate>
           </span>
         );
       },
@@ -306,12 +320,25 @@ export function AuditTable({
       title={title}
       description={description}
       label="Audit entries"
+      // How the list is shown sits with what is done with it, beside the title: in the filters'
+      // row it took a row of its own once they filled it (P4-1).
       actions={
-        tenantLog ? (
-          <Button size="small" href={`/api/v1${path}-export?${asked}`} download>
-            <Download aria-hidden="true" size={14} /> CSV
-          </Button>
-        ) : undefined
+        <span className="flex items-center gap-2">
+          <ColumnsMenu
+            columns={columns.slice(1).map((column) => ({
+              key: column.key ?? column.header,
+              label: column.header,
+            }))}
+            shown={url.cols.length > 0 ? url.cols : undefined}
+            onChange={(next) => setUrl({ cols: next ?? [] })}
+          />
+          {tenantId ? <ViewsMenu tenantId={tenantId} list="audit" omit={["entry"]} /> : null}
+          {tenantLog ? (
+            <Button size="small" href={`/api/v1${path}-export?${asked}`} download>
+              <Download aria-hidden="true" size={14} /> CSV
+            </Button>
+          ) : null}
+        </span>
       }
       toolbar={
         <div className="flex flex-col gap-3">
@@ -405,17 +432,6 @@ export function AuditTable({
                 className={select}
               />
             </label>
-            <span className="ml-auto flex items-center gap-2 self-center">
-              <ColumnsMenu
-                columns={columns.slice(1).map((column) => ({
-                  key: column.key ?? column.header,
-                  label: column.header,
-                }))}
-                shown={url.cols.length > 0 ? url.cols : undefined}
-                onChange={(next) => setUrl({ cols: next ?? [] })}
-              />
-              {tenantId ? <ViewsMenu tenantId={tenantId} list="audit" omit={["entry"]} /> : null}
-            </span>
           </div>
         </div>
       }
@@ -492,7 +508,11 @@ export function AuditTable({
               ) : null}
               <div className="flex flex-col gap-1.5">
                 <SectionLabel>Details</SectionLabel>
-                <JsonView label="Details" value={chosen.details} maxHeight="22rem" />
+                {Object.keys(chosen.details ?? {}).length === 0 ? (
+                  <p className="m-0 text-ink-muted">Nothing more was recorded.</p>
+                ) : (
+                  <JsonView label="Details" value={chosen.details} maxHeight="22rem" />
+                )}
               </div>
             </div>
           ) : null}

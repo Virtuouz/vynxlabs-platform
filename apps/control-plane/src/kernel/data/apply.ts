@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import {
   type ColumnType,
   conditionColumn,
@@ -8,7 +8,7 @@ import {
   type RowRule,
   type TableBody,
   type TablePolicy,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import type { AppliedResource } from "../kinds.js";

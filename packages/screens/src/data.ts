@@ -1,4 +1,4 @@
-import type { InterfaceBody } from "@vynxlabs/manifest";
+import type { InterfaceBody } from "@volvel/manifest";
 
 export type Row = Record<string, unknown>;
 
@@ -16,6 +16,8 @@ export interface TableInfo {
   canWrite: boolean;
   columns: {
     name: string;
+    /** What the column holds, when its definition says. */
+    description?: string;
     type: string;
     required: boolean;
     references: string | null;

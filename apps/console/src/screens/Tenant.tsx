@@ -1,4 +1,4 @@
-import { Button, EmptyState, Menu, Notice, TextField } from "@vynxlabs/ui";
+import { Button, EmptyState, Menu, Notice, TextField } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
@@ -8,6 +8,7 @@ import { KeyValues } from "../kit/layout.tsx";
 import { setOperatorAccess } from "../kit/OperatorStrip.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { Time } from "../kit/Time.tsx";
+import { Truncate } from "../kit/Truncate.tsx";
 import {
   type CreateConfig,
   CreateDialog,
@@ -56,6 +57,11 @@ const InterfaceBuilder = lazy(() =>
   import("./builder/AppBuilder.tsx").then((m) => ({ default: m.AppBuilder })),
 );
 const Interfaces = lazy(() => import("./Interfaces.tsx").then((m) => ({ default: m.Interfaces })));
+// Documentation brings the reader of Markdown with it, and its editor the code editor.
+const Docs = lazy(() => import("./docs/Docs.tsx").then((m) => ({ default: m.Docs })));
+const DocEditor = lazy(() =>
+  import("./docs/DocEditor.tsx").then((m) => ({ default: m.DocEditor })),
+);
 const SingleSignOn = lazy(() =>
   import("./SingleSignOn.tsx").then((m) => ({ default: m.SingleSignOn })),
 );
@@ -375,6 +381,7 @@ const WORKSPACE_TABS = new Set([
   "connections",
   "dashboards",
   "deployments",
+  "docs",
   "events",
   "extensions",
   "flow-runs",
@@ -491,6 +498,32 @@ function WorkspaceDetail({
       ) : tab === "flow-runs" && rest ? (
         // A flow run's page is the run page now; old links still arrive.
         <ToRunPage to={`/t/${tenantId}/workspaces/${workspaceId}/runs/${rest}`} />
+      ) : tab === "docs" && (rest === "new" || rest.startsWith("edit/")) ? (
+        workspace.data.type === "dev" ? (
+          <Suspense fallback={<p className="text-ink-muted">Loading the editor…</p>}>
+            <DocEditor
+              key={rest}
+              root={root}
+              link={`/t/${tenantId}/workspaces/${workspaceId}`}
+              tenantId={tenantId}
+              workspaceId={workspaceId}
+              path={rest === "new" ? undefined : rest.slice("edit/".length)}
+            />
+          </Suspense>
+        ) : (
+          <ProductionNotice root={root} noun="Pages" edit={`docs/${rest}`} />
+        )
+      ) : tab === "docs" ? (
+        <Suspense fallback={<Loading />}>
+          <Docs
+            root={root}
+            link={`/t/${tenantId}/workspaces/${workspaceId}`}
+            tenantId={tenantId}
+            workspaceId={workspaceId}
+            path={rest === "" ? undefined : rest}
+            editable={workspace.data.type === "dev"}
+          />
+        </Suspense>
       ) : tab === "queries" ? (
         <Queries root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "dashboards" && rest ? (
@@ -577,7 +610,12 @@ function WorkspaceDetail({
       ) : tab === "git" ? (
         <GitSync root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
       ) : tab === "scripts" && rest ? (
-        <ScriptPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
+        <ScriptPage
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          path={rest}
+          production={workspace.data.type === "production"}
+        />
       ) : tab === "scripts" ? (
         <Scripts
           root={root}
@@ -678,13 +716,15 @@ function WorkspaceDetail({
                   isEditedKind(row.kind) ? (
                     <Link
                       to={`/t/${tenantId}/workspaces/${workspaceId}/resources/edit/${row.kind}/${row.path}`}
-                      className="font-mono text-code text-action"
+                      className="block min-w-0 font-mono text-code text-action"
                     >
-                      {row.path}
+                      <Truncate mode="middle">{row.path}</Truncate>
                     </Link>
                   ) : (
-                    <span className="flex flex-col">
-                      <Code>{row.path}</Code>
+                    <span className="flex min-w-0 flex-col">
+                      <Code>
+                        <Truncate mode="middle">{row.path}</Truncate>
+                      </Code>
                       {row.title ? (
                         <span className="text-meta text-ink-muted">{row.title}</span>
                       ) : null}
@@ -695,11 +735,17 @@ function WorkspaceDetail({
               {
                 // Said only for one that was moved: until then a resource's key is its path.
                 header: "Key",
+                priority: 3,
                 cell: (row) => (row.key === row.path ? "" : <Code>{row.key}</Code>),
               },
-              { header: "Defined in", cell: (row) => definedWhere(row) },
-              { header: "Version", cell: (row) => row.version, align: "end" },
-              { header: "Changed", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
+              // On a phone a row keeps what it is; when it changed shows from a tablet up.
+              { header: "Defined in", priority: 3, cell: (row) => definedWhere(row) },
+              { header: "Version", priority: 3, cell: (row) => row.version, align: "end" },
+              {
+                header: "Changed",
+                priority: 2,
+                cell: (row) => <Time value={row.updatedAt} mode="ago" />,
+              },
             ]}
             empty={{
               title: "No resources yet",
@@ -1083,10 +1129,18 @@ function OperatorAccess({ base }: { base: string }) {
       path={`${base}/access-grants`}
       rowKey={(row) => row.id}
       columns={[
-        { header: "Operator", cell: (row) => row.memberEmail },
-        { header: "Reason", cell: (row) => row.reason },
-        { header: "Access level", cell: (row) => <Code>{row.roleName}</Code> },
-        { header: "Opened", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
+        // On a phone a row keeps who and whether it is active; why, from a tablet up.
+        {
+          header: "Operator",
+          cell: (row) => <Truncate mode="middle">{row.memberEmail}</Truncate>,
+        },
+        { header: "Reason", priority: 2, cell: (row) => row.reason },
+        { header: "Access level", priority: 3, cell: (row) => <Code>{row.roleName}</Code> },
+        {
+          header: "Opened",
+          priority: 3,
+          cell: (row) => <Time value={row.createdAt} mode="ago" />,
+        },
         {
           header: "Status",
           cell: (row) =>

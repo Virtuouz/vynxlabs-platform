@@ -6,8 +6,9 @@ import type {
   VisualBucket,
   VisualCondition,
   VisualQuery,
-} from "@vynxlabs/manifest";
-import { groupName } from "@vynxlabs/manifest";
+} from "@volvel/manifest";
+import { groupName } from "@volvel/manifest";
+import { followRecordedKey } from "../../dashboard-queries.js";
 import { badRequest, notFound } from "../../errors.js";
 import type { Kernel } from "../../kernel.js";
 import { resolveResource } from "../../resolve.js";
@@ -138,6 +139,11 @@ export function writeVisual(
 export interface WidgetQuery {
   text: string;
   parameters: unknown[];
+  /**
+   * The widget's path named nothing, and its query was found by the key recorded when the
+   * dashboard was deployed: `names` is the path the dashboard still has, `now` the query's.
+   */
+  followed?: { names: string; now: string };
 }
 
 /** What one widget of a dashboard asks, with the filters as they were set. */
@@ -149,6 +155,8 @@ export async function widgetQuery(
   values: FilterValues,
   /** `trend`: a figure's number over the time it covers, one row to a day, week or month. */
   part?: "trend",
+  /** The deployed dashboard, whose recorded keys a widget falls back on. */
+  dashboardId?: string,
 ): Promise<WidgetQuery> {
   const source = widget.source;
   if (!source) throw badRequest("This widget asks nothing.");
@@ -203,9 +211,17 @@ export async function widgetQuery(
 
   if ("query" in source) {
     const found = await resolveResource(kernel.db, at.workspaceId, source.query, { kind: "query" });
-    if (!found?.resource) throw notFound(`The query ${source.query}`);
-    const saved = found.resource.body as unknown as QueryBody;
+    // Nothing at the path, or at a path it had: the query the path named when the dashboard
+    // was deployed, if it is still there under another path.
+    const byKey =
+      !found?.resource && dashboardId
+        ? await followRecordedKey(kernel.db, at.workspaceId, dashboardId, widget.id)
+        : undefined;
+    const query = found?.resource ?? byKey?.resource;
+    if (!query) throw notFound(`The query ${source.query}`);
+    const saved = query.body as unknown as QueryBody;
     return {
+      ...(byKey ? { followed: { names: byKey.names, now: byKey.now } } : {}),
       text: saved.sql,
       parameters: (saved.parameters ?? []).map(
         (parameter) =>

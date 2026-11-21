@@ -2,10 +2,10 @@ import { mkdtemp, open, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Kysely, type PlatformSchema, sql } from "@vynxlabs/db";
-import { createTestDatabase, type TestDatabase } from "@vynxlabs/db/testing";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { Worker } from "@vynxlabs/worker";
+import { type Kysely, type PlatformSchema, sql } from "@volvel/db";
+import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { workspaceSchema } from "./kernel/data/apply.js";
 import type { ExportManifest } from "./kernel/tenancy/export.js";
@@ -446,7 +446,7 @@ describe("exporting a tenant", () => {
     manifest = JSON.parse((await tarRead(file, index.at(-1) as never)).toString("utf8"));
     await file.close();
     expect(manifest).toMatchObject({
-      format: "vynxlabs-tenant-export",
+      format: "volvel-tenant-export",
       formatVersion: 1,
       tenant: { id: tenant, slug: "acme", name: "Acme Corp" },
       history: true,

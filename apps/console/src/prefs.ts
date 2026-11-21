@@ -96,6 +96,16 @@ function deliver(key: string, value: unknown) {
   });
 }
 
+/**
+ * Drops what is waiting to be sent, without sending it. For tests: a setting changed in one test
+ * is otherwise sent a moment later, during the next.
+ */
+export function dropWaitingPreferences() {
+  for (const timer of pending.values()) clearTimeout(timer);
+  pending.clear();
+  waitingValues.clear();
+}
+
 function send(key: string, value: unknown, { now = false } = {}) {
   const waiting = pending.get(key);
   if (waiting) clearTimeout(waiting);

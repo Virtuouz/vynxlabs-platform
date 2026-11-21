@@ -1,4 +1,4 @@
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import { getMigrations } from "better-auth/db/migration";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { mutate, SYSTEM } from "./kernel/audit.js";
@@ -396,6 +396,7 @@ describe("permissions", () => {
       "app_maintainer",
       "deployer",
       "developer",
+      "doc_writer",
       "portal_reader",
       "portal_user",
       "tenant_admin",
@@ -753,6 +754,7 @@ describe("resource registry", () => {
       "connector",
       "dashboard",
       "data_source",
+      "doc",
       "event",
       "flow",
       "interface",
@@ -796,7 +798,7 @@ describe("resource registry", () => {
     // The path it had answers for it for a while, saying where it is now, until that is ended.
     const byOld = await alice.client.get(`${base()}/access/reviewer`);
     expect(byOld.body).toMatchObject({ id, path: "access/roles/reviewer", key: "access/reviewer" });
-    expect(byOld.headers["vynx-resource-moved"]).toBe("access/roles/reviewer");
+    expect(byOld.headers["volvel-resource-moved"]).toBe("access/roles/reviewer");
     const aliases = `/tenants/${acme}/workspaces/${dev}/aliases`;
     expect((await alice.client.get(aliases)).body.items).toEqual([
       expect.objectContaining({ path: "access/reviewer", now: "access/roles/reviewer" }),

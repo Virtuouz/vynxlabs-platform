@@ -431,6 +431,17 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     },
   },
   {
+    kind: "doc",
+    label: "Documentation",
+    group: "Apps",
+    scope: "workspace",
+    verbs: {
+      read: "Read a workspace's pages of documentation in the console, drafts included.",
+      write:
+        "Write and change pages of documentation in the console, and deploy them. Nothing else can be deployed with it.",
+    },
+  },
+  {
     kind: "dashboard",
     label: "Dashboards",
     group: "Data",

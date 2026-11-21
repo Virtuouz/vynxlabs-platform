@@ -1,4 +1,4 @@
-import { runScript, useQuery } from "@vynxlabs/app";
+import { HelpPanel, runScript, useQuery } from "@volvel/app";
 import {
   Button,
   DateStepper,
@@ -7,8 +7,8 @@ import {
   SelectField,
   TextAreaField,
   useToast,
-} from "@vynxlabs/ui";
-import { TriangleAlert } from "@vynxlabs/ui/icons";
+} from "@volvel/ui";
+import { TriangleAlert } from "@volvel/ui/icons";
 import { useState } from "react";
 import type { Reason } from "../../src/constants.ts";
 import { ClientSearch } from "./Clients.tsx";
@@ -165,6 +165,10 @@ export function Book({
             void submit();
           }}
         >
+          {/* The handbook's page on booking, beside the form. Nothing is drawn for someone who may not read it. */}
+          <div>
+            <HelpPanel topic="desk-booking">How to book</HelpPanel>
+          </div>
           {client && owner.data ? (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-control bg-sunken px-3 py-2">
               <span>

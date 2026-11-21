@@ -1,6 +1,6 @@
-import { totalOf, useQuery } from "@vynxlabs/app";
-import { Avatar, Badge, Button, EmptyState, Notice, TextField, Panel as Tile } from "@vynxlabs/ui";
-import { ChevronLeft, TriangleAlert } from "@vynxlabs/ui/icons";
+import { totalOf, useQuery } from "@volvel/app";
+import { Avatar, Badge, Button, EmptyState, Notice, TextField, Panel as Tile } from "@volvel/ui";
+import { ChevronLeft, TriangleAlert } from "@volvel/ui/icons";
 import { useEffect, useState } from "react";
 import {
   Appointments,

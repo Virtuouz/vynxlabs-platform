@@ -26,6 +26,11 @@
     "body": {
       "type": "object",
       "properties": {
+        "description": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "What the schedule is for."
+        },
         "script": {
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",

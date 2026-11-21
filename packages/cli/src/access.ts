@@ -10,7 +10,7 @@ import {
   sameResourceFile,
   TENANT_FOLDER,
   type TenantResource,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import type { ApiReply, Io, Settings } from "./cli.js";
 import { CliError } from "./errors.js";
 
@@ -84,7 +84,7 @@ const lines = (summary: Summary) => [
 type Call = (path: string, send?: { method: string; body?: unknown }) => Promise<ApiReply>;
 
 /**
- * `platform tenant plan | release | pull | releases | approve | decline |
+ * `volvel tenant plan | release | pull | releases | approve | decline |
  * withdraw | rollback`: the tenant's groups, service accounts, roles and what
  * they are given, as the repository has them.
  */
@@ -126,7 +126,7 @@ export async function tenantAccess(
     const resources = await readAccess(directory);
     if (resources.length === 0) {
       throw new CliError(
-        `No file of the tenant's access was found under ${directory}. They are named <key>.<kind>.yaml, such as ${TENANT_FOLDER}/groups/tech-desk.group.yaml. Run "platform tenant pull" to write what the tenant has now.`,
+        `No file of the tenant's access was found under ${directory}. They are named <key>.<kind>.yaml, such as ${TENANT_FOLDER}/groups/tech-desk.group.yaml. Run "volvel tenant pull" to write what the tenant has now.`,
       );
     }
     const body = { resources, ...(allowDelete.length > 0 ? { allowDelete } : {}) };
@@ -148,7 +148,7 @@ export async function tenantAccess(
       io.out(
         plan.body.waits
           ? "Nothing was changed. This tenant asks for a second person: a release would wait for one."
-          : 'Nothing was changed. Run "platform tenant release" to do it.',
+          : 'Nothing was changed. Run "volvel tenant release" to do it.',
       );
       return;
     }
@@ -164,7 +164,7 @@ export async function tenantAccess(
       );
       for (const line of lines(released.body.summary)) io.out(line);
       io.out(
-        `Nothing changed yet. Someone else approves it with: platform tenant approve ${released.body.number} --tenant ${values.tenant}`,
+        `Nothing changed yet. Someone else approves it with: volvel tenant approve ${released.body.number} --tenant ${values.tenant}`,
       );
       return;
     }
@@ -249,7 +249,7 @@ export async function tenantAccess(
   if (["approve", "decline", "withdraw", "rollback"].includes(action)) {
     const number = Number(positionals[0]);
     if (!Number.isInteger(number)) {
-      throw new CliError(`Say which release, by its number: platform tenant ${action} <number>`);
+      throw new CliError(`Say which release, by its number: volvel tenant ${action} <number>`);
     }
     const release = (await list()).find((one) => one.number === number);
     if (!release) throw new CliError(`${values.tenant} has no release ${number} of its access.`);
@@ -277,7 +277,7 @@ export async function tenantAccess(
   }
 
   throw new CliError(
-    "Usage: platform tenant plan | release | pull | releases | approve <n> | decline <n> | withdraw <n> | rollback <n>, with --tenant <slug>",
+    "Usage: volvel tenant plan | release | pull | releases | approve <n> | decline <n> | withdraw <n> | rollback <n>, with --tenant <slug>",
   );
 }
 

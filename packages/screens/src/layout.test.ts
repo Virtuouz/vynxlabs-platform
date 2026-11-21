@@ -1,4 +1,4 @@
-import type { PageWidget } from "@vynxlabs/manifest";
+import type { PageWidget } from "@volvel/manifest";
 import { expect, test } from "vitest";
 import { settle } from "./layout.ts";
 

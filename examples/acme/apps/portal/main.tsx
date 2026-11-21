@@ -1,12 +1,4 @@
-import {
-  appContext,
-  logoUrl,
-  runScript,
-  signOut,
-  table,
-  useQuery,
-  useSession,
-} from "@vynxlabs/app";
+import { appContext, logoUrl, runScript, signOut, table, useQuery, useSession } from "@volvel/app";
 import {
   Badge,
   type BadgeTone,
@@ -21,7 +13,7 @@ import {
   Tabs,
   ToastProvider,
   useToast,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { useMemo } from "react";
 import { createRoot } from "react-dom/client";
 // Types only: none of the repository's server code reaches the browser.

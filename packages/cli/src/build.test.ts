@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundleDigest } from "@vynxlabs/manifest";
+import { bundleDigest } from "@volvel/manifest";
 import { afterAll, describe, expect, test } from "vitest";
 import { BuildError, buildBundle, buildRepository, describeBundle } from "./build.js";
 
@@ -15,10 +15,10 @@ async function repository(source: string) {
   const dir = await mkdtemp(join(tmpdir(), "tenant-"));
   scratch.push(dir);
   await mkdir(join(dir, "src"));
-  await mkdir(join(dir, "node_modules", "@vynxlabs"), { recursive: true });
+  await mkdir(join(dir, "node_modules", "@volvel"), { recursive: true });
   await symlink(
-    join(example, "node_modules", "@vynxlabs", "sdk"),
-    join(dir, "node_modules", "@vynxlabs", "sdk"),
+    join(example, "node_modules", "@volvel", "sdk"),
+    join(dir, "node_modules", "@volvel", "sdk"),
   );
   await writeFile(join(dir, "package.json"), '{"type":"module"}');
   await writeFile(join(dir, "src", "index.ts"), source);
@@ -175,8 +175,7 @@ describe("building the example repository", () => {
 });
 
 describe("a repository with mistakes", () => {
-  const head =
-    'import { defineScript, defineSchedule, defineConnection, z } from "@vynxlabs/sdk";\n';
+  const head = 'import { defineScript, defineSchedule, defineConnection, z } from "@volvel/sdk";\n';
   const script = (extra = "") =>
     `export const s = defineScript({ path: "jobs/a", input: z.object({}), output: z.object({}), ${extra} async run() { return {}; } });\n`;
 
@@ -204,8 +203,7 @@ describe("a repository with mistakes", () => {
   });
 
   test("catches a flow that does not hold together", async () => {
-    const flowHead =
-      'import { defineFlow, defineScript, step, trigger, z } from "@vynxlabs/sdk";\n';
+    const flowHead = 'import { defineFlow, defineScript, step, trigger, z } from "@volvel/sdk";\n';
     const source = `${flowHead}${script()}export const f = defineFlow({
       path: "flows/broken",
       nodes: {
@@ -234,7 +232,7 @@ describe("a repository with mistakes", () => {
     // What refers to a path used twice is not reported again: the one problem is the clash.
     expect(
       await problems(
-        `import { column, defineApp, defineInterface, defineTable } from "@vynxlabs/sdk";
+        `import { column, defineApp, defineInterface, defineTable } from "@volvel/sdk";
 export const pets = defineTable({ path: "pets", columns: { name: column.text() } });
 export const app = defineApp({ path: "pets", title: "Pets", interface: "screens/pets" });
 export const visits = defineTable({ path: "visits", columns: { pet: column.reference("pets") } });
@@ -250,7 +248,7 @@ export const screen = defineInterface({ path: "screens/pets", title: "Pets", pag
 
 describe("keys and titles", () => {
   const head =
-    'import { column, defineSchedule, defineScript, defineTable, z } from "@vynxlabs/sdk";\n';
+    'import { column, defineSchedule, defineScript, defineTable, z } from "@volvel/sdk";\n';
   const script = (options: string) =>
     `export const submit = defineScript({ ${options} input: z.object({}), output: z.object({}), async run() { return {}; } });\n`;
 
@@ -324,7 +322,7 @@ export const nightly = defineSchedule({ path: "nightly", script: "requests/submi
 
 describe("a definition the entry file does not export", () => {
   const script = (name: string, path: string) =>
-    `import { defineScript, z } from "@vynxlabs/sdk";\nexport const ${name} = defineScript({ path: "${path}", input: z.object({}), output: z.object({}), async run() { return {}; } });\n`;
+    `import { defineScript, z } from "@volvel/sdk";\nexport const ${name} = defineScript({ path: "${path}", input: z.object({}), output: z.object({}), async run() { return {}; } });\n`;
 
   test("is refused by name, where it would have gone missing without a word", async () => {
     expect(
@@ -361,7 +359,7 @@ describe("a definition the entry file does not export", () => {
 
 describe("resources managed in the console, as files in the repository", () => {
   const source = `
-    import { defineScript, z } from "@vynxlabs/sdk";
+    import { defineScript, z } from "@volvel/sdk";
     export const check = defineScript({
       path: "orders/check",
       input: z.object({}),
@@ -419,7 +417,7 @@ describe("resources managed in the console, as files in the repository", () => {
 
   test("files are read wherever the repository keeps them, and say where each is when that is not the console's folder", async () => {
     const dir = await withFiles({
-      "vynxlabs.yaml": "roots: [src]\n",
+      "volvel.yaml": "roots: [src]\n",
       // Beside the feature it belongs to. Its path is where it is, under the root.
       "src/lending/greeting.variable.yaml":
         "title: Greeting\nschemaVersion: 1\nbody:\n  default: hi\n",
@@ -480,5 +478,102 @@ describe("resources managed in the console, as files in the repository", () => {
         })
       ).join("\n"),
     ).toContain("timeoutSeconds");
+  });
+});
+
+describe("a repository with documentation", () => {
+  const PNG = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const source = `
+    import { defineApp, defineBinding } from "@volvel/sdk";
+    export const help = defineApp({ path: "help", title: "Handbook", docs: "handbook" });
+    export const open = defineBinding({
+      path: "bindings/help",
+      role: "portal_user",
+      principal: { type: "anonymous" },
+      resource: help,
+    });
+  `;
+  const withPages = async (pages: Record<string, string | Buffer>, config?: string) => {
+    const dir = await repository(source);
+    if (config !== undefined) await writeFile(join(dir, "volvel.yaml"), config);
+    for (const [name, content] of Object.entries(pages)) {
+      await mkdir(dirname(join(dir, name)), { recursive: true });
+      await writeFile(join(dir, name), content);
+    }
+    return dir;
+  };
+
+  test("reads its pages from the folder of pages, as they are, and its pictures as the app's files", async () => {
+    const home =
+      "---\ntitle: Handbook\n---\n\nSee [refunds](support/refunds).\n\n![The till](img/till.png)\n";
+    const refunds = "---\ntitle: Refund an order\ntopic: support-refunds\n---\n\nAsk first.\n";
+    const directory = await withPages({
+      "platform/docs/handbook/index.md": home,
+      "platform/docs/handbook/support/refunds.md": refunds,
+      "platform/docs/handbook/img/till.png": PNG,
+      // Not a page: it is in no folder of pages.
+      "README.md": "# Read me\n\n[broken](nowhere)\n",
+    });
+    const built = await buildRepository({ directory });
+    const docs = built.bundle.manifests.filter((manifest) => manifest.kind === "doc");
+    expect(docs.map((doc) => [doc.path, doc.title, doc.ownership])).toEqual([
+      ["handbook/index", "Handbook", "ui"],
+      ["handbook/support/refunds", "Refund an order", "ui"],
+    ]);
+    expect(docs[0]?.body).toEqual({ source: home });
+    expect(built.bundle.manifests.map((manifest) => manifest.kind)).toEqual([
+      "doc",
+      "doc",
+      "app",
+      "binding",
+    ]);
+    expect(built.bundle.assets).toEqual([
+      {
+        app: "help",
+        path: "img/till.png",
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+        size: PNG.length,
+        contentType: "image/png",
+      },
+    ]);
+    expect(built.files.get(built.bundle.assets?.[0]?.sha256 as string)).toEqual(PNG);
+  });
+
+  test("reads them from the folders a repository names, and from nowhere else", async () => {
+    const directory = await withPages(
+      {
+        "docs/handbook/index.md": "---\ntitle: Handbook\n---\n",
+        "platform/docs/handbook/ignored.md": "---\ntitle: Not read\n---\n",
+      },
+      "docs: [docs]\n",
+    );
+    const built = await buildRepository({ directory });
+    expect(
+      built.bundle.manifests.filter((manifest) => manifest.kind === "doc").map((doc) => doc.path),
+    ).toEqual(["handbook/index"]);
+  });
+
+  test("does not build when a page does not read or a link leads nowhere", async () => {
+    const directory = await withPages({
+      "platform/docs/handbook/index.md": "---\ntitle: Handbook\n---\n\n[gone](missing)\n\n::nope\n",
+      "platform/docs/handbook/Bad Name.md": "---\ntitle: Bad\n---\n",
+    });
+    await expect(buildRepository({ directory })).rejects.toMatchObject({
+      problems: [
+        "platform/docs/handbook/Bad Name.md: a page's name and its folders are written in lowercase letters, digits, hyphens and underscores. Rename the file: nothing renames it for you.",
+      ],
+    });
+    await rm(join(directory, "platform/docs/handbook/Bad Name.md"));
+    await expect(buildRepository({ directory })).rejects.toMatchObject({
+      problems: [
+        'handbook/index (doc): line 5: The link to "missing" leads nowhere: there is no page at missing.',
+        expect.stringContaining(
+          'handbook/index (doc): line 7: There is no component named "nope".',
+        ),
+      ],
+    });
   });
 });

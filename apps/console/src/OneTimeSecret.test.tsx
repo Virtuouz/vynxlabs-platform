@@ -69,7 +69,7 @@ test("a new worker credential comes with the command to start a worker, filled i
   fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Warehouse" } });
   fireEvent.click(within(dialog).getByRole("button", { name: "Create credential" }));
 
-  const command = "platform-worker --url https://platform.acme.test --token vxw_secret";
+  const command = "volvel-worker --url https://platform.acme.test --token vxw_secret";
   expect(await screen.findByText(command)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Copy the command" }));
   await waitFor(() => expect(copied).toEqual([command]));

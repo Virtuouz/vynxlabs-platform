@@ -1,6 +1,6 @@
-import type { ValueFormat } from "@vynxlabs/manifest";
-import { formatValue } from "@vynxlabs/screens";
-import { CheckboxField, SelectField, TextField } from "@vynxlabs/ui";
+import type { ValueFormat } from "@volvel/manifest";
+import { formatValue } from "@volvel/screens";
+import { CheckboxField, SelectField, TextField } from "@volvel/ui";
 
 /**
  * How a number is written: as it is, as a number, as money or as a percent.

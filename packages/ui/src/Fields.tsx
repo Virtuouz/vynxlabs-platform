@@ -1,6 +1,15 @@
 import { Field } from "@base-ui/react/field";
 import type { ChangeEvent, ReactNode } from "react";
-import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { TermText } from "./Term.tsx";
 
 /** A control's own box. An invalid one has a danger edge, beside the words that say why. */
 export const control =
@@ -16,6 +25,17 @@ interface Common {
    * value makes plain: the label is read, not shown (P4-1).
    */
   labelHidden?: boolean;
+}
+
+const Beside = createContext<ReactNode>(null);
+
+/**
+ * Puts something beside the label of the field inside it: the ⓘ that says
+ * more about the field. It sits next to the label and not in it, since a
+ * label may hold only the control it names.
+ */
+export function FieldHelp({ help, children }: { help: ReactNode; children: ReactNode }) {
+  return <Beside.Provider value={help}>{children}</Beside.Provider>;
 }
 
 /**
@@ -34,10 +54,17 @@ export function FieldFrame({
   labelHidden = false,
   children,
 }: Common & { required?: boolean | undefined; children: ReactNode }) {
+  const beside = useContext(Beside);
   return (
     <Field.Root invalid={error !== undefined} className="flex flex-col gap-1">
       <div className={labelHidden ? "sr-only" : "flex items-baseline gap-1 text-body-sm"}>
         <Field.Label className="font-medium text-ink">{label}</Field.Label>
+        {beside && !labelHidden ? (
+          // The help is for this field. A field inside this one gets none of it.
+          <Beside.Provider value={null}>
+            <span className="self-center">{beside}</span>
+          </Beside.Provider>
+        ) : null}
         {/* Seen, not read: the control's own `required` is what a screen reader says. */}
         {required === true ? (
           <span aria-hidden="true" className="text-danger">
@@ -51,7 +78,9 @@ export function FieldFrame({
       </div>
       {children}
       {hint ? (
-        <Field.Description className="m-0 text-body-sm text-ink-muted">{hint}</Field.Description>
+        <Field.Description className="m-0 text-body-sm text-ink-muted">
+          <TermText>{hint}</TermText>
+        </Field.Description>
       ) : null}
       {error ? (
         <Field.Error match role="alert" className="m-0 text-body-sm text-danger">

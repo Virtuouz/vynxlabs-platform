@@ -1,3 +1,4 @@
+import type { ConfigVarName } from "./config-vars.js";
 import { type EgressAllow, parseEgressAllow } from "./kernel/egress.js";
 import { readHeaders, type TelemetryConfig } from "./kernel/telemetry.js";
 export interface Config {
@@ -51,6 +52,8 @@ export interface Config {
   egressAllow: EgressAllow;
   /** Directory holding the built console. Undefined when the console is not served. */
   consoleDir: string | undefined;
+  /** Where the documentation is on the web, when the operator says. */
+  docsUrl?: string | undefined;
   /** Where the built app that draws interfaces is. Without it, generated apps are not served. */
   screensDir: string | undefined;
   /**
@@ -141,16 +144,16 @@ export class ConfigError extends Error {
 /** Reads configuration from environment variables. Reports every problem at once. */
 export function loadConfig(env: Record<string, string | undefined>): Config {
   const problems: string[] = [];
-  const value = (name: string) => {
+  const value = (name: ConfigVarName) => {
     const raw = env[name]?.trim();
     return raw === "" ? undefined : raw;
   };
-  const required = (name: string) => {
+  const required = (name: ConfigVarName) => {
     const raw = value(name);
     if (raw === undefined) problems.push(`${name} is required.`);
     return raw ?? "";
   };
-  const url = (name: string, raw: string | undefined, protocols: string[]) => {
+  const url = (name: ConfigVarName, raw: string | undefined, protocols: string[]) => {
     if (raw === undefined) return;
     const parsed = URL.canParse(raw) ? new URL(raw) : null;
     if (!parsed || !protocols.includes(parsed.protocol)) {
@@ -276,7 +279,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   if (workerUser !== "own" && workerUser !== "same") {
     problems.push("MANAGED_WORKER_USER must be own or same.");
   }
-  const id = (name: string) => {
+  const id = (name: ConfigVarName) => {
     const raw = value(name) ?? "10001";
     const parsed = Number(raw);
     if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -284,7 +287,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     }
     return parsed;
   };
-  const days = (name: string, fallback: number, bounds: { min: number; max: number }) => {
+  const days = (name: ConfigVarName, fallback: number, bounds: { min: number; max: number }) => {
     const raw = value(name);
     if (raw === undefined) return fallback;
     const parsed = Number(raw);
@@ -301,7 +304,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   };
   const egress = parseEgressAllow(value("EGRESS_ALLOW"));
   if (typeof egress === "string") problems.push(egress);
-  const whole = (name: string, min: number, max: number) => {
+  const whole = (name: ConfigVarName, min: number, max: number) => {
     const raw = value(name);
     if (raw === undefined) return undefined;
     const parsed = Number(raw);
@@ -323,6 +326,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     triggersPaused: (value("TRIGGERS_PAUSED") ?? "false") === "true",
     scheduleBacklogLimit: whole("SCHEDULE_BACKLOG_LIMIT", 0, 1_000_000) ?? 200,
   };
+  const docsUrl = value("DOCS_URL");
+  url("DOCS_URL", docsUrl, ["http:", "https:"]);
   const pausedRaw = value("TRIGGERS_PAUSED");
   if (pausedRaw !== undefined && pausedRaw !== "true" && pausedRaw !== "false") {
     problems.push("TRIGGERS_PAUSED must be true or false.");
@@ -358,7 +363,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     telemetry: {
       endpoint: otlpEndpoint,
       headers: readHeaders(value("OTEL_EXPORTER_OTLP_HEADERS")),
-      serviceName: value("OTEL_SERVICE_NAME") ?? "platform",
+      serviceName: value("OTEL_SERVICE_NAME") ?? "volvel",
       traces: value("OTEL_TRACES_EXPORTER") !== "none",
       metrics: value("OTEL_METRICS_EXPORTER") !== "none",
       metricsIntervalMs: otlpInterval,
@@ -367,6 +372,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     retention,
     egressAllow: typeof egress === "string" ? { networks: [], hosts: [] } : egress,
     consoleDir: value("CONSOLE_DIR"),
+    docsUrl: docsUrl?.replace(/\/+$/, ""),
     screensDir: value("SCREENS_DIR"),
     appsUrl: appsUrl?.replace(/\/+$/, ""),
     appsOnConsoleAddress: appsOnConsole === "true",

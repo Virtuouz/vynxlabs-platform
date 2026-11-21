@@ -1,6 +1,6 @@
 import { type FastifyPluginAsyncTypebox, Type } from "@fastify/type-provider-typebox";
-import type { TenantResource } from "@vynxlabs/db";
-import { renderTenantFiles, TENANT_FOLDER } from "@vynxlabs/manifest";
+import type { TenantResource } from "@volvel/db";
+import { renderTenantFiles, TENANT_FOLDER } from "@volvel/manifest";
 import { mutate } from "../kernel/audit.js";
 import { HttpError } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
@@ -139,13 +139,17 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               approval: Type.Boolean({
                 description: "Whether a change waits for a second person.",
               }),
+              mayChange: Type.Boolean({
+                description:
+                  "Whether the caller may change access: answer a release that waits, or go back to one.",
+              }),
               resources: Type.Array(Resource),
               files: Type.Array(Type.Object({ path: Type.String(), content: Type.String() })),
             }),
           },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params }) => {
         const resources = await currentAccess(db, params.t);
         const tenant = await db
           .selectFrom("tenant")
@@ -155,6 +159,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           folder: TENANT_FOLDER,
           approval: tenant.access_approval,
+          mayChange: await ctx.allowed("access:write", { tenantId: params.t }),
           resources,
           files: renderTenantFiles(resources),
         };
@@ -407,6 +412,32 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             body.comment,
           ),
         ),
+    );
+
+    app.get(
+      "/tenants/:t/access/releases/:id/rollback",
+      {
+        config: { access: access.tenant("access:write") },
+        schema: {
+          summary: "What going back to an access release would do",
+          description:
+            "Read-only: the asks that going back would make, and the keys of what it removes " +
+            "because it was made since (`allowDelete`, as `kind/key`). Changes nothing.",
+          tags: ["access"],
+          params: Type.Object({ t: Id, id: Id }),
+          response: {
+            200: Type.Object({
+              number: Type.Integer(),
+              asks: Type.Array(Type.Any()),
+              allowDelete: Type.Array(Type.String()),
+              removes: Type.Array(
+                Type.Object({ kind: Type.String(), key: Type.String(), label: Type.String() }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => rollbackAsks(db, params.t, params.id),
     );
 
     app.post(

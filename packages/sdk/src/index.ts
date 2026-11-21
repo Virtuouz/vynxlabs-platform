@@ -77,7 +77,7 @@ export interface AuthoredManifest {
   body: Record<string, unknown>;
 }
 
-const RESOURCE = "__vynxlabsResource";
+const RESOURCE = "__volvelResource";
 
 /** Something a tenant repository exports for the build to pick up. */
 export interface ResourceDefinition {
@@ -103,7 +103,7 @@ export function isResourceDefinition(value: unknown): value is ResourceDefinitio
  * It is on `globalThis` because the build loads a copy of the SDK bundled into the
  * repository's code, not the one it imports itself. Nothing is kept anywhere else.
  */
-const DEFINITIONS = Symbol.for("vynxlabs.definitions");
+const DEFINITIONS = Symbol.for("volvel.definitions");
 
 function resource(
   kind: string,
@@ -283,6 +283,8 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
 
 export interface ScheduleOptions extends ResourceNames {
   path: string;
+  /** What it is for, in plain text. */
+  description?: string;
   script: string | { path: string };
   /** Five-field cron expression, for example `0 6 * * 1-5`. */
   cron: string;
@@ -308,6 +310,7 @@ export interface ScheduleOptions extends ResourceNames {
 export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
   return resource("schedule", options, () =>
     compact({
+      description: options.description,
       script: pathOf(options.script),
       cron: options.cron,
       timezone: options.timezone,
@@ -353,6 +356,8 @@ export interface WebhookRequest<Body = unknown> {
 
 export interface WebhookOptions extends ResourceNames {
   path: string;
+  /** What it is for, in plain text. */
+  description?: string;
   /** The script that receives the request. */
   script: string | { path: string };
   enabled?: boolean;
@@ -463,6 +468,7 @@ export function defineWebhook(options: WebhookOptions): ResourceDefinition {
   return resource("trigger", options, () =>
     compact({
       type: "webhook",
+      description: options.description,
       script: pathOf(options.script),
       enabled: options.enabled,
       input: options.input,
@@ -677,6 +683,8 @@ export function defineEvent<Payload extends z.ZodType>(
 
 export interface EventTriggerOptions extends ResourceNames {
   path: string;
+  /** What it is for, in plain text. */
+  description?: string;
   /** The event to listen for, by name or by definition. */
   event: string | { path: string };
   /** The script that receives the event's payload as its input. */
@@ -691,6 +699,7 @@ export function defineEventTrigger(options: EventTriggerOptions): ResourceDefini
   return resource("trigger", options, () =>
     compact({
       type: "event",
+      description: options.description,
       script: pathOf(options.script),
       event: pathOf(options.event),
       filter: options.filter,
@@ -1068,9 +1077,28 @@ export interface AppOptions extends ResourceNames {
   source?: string;
   /**
    * The path of an interface to serve as this app, in place of code of its own.
-   * An app has a `source` or an `interface`, never both.
+   * An app has a `source`, an `interface` or `docs`, and only one of them.
    */
   interface?: string;
+  /**
+   * A folder of the workspace's pages of documentation to serve as this app:
+   * every page whose path is under it, such as `handbook`. Its pages are Markdown
+   * files in the repository's folder of pages, or pages made in the console.
+   * It is a top-level folder.
+   */
+  docs?: string;
+  /**
+   * For an app that serves `docs`: the table its readers' answers to "Was this
+   * page helpful?" are kept in. Each page asks, and each answer is a row with
+   * the columns `page` (text), `helpful` (boolean), `version` (text) and `at`
+   * (timestamp). Nothing about who answered is kept.
+   */
+  feedback?: { table: string };
+  /**
+   * For an app that serves `docs`: false stops serving it and keeps its pages.
+   * Default true.
+   */
+  published?: boolean;
   /** The page inside the built app. Default `index.html`. */
   entry?: string;
   /**
@@ -1099,23 +1127,41 @@ export interface AppDefinition extends ResourceDefinition {
  * holding `app:read` to members, to `end_users`, or to `anonymous` for a public app.
  */
 export function defineApp(options: AppOptions): AppDefinition {
-  if ((options.source === undefined) === (options.interface === undefined)) {
-    throw new Error(`The app "${options.path}" needs a source or an interface, and not both.`);
+  const given = [options.source, options.interface, options.docs].filter(
+    (one) => one !== undefined,
+  ).length;
+  if (given !== 1) {
+    throw new Error(
+      `The app "${options.path}" needs a source, an interface or docs, and only one of them.`,
+    );
+  }
+  if (options.feedback !== undefined && options.docs === undefined) {
+    throw new Error(
+      `The app "${options.path}" asks for feedback: only an app that serves docs can.`,
+    );
   }
   const definition = resource("app", named(options), () =>
-    options.interface !== undefined
+    options.docs !== undefined
       ? compact({
           title: options.title,
           description: options.description,
-          interface: options.interface,
+          docs: options.docs,
+          feedback: options.feedback,
+          published: options.published,
         })
-      : compact({
-          title: options.title,
-          description: options.description,
-          entry: options.entry ?? "index.html",
-          fallback: options.fallback,
-          reads: options.reads,
-        }),
+      : options.interface !== undefined
+        ? compact({
+            title: options.title,
+            description: options.description,
+            interface: options.interface,
+          })
+        : compact({
+            title: options.title,
+            description: options.description,
+            entry: options.entry ?? "index.html",
+            fallback: options.fallback,
+            reads: options.reads,
+          }),
   );
   return {
     ...definition,
@@ -1190,6 +1236,8 @@ export type BindingPrincipal =
 export interface BindingOptions extends ResourceNames {
   /** Unique within the workspace, for example `bindings/portal-orders`. */
   path: string;
+  /** Why the grant is there, for whoever reads it later. */
+  description?: string;
   /** A role by name or by definition: built-in, the tenant's, or one this workspace defines. */
   role: string | { name: string };
   principal: BindingPrincipal;
@@ -1207,6 +1255,7 @@ export function defineBinding(options: BindingOptions): ResourceDefinition {
       role: typeof options.role === "string" ? options.role : options.role.name,
       principal: options.principal,
       resource: options.resource === undefined ? undefined : pathOf(options.resource),
+      description: options.description,
     }),
   );
 }

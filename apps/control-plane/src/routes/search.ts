@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import { Type } from "typebox";
 import { TAG_PATTERN } from "../kernel/execution/runs.js";
 import type { RequestContext } from "../kernel/http.js";
@@ -18,6 +18,7 @@ const READ: Record<string, string> = {
   schedule: "trigger:read",
   connection: "connection:read",
   event: "event:read",
+  doc: "doc:read",
 };
 const KINDS = Object.keys(READ);
 const RUN_KINDS = ["run", "flow_run"];

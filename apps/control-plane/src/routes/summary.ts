@@ -1,7 +1,8 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { sql } from "@vynxlabs/db";
+import { sql } from "@volvel/db";
 import { Type } from "typebox";
 import { WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
+import { mayDecide } from "../kernel/flows/approvers.js";
 import { access, findWorkspace } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { workspaceReferences } from "../kernel/references.js";
@@ -19,6 +20,12 @@ const WorkspaceSummary = Type.Object({
   }),
   unboundConnections: Count,
   approvalsWaiting: Count,
+  approvalsWaitingMine: Type.Optional(
+    Type.Union([Type.Integer({ minimum: 0 }), Type.Null()], {
+      description:
+        "Of the approvals waiting, those the caller may decide: the same ones `approvals?mine=true` lists.",
+    }),
+  ),
   git: Type.Union([
     Type.Object({
       state: Type.String({ description: "never, synced, ahead, behind, conflict or error." }),
@@ -49,6 +56,12 @@ const WorkspaceSummary = Type.Object({
 const TenantSummary = Type.Object({
   workspaces: Count,
   approvalsWaiting: Count,
+  approvalsWaitingMine: Type.Optional(
+    Type.Union([Type.Integer({ minimum: 0 }), Type.Null()], {
+      description:
+        "Of the approvals waiting in the tenant's workspaces, those the caller may decide, by the same rule as a workspace's.",
+    }),
+  ),
   domainsToFix: Count,
   workersOnline: Count,
   operatorAccessActive: Count,
@@ -172,19 +185,24 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             )
           : null;
 
-        const approvals = readApprovals
-          ? await count(
-              db
-                .selectFrom("step_run")
-                .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
-                .select((eb) => eb.fn.countAll().as("n"))
-                .where("flow_run.workspace_id", "=", params.w)
-                .where("flow_run.status", "=", "running")
-                .where("step_run.status", "=", "waiting")
-                .where(sql<boolean>`step_run.detail ? 'title'`)
-                .executeTakeFirst(),
-            )
+        const waiting = readApprovals
+          ? await db
+              .selectFrom("step_run")
+              .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
+              .select("step_run.detail")
+              .where("flow_run.workspace_id", "=", params.w)
+              .where("flow_run.status", "=", "running")
+              .where("step_run.status", "=", "waiting")
+              .where(sql<boolean>`step_run.detail ? 'title'`)
+              .execute()
           : null;
+        const approvals = waiting ? waiting.length : null;
+        let approvalsMine: number | null = null;
+        if (waiting) {
+          approvalsMine = 0;
+          for (const row of waiting)
+            if (await mayDecide(db, ctx, at, row.detail)) approvalsMine += 1;
+        }
 
         const git = readGit
           ? await db
@@ -259,6 +277,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           failedRuns: { count: failed, since: since.toISOString() },
           unboundConnections: unbound,
           approvalsWaiting: approvals,
+          approvalsWaitingMine: approvalsMine,
           git: git ? { state: git.state } : null,
           version: here?.version ?? null,
           linked: linkedRow
@@ -330,6 +349,26 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             return null;
           return waiting;
         };
+        /** Of the approvals waiting in every workspace, those this caller may decide. */
+        const waitingForMe = async () => {
+          const rows = await db
+            .selectFrom("step_run")
+            .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
+            .select(["step_run.detail", "flow_run.workspace_id"])
+            .where("flow_run.tenant_id", "=", params.t)
+            .where("flow_run.status", "=", "running")
+            .where("step_run.status", "=", "waiting")
+            .where(sql<boolean>`step_run.detail ? 'title'`)
+            // As the tenant's queue lists them: a step that surfaces its approval to the tenant.
+            .where(sql<boolean>`step_run.detail ->> 'surface' = 'tenant'`)
+            .execute();
+          let mine = 0;
+          for (const row of rows) {
+            const here = { tenantId: params.t, workspaceId: row.workspace_id };
+            if (await mayDecide(db, ctx, here, row.detail)) mine += 1;
+          }
+          return mine;
+        };
         const total = (table: "workspace" | "tenant_member") =>
           count(
             db
@@ -350,9 +389,12 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   .where("flow_run.status", "=", "running")
                   .where("step_run.status", "=", "waiting")
                   .where(sql<boolean>`step_run.detail ? 'title'`)
+                  // The tenant counts what its queue lists, so the count and the queue agree.
+                  .where(sql<boolean>`step_run.detail ->> 'surface' = 'tenant'`)
                   .executeTakeFirst(),
               )
             : null,
+          approvalsWaitingMine: approvals ? await waitingForMe() : null,
           domainsToFix: domains
             ? await count(
                 db

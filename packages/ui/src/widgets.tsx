@@ -23,7 +23,7 @@ export interface WidgetContext {
   /** Called with the row a person chose to look at. Other widgets may follow it. */
   onSelect?(row: Record<string, unknown>): void;
   /** Whether there are more rows than the ones given, and how to ask for them. */
-  page?: { hasMore: boolean; onMore(): void };
+  page?: { hasMore: boolean; onMore(): void; loading?: boolean; error?: string };
   /** Saves one changed value of a row. A rejection's message is shown where the value is. */
   onEdit?(row: Record<string, unknown>, column: string, value: unknown): Promise<void>;
   /** Removes a row. */
@@ -93,6 +93,8 @@ export interface WidgetField {
   name: string;
   /** What to call it. The name, when left out. */
   label?: string;
+  /** What it holds, said in words, behind a small ⓘ beside its heading. */
+  description?: string | undefined;
   /** What it holds: text, integer, number, boolean, timestamp and so on. */
   type?: string;
   /** Whether it can be changed in place, when the screen gives a way to save it. */
@@ -171,6 +173,7 @@ const fieldSchema = {
   properties: {
     name: { type: "string", description: "The key of the value in each row." },
     label: { type: "string", description: "What to call it." },
+    description: { type: "string", description: "What it holds, said in words." },
     type: {
       type: "string",
       default: "text",
@@ -209,10 +212,16 @@ function shown(field: WidgetField, value: unknown, context: WidgetContext): Reac
 
 function More({ context }: { context: WidgetContext }) {
   if (!context.page?.hasMore) return null;
+  const { loading, error } = context.page;
   return (
-    <div className="mt-2 flex justify-center">
-      <Button size="small" onClick={() => context.page?.onMore()}>
-        Show more
+    <div className="mt-2 flex flex-col items-center gap-2">
+      {error ? (
+        <p role="alert" className="m-0 text-body-sm text-danger">
+          {error}
+        </p>
+      ) : null}
+      <Button size="small" loading={loading === true} onClick={() => context.page?.onMore()}>
+        {error ? "Try again" : "Show more"}
       </Button>
     </div>
   );
@@ -242,6 +251,7 @@ registerWidget<TableWidgetConfig>({
           columns={config.columns.map((column) => ({
             name: column.name,
             label: column.label,
+            description: column.description,
             type: column.type ?? "text",
             editable: column.editable === true && edit !== undefined,
           }))}

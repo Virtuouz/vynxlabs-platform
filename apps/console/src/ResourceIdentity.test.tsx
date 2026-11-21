@@ -141,3 +141,37 @@ test("what the repository's code defines is renamed there, and a file is renamed
   show(<ResourceIdentity root={root} link="/x" row={generated} onDone={() => {}} />);
   expect((screen.getByRole("button", { name: "Rename" }) as HTMLButtonElement).disabled).toBe(true);
 });
+
+test("renaming a query lists the dashboards it will update, and the repository's it will not", async () => {
+  const query = { path: "reports/n", key: "reports/n", kind: "query", ownership: "ui" };
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    const method = init.method ?? "GET";
+    calls.push({ method, url: address, body: undefined });
+    const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
+    if (address.includes("/rename-effects/")) {
+      return json({
+        dashboards: [
+          { path: "boards/mine", title: "Mine", ownership: "ui", widgets: 1 },
+          { path: "boards/theirs", title: "Theirs", ownership: "code", widgets: 2 },
+        ],
+      });
+    }
+    if (method === "GET" && address.includes("/drafts/")) return json({ detail: "none" }, 404);
+    return json({ kind: "query", schemaVersion: 1, key: "reports/n", title: null, body: {} });
+  });
+  show(<ResourceIdentity root={root} link="/x" row={query} onDone={() => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+  const dialog = await screen.findByRole("dialog");
+  // Nothing is said while the path is as it was.
+  await within(dialog).findByLabelText("Path");
+  expect(within(dialog).queryByTestId("naming")).toBeNull();
+  type(dialog, "Path", "reports/count");
+  const list = await within(dialog).findByTestId("naming");
+  expect(list.textContent).toContain("This dashboard is saved as a draft with the new path:");
+  expect(list.textContent).toContain("Mine");
+  expect(list.textContent).toContain("boards/mine");
+  expect(list.textContent).toContain("the repository's, so it is not changed here");
+  expect(list.textContent).toContain("Theirs");
+  expect(list.textContent).toContain("2 widgets");
+  expect(list.textContent).toContain("Until then its widgets find the query by its key.");
+});

@@ -47,10 +47,10 @@ afterEach(() => {
   history.replaceState(null, "", "/");
 });
 
-test("each trigger links to what it starts", async () => {
+test("each trigger links to the page of what it starts", async () => {
   show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
   expect((await screen.findByRole("link", { name: "reminders/send" })).getAttribute("href")).toBe(
-    `${link}/scripts/edit/reminders/send`,
+    `${link}/scripts/reminders/send`,
   );
   expect(screen.getByRole("link", { name: "inventory/reorder" }).getAttribute("href")).toBe(
     `${link}/flows/inventory/reorder`,

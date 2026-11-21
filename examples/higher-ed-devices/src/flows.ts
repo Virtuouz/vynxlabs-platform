@@ -1,4 +1,4 @@
-import { defineFlow, step, trigger, z } from "@vynxlabs/sdk";
+import { defineFlow, step, trigger, z } from "@volvel/sdk";
 import { AUTO_APPROVED, requestSubmitted } from "./model.ts";
 import { decideRequest } from "./scripts.ts";
 

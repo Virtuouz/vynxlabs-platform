@@ -1,4 +1,4 @@
-import { newId, type ResourceMeta, sql } from "@vynxlabs/db";
+import { newId, type ResourceMeta, sql } from "@volvel/db";
 import {
   type BundleManifest,
   bundleCompatibility,
@@ -8,8 +8,9 @@ import {
   platformKinds,
   renderResourceFiles,
   toolNameOf,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import type { Audit, Principal, Trx } from "../audit.js";
+import { recordWidgetQueries } from "../dashboard-queries.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
 import { describeChanges } from "../data/plan.js";
 import { HttpError, notFound } from "../errors.js";
@@ -470,6 +471,9 @@ export async function deployBundle(
     }
   }
 
+  // What each dashboard widget names, by key: now that every query it may name is there.
+  await recordWidgetQueries(trx, workspace);
+
   // A binding or a role whose row is gone, though its definition did not change: a group
   // deleted and made again, for one. Its definition is applied again, so the access it gives
   // is what the bundle says. One that changed was applied just now.
@@ -800,6 +804,7 @@ const KIND_ORDER = [
   "connection_group",
   "variable",
   "table",
+  "query",
   "data_source",
   "event",
   "script",
@@ -810,6 +815,9 @@ const KIND_ORDER = [
   "trigger",
   "theme",
   "interface",
+  // After the tables and queries a dashboard asks, and the resources a page is about.
+  "dashboard",
+  "doc",
   "app",
   "binding",
 ];

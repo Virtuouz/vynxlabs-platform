@@ -17,6 +17,8 @@ export type OnDelete = "restrict" | "set_null" | "cascade";
 
 export interface TableColumn {
   type: ColumnType;
+  /** What the column holds, in plain text. */
+  description?: string;
   required?: boolean;
   unique?: boolean;
   default?: unknown;
@@ -80,6 +82,22 @@ export interface TableBody {
   renamedFrom?: string;
   /** The column that stands for a row where another table refers to it. */
   display?: string;
+}
+
+/**
+ * The column that names a row where another table refers to it, when the table says none: its
+ * `name`, else its `title`, else its first text column. Retired columns are never chosen. The
+ * console's pickers and grid, and the server's `expanded` labels, all use this one rule.
+ */
+export function displayGuess(
+  columns: readonly { name: string; type: string; status?: string }[],
+): string | undefined {
+  const text = columns.filter((one) => one.type === "text" && one.status !== "retired");
+  return (
+    text.find((one) => one.name === "name")?.name ??
+    text.find((one) => one.name === "title")?.name ??
+    text[0]?.name
+  );
 }
 
 /** Whether a default can be stored in a column of this type. */

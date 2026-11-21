@@ -1,4 +1,4 @@
-import { duration } from "@vynxlabs/ui";
+import { duration } from "@volvel/ui";
 import { useEffect, useState } from "react";
 
 /** Now, again every second while `active`. */

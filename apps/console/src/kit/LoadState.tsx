@@ -1,4 +1,4 @@
-import { Button, Skeleton } from "@vynxlabs/ui";
+import { Button, Skeleton } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import type { ApiError, Loaded } from "../api.ts";
 
@@ -50,7 +50,7 @@ function RequestId({ id }: { id: string }) {
 }
 
 /**
- * What failed, a way to try again, and the server's request ID to report it
+ * What failed, a way to try again (not for a refusal, which asking again does not change), and the server's request ID to report it
  * with. Shown in place of what could not be loaded; the page around it stays.
  */
 export function ErrorState({
@@ -64,6 +64,8 @@ export function ErrorState({
   onRetry?: (() => void) | undefined;
 }) {
   const requestId = (error as Partial<ApiError> | undefined)?.requestId;
+  // A refusal does not pass by asking again: say whom to ask instead.
+  const forbidden = (error as Partial<ApiError> | undefined)?.status === 403;
   return (
     <div
       role="alert"
@@ -74,9 +76,15 @@ export function ErrorState({
           {what ? <strong className="font-medium">Could not load {what}. </strong> : null}
           {messageOf(error)}
         </span>
+        {forbidden ? (
+          <span>
+            Ask a member who can give access in this tenant (an owner or administrator) to give you
+            a role with it.
+          </span>
+        ) : null}
         {requestId ? <RequestId id={requestId} /> : null}
       </div>
-      {onRetry ? (
+      {onRetry && !forbidden ? (
         <Button size="small" onClick={onRetry}>
           Try again
         </Button>

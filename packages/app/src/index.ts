@@ -6,11 +6,14 @@ export {
   type AppTable,
   api,
   appContext,
+  type Described,
+  type DocPage,
   type Filter,
   type FindOptions,
   type FlowRun,
   FlowRunError,
   flowRun,
+  helpUrl,
   logoUrl,
   type Page,
   type Principal,
@@ -26,9 +29,13 @@ export {
   signOut,
   staffSignInUrl,
   startFlow,
+  type Term,
+  type Terms,
   table,
+  terms,
   totalOf,
 } from "./client.ts";
+export { type Help, HelpPanel, useHelp } from "./help.tsx";
 export {
   type Followed,
   type Query,

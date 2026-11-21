@@ -3,9 +3,9 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
-import { newId, sql } from "@vynxlabs/db";
-import { PATH_PATTERN, validateJson } from "@vynxlabs/manifest";
-import { procProbe } from "@vynxlabs/worker";
+import { newId, sql } from "@volvel/db";
+import { PATH_PATTERN, validateJson } from "@volvel/manifest";
+import { procProbe } from "@volvel/worker";
 import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
@@ -664,7 +664,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 {
                   maxItems: 1000,
                   description:
-                    "Drafts this bundle carries, as `platform pull` took them: each is removed " +
+                    "Drafts this bundle carries, as `volvel pull` took them: each is removed " +
                     "if it is still at that revision. A draft changed in the console since is kept.",
                 },
               ),

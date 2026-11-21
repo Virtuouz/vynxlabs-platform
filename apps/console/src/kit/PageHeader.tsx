@@ -1,6 +1,7 @@
-import { Popover } from "@vynxlabs/ui";
+import { Popover, TermText } from "@volvel/ui";
 import { Info } from "lucide-react";
 import { type ReactNode, useEffect, useRef } from "react";
+import { openHelp, useHelp } from "../help/store.ts";
 import { usePreference } from "../prefs.ts";
 
 /**
@@ -62,12 +63,13 @@ export function PageHeader({
   /** Whether the description is folded, whatever the member has read: for the kit sheet. */
   helpSeen?: boolean;
   /**
-   * A list's heading, its toolbar and its actions on one row from a laptop's
-   * width up, so the list starts higher (P4-1). They wrap below it.
+   * A workbench's compact heading (P4-1): the title and actions on one row, then
+   * the description, then the filters on a row of their own (phase 23 M5).
    */
   oneRow?: boolean;
 }) {
   const [seen] = useSeen(helpKey, Boolean(description));
+  const { topic } = useHelp();
   const folded = Boolean(helpKey && description && (helpSeen ?? seen));
   const heading = (
     <h1
@@ -102,31 +104,48 @@ export function PageHeader({
       </header>
     );
   }
+  const named = typeof title === "string" ? title : "this page";
+  // A description in words may use the workspace's own terms. One made of elements is left as it is.
+  const said = typeof description === "string" ? <TermText>{description}</TermText> : description;
+  // Folded, the description is behind the ⓘ, with the way to the page's help under it.
+  // Shown, or with none, the ⓘ opens the help itself.
   const help = folded ? (
-    <Help title={typeof title === "string" ? title : "this page"}>{description}</Help>
+    <Help title={named} more={topic !== undefined}>
+      {description}
+    </Help>
+  ) : topic !== undefined ? (
+    <button
+      type="button"
+      aria-label={`Help for ${named}`}
+      onClick={() => openHelp()}
+      className="inline-flex size-7 items-center justify-center rounded-control text-ink-subtle hover:bg-sunken hover:text-ink"
+    >
+      <Info aria-hidden="true" size={16} />
+    </button>
   ) : null;
   if (oneRow) {
-    // One row from a laptop's width: the title, the toolbar taking the room, the actions.
-    // Narrower, the toolbar wraps under the title and the actions stay beside the title.
+    // A workbench's heading keeps to little height: the title with its actions at the right,
+    // then the sentence on a first visit, then the filters on a row of their own, full width
+    // (phase 23 M5). The filters are never beside the title.
     return (
-      <header className="flex flex-wrap items-center gap-3">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 [&>h1]:shrink-0">
-          {heading}
-          {help}
-          {state}
+      <header className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            {heading}
+            {help}
+            {state}
+          </div>
+          {actions ? (
+            <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+          ) : null}
         </div>
-        {actions ? (
-          <div className="ml-auto flex shrink-0 items-center gap-2 lg:order-3 lg:ml-0">
-            {actions}
+        {description && !folded ? <p className="m-0 max-w-measure text-ink-muted">{said}</p> : null}
+        {after}
+        {toolbar ? (
+          <div data-header-filters="" className="min-w-0">
+            {toolbar}
           </div>
         ) : null}
-        {toolbar ? (
-          <div className="min-w-0 basis-full lg:order-2 lg:flex-1 lg:basis-0">{toolbar}</div>
-        ) : null}
-        {description && !folded ? (
-          <p className="order-last m-0 max-w-measure basis-full text-ink-muted">{description}</p>
-        ) : null}
-        {after ? <div className="order-last basis-full">{after}</div> : null}
       </header>
     );
   }
@@ -141,7 +160,7 @@ export function PageHeader({
             {state}
           </div>
           {description && !folded ? (
-            <p className="m-0 max-w-measure text-ink-muted">{description}</p>
+            <p className="m-0 max-w-measure text-ink-muted">{said}</p>
           ) : null}
           {meta ? (
             <div className="flex flex-wrap items-center gap-2 pt-0.5 text-meta">{meta}</div>
@@ -152,7 +171,11 @@ export function PageHeader({
         ) : null}
       </div>
       {after}
-      {toolbar}
+      {toolbar ? (
+        <div data-header-filters="" className="min-w-0">
+          {toolbar}
+        </div>
+      ) : null}
     </header>
   );
 }
@@ -171,8 +194,17 @@ export function useSeen(key: string | undefined, has: boolean): [boolean] {
   return [seen && !first.current];
 }
 
-/** The ⓘ beside a list's title that holds what the list is for. */
-export function Help({ title, children }: { title: string; children: ReactNode }) {
+/** The ⓘ beside a list's title that holds what the list is for, and leads to the page's help. */
+export function Help({
+  title,
+  children,
+  more = false,
+}: {
+  title: string;
+  children: ReactNode;
+  /** Whether there is help for the page to lead on to. */
+  more?: boolean;
+}) {
   return (
     <Popover
       title={`About ${title}`}
@@ -187,6 +219,17 @@ export function Help({ title, children }: { title: string; children: ReactNode }
       }
     >
       {children}
+      {more ? (
+        <div className="mt-2">
+          <button
+            type="button"
+            onClick={() => openHelp()}
+            className="border-0 bg-transparent p-0 font-medium text-action underline"
+          >
+            Learn more
+          </button>
+        </div>
+      ) : null}
     </Popover>
   );
 }

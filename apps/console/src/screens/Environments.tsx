@@ -6,7 +6,7 @@ import {
   SelectField,
   SideSheet,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -204,21 +204,29 @@ export function WorkspaceSettings({
   const storedZone = detail.data?.timeZone ?? "UTC";
   const [zone, setZone] = useState<string>();
   const [linked, setLinked] = useState<string | null>();
+  const [name, setName] = useState<string>();
   const [saving, setSaving] = useState(false);
   const draft = {
+    name: name ?? workspace.name,
     timeZone: zone ?? storedZone,
     linkedWorkspaceId: linked !== undefined ? linked : workspace.linkedWorkspaceId,
   };
+  const blank = draft.name.trim() === "";
   const dirty =
-    draft.timeZone !== storedZone || draft.linkedWorkspaceId !== workspace.linkedWorkspaceId;
+    draft.name.trim() !== workspace.name ||
+    draft.timeZone !== storedZone ||
+    draft.linkedWorkspaceId !== workspace.linkedWorkspaceId;
   const discard = () => {
+    setName(undefined);
     setZone(undefined);
     setLinked(undefined);
   };
   const save = async () => {
+    if (blank) return;
     setSaving(true);
     try {
       await api.patch(root, {
+        ...(draft.name.trim() !== workspace.name ? { name: draft.name.trim() } : {}),
         ...(draft.timeZone !== storedZone ? { timeZone: draft.timeZone } : {}),
         ...(draft.linkedWorkspaceId !== workspace.linkedWorkspaceId
           ? { linkedWorkspaceId: draft.linkedWorkspaceId }
@@ -237,8 +245,27 @@ export function WorkspaceSettings({
   return (
     <Page
       title="Workspace settings"
-      description="Pause what starts by itself, make a copy, or delete a dev workspace: these act at once. Where it promotes to and its time zone are saved together, from the bar that appears below."
+      description="Pause what starts by itself, make a copy, or delete a dev workspace: these act at once. Its name, where it promotes to and its time zone are saved together, from the bar that appears below."
     >
+      <section aria-labelledby="workspace-name" className="flex flex-col gap-3">
+        <h2 id="workspace-name" className="m-0 text-title">
+          Name
+        </h2>
+        <Panel className="flex flex-col gap-3 p-4">
+          <div className="w-full max-w-sm">
+            <TextField
+              name="name"
+              label="Workspace name"
+              value={draft.name}
+              maxLength={200}
+              required
+              onChange={setName}
+              hint={`What people read in lists and the switcher. Its address, ${workspace.slug}, does not change.`}
+              {...(blank ? { error: "A workspace needs a name." } : {})}
+            />
+          </div>
+        </Panel>
+      </section>
       <WorkspaceControls
         key={workspace.id}
         base={base}
@@ -318,19 +345,26 @@ function CloneDialog({
   const [safety, setSafety] = useState("on");
   const [problem, setProblem] = useState<ApiError | string>();
   const [clone, setClone] = useState<Clone>();
+  const [posting, setPosting] = useState(false);
+  /** Reads of the copy's progress that failed in a row. The asking stops at three. */
+  const [misses, setMisses] = useState(0);
 
   // The copying goes on after the request is answered. Ask how it is going until it ends.
   useEffect(() => {
     if (clone?.status !== "running" && clone?.status !== "queued") return;
+    if (misses >= 3) return;
     const timer = setInterval(async () => {
       try {
         setClone(await api.get<Clone>(`${base}/workspace-clones/${clone.id}`));
+        setMisses(0);
+        setProblem(undefined);
       } catch (error) {
         setProblem(failed(error));
+        setMisses((n) => n + 1);
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [clone, base]);
+  }, [clone, base, misses]);
 
   const field = (path: string) =>
     problem instanceof ApiError
@@ -348,6 +382,21 @@ function CloneDialog({
     >
       {clone ? (
         <div className="flex flex-col gap-3">
+          {problem ? (
+            <Notice tone="danger">
+              {misses >= 3
+                ? "The copy's progress cannot be read, so this stopped asking. The copy may still be going: close this and look for it in the workspace list. "
+                : "The copy's progress could not be read. Asking again. "}
+              {typeof problem === "string" ? problem : problem.message}
+            </Notice>
+          ) : null}
+          {misses >= 3 ? (
+            <div>
+              <Button size="small" onClick={() => setMisses(0)}>
+                Try again
+              </Button>
+            </div>
+          ) : null}
           {clone.status === "queued" ? (
             <p className="m-0" role="status">
               Waiting for another clone to finish copying. One copies its rows at a time, so the
@@ -395,7 +444,9 @@ function CloneDialog({
           className="flex flex-col gap-3"
           onSubmit={async (event) => {
             event.preventDefault();
+            if (posting) return;
             setProblem(undefined);
+            setPosting(true);
             try {
               setClone(
                 await api.post<Clone>(`${base}/workspaces/${workspace.id}/clones`, {
@@ -407,6 +458,8 @@ function CloneDialog({
               );
             } catch (error) {
               setProblem(error as ApiError);
+            } finally {
+              setPosting(false);
             }
           }}
         >
@@ -455,7 +508,7 @@ function CloneDialog({
           ) : null}
           <div className="mt-1 flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
-            <Button type="submit" variant="primary">
+            <Button type="submit" variant="primary" loading={posting}>
               Clone workspace
             </Button>
           </div>
@@ -792,7 +845,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
         <p className="m-0 text-body-sm text-ink-muted">
           The passphrase protects the secrets in the file. The rest of it, rows and files included,
           can be read by anyone who has the file, so keep it somewhere safe. For a large tenant, use
-          the command line instead: <Code>{"platform tenant export"}</Code>.
+          the command line instead: <Code>{"volvel tenant export"}</Code>.
         </p>
       </form>
     </Page>
@@ -1270,11 +1323,45 @@ export function TenantImport() {
           </div>
           <p className="m-0 text-body-sm text-ink-muted">
             The export must come from an instance at the same version as this one. For a large file,
-            use the command line: <Code>{"platform tenant import <file>"}</Code>.
+            use the command line: <Code>{"volvel tenant import <file>"}</Code>.
           </p>
         </form>
       )}
     </Page>
+  );
+}
+
+/** Renames a tenant. Its slug, which is in its addresses, stays. */
+export function RenameTenantButton({
+  tenant,
+  onDone,
+}: {
+  tenant: { id: string; slug: string; name: string };
+  onDone: () => void;
+}) {
+  return (
+    <Button
+      size="small"
+      onClick={async () => {
+        const name = await ask.prompt({
+          title: `Rename ${tenant.name}`,
+          text: `What people read in lists and the switcher. Its slug, ${tenant.slug}, is in its addresses and stays.`,
+          label: "Name",
+          initial: tenant.name,
+          action: "Rename",
+        });
+        if (!name || name.trim() === tenant.name) return;
+        try {
+          await api.patch(`/tenants/${tenant.id}`, { name: name.trim() });
+          notify.success(`${tenant.name} is now called ${name.trim()}.`);
+          onDone();
+        } catch (error) {
+          notify.error(error);
+        }
+      }}
+    >
+      Rename
+    </Button>
   );
 }
 

@@ -1,9 +1,10 @@
-import { Button, TextField } from "@vynxlabs/ui";
+import { Button, TextField } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
+import { LoadMore, usePagedList } from "../kit/paged.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
@@ -155,21 +156,17 @@ const whereOf = (binding: Binding, workspaces: WorkspaceRef[]) =>
       }`;
 
 export function MemberList({ base, framed }: { base: string; framed?: Framed }) {
-  const members = useLoad<{ items: Member[] }>(`${base}/members?limit=200`);
+  const [search, setSearch] = useUrlParam("q", "");
+  // The server searches, so a member past the first page is found by typing.
+  const members = usePagedList<Member>(`${base}/members`, { search });
   const roles = useLoad<{ items: Role[] }>(`${base}/roles?limit=200`);
   const bindings = useLoad<{ items: Binding[] }>(`${base}/bindings`);
   const workspaces = useLoad<{ items: WorkspaceRef[] }>(`${base}/workspaces`);
-  const [search, setSearch] = useUrlParam("q", "");
   const [selected, setSelected] = useUrlParam("member", undefined, { push: true });
   const [adding, setAdding] = useState(false);
   const needle = search.trim().toLowerCase();
-  const rows = members.data?.items.filter(
-    (row) =>
-      needle === "" ||
-      row.email.toLowerCase().includes(needle) ||
-      row.name.toLowerCase().includes(needle),
-  );
-  const chosen = members.data?.items.find((row) => row.id === selected);
+  const rows = members.items;
+  const chosen = members.items?.find((row) => row.id === selected);
   const held = (bindings.data?.items ?? []).filter(
     (binding) => binding.principalType === "member" && binding.principalId === selected,
   );
@@ -218,6 +215,18 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
         rowKey={(row) => row.id}
         selected={selected}
         onSelect={(row) => setSelected(row.id)}
+        table={{
+          footer: (
+            <LoadMore
+              shown={members.items?.length ?? 0}
+              hasMore={members.hasMore}
+              loading={members.loadingMore}
+              error={members.moreError}
+              noun="members"
+              onMore={members.loadMore}
+            />
+          ),
+        }}
         columns={[
           {
             header: "Name",

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { newId, sql } from "@vynxlabs/db";
+import { newId, sql } from "@volvel/db";
 import type { FastifyRequest } from "fastify";
 import type { Audit, Db, Trx } from "../audit.js";
 import { cleanEmail, createEndUser } from "../endusers.js";

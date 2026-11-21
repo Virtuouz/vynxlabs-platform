@@ -6,7 +6,7 @@ import {
   type PlatformSchema,
   type PoolStats,
   type Transaction,
-} from "@vynxlabs/db";
+} from "@volvel/db";
 import type { FastifyBaseLogger } from "fastify";
 import type { Db, Trx } from "../audit.js";
 import type { Vault } from "../crypto.js";

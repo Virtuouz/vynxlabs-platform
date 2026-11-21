@@ -373,6 +373,37 @@ describe("pulling", () => {
     expect((await alice.get(`${ws()}/resources/orders/other`)).status).toBe(404);
   });
 
+  test("a page of documentation on the branch is pulled as the page it is, and pushed back as the same file", async () => {
+    checkout();
+    const page = "---\ntitle: Handbook\ndescription: How the shop runs.\n---\n\nStart here.\n";
+    commitOnBranch(
+      {
+        "platform/docs/handbook/index.md": page,
+        // Markdown outside the folder of pages is nobody's page.
+        "platform/NOTES.md": "# Notes\n",
+      },
+      "Add the handbook",
+    );
+    const pulled = await alice.post(`${ws()}/git/pull`, {});
+    expect(pulled.body, JSON.stringify(pulled.body)).toMatchObject({
+      status: "done",
+      state: "synced",
+      applied: ["platform/docs/handbook/index"],
+    });
+    const stored = await t.db
+      .selectFrom("resource")
+      .select(["kind", "title", "ownership", "body"])
+      .where("workspace_id", "=", dev)
+      .where("path", "=", "handbook/index")
+      .executeTakeFirstOrThrow();
+    expect(stored).toMatchObject({ kind: "doc", title: "Handbook", ownership: "ui" });
+    expect(stored.body).toEqual({ source: page });
+    // Nothing to push: what the workspace holds is the file, byte for byte.
+    expect((await alice.post(`${ws()}/git/push`, {})).body.status).toBe("nothing");
+    checkout();
+    expect(readFileSync(join(clone, "platform/docs/handbook/index.md"), "utf8")).toBe(page);
+  });
+
   test("a resource changed on both sides is a conflict, settled one way or the other", async () => {
     commitOnBranch(
       { "platform/orders/hello.script.ts": "export default async () => ({ hello: 'theirs' });\n" },
@@ -425,7 +456,7 @@ describe("pulling", () => {
     );
     const pulled = await alice.post(`${ws()}/git/pull`, {});
     expect(pulled.body.status).toBe("failed");
-    expect(pulled.body.problem).toContain("may import only @vynxlabs/sdk and node: modules");
+    expect(pulled.body.problem).toContain("may import only @volvel/sdk and node: modules");
     expect(await sourceOf("orders/hello")).toContain("theirs again");
     expect((await alice.get(`${ws()}/git`)).body).toMatchObject({ state: "error" });
     // Put right on the branch, the next pull goes through.
@@ -594,7 +625,7 @@ describe("safety", () => {
       '# How many devices one person may hold.\nschemaVersion: 1\nbody:\n  default: "5"\n';
     commitOnBranch(
       {
-        "vynxlabs.yaml": "roots:\n  - src\n",
+        "volvel.yaml": "roots:\n  - src\n",
         "src/lending/limit.variable.yaml": written,
       },
       "Keep the limit beside the code",
@@ -785,7 +816,7 @@ describe("safety", () => {
       join(clone, "src/billing/rate.variable.yaml"),
       'schemaVersion: 1\nbody:\n  default: "2"\n',
     );
-    writeFileSync(join(clone, "vynxlabs.yaml"), "roots:\n  - src\n");
+    writeFileSync(join(clone, "volvel.yaml"), "roots:\n  - src\n");
     sh(["add", "-A"], clone);
     sh(
       ["-c", "user.name=Dev", "-c", "user.email=dev@acme.example", "commit", "-q", "-m", "Rate"],

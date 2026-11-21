@@ -1,29 +1,45 @@
 {
-  "name": "@vynxlabs/cli",
+  "name": "@volvel/cli",
   "version": "0.5.0",
-  "private": true,
   "type": "module",
+  "description": "The volvel command: builds a tenant's repository and deploys it, runs scripts, and moves tenants between instances.",
+  "license": "Apache-2.0",
   "bin": {
-    "platform": "./dist/bin.js"
-  },
-  "files": [
-    "dist"
-  ],
-  "devDependencies": {
-    "@vynxlabs/control-plane": "workspace:*",
-    "@vynxlabs/example-acme": "workspace:*",
-    "@vynxlabs/worker": "workspace:*"
-  },
-  "dependencies": {
-    "@marcbachmann/cel-js": "^8.0.0",
-    "@vynxlabs/compose": "workspace:*",
-    "@vynxlabs/manifest": "workspace:*",
-    "esbuild": "^0.28.2"
+    "volvel": "./dist/bin.js"
   },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
+  },
+  "files": [
+    "dist/volvel.mjs"
+  ],
+  "scripts": {
+    "bundle": "node bundle.mjs",
+    "prepack": "node bundle.mjs"
+  },
+  "publishConfig": {
+    "access": "public",
+    "bin": {
+      "volvel": "./dist/volvel.mjs"
+    },
+    "exports": {
+      ".": "./dist/volvel.mjs"
+    }
+  },
+  "dependencies": {
+    "esbuild": "^0.28.2"
+  },
+  "devDependencies": {
+    "@marcbachmann/cel-js": "^8.0.0",
+    "@volvel/compose": "workspace:*",
+    "@volvel/control-plane": "workspace:*",
+    "@volvel/docs-engine": "workspace:*",
+    "@volvel/example-acme": "workspace:*",
+    "@volvel/manifest": "workspace:*",
+    "@volvel/markup": "workspace:*",
+    "@volvel/worker": "workspace:*"
   }
 }

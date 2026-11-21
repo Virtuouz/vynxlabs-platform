@@ -6,10 +6,10 @@
  * the client's secret never leave the control plane.
  */
 import { createHash, randomBytes } from "node:crypto";
-import type { ConnectionOAuth } from "@vynxlabs/db";
-import { newId, sql } from "@vynxlabs/db";
-import { validateJson } from "@vynxlabs/manifest";
-import type { OAuth2Config } from "@vynxlabs/sdk";
+import type { ConnectionOAuth } from "@volvel/db";
+import { newId, sql } from "@volvel/db";
+import { validateJson } from "@volvel/manifest";
+import type { OAuth2Config } from "@volvel/sdk";
 import { type Actor, type Db, mutate, SYSTEM, type Trx } from "../audit.js";
 import { forgetHealth, recordHealth } from "../data/health.js";
 import { guardedFetch } from "../egress.js";

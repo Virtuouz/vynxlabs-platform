@@ -1,4 +1,4 @@
-import type { InterfacePage, WidgetAction } from "@vynxlabs/manifest";
+import type { InterfacePage, WidgetAction } from "@volvel/manifest";
 import {
   Button,
   Closing,
@@ -7,7 +7,7 @@ import {
   Notice,
   SchemaForm,
   useDialogs,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { type ReactNode, useState } from "react";
 import { type DataClient, failure, type Row, type StartedRun, type TargetInfo } from "./data.ts";
 

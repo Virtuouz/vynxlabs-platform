@@ -1,4 +1,4 @@
-import { Button, ContainedArea, Notice, ResultView, TextAreaField } from "@vynxlabs/ui";
+import { Button, ContainedArea, Notice, ResultView, TextAreaField } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { type ApiError, api } from "../api.ts";
 import { failureText } from "../ask.tsx";

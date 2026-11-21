@@ -125,6 +125,7 @@ test("a variable is made with a path, a purpose and a default, and saved as a dr
       kind: "variable",
       schemaVersion: 1,
       body: { description: "How many orders at once.", default: "50" },
+      create: true,
     },
   });
   await screen.findByText("Draft");
@@ -234,6 +235,23 @@ test("a trigger is a webhook, an event or a form, each with its own settings", a
   // It has no script yet, and says so without asking the server.
   await screen.findByText("Choose the script it starts.");
   expect(saved()).toBeUndefined();
+});
+
+test("a trigger says what it is for, and keeps saying it whatever else about it changes", async () => {
+  show(<ResourceEditor root={root} link={link} kind="trigger" path={undefined} editable />);
+  await screen.findByLabelText("Path of the new trigger");
+  const purpose = () => screen.getByLabelText(/^What it is for/) as HTMLInputElement;
+  fireEvent.change(purpose(), { target: { value: "Takes feedback from the shop's site." } });
+  expect(purpose().value).toBe("Takes feedback from the shop's site.");
+  // Another kind of trigger, and that kind's own settings, each write the whole body.
+  fireEvent.change(screen.getByLabelText("It starts the script"), { target: { value: "form" } });
+  expect(purpose().value).toBe("Takes feedback from the shop's site.");
+  fireEvent.change(screen.getByLabelText("Title of the form"), {
+    target: { value: "Tell us how it went" },
+  });
+  expect(purpose().value).toBe("Takes feedback from the shop's site.");
+  fireEvent.change(screen.getByLabelText("It starts the script"), { target: { value: "event" } });
+  expect(purpose().value).toBe("Takes feedback from the shop's site.");
 });
 
 test("a production workspace shows a resource and offers no way to change it", async () => {

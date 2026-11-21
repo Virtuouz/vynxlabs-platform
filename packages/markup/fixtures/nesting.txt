@@ -1,0 +1,44 @@
+Every component inside every other
+
+Card
+
+- Find the order.
+- Check its status.
+
+Cash
+
+Keep the receipt
+
+File it with the day's till slips.
+
+JavaScript
+
+refund(order);
+
+Python
+
+refund(order)
+
+Tabs inside details
+
+One
+
+- refunds/
+  - index.md
+
+Two
+
+Inner
+
+Tabs inside tabs.
+
+- A step that holds a fold.
+  More
+  Inside a step, inside a list item.
+- And one that holds a Ctrl key and a RMA.
+
+Inside a callout
+
+A fold in a callout
+
+- Deeper still.

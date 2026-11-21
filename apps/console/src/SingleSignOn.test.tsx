@@ -181,6 +181,19 @@ test("a provider is connected, tried out, given a domain, turned on and required
   expect(said).toContain("operators of this instance keep theirs");
   await screen.findByRole("button", { name: "Stop requiring it" });
   expect(sent("PATCH")[1]?.body).toEqual({ enforce: true });
+
+  // Turning it off says whom it signs in, and that passwords come back, and asks first.
+  fireEvent.click(screen.getByRole("button", { name: "Turn off" }));
+  const off = await answer("Cancel");
+  expect(off).toContain("Turn off Acme Login?");
+  expect(off).toContain("It signs in members with an email in acme.example.");
+  expect(off).toContain("those members can use a password again");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(sent("PATCH")).toHaveLength(2);
+  fireEvent.click(screen.getByRole("button", { name: "Turn off" }));
+  await answer("Turn off");
+  await screen.findByRole("button", { name: "Turn on" });
+  expect(sent("PATCH")[2]?.body).toEqual({ enabled: false });
 });
 
 test("a SAML provider's settings say what lowering the bar means, and group mapping is saved whole", async () => {

@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { PERMISSION_KINDS } from "@vynxlabs/manifest";
+import { PERMISSION_KINDS } from "@volvel/manifest";
 import { Type } from "typebox";
 import type { Principal } from "../kernel/audit.js";
 import { explainAccess, grants } from "../kernel/authorize.js";

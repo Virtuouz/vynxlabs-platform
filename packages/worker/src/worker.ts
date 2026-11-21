@@ -6,7 +6,7 @@ import { setPriority, tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import {
   allowedCall,
   type Bound,
@@ -248,7 +248,7 @@ export class Worker {
     this.#options = options;
     this.#url = options.url.replace(/\/+$/, "");
     this.#log = options.log ?? (() => {});
-    this.#cacheDir = options.cacheDir ?? join(tmpdir(), `platform-worker-${this.id}`);
+    this.#cacheDir = options.cacheDir ?? join(tmpdir(), `volvel-worker-${this.id}`);
     this.#runner = options.runner ?? defaultRunner();
     this.#probe = options.probe ?? procProbe;
   }

@@ -1,7 +1,6 @@
 import {
   Button,
   CheckboxField,
-  type Column,
   ComboboxField,
   Dialog,
   EmptyState,
@@ -10,15 +9,16 @@ import {
   SelectField,
   SideSheet,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import type { ReactNode } from "react";
 import { useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, notify } from "./ask.tsx";
-import { DataTable } from "./kit/DataTable.tsx";
+import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
 import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
+import { usePagedList } from "./kit/paged.tsx";
 export interface FormField {
   name: string;
   label: string;
@@ -39,7 +39,12 @@ export interface FormField {
    * and how one item becomes a choice. The field is then a searchable list, so
    * nobody types a name that has to match something elsewhere.
    */
-  choose?: { path: string; option: (item: never) => Option | undefined };
+  choose?: {
+    path: string;
+    option: (item: never) => Option | undefined;
+    /** The route pages and takes `?search=`: what is typed is asked of the server. */
+    search?: boolean;
+  };
   /** Shows the field only while this holds for what has been entered so far. */
   when?: (values: Record<string, string>) => boolean;
   placeholder?: string;
@@ -57,8 +62,13 @@ function ChoiceField({
   onChange: (value: string | undefined) => void;
 }) {
   const choose = field.choose as NonNullable<FormField["choose"]>;
-  const list = useLoad<{ items: never[] }>(choose.path);
-  const options = (list.data?.items ?? [])
+  const [typed, setTyped] = useState("");
+  // A route that pages is searched on the server, so what is past the first page is found.
+  const list = usePagedList<never>(choose.path, {
+    search: choose.search ? typed : "",
+    limit: choose.search ? 50 : 0,
+  });
+  const options = (list.items ?? [])
     .map(choose.option)
     .filter((option): option is Option => option !== undefined);
   return (
@@ -66,11 +76,18 @@ function ChoiceField({
       label={field.label}
       options={options}
       value={value}
-      hint={list.error ? list.error.message : field.hint}
+      hint={
+        list.error
+          ? list.error.message
+          : list.hasMore && !typed
+            ? "Showing the first of many. Type to search."
+            : field.hint
+      }
       error={error}
       placeholder={list.loading ? "Loading…" : (field.placeholder ?? "Choose")}
       empty={list.loading ? "Loading…" : "Nothing to choose from."}
       onChange={onChange}
+      {...(choose.search ? { onSearch: setTyped } : {})}
     />
   );
 }
@@ -100,7 +117,7 @@ export interface ListScreenProps<Row> {
   description?: string;
   /** A GET route returning `{ items: Row[] }`. */
   path: string;
-  columns: Column<Row>[];
+  columns: DataColumn<Row>[];
   rowKey: (row: Row) => string;
   empty: { title: string; text?: string };
   create?: CreateConfig;
@@ -116,6 +133,8 @@ export function Page({
   action,
   width = "full",
   mono = false,
+  fill = false,
+  helpKey,
   children,
 }: {
   title: string;
@@ -125,11 +144,31 @@ export function Page({
   mono?: boolean;
   /** `form` keeps a page of fields to a readable measure; `full` lets a list use the room. */
   width?: "full" | "form";
+  /**
+   * The page is a workbench (`nav.ts`): it fills the work area and does not scroll, so what
+   * is under the title takes the height left, and one part of it scrolls.
+   */
+  fill?: boolean;
+  /** Shows the description on a member's first visit, then folds it behind the title's help. */
+  helpKey?: string;
   children: ReactNode;
 }) {
   return (
-    <section className={`flex flex-col gap-5 ${width === "form" ? "max-w-[52rem]" : ""}`}>
-      <PageHeader title={title} mono={mono} description={description} actions={action} />
+    // A page that fills the window keeps its parts closer, so what it holds starts high (P4-1).
+    <section
+      className={`flex flex-col ${fill ? "min-h-0 flex-1 gap-3 px-4 pt-3 pb-4 md:px-8" : "gap-5"} ${
+        width === "form" ? "max-w-[52rem]" : ""
+      }`}
+    >
+      <PageHeader
+        title={title}
+        mono={mono}
+        description={description}
+        actions={action}
+        {...(helpKey ? { helpKey } : {})}
+        // A workbench's heading, as the lists that fill the window have (P4-1).
+        oneRow={fill}
+      />
       {children}
     </section>
   );
@@ -140,13 +179,16 @@ export function CreateDialog({
   open,
   onClose,
   onCreated,
+  initial,
 }: {
   config: CreateConfig;
   open: boolean;
   onClose: () => void;
   onCreated: (result: unknown) => void;
+  /** What the fields hold when it opens: changing something that exists starts from what it is. */
+  initial?: Record<string, string>;
 }) {
-  const [values, setValues] = useState<Record<string, string>>({});
+  const [values, setValues] = useState<Record<string, string>>(initial ?? {});
   const [error, setError] = useState<ApiError>();
   const [unpicked, setUnpicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -157,7 +199,7 @@ export function CreateDialog({
       : error?.fields.find((field) => field.path === `/body/${name}`)?.message;
   // Cancelled means forgotten: what was typed, a password included, does not wait for the next time.
   const close = () => {
-    setValues({});
+    setValues(initial ?? {});
     setError(undefined);
     setUnpicked([]);
     onClose();
@@ -201,7 +243,7 @@ export function CreateDialog({
           const said = config.done?.(result, sent) ?? (config.afterCreate ? undefined : "Created.");
           if (typeof said === "string") notify.success(said);
           else if (said) notify.success(said.message, said.link ? { link: said.link } : {});
-          setValues({});
+          setValues(initial ?? {});
           onCreated(result);
         } catch (caught) {
           setError(caught as ApiError);
@@ -281,7 +323,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
   const [created, setCreated] = useState<ReactNode>();
   const { create } = props;
 
-  const columns: Column<Row>[] = props.rowActions
+  const columns: DataColumn<Row>[] = props.rowActions
     ? [
         ...props.columns,
         { header: "", align: "end", cell: (row) => props.rowActions?.(row, list.reload) },

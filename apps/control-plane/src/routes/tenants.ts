@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { type DataLocation, newId } from "@vynxlabs/db";
+import { type DataLocation, newId } from "@volvel/db";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
@@ -8,7 +8,7 @@ import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
 import { effectivePolicy } from "../kernel/retention.js";
 import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
-import { PageQuery, pageOf } from "../pagination.js";
+import { likeTerm, pageOf, SearchPageQuery } from "../pagination.js";
 import {
   ApiKey,
   insertApiKey,
@@ -117,7 +117,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Tenants the caller can see",
           description: "Every tenant for an operator. Otherwise the tenants the caller belongs to.",
           tags: ["tenancy"],
-          querystring: PageQuery,
+          querystring: SearchPageQuery,
           response: {
             200: pageOf(
               Type.Object({
@@ -144,6 +144,12 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     .where("member_id", "=", principal.id as string),
                 )
               : select.where("id", "=", principal.tenantId as string);
+        }
+        if (query.search) {
+          const term = likeTerm(query.search);
+          select = select.where((eb) =>
+            eb.or([eb(eb.fn("lower", ["name"]), "like", term), eb("slug", "like", term)]),
+          );
         }
         if (args.after) select = select.where("id", ">", args.after);
         const rows = await select
@@ -465,7 +471,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Members of a tenant",
           tags: ["identity"],
           params: TenantParams,
-          querystring: PageQuery,
+          querystring: SearchPageQuery,
           response: { 200: pageOf(Member) },
         },
       },
@@ -482,6 +488,15 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "tenant_member.suspended_at",
           ])
           .where("tenant_member.tenant_id", "=", params.t);
+        if (query.search) {
+          const term = likeTerm(query.search);
+          select = select.where((eb) =>
+            eb.or([
+              eb(eb.fn("lower", ["member.email"]), "like", term),
+              eb(eb.fn("lower", ["member.name"]), "like", term),
+            ]),
+          );
+        }
         if (args.after) select = select.where("member.id", ">", args.after);
         const rows = await select
           .orderBy("member.id")

@@ -1,4 +1,4 @@
-import { Button, Closing, JsonView, Menu, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Closing, JsonView, Menu, Notice, TextField } from "@volvel/ui";
 import {
   CircleCheck,
   CirclePause,
@@ -18,6 +18,8 @@ import { Current } from "../kit/current.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { ago, stamp } from "../kit/format.ts";
 import { FilterChips, HeadNote, Inspector, KeyValues, NextStep } from "../kit/layout.tsx";
+import { triggerKey } from "../kit/objects.tsx";
+import { LoadMore, usePagedList } from "../kit/paged.tsx";
 import { Mono, type RunState, StatePill, stateOf, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
@@ -28,7 +30,7 @@ import { NewScheduleSheet } from "./ScheduleForm.tsx";
 
 // ----- Triggers -----
 
-interface Trigger {
+export interface Trigger {
   path: string;
   node: string;
   type: string;
@@ -78,50 +80,64 @@ const REFUSED: Record<string, string> = {
   paused: "the trigger was paused",
 };
 
-/** A trigger as runs name it: its path, and the node for one inside a flow. */
-const triggerKey = (row: Trigger) => (row.node ? `${row.path}#${row.node}` : row.path);
 /** The page of what a trigger starts. */
 const targetLink = (link: string, row: Trigger) =>
-  row.targetKind === "flow" ? `${link}/flows/${row.script}` : `${link}/scripts/edit/${row.script}`;
+  row.targetKind === "flow" ? `${link}/flows/${row.script}` : `${link}/scripts/${row.script}`;
 const runLink = (link: string, run: NonNullable<Trigger["lastRun"]>) => `${link}/runs/${run.id}`;
 
-/** What starts work by itself, by kind, with each one's last firing and a way to pause just it. */
-export function TriggersWorkbench({
-  root,
-  link,
+/**
+ * What a trigger will do, in one rule for every place that lists triggers: a draft that was
+ * never deployed starts nothing, a pause (its own or the workspace's) stops it, and an
+ * enabled one says when it fires next.
+ */
+export function TriggerState({
+  row,
   workspacePaused,
+}: {
+  row: Pick<Trigger, "paused" | "enabled" | "nextFireAt" | "draft">;
+  workspacePaused: boolean;
+}) {
+  if (row.draft === "new") return <StatePill state="draft">Draft, never deployed</StatePill>;
+  if (row.draft)
+    return (
+      <span className="flex flex-wrap items-center gap-2">
+        {row.paused ? <StatePill state="paused" /> : null}
+        <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
+      </span>
+    );
+  if (row.paused) return <StatePill state="paused" />;
+  if (!row.enabled) return <StatePill state="off" />;
+  if (workspacePaused) return <StatePill state="paused">Workspace paused</StatePill>;
+  if (row.nextFireAt) return <span className="text-ink-muted">Next {ago(row.nextFireAt)}</span>;
+  return <StatePill state="on" />;
+}
+
+/**
+ * Pause and resume for a trigger, wherever it is listed. A pause asks why (shown to
+ * everyone here), and in production asks as a danger. Each shows at once in the list
+ * at `listPath`, and is put back if the server refuses.
+ */
+export function useTriggerPause({
+  root,
   production,
+  listPath,
 }: {
   root: string;
-  link: string;
-  workspacePaused: boolean;
   production: boolean;
+  /** The address the list was loaded from, so the cache can show the change at once. */
+  listPath: string;
 }) {
-  const list = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
   const editCache = useCacheEdit();
-  /** Shows a trigger paused or running at once; the server's answer follows. */
-  const showPaused = (trigger: Trigger, paused: Trigger["paused"]) =>
-    editCache<{ items: Trigger[] }>(`${root}/triggers`, (data) => ({
+  const showPaused = (trigger: Pick<Trigger, "path" | "node">, paused: Trigger["paused"]) =>
+    editCache<{ items: Trigger[] }>(listPath, (data) => ({
       ...data,
       items: data.items.map((one) =>
         triggerKey(one) === triggerKey(trigger) ? { ...one, paused } : one,
       ),
     }));
-  // The kind shown is in the address, so a reload or a link keeps it.
-  const [type, setType] = useUrlParam("kind", "all");
-  // The chosen trigger lives in the address, so a run can link straight to the trigger
-  // that started it.
-  const [chosen, choose] = useQueryValue("trigger");
-  const items = list.data?.items ?? [];
-  const types = [...new Set(items.map((one) => one.type))];
-  const rows = items.filter((one) => type === "all" || one.type === type);
-  const open = items.find((one) => triggerKey(one) === chosen);
-  const pausedCount = items.filter((one) => one.paused).length;
-  const [creating, setCreating] = useState(false);
-  const pauseAt = (trigger: Trigger) =>
+  const pauseAt = (trigger: Pick<Trigger, "path" | "node">) =>
     `${root}/trigger-pauses/${trigger.path}${trigger.node ? `?node=${encodeURIComponent(trigger.node)}` : ""}`;
-  /** Pauses a trigger, with a reason everyone here sees. It shows paused at once. */
-  const pause = async (trigger: Trigger) => {
+  const pause = async (trigger: Pick<Trigger, "path" | "node">) => {
     const reason = await ask.prompt({
       title: `Pause ${trigger.path}?`,
       label: "Why (shown to everyone here)",
@@ -143,7 +159,7 @@ export function TriggersWorkbench({
       notify.error(caught);
     }
   };
-  const resume = async (trigger: Trigger) => {
+  const resume = async (trigger: Pick<Trigger, "path" | "node">) => {
     const undo = showPaused(trigger, null);
     try {
       await api.delete(pauseAt(trigger));
@@ -153,6 +169,34 @@ export function TriggersWorkbench({
       notify.error(caught);
     }
   };
+  return { pause, resume };
+}
+
+/** What starts work by itself, by kind, with each one's last firing and a way to pause just it. */
+export function TriggersWorkbench({
+  root,
+  link,
+  workspacePaused,
+  production,
+}: {
+  root: string;
+  link: string;
+  workspacePaused: boolean;
+  production: boolean;
+}) {
+  const list = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
+  const { pause, resume } = useTriggerPause({ root, production, listPath: `${root}/triggers` });
+  // The kind shown is in the address, so a reload or a link keeps it.
+  const [type, setType] = useUrlParam("kind", "all");
+  // The chosen trigger lives in the address, so a run can link straight to the trigger
+  // that started it.
+  const [chosen, choose] = useQueryValue("trigger");
+  const items = list.data?.items ?? [];
+  const types = [...new Set(items.map((one) => one.type))];
+  const rows = items.filter((one) => type === "all" || one.type === type);
+  const open = items.find((one) => triggerKey(one) === chosen);
+  const pausedCount = items.filter((one) => one.paused).length;
+  const [creating, setCreating] = useState(false);
   // Triggers checked, to pause or resume together.
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const batch = useBatch();
@@ -190,12 +234,11 @@ export function TriggersWorkbench({
           ...(one.node ? { node: one.node } : {}),
         })),
       });
-    const idOf = (one: Trigger) => (one.node ? `${one.path}#${one.node}` : one.path);
     await batch.run(() => send(chosen), {
       title: paused ? "Pausing triggers" : "Resuming triggers",
       done: (count) =>
         `${count} trigger${count === 1 ? "" : "s"} ${paused ? "paused" : "resumed"}.`,
-      retry: (ids) => send(chosen.filter((one) => ids.includes(idOf(one)))),
+      retry: (ids) => send(chosen.filter((one) => ids.includes(triggerKey(one)))),
     });
     setChecked(new Set());
     list.reload();
@@ -271,25 +314,7 @@ export function TriggersWorkbench({
     },
     {
       header: "State",
-      cell: (row) =>
-        row.draft === "new" ? (
-          <StatePill state="draft">Draft, never deployed</StatePill>
-        ) : row.draft ? (
-          <span className="flex flex-wrap items-center gap-2">
-            {row.paused ? <StatePill state="paused" /> : null}
-            <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
-          </span>
-        ) : row.paused ? (
-          <StatePill state="paused" />
-        ) : !row.enabled ? (
-          <StatePill state="off" />
-        ) : workspacePaused ? (
-          <StatePill state="paused">Workspace paused</StatePill>
-        ) : row.nextFireAt ? (
-          <span className="text-ink-muted">Next {ago(row.nextFireAt)}</span>
-        ) : (
-          <StatePill state="on" />
-        ),
+      cell: (row) => <TriggerState row={row} workspacePaused={workspacePaused} />,
     },
     {
       header: "Last fired",
@@ -632,11 +657,18 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
   // The name searched for is in the address, so a reload, a link or a saved view keeps it.
   const [applied, setApplied] = useUrlParam("name", "");
   const [name, setName] = useState(applied);
-  const list = useLoad<{ items: EventRow[] }>(
-    `${root}/events?limit=100${applied ? `&name=${encodeURIComponent(applied)}` : ""}`,
+  // Newest first, a page at a time: older ones are one "Load more" away.
+  const list = usePagedList<EventRow>(
+    `${root}/events${applied ? `?name=${encodeURIComponent(applied)}` : ""}`,
+    { limit: 100 },
   );
   const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
-  const open = list.data?.items.find((one) => one.id === chosen);
+  const onPage = list.items?.find((one) => one.id === chosen);
+  // A link to an event that the pages loaded do not reach is looked up by its ID.
+  const lookup = useLoad<{ items: EventRow[] }>(
+    chosen && list.items && !onPage ? `${root}/events?id=${encodeURIComponent(chosen)}` : null,
+  );
+  const open = onPage ?? lookup.data?.items.find((one) => one.id === chosen);
 
   return (
     <CollectionView
@@ -652,7 +684,7 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
         >
           <div className="w-72 max-w-full">
             <TextField
-              label="Event name"
+              label="Exact event name"
               labelHidden
               name="event"
               value={name}
@@ -715,18 +747,42 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
             ),
         },
       ]}
-      rows={list.data?.items}
+      rows={list.items}
       rowKey={(row) => row.id}
       selected={chosen}
       onSelect={(row) => setChosen(row.id)}
       error={list.error}
       onRetry={list.reload}
+      table={{
+        footer: (
+          <LoadMore
+            shown={list.items?.length ?? 0}
+            hasMore={list.hasMore}
+            loading={list.loadingMore}
+            error={list.moreError}
+            noun="events"
+            onMore={list.loadMore}
+          />
+        ),
+      }}
       empty={{
         title: applied ? `No ${applied} events yet` : "No events yet",
         text: "Declare an event with defineEvent, and publish it from a script with ctx.events.publish.",
       }}
       inspector={
-        open ? (
+        chosen && !open && !lookup.loading && (lookup.error || lookup.data) ? (
+          <Inspector
+            open
+            label="The chosen event"
+            title="Event not found"
+            onClose={() => setChosen(undefined)}
+          >
+            <p className="m-0 text-ink-muted">
+              No event with that ID is in this workspace. It may belong to another workspace, or
+              have been removed with the older ones.
+            </p>
+          </Inspector>
+        ) : open ? (
           <Inspector
             open
             label="The chosen event"
@@ -850,11 +906,24 @@ export function ApprovalsQueue({
   /** Given, the queue is that workspace's own. */
   workspaceId?: string;
 }) {
-  const [state, setState] = useUrlParam<"waiting" | "decided">("show", "waiting");
+  const [state, setState] = useUrlParam<"waiting" | "others" | "decided">("show", "waiting");
   const from = workspaceId ? `${base}/workspaces/${workspaceId}` : base;
   const waiting = useLoad<{ items: Waiting[] }>(
     `${from}/approvals${workspaceId ? "?mine=true" : ""}`,
   );
+  // What waits in this workspace for someone else: everything it can show, less what this
+  // person may decide. Read-only: the server refuses a decision from anyone else.
+  // For the tenant it is what the flows surfaced there, whoever may decide it.
+  const everyone = useLoad<{ items: Waiting[] }>(
+    workspaceId ? `${from}/approvals` : `${from}/approvals?all=true`,
+  );
+  const mineKeys = new Set(
+    (waiting.data?.items ?? []).map((row) => `${row.flowRunId}-${row.node}`),
+  );
+  const others =
+    everyone.data && waiting.data
+      ? everyone.data.items.filter((row) => !mineKeys.has(`${row.flowRunId}-${row.node}`))
+      : undefined;
   const decided = useLoad<{ items: Decided[] }>(
     state === "decided" ? `${from}/approvals/decided` : null,
   );
@@ -879,10 +948,15 @@ export function ApprovalsQueue({
     const comment = await ask.prompt({
       title: `${decision === "approve" ? "Approve" : "Reject"} ${rows.length} decision${rows.length === 1 ? "" : "s"}?`,
       text: rows.length > 3 ? `${names} and ${rows.length - 3} more.` : `${names}.`,
-      label: "Comment, kept with each decision",
+      // As for one: a reject says why, and the reason is kept with each decision.
+      label:
+        decision === "approve"
+          ? "Note (optional), kept with each decision"
+          : "Why are they rejected? Kept with each decision.",
       action: decision === "approve" ? "Approve" : "Reject",
       danger: decision === "reject",
-      required: false,
+      required: decision === "reject",
+      multiline: true,
     });
     if (comment === null) return;
     const send = (subset: typeof rows) =>
@@ -954,13 +1028,74 @@ export function ApprovalsQueue({
         setChosen(undefined);
       }}
       options={[
-        { value: "waiting", label: "Waiting", count: waiting.data?.items.length ?? null },
+        { value: "waiting", label: "Waiting for you", count: waiting.data?.items.length ?? null },
+        {
+          value: "others" as const,
+          label: "Waiting for others",
+          count: others?.length ?? null,
+        },
         { value: "decided", label: "Decided" },
       ]}
     />
   );
   const runLinkOf = (row: { workspaceId: string; flowRunId: string }) =>
     `/t/${tenantId}/workspaces/${row.workspaceId}/runs/${row.flowRunId}`;
+
+  if (state === "others") {
+    return (
+      <CollectionView<Waiting>
+        title="Approvals"
+        helpKey="workspace-approvals"
+        description="Waiting for people other than you. You can see them but not decide them: the step names who may, or your role does not include approving."
+        toolbar={chips}
+        columns={[
+          {
+            header: "Decision",
+            cell: (row) => {
+              const about = detailSummary(row.detail);
+              return (
+                <span className="flex flex-col">
+                  <span className="font-medium">{row.title}</span>
+                  {about ? <span className="text-ink-muted">{about}</span> : null}
+                  <span className="text-meta text-ink-subtle">
+                    <Mono>{row.flow}</Mono> · {nameOf(row.workspaceId)}
+                  </span>
+                </span>
+              );
+            },
+          },
+          {
+            header: "Waiting",
+            cell: (row) => (
+              <StatePill state="waiting">{ago(row.waitingSince).replace(" ago", "")}</StatePill>
+            ),
+          },
+          {
+            header: "Who decides",
+            cell: (row) => (
+              <span className="text-ink-muted">
+                {row.approvers?.text ?? "Anyone who may approve"}
+              </span>
+            ),
+          },
+          {
+            header: "",
+            priority: 2,
+            align: "end",
+            cell: (row) => <Link to={runLinkOf(row)}>Open the run</Link>,
+          },
+        ]}
+        rows={others}
+        rowKey={key}
+        error={everyone.error ?? waiting.error}
+        onRetry={() => {
+          everyone.reload();
+          waiting.reload();
+        }}
+        empty={{ title: "Nothing waits for anyone else" }}
+      />
+    );
+  }
 
   if (state === "decided") {
     return (

@@ -44,7 +44,33 @@
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
           "maxLength": 255,
-          "description": "An interface of the workspace to serve as this app, in place of files of its own. An app has an entry or an interface, never both."
+          "description": "An interface of the workspace to serve as this app, in place of files of its own. An app has an entry, an interface or docs, and only one of them."
+        },
+        "docs": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+          "maxLength": 255,
+          "description": "A top-level folder of the workspace's pages of documentation to serve as this app: every page whose path is under it. Its `index` page is the home page, each folder directly under it is a collection, and folders go as deep as they are written."
+        },
+        "feedback": {
+          "type": "object",
+          "description": "For an app that serves documentation: ask readers whether a page helped, and keep each answer as a row of a table of the workspace's. The table needs the columns `page` (text), `helpful` (boolean), `version` (text) and `at` (timestamp). A reader answers once for each page, and nothing about who they are is kept.",
+          "properties": {
+            "table": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+              "maxLength": 255,
+              "description": "The table the answers are kept in."
+            }
+          },
+          "required": [
+            "table"
+          ],
+          "additionalProperties": false
+        },
+        "published": {
+          "type": "boolean",
+          "description": "For an app that serves documentation: false stops serving it, and keeps its pages and the app. It is served again once this is left out or true, from the next deploy. Default true."
         },
         "fallback": {
           "type": "boolean",
@@ -75,8 +101,21 @@
           "required": [
             "interface"
           ]
+        },
+        {
+          "required": [
+            "docs"
+          ]
         }
       ],
+      "dependentRequired": {
+        "feedback": [
+          "docs"
+        ],
+        "published": [
+          "docs"
+        ]
+      },
       "additionalProperties": false
     }
   },

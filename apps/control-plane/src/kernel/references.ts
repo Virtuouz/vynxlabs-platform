@@ -1,4 +1,4 @@
-import { type FlowBody, flowGrants, flowReferences } from "@vynxlabs/manifest";
+import { type FlowBody, flowGrants, flowReferences } from "@volvel/manifest";
 import type { Db } from "./audit.js";
 
 /** Something a resource can depend on, by kind and name. */

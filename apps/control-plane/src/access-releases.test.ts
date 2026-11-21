@@ -1,5 +1,5 @@
-import { newId } from "@vynxlabs/db";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
+import { newId } from "@volvel/db";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { membershipForProvider } from "./kernel/tenant/releases.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -469,7 +469,7 @@ describe("a workspace's bindings and the tenant's access", () => {
       {
         path: "/body/principal/key",
         message:
-          'no group has the key "night-shift" in this tenant. Add tenant/groups/night-shift.group.yaml to the repository and run `platform tenant release`, or make it in the console',
+          'no group has the key "night-shift" in this tenant. Add tenant/groups/night-shift.group.yaml to the repository and run `volvel tenant release`, or make it in the console',
       },
     ]);
   });
@@ -502,6 +502,16 @@ describe("going back, and asking a second person", () => {
       message: "First release",
       createdBy: "alice",
     });
+    // Asking what going back would do changes nothing, and names what it removes.
+    const before = ((await alice.get(`${at()}/releases`)).body.items as Any[]).length;
+    const preview = await alice.get(`${at()}/releases/${first.id}/rollback`);
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    expect(preview.body).toMatchObject({ number: 1 });
+    expect(preview.body.asks.length).toBeGreaterThan(0);
+    expect(preview.body.allowDelete).toEqual(
+      (preview.body.removes as Any[]).map((one) => `${one.kind}/${one.key}`),
+    );
+    expect(((await alice.get(`${at()}/releases`)).body.items as Any[]).length).toBe(before);
     const back = await alice.post(`${at()}/releases/${first.id}/rollback`);
     expect(back.status, JSON.stringify(back.body)).toBe(201);
     expect(back.body.summary.changes).toEqual([
@@ -509,6 +519,27 @@ describe("going back, and asking a second person", () => {
     ]);
     const latest = ((await alice.get(`${at()}/releases`)).body.items as Any[])[0];
     expect(latest).toMatchObject({ origin: "rollback", message: "Back to release 1" });
+  });
+
+  test("going back says first what it would remove, by name, and removes it only when asked", async () => {
+    const first = ((await alice.get(`${at()}/releases`)).body.items as Any[]).find(
+      (one) => one.number === 1,
+    );
+    const made = await release([
+      ...all,
+      { kind: "group", key: "late-shift", body: { title: "Late shift" } },
+    ]);
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const preview = await alice.get(`${at()}/releases/${first.id}/rollback`);
+    expect(preview.status, JSON.stringify(preview.body)).toBe(200);
+    expect(preview.body.removes).toEqual([
+      { kind: "group", key: "late-shift", label: "Late shift" },
+    ]);
+    expect(preview.body.allowDelete).toEqual(["group/late-shift"]);
+    // Looking changed nothing.
+    expect((await current()).some((one) => one.key === "late-shift")).toBe(true);
+    expect((await alice.post(`${at()}/releases/${first.id}/rollback`)).status).toBe(201);
+    expect((await current()).some((one) => one.key === "late-shift")).toBe(false);
   });
 
   test("with approval on, a release waits, its author cannot approve it, and another person can", async () => {

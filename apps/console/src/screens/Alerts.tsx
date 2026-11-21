@@ -1,4 +1,4 @@
-import { Badge, Button, SelectField } from "@vynxlabs/ui";
+import { Badge, Button, SelectField } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
@@ -101,6 +101,22 @@ export function Alerts({
   const httpConnections = (connections.data?.items ?? []).filter(
     (one) => one.connector === "http" && one.bound,
   );
+  // A value that is set but no longer offered stays listed, so the select does not read "None"
+  // while alerts still go there. Only once the list has loaded: before that, "None" would be a guess.
+  const held = (path: string, offered: { value: string; label: string }[], what: string) =>
+    path && !offered.some((one) => one.value === path)
+      ? [...offered, { value: path, label: `${path} (${what})` }]
+      : offered;
+  const scriptOptions = (scripts.data?.items ?? []).map((one) => ({
+    value: one.path,
+    label: one.path,
+  }));
+  const connectionOptions = httpConnections.map((one) => ({ value: one.path, label: one.path }));
+  const loadErrors: [string, { error?: unknown; reload: () => void }][] = [
+    ["the alert settings", settings],
+    ["the scripts", scripts],
+    ["the connections", connections],
+  ];
 
   return (
     <Page
@@ -109,6 +125,11 @@ export function Alerts({
     >
       <section aria-label="Default" className="flex max-w-2xl flex-col gap-3">
         <h2 className="m-0 text-title font-semibold">This workspace's default</h2>
+        {loadErrors.map(([what, load]) =>
+          load.error ? (
+            <ErrorState key={what} what={what} error={load.error} onRetry={load.reload} />
+          ) : null,
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <SelectField
             name="handler"
@@ -117,7 +138,9 @@ export function Alerts({
             disabled={!editable}
             options={[
               { value: "", label: "None" },
-              ...(scripts.data?.items ?? []).map((one) => ({ value: one.path, label: one.path })),
+              ...(scripts.data || scripts.error
+                ? held(script, scriptOptions, "not found")
+                : scriptOptions),
             ]}
             onChange={setScript}
           />
@@ -128,7 +151,9 @@ export function Alerts({
             disabled={!editable}
             options={[
               { value: "", label: "None" },
-              ...httpConnections.map((one) => ({ value: one.path, label: one.path })),
+              ...(connections.data || connections.error
+                ? held(notifyPath, connectionOptions, "no longer bound")
+                : connectionOptions),
             ]}
             onChange={setNotifyPath}
           />

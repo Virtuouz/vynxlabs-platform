@@ -1,4 +1,4 @@
-import { defineBinding, defineRole } from "@vynxlabs/sdk";
+import { defineBinding, defineRole } from "@volvel/sdk";
 import { review } from "./flows.ts";
 import {
   availability,

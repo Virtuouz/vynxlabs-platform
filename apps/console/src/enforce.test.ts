@@ -32,7 +32,7 @@ test("no screen draws a list of its own", () => {
       if (/<table\b/.test(line) && !why.includes("table-allowed:")) {
         found.push(`${path.slice(here.length)}:${index + 1} draws a <table>`);
       }
-      if (/import \{[^}]*\bTable\b[^}]*\} from "@vynxlabs\/ui"/.test(line)) {
+      if (/import \{[^}]*\bTable\b[^}]*\} from "@volvel\/ui"/.test(line)) {
         found.push(`${path.slice(here.length)}:${index + 1} imports the kit's Table`);
       }
     });
@@ -390,6 +390,133 @@ test("a table that is read has its tools, and a dialog that holds one is big eno
       const opening = lines.slice(index, index + 8).join("\n");
       if (/<(ReadTable|ResultTable)\b/.test(inside) && !/size="table"/.test(opening)) {
         found.push(`${where(path)}:${index + 1} a table in a dialog that is not the table size`);
+      }
+    });
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * Every section in the navigation is measured by `e2e/polish-setup.ts` (shared by the `polish-*.spec.ts` files), or that module
+ * lists it in `NOT_MEASURED` (the polish gate, step 6, `docs/polish`). A section
+ * added to `nav.ts` without either fails here, so its layout is not left unseen by
+ * default, as the data screens were (A2-31).
+ */
+test("every section in the navigation is measured for polish, or says it is not", async () => {
+  const { INSTANCE_SECTIONS, TENANT_SECTIONS, WORKSPACE_SECTIONS } = await import("./nav.ts");
+  const sections = [
+    ...Object.values(WORKSPACE_SECTIONS).flatMap((list) => list.map((s) => `workspace/${s.slug}`)),
+    ...TENANT_SECTIONS.map((s) => `tenant/${s.slug}`),
+    ...INSTANCE_SECTIONS.map((s) => `instance/${s.slug}`),
+  ];
+  const spec = readFileSync(join(here, "../../../e2e/polish-setup.ts"), "utf8");
+  const start = spec.indexOf("export const workbenches = (");
+  const listed = spec.slice(start, spec.indexOf("export const NOT_MEASURED", start));
+  const measured = new Set<string>();
+  for (const [, slug] of listed.matchAll(/\$\{ctx\.ws\}\/([\w-]+)/g))
+    measured.add(`workspace/${slug}`);
+  for (const [, slug] of listed.matchAll(/\/t\/\$\{ctx\.tenant\.id\}\/([\w-]+)/g)) {
+    measured.add(`tenant/${slug}`);
+  }
+  if (/\/t\/\$\{ctx\.tenant\.id\}`/.test(listed)) measured.add("tenant/overview");
+  for (const [, slug] of listed.matchAll(/"\/instance\/([\w-]+)"/g))
+    measured.add(`instance/${slug}`);
+  if (/\["tenants", "\/"\]/.test(listed)) measured.add("instance/");
+  const block = spec.slice(spec.indexOf("export const NOT_MEASURED"));
+  const skipped = new Set(
+    [...block.slice(0, block.indexOf("];")).matchAll(/"([\w/-]+)"/g)].map(([, key]) => key ?? ""),
+  );
+  expect(start).toBeGreaterThan(0);
+  expect(sections.filter((key) => !measured.has(key) && !skipped.has(key))).toEqual([]);
+  // A section measured now comes off the list, and the list names only real sections.
+  expect([...skipped].filter((key) => measured.has(key) || !sections.includes(key))).toEqual([]);
+});
+
+/**
+ * A list is a screen of its own (`ListScreen` draws a page header with an `h1`), so one
+ * drawn inside another screen is `as="section"`, or the page has two `h1`s (R-01,
+ * phase 22 M7). A component that renders a `ListScreen` and is drawn by a screen that has
+ * its own `PageHeader` carries that choice: it passes `as` on, and the one who draws it says
+ * which. `list-allowed:` on the line before says why a list stands alone on a page that
+ * has a header.
+ */
+test("a list drawn inside another screen is a section, not a second page", () => {
+  const found: string[] = [];
+  const all = [...files(join(here, "screens")), ...files(join(here, "kit"))];
+  const tagAt = (lines: string[], index: number, name: string) => {
+    // The opening tag, up to where its props are done: a list's `path`, or the line that closes it.
+    let end = index;
+    const done =
+      name === "ListScreen"
+        ? (line: string) => /^\s*(path|columns)=/.test(line)
+        : (line: string) => /\/?>\s*$/.test(line) && !/=>\s*$/.test(line);
+    while (
+      end < lines.length - 1 &&
+      !done(lines[end + (name === "ListScreen" ? 1 : 0)] as string)
+    ) {
+      end++;
+    }
+    return lines.slice(index, end + 1).join("\n");
+  };
+  // Components that draw a list, and whether they let their caller say `as`.
+  const lists = new Map<string, "page" | "passes">();
+  for (const path of all) {
+    const lines = readFileSync(path, "utf8").split("\n");
+    let owner = "";
+    lines.forEach((line, index) => {
+      owner = /^(?:export )?function ([A-Z]\w*)\b/.exec(line)?.[1] ?? owner;
+      if (!/<ListScreen\b/.test(line) || owner === "") return;
+      const tag = tagAt(lines, index, "ListScreen");
+      const as = /\bas=(\{[^}]*\}|"\w+")/.exec(tag)?.[1];
+      if (as === undefined) lists.set(owner, "page");
+      else if (as.startsWith("{") && !lists.has(owner)) lists.set(owner, "passes");
+    });
+  }
+  for (const path of all) {
+    const text = readFileSync(path, "utf8");
+    if (!/<PageHeader\b/.test(text)) continue;
+    const lines = text.split("\n");
+    lines.forEach((line, index) => {
+      if (/list-allowed:/.test(`${lines[index - 1]}${lines[index - 2]}`)) return;
+      const used = /<(ListScreen|[A-Z]\w*)\b/g;
+      for (const [, name] of line.matchAll(used)) {
+        if (name !== "ListScreen" && !lists.has(name as string)) continue;
+        if (/^\s*(export )?function /.test(line)) continue;
+        const tag = tagAt(lines, index, name as string);
+        if (!/\bas="section"/.test(tag)) {
+          found.push(`${where(path)}:${index + 1} draws <${name}> as a page inside a screen`);
+        }
+      }
+    });
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * A key typed into a field is the field's only when it is one the field uses. A handler
+ * that stops every key from going further (an unconditional `stopPropagation()` as its
+ * first statement) takes F1 and ⌘K away as well (A3-08, phase 22 M7). It stops the keys
+ * it handles, under an `if`, or says why with `keys-allowed:` on the line before.
+ */
+test("no key handler on a field stops every key", () => {
+  const found: string[] = [];
+  for (const path of new Set(drawn())) {
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (/keys-allowed:/.test(`${lines[index - 1]}${lines[index - 2]}`)) return;
+      // A handler's opening: `const keys = (event…) => {`, `onKeyDown={(event) => {`,
+      // `function onKeys(event…) {`; its first statement is on the next line.
+      const opens =
+        /\b(onKeyDown|onKeyDownCapture|onKeyUp)=\{\s*\(?\w*\)?\s*(:[^=]*)?=>\s*\{\s*$/.test(line) ||
+        /\b(const|function)\s+\w*[kK]ey\w*\b.*(=>\s*)?\{\s*$/.test(line);
+      if (/\bonKey(Down|Up)=\{\s*\(\w*\)\s*=>\s*\w+\.stopPropagation\(\)\s*\}/.test(line)) {
+        found.push(`${where(path)}:${index + 1} stops every key`);
+      }
+      if (!opens) return;
+      let next = index + 1;
+      while (/^\s*(\/\/.*)?$/.test(lines[next] ?? "")) next++;
+      if (/^\s*\w+\.stopPropagation\(\);?\s*$/.test(lines[next] ?? "")) {
+        found.push(`${where(path)}:${next + 1} stops every key`);
       }
     });
   }

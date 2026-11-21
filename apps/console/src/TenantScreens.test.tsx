@@ -44,6 +44,7 @@ test("the tenant's overview says what needs attention, and how each workspace st
   routes[`GET ${base}/summary`] = () => ({
     workspaces: 2,
     approvalsWaiting: 2,
+    approvalsWaitingMine: 1,
     domainsToFix: 0,
     workersOnline: 1,
     operatorAccessActive: null,
@@ -85,7 +86,8 @@ test("the tenant's overview says what needs attention, and how each workspace st
   });
   show(<TenantOverview base={base} tenantId="t1" />);
   expect(await screen.findByRole("heading", { name: "Acme" })).toBeTruthy();
-  expect(await screen.findByText("2 approvals waiting")).toBeTruthy();
+  expect(await screen.findByText("1 approval waiting for you")).toBeTruthy();
+  expect(screen.getByText(/1 more waits for someone else/)).toBeTruthy();
   expect(screen.getByRole("link", { name: "Decide" }).getAttribute("href")).toBe("/t/t1/approvals");
   expect(await screen.findByText("3 failed runs today")).toBeTruthy();
   expect(await screen.findByText("2 drafts")).toBeTruthy();
@@ -95,6 +97,27 @@ test("the tenant's overview says what needs attention, and how each workspace st
   // Moving between workspaces is not a change, even where an older entry says so.
   expect(screen.queryByTitle("member.recent_set")).toBeNull();
   expect(screen.getByTitle("secret.set")).toBeTruthy();
+});
+
+test("the tenant's overview says when every approval waits for someone else", async () => {
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme" });
+  routes[`GET ${base}/summary`] = () => ({
+    workspaces: 1,
+    approvalsWaiting: 2,
+    approvalsWaitingMine: 0,
+    domainsToFix: 0,
+    workersOnline: 1,
+    operatorAccessActive: null,
+    members: 4,
+  });
+  routes[`GET ${base}/workspaces`] = () => ({ items: [] });
+  routes[`GET ${base}/audit`] = () => ({ items: [] });
+  show(<TenantOverview base={base} tenantId="t1" />);
+  expect(await screen.findByText("2 approvals waiting for someone else to decide")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "See who" }).getAttribute("href")).toBe(
+    "/t/t1/approvals?show=others",
+  );
+  expect(screen.queryByRole("link", { name: "Decide" })).toBeNull();
 });
 
 const me = {

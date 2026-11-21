@@ -1,10 +1,10 @@
-import { Button, Notice, TextField } from "@vynxlabs/ui";
+import { Button, Notice, TextField } from "@volvel/ui";
 import { type ReactNode, useState } from "react";
-import { useLoad } from "../api.ts";
 import { type CreateConfig, CreateDialog } from "../ListScreen.tsx";
 import { useUrlState } from "../router.tsx";
 import { type CollectionColumn, CollectionView } from "./CollectionView.tsx";
 import { Inspector } from "./layout.tsx";
+import { LoadMore, usePagedList } from "./paged.tsx";
 
 const LIST_URL = { q: { type: "string" }, item: { type: "string", push: true } } as const;
 
@@ -23,6 +23,7 @@ export function ListCollection<Row>({
   create,
   rowActions,
   search,
+  paged,
   inspect,
 }: {
   title: string;
@@ -36,6 +37,12 @@ export function ListCollection<Row>({
   rowActions?: (row: Row, reload: () => void) => ReactNode;
   /** The words a row is found by, for the search box. Without it there is no box. */
   search?: (row: Row) => string;
+  /**
+   * The route pages and takes `?search=`: the box then asks the server, so a
+   * row past the first page is found, and "Load more" follows the list.
+   * `search` then only says there is a box.
+   */
+  paged?: boolean;
   /** What the inspector shows for the chosen row. Without it rows are not chosen. */
   inspect?: {
     title: (row: Row) => ReactNode;
@@ -44,7 +51,6 @@ export function ListCollection<Row>({
     footer?: (row: Row, reload: () => void, close: () => void) => ReactNode;
   };
 }) {
-  const list = useLoad<{ items: Row[] }>(path);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<ReactNode>();
   // The search and the open row are in the address: a reload or a link keeps them,
@@ -55,11 +61,18 @@ export function ListCollection<Row>({
   const chosen = url.item;
   const setChosen = (key: string | undefined) => setUrl({ item: key });
 
+  const hasSearch = Boolean(search || paged);
   const wanted = query.trim().toLowerCase();
-  const rows = list.data?.items.filter(
-    (row) => !search || wanted === "" || search(row).toLowerCase().includes(wanted),
-  );
-  const row = chosen ? list.data?.items.find((one) => rowKey(one) === chosen) : undefined;
+  const list = usePagedList<Row>(path, {
+    search: paged ? query : "",
+    limit: paged ? 50 : 0,
+  });
+  const rows = paged
+    ? list.items
+    : list.items?.filter(
+        (row) => !search || wanted === "" || search(row).toLowerCase().includes(wanted),
+      );
+  const row = chosen ? list.items?.find((one) => rowKey(one) === chosen) : undefined;
   const close = () => setChosen(undefined);
 
   const createButton = create ? (
@@ -92,10 +105,10 @@ export function ListCollection<Row>({
         description={description}
         actions={createButton}
         toolbar={
-          created || search ? (
+          created || hasSearch ? (
             <div className="flex flex-col gap-3">
               {created ? <Notice tone="attention">{created}</Notice> : null}
-              {search ? (
+              {hasSearch ? (
                 <div className="w-full max-w-sm">
                   <TextField
                     label={`Search ${title.toLowerCase()}`}
@@ -128,15 +141,29 @@ export function ListCollection<Row>({
           ) : null
         }
         empty={
-          wanted !== "" && list.data && list.data.items.length > 0
+          wanted !== "" && list.items && (paged || list.items.length > 0)
             ? { title: "Nothing matches", text: "Try fewer or other words." }
             : { ...empty, action: createButton }
         }
         error={list.error}
         onRetry={list.reload}
-        loading={list.loading && !list.data}
+        loading={list.loading && !list.items}
         table={{
           onRetry: list.reload,
+          ...(paged
+            ? {
+                footer: (
+                  <LoadMore
+                    shown={list.items?.length ?? 0}
+                    hasMore={list.hasMore}
+                    loading={list.loadingMore}
+                    error={list.moreError}
+                    noun={title.toLowerCase()}
+                    onMore={list.loadMore}
+                  />
+                ),
+              }
+            : {}),
           ...(wanted !== "" ? { filtered: { onClear: () => setQuery("") } } : {}),
         }}
       />

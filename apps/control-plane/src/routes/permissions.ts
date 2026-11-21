@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { newId, type PrincipalType as PrincipalKind } from "@vynxlabs/db";
+import { newId, type PrincipalType as PrincipalKind } from "@volvel/db";
 import { Type } from "typebox";
 import type { Audit, Db, Trx } from "../kernel/audit.js";
 import { PERMISSION_PATTERN } from "../kernel/authorize.js";

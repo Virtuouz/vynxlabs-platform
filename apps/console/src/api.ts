@@ -181,6 +181,8 @@ export interface Loaded<T> {
   loading: boolean;
   /** When the data shown was read, for "Updated 14:02" while nothing is live. */
   updatedAt?: number | undefined;
+  /** What shows is the answer to an earlier path, kept while the new one loads. */
+  stale?: boolean | undefined;
   reload: () => void;
 }
 
@@ -219,6 +221,7 @@ export function useLoad<T>(
     error: query.error ?? undefined,
     loading: query.isPending || query.isFetching,
     updatedAt: query.dataUpdatedAt || undefined,
+    stale: query.isPlaceholderData,
     reload,
   };
 }

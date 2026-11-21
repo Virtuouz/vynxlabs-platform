@@ -52,7 +52,9 @@ export function JsonView({ value, label, tone = "plain", maxHeight = "18rem" }: 
   const [copied, setCopied] = useState(false);
   const text = value === undefined ? "" : JSON.stringify(value, null, 2);
   return (
+    // A recessed well (07 §7.5): a border of its own wherever it sits, panels included.
     <div
+      data-well
       className={`group relative rounded-control border ${
         tone === "danger" ? "border-danger/40 bg-danger-soft" : "border-line bg-sunken"
       }`}

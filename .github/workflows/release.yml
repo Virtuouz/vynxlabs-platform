@@ -1,0 +1,110 @@
+name: Release
+
+# A tag `v1.2.3` publishes that version: the packages to npm under `latest`,
+# and the image to the registry. A push to main publishes `1.2.3-next.<commit>`
+# under `next`, so that what is about to be released can be tried.
+#
+# Nothing here publishes until the repository says it may: the variable
+# RELEASE_ENABLED must be `true`. Until then every run builds, checks and
+# rehearses the release, and stops there. It needs the secrets NPM_TOKEN, and
+# DOCKERHUB_USERNAME with DOCKERHUB_TOKEN.
+
+on:
+  push:
+    tags: ["v*"]
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build, rehearse, publish
+    runs-on: ubuntu-latest
+    services:
+      # The API's page of reference is written by the app itself, which needs a database.
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+
+      - name: The version this is
+        id: version
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            base=$(node -p "require('./packages/sdk/package.json').version")
+            echo "version=${base}-next.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+            echo "tag=next" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Give every published package that version
+        run: node scripts/release-version.mjs "${{ steps.version.outputs.version }}"
+
+      # The reference is written from the code of this version, the API's page included.
+      - run: pnpm docs:generate
+      - run: pnpm build
+      - run: pnpm docs:check
+      - name: Rehearse the release
+        run: node scripts/release-check.mjs
+
+      - name: Publish the packages
+        if: vars.RELEASE_ENABLED == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for package in markup docs-engine docs ui app sdk cli; do
+            pnpm --filter "@volvel/${package}" publish --no-git-checks --access public --tag "${{ steps.version.outputs.tag }}"
+          done
+
+      - name: Sign in to the image registry
+        if: vars.RELEASE_ENABLED == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build the image, and push it when releasing
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ vars.RELEASE_ENABLED == 'true' }}
+          tags: |
+            volvel/volvel:${{ steps.version.outputs.version }}
+            volvel/volvel:${{ steps.version.outputs.tag }}
+
+      # The website is another repository. It is told when there is a version to build
+      # its documentation from, once it exists to be told: set DOCS_SITE_REPOSITORY to it.
+      - name: Tell the website
+        if: vars.RELEASE_ENABLED == 'true' && vars.DOCS_SITE_REPOSITORY != ''
+        env:
+          GH_TOKEN: ${{ secrets.DOCS_SITE_TOKEN }}
+        run: |
+          gh api "repos/${{ vars.DOCS_SITE_REPOSITORY }}/dispatches" \
+            -f event_type=volvel-docs \
+            -f "client_payload[version]=${{ steps.version.outputs.version }}" \
+            -f "client_payload[tag]=${{ steps.version.outputs.tag }}"

@@ -1,8 +1,9 @@
-import { Appear, Menu, SideSheet } from "@vynxlabs/ui";
+import { Appear, Menu, SideSheet, Tooltip } from "@volvel/ui";
 import {
   ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
+  CircleHelp,
   CircleX,
   Keyboard,
   KeyRound,
@@ -19,6 +20,9 @@ import {
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, isOperator, type Me, useLoad } from "./api.ts";
+import { WorkspaceGlossary } from "./help/glossary.tsx";
+import { HelpDock, useHelpInAddress } from "./help/HelpDock.tsx";
+import { openHelp, setSectionTopic, toggleHelp, useHelp } from "./help/store.ts";
 import { BrandMark, useBrand } from "./kit/brand.tsx";
 import {
   CommandPalette,
@@ -86,6 +90,8 @@ export interface WorkspaceCounts {
   failedRuns?: { count: number | null; since: string };
   unboundConnections: number | null;
   approvalsWaiting: number | null;
+  /** Of those, the ones the viewer may decide. An older server does not send it. */
+  approvalsWaitingMine?: number | null;
   git: { state: string } | null;
   version: number | null;
   linked: {
@@ -100,6 +106,8 @@ export interface WorkspaceCounts {
 export interface TenantCounts {
   workspaces: number | null;
   approvalsWaiting: number | null;
+  /** Of those, the ones the viewer may decide. An older server does not send it. */
+  approvalsWaitingMine?: number | null;
   domainsToFix: number | null;
   workersOnline: number | null;
   operatorAccessActive: number | null;
@@ -651,6 +659,11 @@ function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           onSelect: () => navigate("/account/api-keys"),
         },
         {
+          label: "Help for this page",
+          icon: <CircleHelp aria-hidden="true" size={16} />,
+          onSelect: () => openHelp(),
+        },
+        {
           label: "Keyboard shortcuts",
           icon: <Keyboard aria-hidden="true" size={16} />,
           onSelect: openShortcuts,
@@ -682,6 +695,11 @@ export function Shell({
   const brand = useBrand();
   const operator = isOperator(me);
   const where = whereIs(path, operator);
+  // The help follows where the reader is. A page or a dialog can say its own over this.
+  useEffect(() => setSectionTopic(where.help), [where.help]);
+  useShortcut("help", toggleHelp);
+  useHelpInAddress();
+  const help = useHelp();
   const workspaceId = where.workspaceId;
   // One stream of run events for the tenant on screen, for every screen of the tab.
   useTenantStream(tenantId);
@@ -1215,6 +1233,19 @@ export function Shell({
                 <span className="font-mono">{failed}</span> failed run{failed === 1 ? "" : "s"}
               </Link>
             ) : null}
+            <Tooltip label="Help for this page" keys="F1">
+              <button
+                type="button"
+                onClick={toggleHelp}
+                aria-label="Help for this page"
+                aria-expanded={help.open}
+                className={`flex size-8 shrink-0 items-center justify-center rounded-control hover:bg-surface hover:text-ink md:size-7 ${
+                  help.open ? "bg-surface text-ink" : "text-ink-muted"
+                }`}
+              >
+                <CircleHelp aria-hidden="true" size={16} />
+              </button>
+            </Tooltip>
             <button
               type="button"
               onClick={openPalette}
@@ -1243,7 +1274,9 @@ export function Shell({
         >
           {where.workbench ? (
             <ErrorBoundary resetOn={path} what="This page">
-              {children}
+              <WorkspaceGlossary tenantId={tenantId} workspaceId={workspaceId}>
+                {children}
+              </WorkspaceGlossary>
             </ErrorBoundary>
           ) : (
             <div
@@ -1255,12 +1288,16 @@ export function Shell({
               }`}
             >
               <ErrorBoundary resetOn={path} what="This page">
-                {children}
+                <WorkspaceGlossary tenantId={tenantId} workspaceId={workspaceId}>
+                  {children}
+                </WorkspaceGlossary>
               </ErrorBoundary>
             </div>
           )}
         </main>
       </div>
+
+      <HelpDock tenantId={tenantId} workspaceId={workspaceId} />
 
       <SideSheet
         open={drawer}

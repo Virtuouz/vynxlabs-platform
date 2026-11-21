@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import { ACCESS_ACTIONS, tenantAccess } from "./access.js";
 import { BuildError, type Built, buildRepository, describeBundle } from "./build.js";
+import { type CommandName, usage } from "./commands.js";
 import { startDevServer } from "./dev.js";
 import { CliError } from "./errors.js";
 import { type Followed, followRun, Stopped } from "./follow.js";
@@ -27,74 +28,9 @@ export interface Settings {
   token: string;
 }
 
-const USAGE = `Usage: platform <command>
-
-Sign in
-  login --url <url> --token <api key>   Save the instance and key to use
-  whoami                                Show who the saved key acts as
-  status                                Show the instance's version and readiness
-
-Work on a tenant repository
-  init [directory]                      Write a starter repository
-  build                                 Build the bundle and list what it contains
-  schemas                               Write each kind's file schema into .platform/schemas,
-                                        and tell VS Code which files each checks, so that
-                                        <name>.<kind>.yaml completes and is checked as typed
-  run <script> [--input <json>]         Run one script on this machine
-  run <script|flow> --remote --tenant <slug> --workspace <slug> [--input <json>|@file]
-                                        Run it on the platform, from this build, in a dev
-                                        workspace, and follow it. Nothing is deployed
-  pull --tenant <slug> --workspace <slug> [--deployed] [--force]
-                                        Write the workspace's console resources, drafts
-                                        included, into platform/. A file changed here is
-                                        kept unless --force
-  dev [app] --tenant <slug> --workspace <slug> [--port <n>]
-                                        Serve an app from its source, with reload, against
-                                        that workspace's data, as yourself
-  deploy --tenant <slug> --workspace <slug> [--allow-delete <path>]
-                                        Build, upload and activate the bundle
-  promote --tenant <slug> --workspace <slug> [--preview] [--allow-delete <path>]
-          [--confirm-breaking]
-                                        Activate this workspace's bundle in the workspace
-                                        it is linked to. Nothing is rebuilt
-
-A tenant's access: its groups, service accounts, roles and what they are given
-  tenant plan --tenant <slug>           What releasing the repository's files would change
-  tenant release --tenant <slug> [--message <text>] [--allow-delete <kind>/<key>]
-                                        Make the tenant's access what the files say. Files are
-                                        named <key>.<kind>.yaml, such as
-                                        tenant/groups/tech-desk.group.yaml
-  tenant pull --tenant <slug>           Write the tenant's access as it is into the repository
-  tenant releases --tenant <slug>       The releases there were, newest first
-  tenant approve|decline|withdraw <number> --tenant <slug> [--comment <text>]
-                                        Answer a release that waits for a second person
-  tenant rollback <number> --tenant <slug>
-                                        Go back to the access a release left
-
-Move a tenant
-  tenant export --tenant <slug> --out <file> [--history]
-                                        Write everything the tenant has to one file. The file's
-                                        passphrase is read from PLATFORM_EXPORT_PASSPHRASE
-  tenant import <file> [--slug <slug>] [--location <name>]
-                                        Bring an exported tenant into this instance. Operators only
-
-See what ran
-  runs --tenant <slug> --workspace <slug> [run id]
-                                        List recent runs, or show one with its logs
-  runs cancel --tenant <slug> --workspace <slug> [--queued|--all] [--older-than <s>]
-                                        Cancel the workspace's queued runs; with --all, those
-                                        going too, and its flow runs
-  logs <run id> --tenant <slug> --workspace <slug> [-f]
-                                        A run's or flow run's logs; with -f, follow it to its
-                                        end. Exits 0 when it succeeded, 1 failed, 3 canceled
-
-build, run, dev, deploy and pull read the repository in the current directory, or --dir <path>.
-Create an API key in the console under your account menu.
-PLATFORM_URL and PLATFORM_TOKEN override the saved settings.`;
-
 export function settingsPath(env: Io["env"]): string {
   const base = env.XDG_CONFIG_HOME ?? join(env.HOME ?? homedir(), ".config");
-  return join(base, "vynxlabs-platform", "config.json");
+  return join(base, "volvel", "config.json");
 }
 
 export async function loadSettings(env: Io["env"]): Promise<Settings> {
@@ -104,10 +40,10 @@ export async function loadSettings(env: Io["env"]): Promise<Settings> {
   } catch {
     // Not signed in yet. The environment may still supply everything.
   }
-  const url = env.PLATFORM_URL ?? saved.url;
-  const token = env.PLATFORM_TOKEN ?? saved.token;
+  const url = env.VOLVEL_URL ?? saved.url;
+  const token = env.VOLVEL_TOKEN ?? saved.token;
   if (!url || !token) {
-    throw new CliError("Not signed in. Run: platform login --url <url> --token <api key>");
+    throw new CliError("Not signed in. Run: volvel login --url <url> --token <api key>");
   }
   return { url, token };
 }
@@ -511,10 +447,10 @@ async function promote(args: string[], io: Io) {
 
 /** The passphrase for an export file. Kept out of the command line, where it would be visible to others. */
 function passphrase(io: Io): string {
-  const value = io.env.PLATFORM_EXPORT_PASSPHRASE;
+  const value = io.env.VOLVEL_EXPORT_PASSPHRASE;
   if (!value) {
     throw new CliError(
-      "Set PLATFORM_EXPORT_PASSPHRASE to the passphrase for the export file. It protects every secret the tenant has: make it long, and pass it on separately from the file.",
+      "Set VOLVEL_EXPORT_PASSPHRASE to the passphrase for the export file. It protects every secret the tenant has: make it long, and pass it on separately from the file.",
     );
   }
   return value;
@@ -588,7 +524,7 @@ async function tenant(args: string[], io: Io) {
       options: { slug: { type: "string" as const }, location: { type: "string" as const } },
     });
     const [path] = positionals;
-    if (!path) throw new CliError("This needs the export file: platform tenant import <file>");
+    if (!path) throw new CliError("This needs the export file: volvel tenant import <file>");
     const secret = passphrase(io);
     const file = resolve(path);
     const { size } = await stat(file).catch(() => {
@@ -647,7 +583,7 @@ async function tenant(args: string[], io: Io) {
     for (const line of report.notCarried) io.out(`Not carried: ${line}`);
     return;
   }
-  throw new CliError("Use: platform tenant export ..., or: platform tenant import <file>");
+  throw new CliError("Use: volvel tenant export ..., or: volvel tenant import <file>");
 }
 
 export const clock = (iso: string) => iso.replace("T", " ").slice(0, 19);
@@ -778,7 +714,7 @@ async function runs(args: string[], io: Io) {
   }
   if (run.status === "queued" || run.status === "running") {
     io.out(
-      `To follow it: platform logs ${id} -f --tenant ${values.tenant} --workspace ${values.workspace}`,
+      `To follow it: volvel logs ${id} -f --tenant ${values.tenant} --workspace ${values.workspace}`,
     );
   }
 }
@@ -799,7 +735,7 @@ async function logs(args: string[], io: Io): Promise<number> {
   });
   const [id] = positionals;
   if (!id)
-    throw new CliError("Say which run: platform logs <run id> --tenant <slug> --workspace <slug>");
+    throw new CliError("Say which run: volvel logs <run id> --tenant <slug> --workspace <slug>");
   const settings = await loadSettings(io.env);
   const { base, tenant } = await locate(settings, values.tenant, values.workspace);
   const watch = interruptible();
@@ -846,7 +782,7 @@ async function runRemote(args: string[], io: Io): Promise<number> {
     },
   });
   const [path] = positionals;
-  if (!path) throw new CliError("Say what to run: platform run <script or flow path> --remote ...");
+  if (!path) throw new CliError("Say what to run: volvel run <script or flow path> --remote ...");
   const input = await inputOf(values.input);
   const settings = await loadSettings(io.env);
   const { base, workspace, tenant } = await locate(settings, values.tenant, values.workspace);
@@ -906,87 +842,93 @@ async function runRemote(args: string[], io: Io): Promise<number> {
   return followed.exitCode;
 }
 
+/** What each command does. One for each name in `COMMANDS`, and none besides: the types hold it to that. */
+const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>> = {
+  login: async (rest, io) => {
+    await login(rest, io);
+    return 0;
+  },
+  whoami: async (_rest, io) => {
+    const settings = await loadSettings(io.env);
+    const me = await whoami(settings);
+    io.out(`${describe(me.principal)} on ${settings.url}`);
+    io.out(
+      me.tenants.length > 0
+        ? `Tenants: ${me.tenants.map((tenant) => `${tenant.name} (${tenant.slug})`).join(", ")}`
+        : "Tenants: none",
+    );
+    return 0;
+  },
+  status: async (_rest, io) => {
+    const { url } = await loadSettings(io.env);
+    const [instance, ready] = await Promise.all([
+      request(url, "/instance"),
+      request(url, "/readyz"),
+    ]);
+    if (instance.status !== 200) throw new CliError(`${url} answered ${instance.status}.`);
+    io.out(`${url}`);
+    io.out(`Version ${instance.body.coreVersion}, migration level ${instance.body.migrationLevel}`);
+    const failing = Object.entries((ready.body?.checks ?? {}) as Record<string, { ok: boolean }>)
+      .filter(([, check]) => !check.ok)
+      .map(([name]) => name);
+    io.out(failing.length === 0 ? "Ready" : `Not ready: ${failing.join(", ")} failing`);
+    return failing.length === 0 ? 0 : 1;
+  },
+  init: async (rest, io) => {
+    await init(rest, io);
+    return 0;
+  },
+  build: async (rest, io) => {
+    await build(rest, io);
+    return 0;
+  },
+  schemas: async (rest, io) => {
+    await schemas(rest, io);
+    return 0;
+  },
+  run: async (rest, io) => {
+    if (rest.includes("--remote")) return await runRemote(rest, io);
+    await runLocally(rest, io);
+    return 0;
+  },
+  logs: (rest, io) => logs(rest, io),
+  pull: (rest, io) => pull(rest, io),
+  dev: async (rest, io) => {
+    await dev(rest, io);
+    return 0;
+  },
+  deploy: async (rest, io) => {
+    await deploy(rest, io);
+    return 0;
+  },
+  promote: async (rest, io) => {
+    await promote(rest, io);
+    return 0;
+  },
+  tenant: async (rest, io) => {
+    await tenant(rest, io);
+    return 0;
+  },
+  runs: async (rest, io) => {
+    if (rest[0] === "cancel") await cancelInBulk(rest.slice(1), io);
+    else await runs(rest, io);
+    return 0;
+  },
+};
+
 /** Runs the command line. Returns the process exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
   const [command, ...rest] = argv;
   try {
-    switch (command) {
-      case "login":
-        await login(rest, io);
-        return 0;
-      case "whoami": {
-        const settings = await loadSettings(io.env);
-        const me = await whoami(settings);
-        io.out(`${describe(me.principal)} on ${settings.url}`);
-        io.out(
-          me.tenants.length > 0
-            ? `Tenants: ${me.tenants.map((tenant) => `${tenant.name} (${tenant.slug})`).join(", ")}`
-            : "Tenants: none",
-        );
-        return 0;
-      }
-      case "status": {
-        const { url } = await loadSettings(io.env);
-        const [instance, ready] = await Promise.all([
-          request(url, "/instance"),
-          request(url, "/readyz"),
-        ]);
-        if (instance.status !== 200) throw new CliError(`${url} answered ${instance.status}.`);
-        io.out(`${url}`);
-        io.out(
-          `Version ${instance.body.coreVersion}, migration level ${instance.body.migrationLevel}`,
-        );
-        const failing = Object.entries(
-          (ready.body?.checks ?? {}) as Record<string, { ok: boolean }>,
-        )
-          .filter(([, check]) => !check.ok)
-          .map(([name]) => name);
-        io.out(failing.length === 0 ? "Ready" : `Not ready: ${failing.join(", ")} failing`);
-        return failing.length === 0 ? 0 : 1;
-      }
-      case "init":
-        await init(rest, io);
-        return 0;
-      case "build":
-        await build(rest, io);
-        return 0;
-      case "schemas":
-        await schemas(rest, io);
-        return 0;
-      case "run":
-        if (rest.includes("--remote")) return await runRemote(rest, io);
-        await runLocally(rest, io);
-        return 0;
-      case "logs":
-        return await logs(rest, io);
-      case "pull":
-        return await pull(rest, io);
-      case "dev":
-        await dev(rest, io);
-        return 0;
-      case "deploy":
-        await deploy(rest, io);
-        return 0;
-      case "promote":
-        await promote(rest, io);
-        return 0;
-      case "tenant":
-        await tenant(rest, io);
-        return 0;
-      case "runs":
-        if (rest[0] === "cancel") await cancelInBulk(rest.slice(1), io);
-        else await runs(rest, io);
-        return 0;
-      case undefined:
-      case "help":
-      case "--help":
-      case "-h":
-        io.out(USAGE);
-        return 0;
-      default:
-        io.err(`Unknown command "${command}".\n\n${USAGE}`);
-        return 2;
+    if (command === undefined || command === "help" || command === "--help" || command === "-h") {
+      io.out(usage());
+      return 0;
     }
+    if (!Object.hasOwn(HANDLERS, command)) {
+      io.err(`Unknown command "${command}".\n\n${usage()}`);
+      return 2;
+    }
+    return await HANDLERS[command as CommandName](rest, io);
   } catch (error) {
     if (error instanceof Stopped) {
       io.err(error.message);

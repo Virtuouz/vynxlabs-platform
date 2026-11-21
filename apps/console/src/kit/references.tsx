@@ -1,4 +1,4 @@
-import { Button, Notice } from "@vynxlabs/ui";
+import { Button, Notice } from "@volvel/ui";
 import { useLoad } from "../api.ts";
 import { Link } from "../router.tsx";
 import { Pending } from "./LoadState.tsx";

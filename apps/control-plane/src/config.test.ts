@@ -1,5 +1,9 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import { ConfigError, loadConfig } from "./config.js";
+import { CONFIG_VARS, type ConfigVar } from "./config-vars.js";
 
 const valid = {
   DATABASE_URL: "postgres://user:pass@db:5432/platform",
@@ -47,7 +51,7 @@ describe("configuration", () => {
       telemetry: {
         endpoint: undefined,
         headers: {},
-        serviceName: "platform",
+        serviceName: "volvel",
         traces: true,
         metrics: true,
         metricsIntervalMs: 60000,
@@ -220,4 +224,51 @@ describe("configuration", () => {
 test("mail can be kept as files instead of sent, for development", () => {
   expect(loadConfig({ ...valid, MAIL_CAPTURE_DIR: "/tmp/mail" }).mailCaptureDir).toBe("/tmp/mail");
   expect(loadConfig(valid).mailCaptureDir).toBeUndefined();
+});
+
+describe("the table of settings", () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const loader = readFileSync(join(here, "config.ts"), "utf8");
+  const sources = (folder: string): string[] =>
+    readdirSync(folder, { withFileTypes: true }).flatMap((entry) =>
+      entry.isDirectory()
+        ? sources(join(folder, entry.name))
+        : /\.ts$/.test(entry.name) && !/\.test\.ts$/.test(entry.name)
+          ? [join(folder, entry.name)]
+          : [],
+    );
+
+  test("every setting declared is one the loader reads, so the page lists nothing that does nothing", () => {
+    for (const name of Object.keys(CONFIG_VARS)) {
+      expect(loader.includes(`"${name}"`), name).toBe(true);
+    }
+  });
+
+  test("every setting says what it is for, and a required one has no default", () => {
+    for (const [name, setting] of Object.entries(CONFIG_VARS) as [string, ConfigVar][]) {
+      expect(setting.description.length, name).toBeGreaterThan(10);
+      if (setting.required) expect(setting.default, name).toBeUndefined();
+    }
+  });
+
+  test("the environment is read in one place: nothing else reaches for a variable of its own", () => {
+    const reaching = sources(here)
+      // `main.ts` hands the environment to the loader. The supervisor copies a named few
+      // of the machine's own variables, such as PATH, to the workers it starts: it reads
+      // no setting.
+      .filter((file) => !/(^|\/)(main|testing|kernel\/execution\/supervisor)\.ts$/.test(file))
+      .filter((file) => /process\.env\b(?!\.NODE_ENV)/.test(readFileSync(file, "utf8")))
+      .map((file) => file.slice(here.length + 1));
+    expect(reaching).toEqual([]);
+  });
+
+  test("the documentation's address is a web address, without its last slash", () => {
+    expect(loadConfig({ ...valid, DOCS_URL: "https://docs.example.com/" }).docsUrl).toBe(
+      "https://docs.example.com",
+    );
+    expect(loadConfig(valid).docsUrl).toBeUndefined();
+    expect(problems({ ...valid, DOCS_URL: "docs.example.com" })).toEqual([
+      "DOCS_URL must be a URL starting with http: or https://.",
+    ]);
+  });
 });

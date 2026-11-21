@@ -43,6 +43,7 @@ const PRESSES: [ShortcutId, () => void][] = [
   ["palette", () => press("k", { ctrlKey: true })],
   ["sheet", () => press("?", { shiftKey: true })],
   ["search", () => press("/")],
+  ["help", () => press("F1")],
   ["go.overview", () => chord("o")],
   ["go.runs", () => chord("r")],
   ["go.flows", () => chord("f")],
@@ -68,6 +69,10 @@ test("every shortcut the console binds itself is pressed here, and reaches its h
     // ⌘↵ is both the editor's Run and the palette's; the palette's is its own component's.
     expect(seen, id).toEqual([id]);
   }
+  // Help has a second way, ⌘/.
+  seen.length = 0;
+  press("/", { ctrlKey: true });
+  expect(seen).toEqual(["help"]);
   // Redo has a second way, Ctrl+Y.
   seen.length = 0;
   press("y", { ctrlKey: true });
@@ -85,6 +90,9 @@ test("single keys wait while typing and when turned off; ⌘ keys work in a fiel
   expect(seen).toEqual([]);
   press("s", { ctrlKey: true }, field);
   expect(seen).toEqual(["save"]);
+  // A function key types nothing: help opens from a field too, and with single keys turned off.
+  press("F1", {}, field);
+  expect(seen).toEqual(["save", "help"]);
 
   act(() => setPreference("shortcuts.single-key", false));
   seen.length = 0;
@@ -93,7 +101,8 @@ test("single keys wait while typing and when turned off; ⌘ keys work in a fiel
   press("g");
   press("r");
   press("k", { ctrlKey: true });
-  expect(seen).toEqual(["palette"]);
+  press("F1");
+  expect(seen).toEqual(["palette", "help"]);
 });
 
 test("a chord's second key must come within a second", () => {
@@ -142,10 +151,38 @@ const files = (dir: string): string[] =>
 
 test("no screen listens for keys on the page by hand: shortcuts go through the registry", () => {
   // The registry itself, and kit parts whose keys work only inside them.
-  const allowed = new Set(["kit/keys.ts"]);
+  // The diagram listens on its own box, which holds the focus, and runs on served sites too,
+  // where there is no registry: its keys are the diagram's, not the page's.
+  const allowed = new Set(["kit/keys.ts", "diagrams/draw.ts"]);
   const found = files(here)
     .filter((path) => !allowed.has(path.slice(here.length + 1)))
     .filter((path) => /addEventListener\(\s*"keydown"/.test(readFileSync(path, "utf8")))
     .map((path) => path.slice(here.length + 1));
   expect(found).toEqual([]);
+});
+
+function Saves({ text, on, seen }: { text: string; on: boolean; seen: string[] }) {
+  useShortcut("save", () => seen.push(text), { enabled: on });
+  return null;
+}
+
+test("a key pressed after the handler is swapped runs the newest one, and an off shortcut lets the key go on", () => {
+  const seen: string[] = [];
+  const view = render(<Saves text="before" on seen={seen} />);
+  view.rerender(<Saves text="after the typing" on seen={seen} />);
+  press("s", { ctrlKey: true });
+  expect(seen).toEqual(["after the typing"]);
+  view.rerender(<Saves text="off" on={false} seen={seen} />);
+  const event = new KeyboardEvent("keydown", {
+    key: "s",
+    ctrlKey: true,
+    bubbles: true,
+    cancelable: true,
+  });
+  document.body.dispatchEvent(event);
+  expect(seen).toEqual(["after the typing"]);
+  expect(event.defaultPrevented).toBe(false);
+  view.rerender(<Saves text="on again" on seen={seen} />);
+  press("s", { ctrlKey: true });
+  expect(seen).toEqual(["after the typing", "on again"]);
 });

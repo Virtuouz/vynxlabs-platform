@@ -136,9 +136,9 @@ const put = (url: string) => calls.find((call) => call.method === "PUT" && call.
 
 test("the list says what each connection's last Test found, and what needs a member", async () => {
   show(<Connections root={root} />);
-  expect(await screen.findByText("Failed: HTTP 401: answered 401.")).toBeTruthy();
+  expect(await screen.findByText("HTTP 401: answered 401.")).toBeTruthy();
   expect(screen.getByText("Reached")).toBeTruthy();
-  expect(screen.getByText("87 ms")).toBeTruthy();
+  expect(screen.getByText(/^87 ms · tested/)).toBeTruthy();
   expect(screen.getByText("Needs reconnecting")).toBeTruthy();
   expect(screen.getByText("Not bound")).toBeTruthy();
   // Reconnect is the OAuth connection's first action, and goes to its provider.
@@ -173,6 +173,7 @@ test("a new connection is declared in a draft, bound, and tested; a refusal says
     kind: "connection",
     schemaVersion: 1,
     body: { connector: "http" },
+    create: true,
   });
   // Declared first, then bound.
   expect(calls.findIndex((call) => call.url.endsWith("/drafts/crm"))).toBeLessThan(

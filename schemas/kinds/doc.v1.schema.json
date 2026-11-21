@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "kinds/doc.v1.schema.json",
+  "title": "doc body, version 1",
+  "type": "object",
+  "description": "A page of documentation. Kept in a repository as a Markdown file, `<path>.md`, in a folder of pages, and not as YAML.",
+  "properties": {
+    "source": {
+      "type": "string",
+      "maxLength": 262144,
+      "description": "The page as its file holds it: its title and what else it says of itself between two lines of `---`, then its Markdown."
+    }
+  },
+  "required": [
+    "source"
+  ],
+  "additionalProperties": false
+}

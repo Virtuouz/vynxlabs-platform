@@ -249,6 +249,19 @@ export interface ResourceAliasTable {
   last_used_at: Date | null;
 }
 
+/** The query a dashboard's widget named when the dashboard was deployed, by its key. */
+export interface DashboardWidgetQueryTable {
+  dashboard_id: string;
+  widget_id: string;
+  workspace_id: string;
+  tenant_id: string;
+  dashboard_key: string;
+  /** The path the widget names, as written in the dashboard. */
+  path: string;
+  /** The key of the query that path named at deploy time. */
+  query_key: string;
+}
+
 export interface ResourceVersionTable {
   resource_id: string;
   version: number;
@@ -826,6 +839,20 @@ export interface FileTable {
   created_at: Generated<Date>;
 }
 
+/** A file a row used to name: kept until the tenant's history of changes has run out. */
+export interface RowFileHistoryTable {
+  id: string;
+  tenant_id: string;
+  workspace_id: string;
+  file_id: string;
+  table_name: string;
+  row_id: string;
+  column_name: string;
+  replaced_by_type: string;
+  replaced_by_id: string | null;
+  replaced_at: Generated<Date>;
+}
+
 export interface WorkspaceCloneTable {
   id: string;
   tenant_id: string;
@@ -1268,6 +1295,7 @@ export interface PlatformSchema {
   deployment: DeploymentTable;
   resource_draft: ResourceDraftTable;
   resource_alias: ResourceAliasTable;
+  dashboard_widget_query: DashboardWidgetQueryTable;
   tenant_release: TenantReleaseTable;
   git_repository: GitRepositoryTable;
   workspace_git: WorkspaceGitTable;
@@ -1291,6 +1319,7 @@ export interface PlatformSchema {
   data_column: DataColumnTable;
   data_source_binding: DataSourceBindingTable;
   file: FileTable;
+  row_file_history: RowFileHistoryTable;
   database_location: DatabaseLocationTable;
   workspace_clone: WorkspaceCloneTable;
   bundle_asset: BundleAssetTable;

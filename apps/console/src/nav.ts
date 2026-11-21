@@ -3,6 +3,7 @@ import {
   AppWindow,
   BellRing,
   Blocks,
+  BookOpen,
   Bot,
   Boxes,
   Building2,
@@ -97,6 +98,8 @@ export interface Section {
   slug: string;
   label: string;
   icon: LucideIcon;
+  /** The topic of the help for this screen. Every screen has one, and `pnpm docs:check` finds its page. */
+  help: string;
 }
 
 /** A workspace's screens, by area. */
@@ -104,35 +107,36 @@ export const WORKSPACE_SECTIONS: Record<
   "overview" | "build" | "operate" | "data" | "configure",
   readonly Section[]
 > = {
-  overview: [{ slug: "overview", label: "Overview", icon: Activity }],
+  overview: [{ slug: "overview", label: "Overview", icon: Activity, help: "workspace-overview" }],
   build: [
-    { slug: "flows", label: "Flows", icon: Workflow },
-    { slug: "scripts", label: "Scripts", icon: FileCode2 },
-    { slug: "screens", label: "App Builder", icon: LayoutDashboard },
-    { slug: "apps", label: "Published apps", icon: AppWindow },
-    { slug: "extensions", label: "Extensions", icon: Shapes },
-    { slug: "resources", label: "All resources", icon: Boxes },
+    { slug: "flows", label: "Flows", icon: Workflow, help: "build-flows" },
+    { slug: "scripts", label: "Scripts", icon: FileCode2, help: "build-scripts" },
+    { slug: "screens", label: "App Builder", icon: LayoutDashboard, help: "build-screens" },
+    { slug: "apps", label: "Published apps", icon: AppWindow, help: "build-apps" },
+    { slug: "extensions", label: "Extensions", icon: Shapes, help: "build-extensions" },
+    { slug: "docs", label: "Documentation", icon: BookOpen, help: "build-docs" },
+    { slug: "resources", label: "All resources", icon: Boxes, help: "build-resources" },
   ],
   operate: [
-    { slug: "runs", label: "Runs", icon: Play },
-    { slug: "events", label: "Events", icon: Radio },
-    { slug: "triggers", label: "Triggers", icon: Zap },
-    { slug: "approvals", label: "Approvals", icon: CircleCheck },
-    { slug: "release", label: "Releases", icon: Rocket },
-    { slug: "git", label: "Git sync", icon: GitCompareArrows },
+    { slug: "runs", label: "Runs", icon: Play, help: "operate-runs" },
+    { slug: "events", label: "Events", icon: Radio, help: "operate-events" },
+    { slug: "triggers", label: "Triggers", icon: Zap, help: "operate-triggers" },
+    { slug: "approvals", label: "Approvals", icon: CircleCheck, help: "operate-approvals" },
+    { slug: "release", label: "Releases", icon: Rocket, help: "operate-release" },
+    { slug: "git", label: "Git sync", icon: GitCompareArrows, help: "operate-git" },
   ],
   data: [
-    { slug: "tables", label: "Tables", icon: Table2 },
-    { slug: "queries", label: "Queries", icon: FileSearch },
-    { slug: "sources", label: "Data sources", icon: Database },
-    { slug: "dashboards", label: "Dashboards", icon: Gauge },
+    { slug: "tables", label: "Tables", icon: Table2, help: "data-tables" },
+    { slug: "queries", label: "Queries", icon: FileSearch, help: "data-queries" },
+    { slug: "sources", label: "Data sources", icon: Database, help: "data-sources" },
+    { slug: "dashboards", label: "Dashboards", icon: Gauge, help: "data-dashboards" },
   ],
   configure: [
-    { slug: "connections", label: "Connections", icon: Plug },
-    { slug: "variables", label: "Variables", icon: Variable },
-    { slug: "secrets", label: "Secrets", icon: KeyRound },
-    { slug: "alerts", label: "Alerts", icon: BellRing },
-    { slug: "settings", label: "Workspace settings", icon: Settings },
+    { slug: "connections", label: "Connections", icon: Plug, help: "configure-connections" },
+    { slug: "variables", label: "Variables", icon: Variable, help: "configure-variables" },
+    { slug: "secrets", label: "Secrets", icon: KeyRound, help: "configure-secrets" },
+    { slug: "alerts", label: "Alerts", icon: BellRing, help: "configure-alerts" },
+    { slug: "settings", label: "Workspace settings", icon: Settings, help: "configure-settings" },
   ],
 };
 
@@ -148,36 +152,56 @@ export const TENANT_GROUPS: readonly (readonly [label: string, sections: readonl
   [
     "Work",
     [
-      { slug: "overview", label: "Overview", icon: Activity },
-      { slug: "workspaces", label: "Workspaces", icon: Boxes },
-      { slug: "approvals", label: "Approvals", icon: CircleCheck },
+      { slug: "overview", label: "Overview", icon: Activity, help: "tenant-overview" },
+      { slug: "workspaces", label: "Workspaces", icon: Boxes, help: "tenant-workspaces" },
+      { slug: "approvals", label: "Approvals", icon: CircleCheck, help: "tenant-approvals" },
     ],
   ],
   [
     "People and access",
     [
-      { slug: "members", label: "Members & access", icon: UserRound },
-      { slug: "end-users", label: "End users", icon: Globe },
-      { slug: "service-accounts", label: "Service accounts", icon: Bot },
-      { slug: "operator-access", label: "Operator access", icon: LifeBuoy },
+      { slug: "members", label: "Members & access", icon: UserRound, help: "tenant-members" },
+      { slug: "end-users", label: "End users", icon: Globe, help: "tenant-end-users" },
+      {
+        slug: "service-accounts",
+        label: "Service accounts",
+        icon: Bot,
+        help: "tenant-service-accounts",
+      },
+      {
+        slug: "operator-access",
+        label: "Operator access",
+        icon: LifeBuoy,
+        help: "tenant-operator-access",
+      },
     ],
   ],
-  ["Sign-in", [{ slug: "single-sign-on", label: "Single sign-on", icon: Fingerprint }]],
+  [
+    "Sign-in",
+    [
+      {
+        slug: "single-sign-on",
+        label: "Single sign-on",
+        icon: Fingerprint,
+        help: "tenant-single-sign-on",
+      },
+    ],
+  ],
   [
     "Delivery",
     [
-      { slug: "branding", label: "Branding", icon: Palette },
-      { slug: "domains", label: "Domains", icon: Globe },
-      { slug: "repository", label: "Repository", icon: GitBranch },
-      { slug: "workers", label: "Workers", icon: Cpu },
+      { slug: "branding", label: "Branding", icon: Palette, help: "tenant-branding" },
+      { slug: "domains", label: "Domains", icon: Globe, help: "tenant-domains" },
+      { slug: "repository", label: "Repository", icon: GitBranch, help: "tenant-repository" },
+      { slug: "workers", label: "Workers", icon: Cpu, help: "tenant-workers" },
     ],
   ],
   [
     "Governance",
     [
-      { slug: "audit", label: "Audit log", icon: ScrollText },
-      { slug: "retention", label: "Retention", icon: History },
-      { slug: "export", label: "Export", icon: Download },
+      { slug: "audit", label: "Audit log", icon: ScrollText, help: "tenant-audit" },
+      { slug: "retention", label: "Retention", icon: History, help: "tenant-retention" },
+      { slug: "export", label: "Export", icon: Download, help: "tenant-export" },
     ],
   ],
 ];
@@ -185,21 +209,70 @@ export const TENANT_SECTIONS = TENANT_GROUPS.flatMap(([, sections]) => sections)
 
 /** The instance's screens, for operators. The tenant list is the first. */
 export const INSTANCE_SECTIONS: readonly (Section & { to: string })[] = [
-  { slug: "", to: "/", label: "All tenants", icon: Building2 },
-  { slug: "members", to: "/instance/members", label: "All members", icon: UsersRound },
-  { slug: "operators", to: "/instance/operators", label: "Operators", icon: ShieldCheck },
+  { slug: "", to: "/", label: "All tenants", icon: Building2, help: "instance-tenants" },
+  {
+    slug: "members",
+    to: "/instance/members",
+    label: "All members",
+    icon: UsersRound,
+    help: "instance-members",
+  },
+  {
+    slug: "operators",
+    to: "/instance/operators",
+    label: "Operators",
+    icon: ShieldCheck,
+    help: "instance-operators",
+  },
   {
     slug: "single-sign-on",
     to: "/instance/single-sign-on",
     label: "Single sign-on",
     icon: Fingerprint,
+    help: "instance-single-sign-on",
   },
-  { slug: "databases", to: "/instance/databases", label: "Database locations", icon: Server },
-  { slug: "import", to: "/instance/import", label: "Import a tenant", icon: Upload },
-  { slug: "triggers", to: "/instance/triggers", label: "Triggers", icon: CirclePause },
-  { slug: "audit", to: "/instance/audit", label: "Audit log", icon: ScrollText },
-  { slug: "branding", to: "/instance/branding", label: "Console branding", icon: Palette },
-  { slug: "kit", to: "/instance/kit", label: "Component kit", icon: LayoutGrid },
+  {
+    slug: "databases",
+    to: "/instance/databases",
+    label: "Database locations",
+    icon: Server,
+    help: "instance-databases",
+  },
+  {
+    slug: "import",
+    to: "/instance/import",
+    label: "Import a tenant",
+    icon: Upload,
+    help: "instance-import",
+  },
+  {
+    slug: "triggers",
+    to: "/instance/triggers",
+    label: "Triggers",
+    icon: CirclePause,
+    help: "instance-triggers",
+  },
+  {
+    slug: "audit",
+    to: "/instance/audit",
+    label: "Audit log",
+    icon: ScrollText,
+    help: "instance-audit",
+  },
+  {
+    slug: "branding",
+    to: "/instance/branding",
+    label: "Console branding",
+    icon: Palette,
+    help: "instance-branding",
+  },
+  {
+    slug: "kit",
+    to: "/instance/kit",
+    label: "Component kit",
+    icon: LayoutGrid,
+    help: "instance-kit",
+  },
 ];
 
 export interface Where {
@@ -212,16 +285,19 @@ export interface Where {
   editor: boolean;
   /** The screen lays out its own regions edge to edge: a workbench, not a page. */
   workbench: boolean;
+  /** The topic of the help for where this is: an editor's own, or its section's. */
+  help?: string;
 }
 
-/** Editors of one thing, which want every pixel. */
-const EDITORS = [
-  /^flows\/(new|edit\/)/,
-  /^scripts\/(new|edit\/)/,
-  /^extensions\/[a-z_]+\/(new|edit\/)/,
-  /^screens\/.+/,
-  /^dashboards\/.+/,
-  /^resources\/(new|edit\/)/,
+/** Editors of one thing, which want every pixel. Each has help of its own. */
+export const EDITORS: readonly { pattern: RegExp; help: string }[] = [
+  { pattern: /^flows\/(new|edit\/)/, help: "build-flows-editor" },
+  { pattern: /^scripts\/(new|edit\/)/, help: "build-scripts-editor" },
+  { pattern: /^extensions\/[a-z_]+\/(new|edit\/)/, help: "build-extensions-editor" },
+  { pattern: /^screens\/.+/, help: "build-screens-editor" },
+  { pattern: /^dashboards\/.+/, help: "data-dashboards-editor" },
+  { pattern: /^resources\/(new|edit\/)/, help: "build-resources-editor" },
+  { pattern: /^docs\/(new$|edit\/)/, help: "build-docs-editor" },
 ];
 
 /**
@@ -233,6 +309,10 @@ const WORKBENCHES: RegExp[] = [
   /^(runs|triggers|events|approvals)(\/|$)/,
   /^(flows|scripts|apps)$/,
   /^flows\/(new|edit\/)/,
+  // A table's rows are one scroller under a pinned header (A2-08).
+  /^tables\/.+/,
+  // A data source's tables beside the rows of the one chosen.
+  /^sources\/.+/,
 ];
 /** The same, for a tenant's screens. */
 const TENANT_WORKBENCHES: RegExp[] = [
@@ -273,24 +353,32 @@ export function whereIs(path: string, operator: boolean): Where {
       (Object.entries(WORKSPACE_SECTIONS).find(([, sections]) =>
         sections.some((one) => one.slug === section),
       )?.[0] as Area | undefined) ?? "overview";
+    const editor = EDITORS.find((one) => one.pattern.test(rest));
+    const help =
+      editor?.help ??
+      Object.values(WORKSPACE_SECTIONS)
+        .flat()
+        .find((one) => one.slug === section)?.help;
     return {
       area,
       tenantId: inWorkspace.t,
       workspaceId: inWorkspace.w,
       section,
-      editor: EDITORS.some((pattern) => pattern.test(rest)),
+      editor: editor !== undefined,
       workbench: WORKBENCHES.some((pattern) => pattern.test(rest)),
+      ...(help ? { help } : {}),
     };
   }
   const inTenant = match("/t/:t/*", path);
   if (inTenant?.t) {
+    const slug = path.split("/")[3] ?? "";
+    const section = TENANT_ALIASES[slug] ?? slug;
+    const help = TENANT_SECTIONS.find((one) => one.slug === section)?.help;
     return {
       area: "tenant",
       tenantId: inTenant.t,
-      section: (() => {
-        const slug = path.split("/")[3] ?? "";
-        return TENANT_ALIASES[slug] ?? slug;
-      })(),
+      section,
+      ...(help ? { help } : {}),
       editor: false,
       workbench: TENANT_WORKBENCHES.some((pattern) =>
         pattern.test(path.split("/").slice(3).join("/")),
@@ -298,15 +386,24 @@ export function whereIs(path: string, operator: boolean): Where {
     };
   }
   if (path.startsWith("/account/"))
-    return { area: "account", section: path, editor: false, workbench: false };
-  if (path.startsWith("/instance/") || (operator && path === "/"))
+    return { area: "account", section: path, editor: false, workbench: false, help: "account" };
+  if (path.startsWith("/instance/") || (operator && path === "/")) {
+    const help = INSTANCE_SECTIONS.find((one) => one.to === path)?.help;
     return {
       area: "instance",
       section: path,
       editor: false,
       workbench: INSTANCE_WORKBENCHES.has(path),
+      ...(help ? { help } : {}),
     };
-  return { area: "tenants", section: path, editor: false, workbench: path === "/" };
+  }
+  return {
+    area: "tenants",
+    section: path,
+    editor: false,
+    workbench: path === "/",
+    help: "tenants",
+  };
 }
 
 /** Where a workspace area opens. */

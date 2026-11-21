@@ -12,6 +12,10 @@ export function Popover({
   children,
   side = "bottom",
   align = "start",
+  open,
+  onOpenChange,
+  wide = false,
+  titleHidden = false,
 }: {
   /** One element that takes focus: a button. */
   trigger: ReactElement;
@@ -20,15 +24,33 @@ export function Popover({
   children: ReactNode;
   side?: "top" | "bottom" | "left" | "right";
   align?: "start" | "center" | "end";
+  /** Opened and closed from outside, such as by a key typed elsewhere. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** For a panel that holds a list to choose from, with no padding of its own. */
+  wide?: boolean;
+  /** The title names the panel for screen readers only, for one whose contents say what it is. */
+  titleHidden?: boolean;
 }) {
   return (
-    <Base.Root>
+    <Base.Root
+      {...(open === undefined ? {} : { open })}
+      {...(onOpenChange ? { onOpenChange: (next: boolean) => onOpenChange(next) } : {})}
+    >
       <Base.Trigger render={trigger} />
       <Base.Portal>
         <Base.Positioner side={side} align={align} sideOffset={6} className="layer-popover">
-          <Base.Popup className="max-w-sm rounded-control border border-line bg-surface p-3 text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0">
-            <Base.Title className="m-0 mb-1 text-meta font-semibold">{title}</Base.Title>
-            <Base.Description render={<div />} className="text-ink-muted">
+          <Base.Popup
+            className={`rounded-control border border-line text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0 ${
+              wide
+                ? "w-[22rem] max-w-[90vw] overflow-hidden bg-raised p-0"
+                : "max-w-sm bg-surface p-3"
+            }`}
+          >
+            <Base.Title className={titleHidden ? "sr-only" : "m-0 mb-1 text-meta font-semibold"}>
+              {title}
+            </Base.Title>
+            <Base.Description render={<div />} className={wide ? "" : "text-ink-muted"}>
               {children}
             </Base.Description>
           </Base.Popup>

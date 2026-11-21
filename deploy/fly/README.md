@@ -49,8 +49,8 @@ and add the group to `fly.toml`:
 
 ```toml
 [processes]
-  app = "platform-start dist/main.js"
-  workers = "platform-worker-host --url http://<app>.internal:8080"
+  app = "volvel-start dist/main.js"
+  workers = "volvel-worker-host --url http://<app>.internal:8080"
 ```
 
 Size the `workers` machines for the scripts they will run. The worker host runs as root, to start each worker as `vxrun`. Set `MANAGED_WORKERS=false` instead if every tenant is served by standalone workers.

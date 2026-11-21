@@ -1,0 +1,233 @@
+{
+  "type": "root",
+  "v": 1,
+  "children": [
+    {
+      "type": "heading",
+      "depth": 1,
+      "id": "scriptalert1script",
+      "children": [
+        {
+          "type": "text",
+          "value": "<script>alert(1)</script>",
+          "line": 1
+        }
+      ],
+      "line": 1
+    },
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "text",
+          "value": "<img src=x onerror=alert(1)> and <b>bold</b> are text.",
+          "line": 3
+        }
+      ],
+      "line": 3
+    },
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "link",
+          "href": "javascript:alert(1)",
+          "children": [
+            {
+              "type": "text",
+              "value": "click",
+              "line": 5
+            }
+          ],
+          "line": 5
+        },
+        {
+          "type": "text",
+          "value": " ",
+          "line": 5
+        },
+        {
+          "type": "link",
+          "href": "data:text/html,%3Cscript%3Ealert(1)%3C/script%3E",
+          "children": [
+            {
+              "type": "text",
+              "value": "data",
+              "line": 5
+            }
+          ],
+          "line": 5
+        },
+        {
+          "type": "text",
+          "value": " ",
+          "line": 5
+        },
+        {
+          "type": "link",
+          "href": "vbscript:x",
+          "children": [
+            {
+              "type": "text",
+              "value": "vb",
+              "line": 5
+            }
+          ],
+          "line": 5
+        },
+        {
+          "type": "break",
+          "hard": false,
+          "line": 5
+        },
+        {
+          "type": "text",
+          "value": "[spaced](java\tscript:alert(1)) ",
+          "line": 6
+        },
+        {
+          "type": "link",
+          "href": "//evil.example/x",
+          "children": [
+            {
+              "type": "text",
+              "value": "other host",
+              "line": 6
+            }
+          ],
+          "line": 6
+        },
+        {
+          "type": "text",
+          "value": " ",
+          "line": 6
+        },
+        {
+          "type": "link",
+          "href": "https://example.com/%22onmouseover=%22x",
+          "children": [
+            {
+              "type": "text",
+              "value": "fine",
+              "line": 6
+            }
+          ],
+          "line": 6
+        }
+      ],
+      "line": 5
+    },
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "image",
+          "src": "javascript:alert(1)",
+          "alt": "x",
+          "line": 8
+        },
+        {
+          "type": "text",
+          "value": " ",
+          "line": 8
+        },
+        {
+          "type": "image",
+          "src": "http://example.com/a.png",
+          "alt": "plain http",
+          "line": 8
+        }
+      ],
+      "line": 8
+    },
+    {
+      "type": "component",
+      "name": "alert",
+      "form": "container",
+      "props": {
+        "type": "warning\\",
+        "onclick": "\\",
+        "x": "true"
+      },
+      "children": [
+        {
+          "type": "paragraph",
+          "children": [
+            {
+              "type": "text",
+              "value": "Quotes in a value.",
+              "line": 11
+            }
+          ],
+          "line": 11
+        }
+      ],
+      "badProps": true,
+      "line": 10,
+      "endLine": 12
+    },
+    {
+      "type": "paragraph",
+      "children": [
+        {
+          "type": "component",
+          "name": "term",
+          "form": "inline",
+          "props": {
+            "id": "a"
+          },
+          "children": [
+            {
+              "type": "text",
+              "value": "<i>x</i>",
+              "line": 14
+            }
+          ],
+          "line": 14
+        },
+        {
+          "type": "text",
+          "value": " ",
+          "line": 14
+        },
+        {
+          "type": "component",
+          "name": "unknown",
+          "form": "inline",
+          "props": {
+            "x": "1"
+          },
+          "children": [
+            {
+              "type": "text",
+              "value": "thing",
+              "line": 14
+            }
+          ],
+          "line": 14
+        }
+      ],
+      "line": 14
+    },
+    {
+      "type": "component",
+      "name": "screenshot",
+      "form": "leaf",
+      "props": {
+        "name": "console/deploy",
+        "alt": "\\",
+        "script": "true",
+        "alert": "true"
+      },
+      "children": [],
+      "badProps": true,
+      "line": 16
+    },
+    {
+      "type": "code",
+      "value": "code",
+      "lang": "\"><script>",
+      "line": 18
+    }
+  ]
+}

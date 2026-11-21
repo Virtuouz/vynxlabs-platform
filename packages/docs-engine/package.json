@@ -1,0 +1,27 @@
+{
+  "name": "@volvel/docs-engine",
+  "version": "0.5.0",
+  "type": "module",
+  "description": "A set of documentation pages: folders become collections and navigation, and terms, topics, links and search are worked out across them.",
+  "license": "Apache-2.0",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/*.map"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@volvel/markup": "workspace:*",
+    "minisearch": "^7.2.0",
+    "yaml": "^2.9.1"
+  }
+}

@@ -1,4 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
+import { frontmatterOf, isFeedbackTable } from "@volvel/docs-engine";
 import {
   type FlowBody,
   type InterfaceBody,
@@ -7,7 +8,7 @@ import {
   RESOURCE_FOLDER,
   renderRepositoryFiles,
   renderResourceFiles,
-} from "@vynxlabs/manifest";
+} from "@volvel/manifest";
 import { Type } from "typebox";
 import { mutate } from "../kernel/audit.js";
 import {
@@ -19,6 +20,7 @@ import {
   isCodeKind,
   saveDraft,
 } from "../kernel/authoring.js";
+import { dashboardsNaming } from "../kernel/dashboard-queries.js";
 import { describeChange } from "../kernel/describe.js";
 import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { bundleManifest, storeBundle } from "../kernel/execution/bundles.js";
@@ -216,35 +218,57 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     };
 
     /**
-     * What someone who maintains interfaces, and holds nothing wider, may write
-     * and deploy: an interface, and an app that serves one. Never code.
+     * The kinds someone may write and deploy who holds nothing wider: whoever
+     * maintains interfaces, and whoever writes documentation. Each is held to
+     * its own kind and to an app that serves it. Never code.
      */
-    const isScreen = (kind: string, body: unknown) =>
-      kind === "interface" ||
-      (kind === "app" && typeof (body as { interface?: unknown } | null)?.interface === "string");
+    interface Held {
+      interface: boolean;
+      doc: boolean;
+    }
+    const fits = (held: Held, kind: string, body: unknown, path: string) => {
+      const app = kind === "app" ? (body as { interface?: unknown; docs?: unknown } | null) : null;
+      return (
+        (held.interface && (kind === "interface" || typeof app?.interface === "string")) ||
+        // The one table a writer of documentation drafts and deploys: the workspace's table of
+        // its sites' answers, with exactly its columns. Drafting and deploying share this check.
+        (held.doc &&
+          (kind === "doc" || typeof app?.docs === "string" || isFeedbackTable(kind, path, body)))
+      );
+    };
 
     /**
-     * Enters a workspace for someone who holds `needs`, or who only maintains
-     * interfaces. `full` says which: without it the caller is held to interfaces.
+     * Enters a workspace for someone who holds `needs`, or who holds only one
+     * of the narrow permissions. `full` says which: without it the caller is
+     * held to the kinds in `held`.
      */
     async function enter(
       ctx: RequestContext,
       params: { t: string; w: string },
       needs: "resource:read" | "resource:write" | "deployment:write",
-    ): Promise<{ workspace: WorkspaceRef; full: boolean }> {
+    ): Promise<{ workspace: WorkspaceRef; full: boolean; held: Held }> {
       const workspace = await findWorkspace(kernel, params.t, params.w);
       ctx.workspace = workspace;
       const at = { tenantId: workspace.tenantId, workspaceId: workspace.id };
-      if (await ctx.allowed(needs, at)) return { workspace, full: true };
+      const everything = { interface: true, doc: true };
+      if (await ctx.allowed(needs, at)) return { workspace, full: true, held: everything };
       const verb = needs.endsWith(":read") ? "read" : "write";
-      if (await ctx.allowed(`interface:${verb}`, at)) return { workspace, full: false };
+      const held = {
+        interface: await ctx.allowed(`interface:${verb}`, at),
+        doc: await ctx.allowed(`doc:${verb}`, at),
+      };
+      if (held.interface || held.doc) return { workspace, full: false, held };
       // Refuses, in the words every other route uses.
       await ctx.authorize(needs, at);
-      return { workspace, full: true };
+      return { workspace, full: true, held: everything };
     }
 
-    /** Whether what is at a path now, deployed or drafted, is an interface or an app that serves one. */
-    async function screenAt(workspace: WorkspaceRef, path: string): Promise<boolean | null> {
+    /** Whether what is at a path now, deployed or drafted, is of a kind the caller is held to. */
+    async function screenAt(
+      workspace: WorkspaceRef,
+      path: string,
+      held: Held,
+    ): Promise<boolean | null> {
       const [live, draft] = await Promise.all([
         db
           .selectFrom("resource")
@@ -260,9 +284,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .executeTakeFirst(),
       ]);
       if (!live && !draft) return null;
-      const liveOk = !live || isScreen(live.kind, live.body);
+      const liveOk = !live || fits(held, live.kind, live.body, path);
       // A draft that removes something says nothing of what it is. What it removes does.
-      const draftOk = !draft || (draft.deleted ? liveOk : isScreen(draft.kind, draft.body));
+      const draftOk = !draft || (draft.deleted ? liveOk : fits(held, draft.kind, draft.body, path));
       return liveOk && draftOk;
     }
 
@@ -281,7 +305,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }) => {
-        const { workspace, full } = await enter(ctx, params, "resource:read");
+        const { workspace, full, held } = await enter(ctx, params, "resource:read");
         const all = await db
           .selectFrom("resource_draft")
           .selectAll()
@@ -290,7 +314,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .execute();
         const rows = [];
         for (const row of all) {
-          if (full || (await screenAt(workspace, row.path))) rows.push(row);
+          if (full || (await screenAt(workspace, row.path, held))) rows.push(row);
         }
         const owned = await ownership(
           workspace.id,
@@ -333,7 +357,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "The workspace's console resources as repository files",
           description:
             "Every resource made in the console, with the drafts laid over what is deployed, " +
-            "as the files `platform/` holds in a repository: what `platform pull` writes, and " +
+            "as the files `platform/` holds in a repository: what `volvel pull` writes, and " +
             "what Git sync commits. The whole set: a bundle with a `platform/` folder replaces " +
             "the workspace's console resources with it. With `drafts=false`, what is deployed only.",
           tags: ["authoring"],
@@ -344,7 +368,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               Type.String({
                 maxLength: 2000,
                 description:
-                  "The repository's roots, as its `vynxlabs.yaml` lists them, separated by commas. " +
+                  "The repository's roots, as its `volvel.yaml` lists them, separated by commas. " +
                   "A file under one is not made to say its path.",
               }),
             ),
@@ -384,7 +408,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, query }) => {
-        const { workspace, full } = await enter(ctx, params, "resource:read");
+        const { workspace, full, held } = await enter(ctx, params, "resource:read");
         // Part of the set would be read as all of it, and a deploy would remove the rest.
         if (!full) throw forbidden("resource:read");
         const withDrafts = query.drafts !== false;
@@ -441,7 +465,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }) => {
-        const { workspace, full } = await enter(ctx, params, "resource:read");
+        const { workspace, full, held } = await enter(ctx, params, "resource:read");
         const path = pathOf(params);
         const row = await db
           .selectFrom("resource_draft")
@@ -449,11 +473,54 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", workspace.id)
           .where("path", "=", path)
           .executeTakeFirst();
-        if (!row || (!full && !(await screenAt(workspace, path)))) {
+        if (!row || (!full && !(await screenAt(workspace, path, held)))) {
           throw notFound(`A draft at ${path}`);
         }
         const owned = await ownership(workspace.id, [row.key]);
         return { ...summarize(row, owned.get(row.key)), body: row.body };
+      },
+    );
+
+    app.get(
+      `${base}/rename-effects/*`,
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "What renaming a query would change",
+          description:
+            "The dashboards whose widgets name the query's path. Renaming the query in the " +
+            "console drafts the ones made in the console with the new path, in the same " +
+            "request, and sets those drafts aside when the rename's draft is. A dashboard from " +
+            "the repository is changed in the repository: until then its widgets reach the " +
+            "query by its key.",
+          tags: ["authoring"],
+          params: PathParams,
+          response: {
+            200: Type.Object({
+              dashboards: Type.Array(
+                Type.Object({
+                  path: Type.String(),
+                  title: Type.String(),
+                  ownership: Type.Union([Type.Literal("ui"), Type.Literal("code")]),
+                  widgets: Type.Integer({ description: "How many of its widgets name the path." }),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params }) => {
+        const { workspace, full } = await enter(ctx, params, "resource:read");
+        // What a rename drafts is the console's dashboards, which only a caller who may write any resource does.
+        const found = full ? await dashboardsNaming(db, workspace.id, pathOf(params)) : [];
+        return {
+          dashboards: found.map((one) => ({
+            path: one.path,
+            title: one.title,
+            ownership: one.ownership,
+            widgets: one.widgets.length,
+          })),
+        };
       },
     );
 
@@ -478,6 +545,14 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             body: AnyObject,
             deleted: Type.Optional(Type.Boolean()),
             revision: Type.Optional(Type.Integer({ minimum: 1 })),
+            create: Type.Optional(
+              Type.Boolean({
+                description:
+                  "Say that this makes something new. When the path already holds a draft or a " +
+                  "deployed resource, it is refused with 409 `path_taken` and nothing is saved. " +
+                  "Without it, a save without a revision replaces what is there.",
+              }),
+            ),
             path: Type.Optional(
               Type.String({
                 maxLength: 255,
@@ -498,12 +573,12 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }) => {
-        const { workspace, full } = await enter(ctx, params, "resource:write");
+        const { workspace, full, held } = await enter(ctx, params, "resource:write");
         const path = pathOf(params);
         if (!full) {
-          const there = await screenAt(workspace, path);
-          const fits = body.deleted ? there === true : isScreen(body.kind, body.body);
-          if (!fits || there === false) throw forbidden("resource:write");
+          const there = await screenAt(workspace, path, held);
+          const theirs = body.deleted ? there === true : fits(held, body.kind, body.body, path);
+          if (!theirs || there === false) throw forbidden("resource:write");
         }
         if (isCodeKind(body.kind)) await mayWriteCode(ctx, workspace);
         const saved = await ctx.mutate((trx, audit) =>
@@ -513,6 +588,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             body: body.body,
             deleted: body.deleted,
             revision: body.revision,
+            create: body.create,
+            renameDashboards: full,
             path,
             ...(body.path !== undefined && body.path !== path
               ? { moveTo: movedPath(body.path) }
@@ -539,6 +616,130 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }
             : {}),
         };
+      },
+    );
+
+    app.post(
+      `${base}/drafts/batch`,
+      {
+        config: { access: access.custom },
+        schema: {
+          summary: "Save, move and remove several pages of documentation at once",
+          description:
+            "For a change to the tree of pages that touches more than one: a folder renamed or " +
+            "moved, a page put before another, a folder removed. Every change is made, or none " +
+            "is: a revision that is not the draft's now refuses them all. Each is audited as the " +
+            "save it is. A page is given whole, as `source`; `to` moves it, `deleted` removes it, " +
+            "and a page that was only ever a draft is then set aside. Another kind of resource, " +
+            "such as the app that publishes a folder as a site, is given as `kind` and `body`. " +
+            "Needs what saving each needs: `resource:write`, or `doc:write` for pages and apps " +
+            "that serve them.",
+          tags: ["authoring"],
+          params: WorkspaceParams,
+          body: Type.Object({
+            changes: Type.Array(
+              Type.Object({
+                path: Type.String({ maxLength: 255 }),
+                to: Type.Optional(Type.String({ maxLength: 255 })),
+                kind: Type.Optional(Type.String({ description: "`doc` when left out." })),
+                schemaVersion: Type.Optional(Type.Integer({ minimum: 1 })),
+                body: Type.Optional(AnyObject),
+                source: Type.Optional(Type.String()),
+                deleted: Type.Optional(Type.Boolean()),
+                revision: Type.Optional(Type.Integer({ minimum: 1 })),
+                create: Type.Optional(
+                  Type.Boolean({
+                    description: "A new one: refused as `path_taken` when the path is held.",
+                  }),
+                ),
+              }),
+              { minItems: 1, maxItems: 500 },
+            ),
+          }),
+          response: {
+            200: Type.Object({
+              paths: Type.Array(Type.String(), { description: "Where each page now is." }),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, body }) => {
+        const { workspace, full, held } = await enter(ctx, params, "resource:write");
+        for (const change of body.changes) {
+          for (const path of [change.path, change.to].filter((one) => one !== undefined)) {
+            movedPath(path);
+            if (!full && (await screenAt(workspace, path, held)) === false) {
+              throw forbidden("resource:write");
+            }
+          }
+          const kind = change.kind ?? "doc";
+          if (!change.deleted && (kind === "doc" ? change.source : change.body) === undefined) {
+            throw badRequest("The manifest is not valid.", [
+              {
+                path: `/changes/${change.path}`,
+                message: kind === "doc" ? "needs its source" : "needs its body",
+              },
+            ]);
+          }
+          if (
+            !full &&
+            !change.deleted &&
+            !fits(held, kind, change.body ?? {}, change.to ?? change.path)
+          ) {
+            throw forbidden("resource:write");
+          }
+          if (isCodeKind(kind)) await mayWriteCode(ctx, workspace);
+        }
+        const paths = await ctx.mutate(async (trx, audit) => {
+          const out: string[] = [];
+          for (const change of body.changes) {
+            if (change.deleted) {
+              const draft = await trx
+                .selectFrom("resource_draft")
+                .select(["key"])
+                .where("workspace_id", "=", workspace.id)
+                .where("path", "=", change.path)
+                .executeTakeFirst();
+              const live = await trx
+                .selectFrom("resource")
+                .select(["id"])
+                .where("workspace_id", "=", workspace.id)
+                .where((where) =>
+                  draft
+                    ? where.or([where("key", "=", draft.key), where("path", "=", change.path)])
+                    : where("path", "=", change.path),
+                )
+                .executeTakeFirst();
+              // A page that was only ever a draft has nothing to remove: its draft is set aside.
+              if (!live && draft) {
+                await discardDraft(trx, audit, workspace, change.path);
+                continue;
+              }
+            }
+            const kind = change.kind ?? "doc";
+            const source = change.source ?? "";
+            const title =
+              kind === "doc"
+                ? frontmatterOf(source)?.title
+                : (change.body as { title?: unknown } | undefined)?.title;
+            const saved = await saveDraft(kernel, trx, audit, workspace, ctx.principal, {
+              kind,
+              schemaVersion: change.schemaVersion ?? 1,
+              body: kind === "doc" ? { source } : (change.body ?? {}),
+              deleted: change.deleted,
+              revision: change.revision,
+              create: change.create,
+              path: change.path,
+              ...(change.to !== undefined && change.to !== change.path
+                ? { moveTo: change.to }
+                : {}),
+              ...(typeof title === "string" && title !== "" ? { title } : {}),
+            });
+            out.push(saved.draft.path);
+          }
+          return out;
+        });
+        return { paths };
       },
     );
 
@@ -573,9 +774,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }) => {
-        const { workspace, full } = await enter(ctx, params, "resource:read");
+        const { workspace, full, held } = await enter(ctx, params, "resource:read");
         const path = pathOf(params);
-        if (!full && !(await screenAt(workspace, path))) throw forbidden("resource:read");
+        if (!full && !(await screenAt(workspace, path, held))) throw forbidden("resource:read");
         const rows = await db
           .selectFrom("resource_draft_history")
           .selectAll()
@@ -621,8 +822,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .executeTakeFirst();
         if (!kept) throw notFound("That earlier version");
-        const { workspace, full } = await enter(ctx, params, "resource:write");
-        if (!full && !(await screenAt(workspace, kept.path))) throw forbidden("resource:write");
+        const { workspace, full, held } = await enter(ctx, params, "resource:write");
+        if (!full && !(await screenAt(workspace, kept.path, held)))
+          throw forbidden("resource:write");
         if (isCodeKind(kept.kind)) await mayWriteCode(ctx, workspace);
         const saved = await ctx.mutate((trx, audit) =>
           saveDraft(kernel, trx, audit, workspace, ctx.principal, {
@@ -651,8 +853,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params }, reply) => {
-        const { workspace, full } = await enter(ctx, params, "resource:write");
-        if (!full && (await screenAt(workspace, pathOf(params))) === false) {
+        const { workspace, full, held } = await enter(ctx, params, "resource:write");
+        if (!full && (await screenAt(workspace, pathOf(params), held)) === false) {
           throw forbidden("resource:write");
         }
         await ctx.mutate((trx, audit) => discardDraft(trx, audit, workspace, pathOf(params)));
@@ -754,18 +956,19 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
-        const { workspace, full } = await enter(ctx, params, "deployment:write");
+        const { workspace, full, held } = await enter(ctx, params, "deployment:write");
         if (!full) {
           // Without paths a deploy carries every draft, and so other people's code.
           if (!body.paths?.length) {
             throw new HttpError(
               403,
               "forbidden",
-              "Say which interfaces to deploy. Deploying every draft needs the deployment:write permission.",
+              "Say which interfaces or pages to deploy. Deploying every draft needs the deployment:write permission.",
             );
           }
           for (const path of body.paths) {
-            if ((await screenAt(workspace, path)) !== true) throw forbidden("deployment:write");
+            if ((await screenAt(workspace, path, held)) === true) continue;
+            throw forbidden("deployment:write");
           }
         }
         let pending = db
@@ -904,7 +1107,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 format: "uuid",
                 description:
                   "A bundle uploaded to this workspace with `preview`, such as a local build " +
-                  "(`platform run --remote`): run from it as it is, in a dev workspace only.",
+                  "(`volvel run --remote`): run from it as it is, in a dev workspace only.",
               }),
             ),
             triggerNode: Type.Optional(

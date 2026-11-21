@@ -1,9 +1,9 @@
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
-import { newId, sql } from "@vynxlabs/db";
-import { type Bundle, type BundleManifest, bundleDigest } from "@vynxlabs/manifest";
-import { Worker } from "@vynxlabs/worker";
+import { newId, sql } from "@volvel/db";
+import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { reapDeadRuns, requeueLostRuns } from "./kernel/execution/runs.js";
 import { sweepTasks } from "./kernel/execution/tasks.js";
@@ -1586,8 +1586,8 @@ describe("managed workers", () => {
     expect(
       Object.keys(environment)
         .sort()
-        .filter((name) => name.startsWith("PLATFORM_")),
-    ).toEqual(["PLATFORM_URL", "PLATFORM_WORKER_IDLE_EXIT", "PLATFORM_WORKER_MACHINE"]);
+        .filter((name) => name.startsWith("VOLVEL_")),
+    ).toEqual(["VOLVEL_URL", "VOLVEL_WORKER_IDLE_EXIT", "VOLVEL_WORKER_MACHINE"]);
     for (const secret of [
       "DATABASE_URL",
       "MASTER_KEY",

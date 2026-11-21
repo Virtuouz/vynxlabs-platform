@@ -7,10 +7,12 @@ export interface Branding {
   named: boolean;
   logo: boolean;
   theme: { tokens: Record<string, string>; dark: Record<string, string> };
+  /** Where the documentation is on the web, when the operator said. */
+  docsUrl?: string | null;
 }
 
 const DEFAULT: Branding = {
-  productName: "Vynxlabs",
+  productName: "Volvel",
   named: false,
   logo: false,
   theme: { tokens: {}, dark: {} },

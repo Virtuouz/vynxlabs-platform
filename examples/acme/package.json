@@ -1,13 +1,13 @@
 {
-  "name": "@vynxlabs/example-acme",
+  "name": "@volvel/example-acme",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "description": "A sample tenant repository: an integration between a shop and an ERP, and a portal for staff and customers.",
   "dependencies": {
-    "@vynxlabs/sdk": "workspace:*",
-    "@vynxlabs/app": "workspace:*",
-    "@vynxlabs/ui": "workspace:*",
+    "@volvel/sdk": "workspace:*",
+    "@volvel/app": "workspace:*",
+    "@volvel/ui": "workspace:*",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

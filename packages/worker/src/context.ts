@@ -1,11 +1,11 @@
-import type { BundleManifest } from "@vynxlabs/manifest";
+import type { BundleManifest } from "@volvel/manifest";
 import {
   type Connector,
   httpConnector,
   oauth2Connector,
   type ScriptContext,
   type TableClient,
-} from "@vynxlabs/sdk";
+} from "@volvel/sdk";
 import { smtpConnector } from "./smtp.js";
 
 /** A run as the control plane hands it out. */

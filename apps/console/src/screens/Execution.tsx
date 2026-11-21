@@ -7,14 +7,15 @@ import {
   Notice,
   Panel,
   saveText,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
-import { ago, between, clock, count, duration } from "../kit/format.ts";
+import { ago, between, count, duration } from "../kit/format.ts";
+import { HealthCell } from "../kit/health.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
@@ -179,7 +180,7 @@ export function Scripts({
             <span className="flex min-w-0 flex-col">
               <span className="flex min-w-0 items-center gap-2">
                 <Link
-                  to={`${link}/scripts/edit/${row.path}`}
+                  to={`${link}/scripts/${row.path}`}
                   className="min-w-0 font-mono text-code text-ink no-underline"
                 >
                   <Truncate mode="middle">{row.path}</Truncate>
@@ -244,12 +245,12 @@ export function Scripts({
           ) : editable ? (
             <>
               Write one here, or deploy them from the tenant's repository with{" "}
-              <code className="font-mono">platform deploy</code>.
+              <code className="font-mono">volvel deploy</code>.
             </>
           ) : (
             <>
               Scripts reach production when a dev workspace is promoted here, or with{" "}
-              <code className="font-mono">platform deploy</code> from the tenant's repository.
+              <code className="font-mono">volvel deploy</code> from the tenant's repository.
             </>
           ),
         ...(items.length === 0 && editable
@@ -283,6 +284,8 @@ export function Scripts({
                   script={open.path}
                   schema={open.inputSchema}
                   runsLink={runsLink}
+                  deployed={open.deployed !== false}
+                  draft={open.draft === true}
                 />
                 <OfferButton root={root} kind="script" path={open.path} size="small" />
               </>
@@ -332,27 +335,41 @@ export function Scripts({
   );
 }
 
-function RunButton({
+export function RunButton({
   root,
   script,
   schema,
   runsLink,
+  deployed = true,
+  draft = false,
+  size = "small",
 }: {
   root: string;
   script: string;
   schema: Record<string, unknown>;
   runsLink: string;
+  /** False for a script that is only a draft: nothing is there to run yet. */
+  deployed?: boolean;
+  /** A change waits to be deployed: a run starts the deployed version, not it. */
+  draft?: boolean;
+  size?: "small" | "regular";
 }) {
   const [open, setOpen] = useState(false);
+  if (!deployed)
+    return (
+      <span className="text-meta text-ink-muted">
+        Not deployed yet. Deploy it to run it, or try the draft from its editor.
+      </span>
+    );
   return (
     <>
-      <Button size="small" onClick={() => setOpen(true)}>
+      <Button size={size} onClick={() => setOpen(true)}>
         Run
       </Button>
       <InputDialog
         open={open}
         onClose={() => setOpen(false)}
-        title={`Run ${script}`}
+        title={draft ? `Run ${script}, as deployed` : `Run ${script}`}
         action="Run"
         schema={schema}
         onSubmit={async (input) => {
@@ -547,66 +564,46 @@ export function LogWindowNote({
   );
 }
 
-interface BundleRow {
-  id: string;
+/**
+ * "Activate this version": the way back to a bundle that ran before, or on to one
+ * that never ran here. It names the workspace, and asks as a danger in production.
+ */
+export function ActivateVersion({
+  root,
+  workspace,
+  bundleId,
+  version,
+  onDone,
+}: {
+  root: string;
+  /** Whose version this is: the confirm names it. */
+  workspace: { name: string; type: string };
+  bundleId: string;
   version: number;
-  digest: string;
-  sdkVersion: string;
-  manifestCount: number;
-  active: boolean;
-  createdAt: string;
-}
-
-export function Deployments({ root }: { root: string }) {
+  onDone: () => void;
+}) {
   return (
-    <ListScreen<BundleRow>
-      title="Deployments"
-      description="Every bundle uploaded to this workspace. Activating an earlier one is how you roll back. Runs in progress finish on the bundle they started with."
-      path={`${root}/bundles`}
-      rowKey={(row) => row.id}
-      columns={[
-        {
-          header: "Version",
-          cell: (row) => (
-            <span className="flex items-center gap-2">
-              {row.version}
-              {row.active ? <StatePill state="active">In use</StatePill> : null}
-            </span>
-          ),
-        },
-        { header: "Digest", cell: (row) => <Code>{row.digest.slice(0, 12)}</Code> },
-        { header: "Resources", cell: (row) => row.manifestCount, align: "end" },
-        { header: "Uploaded", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
-      ]}
-      empty={{
-        title: "Nothing has been deployed",
-        text: "Deploy what was saved here from Release, promote a dev workspace into this one, or deploy from the tenant's repository with platform deploy.",
+    <Button
+      size="small"
+      onClick={async () => {
+        const sure = await ask.confirm({
+          title: `Activate version ${version} in ${workspace.name}?`,
+          text: `${workspace.name} stops running what it runs now and starts running version ${version} at once. Runs in progress there finish on the version they started with.`,
+          action: workspace.type === "production" ? "Activate in production" : "Activate",
+          danger: workspace.type === "production",
+        });
+        if (!sure) return;
+        try {
+          await api.post(`${root}/deployments`, { bundleId });
+          notify.success(`Version ${version} is what runs here now.`);
+          onDone();
+        } catch (error) {
+          notify.error(error);
+        }
       }}
-      rowActions={(row, reload) =>
-        row.active ? null : (
-          <Button
-            size="small"
-            onClick={async () => {
-              const sure = await ask.confirm({
-                title: `Activate version ${row.version}?`,
-                text: "This replaces what the workspace is running.",
-                action: "Activate",
-              });
-              if (!sure) return;
-              try {
-                await api.post(`${root}/deployments`, { bundleId: row.id });
-                notify.success(`Version ${row.version} is what runs here now.`);
-                reload();
-              } catch (error) {
-                notify.error(error);
-              }
-            }}
-          >
-            Activate
-          </Button>
-        )
-      }
-    />
+    >
+      Activate this version
+    </Button>
   );
 }
 
@@ -670,25 +667,7 @@ export function ConnectionHealth({ root, row }: { root: string; row: ConnectionR
       </span>
     );
   }
-  if (!row.health) return <StatePill state="queued">Not tested</StatePill>;
-  const when = `Tested ${clock(row.health.checkedAt)}`;
-  return (
-    <span
-      title={row.health.ok ? when : `${row.health.problem ?? ""}\n${when}`}
-      className="block max-w-[18rem]"
-    >
-      {row.health.ok ? (
-        <StatePill
-          state="ok"
-          detail={row.health.latencyMs !== null ? `${row.health.latencyMs} ms` : undefined}
-        >
-          Reached
-        </StatePill>
-      ) : (
-        <StatePill state="failed">{`Failed: ${row.health.problem ?? "not reached"}`}</StatePill>
-      )}
-    </span>
-  );
+  return <HealthCell health={row.health} />;
 }
 
 export function Connections({ root }: { root: string }) {
@@ -1233,7 +1212,7 @@ export function Workers({ base }: { base: string }) {
       }>
         as="section"
         title="Credentials for standalone workers"
-        description={`A worker outside the platform signs in with one of these: platform-worker --url ${instanceUrl} --token followed by the credential. The full command is shown when a credential is made.`}
+        description={`A worker outside the platform signs in with one of these: volvel-worker --url ${instanceUrl} --token followed by the credential. The full command is shown when a credential is made.`}
         path={`${base}/worker-credentials`}
         rowKey={(row) => row.id}
         columns={[
@@ -1275,7 +1254,7 @@ export function Workers({ base }: { base: string }) {
           },
           afterCreate: (result, dismiss) => {
             const token = (result as { token: string }).token;
-            const command = `platform-worker --url ${instanceUrl} --token ${token}`;
+            const command = `volvel-worker --url ${instanceUrl} --token ${token}`;
             return (
               <OneTimeSecret value={token} noun="credential" onDone={dismiss}>
                 <p className="m-0">Start a worker with it:</p>

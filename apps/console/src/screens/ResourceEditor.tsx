@@ -8,14 +8,17 @@ import {
   SelectField,
   TextAreaField,
   TextField,
-} from "@vynxlabs/ui";
+} from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
-import { ask, failureText, notify } from "../ask.tsx";
+import { failureText, takenText } from "../ask.tsx";
+import { FieldAbout } from "../help/FieldAbout.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { useDraftSave } from "../kit/draftSave.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
@@ -43,6 +46,13 @@ export const isEditedKind = (kind: string): kind is EditedKind =>
   (EDITED_KINDS as readonly string[]).includes(kind);
 
 type Body = Record<string, unknown>;
+
+/** What a save sends: the three things the editor holds. */
+interface Unsaved {
+  path: string;
+  body: Body;
+  json: Record<string, string>;
+}
 
 const ABOUT: Record<EditedKind, { noun: string; example: string; says: string; fresh: Body }> = {
   connection: {
@@ -126,7 +136,7 @@ export function resourceProblems(kind: EditedKind, body: Body, json: Record<stri
 /**
  * A resource that is settings and no code, made and changed in the console:
  * a connection, a connection group, a variable, an event, a schedule or a
- * trigger. Saving makes a draft, deployed from the Changes screen.
+ * trigger. Saving makes a draft, deployed from the Releases screen.
  */
 export function ResourceEditor({
   root,
@@ -154,12 +164,50 @@ export function ResourceEditor({
     typeAsked === "webhook" || typeAsked === "event" || typeAsked === "form"
       ? typeAsked
       : undefined;
-  const [revision, setRevision] = useState<number>();
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
-  const [dirty, setDirty] = useState(false);
   const [problem, setProblem] = useState<string>();
-  const [busy, setBusy] = useState(false);
+  const [pathTaken, setPathTaken] = useState<string>();
   const [tried, setTried] = useState(false);
+  // What is saved and what is on screen go through one hook: a save sends what was typed last,
+  // and what is typed while one is in flight is saved after it.
+  const draft = useDraftSave<Unsaved, { body: Body; revision: number }>({
+    send: (snap, at) => {
+      const written: Body = { ...snap.body };
+      for (const [name, value] of Object.entries(snap.json)) {
+        if (value.trim() === "") delete written[name];
+        else written[name] = JSON.parse(value);
+      }
+      return api.put<{ body: Body; revision: number }>(`${root}/drafts/${snap.path}`, {
+        kind,
+        schemaVersion: 1,
+        body: written,
+        // A new one is a create: a path that is taken is refused, never overwritten.
+        ...(at ? { revision: at } : opened ? {} : { create: true }),
+      });
+    },
+    applied: (saved, sent, current) => {
+      // What the server sends back replaces the screen only if nothing was typed since.
+      if (current) {
+        draft.adopt({ ...sent, body: saved.body });
+        setBody(saved.body);
+      }
+      setState("draft");
+      drafts.reload();
+      clearRecovery(recoveryKey);
+      if (!opened && savedAs.current !== sent.path) {
+        savedAs.current = sent.path;
+        navigate(`${link}/resources/edit/${kind}/${sent.path}`, { replace: true });
+      }
+    },
+    failed: (error) => {
+      const refused = takenText(error);
+      if (refused) setPathTaken(refused);
+      else setProblem(failureText(error));
+    },
+  });
+  const { dirty } = draft;
+  const busy = draft.saving;
+  const savedAs = useRef<string>(undefined);
   const resources = useLoad<{ items: { path: string; kind: string; body: { mode?: string } }[] }>(
     `${root}/resources`,
   );
@@ -170,18 +218,19 @@ export function ResourceEditor({
 
   useEffect(() => {
     let current = true;
+    const jsonOf = (next: Body): Record<string, string> => ({
+      ...(next.payload ? { payload: JSON.stringify(next.payload, null, 2) } : {}),
+      // A schedule's input is a form of its own.
+      ...(next.input && typeof next.input === "object" && about.noun !== "schedule"
+        ? { input: JSON.stringify(next.input, null, 2) }
+        : {}),
+    });
     const open = (next: Body, as: typeof state, at?: number) => {
       if (!current) return;
       setBody(next);
-      setJson({
-        ...(next.payload ? { payload: JSON.stringify(next.payload, null, 2) } : {}),
-        // A schedule's input is a form of its own.
-        ...(next.input && typeof next.input === "object" && about.noun !== "schedule"
-          ? { input: JSON.stringify(next.input, null, 2) }
-          : {}),
-      });
+      setJson(jsonOf(next));
       setState(as);
-      setRevision(at);
+      draft.reset({ path: opened ?? "", body: next, json: jsonOf(next) }, at);
     };
     if (!opened) {
       // The Triggers page says which kind of trigger it wants.
@@ -206,7 +255,7 @@ export function ResourceEditor({
     return () => {
       current = false;
     };
-  }, [root, opened, about, askedType]);
+  }, [root, opened, about, askedType, draft.reset]);
 
   // Changes not saved are not lost by a click elsewhere, Back, or closing the tab. A draft
   // saves itself a few seconds after the last change; something new waits for its first Save,
@@ -238,10 +287,16 @@ export function ResourceEditor({
   if (!body) return <Loading />;
 
   const readOnly = !editable;
-  const change = (next: Body) => {
-    setBody(tidy({ ...body, ...next }));
-    setDirty(true);
+  /** Something changed: on top of the newest, not of this render's, so two changes both stay. */
+  const edit = (part: Partial<Unsaved>) => {
+    const next = { path, body, json, ...draft.value(), ...part };
+    if (part.path !== undefined) setPath(part.path);
+    if (part.body) setBody(part.body);
+    if (part.json) setJson(part.json);
+    draft.edit(next);
   };
+  const change = (next: Body) =>
+    edit({ body: tidy({ ...(draft.value()?.body ?? body), ...next }) });
   const text = (name: string) => (body[name] as string | undefined) ?? "";
   /** What the workspace has of a kind, deployed or still a draft. */
   const ofKind = (wanted: string, mode?: string): Option[] => {
@@ -263,6 +318,7 @@ export function ResourceEditor({
 
   const save = async (): Promise<boolean> => {
     setProblem(undefined);
+    setPathTaken(undefined);
     if (!PATH.test(path)) {
       setProblem(
         `Give the ${about.noun} a path: lowercase letters, digits, hyphens and underscores, in folders. For example ${about.example}.`,
@@ -274,33 +330,7 @@ export function ResourceEditor({
       setTried(true);
       return false;
     }
-    const written: Body = { ...body };
-    for (const [name, value] of Object.entries(json)) {
-      if (value.trim() === "") delete written[name];
-      else written[name] = JSON.parse(value);
-    }
-    setBusy(true);
-    try {
-      const saved = await api.put<{ body: Body; revision: number }>(`${root}/drafts/${path}`, {
-        kind,
-        schemaVersion: 1,
-        body: written,
-        ...(revision ? { revision } : {}),
-      });
-      setBody(saved.body);
-      setRevision(saved.revision);
-      setState("draft");
-      setDirty(false);
-      drafts.reload();
-      clearRecovery(recoveryKey);
-      if (!opened) navigate(`${link}/resources/edit/${kind}/${path}`, { replace: true });
-      return true;
-    } catch (error) {
-      setProblem(failureText(error));
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    return draft.save(true);
   };
 
   autosave.current = save;
@@ -314,10 +344,7 @@ export function ResourceEditor({
       required={false}
       disabled={readOnly}
       hint={hint}
-      onChange={(value) => {
-        setJson({ ...json, [name]: value });
-        setDirty(true);
-      }}
+      onChange={(value) => edit({ json: { ...(draft.value()?.json ?? json), [name]: value } })}
     />
   );
   const description = (
@@ -380,36 +407,17 @@ export function ResourceEditor({
                 />
               ) : null}
               {opened && state !== "new" ? (
-                <Button
-                  variant="danger"
+                <RemoveDraftButton
+                  root={root}
+                  kind={kind}
+                  path={opened}
+                  noun={about.noun}
+                  state={state}
                   disabled={busy}
-                  onClick={async () => {
-                    const draft = state === "draft";
-                    const sure = await ask.confirm({
-                      title: draft ? "Discard this draft?" : `Remove this ${about.noun}?`,
-                      text: draft
-                        ? `The ${about.noun} goes back to how it was last deployed. One that was never deployed is gone.`
-                        : "This saves a draft that removes it. Nothing changes until that draft is deployed.",
-                      action: draft ? "Discard" : "Remove",
-                      danger: true,
-                    });
-                    if (!sure) return;
-                    await (draft
-                      ? api.delete(`${root}/drafts/${opened}`)
-                      : api.put(`${root}/drafts/${opened}`, {
-                          kind,
-                          schemaVersion: 1,
-                          body: {},
-                          deleted: true,
-                        })
-                    ).then(
-                      () => navigate(`${link}/${draft ? "resources" : "changes"}`),
-                      notify.error,
-                    );
-                  }}
-                >
-                  {state === "draft" ? "Discard draft" : "Remove"}
-                </Button>
+                  onDone={(did) =>
+                    navigate(`${link}/${did === "discarded" ? "resources" : "changes"}`)
+                  }
+                />
               ) : null}
               <Button
                 variant="primary"
@@ -440,7 +448,11 @@ export function ResourceEditor({
                 value={path}
                 placeholder={about.example}
                 hint="Its name in this workspace. It can be renamed later, and stays the same resource."
-                onChange={setPath}
+                {...(pathTaken ? { error: pathTaken } : {})}
+                onChange={(next) => {
+                  setPathTaken(undefined);
+                  edit({ path: next });
+                }}
               />
             </div>
           )
@@ -477,10 +489,7 @@ export function ResourceEditor({
               <Button
                 size="small"
                 onClick={() => {
-                  setPath(kept.path);
-                  setBody(kept.body);
-                  setJson(kept.json);
-                  setDirty(true);
+                  edit({ path: kept.path, body: kept.body, json: kept.json });
                   taken();
                 }}
               >
@@ -580,18 +589,29 @@ export function ResourceEditor({
                 ? {}
                 : { hint: "What a trigger is cannot be changed once it is saved. Make another." })}
               onChange={(type) => {
-                const kept = { script: text("script") };
-                setBody(
-                  type === "event"
-                    ? { type, ...kept, event: "" }
-                    : type === "form"
-                      ? { ...newForm(), ...kept }
-                      : { type: "webhook", ...kept },
-                );
-                setDirty(true);
+                const kept = { script: text("script"), description: text("description") };
+                edit({
+                  body:
+                    type === "event"
+                      ? { type, ...kept, event: "" }
+                      : type === "form"
+                        ? { ...newForm(), ...kept }
+                        : { type: "webhook", ...kept },
+                });
               }}
             />
             {script}
+            <FieldAbout path="trigger.description" name="what it is for">
+              <TextField
+                name="description"
+                label="What it is for"
+                value={text("description")}
+                required={false}
+                maxLength={500}
+                disabled={readOnly}
+                onChange={(value) => change({ description: value })}
+              />
+            </FieldAbout>
             {body.type === "webhook" ? (
               <WebhookSettings
                 canRespond={false}
@@ -602,8 +622,14 @@ export function ResourceEditor({
                   label: one.name,
                 }))}
                 onChange={(trigger) => {
-                  setBody(tidy({ ...trigger, script: text("script"), enabled: body.enabled }));
-                  setDirty(true);
+                  edit({
+                    body: tidy({
+                      ...trigger,
+                      script: text("script"),
+                      enabled: body.enabled,
+                      description: text("description"),
+                    }),
+                  });
                 }}
               />
             ) : null}
@@ -632,8 +658,14 @@ export function ResourceEditor({
               <FormDesigner
                 trigger={body as unknown as FormTrigger}
                 onChange={(trigger) => {
-                  setBody(tidy({ ...trigger, script: text("script"), enabled: body.enabled }));
-                  setDirty(true);
+                  edit({
+                    body: tidy({
+                      ...trigger,
+                      script: text("script"),
+                      enabled: body.enabled,
+                      description: text("description"),
+                    }),
+                  });
                 }}
               />
             ) : null}

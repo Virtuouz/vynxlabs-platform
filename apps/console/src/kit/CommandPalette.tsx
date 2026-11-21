@@ -1,8 +1,10 @@
-import { CheckboxField, Closing, Dialog, Kbd } from "@vynxlabs/ui";
+import { CheckboxField, Closing, Dialog, Kbd } from "@volvel/ui";
 import {
   Activity,
+  BookOpen,
   Boxes,
   Braces,
+  CircleHelp,
   CornerDownLeft,
   FileCode2,
   Keyboard,
@@ -21,6 +23,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { openHelp } from "../help/store.ts";
 import { InputDialog } from "../InputDialog.tsx";
 import { usePreference } from "../prefs.ts";
 import { navigate } from "../router.tsx";
@@ -86,6 +89,7 @@ const KIND_ICON: Record<string, LucideIcon> = {
   schedule: Zap,
   connection: Plug,
   event: Radio,
+  doc: BookOpen,
   run: Play,
   flow_run: Play,
   member: User,
@@ -101,6 +105,7 @@ const KIND_LABEL: Record<string, string> = {
   schedule: "Schedule",
   connection: "Connection",
   event: "Event",
+  doc: "Page",
   run: "Run",
   flow_run: "Flow run",
   member: "Member",
@@ -162,6 +167,8 @@ function pageOf(tenantId: string, found: Found): string {
       return `${ws}/scripts/${found.ref}`;
     case "app":
       return `${ws}/apps?app=${found.id}`;
+    case "doc":
+      return `${ws}/docs/${found.ref}`;
     case "flow":
     case "interface":
     case "table":
@@ -537,6 +544,16 @@ export function CommandPalette({
         open: () => {
           close();
           window.open("/api/v1/openapi.json", "_blank", "noopener");
+        },
+      },
+      {
+        key: "a-help",
+        label: "Help for this page",
+        icon: CircleHelp,
+        section: "Actions",
+        open: () => {
+          close();
+          openHelp();
         },
       },
       {

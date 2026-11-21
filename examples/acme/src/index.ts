@@ -16,7 +16,7 @@ import {
   step,
   trigger,
   z,
-} from "@vynxlabs/sdk";
+} from "@volvel/sdk";
 
 // Where each connection points, and its credential, is set per workspace.
 export const shop = defineConnection({ path: "shop", description: "The web shop's order API." });

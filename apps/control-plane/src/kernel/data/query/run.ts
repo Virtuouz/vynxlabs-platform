@@ -1,4 +1,4 @@
-import { CompiledQuery, sql } from "@vynxlabs/db";
+import { CompiledQuery, sql } from "@volvel/db";
 import { badRequest, HttpError } from "../../errors.js";
 import type { Kernel } from "../../kernel.js";
 import { type DataScope, withData } from "../rows.js";

@@ -1,17 +1,19 @@
 import { fileURLToPath } from "node:url";
-import { ComposeError, composeBundle, SOURCE_KINDS, type UnsignedBundle } from "@vynxlabs/compose";
-import { newId, sql } from "@vynxlabs/db";
+import { ComposeError, composeBundle, SOURCE_KINDS, type UnsignedBundle } from "@volvel/compose";
+import { newId, sql } from "@volvel/db";
 import {
   type Bundle,
   type BundleManifest,
   CORE_PREFIX,
+  type DashboardBody,
   entryFor,
   keyOf,
   movedFile,
   validateJson,
-} from "@vynxlabs/manifest";
-import { CORE_RANGE, SDK_VERSION } from "@vynxlabs/sdk";
+} from "@volvel/manifest";
+import { CORE_RANGE, SDK_VERSION } from "@volvel/sdk";
 import { type Audit, type Db, mutate, type Principal, type Trx } from "./audit.js";
+import { dashboardsNaming, queryPathsOf, renamedQuery } from "./dashboard-queries.js";
 import { badRequest, conflict, HttpError, notFound } from "./errors.js";
 import { loadBundle, storeBundle } from "./execution/bundles.js";
 import { deployBundle } from "./execution/deploy.js";
@@ -30,7 +32,7 @@ import type { Kernel } from "./kernel.js";
  */
 
 /** The SDK that console-written code is compiled against: the control plane's own. */
-const sdkEntry = fileURLToPath(import.meta.resolve("@vynxlabs/sdk"));
+const sdkEntry = fileURLToPath(import.meta.resolve("@volvel/sdk"));
 
 /** Whether a kind's manifest carries source, and so needs the permission to write code. */
 export const isCodeKind = (kind: string) => SOURCE_KINDS.includes(kind);
@@ -51,6 +53,13 @@ export interface DraftInput {
   moveTo?: string | undefined;
   /** What people read. Null takes it away. Left as it is when not given. */
   title?: string | null | undefined;
+  /**
+   * With a rename of a query: also draft the console's dashboards that name its path, with the
+   * new one. Left to a caller who may write any resource, since it drafts resources beyond the query.
+   */
+  renameDashboards?: boolean | undefined;
+  /** A create: refused, as `path_taken`, when the path holds a draft or a deployed resource. */
+  create?: boolean | undefined;
 }
 
 /** Drafts are for dev workspaces: production changes by deploy and promotion only. */
@@ -90,6 +99,21 @@ const emptyBase = (): UnsignedBundle => ({
   code: "",
 });
 
+/**
+ * Takes the workspace row's key-share lock before any draft row is touched. A draft's history
+ * row takes it anyway, through its foreign key; taken first, a draft write waits behind a deploy
+ * that holds the workspace, instead of holding a draft row the deploy then waits for (a deadlock
+ * found by the phase 22 walk: a discard while a deploy settled its drafts).
+ */
+async function holdWorkspace(trx: Trx, workspaceId: string) {
+  await trx
+    .selectFrom("workspace")
+    .select("id")
+    .where("id", "=", workspaceId)
+    .forKeyShare()
+    .execute();
+}
+
 export async function saveDraft(
   kernel: Kernel,
   trx: Trx,
@@ -98,6 +122,7 @@ export async function saveDraft(
   principal: Principal,
   input: DraftInput,
 ) {
+  await holdWorkspace(trx, workspace.id);
   await devWorkspace(trx, workspace);
   if (input.path.startsWith(CORE_PREFIX)) {
     throw badRequest("The manifest is not valid.", [
@@ -120,6 +145,15 @@ export async function saveDraft(
     .where("path", "=", input.path)
     .forUpdate()
     .executeTakeFirst();
+  // A create never overwrites: the path must hold neither a draft nor a deployed resource.
+  if (input.create && (existing || resource)) {
+    const kind = existing?.kind ?? resource?.kind ?? input.kind;
+    throw new HttpError(
+      409,
+      "path_taken",
+      `${input.path} is the path of ${/^[aeiou]/.test(kind) ? "an" : "a"} ${kind.replaceAll("_", " ")}. Choose another path, or open that one.`,
+    );
+  }
   // The draft is of the resource at its path, or of a new one that takes the path as its key.
   const key = existing?.key ?? resource?.key ?? input.path;
   // A rename: the draft moves to the path the resource is to have. Nothing else may be there.
@@ -185,6 +219,16 @@ export async function saveDraft(
     );
   }
 
+  // A page of documentation is written by people who do not share a repository to settle
+  // their differences in. Whoever saves one says which draft they were looking at, and a
+  // save that says nothing, over a draft someone else has made since, is that same conflict.
+  if (existing && input.kind === "doc" && input.revision === undefined) {
+    throw new HttpError(
+      409,
+      "draft_changed",
+      "Someone else saved this page after you opened it. Reload it, then make your change again.",
+    );
+  }
   if (existing && input.revision !== undefined && input.revision !== existing.revision) {
     throw new HttpError(
       409,
@@ -238,6 +282,19 @@ export async function saveDraft(
       ...(path !== input.path ? { renamedFrom: input.path } : {}),
     },
   });
+  // A query renamed: the dashboards made in the console that name its path are drafted with the
+  // new one, in this same transaction. A dashboard from the repository is changed there.
+  if (input.renameDashboards && input.kind === "query" && !input.deleted && path !== input.path) {
+    for (const dashboard of await dashboardsNaming(trx, workspace.id, input.path)) {
+      if (dashboard.ownership === "code") continue;
+      await saveDraft(kernel, trx, audit, workspace, principal, {
+        path: dashboard.path,
+        kind: "dashboard",
+        schemaVersion: dashboard.schemaVersion,
+        body: renamedQuery(dashboard.body, input.path, path) as unknown as Record<string, unknown>,
+      });
+    }
+  }
   return { draft: row, takesOver: resource?.ownership === "code" };
 }
 
@@ -291,6 +348,39 @@ async function keepInHistory(trx: Trx, draft: DraftRow, reason: "replaced" | "se
 
 /** Sets a draft aside: it stops being a draft, and is kept whole in its history. */
 export async function discardDraft(trx: Trx, audit: Audit, workspace: WorkspaceRef, path: string) {
+  await holdWorkspace(trx, workspace.id);
+  const removed = await setAside(trx, audit, workspace, path);
+  // The draft that renamed a query drafted the console's dashboards that name it. They are
+  // set aside with it: a dashboard naming the new path whose deployed one names the old path
+  // is one the rename drafted, and is not left naming a path that is no longer there.
+  if (removed.kind !== "query") return;
+  const was = await trx
+    .selectFrom("resource")
+    .select("path")
+    .where("workspace_id", "=", workspace.id)
+    .where("key", "=", removed.key)
+    .executeTakeFirst();
+  if (!was || was.path === removed.path) return;
+  for (const dashboard of await dashboardsNaming(trx, workspace.id, removed.path)) {
+    if (!dashboard.drafted) continue;
+    const deployed = await trx
+      .selectFrom("resource")
+      .select("body")
+      .where("workspace_id", "=", workspace.id)
+      .where("key", "=", dashboard.key)
+      .executeTakeFirst();
+    const before = deployed ? queryPathsOf(deployed.body as unknown as DashboardBody) : undefined;
+    if (!deployed || !before || !dashboard.widgets.some((id) => before.get(id) === was.path))
+      continue;
+    // Only the draft the rename wrote, as it wrote it: one changed since is someone's work, and
+    // is kept (it then names a path that is gone, and runs by the key recorded for it).
+    const written = renamedQuery(deployed.body as unknown as DashboardBody, was.path, removed.path);
+    if (JSON.stringify(dashboard.body) !== JSON.stringify(written)) continue;
+    await setAside(trx, audit, workspace, dashboard.path);
+  }
+}
+
+async function setAside(trx: Trx, audit: Audit, workspace: WorkspaceRef, path: string) {
   const removed = await trx
     .deleteFrom("resource_draft")
     .where("workspace_id", "=", workspace.id)
@@ -307,6 +397,7 @@ export async function discardDraft(trx: Trx, audit: Audit, workspace: WorkspaceR
     workspaceId: workspace.id,
     details: { kind: removed.kind },
   });
+  return removed;
 }
 
 /**

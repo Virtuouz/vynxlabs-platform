@@ -196,8 +196,14 @@ export interface FilterBarProps {
 
 /** A page's filters, set by whoever reads it: a range of dates, a choice, some text or a number. */
 export function FilterBar({ filters, values, onChange, options }: FilterBarProps) {
+  // Two filters that hand on a value in the same moment each add to what the other set.
+  const latest = useRef(values);
+  latest.current = values;
   if (filters.length === 0) return null;
-  const set = (name: string, value: unknown) => onChange({ ...values, [name]: value });
+  const set = (name: string, value: unknown) => {
+    latest.current = { ...latest.current, [name]: value };
+    onChange(latest.current);
+  };
   return (
     <search aria-label="Filters" className="flex flex-wrap items-end gap-4">
       {filters.map((filter) => {

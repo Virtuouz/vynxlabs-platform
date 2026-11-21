@@ -48,7 +48,6 @@ function Title({
         className="min-w-0 flex-1 rounded-inner border border-action bg-surface px-1.5 py-0.5 text-title font-semibold text-ink"
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
-          event.stopPropagation();
           if (event.key === "Enter") finish(true);
           if (event.key === "Escape") finish(false);
         }}

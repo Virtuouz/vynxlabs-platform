@@ -447,6 +447,10 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }) => {
         const path = wildPath(params);
+        // Not updateRowKeepingFiles: a source table has no file column. `platformType`
+        // (kernel/data/sources.ts) maps a source's column types to text, number, json and the
+        // like, never "file", and the files Volvel stores are named only by a workspace table's
+        // file column. A source's own file reference is plain text to Volvel, not a file it keeps.
         const row = await onSource(params, path, async (source) =>
           updateRow(
             source.db,

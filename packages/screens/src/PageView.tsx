@@ -1,7 +1,14 @@
-import type { PageFilter, PageWidget } from "@volvel/manifest";
+import {
+  type ActingUser,
+  type Condition,
+  conditionWords,
+  type Page,
+  type PageFilter,
+  type PageWidget,
+} from "@volvel/manifest";
 import { EmptyState, Panel, useFlip } from "@volvel/ui";
 import { GripHorizontal } from "@volvel/ui/icons";
-import type { EventPayload } from "@volvel/widgets";
+import type { ActOutcome, Choice, EventPayload } from "@volvel/widgets";
 import type React from "react";
 import {
   type CSSProperties,
@@ -13,6 +20,16 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  type ActionsHost,
+  actionAt,
+  groupOf,
+  holds,
+  type NavigateTo,
+  type Request,
+  recordOf,
+  useActions,
+} from "./actions.tsx";
 import { FilterBar } from "./FilterBar.tsx";
 import { Frame, nameOf } from "./Frame.tsx";
 import { duplicated, limitsOf, placed, sizeWords, without } from "./layout.ts";
@@ -39,8 +56,20 @@ export interface PageViewProps {
   refreshKey?: number;
   /** For a choice filter that lists a table's column: what was read for it, by filter name. */
   filterOptions?: Readonly<Record<string, readonly string[]>>;
-  /** A widget raised an event its definition declares. Nothing handles them in phase 25, so a page leaves them alone. */
+  /** A widget raised an event its definition declares. Told after the page has done what its widget says to do. */
   onEvent?: (widget: string, event: string, payload: EventPayload) => void;
+  /** The record the page is open on: a record page, a side sheet or a modal. */
+  record?: string;
+  /** Who is looking, for drawing `when` and `showWhen`. The server checks again. */
+  user?: ActingUser;
+  /** An action opens a page, or closes the sheet or modal it is in. Left out, they are not followed. */
+  onNavigate?(to: NavigateTo): void;
+  /** The page is shown as a side sheet or a modal: its views are given `close`. */
+  over?: boolean;
+  /** The record whose side sheet or modal is open over this page: its row, in the widget that lists it, is marked (`selectedRecord`). */
+  overRecord?: string;
+  /** The pages of the app, so that `open` knows whether its target is a page, a sheet or a modal. */
+  pages?: readonly Page[];
   /** Present while building: the canvas. */
   editing?: {
     selected: string | undefined;
@@ -106,7 +135,26 @@ function Cell({
   selected,
   onEvent,
   handlers,
+  run,
+  record,
+  thisRow,
+  user,
+  onRecord,
+  fade,
+  onClose,
+  overRecord,
 }: {
+  /** Closes the sheet or modal the page is shown in; absent when it is not. */
+  onClose: (() => void) | undefined;
+  overRecord: string | undefined;
+  run(request: Request): Promise<ActOutcome>;
+  /** The page's record id, and its row when a widget has read it. */
+  record: string | undefined;
+  thisRow: Readonly<Record<string, unknown>> | undefined;
+  user: ActingUser | undefined;
+  onRecord(row: Readonly<Record<string, unknown>>): void;
+  /** While building, what decides when the widget is shown: it is drawn faded, with this said. */
+  fade: string | undefined;
   widget: PageWidget;
   entry: ViewEntry | undefined;
   at: Box;
@@ -164,7 +212,44 @@ function Cell({
     }
     // Events are for a page that is read, and only those the definition declares.
     if (building || !definition || !(event in definition.events)) return;
+    if (widget.on?.[event]) {
+      const id = recordOf(payload);
+      void run({
+        widget,
+        at: `on/${event}`,
+        record: id,
+        row: id ? lookup(id) : undefined,
+        group: groupOf(payload),
+        input: groupInput,
+        among: amongIds(),
+      });
+    }
     onEvent?.(widget.id, event, payload);
+  };
+  // The rows the widget read, to find a row by its id and to step through them.
+  const rowsRead = Object.values(reading.read ?? {}).find((wire) => wire.shape === "rows");
+  const lookup = (id: string) => rowsRead?.rows.find((row) => row.id === id);
+  const amongIds = () =>
+    rowsRead?.rows.map((row) => row.id).filter((id): id is string => typeof id === "string");
+  // The summary input a clicked group belongs to: the rows behind it are read for that input.
+  const groupInput = Object.entries(definition?.data ?? {}).find(
+    ([, declared]) => declared.shape === "summary",
+  )?.[0];
+  // A widget that shows the page's record tells the page what it holds, for `when` and `{column}`.
+  const seen = reading.read;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: told again only when something new was read
+  useEffect(() => {
+    if (!record) return;
+    for (const wire of Object.values(seen ?? {})) {
+      if (wire.shape === "record" && wire.record && String(wire.record.id) === record)
+        onRecord(wire.record);
+    }
+  }, [seen, record]);
+  // What views read beyond the contract's props: how to close the sheet they are in, and which row is open.
+  const selectedRecord = overRecord && lookup(overRecord) ? overRecord : undefined;
+  const extras = {
+    ...(onClose ? { close: onClose } : {}),
+    ...(selectedRecord ? { selectedRecord } : {}),
   };
   const name = nameOf(widget, definition);
   const hiddenOnPhones = definition?.layout.phone === "hide";
@@ -183,7 +268,7 @@ function Cell({
       // A view may size what it draws by its cell's width: the container named `cell`.
       className={`@container/cell relative flex min-h-0 min-w-0 flex-col @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
         selected ? "ring-2 ring-action" : ""
-      } ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
+      } ${fade ? "opacity-60" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
         building ? "cursor-grab touch-pan-y select-none active:cursor-grabbing" : ""
       }`}
       {...(building
@@ -221,9 +306,44 @@ function Cell({
             size={{ w: at.w, h: at.h, narrow }}
             emit={emit}
             building={building}
+            {...extras}
+            {...(building || !client.act
+              ? {}
+              : {
+                  act: (
+                    at: string,
+                    given?: { record?: string; inputs?: Readonly<Record<string, unknown>> },
+                  ) =>
+                    run({
+                      widget,
+                      at,
+                      record: given?.record,
+                      row: given?.record ? lookup(given.record) : undefined,
+                      input: groupInput,
+                      inputs: given?.inputs,
+                      among: amongIds(),
+                    }),
+                })}
+            can={(at, row) =>
+              holds(actionAt(widget, at)?.when, { this: record ? thisRow : null, event: row }, user)
+            }
+            listens={(event) => !building && widget.on?.[event] !== undefined}
+            {...(client.choices
+              ? {
+                  choices: (
+                    input: string,
+                    column: string,
+                    search: string,
+                  ): Promise<readonly Choice[]> =>
+                    client.choices?.(widget.id, input, column, search) ?? Promise.resolve([]),
+                }
+              : {})}
           />
         ) : null}
       </Frame>
+      {fade ? (
+        <p className="m-0 px-3 pb-2 text-meta text-ink-muted">Shown only when {fade}</p>
+      ) : null}
       {building && narrow && hiddenOnPhones ? (
         <span className="absolute top-2 right-2 text-meta text-ink-muted">Hidden on phones</span>
       ) : null}
@@ -276,9 +396,33 @@ export function PageView({
   refreshKey = 0,
   filterOptions,
   onEvent,
+  record,
+  user,
+  onNavigate,
+  over,
+  overRecord,
+  pages,
   editing,
 }: PageViewProps) {
   const [told, setTold] = useState("");
+  // Each action that ran makes every widget read again, on top of the host's own refresh.
+  const [ran, setRan] = useState(0);
+  const [thisRow, setThisRow] = useState<Readonly<Record<string, unknown>>>();
+  const host: ActionsHost = {
+    client,
+    registry,
+    record,
+    pages,
+    filterValues,
+    onFilterValues,
+    onNavigate,
+    refresh: () => setRan((count) => count + 1),
+    label: (value) => value,
+  };
+  const actions = useActions(host);
+  // What decides whether a widget is shown, as far as the browser knows it.
+  const shownNow = (conditions: readonly Condition[] | undefined) =>
+    holds(conditions, { this: record ? thisRow : null }, user);
   const read = useFilterOptions(filters, client, filterOptions);
   // Top to bottom and left to right, so the page reads in order without the grid.
   const ordered = useMemo(
@@ -391,6 +535,15 @@ export function PageView({
             const entry = registry.get(widget.type);
             // On a phone a widget whose definition says so is not shown at all.
             if (!editing && narrow && entry?.definition.layout.phone === "hide") return null;
+            // Served, a widget whose conditions do not hold is not drawn; building, it is drawn faded and says when.
+            const showWhen = widget.rules?.showWhen;
+            if (!editing && !shownNow(showWhen)) return null;
+            const fade =
+              editing && showWhen && showWhen.length > 0
+                ? showWhen
+                    .map((one) => conditionWords(one, (field) => field.replace(/_/g, " ")))
+                    .join(" and ")
+                : undefined;
             const at = drawnAt.get(widget.id) ?? widget.at;
             const selected = editing?.selected === widget.id;
             return (
@@ -404,11 +557,19 @@ export function PageView({
                 narrow={narrow}
                 client={client}
                 filterValues={filterValues}
-                refreshKey={refreshKey}
+                refreshKey={refreshKey + ran}
                 emptyMessage={emptyMessage}
                 editing={editing}
                 selected={selected}
                 onEvent={onEvent}
+                run={actions.run}
+                record={record}
+                thisRow={thisRow}
+                user={user}
+                onRecord={setThisRow}
+                fade={fade}
+                onClose={over ? () => onNavigate?.({ close: true }) : undefined}
+                overRecord={overRecord}
                 handlers={{
                   onPointerDown: (event, how) => {
                     // A press on a widget that is not a drag chooses it by click, below.
@@ -449,6 +610,7 @@ export function PageView({
           {told}
         </span>
       </div>
+      {actions.node}
     </div>
   );
 }

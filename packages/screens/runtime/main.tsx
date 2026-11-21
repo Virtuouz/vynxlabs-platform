@@ -1,15 +1,28 @@
 import "./styles.css";
 import { ApiError, api, appContext, signInUrl, signOut, type Term, terms } from "@volvel/app";
-import type { InterfaceBody, Page } from "@volvel/manifest";
-import { Button, GlossaryProvider, Notice, SideSheet, Tabs } from "@volvel/ui";
+import type { ActingUser, InterfaceBody, Page } from "@volvel/manifest";
+import {
+  Button,
+  Closing,
+  Dialog,
+  GlossaryProvider,
+  Notice,
+  SideSheet,
+  Tabs,
+  ToastProvider,
+} from "@volvel/ui";
 import { corePack } from "@volvel/widgets-core/views";
 import { labsPack } from "@volvel/widgets-labs/views";
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
+  ActionError,
   type FilterValues,
+  type NavigateTo,
   type PageDataClient,
   PageView,
+  Stepper,
+  useAddress,
   viewRegistry,
   WidgetReadError,
   type WireData,
@@ -28,17 +41,28 @@ function workspaceApi() {
   return `/tenants/${context.tenant.id}/workspaces/${context.workspace.id}`;
 }
 
+/** What the server refused, as an error the renderer draws: its words, and what was wrong with what was typed. */
+function refusal(error: unknown): unknown {
+  if (!(error instanceof ApiError)) return error;
+  const fields: Record<string, string> = {};
+  for (const one of error.errors) {
+    const name = one.path.replace(/^\/inputs\//, "");
+    if (name !== one.path) fields[name] = one.message;
+  }
+  return new ActionError(error.message, error.status, fields);
+}
+
 /** What each widget of a page reads, asked of the platform as whoever is using the app. */
-function clientFor(path: string, page: string): PageDataClient {
+function clientFor(path: string, page: string, record?: string): PageDataClient {
+  const where = (widget: string) => {
+    const query = new URLSearchParams({ of: "interface", path, page, widget });
+    if (record) query.set("record", record);
+    return query;
+  };
   return {
     async read(widget, filters, options = {}) {
-      const query = new URLSearchParams({
-        of: "interface",
-        path,
-        page,
-        widget,
-        filters: JSON.stringify(filters),
-      });
+      const query = where(widget);
+      query.set("filters", JSON.stringify(filters));
       if (options.input) query.set("input", options.input);
       if (options.cursor) query.set("cursor", options.cursor);
       try {
@@ -56,12 +80,76 @@ function clientFor(path: string, page: string): PageDataClient {
       );
       return found.values;
     },
+    async act(widget, at, given) {
+      try {
+        return await api.post(`${workspaceApi()}/page-actions`, {
+          of: "interface",
+          path,
+          page,
+          widget,
+          at,
+          ...(given.records && Object.keys(given.records).length > 0
+            ? { records: given.records }
+            : {}),
+          ...(given.inputs ? { inputs: given.inputs } : {}),
+        });
+      } catch (error) {
+        throw refusal(error);
+      }
+    },
+    async choices(widget, input, column, search) {
+      const query = where(widget);
+      query.set("input", input);
+      query.set("column", column);
+      query.set("search", search);
+      const found = await api.get<{ choices: { value: string; label: string }[] }>(
+        `${workspaceApi()}/widget-choices?${query}`,
+      );
+      return found.choices;
+    },
+    async behind(widget, input, group, filters) {
+      const query = where(widget);
+      query.set("input", input);
+      query.set("behind", JSON.stringify(group));
+      query.set("filters", JSON.stringify(filters ?? {}));
+      try {
+        const read = await api.get<{ inputs: Record<string, WireData> }>(
+          `${workspaceApi()}/widget-data?${query}`,
+        );
+        const found = read.inputs[input];
+        if (!found) throw new WidgetReadError("The rows could not be read.", 404);
+        return found;
+      } catch (error) {
+        throw error instanceof ApiError ? new WidgetReadError(error.message, error.status) : error;
+      }
+    },
   };
 }
 
-/** One page of the app. A new page starts with its filters at their defaults. */
-function PageOf({ path, page }: { path: string; page: Page }) {
-  const client = useMemo(() => clientFor(path, page.id), [path, page.id]);
+/**
+ * One page of the app, open on a record or not. A new page, or a new record, starts with its
+ * filters at their defaults. `onNavigate` is what an action's `open` and `close` do.
+ */
+function PageOf({
+  path,
+  page,
+  record,
+  pages,
+  user,
+  onNavigate,
+  over,
+  overRecord,
+}: {
+  over?: boolean;
+  overRecord?: string;
+  path: string;
+  page: Page;
+  record?: string;
+  pages: readonly Page[];
+  user: ActingUser | undefined;
+  onNavigate(to: NavigateTo): void;
+}) {
+  const client = useMemo(() => clientFor(path, page.id, record), [path, page.id, record]);
   const [values, setValues] = useState<FilterValues>({});
   return (
     <PageView
@@ -71,9 +159,18 @@ function PageOf({ path, page }: { path: string; page: Page }) {
       client={client}
       filterValues={values}
       onFilterValues={setValues}
+      pages={pages}
+      onNavigate={onNavigate}
+      {...(over ? { over } : {})}
+      {...(overRecord ? { overRecord } : {})}
+      {...(record ? { record } : {})}
+      {...(user ? { user } : {})}
     />
   );
 }
+
+/** Pages that are in the app's menu: a record page, a side sheet and a modal are only opened on something. */
+const inMenu = (page: Page) => page.kind === undefined || page.kind === "page";
 
 function App() {
   const context = appContext();
@@ -93,8 +190,8 @@ function App() {
       () => {},
     );
   }, []);
-  // The page that is open is in the address, so that it can be linked to and reloaded.
-  const [pageId, setPageId] = useState(() => window.location.hash.slice(1) || undefined);
+  // What is open is in the address, so that it can be linked to, reloaded and closed with Back.
+  const { address, go, stepping, step } = useAddress(context.base);
   const path = context.app.interface;
 
   useEffect(() => {
@@ -118,10 +215,37 @@ function App() {
 
   const who = context.principal;
   const pages = view?.body.pages ?? [];
+  const menu = pages.filter(inMenu);
   // The page that is open, and its help: a page of documentation, when it names one this person may read.
-  const open = pages.find((one) => one.id === pageId) ?? pages[0];
+  const open = pages.find((one) => one.id === address.page) ?? menu[0];
   const help = open?.help ? topics[open.help] : undefined;
-  const drawn = open && path ? <PageOf key={open.id} path={path} page={open} /> : null;
+  // Who is acting, for what a page draws by who it is. A member has no groups; an end user's come with the page.
+  const user: ActingUser | undefined = who.id
+    ? {
+        id: who.id,
+        ...(who.email ? { email: who.email } : {}),
+        ...(who.name ? { name: who.name } : {}),
+        groups: who.groups ?? [],
+      }
+    : undefined;
+  const draw = (page: Page, record?: string, over = false) =>
+    path ? (
+      <PageOf
+        key={`${page.id}/${record ?? ""}`}
+        path={path}
+        page={page}
+        pages={pages}
+        user={user}
+        onNavigate={go}
+        {...(record ? { record } : {})}
+        {...(over ? { over } : {})}
+        {...(!over && overRecord ? { overRecord } : {})}
+      />
+    ) : null;
+  const overRecord = address.sheet?.record ?? address.modal?.record;
+  const drawn = open ? draw(open, open.kind === "record" ? address.record : undefined) : null;
+  const sheet = address.sheet ? pages.find((one) => one.id === address.sheet?.page) : undefined;
+  const modal = address.modal ? pages.find((one) => one.id === address.modal?.page) : undefined;
   return (
     <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 p-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -180,23 +304,61 @@ function App() {
         <GlossaryProvider terms={glossary}>
           {pages.length === 0 ? (
             <p className="m-0 text-ink-muted">This app has no pages yet.</p>
-          ) : pages.length === 1 ? (
+          ) : open && !inMenu(open) ? (
+            // A record page is not in the menu: it is a page of its own, with a way back to the menu.
+            <>
+              {menu[0] ? (
+                <div>
+                  <Button
+                    size="small"
+                    variant="quiet"
+                    onClick={() => go({ page: menu[0]?.id ?? "", as: "page" })}
+                  >
+                    Back to {menu[0].title}
+                  </Button>
+                </div>
+              ) : null}
+              {drawn}
+            </>
+          ) : menu.length === 1 ? (
             drawn
           ) : (
             <Tabs
               label="Pages"
               value={open?.id ?? ""}
-              onChange={(id) => {
-                setPageId(id);
-                window.history.replaceState(null, "", `#${id}`);
-              }}
-              tabs={pages.map((page) => ({
+              onChange={(id) => go({ page: id, as: "page" })}
+              tabs={menu.map((page) => ({
                 id: page.id,
                 label: page.title,
                 content: page.id === open?.id ? drawn : null,
               }))}
             />
           )}
+          <Closing subject={sheet ? { page: sheet, record: address.sheet?.record } : undefined}>
+            {(held, shown) => (
+              <SideSheet
+                open={shown}
+                onClose={() => go({ close: true })}
+                title={held.page.title}
+                size="wide"
+                {...(stepping ? { footer: <Stepper stepping={stepping} onStep={step} /> } : {})}
+              >
+                {draw(held.page, held.record, true)}
+              </SideSheet>
+            )}
+          </Closing>
+          <Closing subject={modal ? { page: modal, record: address.modal?.record } : undefined}>
+            {(held, shown) => (
+              <Dialog
+                open={shown}
+                onClose={() => go({ close: true })}
+                title={held.page.title}
+                size="wide"
+              >
+                {draw(held.page, held.record, true)}
+              </Dialog>
+            )}
+          </Closing>
         </GlossaryProvider>
       ) : problem ? null : (
         <p className="m-0 text-ink-muted">Loading…</p>
@@ -207,6 +369,8 @@ function App() {
 
 createRoot(document.getElementById("app") as HTMLElement).render(
   <StrictMode>
-    <App />
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </StrictMode>,
 );

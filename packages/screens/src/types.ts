@@ -1,4 +1,6 @@
+import type { Step } from "@volvel/manifest";
 import type {
+  Choice,
   ColumnInfo,
   WidgetPack as SdkWidgetPack,
   WidgetDefinition,
@@ -36,6 +38,8 @@ export type WireData =
       shape: "record";
       columns: ColumnInfo[];
       record: Record<string, unknown> | null;
+      /** For a reference column: the name of the row each id points to, as rows have. */
+      names?: Record<string, Record<string, string>>;
       followed?: Followed;
     };
 
@@ -47,6 +51,28 @@ export type WireData =
 export interface Followed {
   names: string;
   now: string;
+}
+
+/** What the server answers when an action ran: the browser's steps, each with its record as an id. */
+export interface ActResponse {
+  client: Step[];
+  made?: { table: string; id: string };
+  message?: string;
+}
+
+/**
+ * An action that did not run. `fields` says what was wrong with what was typed, by
+ * field name; the message is the server's own words.
+ */
+export class ActionError extends Error {
+  readonly status: number | undefined;
+  readonly fields: Readonly<Record<string, string>> | undefined;
+  constructor(message: string, status?: number, fields?: Record<string, string>) {
+    super(message);
+    this.name = "ActionError";
+    this.status = status;
+    this.fields = fields;
+  }
 }
 
 export interface PageDataClient {
@@ -61,6 +87,29 @@ export interface PageDataClient {
    * read them. Left out, such a filter is typed into.
    */
   options?(filter: string): Promise<readonly string[]>;
+  /**
+   * Runs an action a widget holds, named by where it is (`on/<event>`,
+   * `config/<property>`, `config/<property>/<index>/action`), with the records it
+   * works on and what was asked. Rejects with an `ActionError` when it did not run.
+   * Absent on a host that runs no actions.
+   */
+  act?(
+    widget: string,
+    at: string,
+    given: { records?: { this?: string; event?: string }; inputs?: Record<string, unknown> },
+  ): Promise<ActResponse>;
+  /** What a reference or choice column of a widget's data input offers. */
+  choices?(widget: string, input: string, column: string, search: string): Promise<Choice[]>;
+  /**
+   * The rows behind one group of a summary input, as `rows`, under the page's filters as
+   * they are now.
+   */
+  behind?(
+    widget: string,
+    input: string,
+    group: Readonly<Record<string, unknown>>,
+    filters?: FilterValues,
+  ): Promise<WireData>;
 }
 
 /** What a client rejects with when the server said no: its status says which kind of no. */

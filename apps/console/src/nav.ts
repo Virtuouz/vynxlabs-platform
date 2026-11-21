@@ -311,6 +311,8 @@ const WORKBENCHES: RegExp[] = [
   /^flows\/(new|edit\/)/,
   // A table's rows are one scroller under a pinned header (A2-08).
   /^tables\/.+/,
+  // A data source's tables beside the rows of the one chosen.
+  /^sources\/.+/,
 ];
 /** The same, for a tenant's screens. */
 const TENANT_WORKBENCHES: RegExp[] = [

@@ -1,4 +1,4 @@
-import { ENUM_COLORS, enumColor } from "@volvel/manifest";
+import { displayGuess, ENUM_COLORS, enumColor } from "@volvel/manifest";
 import {
   Button,
   Closing,
@@ -609,16 +609,6 @@ const TYPING_MS = 250;
  * finds the rows whose name contains it, so a row past the first page can be found. Where the
  * table cannot be read, the ID is typed.
  */
-/** A column to name a row by, when the table says none: its name or title, else its first text. */
-export function displayGuess(columns: { name: string; type: string; status?: string }[]) {
-  const text = columns.filter((one) => one.type === "text" && one.status !== "retired");
-  return (
-    text.find((one) => one.name === "name")?.name ??
-    text.find((one) => one.name === "title")?.name ??
-    text[0]?.name
-  );
-}
-
 function ReferenceField({
   column,
   rowsPath,
@@ -2200,8 +2190,8 @@ function Definition({
       <section className="flex flex-col gap-2">
         <h2 className="m-0 text-title font-semibold">Where it is stored</h2>
         <p className="m-0 max-w-measure text-ink-muted">
-          In Postgres, as <Code wrap>{`${table.stored.schema}.${table.stored.table}`}</Code>. It is your
-          data: you can read it there directly at any time.
+          In Postgres, as <Code wrap>{`${table.stored.schema}.${table.stored.table}`}</Code>. It is
+          your data: you can read it there directly at any time.
         </p>
       </section>
 
@@ -2586,6 +2576,8 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
 
   return (
     <Page
+      fill
+      helpKey="source"
       title={path}
       description="An external database. Rows are read and written there directly. The platform does not change its structure, and its own access rules apply."
       action={
@@ -2605,8 +2597,12 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
           The database was reached, but the schema it is connected to has no tables.
         </EmptyState>
       ) : (
-        <div className="grid gap-4 md:grid-cols-[12rem_minmax(0,1fr)]">
-          <nav aria-label="Tables of this source" className="flex flex-col gap-0.5">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 md:flex-row md:gap-4">
+          {/* The list of tables scrolls on its own, beside the rows (A2-08). */}
+          <nav
+            aria-label="Tables of this source"
+            className="flex max-h-32 shrink-0 flex-col gap-0.5 overflow-y-auto md:max-h-none md:w-48"
+          >
             {items.map((item) => (
               <button
                 type="button"
@@ -2623,24 +2619,27 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
               </button>
             ))}
           </nav>
-          <RowsBrowser
-            key={table.name}
-            label={`Rows of ${table.name}`}
-            rowsPath={`${root}/source-rows/${table.name}/${path}`}
-            rowPath={
-              table.key
-                ? (key) => `${root}/source-row/${table.name}/${encodeURIComponent(key)}/${path}`
-                : null
-            }
-            keyColumn={table.key}
-            columns={table.columns}
-            {...(table.key
-              ? {}
-              : {
-                  readOnlyNote:
-                    "This table has no primary key, so rows can be read and added but not changed or deleted.",
-                })}
-          />
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <RowsBrowser
+              fill
+              key={table.name}
+              label={`Rows of ${table.name}`}
+              rowsPath={`${root}/source-rows/${table.name}/${path}`}
+              rowPath={
+                table.key
+                  ? (key) => `${root}/source-row/${table.name}/${encodeURIComponent(key)}/${path}`
+                  : null
+              }
+              keyColumn={table.key}
+              columns={table.columns}
+              {...(table.key
+                ? {}
+                : {
+                    readOnlyNote:
+                      "This table has no primary key, so rows can be read and added but not changed or deleted.",
+                  })}
+            />
+          </div>
         </div>
       )}
     </Page>

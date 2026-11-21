@@ -1428,7 +1428,7 @@ describe("references: what a delete does, what stands for a row, and where one p
     // Without the asking, nothing is added.
     expect((await alice.get(`${ws()}/rows/kit/lends`)).body.expanded).toBeUndefined();
     expect((await alice.get(`${ws()}/rows/kit/lends?expand=note`)).status).toBe(400);
-    // A table that names no column to stand for its rows gives none.
+    // A table that names no column to stand for its rows is named by its name.
     for (const row of await rows(alice, "kit/lends")) {
       await alice.delete(`${ws()}/row/${row.id}/kit/lends`);
     }
@@ -1436,7 +1436,7 @@ describe("references: what a delete does, what stands for a row, and where one p
     const spare = await device("Cable", "kit/spares");
     await alice.post(`${ws()}/rows/kit/lends`, { note: "cable", device: spare });
     expect((await alice.get(`${ws()}/rows/kit/lends?expand=device`)).body.expanded).toEqual({
-      device: {},
+      device: { [spare]: "Cable" },
     });
   });
 

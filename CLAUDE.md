@@ -18,7 +18,7 @@ After each phase, the owner used to find a round of corrections within hours: st
   Write what the walk found into the milestone's Findings. A walk that could not be run is said there, and the phase is not presented as finished.
 - Fix in the shared piece, and list the other places that use it (POLISH-013). Thirteen of the audit's findings were earlier fixes made only at one call site.
 - Anything trimmed from the owner's decisions or exit criterion is asked about before the phase is presented, not left in a "not built" list (POLISH-015).
-- A new navigation section is measured in `e2e/polish.spec.ts`, or listed in its `NOT_MEASURED` with the reason. `enforce.test.ts` checks this.
+- A new navigation section is measured in `e2e/polish-setup.ts` (`screens()`, shared by the `e2e/polish-*.spec.ts` files), or listed in its `NOT_MEASURED` with the reason. `enforce.test.ts` checks this.
 
 ## Care
 

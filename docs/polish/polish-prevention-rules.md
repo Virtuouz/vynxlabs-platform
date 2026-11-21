@@ -143,7 +143,7 @@ Grep for a second map of the same words (status, trigger type, kind), a second m
 - Text that grows has room to grow.
 - The workbench targets hold: 20 runs at 1440×900, and the first row within 160 px.
 
-**Verify:** `e2e/polish.spec.ts`, `wide.spec.ts` and `panes.spec.ts` measure some of this. Run them, and add the new screen to their lists.
+**Verify:** `e2e/polish-*.spec.ts`, `wide.spec.ts` and `panes.spec.ts` measure some of this. Run them, and add the new screen to their lists.
 
 **Enforced:** partly. The measures cover the workbenches that are listed. A new screen is not measured until someone adds it.
 
@@ -174,7 +174,7 @@ The owner's standing rule says the same thing: a redesign is responsive even whe
 - Nothing the user needs is only in a hidden column.
 - Each region has a phone form: drawer navigation, the inspector as a sheet, tables that drop columns by priority.
 
-**Verify:** `polish.spec.ts` checks for overdraw at 390, 768, 1280 and 1440 px over the workbenches it lists. Add the new screens to it. Look at the screens by eye in light and dark.
+**Verify:** `polish-measures.spec.ts` and `polish-layout.spec.ts` check for overdraw at 390, 768, 1280 and 1440 px over the workbenches it lists. Add the new screens to it. Look at the screens by eye in light and dark.
 
 **Enforced:** partly, for the console's listed workbenches. Served apps and the docs site are checked only by their own specs and pictures.
 

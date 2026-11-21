@@ -393,6 +393,7 @@ test("staff who may only read press Mark paid, because the button is the grant, 
     .getByRole("button", { name: "Mark paid" })
     .click();
   await expect(staff.getByText("Invoice marked paid")).toBeVisible();
+  await staff.keyboard.press("Escape");
   await expect(rowOf(staff, invoice.grant.number)).not.toContainText(/unpaid/i);
   const after = await stored(invoice.grant.number);
   expect(after.status).toBe("paid");

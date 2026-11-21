@@ -232,10 +232,13 @@ export function compileVisual(
   const order = (query.sort ?? []).map((one, index) => {
     // By a name of the result, or by a column written as the query writes its groups.
     const name = names.includes(one.by) ? one.by : one.by.replace(".", "_");
-    if (!names.includes(name)) {
-      throw new VisualRefused(`/sort/${index}/by`, `the result has no column "${one.by}"`);
-    }
-    return `${quoted(name)} ${one.descending ? "desc" : "asc"} nulls last`;
+    const direction = `${one.descending ? "desc" : "asc"} nulls last`;
+    if (names.includes(name)) return `${quoted(name)} ${direction}`;
+    // Rows, not totals, may be put in the order of any column of their table, shown or not:
+    // the newest first is by when each was made.
+    const rows = (query.groupBy?.length ?? 0) === 0 && (query.measures?.length ?? 0) === 0;
+    if (rows) return `${column(one.by, `/sort/${index}/by`).sql} ${direction}`;
+    throw new VisualRefused(`/sort/${index}/by`, `the result has no column "${one.by}"`);
   });
   // Groups with no order asked for come in their own order, so a chart reads left to right.
   if (order.length === 0 && groups.length > 0) {

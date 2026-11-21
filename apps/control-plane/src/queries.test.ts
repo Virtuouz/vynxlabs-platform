@@ -737,6 +737,17 @@ describe("queries built from menus", () => {
       sort: [{ by: "fee" }],
     });
     expect(rowsOf(plain.body)).toEqual([{ device_title: "Camera", status: "late", fee: 30 }]);
+    // Rows sort by any column of their table, shown or not: the newest first.
+    const newest = await visual(alice, {
+      table: "lending/loans",
+      columns: ["fee"],
+      sort: [{ by: "created_at", descending: true }],
+    });
+    expect(newest.status, JSON.stringify(newest.body)).toBe(200);
+    // Totals sort only by what they show.
+    const totals = await visual(alice, { ...feesByDevice, sort: [{ by: "created_at" }] });
+    expect(totals.status).toBe(400);
+    expect(JSON.stringify(totals.body)).toContain('the result has no column \\"created_at\\"');
     // By period, and by a distinct count.
     const monthly = await visual(alice, {
       table: "lending/loans",

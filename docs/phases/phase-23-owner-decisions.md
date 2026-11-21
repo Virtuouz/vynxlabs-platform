@@ -1,6 +1,6 @@
 # Phase 23: what the owner chose for phase 22's open items
 
-Status: planned, on branch `phase-23-owner-decisions`, off `phase-22-polish` at `6224c6d`.
+Status: built, on branch `phase-23-owner-decisions`, off `phase-22-polish` at `6224c6d`.
 Last updated: 2026-11-20
 
 Phase 22 ([its document](phase-22-polish.md)) closed 80 of the polish audit's 84 findings. It left eight items for the owner, each set out with its options. The owner chose one option for each, and this phase builds them.
@@ -58,7 +58,44 @@ M1 to M4 touch separate files and can be built side by side. M5 changes the shar
 - A table's rows and definition are added to the workbench measures of `e2e/polish.spec.ts`: the first row near the top, and one scroller.
 - Screenshots of a table at 1440, 768 and 390 px.
 
-**Polish gate.** To be answered, steps 1 to 7 of [the template](TEMPLATE.md). Rules: 004, 005.
+**Built** in `159f023`, merged in `8d2b0d3`, then brought up to P4-1 after the end-of-phase run.
+- **Main change.**
+  - `tables/<name>` is a workbench (`nav.ts`).
+  - `Grid` takes `fill`.
+  - `Page` takes `fill`, and with it the workbench heading (`oneRow`) and a folding description (`helpKey`).
+- **P4-1 follow-ups.**
+  - `3600c8d`:
+    - the keys are behind a "Keys" button;
+    - the tabs share the toolbar's row;
+    - the description folds after the first visit.
+  - `a9e89c6`, `80754b0`: a filled page's spacing and heading.
+  - `5bee09a`: a grid's filter row is one step denser, at 24 px fields.
+  - `1a06dca`: the Postgres name wraps.
+- **Grid rows.** A grid's rows of data are numbered from 2, since the header is row 1 (`f051013`).
+
+**Tests.**
+- `Grid.test.tsx` (`fill`) and `Shell.test.tsx` (a workbench).
+- `e2e/polish.spec.ts`:
+  - a table's rows are among the workbenches;
+  - its rows and definition are measured;
+  - "a table's screen has one scroller", at 1440, 768 and 390 px.
+
+**Findings.**
+- As a workbench, a table's first row came 305 px down, against P4-1's 160. Its header stacked five rows. It now measures under 160 px.
+- `SourceView`'s table browser does not fill yet. It is a candidate.
+
+**Polish gate.**
+1. Rules: 004, 005.
+2. Siblings:
+   - `Grid`'s other users (`ReadTable`, widgets, the kit sheet, `SourceView`) keep their 70vh box;
+   - every grid gets the denser filter row.
+3. Lifecycle: not applicable.
+4. States: loading and failure keep their padding in a workbench.
+5. Walk. On the throwaway instance (:8090, Fernhill seeded) at `0eb0f62`:
+   - `tables/appointments` at 1440, 768 and 390 px: one scroller on Rows and on Definition, the page never scrolls, the header is sticky, and Next stays in view.
+   - After the follow-ups, `polish.spec.ts` passes in full at `1a06dca`, all 11 tests.
+6. Guards: the polish measures above.
+7. Left out: `SourceView`.
 
 ## M2: a reference found by typing, and files changed in the inspector
 
@@ -78,7 +115,39 @@ M1 to M4 touch separate files and can be built side by side. M5 changes the shar
 - A kernel or route test: a replaced file is still there after the replace, and goes once the history entry that names it is pruned.
 - A step of `e2e/phase-23.spec.ts`.
 
-**Polish gate.** To be answered. Rules: 001, 003, 010.
+**Built** in `0bc5df1`, merged in `c127c69`, with `435c8f3`.
+- **The picker.** It sends what is typed as a `contains` filter on the display column, debounced. It names a row it was not sent by fetching it.
+- **Display column.** When a table names no display column, the picker names rows by `name`, else `title`, else the first text column (`displayGuess`, `435c8f3`).
+- **Files in the inspector.** `FileField` gives "Replace" and "Remove", each asking first.
+- **The server.**
+  - There was no row history. Migration `0083_row_file_history.sql` notes a file a row stops naming (`updateRowKeepingFiles`).
+  - `pruneFileHistory` in the retention pass deletes a note older than the tenant's audit retention (400 days by default), then the file that nothing names any more.
+
+**Tests.**
+- `Data.test.tsx`: the picker's request, replace, remove, and `displayGuess`.
+- `data-access.test.ts`: a replaced file survives, and goes once its note is pruned.
+- `e2e/phase-23.spec.ts`: a row past the first 50, and past the first 200, chosen by typing; a file replaced and removed.
+
+**Findings.**
+- **Found in the walk.** Fernhill's `pets` names no display column, so the picker listed IDs and could not search. Fixed by `displayGuess`.
+- **Not noted.** Files changed by a worker script or in a source table are not noted, so they are kept forever, as before.
+- **Inherited.** The grid's reference cells still show IDs. They did before this phase.
+
+**Polish gate.**
+1. Rules: 001, 003, 010.
+2. Siblings:
+   - the grid's reference cells, as above;
+   - `SeeItAs` keeps its 200.
+3. Lifecycle: a file is set, replaced and removed. The old file is kept, then removed with its history.
+4. States:
+   - the picker: "Type to find more";
+   - the reference field: falls back to a text field when the table can't be read;
+   - a refused save is said in the inspector.
+5. Walk. On the throwaway instance (:8090, Fernhill seeded):
+   - at `0eb0f62`, the picker on `appointments` listed IDs, as found above;
+   - after `displayGuess`, the walk-through's picker tests passed at `c5275ea`.
+6. Guards: the unit and kernel tests above.
+7. Left out: the worker and source-table paths, as above.
 
 ## M3: Release, one list of deploys, and rollback from it
 
@@ -92,7 +161,26 @@ M1 to M4 touch separate files and can be built side by side. M5 changes the shar
 - `Rollback.test.tsx` and the Release tests, updated.
 - `e2e/release.spec.ts` rolls back from a row of the history.
 
-**Polish gate.** To be answered. Rules: 002, 010.
+**Built** in `8a72c99`, merged in `6fd8d64`.
+- "Versions of <workspace>" is the one list, with `ActivateVersion` (`Execution.tsx`) on each row whose bundle is not running.
+- "Not yet run here" lists bundles that no deployment names.
+- "Bundles and rollback" is gone.
+
+**Tests.**
+- `Rollback.test.tsx`, `Release.test.tsx`.
+- `e2e/release.spec.ts`: production rolls back from a row.
+- `e2e/phase-23.spec.ts`: a dev workspace's versions step, `?step=deploy`.
+
+**Polish gate.**
+1. Rules: 002, 010.
+2. Siblings: `Deployments` had no other user, and is replaced.
+3. Lifecycle: activate from any row, repeated rows included.
+4. States: "Not yet run here" only when there is one.
+5. Walk. On the throwaway instance (:8090, Fernhill seeded) at `0eb0f62`:
+   - Clinics: one `h1`, no old table.
+   - It has one version, so `release.spec.ts` and the walk-through activated in the e2e run.
+6. Guards: as above.
+7. Left out: nothing.
 
 ## M4: rollback preview, the doc writer's feedback table, tenant approvals, renames
 
@@ -123,7 +211,48 @@ Small pieces, mostly on the server, each in files of its own.
   - the tenant's `approvalsWaitingMine` against the queue.
 - Console tests for each screen changed.
 
-**Polish gate.** To be answered. Rules: 001, 003, 006, 010.
+**Built** in `4fad460`, merged in `9f7c258`, with `ab5e431`, `0eb0f62`, `4277905` and `f051013`.
+- **Going back to an access release.**
+  - A read-only `GET …/access/releases/:id/rollback` answers `rollbackAsks`, with readable `removes`.
+  - The confirm lists "These are removed: …", and is a danger confirm when anything is.
+- **The doc writer's feedback table.**
+  - The deploy lets a caller without `deployment:write` deploy a table draft when a site in the same deploy names it as feedback, and it has exactly the feedback columns.
+  - Migration `0082_doc_writer_feedback.sql` rewords the role.
+- **Tenant approvals.**
+  - The tenant summary answers `approvalsWaitingMine`. Both counts count only approvals surfaced to the tenant, as its queue lists them (`ab5e431`).
+  - The tenant overview says "waiting for you" or "for someone else".
+  - The tenant queue has "Waiting for others".
+- **Renames.**
+  - A query gets "Name and path".
+  - An app gets "Rename", for its title in the interface and the app, with its address unchanged.
+  - A rename's dialog leaves with its motion before the screen moves on (`onClosed` on the kit `Dialog`, `f051013`).
+
+**Tests.**
+- `access-releases.test.ts`, `docs-apps.test.ts`, `flows.test.ts`.
+- `AccessReleases.test.tsx`, `TenantScreens.test.tsx`, `Approvals.test.tsx`, `Interfaces.test.tsx`, `RemoveDraft.test.tsx`.
+- `e2e/phase-23.spec.ts`.
+
+**Findings.**
+- The tenant counts first counted every waiting step, more than the tenant's queue lists. Fixed (`ab5e431`).
+- **A dashboard follows a renamed query only for 90 days.** A widget names its query by path, and reaches it through the old-path alias. After that, the widget needs editing. For the owner.
+- A doc writer deploys a feedback table but cannot draft one. A developer drafts it.
+- The end-of-phase run found a rename's dialog taken away mid-motion on Queries. Fixed, in the shared dialog.
+
+**Polish gate.**
+1. Rules: 001, 003, 006, 010.
+2. Siblings:
+   - every `ResourceIdentity` user gets the dialog fix;
+   - the workspace and tenant queues share "Waiting for others".
+3. Lifecycle:
+   - a query: create, rename, remove;
+   - an app: create, rename its title, remove. Its address is not changed (decision 8).
+4. States: the preview's failure is shown in the release's notice.
+5. Walk. On the throwaway instance (:8090, Fernhill seeded) at `0eb0f62`:
+   - going back to release 1 listed "These are removed: the group of end users Front desk, … ".
+   - Fernhill surfaces no approvals to the tenant, so both counts read 0 for the viewer and the owner (the walk-through's test skipped).
+   - The App Builder's Rename is disabled for apps from the repository.
+6. Guards: the route and console tests above, and `path-lookups.test.ts`, with the feedback check's reason beside its query (`4277905`).
+7. Left out: dashboards following a query by key, as above.
 
 ## M5: filters on their own row
 
@@ -136,7 +265,28 @@ Small pieces, mostly on the server, each in files of its own.
 - `e2e/polish.spec.ts` measures the audit log at 1440 px with its first-visit description shown, for a member who has not seen it.
 - The screenshots are taken again, after each difference is looked at.
 
-**Polish gate.** To be answered. Rules: 004, 013.
+**Built** in `d6dba5b`, merged in `a892a75`, with `6d153a4`.
+- `PageHeader`'s workbench heading is a column:
+  - the title and actions;
+  - the description;
+  - then the filters, in their own full-width row (`data-header-filters`).
+- Every list that passes filters as its toolbar has it.
+- The audit log's column and view menus sit beside CSV, not under the filters (`6d153a4`).
+
+**Tests.**
+- `Chrome.test.tsx`.
+- `e2e/polish.spec.ts`, "the audit log's filters sit under its title and description on a first visit", at 1440 and 390 px.
+
+**Findings.** With the filters filling their row, the audit log's menus wrapped to a row of their own, and its first row came to 162 px. Fixed.
+
+**Polish gate.**
+1. Rules: 004, 013.
+2. Siblings: every `CollectionView` and `ListCollection` list. Non-workbench headers already had the filters under the title.
+3. Lifecycle: not applicable.
+4. States: not applicable.
+5. Walk: the polish spec's first-visit audit check, and P4-1 on every workbench, pass at `1a06dca`.
+6. Guards: as above. The lists' pictures were taken again (`c5275ea`).
+7. Left out: nothing.
 
 ## M6: guides, Fernhill, changelog, the walk-through
 
@@ -148,11 +298,57 @@ Small pieces, mostly on the server, each in files of its own.
 - `e2e/phase-23.spec.ts` walks this exit criterion, each step named for the POLISH rule it checks.
 - The full `pnpm test` and `pnpm e2e`, on a throwaway instance seeded with Fernhill, as phase 22 did.
 
-**Polish gate.** To be answered. Rules: 014, 015.
+**Built** in `5c6d2a4`, merged in `485865f`.
+- `CHANGELOG.md`.
+- Guides: tables, Release, members (access releases), documentation, approvals, the tenant overview, queries, App Builder, the audit log. `pnpm docs:check` passes.
+- Fernhill:
+  - `suppliers`, 220 rows, with `name` as what stands for a row;
+  - `supplier_contacts`, with a reference to it;
+  - Sam Reyes, a doc writer in the sandbox.
+- `e2e/phase-23.spec.ts` walks the exit criterion in 10 tests, each named for its POLISH rule.
+
+**The end-of-phase runs.** On a throwaway instance (:8090) seeded with Fernhill. The full suites ran once, at the phase's end, as the gate now says (`589867c`).
+- **`pnpm e2e` at `a3921c4`:** 75 passed, 4 failed, 2 skipped.
+  - Fixed:
+    - the rename dialog's motion;
+    - a table's first row against P4-1, then the audit log's;
+    - the phones' pictures, taken again;
+    - the walk-through's Release step.
+  - The single sign-on test needs the Keycloak of `e2e/README.md`, which this instance did not run. The exit-criterion tests after it, in the same serial spec, did not run.
+- **Reruns of what failed, at `1a06dca`:**
+  - `polish.spec.ts`: 11 passed.
+  - `redesign.spec.ts`, `wide.spec.ts` and `phase-23.spec.ts`: 22 passed, 1 skipped. The skip is the viewer's tenant count: Fernhill surfaces no approval to the tenant.
+- **`pnpm test`:**
+  - At `c5275ea`: 2184 passed, 2 skipped.
+  - The console, ui, app and screens packages again at `1a06dca`, after the last console changes: 796 passed.
+
+**Polish gate.**
+1. Rules: 014, 015.
+2. Siblings: not applicable.
+3. Lifecycle: not applicable.
+4. States: not applicable.
+5. Walk: the e2e runs above, the walk-through included.
+6. Guards: the full suites, once, as above.
+7. Left out: the single sign-on test, for want of Keycloak here.
 
 ## Findings
 
-None yet.
+- **Every decision is built.** Decision 8's deferred part, changing an app's address, is left as decided.
+- **What walking found after a milestone's own tests passed:**
+  - the reference picker listed IDs for a table with no display column;
+  - the tenant counts did not count what the tenant queue lists;
+  - a rename's dialog was taken away mid-motion;
+  - a table's first row, then the audit log's, missed P4-1;
+  - a Postgres name ran past a phone's width.
+- **For the owner.**
+  - A dashboard follows a renamed query for 90 days only. Its widget names the query by path, and reaches it by the old-path alias. Following it by key needs the server to resolve widgets by key, or to rewrite them on a rename.
+  - A file a worker script or a source table changes is not noted, so it is kept forever, as before.
+  - A doc writer deploys a site's feedback table, but cannot draft one.
+  - `SourceView`'s table browser does not fill the window as a table's does.
+  - The grid's reference cells show IDs, as before this phase.
+- **How it was built.**
+  - M1 to M4 were built side by side, M5 after them, and M6 last. Each was merged and checked: typecheck, its tests, its walk.
+  - M2 and M4 each added a migration `0082`. M2's became `0083`.
 
 ## Traceability
 

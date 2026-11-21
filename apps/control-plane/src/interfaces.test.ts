@@ -881,7 +881,8 @@ describe("a member's own dashboards", () => {
       },
     });
     expect(old.status).toBe(400);
-    // A widget that shows something must say what it asks, and a filter it takes must be there.
+    // A filter a widget takes must be there. A widget not yet told what to ask (the stat) is a
+    // dashboard being made, and is kept: a member's dashboard is never deployed.
     const hollow = await mona.put(`${base()}/${id}`, {
       body: board([
         { id: "a", type: "core/stat", at: { x: 0, y: 0, w: 3, h: 3 } },
@@ -896,7 +897,6 @@ describe("a member's own dashboards", () => {
     });
     expect(hollow.status).toBe(400);
     expect(hollow.body.errors.map((one: Any) => one.message)).toEqual([
-      "Stat needs a source to show",
       'the page has no filter "when"',
     ]);
     const stale = await mona.put(`${base()}/${id}`, { revision: 1, title: "Late" });

@@ -9,6 +9,7 @@ Fernhill runs three clinics in Portland, Oregon: Northside, Riverside and Hillto
 | **Front desk**: today's board, booking, client look-up, stock, callbacks. A custom React app | `apps/front-desk` | Front-desk staff: end users in their clinic's group |
 | **Pet portal**: pets, visits, booking and invoices. A custom React app | `apps/pet-portal` | Pet owners: end users with a `client_id` attribute |
 | **Clinic performance**: money, visits and stock. Built from widgets, with no code | `src/apps.ts` (`screens/performance`) | Practice managers: members of the tenant |
+| **Clinic operations**: the day, visits, money, pets and owners, stock, callbacks. Built from widgets, and uses every widget, page kind and feature of the app builder (see below) | `src/operations.ts` (`screens/operations`, query `reports/vet-workload`) | Practice managers: members of the tenant |
 | **Integrations**: TextLine (SMS), VetSupply (stock orders), PayFern (signed payment webhook) | `src/model.ts`, `src/flows.ts`, `stand-ins/` | Scripts and flows |
 | **Shared code for scripts and apps**: lists, visit lengths, status words, dollars, and Pacific clock time | `src/constants.ts`, `src/time.ts` (no imports, so apps can use them) | Both |
 | **Flows**: invoice and thank-you text after a visit; reorder with a manager's approval; weekly chasing of unpaid invoices; public registration form | `src/flows.ts` | Event, schedule, webhook and form triggers |
@@ -95,6 +96,97 @@ The agent is offered exactly the scripts and the flow it is bound to (`src/apps.
    ```
 
    Then, as Maya, review it in Release and promote it. Repository scripts are read-only in the console's editor.
+
+8. **Clinic operations**, through "Staff sign-in" at `/apps/fernhill/clinics/operations/` as Maya. Open a visit, check it in, press an invoice and mark it paid. Then sign in as Devi (Billing): **Void** is greyed with "Only Practice managers can do this".
+
+## Clinic operations: what it uses
+
+The app is one `defineInterface` in `src/operations.ts`: 6 pages in the menu and 11 that open on a record or over a page (17 of the 20 allowed; no page has more than 30 widgets). It adds no table, script or flow. Its one resource of its own is the saved query `reports/vet-workload`, because a saved query is a data source and no table stood in for it. `packages/cli/src/operations-example.test.ts` checks that it is valid and that every registered widget, page kind, page size and chart type is used in it, so a widget added later is either put here or that test says so.
+
+### Pages
+
+| Feature | Where |
+| --- | --- |
+| Page (in the menu), with an icon | Today (`house`), Visits (`calendar`), Money (`banknote`), Pets and owners (`paw-print`), Stock (`boxes`), Callbacks (`inbox`) |
+| Help topic | Visits (`desk-booking`) and Money (`desk-invoices`) show a Help button |
+| Record page (its own address, `/pet/<id>`) | Pet, opened from a pet card |
+| Side sheet, three sizes | Owner (small), Visit (medium), Invoice (large) |
+| Modal, every size | Take a visit request and Edit invoice (small), Add a callback, New invoice and Count stock (medium), Reorder stock (extra large), Visit sheet (full) |
+| Filters, the open sheet or modal and the open tab are in the address | `?f.vet=…`, `?sheet=visit&record=…`, `?modal=day-sheet`, `?tab.views=owners` |
+
+### Widgets
+
+| Widget and option | Where |
+| --- | --- |
+| Table: badges, currency, dates, `align`, `width: fixed`, `sortable`, `total`, `phone: false`, `hidden`, `as: bar`, `rowHeight`, `stripes`, `empty`, `pageSize`, `select` (several rows), `buttons`, `rowActions`, `rowClick` | Money (Invoices: total, select, buttons, four row actions), Today (compact, `phone: false`, empty text), Visits (stripes, `hidden` notes, total of minutes, `width: fixed` on the reason), Stock (`as: bar`, stripes) |
+| Table over a saved query | Visits, "Vets" |
+| List, `list` and `cards`, the title / subtitle / right / badge places, row actions, `rowClick` | Pets (cards), Handle with care (list), Waiting room (cards with a row action), Owner sheet |
+| Stat: caption, format, `compare` with delta `percent` and `absolute`, `goodWhen` up and down, `trendBy`, `click` | Today, Money |
+| Goal (`labs/goal`): a fixed amount, `goalFrom` a column, `percent`, `reached`, `bands`, `goodWhen` | Money (This month), Stock (On the shelves) |
+| Chart, every type | Pie and horizontal bar (Visits, Status and reason), area and line (Over time), stacked bars and heatmap (Where and who), scatter and a bar over a saved query (How long), line (Money), bars (Money, Stock grouped), horizontal bars (Money by vet, Breeds seen) |
+| Chart options: `horizontal`, `bars` stacked and grouped, `order` biggest / smallest / label, `fillGaps`, `compare`, `smooth`, `points`, `values`, `axisTitles`, `colors` theme / cool / warm / mono, `legend` auto / shown / hidden, `x`, `y`, number formats | Spread over the charts above |
+| Pivot: `shade`, `rowTotals`, `columnTotals`, `cellClick` | Visits (Clinic by status), Money (Month by clinic), Stock (Category by clinic) |
+| Text, every look: plain, note, warning, tip | Callbacks (plain), Money (note), the Hilltop, invoice and pet banners (warning), Today (tip) |
+| Markdown components: alert, steps, tabs, details, term, kbd, field | Money (an alert for managers, `:term` for status), Today (steps and kbd in the tip; "About this app": tabs, a fold, `::field`) |
+| Button: `tone`, `icon`, `full`, `place` | Callbacks (Add a callback, main, right), Pet (Take a visit request, full) |
+| Action group: `lineUp` left / right / spread, `showUpTo` with the rest under ⋯, `place`, icons, tones | Today (spread, four buttons, one under ⋯), Stock (right), Invoice and Visit sheets (left) |
+| Record detail: `heading`, `status`, `statusBadges`, `figure`, sections, `across` 1 / 2 / 3, `edit` in place, `actions` | Invoice sheet (figure, badges), Visit sheet, Pet (3 across, edit in place), Callbacks (the chosen row, with its own action), Owner (1 across) |
+| Form, create and edit: sections, `help`, `required`, `initial` today and a fixed value, `submitLabel`, a submit with steps | New invoice, Edit invoice, Take a visit request (today, required), Add a callback (a fixed value), Pet ("Update the record") |
+| Section: `look` card and plain, `folds`, `folded`, a subtitle | Today (Right now, card, folds), Stock (Orders to VetSupply, starts folded) |
+| Tabs: `look` pills and underline, `remember`, `opensFirst` | Visits and Stock (pills, remembered), Money and Pets (underline) |
+| Search and filter: every type (search, choice read from a table, choice from a list, date range, text, number), `sit: button`, `reset` | Visits (all six), Today (behind a button), Money (two date ranges, one for the goal) |
+| Approvals: `look` rows / cards / queue, `fields` (one hidden), `opens`, `decided`, `askWhy`, `confirm`, `advance`, labels, `empty`, `whose` mine and all | Stock, the three tabs |
+
+### Data
+
+| Feature | Where |
+| --- | --- |
+| Visual query: filters, group by, every measure (count, count distinct, sum, avg, min, max), every bucket (day, week, month, quarter, year), sort, limit | Money and Visits |
+| Joins | Money (invoices by the vet of their visit), Pets (visits by the pet's breed) |
+| Operators `eq`, `ne`, `gt`, `gte`, `lte`, `in`, `is_null`, `not_null`, `last`, `between` | Money's stats, Stock's "Nearly out", Today, Handle with care |
+| A date range bound to data, and to a saved query's parameters (`from`, `to`) | Visits |
+| Saved query | `reports/vet-workload`: Visits ("Visits for each vet", "Vets") |
+| The record the page opened on (`this`), and a column of it in a condition | Every sheet and record page; Visit ("This pet's visits"), Owner ("Their pets"), Pet |
+| `selected` (the row chosen in a table) | Callbacks |
+| Approvals source | Stock |
+
+### Actions and rules
+
+| Feature | Where |
+| --- | --- |
+| Steps `open` (each page kind, with and without a record), `close`, `update`, `create`, `delete`, `message` (success and info), `confirm` (with questions: long text, number), `flow`, `script`, `narrow`, `rows` | `open`: tables and cards; `close`: Visit sheet; `update`: Mark paid, Void, Mark called; `create`: the forms; `delete`: Remove a callback; `flow`: Reorder, Chase unpaid invoices; `script`: Check in and the other moves, Text the owner; `narrow`: a bar or a pivot cell sets a filter; `rows`: a stat, a slice or a point shows the rows behind it |
+| Events `rowClick`, `pointClick`, `cellClick`, `click` | Tables and lists; charts; pivots; stats and buttons |
+| "Can be pressed when" | Each move of a visit; Mark paid; Mark called; Reorder (`is_not`); Text the owner (two conditions) |
+| "Who can run it" (`runBy`) | Mark paid (managers and Billing), Void, Chase unpaid invoices and Remove a callback (managers). Greyed with "Only Practice managers can do this", and refused by the server |
+| "Show when": a field of the record, the person's group, a record exists, a field is not empty | Invoice sheet (unpaid, with a record), Money (the managers' note), Pet (the alert banner) |
+| Visible to groups (`seenBy`) | Money ("Largest invoice": managers and Billing), Today (the Hilltop banner: managers) |
+| Bulk actions | Money's Invoices and Callbacks: select rows, then a row action runs on each |
+| An action's `done` text | Callbacks, the chosen row's Mark called |
+
+### Smaller screens
+
+| Feature | Where |
+| --- | --- |
+| Tablet by hand | Today's four stats, two to a row |
+| Phone by hand | Money's goal comes first on a phone |
+| Narrow `hide`, `full`, `stack` | Money's "By clinic" hidden; Visits' pivot full; Today's waiting room and Stock's two lower widgets stacked |
+| Priority | Money's "Largest invoice" and Today's Hilltop banner sink below the rest |
+| A table as a list on a phone | Every table (`phone: false` drops a column from the list) |
+
+### Left out, and why
+
+- **Form steps (a wizard).** The Form widget has no steps: sections are its only grouping.
+- **`initial: me`** (a field starting as the person filling it in). It needs a text column that holds a person, and no Fernhill table has one. Adding a column only to show it was not worth it.
+- **The `own` source** (the user's own row, by email). It is for end users, and this app is for members, who are not clients. `screens/my-account` ("My details") uses it.
+- **The SQL source.** SQL is written on dashboards, not on an app's pages.
+- **List `picture`.** No table has a column holding a picture's address.
+- **Stat `delta: points`.** Points suit a figure that is already a percentage, and no stat here is one. Percent notation likewise.
+- **Table column `as: delta` and `text`; "pinned" columns.** A delta column needs a column that holds a change. The table has no pinned columns.
+- **Detail fields `hidden`, `as: badge` and `badges`.** The detail's status chip does it (`statusBadges`).
+- **Pivot `totals`.** Older than `rowTotals` and `columnTotals`, which win.
+- **Condition tests `gte`, `lt` and `contains`**, and the operators `lt` and `contains`: they have the same shape as the ones used.
+- **Question types `text`, `date` and `choice`** on a confirmation: long text and number are used here; `screens/my-account` uses the others.
+- **Tabs `remember: false`, Section `look: plain` with `folds: false`**: the defaults.
 
 ## What phase 23 walks here
 

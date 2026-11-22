@@ -368,7 +368,7 @@ export const operations = defineInterface({
           type: "core/section",
           title: "Right now",
           subtitle: "In the range and at the clinics chosen. Folds away if you do not need it.",
-          at: at(0, 7, 12, 5),
+          at: at(0, 7, 12, 6),
           config: { look: "card", folds: true },
         },
         {
@@ -376,7 +376,7 @@ export const operations = defineInterface({
           type: "core/stat",
           title: "Visits",
           in: { widget: "now" },
-          at: at(0, 0, 3, 3),
+          at: at(0, 0, 3, 4),
           data: visitCount(),
           config: {
             caption: "Booked, in the range",
@@ -388,34 +388,34 @@ export const operations = defineInterface({
             trendBy: "starts_at",
           },
           on: { click: { steps: [{ do: "rows" }] } },
-          layout: { priority: 3, tablet: { at: at(0, 0, 6, 3) } },
+          layout: { tablet: { at: at(0, 0, 6, 4) } },
         },
         {
           id: "waiting",
           type: "core/stat",
           title: "Not yet arrived",
           in: { widget: "now" },
-          at: at(3, 0, 3, 3),
+          at: at(3, 0, 3, 4),
           data: visitCount([{ column: "status", op: "eq", value: "booked" }]),
           config: { caption: "Booked and expected", format: COUNT },
-          layout: { priority: 2, tablet: { at: at(6, 0, 6, 3) } },
+          layout: { tablet: { at: at(6, 0, 6, 4) } },
         },
         {
           id: "inside",
           type: "core/stat",
           title: "In the clinic",
           in: { widget: "now" },
-          at: at(6, 0, 3, 3),
+          at: at(6, 0, 3, 4),
           data: visitCount([{ column: "status", op: "in", value: ["checked_in", "in_exam"] }]),
           config: { caption: "Checked in or with the vet", format: COUNT },
-          layout: { priority: 1, tablet: { at: at(0, 3, 6, 3) } },
+          layout: { tablet: { at: at(0, 4, 6, 4) } },
         },
         {
           id: "missed",
           type: "core/stat",
           title: "No-shows",
           in: { widget: "now" },
-          at: at(9, 0, 3, 3),
+          at: at(9, 0, 3, 4),
           data: visitCount([{ column: "status", op: "eq", value: "no_show" }]),
           config: {
             caption: "Did not come",
@@ -425,12 +425,12 @@ export const operations = defineInterface({
             delta: "absolute",
             goodWhen: "down",
           },
-          layout: { tablet: { at: at(6, 3, 6, 3) } },
+          layout: { tablet: { at: at(6, 4, 6, 4) } },
         },
         {
           id: "tools",
           type: "core/actions",
-          at: at(0, 12, 12, 1),
+          at: at(0, 13, 12, 1),
           config: {
             lineUp: "spread",
             showUpTo: 3,
@@ -484,7 +484,7 @@ export const operations = defineInterface({
           type: "core/table",
           title: "Visits",
           subtitle: "Move a visit on from here, or press it to open it.",
-          at: at(0, 13, 8, 13),
+          at: at(0, 14, 8, 13),
           data: {
             rows: {
               source: {
@@ -539,14 +539,13 @@ export const operations = defineInterface({
             ],
           },
           on: opens("visit"),
-          layout: { priority: 5 },
         },
         {
           id: "waiting-room",
           type: "core/list",
           title: "Waiting room",
           subtitle: "Checked in, oldest first.",
-          at: at(8, 13, 4, 13),
+          at: at(8, 14, 4, 13),
           data: {
             rows: {
               source: {
@@ -580,13 +579,23 @@ export const operations = defineInterface({
         {
           id: "hilltop",
           type: "core/text",
-          at: at(0, 26, 12, 2),
+          at: at(0, 27, 12, 2),
           config: {
             look: "warning",
             text: "**Hilltop is closed on Saturdays.** A visit booked there for a Saturday needs moving before the day.",
           },
           // Only on weekdays' desk screens of managers: shown to practice managers.
           rules: { seenBy: { groups: MANAGERS } },
+          layout: { priority: -2 },
+        },
+        {
+          id: "about",
+          type: "core/text",
+          title: "About this app",
+          at: at(0, 29, 12, 6),
+          config: {
+            text: ':::tabs\n::::tab{label="For managers"}\nMoney shows what is invoiced and unpaid. **Stock** has the orders waiting for you. Press :term[status]{table=invoices column=status} on an invoice to see what it means.\n::::\n::::tab{label="For the front desk"}\nCheck visits in from **Today**. Booking is done in the Front desk app.\n::::\n:::\n\n:::details{summary="What does a column\'s type mean?"}\n::field{path=table.columns.*.type}\n:::',
+          },
         },
       ],
     },
@@ -774,7 +783,7 @@ export const operations = defineInterface({
           type: "core/pivot",
           title: "Clinic by status",
           subtitle: "Press a cell to narrow the page to its clinic.",
-          at: at(0, 14, 6, 8),
+          at: at(0, 14, 12, 6),
           data: visitsBy([{ column: "clinic" }, { column: "status" }]),
           config: { shade: true, rowTotals: true, columnTotals: true, format: COUNT },
           on: { cellClick: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
@@ -785,7 +794,7 @@ export const operations = defineInterface({
           type: "core/table",
           title: "Vets",
           subtitle: "The same saved query, as a table.",
-          at: at(6, 14, 6, 8),
+          at: at(0, 20, 12, 6),
           data: {
             rows: {
               source: { query: "reports/vet-workload" },
@@ -809,7 +818,7 @@ export const operations = defineInterface({
           id: "every",
           type: "core/table",
           title: "Every visit",
-          at: at(0, 22, 12, 12),
+          at: at(0, 26, 12, 12),
           data: {
             rows: {
               source: {
@@ -837,7 +846,7 @@ export const operations = defineInterface({
               { column: "clinic" },
               { column: "pet_name", label: "Pet" },
               { column: "vet", phone: false },
-              { column: "reason" },
+              { column: "reason", width: "fixed" },
               {
                 column: "minutes",
                 label: "Booked for",
@@ -915,7 +924,7 @@ export const operations = defineInterface({
           id: "invoiced",
           type: "core/stat",
           title: "Invoiced",
-          at: at(0, 4, 3, 3),
+          at: at(0, 4, 3, 4),
           data: invoiceStat({ fn: "sum", column: "total" }),
           config: {
             format: WHOLE,
@@ -927,13 +936,12 @@ export const operations = defineInterface({
             trendBy: "issued_on",
           },
           on: { click: { steps: [{ do: "rows" }] } },
-          layout: { priority: 3 },
         },
         {
           id: "unpaid",
           type: "core/stat",
           title: "Unpaid",
-          at: at(3, 4, 3, 3),
+          at: at(3, 4, 3, 4),
           data: invoiceStat({ fn: "sum", column: "total" }, [
             { column: "paid_at", op: "is_null" },
             NOT_VOID,
@@ -947,13 +955,12 @@ export const operations = defineInterface({
             goodWhen: "down",
           },
           on: { click: { steps: [{ do: "rows" }] } },
-          layout: { priority: 2 },
         },
         {
           id: "average",
           type: "core/stat",
           title: "Average invoice",
-          at: at(6, 4, 3, 3),
+          at: at(6, 4, 3, 4),
           data: invoiceStat({ fn: "avg", column: "total" }),
           config: {
             format: DOLLARS,
@@ -962,13 +969,12 @@ export const operations = defineInterface({
             delta: "absolute",
             goodWhen: "up",
           },
-          layout: { priority: 1 },
         },
         {
           id: "goal",
           type: "labs/goal",
           title: "This month",
-          at: at(9, 4, 3, 3),
+          at: at(9, 4, 3, 4),
           data: {
             value: {
               source: {
@@ -1000,7 +1006,7 @@ export const operations = defineInterface({
           id: "clients-billed",
           type: "core/stat",
           title: "Owners billed",
-          at: at(0, 7, 3, 3),
+          at: at(0, 8, 3, 3),
           data: invoiceStat({ fn: "count_distinct", column: "client_code" }),
           config: { format: COUNT, caption: "Different owners in the range" },
         },
@@ -1008,7 +1014,7 @@ export const operations = defineInterface({
           id: "recent",
           type: "core/stat",
           title: "Last 90 days",
-          at: at(3, 7, 3, 3),
+          at: at(3, 8, 3, 3),
           data: {
             value: {
               source: {
@@ -1031,7 +1037,7 @@ export const operations = defineInterface({
           id: "mid",
           type: "core/stat",
           title: "Between $50 and $150",
-          at: at(6, 7, 3, 3),
+          at: at(6, 8, 3, 3),
           data: invoiceStat({ fn: "count" }, [
             NOT_VOID,
             { column: "total", op: "between", value: [5000, 15000] },
@@ -1042,20 +1048,21 @@ export const operations = defineInterface({
           id: "largest",
           type: "core/stat",
           title: "Largest invoice",
-          at: at(9, 7, 3, 3),
+          at: at(9, 8, 3, 3),
           data: invoiceStat({ fn: "max", column: "total" }, [
             NOT_VOID,
-            { column: "total", op: "gte", value: 1 },
+            { column: "total", op: "gt", value: 0 },
           ]),
           config: { format: DOLLARS, caption: "The smallest is below" },
           // Billing and managers only: others do not see the figure at all.
           rules: { seenBy: { groups: BILLING } },
+          layout: { priority: -1 },
         },
         {
           id: "by-week",
           type: "core/chart",
           title: "Invoiced by week",
-          at: at(0, 10, 8, 8),
+          at: at(0, 11, 8, 8),
           data: invoicesBy([{ column: "issued_on", bucket: "week" }]),
           config: {
             mark: "line",
@@ -1073,7 +1080,7 @@ export const operations = defineInterface({
           id: "by-clinic",
           type: "core/chart",
           title: "By clinic",
-          at: at(8, 10, 4, 8),
+          at: at(8, 11, 4, 8),
           data: invoicesBy([{ column: "clinic" }]),
           layout: { narrow: "hide" },
           config: { mark: "bar", format: SHORT, values: true, order: "biggest" },
@@ -1083,7 +1090,7 @@ export const operations = defineInterface({
           id: "periods",
           type: "core/tabs",
           title: "Over longer periods",
-          at: at(0, 18, 12, 8),
+          at: at(0, 19, 12, 8),
           config: {
             look: "underline",
             tabs: [
@@ -1196,7 +1203,7 @@ export const operations = defineInterface({
         {
           id: "managers",
           type: "core/text",
-          at: at(0, 26, 12, 3),
+          at: at(0, 27, 12, 3),
           config: {
             text: ":::alert[For practice managers]{type=info}\nOwners are texted about invoices unpaid for two weeks every Monday morning. Press an invoice to open it. **Mark paid** is for managers and Billing; **Void** is for managers.\n:::",
           },
@@ -1206,7 +1213,7 @@ export const operations = defineInterface({
           id: "list",
           type: "core/table",
           title: "Invoices",
-          at: at(0, 29, 12, 12),
+          at: at(0, 30, 12, 12),
           data: {
             rows: {
               source: {
@@ -1452,21 +1459,24 @@ export const operations = defineInterface({
         {
           id: "low",
           type: "core/stat",
-          title: "Lines to order",
+          title: "Nearly out",
           at: at(4, 2, 4, 4),
           data: {
             value: {
               source: {
                 visual: {
                   table: "inventory",
-                  filters: [{ column: "reorder_pending", op: "ne", value: true }],
+                  filters: [
+                    { column: "reorder_pending", op: "ne", value: true },
+                    { column: "on_hand", op: "lte", value: 7 },
+                  ],
                   measures: [{ fn: "count", as: "lines" }],
                 },
               },
               filters: stockFilters(),
             },
           },
-          config: { format: COUNT, caption: "Every line not already on order" },
+          config: { format: COUNT, caption: "Seven or fewer on the shelf, not yet on order" },
         },
         {
           id: "stock-tools",
@@ -1597,7 +1607,7 @@ export const operations = defineInterface({
               { column: "item" },
               { column: "clinic" },
               { column: "category" },
-              { column: "on_hand", label: "On hand", format: COUNT, align: "right" },
+              { column: "on_hand", label: "On hand", format: COUNT, align: "right", as: "bar" },
               { column: "reorder_at", label: "Reorder at", format: COUNT, align: "right" },
               {
                 column: "unit_cost",
@@ -1871,7 +1881,12 @@ export const operations = defineInterface({
             look: "warning",
             text: "**Not paid yet.** The owner is texted when it is two weeks old.",
           },
-          rules: { showWhen: [{ field: "status", of: "this", test: "is", value: "unpaid" }] },
+          rules: {
+            showWhen: [
+              { record: "exists" },
+              { field: "status", of: "this", test: "is", value: "unpaid" },
+            ],
+          },
         },
         {
           id: "detail",
@@ -2118,9 +2133,19 @@ export const operations = defineInterface({
           on: { click: { steps: [{ do: "open", page: "request-visit" }] } },
         },
         {
+          id: "care",
+          type: "core/text",
+          at: at(0, 1, 12, 1),
+          config: {
+            look: "warning",
+            text: "**This pet has an alert on its record.** Read it before handling the animal.",
+          },
+          rules: { showWhen: [{ field: "alert", of: "this", test: "is_not_empty" }] },
+        },
+        {
           id: "detail",
           type: "core/detail",
-          at: at(0, 1, 7, 10),
+          at: at(0, 2, 7, 10),
           data: { record: { source: { record: "this" } } },
           config: {
             heading: "name",
@@ -2141,7 +2166,7 @@ export const operations = defineInterface({
           id: "update",
           type: "core/form",
           title: "Update the record",
-          at: at(7, 1, 5, 10),
+          at: at(7, 2, 5, 10),
           data: { record: { source: { record: "this" } } },
           config: {
             mode: "edit",
@@ -2178,7 +2203,7 @@ export const operations = defineInterface({
           id: "history",
           type: "core/table",
           title: "Visits",
-          at: at(0, 11, 12, 8),
+          at: at(0, 12, 12, 8),
           data: {
             rows: {
               source: {

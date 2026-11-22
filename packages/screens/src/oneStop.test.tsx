@@ -16,9 +16,9 @@ function Card({ active }: { active: boolean }) {
       <button type="button">One</button>
       <a href="#x">Two</a>
       {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region, focusable so it can be scrolled */}
-      <div role="region" tabIndex={0} aria-label="scroller" style={{ overflowX: "auto" }}>
+      <section tabIndex={0} aria-label="scroller" style={{ overflowX: "auto" }}>
         wide
-      </div>
+      </section>
     </section>
   );
 }

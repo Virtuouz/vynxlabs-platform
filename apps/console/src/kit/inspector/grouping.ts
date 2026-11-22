@@ -28,7 +28,9 @@ export function groupability(column: CatalogColumn, tableRows?: number): Groupab
   if (distinct !== undefined) {
     if (tableRows !== undefined && tableRows > 1 && distinct >= tableRows)
       return { rank: 9, hint: "every row differs" };
-    const hint = `${count(distinct)} ${distinct === 1 ? "value" : "values"}`;
+    const hint = column.distinctMore
+      ? `${count(distinct)}+ values`
+      : `${count(distinct)} ${distinct === 1 ? "value" : "values"}`;
     // Two to twelve values make a good set of groups; many more make a crowd.
     return { rank: distinct <= 1 ? 7 : distinct <= 12 ? 1 : distinct <= 40 ? 3 : 5, hint };
   }

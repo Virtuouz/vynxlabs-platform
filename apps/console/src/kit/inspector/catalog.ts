@@ -22,6 +22,7 @@ export function useCatalog(root: string): {
   const catalog: Catalog =
     schema.data || saved.data
       ? {
+          root,
           tables: schema.data?.tables ?? EMPTY_CATALOG.tables,
           queries: saved.data?.items ?? [],
           maySql: schema.data?.maySql === true,
@@ -50,4 +51,59 @@ export function useActionLists(root: string): {
     scripts: scripts.data?.items ?? [],
     groups: (groups.data?.items ?? []).map((one) => one.name),
   };
+}
+
+/** What `column-values` gives. */
+export interface ColumnValues {
+  values: { value: string; count: number }[];
+  distinct: number;
+  more?: true;
+  rows: number;
+  empty: number;
+  sampled?: true;
+}
+
+/** What `column-counts` gives. */
+export interface ColumnCounts {
+  rows: number;
+  columns: Record<string, number | null>;
+  more?: string[];
+  sampled?: true;
+}
+
+/** The kinds of column whose values may be listed: the server refuses json, files and lists of choices. */
+const LISTABLE = new Set(["enum", "boolean", "text", "string"]);
+
+/**
+ * The values a column holds with how many rows have each, for the condition editor's checked
+ * list. Nothing is asked for a column that cannot be listed, or a table the workspace does not
+ * own (the server says 404 and the editor is left with typing). Counts of a sampled read are
+ * not exact: a sampled list is not offered.
+ */
+export function useColumnValues(
+  root: string | undefined,
+  table: string | undefined,
+  column: { name: string; type: string } | undefined,
+): { value: string; count?: number }[] | undefined {
+  const listable = root && table && column && LISTABLE.has(column.type);
+  const found = useLoad<ColumnValues>(
+    listable
+      ? `${root}/column-values?table=${encodeURIComponent(table)}&column=${encodeURIComponent(column.name)}`
+      : null,
+  );
+  const data = found.data;
+  if (!data || data.sampled || data.more || data.values.length === 0) return undefined;
+  // A text column with many values is typed into, not ticked.
+  if (column?.type === "text" && data.values.length > 12) return undefined;
+  return data.values;
+}
+
+/** How many different values each column of a table has, and how many rows it has: `undefined` while it is read, or when it cannot be. */
+export function useColumnCounts(
+  root: string | undefined,
+  table: string | undefined,
+): ColumnCounts | undefined {
+  return useLoad<ColumnCounts>(
+    root && table ? `${root}/column-counts?table=${encodeURIComponent(table)}` : null,
+  ).data;
 }

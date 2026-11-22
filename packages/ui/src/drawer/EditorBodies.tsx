@@ -29,7 +29,7 @@ export interface ConditionOperator {
   /** The column's own words: "is in the last…", "is before". */
   label: string;
   /** What is typed after it. Default: by the column's type; `none` for "is empty". */
-  input?: "text" | "number" | "date" | "none";
+  input?: "text" | "number" | "date" | "none" | "last" | "between";
 }
 
 export interface ConditionChoice {
@@ -38,6 +38,8 @@ export interface ConditionChoice {
   /** How many rows have it: "1,204 rows". */
   count?: number;
 }
+
+const UNITS = ["day", "week", "month", "quarter", "year"] as const;
 
 const inputOf = (column: ConditionColumn | undefined, operator: ConditionOperator | undefined) =>
   operator?.input ??
@@ -210,7 +212,26 @@ export function ConditionEditor({
               );
             })}
           </fieldset>
-          {input !== "none" ? (
+          {input === "last" ? (
+            <LastInput
+              id={id}
+              value={current.value}
+              onChange={(next) => {
+                const { value: _, ...rest } = current;
+                onChange(next === undefined ? rest : { ...rest, value: next });
+              }}
+            />
+          ) : input === "between" ? (
+            <BetweenInput
+              id={id}
+              kind={column.type === "date" ? "date" : "number"}
+              value={current.value}
+              onChange={(next) => {
+                const { value: _, ...rest } = current;
+                onChange(next === undefined ? rest : { ...rest, value: next });
+              }}
+            />
+          ) : input !== "none" ? (
             <div>
               <label htmlFor={`${id}-value`} className="sr-only">
                 Value
@@ -235,6 +256,110 @@ export function ConditionEditor({
         </>
       )}
       {note ? <p className="m-0 text-meta text-ink-muted">{note}</p> : null}
+    </div>
+  );
+}
+
+/** "is in the last  [30]  [days]": a count and a unit, as `{ count, unit }`. */
+function LastInput({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: unknown;
+  onChange: (next: { count: number; unit: string } | undefined) => void;
+}) {
+  const now = (value ?? {}) as { count?: number; unit?: string };
+  const unit = now.unit ?? "day";
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <div>
+        <label htmlFor={`${id}-count`} className="sr-only">
+          How many
+        </label>
+        <input
+          id={`${id}-count`}
+          type="number"
+          min={1}
+          max={1000}
+          value={now.count === undefined ? "" : String(now.count)}
+          onChange={(event) =>
+            onChange(
+              event.target.value === ""
+                ? undefined
+                : { count: Number(event.target.value), unit },
+            )
+          }
+          className={`${control} w-full`}
+        />
+      </div>
+      <div>
+        <label htmlFor={`${id}-unit`} className="sr-only">
+          Unit
+        </label>
+        <select
+          id={`${id}-unit`}
+          value={unit}
+          onChange={(event) => onChange({ count: now.count ?? 30, unit: event.target.value })}
+          className={`${control} w-full`}
+        >
+          {UNITS.map((one) => (
+            <option key={one} value={one}>
+              {now.count === 1 ? one : `${one}s`}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+/** "is between  [from]  and  [to]": two days or two numbers, as `[from, to]`. */
+function BetweenInput({
+  id,
+  kind,
+  value,
+  onChange,
+}: {
+  id: string;
+  kind: "date" | "number";
+  value: unknown;
+  onChange: (next: [unknown, unknown] | undefined) => void;
+}) {
+  const pair = Array.isArray(value) ? value : [];
+  const set = (at: 0 | 1, text: string) => {
+    const next: [unknown, unknown] = [pair[0] ?? "", pair[1] ?? ""];
+    next[at] = text === "" ? "" : kind === "number" ? Number(text) : text;
+    onChange(next[0] === "" && next[1] === "" ? undefined : next);
+  };
+  return (
+    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+      <div>
+        <label htmlFor={`${id}-from`} className="sr-only">
+          From
+        </label>
+        <input
+          id={`${id}-from`}
+          type={kind}
+          value={pair[0] === undefined ? "" : String(pair[0])}
+          onChange={(event) => set(0, event.target.value)}
+          className={`${control} w-full`}
+        />
+      </div>
+      <span className="text-body-sm text-ink-muted">and</span>
+      <div>
+        <label htmlFor={`${id}-to`} className="sr-only">
+          To
+        </label>
+        <input
+          id={`${id}-to`}
+          type={kind}
+          value={pair[1] === undefined ? "" : String(pair[1])}
+          onChange={(event) => set(1, event.target.value)}
+          className={`${control} w-full`}
+        />
+      </div>
     </div>
   );
 }

@@ -43,6 +43,7 @@ import {
   spokenType,
   toEditor,
 } from "./conditionWords.ts";
+import { useColumnValues } from "./catalog.ts";
 import type { Env } from "./controls.tsx";
 import {
   bindFilter,
@@ -459,16 +460,29 @@ function FollowChips({
 
 /** The editor of one condition: the kit's, with the column's own words and, where known, its values. */
 function ConditionBody({
-  columns,
+  columns: given,
   start,
   onChange,
+  root,
+  table,
 }: {
   columns: readonly CatalogColumn[];
   start: ConditionValue;
   onChange: (next: ConditionValue) => void;
+  /** Where the table's column values are read from, and which table. */
+  root?: string | undefined;
+  table?: string | undefined;
 }) {
   // What is typed is kept as typed (a list with its commas) while the query takes what it means.
   const [draft, setDraft] = useState(start);
+  const chosen = given.find((one) => one.name === draft.field);
+  // The values the column holds, with how many rows each has, as the server counts them.
+  const read = useColumnValues(root, table, chosen);
+  const columns = given.map((one) =>
+    one.name === draft.field && read && !(one.values && one.values.length > 0)
+      ? { ...one, values: read }
+      : one,
+  );
   const column = columns.find((one) => one.name === draft.field);
   return (
     <ConditionEditor
@@ -540,6 +554,8 @@ function ConditionsBlock({
                 <DrawerEditor trigger={button} title="Only include rows where">
                   <ConditionBody
                     columns={columns}
+                    root={env.catalog.root}
+                    table={visual.table}
                     start={toEditor(condition, column)}
                     onChange={(next) => replace(at, next)}
                   />
@@ -576,7 +592,15 @@ function ConditionsBlock({
             }}
             trigger={<AddChip>Condition</AddChip>}
           >
-            {draft ? <ConditionBody columns={columns} start={draft} onChange={setDraft} /> : null}
+            {draft ? (
+              <ConditionBody
+                columns={columns}
+                root={env.catalog.root}
+                table={visual.table}
+                start={draft}
+                onChange={setDraft}
+              />
+            ) : null}
           </DrawerEditor>
         ) : null}
       </ChipSet>

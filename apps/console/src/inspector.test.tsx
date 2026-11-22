@@ -435,9 +435,7 @@ test("Layout writes a tablet and a phone as Automatic or Custom, what narrow scr
   expect(written.at(-1)?.layout?.tablet).toBeDefined();
   fireEvent.click(within(screen.getByRole("group", { name: "Tablet" })).getByText("Automatic"));
   expect(written.at(-1)?.layout).toBeUndefined();
-  fireEvent.click(
-    within(screen.getByRole("group", { name: "On narrow screens" })).getByText("Stack below"),
-  );
+  fireEvent.change(screen.getByLabelText("On narrow screens"), { target: { value: "stack" } });
   expect(written.at(-1)?.layout?.narrow).toBe("stack");
   fireEvent.change(screen.getByRole("spinbutton", { name: "Priority" }), {
     target: { value: "2" },

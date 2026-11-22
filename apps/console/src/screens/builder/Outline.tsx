@@ -218,7 +218,7 @@ function Buttons({ group, onSelect }: { group: PageWidget; onSelect: () => void 
           <button
             type="button"
             onClick={onSelect}
-            className="flex w-full min-w-0 items-center gap-2 rounded-inner py-1 pr-2 pl-9 text-left text-body-sm text-ink hover:bg-sunken"
+            className="flex w-full min-w-0 items-center gap-2 rounded-inner py-1 pr-2 pl-8 text-left text-body-sm text-ink hover:bg-sunken"
           >
             <Link2 aria-hidden="true" size={14} className="shrink-0 text-ink-muted" />
             <span className="truncate">{one.label || one.id}</span>

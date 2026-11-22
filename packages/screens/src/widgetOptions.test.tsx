@@ -114,6 +114,12 @@ describe("the chart draws each option", () => {
     });
   });
 
+  test("a group with nothing there is None, never null", () => {
+    const data = { ...grouped, rows: [...grouped.rows, { clinic: null, total: 4 }] };
+    const axis = JSON.stringify(spec({ mark: "bar" }, data));
+    expect(axis).toContain("!isValid(datum.value) ? 'None'");
+  });
+
   test("an area is filled under its line", () => {
     expect(spec({ mark: "area" }, dated).mark).toMatchObject({
       type: "area",

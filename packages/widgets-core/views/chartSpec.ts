@@ -299,7 +299,8 @@ export function chartFor(
     ...rows.map((row) => wide(String(row[xField] ?? "").replace(/_/g, " "))),
   );
   const tilted = !temporal && typeOf(x) !== "number" && count > 1 && longest > band * 0.98;
-  const words = "replace(datum.label, regexp('_', 'g'), ' ')";
+  // A group of rows that have nothing there is "None": no one is to read "null".
+  const words = "!isValid(datum.value) ? 'None' : replace(datum.label, regexp('_', 'g'), ' ')";
   const categoryAxis = {
     labelAngle: tilted ? -45 : 0,
     ...(tilted ? { labelAlign: "right", labelBaseline: "top" } : {}),
@@ -322,9 +323,7 @@ export function chartFor(
   const few = temporal && (rows.length <= 12 || mark === "bar") && mark !== "scatter";
   const dayAxis = { labelOverlap: "parity", format: "%b %-d", grid: false };
   const legend =
-    config.legend === "hidden"
-      ? { legend: null }
-      : { legend: { title: null, labelExpr: "replace(datum.label, regexp('_', 'g'), ' ')" } };
+    config.legend === "hidden" ? { legend: null } : { legend: { title: null, labelExpr: words } };
   const description = `${mark} chart of ${measured.map(title).join(", ")} by ${[x, ...others].map(title).join(" and ")}`;
   const xEncoding = {
     field: xField,
@@ -351,7 +350,8 @@ export function chartFor(
             labelAngle: 0,
             labelOverlap: "parity",
             grid: false,
-            labelExpr: "utcFormat(toDate(datum.value), '%b %-d')",
+            labelExpr:
+              "!isValid(datum.value) ? 'No date' : utcFormat(toDate(datum.value), '%b %-d')",
           },
         }
       : temporal

@@ -164,6 +164,11 @@ type Editing = NonNullable<PageViewProps["editing"]>;
 /** The room a page is given, below which its widgets stack in reading order: 42rem, as the stylesheet says. */
 const NARROW_REM = 42;
 
+/** Whether a filter widget has a filter that is not a search. */
+const hasMoreThanSearch = (filters: unknown): boolean =>
+  Array.isArray(filters) &&
+  filters.some((one) => (one as { type?: unknown } | null)?.type !== "search");
+
 /** Whether the element is narrower than a phone's width or so. Measured at once, and kept as it changes. */
 function useNarrow(ref: RefObject<HTMLElement | null>): boolean {
   const [narrow, setNarrow] = useState(false);
@@ -394,8 +399,10 @@ function Cell({
     ...definition?.defaults,
     ...widget.config,
     ...(folds ? { folded: ctx.fold.folded(widget) } : {}),
-    // On a phone the filters sit behind one "Filters · n" button, beside the search.
-    ...(narrow && definition?.role === "filters" ? { sit: "button" } : {}),
+    // On a phone the filters sit behind one "Filters · n" button, beside the search. A search alone stays a box.
+    ...(narrow && definition?.role === "filters" && hasMoreThanSearch(widget.config?.filters)
+      ? { sit: "button" }
+      : {}),
   };
   // Who the page is judged for: the builder's own view as a group, or the person looking.
   const actor = ctx.viewing?.user ?? user;

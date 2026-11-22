@@ -273,3 +273,27 @@ describe("what narrow screens do with a widget", () => {
     ).toBe(2);
   });
 });
+
+describe("the filters on a phone", () => {
+  const bar = (filters: NonNullable<PageViewProps["filters"]>[number][]): PageWidget => ({
+    id: "filters",
+    type: "core/filter",
+    at: box(0, 0, 12, 2),
+    config: { filters },
+  });
+  const search = { name: "search", type: "search", label: "Search invoices" } as const;
+  const clinic = { name: "clinic", type: "text", label: "Clinic" } as const;
+
+  test("wait behind one button, beside the search", async () => {
+    render(<Draw widgets={[bar([search, clinic])]} filters={[search, clinic]} device="phone" />);
+    expect(await screen.findByRole("button", { name: /Filters/ })).toBeTruthy();
+    expect(screen.getByLabelText("Search invoices")).toBeTruthy();
+    expect(screen.queryByLabelText("Clinic")).toBeNull();
+  });
+
+  test("a search alone stays a box", async () => {
+    render(<Draw widgets={[bar([search])]} filters={[search]} device="phone" />);
+    expect(await screen.findByLabelText("Search invoices")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Filters/ })).toBeNull();
+  });
+});

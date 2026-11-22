@@ -13,7 +13,7 @@ const loaded = <T,>(more: Partial<Loaded<T>>): Loaded<T> => ({
   data: undefined,
   error: undefined,
   loading: false,
-  reload: () => {},
+  reload: async () => {},
   ...more,
 });
 

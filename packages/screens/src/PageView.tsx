@@ -429,7 +429,7 @@ function Cell({
         row: id ? lookup(id) : undefined,
         group: groupOf(payload),
         input: groupInput,
-        among: amongIds(),
+        ...amongOf(),
       });
     }
     onEvent?.(widget.id, event, payload);
@@ -447,6 +447,32 @@ function Cell({
     (thisRow?.id === id ? thisRow : undefined);
   const amongIds = () =>
     rowsRead?.rows.map((row) => row.id).filter((id): id is string => typeof id === "string");
+  const rowsInput = Object.entries(reading.read ?? {}).find(
+    ([, wire]) => wire.shape === "rows",
+  )?.[0];
+  /** The list a row was clicked in: its ids, how many rows there are in all, and how to read the ones not loaded yet. */
+  const amongOf = () => {
+    const ids = amongIds();
+    if (!ids) return {};
+    let cursor = rowsRead?.next;
+    const input = rowsInput;
+    return {
+      among: ids,
+      ...(rowsRead?.total !== undefined ? { amongTotal: rowsRead.total } : {}),
+      ...(cursor !== undefined && input !== undefined
+        ? {
+            amongMore: async () => {
+              if (cursor === undefined) return [];
+              const more = await reading.readAfter(input, cursor);
+              cursor = more?.next;
+              return (more?.rows ?? [])
+                .map((row) => row.id)
+                .filter((id): id is string => typeof id === "string");
+            },
+          }
+        : {}),
+    };
+  };
   // The summary input a clicked group belongs to: the rows behind it are read for that input.
   const groupInput = Object.entries(definition?.data ?? {}).find(
     ([, declared]) => declared.shape === "summary",
@@ -623,7 +649,7 @@ function Cell({
                               : undefined,
                         input: groupInput,
                         inputs: given?.inputs,
-                        among: amongIds(),
+                        ...amongOf(),
                       }),
                   })}
               can={(at, row) =>

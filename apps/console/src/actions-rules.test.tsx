@@ -6,11 +6,11 @@ import { button, chart } from "@volvel/widgets-core";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ActionEditor } from "./kit/inspector/actionControls.tsx";
-import { ActionsTab } from "./kit/inspector/actionsTab.tsx";
+import { ActionsTab } from "./kit/inspector/ActionsTab.tsx";
 import { SampleRecordProvider } from "./kit/inspector/confirmPreview.tsx";
 import type { Env } from "./kit/inspector/controls.tsx";
 import { type Catalog, configOf } from "./kit/inspector/model.ts";
-import { ActionRules, RulesTab } from "./kit/inspector/rulesTab.tsx";
+import { ActionRules, RulesTab } from "./kit/inspector/RulesTab.tsx";
 import { type GroupChoice, parseTokens, rulesSummary } from "./kit/inspector/timelineModel.ts";
 import { show } from "./testing.tsx";
 

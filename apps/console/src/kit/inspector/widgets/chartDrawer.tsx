@@ -9,6 +9,8 @@ import {
   DrawerBlock,
   DrawerGroup,
   DrawerRow,
+  SegmentedControl,
+  TextField,
   type TileOption,
   TilePicker,
   ToggleRow,
@@ -426,6 +428,20 @@ export function ChartDisplay({ env, data }: SectionProps) {
             }
           />
         </DrawerBlock>
+        {mark === "bar" && kind !== "pie" && groups.length > 1 ? (
+          <DrawerBlock>
+            <p className="m-0 mb-2 text-body-sm text-ink-muted">Several series</p>
+            <SegmentedControl
+              label="Several series"
+              options={[
+                { value: "stacked", label: "One on another" },
+                { value: "grouped", label: "Side by side" },
+              ]}
+              value={(config.bars as "stacked" | "grouped" | undefined) ?? "stacked"}
+              onChange={(next) => set("bars", next, "changing how several series sit")}
+            />
+          </DrawerBlock>
+        ) : null}
       </DrawerGroup>
       <DrawerGroup label="Look">
         <NumbersRow env={env} />
@@ -460,6 +476,34 @@ export function ChartDisplay({ env, data }: SectionProps) {
             }
           />
         )}
+        {mark !== "pie" && config.axisTitles !== false
+          ? (["x", "y"] as const).map((axis) => (
+              <DrawerRow
+                key={axis}
+                label={axis === "x" ? "Along the bottom" : "Up the side"}
+                value={
+                  typeof config[axis] === "string" && config[axis] !== "" ? (
+                    (config[axis] as string)
+                  ) : (
+                    <span className="text-ink-muted">Named from the data</span>
+                  )
+                }
+                editorTitle={axis === "x" ? "Title along the bottom" : "Title up the side"}
+                editor={
+                  <TextField
+                    name={`${env.widget.id}-axis-${axis}`}
+                    label={axis === "x" ? "Along the bottom" : "Up the side"}
+                    required={false}
+                    maxLength={60}
+                    value={typeof config[axis] === "string" ? (config[axis] as string) : ""}
+                    onChange={(text) =>
+                      set(axis, text === "" ? undefined : text, "changing an axis title")
+                    }
+                  />
+                }
+              />
+            ))
+          : null}
         {mark === "pie" ||
         mark === "heatmap" ||
         groups.length > 1 ||

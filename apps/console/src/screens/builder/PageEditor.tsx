@@ -10,7 +10,7 @@ import {
 } from "@volvel/manifest";
 import { GRID } from "@volvel/screens";
 import { Button, EmptyState, Kbd } from "@volvel/ui";
-import type { Surface, WidgetDefinition } from "@volvel/widgets";
+import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { notify } from "../../ask.tsx";
@@ -479,6 +479,7 @@ export function PageEditor({
       }
     : {};
   // A table whose click opens a side sheet shows that sheet over the canvas while it is chosen (board 3).
+  const [inspectorTab, setInspectorTab] = useState<Tab>("data");
   const [previewHidden, setPreviewHidden] = useState<ReadonlySet<string>>(new Set());
   const rowSheetPage =
     widget && pageInfo && choiceOf(widget, pageInfo.pages) === "detail"
@@ -502,7 +503,7 @@ export function PageEditor({
         className={overlay ? "relative mx-auto" : "relative"}
         style={overlay && width ? { maxWidth: `${width}px` } : undefined}
       >
-        {rowSheet && pageInfo && !previewHidden.has(rowSheet.id) ? (
+        {rowSheet && pageInfo && inspectorTab === "actions" && !previewHidden.has(rowSheet.id) ? (
           <SheetPreviewHost
             key={rowSheet.page.id}
             root={root}
@@ -575,6 +576,8 @@ export function PageEditor({
                       ),
                     onColumn: (id, column) => {
                       onSelect(id);
+                      // A heading clicked opens its column in the drawer's Display tab.
+                      setInspectorTab("display");
                       requestColumn(id, column);
                     },
                     onEditText: (id) => {
@@ -647,6 +650,8 @@ export function PageEditor({
                 client={client}
                 filterValues={filterValues}
                 groupKeys={keyed}
+                tab={inspectorTab}
+                onTab={setInspectorTab}
                 sample={{ table: sample.table, record: sample.record }}
                 onSelect={onSelect}
                 {...(pageInfo && (widget.type === "core/table" || widget.type === "core/list")

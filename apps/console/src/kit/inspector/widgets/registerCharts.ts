@@ -55,6 +55,9 @@ registerDrawer(CHART, {
     "compareTo",
     "smooth",
     "points",
+    "bars",
+    "x",
+    "y",
   ],
 });
 

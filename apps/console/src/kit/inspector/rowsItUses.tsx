@@ -60,7 +60,14 @@ import {
   visualOf,
   withInput,
 } from "./model.ts";
-import { ChoiceList, columnsOf, iconOfType, TEMPORAL, writeVisual } from "./queryParts.tsx";
+import {
+  ChoiceList,
+  columnsOf,
+  iconOfType,
+  NUMERIC,
+  TEMPORAL,
+  writeVisual,
+} from "./queryParts.tsx";
 
 const CodeEditor = lazy(() =>
   import("../../editor/CodeEditor.tsx").then((module) => ({ default: module.CodeEditor })),
@@ -530,7 +537,18 @@ function ConditionsBlock({
       "changing a condition",
       `condition:${env.widget.id}:${input}:${at}`,
     );
-  const first = columns.find((one) => one.type === "enum") ?? columns[1] ?? columns[0];
+  // A new condition starts on the most useful column: a choice (a few known values) first,
+  // else a date of the table's own, else a number.
+  const first =
+    columns.find(
+      (one) => spokenType(one) === "choice" || one.type === "enum" || one.type === "boolean",
+    ) ??
+    columns.find(
+      (one) => TEMPORAL.has(one.type) && !["created_at", "updated_at"].includes(one.name),
+    ) ??
+    columns.find((one) => NUMERIC.has(one.type)) ??
+    columns[1] ??
+    columns[0];
   const [draft, setDraft] = useState<ConditionValue | undefined>();
   const [adding, setAdding] = useState(false);
   return (

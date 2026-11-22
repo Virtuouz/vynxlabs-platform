@@ -76,17 +76,27 @@ export function PivotPreview({ query, data }: { query: Query; data: DrawerData |
           {columns.map((c) => (
             <span
               key={c}
-              className="h-4 rounded-inner"
+              className="h-5 truncate rounded-inner px-1 text-right text-tag leading-5 text-ink"
               style={{
                 background: `color-mix(in srgb, var(--color-action) ${Math.round(shadeOf(cell(r, c), low, high) * 100)}%, transparent)`,
               }}
-            />
+            >
+              {cellWords(cell(r, c))}
+            </span>
           ))}
         </div>
       ))}
     </div>
   );
 }
+
+/** A cell's number, short: 1.2M, 634k, 87. */
+const cellWords = (value: number | null): string =>
+  value === null
+    ? ""
+    : new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(
+        value,
+      );
 
 export function PivotData({ env, data }: SectionProps) {
   const query = queryOf(env, "rows");

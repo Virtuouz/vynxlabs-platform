@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useId } from "react";
+import { useEffect, useId, useRef } from "react";
 import { SegmentedControl } from "../Pickers.tsx";
 import { DashedAdd, type DrawerIcon } from "./Drawer.tsx";
 
@@ -77,6 +77,13 @@ export function ConditionEditor({
   note?: string;
 }) {
   const id = useId();
+  // What is typed after the words is kept in view: the list of words is long, the editor scrolls.
+  const valueArea = useRef<HTMLDivElement>(null);
+  const chosenTest = value?.test;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the chosen test is what moves the view
+  useEffect(() => {
+    valueArea.current?.scrollIntoView?.({ block: "nearest" });
+  }, [chosenTest]);
   const column = columns.find((one) => one.id === value?.field) ?? columns[0];
   if (!column) return null;
   const words = operators(column.type);
@@ -212,47 +219,49 @@ export function ConditionEditor({
               );
             })}
           </fieldset>
-          {input === "last" ? (
-            <LastInput
-              id={id}
-              value={current.value}
-              onChange={(next) => {
-                const { value: _, ...rest } = current;
-                onChange(next === undefined ? rest : { ...rest, value: next });
-              }}
-            />
-          ) : input === "between" ? (
-            <BetweenInput
-              id={id}
-              kind={column.type === "date" ? "date" : "number"}
-              value={current.value}
-              onChange={(next) => {
-                const { value: _, ...rest } = current;
-                onChange(next === undefined ? rest : { ...rest, value: next });
-              }}
-            />
-          ) : input !== "none" ? (
-            <div>
-              <label htmlFor={`${id}-value`} className="sr-only">
-                Value
-              </label>
-              <input
-                id={`${id}-value`}
-                type={input}
-                value={current.value === undefined ? "" : String(current.value)}
-                onChange={(event) => {
-                  const text = event.target.value;
+          <div ref={valueArea}>
+            {input === "last" ? (
+              <LastInput
+                id={id}
+                value={current.value}
+                onChange={(next) => {
                   const { value: _, ...rest } = current;
-                  onChange(
-                    text === ""
-                      ? rest
-                      : { ...rest, value: input === "number" ? Number(text) : text },
-                  );
+                  onChange(next === undefined ? rest : { ...rest, value: next });
                 }}
-                className={`${control} w-full`}
               />
-            </div>
-          ) : null}
+            ) : input === "between" ? (
+              <BetweenInput
+                id={id}
+                kind={column.type === "date" ? "date" : "number"}
+                value={current.value}
+                onChange={(next) => {
+                  const { value: _, ...rest } = current;
+                  onChange(next === undefined ? rest : { ...rest, value: next });
+                }}
+              />
+            ) : input !== "none" ? (
+              <div>
+                <label htmlFor={`${id}-value`} className="sr-only">
+                  Value
+                </label>
+                <input
+                  id={`${id}-value`}
+                  type={input}
+                  value={current.value === undefined ? "" : String(current.value)}
+                  onChange={(event) => {
+                    const text = event.target.value;
+                    const { value: _, ...rest } = current;
+                    onChange(
+                      text === ""
+                        ? rest
+                        : { ...rest, value: input === "number" ? Number(text) : text },
+                    );
+                  }}
+                  className={`${control} w-full`}
+                />
+              </div>
+            ) : null}
+          </div>
         </>
       )}
       {note ? <p className="m-0 text-meta text-ink-muted">{note}</p> : null}

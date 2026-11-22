@@ -344,3 +344,52 @@ body {
     animation: none !important;
   }
 }
+
+/*
+ * Checkboxes and radios, drawn the same in both themes as the boards draw them: an empty box or
+ * ring with the control's border while off (the browser's own dark box is a grey fill), the
+ * action colour with a tick or a dot while on. The ones that carry the control for a styled label
+ * (`sr-only`) are not seen and are left alone.
+ */
+input[type="checkbox"]:not(.sr-only),
+input[type="radio"]:not(.sr-only) {
+  appearance: none;
+  display: inline-grid;
+  flex-shrink: 0;
+  place-content: center;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  border: 1.5px solid var(--vx-line-control);
+  background: transparent;
+  cursor: pointer;
+}
+input[type="checkbox"]:not(.sr-only) {
+  border-radius: 4px;
+}
+input[type="radio"]:not(.sr-only) {
+  border-radius: 999px;
+}
+input[type="checkbox"]:not(.sr-only):checked,
+input[type="radio"]:not(.sr-only):checked {
+  border-color: var(--vx-action);
+}
+input[type="checkbox"]:not(.sr-only):checked {
+  background: var(--vx-action)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 100% no-repeat;
+}
+input[type="radio"]:not(.sr-only):checked {
+  background: radial-gradient(circle, var(--vx-action) 0 40%, transparent 45%);
+}
+input[type="checkbox"]:not(.sr-only):indeterminate {
+  border-color: var(--vx-action);
+  background: var(--vx-action)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8h8' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E")
+    center / 100% no-repeat;
+}
+input[type="checkbox"]:not(.sr-only):disabled,
+input[type="radio"]:not(.sr-only):disabled {
+  opacity: 0.5;
+  cursor: default;
+}

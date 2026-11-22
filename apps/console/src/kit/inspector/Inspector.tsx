@@ -99,6 +99,9 @@ export interface InspectorProps {
   onAddFilters?: () => void;
   /** Removes a tab of this container with what it held moved or removed; the container editor's own, when it has one. */
   onRemoveTab?: (tab: string, fate: TabFate) => void;
+  /** The tab shown, when the host keeps it; and told when it changes. */
+  tab?: Tab | undefined;
+  onTab?: ((tab: Tab) => void) | undefined;
   /** Chooses another widget of the page (a Section's "Holds" rows). */
   onSelect?: ((id: string) => void) | undefined;
   /** "When a row is clicked" as the builder draws it, for a table or a list. */
@@ -121,7 +124,13 @@ export function Inspector(props: InspectorProps) {
   const { widget, definition } = props;
   const [view, setView] = useState<"settings" | "layout">("settings");
   const [moving, setMoving] = useState(false);
-  const [tab, setTab] = useState<Tab>("data");
+  const [own, setOwn] = useState<Tab>("data");
+  // A host that wants to know the tab (the builder's sheet preview shows with Actions) keeps it.
+  const tab = props.tab ?? own;
+  const setTab = (next: Tab) => {
+    setOwn(next);
+    props.onTab?.(next);
+  };
   const prefix = useId();
   const menu = useRef<HTMLSpanElement>(null);
   const cameBack = useRef(false);

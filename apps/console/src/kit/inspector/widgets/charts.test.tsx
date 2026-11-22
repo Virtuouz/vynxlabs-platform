@@ -482,7 +482,7 @@ test("pivot data: Measure, Rows and Columns, and a shaded grid from the data", (
   expect(screen.getByRole("button", { name: /^Columns/ }).textContent).toContain("Monthly");
   const grid = screen.getByRole("img", { name: /A grid of 3 rows and 3 columns/ });
   expect(grid.textContent).toContain("Sep");
-  expect(grid.querySelectorAll("span.h-4").length).toBe(9);
+  expect(grid.querySelectorAll("span.h-5").length).toBe(9);
 });
 
 test("pivot data: the columns can be cut by another period", async () => {

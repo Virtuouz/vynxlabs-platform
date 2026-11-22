@@ -548,6 +548,9 @@ importers:
       '@volvel/markup':
         specifier: workspace:*
         version: link:../markup
+      '@volvel/widgets':
+        specifier: workspace:*
+        version: link:../widget-sdk
       lucide-react:
         specifier: ^1.72.0
         version: 1.72.0(@types/react@19.3.0)(react@19.3.1)

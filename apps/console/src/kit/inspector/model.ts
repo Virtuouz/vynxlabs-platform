@@ -34,10 +34,16 @@ export interface CatalogColumn {
   name: string;
   type: string;
   references: string | null;
+  /** How many different values the column holds, when the schema says. Orders a breakdown's choices. */
+  distinct?: number;
+  /** A choice column's values, with how many rows each has, when the schema says. */
+  values?: { value: string; count?: number }[];
 }
 export interface CatalogTable {
   name: string;
   columns: CatalogColumn[];
+  /** How many rows it has, when the schema says. */
+  rows?: number;
 }
 /** What a widget can ask questions of: the tables, the saved queries, and whether SQL may be written. */
 export interface Catalog {
@@ -111,7 +117,9 @@ export function dataParts(definition: WidgetDefinition): DataPart[] {
       control: one.control,
       label: one.label,
       help: one.help,
-      level: one.level ?? "main",
+      // Sort and limit are always rows of "Rows it uses" (board 13): nothing hides behind
+      // "More data options" any more.
+      level: "main" as const,
     })),
   );
 }

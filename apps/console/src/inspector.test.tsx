@@ -131,16 +131,12 @@ test("every drawer has the same header, the tabs its widget has, and its setting
   expect(panel.getByRole("heading", { name: "Data" })).toBeTruthy();
   const text = screen.getByRole("tabpanel").textContent ?? "";
   const at = (name: string) => text.indexOf(name);
-  expect(at("Source")).toBeLessThan(at("Measure"));
-  expect(at("Measure")).toBeLessThan(at("For each"));
-  expect(at("For each")).toBeLessThan(at("Only include"));
-  expect(at("Only include")).toBeLessThan(at("More data options"));
-  // The disclosure says what is in it, and goes no deeper.
-  expect(panel.getByText(/Sorted by, show at most/)).toBeTruthy();
-  // The source is the table the widget reads.
-  expect((panel.getByRole("combobox", { name: "Source" }) as HTMLInputElement).value).toBe(
-    "Invoices",
-  );
+  expect(at("Rows it uses")).toBeLessThan(at("What it shows"));
+  expect(at("Source")).toBeLessThan(at("Only include"));
+  expect(at("Only include")).toBeLessThan(at("Sorted by"));
+  expect(text).not.toContain("More data options");
+  // The source is the table the widget reads, as a row.
+  expect(panel.getByRole("button", { name: /Source\s*Invoices/ })).toBeTruthy();
   // The repeated note about size and position is gone: Layout is in the ⋯ menu.
   expect(screen.queryByText(/Size and position live on the page/)).toBeNull();
 });
@@ -210,31 +206,66 @@ test("a widget type's registered piece is drawn in its group, in order, and hide
   off();
 });
 
-test("choosing Sum of Total as the value writes the first measure", () => {
+test("the chart's Data tab is drawn as Rows it uses, What it shows and What to chart, with sort and limit as rows", () => {
   show(<Harness start={chartWidget()} definition={chart} />);
-  fireEvent.change(screen.getByLabelText("What value 1 works out"), { target: { value: "sum" } });
+  const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
+  expect(tabs).toEqual(["Data", "Display", "Actions", "Rules"]);
+  const text = screen.getByRole("tabpanel").textContent ?? "";
+  const at = (name: string) => text.indexOf(name);
+  expect(at("Rows it uses")).toBeGreaterThanOrEqual(0);
+  expect(at("Rows it uses")).toBeLessThan(at("What it shows"));
+  expect(at("What it shows")).toBeLessThan(at("What to chart"));
+  // Source, Only include and Sorted by are in the first group, as rows; nothing hides behind a disclosure.
+  expect(at("Source")).toBeLessThan(at("Only include"));
+  expect(at("Only include")).toBeLessThan(at("Sorted by"));
+  expect(text).not.toContain("More data options");
+  const panel = within(screen.getByRole("tabpanel"));
+  expect(panel.getByRole("button", { name: /Source\s*Invoices/ })).toBeTruthy();
+  expect(panel.getByRole("button", { name: /Measure\s*Count of rows/ })).toBeTruthy();
+  expect(panel.getByRole("button", { name: /For each\s*Issued at/ })).toBeTruthy();
+});
+
+/** Opens the editor of the row with this label, in the portal beside it. */
+const openData = async (name: RegExp) => {
+  fireEvent.click(within(screen.getByRole("tabpanel")).getByRole("button", { name }));
+  return within(await screen.findByRole("dialog"));
+};
+
+test("choosing Sum of Total as the value writes the first measure", async () => {
+  show(<Harness start={chartWidget()} definition={chart} />);
+  const editor = await openData(/^Measure/);
+  fireEvent.change(editor.getByLabelText("What it works out"), { target: { value: "sum" } });
   const last = written.at(-1) as PageWidget;
   // A sum is of a number: the first one the table has is chosen, and the value is named for what it is.
   expect(queryOf(last).measures?.[0]).toEqual({ fn: "sum", column: "total", as: "sum_total" });
-  expect(screen.getByLabelText("Column value 1 is of")).toBeTruthy();
-  // The breakdown is left as it was.
+  expect(editor.getByLabelText("Column it works on")).toBeTruthy();
+  // The row says it in words, and the breakdown is left as it was.
+  expect(screen.getByRole("button", { name: /Measure\s*Sum of Total/ })).toBeTruthy();
   expect(queryOf(last).groupBy).toEqual([{ column: "issued_at", bucket: "week" }]);
 });
 
-test("a widget that named the value by its old name names it by the new one", () => {
+test("a widget that named the value by its old name names it by the new one", async () => {
   const start = chartWidget();
   start.config = { ...start.config, y: "count" };
   show(<Harness start={start} definition={chart} />);
-  fireEvent.change(screen.getByLabelText("What value 1 works out"), { target: { value: "sum" } });
+  const editor = await openData(/^Measure/);
+  fireEvent.change(editor.getByLabelText("What it works out"), { target: { value: "sum" } });
   expect((written.at(-1) as PageWidget).config?.y).toBe("sum_total");
 });
 
-test("a condition is added as a sentence of column, test and value", () => {
+test("a condition is added from the dashed chip as column, test and value", async () => {
   show(<Harness start={chartWidget()} definition={chart} />);
-  fireEvent.click(screen.getByRole("button", { name: "Add a condition" }));
-  fireEvent.change(screen.getByLabelText("Test of condition 1"), { target: { value: "ne" } });
-  fireEvent.change(screen.getByLabelText("Value of condition 1"), { target: { value: "paid" } });
+  fireEvent.click(screen.getByRole("button", { name: "Condition" }));
+  const editor = within(await screen.findByRole("dialog"));
+  // The first choice column is offered; the words are the column's own.
+  expect((editor.getByLabelText("Field") as HTMLSelectElement).value).toBe("status");
+  fireEvent.click(editor.getByLabelText("is not"));
+  fireEvent.change(editor.getByLabelText("Value"), { target: { value: "paid" } });
+  // Nothing is written until it is added.
+  expect(written).toEqual([]);
+  fireEvent.click(editor.getByRole("button", { name: "Add" }));
   expect(queryOf(written.at(-1)).filters).toEqual([{ column: "status", op: "ne", value: "paid" }]);
+  expect(screen.getByRole("button", { name: "Status is not paid" })).toBeTruthy();
 });
 
 test("a setting that depends on another is shown only while it holds", () => {

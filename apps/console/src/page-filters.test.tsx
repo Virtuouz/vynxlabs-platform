@@ -257,15 +257,16 @@ test("a data widget's Data tab lists each page filter by its label, and a search
   const widgets = bindWith(page([{ name: "status", label: "Status", type: "choice" }]));
   show(<Harness start={widgets} open="invoices" />);
   const panel = within(screen.getByRole("tabpanel"));
-  expect(panel.getByText("Follows the page filters")).toBeTruthy();
-  expect((panel.getByLabelText("Search invoices") as HTMLInputElement).checked).toBe(true);
-  expect((panel.getByLabelText("Status") as HTMLInputElement).checked).toBe(false);
-  // Following is a switch.
-  fireEvent.click(panel.getByLabelText("Status"));
+  expect(panel.getByText(/Follows 2 page filters · click to switch one off/)).toBeTruthy();
+  const chip = (name: string) => panel.getByRole("button", { name }) as HTMLButtonElement;
+  expect(chip("Search invoices").getAttribute("aria-pressed")).toBe("true");
+  expect(chip("Status").getAttribute("aria-pressed")).toBe("false");
+  // Following is a chip: pressing it follows, and pressing it again switches it off.
+  fireEvent.click(chip("Status"));
   expect(bindings("invoices")).toContainEqual({ filter: "status", column: "status" });
-  fireEvent.click(panel.getByLabelText("Search invoices"));
+  fireEvent.click(chip("Search invoices"));
   expect(bindings("invoices")?.map((one) => one.filter)).toEqual(["status"]);
-  fireEvent.click(panel.getByLabelText("Search invoices"));
+  fireEvent.click(chip("Search invoices"));
   expect(bindings("invoices")).toContainEqual({
     filter: "search_invoices",
     columns: ["number", "client"],

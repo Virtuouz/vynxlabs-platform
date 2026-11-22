@@ -68,7 +68,7 @@ function GroupChip({
 /** The chip nobody picked: what is so when no group is named. */
 function EveryoneChip({ children }: { children: string }) {
   return (
-    <span className="inline-flex h-7 items-center rounded-control border border-action bg-action-soft px-3 text-body-sm text-action">
+    <span className="inline-flex min-h-7 items-center rounded-control border border-action bg-action-soft px-3 py-0.5 text-body-sm text-action">
       {children}
     </span>
   );

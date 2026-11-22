@@ -33,7 +33,7 @@ import { formatCombo } from "../keys.ts";
 import { ActionsTab, RulesSummary } from "./ActionsTab.tsx";
 import "./widgets/registerAll.ts";
 import { type Env, SettingRow } from "./controls.tsx";
-import { drawersFor, headingPlace, hiddenData, hiddenSettings, tabLabelFor } from "./custom.ts";
+import { drawersFor, headingIsFields, headingPlace, hiddenData, hiddenSettings, tabLabelFor } from "./custom.ts";
 import { DataControl } from "./dataControls.tsx";
 import { hasHeading, HeadingGroup } from "./heading.tsx";
 import { type Device, LayoutPanel } from "./LayoutPanel.tsx";
@@ -393,7 +393,7 @@ function TabBody({
       blocks.push({
         key: "heading",
         order: place === "last" ? 1e6 : -2000,
-        node: <HeadingGroup env={env} />,
+        node: <HeadingGroup env={env} fields={headingIsFields(definition.type, tab)} />,
       });
     }
   }

@@ -52,6 +52,8 @@ interface PieceBase {
   dot?: (env: Env) => boolean;
   /** The piece places the shell's Heading group itself (`HeadingGroup`): the shell does not. */
   ownHeading?: boolean;
+  /** The Heading group is drawn as two fields written in place (the chart's, board 11), not as rows. */
+  headingFields?: boolean;
   /** The shell's Heading group goes after everything else in the tab, not before. */
   headingLast?: boolean;
 }
@@ -102,6 +104,10 @@ export function headingPlace(type: string, tab: Tab): "first" | "last" | "own" {
   if (mine.some((one) => one.ownHeading)) return "own";
   return mine.some((one) => one.headingLast) ? "last" : "first";
 }
+
+/** Whether a type's Heading group is written in place, as fields, in a tab. */
+export const headingIsFields = (type: string, tab: Tab): boolean =>
+  drawersFor(type, tab).some((one) => one.headingFields === true);
 
 /** Every config property a type's registered pieces draw themselves (in any tab: a setting is drawn once). */
 export function hiddenSettings(type: string): Set<string> {

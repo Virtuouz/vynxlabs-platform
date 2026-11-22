@@ -38,6 +38,7 @@ function piece(
     hides?: readonly string[];
     hidesData?: readonly ("source" | "conditions" | "sort" | "limit" | "measure" | "breakdown")[];
     headingLast?: boolean;
+    ownHeading?: boolean;
     dot?: (env: Env) => boolean;
   } = {},
 ) {
@@ -62,11 +63,13 @@ piece("core/button", "display", ButtonDisplaySection, {
 piece("core/actions", "display", ActionsDisplaySection, {
   hides: ["actions", "lineUp", "showUpTo", "place"],
 });
-piece("core/section", "display", SectionDisplaySection, { hides: ["look", "folds"] });
+piece("core/section", "display", SectionDisplaySection, { hides: ["look", "folds", "folded"] });
+// The tabs have no heading group of their own (board 18): "ownHeading" with none placed.
 piece("core/tabs", "display", TabsDisplaySection, {
+  ownHeading: true,
   hides: ["tabs", "opensFirst", "look", "remember"],
 });
-piece("core/filter", "display", FilterDisplaySection, { hides: ["filters", "sit"] });
+piece("core/filter", "display", FilterDisplaySection, { hides: ["filters", "sit", "reset"] });
 
 // What a style tile draws: the real button in its tone, the callout in its look.
 registerTilePreview("core/button", "tone", (value, env) =>

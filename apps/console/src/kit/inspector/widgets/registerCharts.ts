@@ -13,7 +13,7 @@ import type { Env } from "../controls.tsx";
 import { registerDrawer } from "../custom.ts";
 import { ChartData, ChartDisplay } from "./chartDrawer.tsx";
 import { type DrawerSection, type SectionProps, useDrawerData } from "./chartShared.tsx";
-import { GoalData, GoalDisplay } from "./goalDrawer.tsx";
+import { GoalData, GoalDisplay, GoalPreview } from "./goalDrawer.tsx";
 import { PivotData, PivotDisplay } from "./pivotDrawer.tsx";
 import { StatData, StatDisplay } from "./statDrawer.tsx";
 
@@ -42,6 +42,7 @@ registerDrawer(CHART, {
   tab: "display",
   order: 10,
   section: withData(ChartDisplay),
+  headingFields: true,
   hides: [
     "mark",
     "horizontal",
@@ -71,6 +72,8 @@ registerDrawer(STAT, {
   hides: ["format", "compare", "compareTo", "delta", "goodWhen"],
 });
 
+// The bar previewed above everything else, as board 14 draws it.
+registerDrawer(GOAL, { tab: "data", order: -5000, section: withData(GoalPreview) });
 registerDrawer(GOAL, {
   tab: "data",
   order: 10,

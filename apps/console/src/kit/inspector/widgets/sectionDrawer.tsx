@@ -84,7 +84,7 @@ export function SectionDisplaySection({
                 "reordering what the section holds",
               )
             }
-            {...(onSelectWidget ? { onOpen: onSelectWidget } : {})}
+            {...(onSelectWidget ?? env.select ? { onOpen: (onSelectWidget ?? env.select) as (id: string) => void } : {})}
           />
         ) : (
           <DrawerBlock>
@@ -109,6 +109,13 @@ export function SectionDisplaySection({
           checked={env.config.folds === true}
           onChange={(next) => setConfig(env, "folds", next ? true : undefined, "folding")}
         />
+        {env.config.folds === true ? (
+          <ToggleRow
+            label="Starts folded"
+            checked={env.config.folded === true}
+            onChange={(next) => setConfig(env, "folded", next ? true : undefined, "starting folded")}
+          />
+        ) : null}
       </Group>
     </>
   );

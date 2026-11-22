@@ -437,7 +437,10 @@ export function TableRowClickSection({
   if (env.rowClickEditor) {
     return (
       <Section bare={bare} label="When a row is clicked">
-        <DrawerBlock>{env.rowClickEditor}</DrawerBlock>
+        <DrawerBlock>
+          {/* The group's own heading says it; the editor's is for where it stands alone. */}
+          <div className="[&_h3]:sr-only">{env.rowClickEditor}</div>
+        </DrawerBlock>
       </Section>
     );
   }

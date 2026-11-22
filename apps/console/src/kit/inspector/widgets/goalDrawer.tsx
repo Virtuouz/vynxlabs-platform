@@ -235,7 +235,6 @@ function OverRow({ env }: SectionProps) {
 export function GoalData({ env, data }: SectionProps) {
   return (
     <>
-      <GoalPreview env={env} data={data} />
       <DrawerGroup
         label="Progress"
         note="The goal can be a fixed amount or come from a column, such as a monthly target table."

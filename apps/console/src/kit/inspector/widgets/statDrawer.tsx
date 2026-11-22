@@ -117,7 +117,7 @@ export function StatDisplay({ env, data }: SectionProps) {
         {comparing ? (
           <DrawerBlock>
             <div className="grid grid-cols-2 gap-3">
-              <div className="flex min-w-0 flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1.5 [&_fieldset]:w-full [&_fieldset]:flex-nowrap [&_label]:flex-1 [&_label]:justify-center">
                 <p className="m-0 text-body-sm text-ink-muted">Show change as</p>
                 <SegmentedControl
                   label="Show change as"
@@ -137,7 +137,7 @@ export function StatDisplay({ env, data }: SectionProps) {
                   }
                 />
               </div>
-              <div className="flex min-w-0 flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1.5 [&_fieldset]:w-full [&_fieldset]:flex-nowrap [&_label]:flex-1 [&_label]:justify-center">
                 <p className="m-0 text-body-sm text-ink-muted">Going up is</p>
                 <SegmentedControl
                   label="Going up is"

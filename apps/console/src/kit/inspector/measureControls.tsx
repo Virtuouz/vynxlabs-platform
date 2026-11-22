@@ -21,7 +21,8 @@ import {
   MEASURE_FUNCTIONS,
   MEASURE_WORDS,
 } from "@volvel/widgets";
-import { Hash } from "lucide-react";
+import { Hash, Search } from "lucide-react";
+import { useState } from "react";
 import type { Env } from "./controls.tsx";
 import { columnsByGrouping } from "./grouping.ts";
 import { type CatalogColumn, heading, measureName, visualOf } from "./model.ts";
@@ -334,7 +335,13 @@ export function BreakdownEditor({
   fillGaps?: { value: boolean; onChange: (next: boolean) => void; noun?: string };
   onRemove?: () => void;
 }) {
-  const ordered = columnsByGrouping(columns, rows);
+  const [find, setFind] = useState("");
+  const ordered = columnsByGrouping(columns, rows).filter(
+    (one) => find === "" || heading(one.name).toLowerCase().includes(find.trim().toLowerCase()),
+  );
+  // A few values, a choice or a date group well; the rest are listed after.
+  const good = ordered.filter((one) => one.rank <= 3);
+  const other = ordered.filter((one) => one.rank > 3);
   const current = columns.find((one) => one.name === breakdown?.column);
   const temporal = current ? TEMPORAL.has(current.type) : false;
   const cadences = BREAKDOWN_CADENCES.filter(
@@ -342,23 +349,59 @@ export function BreakdownEditor({
   );
   return (
     <div className="flex flex-col gap-3">
-      <ChoiceList
-        label="Column to break down by"
-        value={breakdown?.column}
-        options={ordered.map((one) => ({
-          value: one.name,
-          label: heading(one.name),
-          hint: one.hint,
-          icon: iconOfType(one.type, one.references),
-        }))}
-        onChange={(column) => {
-          const next = columns.find((one) => one.name === column);
-          onChange({
-            column,
-            ...(next && TEMPORAL.has(next.type) ? { bucket: breakdown?.bucket ?? "week" } : {}),
-          });
-        }}
-      />
+      {ordered.length > 6 ? (
+        <div className="relative">
+          <Search
+            size={14}
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-ink-muted"
+          />
+          <input
+            type="search"
+            aria-label="Find a column"
+            placeholder="Find a column"
+            value={find}
+            onChange={(event) => setFind(event.target.value)}
+            className="h-9 w-full min-w-0 rounded-control border border-line-control bg-surface pr-2 pl-8 text-body-sm text-ink placeholder:text-ink-muted focus-visible:outline-2 focus-visible:outline-focus"
+          />
+        </div>
+      ) : null}
+      {[
+        { title: "Good for grouping", list: good },
+        { title: "Other columns", list: other },
+      ].map(({ title, list }) =>
+        list.length === 0 ? null : (
+          <div key={title} className="flex flex-col gap-1">
+            {good.length > 0 && other.length > 0 ? (
+              <p className="m-0 text-body-sm text-ink-muted">{title}</p>
+            ) : null}
+            <ChoiceList
+              label={`${title}: column to break down by`}
+              value={breakdown?.column}
+              options={list.map((one) => ({
+                value: one.name,
+                label: heading(one.name),
+                hint: one.hint,
+                icon: iconOfType(one.type, one.references),
+              }))}
+              onChange={(column) => {
+                const next = columns.find((one) => one.name === column);
+                onChange({
+                  column,
+                  ...(next && TEMPORAL.has(next.type)
+                    ? { bucket: breakdown?.bucket ?? "week" }
+                    : {}),
+                });
+              }}
+            />
+          </div>
+        ),
+      )}
+      {ordered.length > 0 ? (
+        <p className="m-0 text-meta text-ink-muted">
+          Columns with few values come first. A date adds a “by week / month” choice.
+        </p>
+      ) : null}
       {temporal && breakdown ? (
         <div className="flex flex-col gap-2">
           <SegmentedControl

@@ -11,10 +11,11 @@ import {
   type DrawerIcon,
   NumberField,
   SegmentedControl,
+  TextField,
 } from "@volvel/ui";
 import type { WidgetDefinition } from "@volvel/widgets";
 import { ChevronLeft } from "lucide-react";
-import { clampPlace, settleOnGrid } from "./model.ts";
+import { clampPlace, settleOnGrid, withText } from "./model.ts";
 
 export type Device = "tablet" | "phone";
 
@@ -109,7 +110,7 @@ export function LayoutPanel(props: LayoutPanelProps) {
           />
         </div>
         {place ? (
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 @[17rem]:grid-cols-4">
             {(
               [
                 ["x", "column", 1],
@@ -144,7 +145,7 @@ export function LayoutPanel(props: LayoutPanelProps) {
   const maxW = Math.min(max?.w ?? COLUMNS, COLUMNS);
   const maxH = max?.h ?? 40;
   return (
-    <div className="flex min-w-0 flex-col gap-5">
+    <div className="@container flex min-w-0 flex-col gap-5 [&_fieldset]:w-full [&_fieldset]:flex-nowrap [&_fieldset_label]:flex-1 [&_fieldset_label]:justify-center">
       <DrawerHeader
         {...(props.icon ? { icon: props.icon } : {})}
         name={name}
@@ -159,12 +160,33 @@ export function LayoutPanel(props: LayoutPanelProps) {
           <ChevronLeft aria-hidden="true" size={14} /> Back to settings
         </button>
       </div>
+      {definition.layout.frame === "none" ? (
+        <DrawerGroup label="Name">
+          <DrawerBlock>
+            <TextField
+              name={`${widget.id}-outline-name`}
+              label="Name in the outline"
+              hint="It isn't drawn on the page: a button says what its label says."
+              required={false}
+              maxLength={100}
+              value={widget.title ?? ""}
+              onChange={(text) =>
+                props.onChange(
+                  withText(widget, "title", text),
+                  "renaming the widget",
+                  `title:${widget.id}`,
+                )
+              }
+            />
+          </DrawerBlock>
+        </DrawerGroup>
+      ) : null}
       <DrawerGroup
         label="On desktop"
         note={`Usually you drag. These are for exact placement and for keyboards: arrow keys move, Shift+arrow resizes. A ${definition.title.toLowerCase()} is ${min.w} to ${maxW} wide and ${min.h} to ${maxH} high, on twelve columns.`}
       >
         <DrawerBlock>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 gap-2 @[17rem]:grid-cols-4">
             <NumberField
               name={`${widget.id}-column`}
               label="Column"

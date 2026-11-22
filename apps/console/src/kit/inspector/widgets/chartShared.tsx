@@ -19,6 +19,7 @@ import { MEASURE_FUNCTIONS, MEASURE_WORDS } from "@volvel/widgets";
 import { Calendar, Hash, List, Type } from "lucide-react";
 import { type ComponentType, createContext, type ReactNode, useContext } from "react";
 import type { Env } from "../controls.tsx";
+import { sampleValue } from "../grouping.ts";
 import type { CatalogColumn } from "../model.ts";
 import {
   heading,
@@ -325,8 +326,11 @@ export function Swatches({ colors }: { colors: readonly string[] }) {
 }
 
 /** The format row of the page: "Numbers  $43,120.00 · Money". */
-export function NumbersRow({ env, sample }: { env: Env; sample?: number }) {
+export function NumbersRow({ env, sample: given }: { env: Env; sample?: number }) {
   const set = setter(env);
+  // A real number from what the widget draws, so the row shows the format on its own figures.
+  const summary = useDrawerData()?.summary;
+  const sample = given ?? sampleValue(summary?.rows, summary?.values);
   const format = env.config.format as Parameters<typeof NumberFormatRow>[0]["value"];
   return (
     <NumberFormatRow

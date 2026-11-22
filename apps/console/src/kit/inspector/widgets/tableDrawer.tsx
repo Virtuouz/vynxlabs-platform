@@ -228,7 +228,16 @@ export function TableLookSection({ env, bare }: TableSectionProps) {
       <DrawerRow
         label="When empty"
         icon={Type}
-        value={empty ? `“${empty}”` : undefined}
+        // Unset, it says what the page says for it: the words the view draws (`PageView`).
+        value={
+          empty ? (
+            `“${empty}”`
+          ) : (
+            <span className="text-ink-muted">
+              {`“${env.filters.length > 0 ? "Nothing matches the filters." : "There is nothing here yet."}”`}
+            </span>
+          )
+        }
         editorTitle="When empty"
         editor={
           <TextField
@@ -237,6 +246,9 @@ export function TableLookSection({ env, bare }: TableSectionProps) {
             required={false}
             maxLength={200}
             value={empty}
+            placeholder={
+              env.filters.length > 0 ? "Nothing matches the filters." : "There is nothing here yet."
+            }
             hint="Shown when there are no rows."
             onChange={(text) => put("empty", text, "changing what an empty table says")}
           />

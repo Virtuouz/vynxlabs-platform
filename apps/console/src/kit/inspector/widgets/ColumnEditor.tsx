@@ -17,6 +17,7 @@ import {
 import { ChevronDown } from "lucide-react";
 import { type ReactElement, type ReactNode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { heading } from "../model.ts";
 import {
   type ColumnFacts,
   type ColumnSetting,
@@ -66,6 +67,8 @@ export function ColumnEditorBody({
   const number = isNumberType(type);
   const badge = spec.as === "badge";
   const values = [...new Set([...(facts?.choices ?? []), ...Object.keys(spec.badges ?? {})])];
+  // A choice is called what the table calls it, else its value with a capital.
+  const words = (value: string) => facts?.labels?.[value] ?? heading(value);
   const field = `column-${spec.column}`;
   return (
     <div className="flex flex-col gap-4">
@@ -166,7 +169,7 @@ export function ColumnEditorBody({
                 const tone = spec.badges?.[value];
                 return (
                   <li key={value} className="flex min-h-10 items-center justify-between gap-3 px-3">
-                    <span className="min-w-0 truncate text-body-sm text-ink">{value}</span>
+                    <span className="min-w-0 truncate text-body-sm text-ink">{words(value)}</span>
                     {/* The badge as it will look, with a chevron: it opens a small menu of tones. */}
                     <Menu
                       ariaLabel={`Color of ${value}`}
@@ -174,7 +177,7 @@ export function ColumnEditorBody({
                       triggerClassName="inline-flex h-7 cursor-pointer items-center gap-1 rounded-control px-1 text-ink-muted outline-offset-2 hover:bg-selected focus-visible:outline-2 focus-visible:outline-focus"
                       label={
                         <span className="inline-flex items-center gap-1.5">
-                          <ToneChip tone={tone ?? "neutral"}>{value}</ToneChip>
+                          <ToneChip tone={tone ?? "neutral"}>{words(value)}</ToneChip>
                           <ChevronDown aria-hidden="true" size={14} />
                         </span>
                       }

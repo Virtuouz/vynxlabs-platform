@@ -48,6 +48,7 @@ import type { Env } from "./controls.tsx";
 import {
   bindFilter,
   type CatalogColumn,
+  choiceWords,
   type DataPart,
   dataParts,
   defaultInputs,
@@ -500,6 +501,10 @@ function ConditionBody({
         return values && values.length > 0
           ? values.map((one) => ({
               value: one.value,
+              label: choiceWords(
+                columns.find((c) => c.name === field),
+                one.value,
+              ),
               ...(one.count === undefined ? {} : { count: one.count }),
             }))
           : undefined;

@@ -47,7 +47,7 @@ import {
   onTablet,
   phoneMoved,
   phoneOrder,
-  phoneSpan,
+  phoneSpans,
 } from "./narrow.ts";
 import {
   type Box,
@@ -541,6 +541,7 @@ function Cell({
               size={{ w: at.w, h: at.h, narrow }}
               emit={emit}
               building={building}
+              {...(building && ctx.viewing ? { viewing: true } : {})}
               {...(widget.title ? { title: widget.title } : {})}
               {...extras}
               {...(place ? { place } : {})}
@@ -713,6 +714,16 @@ function WidgetGrid({
         : [...widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x),
     [widgets, narrow],
   );
+  // On a phone one that would stand alone in a row takes it whole; what is hidden stands in the way of a pairing, drawn or not.
+  const spans = useMemo(
+    () =>
+      narrow
+        ? phoneSpans(ordered, (one) =>
+            hiddenOnPhone(one, ctx.registry.get(one.type)?.definition),
+          )
+        : new Map<string, 1 | 2>(),
+    [narrow, ordered, ctx.registry],
+  );
   // A press on a widget on the phone, dragged up or down and let go, reads it before the one it
   // was let go above (or last): written as the phone's own place, once it is asked about.
   const reorderOnPhone = (event: React.PointerEvent<HTMLElement>, id: string) => {
@@ -839,7 +850,7 @@ function WidgetGrid({
             selected={selected}
             fade={fade}
             hiddenFor={hiddenFor}
-            span={narrow ? phoneSpan(widget) : 2}
+            span={narrow ? (spans.get(widget.id) ?? 2) : 2}
             place={
               container
                 ? (tab) => (
@@ -939,7 +950,8 @@ export function PageView({
         ? {
             id: user?.id ?? "builder",
             ...(user?.email ? { email: user.email } : {}),
-            groups: [viewAs.key],
+            // Served, a person's groups come as names (for "user in group" conditions) and as keys (for who may run).
+            groups: [viewAs.name, viewAs.key],
           }
         : undefined,
     [editing, viewAs, user],

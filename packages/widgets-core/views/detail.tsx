@@ -226,6 +226,7 @@ export function DetailView({
   config,
   data,
   building,
+  viewing,
   act,
   can,
   why,
@@ -341,14 +342,15 @@ export function DetailView({
         <div className="flex flex-wrap gap-2">
           {actions.map((item, at) => {
             const where = `config/actions/${at}/action`;
-            const allowed = building ? false : (can?.(where, record) ?? true);
+            const decides = !building || viewing === true;
+            const allowed = decides ? (can?.(where, record) ?? true) : false;
             return (
               <Button
                 key={item.id}
                 variant={VARIANT[item.tone ?? "default"]}
                 disabled={!allowed || running !== undefined}
                 loading={running === item.id}
-                tooltip={!allowed && !building ? (why?.(where, record) ?? CANNOT_NOW) : undefined}
+                tooltip={!allowed && decides ? (why?.(where, record) ?? CANNOT_NOW) : undefined}
                 onClick={() => void run(item.id, () => act?.(where, { record: id }))}
               >
                 <NamedIcon name={item.icon} />

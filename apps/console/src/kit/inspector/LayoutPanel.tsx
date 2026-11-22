@@ -212,15 +212,18 @@ export function LayoutPanel(props: LayoutPanelProps) {
             <div>
               <SegmentedControl
                 label="On narrow screens"
+                size="small"
                 options={[
+                  { value: "automatic", label: "Automatic" },
+                  { value: "keep", label: "Keep" },
                   { value: "full", label: "Full width" },
-                  { value: "stack", label: "Stack" },
+                  { value: "stack", label: "Stack below" },
                   { value: "hide", label: "Hide" },
                 ]}
-                value={widget.layout?.narrow ?? "full"}
+                value={widget.layout?.narrow ?? "automatic"}
                 onChange={(next) =>
                   setLayout(
-                    { narrow: next as "full" | "stack" | "hide" },
+                    { narrow: next === "automatic" ? undefined : next },
                     "setting what narrow screens do",
                   )
                 }

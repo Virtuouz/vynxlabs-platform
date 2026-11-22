@@ -16,7 +16,7 @@ interface Preview {
 }
 
 const MARK = {
-  ok: { icon: Check, label: "Passed", tone: "text-live" },
+  ok: { icon: Check, label: "Passed", tone: "text-success" },
   warn: { icon: TriangleAlert, label: "Worth knowing", tone: "text-attention" },
   fail: { icon: X, label: "Needs fixing", tone: "text-danger" },
 } as const;

@@ -94,6 +94,9 @@ export interface PageValue {
   addPages?: Page[];
 }
 
+/** The width the desktop layout is drawn at, at least: a narrower canvas scrolls. */
+const DESKTOP_MIN = 720;
+
 /**
  * The page grid's columns, faintly, behind the widgets: twelve columns of equal width with `GRID.gap`
  * between them, over the grid's own box (the frame's padding is outside it).
@@ -500,7 +503,10 @@ export function PageEditor({
                     maxWidth: `${width}px`,
                     ...(device === "tablet" ? { minWidth: `${width}px` } : {}),
                   }
-                : undefined
+                : device === "desktop" && !overlay
+                  ? // The desktop layout is drawn at a desktop's width, scrolled in a narrow canvas, never as the phone's.
+                    { minWidth: `${DESKTOP_MIN}px` }
+                  : undefined
             }
           >
             {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}

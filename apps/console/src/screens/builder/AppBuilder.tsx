@@ -188,9 +188,14 @@ export function AppBuilder({
       ? undefined
       : draftChangeCount(deployed.data?.body, body);
   const acts = runsActions(page?.widgets ?? []);
-  const review = async () => {
+  /** Writes the draft only when there is something unsaved: looking at the check changes nothing. */
+  const settle = async () => {
+    if (!dirty.current && saving === "saved") return true;
     dirty.current = false;
-    if (await save(body)) {
+    return save(body);
+  };
+  const review = async () => {
+    if (await settle()) {
       deployed.reload();
       setReviewing(true);
     }
@@ -222,8 +227,7 @@ export function AppBuilder({
   const publish = async () => {
     setPublishing(true);
     try {
-      dirty.current = false;
-      if (!(await save(body))) return;
+      if (!(await settle())) return;
       const fresh = await api.get<{ items: { path: string }[] }>(`${root}/drafts`);
       const waiting = new Set(fresh.items.map((draft) => draft.path));
       const paths = [path, ...(appPath ? [appPath] : [])].filter((one) => waiting.has(one));

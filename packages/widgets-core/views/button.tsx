@@ -17,7 +17,14 @@ interface ButtonConfig {
  * may run it. While building it is only drawn. It stands in its cell where `place` says (a
  * 3 x 3 position), or fills the cell's width when `full`.
  */
-export function ButtonView({ config, act, can, why, building }: WidgetViewProps<ButtonConfig>) {
+export function ButtonView({
+  config,
+  act,
+  can,
+  why,
+  building,
+  viewing,
+}: WidgetViewProps<ButtonConfig>) {
   const { running, run } = useRunning();
   const label = config.label ?? "Do it";
   const variant = VARIANT[config.tone ?? "primary"];
@@ -30,7 +37,7 @@ export function ButtonView({ config, act, can, why, building }: WidgetViewProps<
       {label}
     </>
   );
-  if (building || !act) {
+  if (!viewing && (building || !act)) {
     // Inert: pressing it in the builder selects the widget, and it never shows pending.
     return (
       <div className={wrap} data-place={config.place ?? "middle-left"}>
@@ -53,7 +60,7 @@ export function ButtonView({ config, act, can, why, building }: WidgetViewProps<
         disabled={!allowed}
         loading={running !== undefined}
         tooltip={allowed ? undefined : (why?.("on/click") ?? CANNOT_NOW)}
-        onClick={() => void run("click", () => act("on/click"))}
+        onClick={() => act && void run("click", () => act("on/click"))}
         className={width}
       >
         {content}

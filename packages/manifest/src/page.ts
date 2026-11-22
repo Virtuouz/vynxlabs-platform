@@ -210,7 +210,7 @@ export const MAX_PAGE_FILTERS = 8;
 export interface WidgetLayout {
   tablet?: { at: WidgetPlace };
   phone?: { at: WidgetPlace };
-  narrow?: "full" | "stack" | "hide";
+  narrow?: "keep" | "full" | "stack" | "hide";
   priority?: number;
 }
 
@@ -667,8 +667,9 @@ export const pageWidgetSchema = {
           additionalProperties: false,
         },
         narrow: {
-          enum: ["full", "stack", "hide"],
-          description: "On narrow screens: full width, stacked below, or hidden.",
+          enum: ["keep", "full", "stack", "hide"],
+          description:
+            "On narrow screens: keep its share of the row, take the full width, be stacked below the rest, or be hidden. Left out, it is automatic.",
         },
         priority: {
           type: "integer",

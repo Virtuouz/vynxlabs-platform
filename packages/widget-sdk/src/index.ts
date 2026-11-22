@@ -444,6 +444,11 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
   emit: (event: string, payload: EventPayload) => void;
   /** Whether the page is being built. A view may draw hints for the builder, never different data. */
   building: boolean;
+  /**
+   * While building, "View as" a group: an action the group may run is drawn pressable (it still
+   * runs nothing here), and one it may not is greyed with the reason, as it will be served.
+   */
+  viewing?: boolean;
   /** The widget's title, as the page draws it over the view: what a view names its own parts by ("Visits", for a tab strip). */
   title?: string;
   /**

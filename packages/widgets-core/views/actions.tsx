@@ -49,7 +49,14 @@ export function fitCount(
  * fit the widget's width, or pass `showUpTo`, goes in the \u22ef menu, which a keyboard reaches like
  * any menu. It lines up left, right or spread, and stands in its cell by `place`.
  */
-export function ActionsView({ config, act, can, why, building }: WidgetViewProps<ActionsConfig>) {
+export function ActionsView({
+  config,
+  act,
+  can,
+  why,
+  building,
+  viewing,
+}: WidgetViewProps<ActionsConfig>) {
   const { running, run } = useRunning();
   const box = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
@@ -76,7 +83,7 @@ export function ActionsView({ config, act, can, why, building }: WidgetViewProps
     return () => watching.disconnect();
   }, [labels]);
 
-  const inert = building || !act;
+  const inert = !viewing && (building || !act);
   const limit =
     typeof config.showUpTo === "number" && config.showUpTo >= 1
       ? Math.floor(config.showUpTo)

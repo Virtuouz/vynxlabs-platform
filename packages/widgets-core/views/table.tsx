@@ -68,7 +68,7 @@ function TableButtons({
   props,
 }: {
   buttons: readonly TableButton[];
-  props: Pick<WidgetViewProps, "act" | "can" | "why" | "building">;
+  props: Pick<WidgetViewProps, "act" | "can" | "why" | "building" | "viewing">;
 }) {
   const { running, run } = useRunning();
   if (buttons.length === 0) return null;
@@ -76,7 +76,7 @@ function TableButtons({
     <div data-table-buttons="" className="mb-2 flex flex-wrap items-center justify-end gap-2">
       {buttons.map((one, at) => {
         const where = `config/buttons/${at}/action`;
-        const inert = props.building || !props.act;
+        const inert = !props.viewing && (props.building || !props.act);
         const allowed = inert ? false : (props.can?.(where) ?? true);
         return (
           <Button
@@ -85,7 +85,11 @@ function TableButtons({
             variant={VARIANT[one.tone ?? (at === 0 ? "primary" : "default")]}
             disabled={!allowed || running !== undefined}
             loading={running === one.id}
-            tooltip={!allowed && !props.building ? (props.why?.(where) ?? CANNOT_NOW) : undefined}
+            tooltip={
+              !allowed && (!props.building || props.viewing)
+                ? (props.why?.(where) ?? CANNOT_NOW)
+                : undefined
+            }
             onClick={() => void run(one.id, () => props.act?.(where))}
           >
             {one.label}
@@ -111,7 +115,7 @@ function ChosenBar({
   count: number;
   rows: readonly Readonly<Record<string, unknown>>[];
   actions: readonly RowAction[];
-  props: Pick<WidgetViewProps, "act" | "can" | "why" | "building">;
+  props: Pick<WidgetViewProps, "act" | "can" | "why" | "building" | "viewing">;
   onClear: () => void;
   onDone: () => void;
 }) {
@@ -180,7 +184,7 @@ export function PhoneRows({
   /** The row whose sheet is open, or that was chosen. */
   selected?: string | undefined;
   actions?: readonly RowAction[];
-  view?: Pick<WidgetViewProps, "act" | "can" | "why" | "building">;
+  view?: Pick<WidgetViewProps, "act" | "can" | "why" | "building" | "viewing">;
   /** With rows to tick: which are, and how to tick one. */
   ticked?: ReadonlySet<string>;
   onTick?: (id: string, on: boolean) => void;

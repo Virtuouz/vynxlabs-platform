@@ -1,4 +1,4 @@
-import { Ellipsis } from "lucide-react";
+import { Ellipsis, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 
 /**
@@ -9,8 +9,9 @@ export function DeviceBanner({ device, changed }: { device: "tablet" | "phone"; 
   return (
     <p
       data-device-banner={device}
-      className="mx-auto mb-3 flex w-fit max-w-full items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-1.5 text-body-sm text-ink-muted"
+      className="mx-auto mb-3.5 flex w-fit max-w-full items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2 text-[12.5px] text-ink-muted"
     >
+      <Sparkles aria-hidden="true" size={14} className="shrink-0 text-action" />
       <span>
         {device === "phone" ? "Phone" : "Tablet"} layout is made from the desktop one.
         {changed > 0 ? (
@@ -47,11 +48,11 @@ export function PhoneFrame({
   return (
     <div
       data-phone-frame=""
-      className="mx-auto flex min-w-0 flex-col rounded-overlay border-2 border-line-strong bg-canvas p-3"
+      className="mx-auto flex min-w-0 flex-col gap-2.5 rounded-[28px] border border-line-strong bg-canvas px-3 py-3.5 shadow-modal"
       style={{ maxWidth: `${width}px` }}
     >
-      <div className="flex items-center justify-between px-2 pt-1 pb-3">
-        <span className="min-w-0 truncate text-title font-semibold text-ink">{title}</span>
+      <div className="flex items-center justify-between gap-2 px-1 pt-0.5 pb-1.5">
+        <span className="min-w-0 truncate text-[17px] font-semibold text-ink">{title}</span>
         <Ellipsis aria-hidden="true" size={16} className="text-ink-muted" />
       </div>
       <div className="min-w-0 overflow-x-hidden">{children}</div>

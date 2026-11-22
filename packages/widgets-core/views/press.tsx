@@ -87,7 +87,7 @@ export function RowActionButtons({
   actions: readonly RowAction[];
   row: Readonly<Record<string, unknown>>;
   record: string;
-  props: Pick<WidgetViewProps, "act" | "can" | "why" | "building">;
+  props: Pick<WidgetViewProps, "act" | "can" | "why" | "building" | "viewing">;
   always: boolean;
 }) {
   const { running, run } = useRunning();
@@ -102,7 +102,8 @@ export function RowActionButtons({
     >
       {actions.map((item, at) => {
         const where = `config/rowActions/${at}/action`;
-        const allowed = props.building ? false : (props.can?.(where, row) ?? true);
+        const decides = !props.building || props.viewing === true;
+        const allowed = decides ? (props.can?.(where, row) ?? true) : false;
         return (
           <Button
             key={item.id}
@@ -111,7 +112,7 @@ export function RowActionButtons({
             disabled={!allowed || running !== undefined}
             loading={running === item.id}
             tooltip={
-              !allowed && !props.building ? (props.why?.(where, row) ?? CANNOT_NOW) : undefined
+              !allowed && decides ? (props.why?.(where, row) ?? CANNOT_NOW) : undefined
             }
             onClick={(event) => {
               // Not the row's own press.

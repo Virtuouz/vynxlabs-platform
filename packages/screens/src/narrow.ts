@@ -5,9 +5,12 @@ import type { Box } from "./placement.ts";
 
 /**
  * Smaller screens (phase 28, boards 6 and 9). The rules, apart from the drawing of them:
- * - `layout.narrow` says what a phone does with a widget: `full` and `stack` give it a row of its
- *   own, `hide` leaves it out (while building it is a dashed place-holder). Left out, it is
- *   automatic: a small widget (a quarter of the desktop's row or less) shares a row, another takes it.
+ * - `layout.narrow` says what a phone does with a widget. Left out, it is automatic: a small widget
+ *   (a quarter of the desktop's row or less) shares a row with the next small one, another takes
+ *   the row. `keep` keeps its share of the row (half the desktop's or less sits two to a row),
+ *   `full` takes the whole row where it comes, `stack` takes the whole row too but is read after
+ *   everything that is not stacked ("stack below"), and `hide` leaves it out (while building it
+ *   is a dashed place-holder).
  * - `layout.priority`: a higher one stays nearer the top when the page stacks.
  * - `layout.phone.at` and `layout.tablet.at`: set by hand. The tablet draws the twelve columns,
  *   narrowed, with these places; the phone reads widgets in the order of its places (it has
@@ -35,7 +38,38 @@ export function phoneSpan(widget: Laid): 1 | 2 {
   // A place set by hand speaks in the twelve columns: half the row or less is one of the phone's two.
   const own = widget.layout?.phone?.at;
   if (own) return own.w <= 6 ? 1 : 2;
+  if (how === "keep") return widget.at.w <= 6 ? 1 : 2;
   return widget.at.w <= 3 ? 1 : 2;
+}
+
+/**
+ * The columns each widget takes on a phone, in the order it is read: `phoneSpan`, except that a
+ * widget that would sit alone in a row, with nothing small after it to share it, takes the whole
+ * row (the third stat of four is as wide as the page, not half of it). `breaks` says which
+ * widgets stand in the way of a pairing: a place-holder or anything else that takes a row of its own.
+ */
+export function phoneSpans<T extends Laid & { id: string }>(
+  ordered: readonly T[],
+  breaks: (widget: T) => boolean = () => false,
+): Map<string, 1 | 2> {
+  const spans = new Map<string, 1 | 2>();
+  let open: T | undefined;
+  for (const widget of ordered) {
+    const span = breaks(widget) ? 2 : phoneSpan(widget);
+    if (span === 2) {
+      if (open) spans.set(open.id, 2);
+      open = undefined;
+      spans.set(widget.id, 2);
+    } else if (open) {
+      spans.set(open.id, 1);
+      spans.set(widget.id, 1);
+      open = undefined;
+    } else {
+      open = widget;
+    }
+  }
+  if (open) spans.set(open.id, 2);
+  return spans;
 }
 
 /**
@@ -72,6 +106,10 @@ const phoneAt = (widget: Laid): Box => widget.layout?.phone?.at ?? widget.at;
 export function phoneOrder<T extends Laid>(widgets: readonly T[]): T[] {
   const keyed = widgets.map((widget, index) => ({ widget, index }));
   keyed.sort((a, b) => {
+    // "Stack below": after everything that is not stacked, unless it was put somewhere by hand.
+    const sa = a.widget.layout?.narrow === "stack" && !a.widget.layout.phone ? 1 : 0;
+    const sb = b.widget.layout?.narrow === "stack" && !b.widget.layout.phone ? 1 : 0;
+    if (sa !== sb) return sa - sb;
     const pa = a.widget.layout?.priority ?? 0;
     const pb = b.widget.layout?.priority ?? 0;
     if (pa !== pb) return pb - pa;
@@ -100,8 +138,15 @@ export function phoneMoved<T extends PageWidget>(
   const target = before ? rest.find((widget) => widget.id === before) : undefined;
   const end = rest.reduce((low, widget) => Math.max(low, phoneAt(widget).y), -1) + 1;
   const place = target ? phoneAt(target) : { x: 0, y: Math.min(LAST_ROW, end) };
+  // A higher priority reads first whatever the place, so a move into another band joins it: it
+  // takes the priority of the one it now precedes (or, last, the lowest there is).
+  const priority = target
+    ? (target.layout?.priority ?? 0)
+    : rest.reduce((low, widget) => Math.min(low, widget.layout?.priority ?? 0), 0);
+  const { priority: _was, ...layout } = one.layout ?? {};
   one.layout = {
-    ...one.layout,
+    ...layout,
+    ...(priority !== 0 ? { priority } : {}),
     phone: { at: { x: place.x, y: place.y, w: one.at.w, h: one.at.h } },
   };
   return next;
@@ -148,7 +193,12 @@ export function intoTablet<T extends PageWidget>(
 
 /** How many widgets were arranged by hand for a device (a place of its own, not the desktop's). */
 export function changedByHand(widgets: readonly PageWidget[], device: "tablet" | "phone"): number {
-  return widgets.filter((widget) => widget.layout?.[device] !== undefined).length;
+  return widgets.filter((widget) => {
+    const own = widget.layout;
+    if (own?.[device] !== undefined) return true;
+    // What a phone does with a widget, and which it keeps nearer the top, is set by hand too.
+    return device === "phone" && (own?.narrow !== undefined || own?.priority !== undefined);
+  }).length;
 }
 
 /** One widget without the place set by hand for a device: it is automatic again. */

@@ -1,9 +1,11 @@
 import {
   type Action,
   type InterfaceBody,
+  type Page,
   missingGroups,
   type PageWidget,
   parseGroupPath,
+  type WidgetSource,
   widgetQueries,
   widgetTables,
 } from "@volvel/manifest";
@@ -70,6 +72,28 @@ function actionProblem(action: Action, body: InterfaceBody, known: Known): strin
       return `it starts ${step.path}, which can't be started by hand`;
     if (step.do === "script" && known.scripts.size > 0 && !known.scripts.has(step.path))
       return `it runs ${step.path}, which does not exist`;
+  }
+  return undefined;
+}
+
+/**
+ * The table a form writes to: the one it reads, or the one of the record its page is opened on
+ * (an edit form on a record page, a side sheet or a modal), or the table of the row it follows.
+ */
+function tableOfSource(
+  source: WidgetSource | undefined,
+  page: Page,
+): string | undefined {
+  if (!source) return undefined;
+  if ("visual" in source) return source.visual.table;
+  if ("record" in source) return page.record?.table;
+  if ("own" in source) return source.own.table;
+  if ("selected" in source) {
+    for (const one of page.widgets) {
+      for (const input of Object.values(one.data ?? {})) {
+        if (one.id === source.selected && "visual" in input.source) return input.source.visual.table;
+      }
+    }
   }
   return undefined;
 }
@@ -148,10 +172,11 @@ export function checksFor(input: {
   }
 
   // Forms: each has a table, and asks for columns it has.
-  for (const { widget } of every.filter((one) => one.widget.type === "core/form")) {
-    const name = nameOf(widget, definitionOf(widget.type));
+  for (const { page, widget } of every.filter((one) => one.widget.type === "core/form")) {
+    // "New invoice form": named by what it is on, the page, when it has no title of its own.
+    const name = (widget.title || page.title).replace(/\s+form$/i, "");
     const source = Object.values(widget.data ?? {})[0]?.source;
-    const table = source && "visual" in source ? source.visual.table : undefined;
+    const table = tableOfSource(source, page);
     const columns = table ? known.tables?.get(table) : undefined;
     const fields = Array.isArray(widget.config?.fields)
       ? (widget.config.fields as { column?: string }[])

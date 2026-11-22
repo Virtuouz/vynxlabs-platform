@@ -40,6 +40,7 @@ export {
   phoneMoved,
   phoneOrder,
   phoneSpan,
+  phoneSpans,
 } from "./narrow.ts";
 export {
   type Address,

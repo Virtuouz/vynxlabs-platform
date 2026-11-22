@@ -79,7 +79,16 @@ export interface PageDataClient {
   read(
     widget: string,
     filters: FilterValues,
-    options?: { input?: string; cursor?: string; signal?: AbortSignal },
+    options?: {
+      input?: string;
+      cursor?: string;
+      signal?: AbortSignal;
+      /**
+       * The row last chosen in each table or list of the page, by that widget's id: sent as the
+       * `chosen` parameter (JSON) for a widget whose source is `{ selected }`.
+       */
+      chosen?: Readonly<Record<string, string>>;
+    },
   ): Promise<{ inputs: Record<string, WireData> }>;
   /**
    * The values a choice filter offers when the page names a table's column
@@ -96,7 +105,10 @@ export interface PageDataClient {
   act?(
     widget: string,
     at: string,
-    given: { records?: { this?: string; event?: string }; inputs?: Record<string, unknown> },
+    given: {
+      records?: { this?: string; event?: string; events?: string[] };
+      inputs?: Record<string, unknown>;
+    },
   ): Promise<ActResponse>;
   /** What a reference or choice column of a widget's data input offers. */
   choices?(widget: string, input: string, column: string, search: string): Promise<Choice[]>;

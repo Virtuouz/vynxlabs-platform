@@ -195,6 +195,8 @@ export interface Request {
   at: string;
   /** The record the event gave, by id. */
   record?: string | undefined;
+  /** Several rows an action runs on (rows chosen in a table), by id; sent as `records.events`. */
+  records?: readonly string[] | undefined;
   /** Its row, when it is among what the widget read: for `{column}` in the text. */
   row?: Row | undefined;
   /** The group a point or cell stands for. */
@@ -257,6 +259,9 @@ export function useActions(host: ActionsHost): {
         records: {
           ...(now.record ? { this: now.record } : {}),
           ...(request.record ? { event: request.record } : {}),
+          ...(request.records && request.records.length > 0
+            ? { events: [...request.records] }
+            : {}),
         },
         ...(inputs && Object.keys(inputs).length > 0 ? { inputs } : {}),
       });

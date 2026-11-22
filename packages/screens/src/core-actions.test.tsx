@@ -319,7 +319,7 @@ describe("row actions", () => {
     const list = widgetOf({
       type: "core/list",
       data: { rows: { source: { visual: { table: "invoices" } } } },
-      config: { primary: "number", rowActions },
+      config: { title: "number", rowActions },
     });
     render(
       <Page

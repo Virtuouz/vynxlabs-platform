@@ -1,5 +1,6 @@
+import type { ColumnInfo, RowsData } from "@volvel/widgets";
+import type { ReactNode } from "react";
 import { cellOf, rowId, SYSTEM_COLUMNS } from "./cells.tsx";
-import { labelOf } from "./format.ts";
 import {
   listensTo,
   PRESSABLE,
@@ -10,74 +11,124 @@ import {
 } from "./press.tsx";
 import { ShowMore } from "./table.tsx";
 
+/** The places of a row, each filled with a column; a place left out takes no space. */
 interface ListConfig {
-  primary?: string;
-  secondary?: string;
-  meta?: string[];
-  status?: string;
+  title?: string;
+  subtitle?: string;
+  right?: string;
+  badge?: string;
+  picture?: string;
+  /** `list` is one row under another; `cards` are boxes side by side. */
+  look?: "list" | "cards";
   rowActions?: RowAction[];
 }
 
-/** Records as rows of cards: a heading, a line under it, a few more values, and a status chip. */
+const filled = (value: unknown) => value !== null && value !== undefined && value !== "";
+
+/** One row's places, drawn: shared by the list and the cards. */
+function placesOf(
+  row: Record<string, unknown>,
+  config: ListConfig,
+  rows: RowsData,
+  title: string | undefined,
+): Record<"picture" | "title" | "subtitle" | "right" | "badge", ReactNode> {
+  const info = (name: string | undefined): ColumnInfo | undefined =>
+    rows.columns.find((column) => column.name === name);
+  const draw = (name: string, value: unknown, as?: "badge") =>
+    cellOf({ column: name, ...(as ? { as } : {}) }, info(name), value, rows);
+  const picture = config.picture ? row[config.picture] : undefined;
+  return {
+    picture:
+      typeof picture === "string" && picture !== "" ? (
+        <img
+          src={picture}
+          alt=""
+          className="size-10 shrink-0 rounded-control bg-sunken object-cover"
+        />
+      ) : null,
+    title: title && filled(row[title]) ? draw(title, row[title]) : null,
+    subtitle:
+      config.subtitle && filled(row[config.subtitle])
+        ? draw(config.subtitle, row[config.subtitle])
+        : null,
+    right: config.right && filled(row[config.right]) ? draw(config.right, row[config.right]) : null,
+    badge:
+      config.badge && filled(row[config.badge])
+        ? draw(config.badge, row[config.badge], "badge")
+        : null,
+  };
+}
+
+/**
+ * Records as rows (a picture, a title with a line under it, a figure and a badge at the right)
+ * or as cards, by `look`. Each place is a column the maker chose.
+ */
 export function ListView(props: WithSelected<ListConfig>) {
   const { config, data, emit, selectedRecord } = props;
   const rows = data.rows;
   if (rows?.shape !== "rows") return null;
   const first = rows.columns.find((column) => !SYSTEM_COLUMNS.has(column.name))?.name;
-  const primary = config.primary ?? first;
+  const title = config.title ?? first;
   const pressable = listensTo(props, "rowClick");
   const actions = config.rowActions ?? [];
-  const info = (name: string | undefined) => rows.columns.find((column) => column.name === name);
-  const draw = (name: string, value: unknown) => cellOf({ column: name }, info(name), value, rows);
+  const cards = config.look === "cards";
   return (
     <>
-      <ul className="m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3 p-0">
-        {rows.rows.map((row, at) => (
-          <li
-            key={rowId(row, at)}
-            className={`group/row flex flex-col gap-1 rounded-control border border-line bg-surface p-3 ${
-              pressable ? `${PRESSABLE} data-[selected]:border-action` : ""
-            }`}
-            // biome-ignore lint/a11y/useKeyWithClickEvents: only a record something listens to is pressed, and that one takes Enter
-            {...press(
-              pressable,
-              () => emit("rowClick", { record: rowId(row, at) }),
-              selectedRecord === rowId(row, at),
-              rowId(row, at),
-            )}
-          >
-            <span className="flex items-start justify-between gap-2">
-              <strong className="min-w-0 truncate">
-                {primary ? draw(primary, row[primary]) : null}
-              </strong>
-              {config.status ? (
-                <span className="shrink-0">{draw(config.status, row[config.status])}</span>
+      <ul
+        className={
+          cards
+            ? "m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3 p-0"
+            : "m-0 flex list-none flex-col p-0"
+        }
+      >
+        {rows.rows.map((row, at) => {
+          const id = rowId(row, at);
+          const places = placesOf(row, config, rows, title);
+          return (
+            <li
+              key={id}
+              className={`group/row flex min-w-0 items-center gap-3 ${
+                cards
+                  ? "rounded-control border border-line bg-surface p-3"
+                  : "border-b border-line px-1 py-3 last:border-b-0"
+              } ${pressable ? `${PRESSABLE} ${cards ? "data-[selected]:border-action" : ""}` : ""}`}
+              // biome-ignore lint/a11y/useKeyWithClickEvents: only a record something listens to is pressed, and that one takes Enter
+              {...press(
+                pressable,
+                () => emit("rowClick", { record: id }),
+                selectedRecord === id,
+                id,
+              )}
+            >
+              {places.picture}
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                {places.title ? (
+                  <strong className="block truncate font-medium">{places.title}</strong>
+                ) : null}
+                {places.subtitle ? (
+                  <span className="truncate text-body-sm text-ink-muted">{places.subtitle}</span>
+                ) : null}
+                {actions.length > 0 ? (
+                  <span className="mt-1 flex">
+                    <RowActionButtons
+                      actions={actions}
+                      row={row}
+                      record={id}
+                      props={props}
+                      always={props.size.narrow}
+                    />
+                  </span>
+                ) : null}
+              </span>
+              {places.right || places.badge ? (
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  {places.right ? <span className="font-medium">{places.right}</span> : null}
+                  {places.badge}
+                </span>
               ) : null}
-            </span>
-            {config.secondary ? (
-              <span className="truncate text-body-sm text-ink-muted">
-                {draw(config.secondary, row[config.secondary])}
-              </span>
-            ) : null}
-            {(config.meta ?? []).map((name) => (
-              <span key={name} className="flex items-baseline gap-2 text-body-sm">
-                <span className="text-ink-muted">{labelOf(rows.columns, name)}</span>
-                <span className="min-w-0 break-words">{draw(name, row[name])}</span>
-              </span>
-            ))}
-            {actions.length > 0 ? (
-              <span className="mt-1 flex justify-end">
-                <RowActionButtons
-                  actions={actions}
-                  row={row}
-                  record={rowId(row, at)}
-                  props={props}
-                  always={props.size.narrow}
-                />
-              </span>
-            ) : null}
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
       <ShowMore data={rows} />
     </>

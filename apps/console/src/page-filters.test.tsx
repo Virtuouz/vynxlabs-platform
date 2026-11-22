@@ -65,7 +65,7 @@ const page = (filters: object[] = [{ name: "status", label: "Status", type: "cho
       id: "cards",
       type: "core/list",
       at: { x: 0, y: 10, w: 12, h: 6 },
-      config: { primary: "number", secondary: "client" },
+      config: { title: "number", subtitle: "client" },
       data: { rows: visual() },
     },
     {

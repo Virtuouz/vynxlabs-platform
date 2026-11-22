@@ -217,7 +217,7 @@ describe("the core pack draws from wire data", () => {
       title: "Recent",
       at: place(0, 0, 4, 8),
       data: { rows: { source: { visual: { table: "invoices" } } } },
-      config: { primary: "number", secondary: "client", status: "status" },
+      config: { title: "number", subtitle: "client", badge: "status" },
     };
     render(<Page client={clientOf({ recent: { rows: rowsInput } })} widgets={[list]} />);
     expect(await screen.findByText("INV-1")).toBeTruthy();

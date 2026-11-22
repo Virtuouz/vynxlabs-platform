@@ -451,11 +451,16 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
    * property the definition marks `action` (`config/<property>`) or `actions`
    * (`config/<property>/<index>/action`). The host asks to confirm, runs it on the
    * server, and does what follows (open a page, say something). A form gives what was
-   * typed as `inputs`. Absent while building, and on a host that runs no actions.
+   * typed as `inputs`. A table with rows chosen gives their ids as `records`. Absent while building, and on a host that runs no actions.
    */
   act?: (
     at: string,
-    given?: { record?: string; inputs?: Readonly<Record<string, unknown>> },
+    given?: {
+      record?: string;
+      /** Several rows chosen in a table or list: the action runs on each of them. */
+      records?: readonly string[];
+      inputs?: Readonly<Record<string, unknown>>;
+    },
   ) => Promise<ActOutcome>;
   /** Whether an action the widget holds may be pressed now, for a row: its `when`, as the host reads it. */
   can?: (at: string, row?: Readonly<Record<string, unknown>>) => boolean;

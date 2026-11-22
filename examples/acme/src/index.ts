@@ -422,7 +422,7 @@ export const invoiceScreen = defineInterface({
               },
             },
           },
-          config: { primary: "number", secondary: "customer_id", meta: ["total"] },
+          config: { title: "number", subtitle: "customer_id", right: "total" },
           on: { rowClick: { steps: [{ do: "open", page: "invoice", record: "event" }] } },
         },
         {

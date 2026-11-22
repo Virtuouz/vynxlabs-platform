@@ -469,7 +469,61 @@ describe("the frame", () => {
       <Page client={clientOf({ invoices: { rows: none } })} widgets={[table]} filters={filters} />,
     );
     expect(await screen.findByText("Nothing matches the filters.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Clear filters" })).toBeTruthy();
+    // They are how they start: what is left is to take them off.
+    expect(await screen.findByRole("button", { name: "Show everything" })).toBeTruthy();
+  });
+
+  test("an empty search says the words searched; Clear filters puts back how the page starts", async () => {
+    const none: WireData = patched(rowsInput, { rows: [] });
+    const starting: PageFilter[] = [
+      { name: "q", type: "search", label: "Search" },
+      { name: "range", type: "date_range", label: "Issued", default: "last_30_days" },
+    ];
+    const seen: FilterValues[] = [];
+    const Held = () => {
+      const [values, setValues] = useState<FilterValues>({ q: "zzzqqq", range: null });
+      return (
+        <PageView
+          filters={starting}
+          registry={registry}
+          client={clientOf({ invoices: { rows: none } })}
+          filterValues={values}
+          onFilterValues={(next) => {
+            seen.push(next);
+            setValues(next);
+          }}
+          widgets={[table]}
+        />
+      );
+    };
+    render(<Held />);
+    expect(await screen.findByText("Nothing matches \u201czzzqqq\u201d")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    // Not null for each: the search is off, and the range is the one the page starts on.
+    expect(seen.at(-1)).toEqual({});
+    expect(JSON.stringify(seen)).not.toContain("null");
+  });
+
+  test("a goal that starts on a month reads that month again after Clear, not all time", async () => {
+    const goal: PageFilter[] = [
+      { name: "month", type: "date_range", label: "Goal month", default: "this_month" },
+    ];
+    const none: WireData = patched(rowsInput, { rows: [] });
+    let latest: FilterValues = { month: "last_month" };
+    render(
+      <PageView
+        filters={goal}
+        registry={registry}
+        client={clientOf({ invoices: { rows: none } })}
+        filterValues={latest}
+        onFilterValues={(next) => {
+          latest = next;
+        }}
+        widgets={[table]}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Clear filters" }));
+    expect(latest).toEqual({});
   });
 
   test("a read that failed says why, and Try again reads again", async () => {
@@ -590,10 +644,10 @@ describe("reading", () => {
     await waitFor(() => expect(client.read).toHaveBeenCalledTimes(3));
     expect(client.read.mock.calls[2]?.[1]).toEqual({ range: "this_year", clinic: "Hilltop" });
 
-    // "Any" is a choice to narrow nothing: null, not absent.
+    // "Any" is a choice to narrow nothing: it is not set at all (and never `null` in an address).
     fireEvent.change(screen.getByLabelText("Clinic"), { target: { value: "" } });
     await waitFor(() => expect(client.read).toHaveBeenCalledTimes(4));
-    expect(client.read.mock.calls[3]?.[1]).toEqual({ range: "this_year", clinic: null });
+    expect(client.read.mock.calls[3]?.[1]).toEqual({ range: "this_year" });
 
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(client.read).toHaveBeenCalledTimes(5));

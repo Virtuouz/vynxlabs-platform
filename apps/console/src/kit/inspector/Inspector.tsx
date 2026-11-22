@@ -61,6 +61,7 @@ import {
   type TabFate,
   tabsOf,
   widgetName,
+  withMoneyStart,
 } from "./model.ts";
 import { RulesTab } from "./RulesTab.tsx";
 
@@ -223,7 +224,8 @@ export function Inspector(props: InspectorProps) {
     neighbours: props.neighbours ?? [],
     catalog: props.catalog,
     config,
-    write: props.onChange,
+    write: (next, label, key) =>
+      props.onChange(withMoneyStart(widget, next, definition, props.catalog), label, key),
     page: props.page,
     pages: props.pages ?? [],
     flows: props.flows ?? [],

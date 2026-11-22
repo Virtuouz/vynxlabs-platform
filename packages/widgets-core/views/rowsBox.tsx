@@ -63,7 +63,7 @@ export function RowsBox({ label, children }: { label: string; children: ReactNod
   return (
     <div
       ref={box}
-      className="min-w-0 shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
+      className="min-w-0 shrink-0 outline-none! focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
     >
       {children}
     </div>

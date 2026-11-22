@@ -245,7 +245,17 @@ export interface ActionsHost {
   refresh(): void;
   /** What a column is called, for the text. */
   label(column: string): string;
+  /** The question the address names (`widget|at|record`), when it names one: it is asked again on a reload or a link. */
+  asked?: string | undefined;
+  /** The address is told when a question is asked (its reference) and when it is answered (`undefined`). */
+  onAsk?: ((ref: string | undefined) => void) | undefined;
+  /** The request a reference names, read again: its widget and its row. */
+  find?: ((ref: string) => Promise<Request | undefined>) | undefined;
 }
+
+/** The address's name for the question an action asks. */
+const refOf = (request: Request): string =>
+  `${request.widget.id}|${request.at}|${request.record ?? ""}`;
 
 /**
  * Runs the actions of a page: asks first when the action says to, calls the server, then
@@ -261,6 +271,9 @@ export function useActions(host: ActionsHost): {
   const [rows, setRows] = useState<{ widget: string; input: string; group: Row }>();
   const latest = useRef(host);
   latest.current = host;
+  // Whether the address has been told of the question that is open: the address leaving it
+  // (Back) then closes it, as a sheet is closed.
+  const told = useRef<string | undefined>(undefined);
   const toasted = useRef(toast);
   toasted.current = toast;
 
@@ -358,6 +371,42 @@ export function useActions(host: ActionsHost): {
     },
     [call, say],
   );
+
+  // The question that is open is in the address. Asked: the address is told. The address leaving
+  // it (Back): it is answered with no. Answered: the address is told. A page loaded on an address
+  // that names one asks it again (once, as the page opens).
+  const asked = host.asked;
+  useEffect(() => {
+    if (!asking) {
+      if (told.current !== undefined) {
+        told.current = undefined;
+        if (latest.current.asked !== undefined) latest.current.onAsk?.(undefined);
+      }
+      return;
+    }
+    const ref = refOf(asking.request);
+    if (asked === ref) {
+      told.current = ref;
+    } else if (told.current === ref) {
+      told.current = undefined;
+      asking.resolve({ ok: false, cancelled: true });
+      setAsking(undefined);
+    } else if (latest.current.onAsk) {
+      told.current = ref;
+      latest.current.onAsk(ref);
+    }
+  }, [asking, asked]);
+  const booted = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: asked again once, as the page opens
+  useEffect(() => {
+    if (booted.current) return;
+    booted.current = true;
+    const ref = latest.current.asked;
+    if (!ref || !latest.current.find) return;
+    void latest.current.find(ref).then((request) => {
+      if (request) void run(request);
+    });
+  }, []);
 
   const node = (
     <>
@@ -494,6 +543,7 @@ function Confirmation({
       {ask.length > 0 ? (
         <SchemaForm
           schema={askedSchema(ask)}
+          json={false}
           submitLabel={button}
           onCancel={onCancel}
           errors={fields}

@@ -986,6 +986,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const content =
       runtime?.get(asset.path)?.content ?? (await readAsset(kernel, tenant.id, asset.sha256));
     if (isPage || asset.path === entry) {
+      // The names of the app's pages: the page that draws before the app is read says them,
+      // so a slow first load shows where the person is going, not grey shapes.
+      const interfaceBody =
+        generated && typeof body.interface === "string"
+          ? (bundle.manifests.find(
+              (candidate) => candidate.kind === "interface" && candidate.path === body.interface,
+            )?.body as { pages?: { id: string; title: string; kind?: string }[] } | undefined)
+          : undefined;
+      const pageNames = (interfaceBody?.pages ?? [])
+        .filter((one) => one.kind === undefined || one.kind === "page")
+        .map((one) => ({ id: one.id, title: one.title }));
       const page = injectContext(content.toString("utf8"), {
         base,
         themeHref: look.themeHref,
@@ -1003,6 +1014,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
             path: manifest.path,
             title: body.title,
             ...(generated ? { interface: body.interface } : {}),
+            ...(pageNames.length > 0 ? { pages: pageNames } : {}),
           },
           base,
           portal,

@@ -72,10 +72,10 @@ function clientFor(path: string, page: string, record?: string): PageDataClient 
     },
     async options(filter) {
       const query = new URLSearchParams({ of: "interface", path, page, filter });
-      const found = await api.get<{ values: string[] }>(
+      const found = await api.get<{ values: string[]; labels?: Record<string, string> }>(
         `${workspaceApi()}/filter-options?${query}`,
       );
-      return found.values;
+      return found.values.map((value) => ({ value, label: found.labels?.[value] ?? value }));
     },
     async act(widget, at, given) {
       try {
@@ -201,7 +201,7 @@ function App() {
     [path],
   );
   return (
-    <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 p-4">
+    <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 overflow-x-clip p-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="m-0 text-display font-semibold">{view?.body.title ?? context.app.title}</h1>
         <span className="flex flex-wrap items-center gap-3 text-body text-ink-muted">
@@ -266,7 +266,7 @@ function App() {
           />
         </GlossaryProvider>
       ) : problem ? null : (
-        <AppSkeleton />
+        <AppSkeleton {...(context.app.pages ? { pages: context.app.pages } : {})} />
       )}
     </div>
   );

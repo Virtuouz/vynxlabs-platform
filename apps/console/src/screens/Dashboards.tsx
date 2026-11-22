@@ -464,7 +464,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
                 Done
               </Button>
             ),
-            more: (
+            roomyMore: (
               <>
                 {refreshSelect}
                 <Button onClick={() => setSharing(true)}>Share</Button>
@@ -590,6 +590,7 @@ function SharedWith({
       options={groups.data.items.map((group) => ({ value: group.id, label: group.name }))}
       value={chosen}
       placeholder="Nobody else"
+      inline
       hint="Members in them can look and not change it. Each sees only the rows they may read."
       onChange={onChange}
     />

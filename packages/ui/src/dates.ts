@@ -103,6 +103,39 @@ export function dateOrder(locale: string): ("d" | "m" | "y")[] {
   }
 }
 
+/**
+ * What an empty date box says, as a hint and never as a value: the shape the locale writes
+ * ("mm/dd/yyyy", "dd.mm.yyyy"), with " hh:mm" for a date and time. "Pick a date" where the
+ * locale cannot say it.
+ */
+export function datePattern(locale: string, withTime: boolean): string {
+  try {
+    const parts = new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: "UTC",
+    }).formatToParts(Date.UTC(2033, 10, 22));
+    const words = parts
+      .map((part) =>
+        part.type === "day"
+          ? "dd"
+          : part.type === "month"
+            ? "mm"
+            : part.type === "year"
+              ? "yyyy"
+              : part.type === "literal"
+                ? part.value
+                : "",
+      )
+      .join("");
+    if (!/dd/.test(words) || !/mm/.test(words) || !/yyyy/.test(words)) return "Pick a date";
+    return withTime ? `${words} hh:mm` : words;
+  } catch {
+    return "Pick a date";
+  }
+}
+
 /** Which day a week starts on in the locale, 0 for Sunday. */
 export function firstDayOf(locale: string): number {
   try {

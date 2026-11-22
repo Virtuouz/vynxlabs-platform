@@ -1,6 +1,6 @@
 import { Dialog as Base } from "@base-ui/react/dialog";
 import { X } from "lucide-react";
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import { useOpening } from "./presence.tsx";
 
 export interface DialogProps {
@@ -37,7 +37,18 @@ export interface DialogProps {
 
 /** A field a person types into: not a switch, a choice, a file or a hidden one. */
 const TEXT_FIELD =
-  'textarea:not([disabled]), input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"])';
+  'textarea:not([disabled]), select:not([disabled]), input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"])';
+
+/**
+ * The first field to type in or choose from, in the order it is read. An optional date is not
+ * the one to start on: that would open its calendar (or a phone's picker) before anything was
+ * asked, so it is passed over.
+ */
+function firstField(root: HTMLElement | null): HTMLElement | undefined {
+  return Array.from(root?.querySelectorAll<HTMLElement>(TEXT_FIELD) ?? []).find(
+    (field) => !(field.hasAttribute("data-date-input") && !field.hasAttribute("required")),
+  );
+}
 
 export function Dialog({
   open,
@@ -54,6 +65,53 @@ export function Dialog({
 }: DialogProps) {
   const shown = useOpening(open);
   const popup = useRef<HTMLDivElement>(null);
+  // A form that is read after the dialog opened (a page's modal) has no field yet when the focus
+  // is placed, and the focus waits on Close. When its first field arrives, and the person has not
+  // moved the focus themselves, the field takes it.
+  useEffect(() => {
+    if (!shown) return;
+    let cleanup: (() => void) | undefined;
+    let frame = 0;
+    const start = () => {
+      const root = popup.current;
+      if (!root) {
+        frame = requestAnimationFrame(start);
+        return;
+      }
+      let moved = false;
+      const mine = () => {
+        moved = true;
+      };
+      root.addEventListener("keydown", mine, true);
+      root.addEventListener("pointerdown", mine, true);
+      const settle = () => {
+        if (moved) return watch.disconnect();
+        const on = document.activeElement;
+        const waiting =
+          !on || on === document.body || on === root || on.getAttribute("aria-label") === "Close";
+        if (!waiting) return watch.disconnect();
+        const field = firstField(root);
+        if (field) {
+          field.focus();
+          watch.disconnect();
+        }
+      };
+      const watch = new MutationObserver(settle);
+      watch.observe(root, { childList: true, subtree: true });
+      const stop = setTimeout(() => watch.disconnect(), 4000);
+      cleanup = () => {
+        clearTimeout(stop);
+        watch.disconnect();
+        root.removeEventListener("keydown", mine, true);
+        root.removeEventListener("pointerdown", mine, true);
+      };
+    };
+    start();
+    return () => {
+      cancelAnimationFrame(frame);
+      cleanup?.();
+    };
+  }, [shown]);
   return (
     <Base.Root
       open={shown}
@@ -72,7 +130,7 @@ export function Dialog({
           // the first control does.
           initialFocus={() =>
             popup.current?.querySelector<HTMLElement>("[data-autofocus]") ??
-            popup.current?.querySelector<HTMLElement>(TEXT_FIELD) ??
+            firstField(popup.current) ??
             true
           }
           className={`fixed layer-dialog flex flex-col overflow-hidden border-line bg-surface shadow-modal transition-[opacity,scale] motion-slow data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0 ${

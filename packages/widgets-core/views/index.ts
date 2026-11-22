@@ -50,7 +50,7 @@ export const corePack: CorePack = {
 
 export { fitCount } from "./actions.tsx";
 export { metaOf, pastTime, relativeTime, valueWords, whyNot } from "./approvals.tsx";
-export { DEFAULT_COLUMNS, defaultColumns, SYSTEM_COLUMNS } from "./cells.tsx";
+export { breakable, DEFAULT_COLUMNS, defaultColumns, isCode, SYSTEM_COLUMNS } from "./cells.tsx";
 export {
   type ChartKind,
   type ChartNeed,

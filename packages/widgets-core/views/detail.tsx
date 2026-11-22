@@ -7,6 +7,7 @@ import {
   type ColumnSpec,
   cellOf,
   defaultColumns,
+  isCode,
   SYSTEM_COLUMNS,
 } from "./cells.tsx";
 import { labelOf } from "./format.ts";
@@ -393,7 +394,7 @@ export function DetailView({
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {heading ? (
             <h3
-              className={`m-0 min-w-0 break-words font-mono ${
+              className={`m-0 min-w-0 break-words ${isCode(record[heading]) ? "font-mono" : ""} ${
                 figured ? "text-meta font-normal text-ink-muted" : "text-display font-semibold"
               }`}
             >

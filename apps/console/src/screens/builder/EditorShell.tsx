@@ -52,6 +52,7 @@ export function EditorShell({
   history,
   primary,
   more,
+  roomyMore,
   after,
   notices,
   outline,
@@ -86,6 +87,11 @@ export function EditorShell({
   primary: ReactNode;
   /** Anything else the toolbar holds, such as a link to the app or a menu. */
   more?: ReactNode;
+  /**
+   * More of the toolbar that is on the row where there is room, and in the ⋯ sheet where there is
+   * not (a dashboard's "Refreshes" and Share): the row stays one row, with the primary step on it.
+   */
+  roomyMore?: ReactNode;
   /** Under the toolbar: the field that names it. */
   after?: ReactNode;
   notices?: ReactNode;
@@ -169,6 +175,7 @@ export function EditorShell({
             {sheeted && roomy ? tools : null}
             {sheeted ? null : tools}
             {sheeted ? null : <UndoRedo history={history} />}
+            {sheeted && !roomy ? null : roomyMore}
             {more}
             {primary}
             {sheeted ? (
@@ -185,6 +192,9 @@ export function EditorShell({
                 <div className="flex flex-col gap-3 p-1">
                   <UndoRedo history={history} />
                   {roomy ? null : <div className="flex flex-wrap items-center gap-2">{tools}</div>}
+                  {roomy || !roomyMore ? null : (
+                    <div className="flex flex-col items-start gap-3">{roomyMore}</div>
+                  )}
                 </div>
               </Popover>
             ) : null}

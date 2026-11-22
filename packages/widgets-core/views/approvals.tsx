@@ -312,8 +312,14 @@ function Decider({
   }
 
   return (
+    // A sticky foot: where what is above it scrolls (a widget's card, a sheet), Approve and Reject stay in sight.
     // biome-ignore lint/a11y/noStaticElementInteractions: Escape leaves the box that opened under it
-    <div ref={box} className="flex flex-col gap-3" onKeyDown={keys}>
+    <div
+      ref={box}
+      data-decider=""
+      className="sticky bottom-0 z-[1] flex flex-col gap-3 bg-surface pt-2 pb-1"
+      onKeyDown={keys}
+    >
       <div className="flex flex-col gap-2 @[28rem]/cell:flex-row">
         <Button
           variant="primary"

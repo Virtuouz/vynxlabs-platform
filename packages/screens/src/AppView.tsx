@@ -30,6 +30,7 @@ function PageOf({
   changed,
   onActed,
   tabs,
+  ask,
 }: {
   over?: boolean;
   overRecord?: string;
@@ -46,6 +47,8 @@ function PageOf({
   onActed(): void;
   /** The open tab of each Tabs, kept in the address (the page on screen; not one over it). */
   tabs?: { open: Readonly<Record<string, string>>; choose(widget: string, tab: string): void };
+  /** The question an action asks, kept in the address (the page on screen; not one over it). */
+  ask?: { open: string | undefined; set(ref: string | undefined): void };
 }) {
   const client = useMemo(() => clientFor(page.id, record), [clientFor, page.id, record]);
   const roles = useMemo(
@@ -87,6 +90,7 @@ function PageOf({
       pages={pages}
       foldKey={foldKey}
       {...(tabs && kept ? { tabs } : {})}
+      {...(ask && kept ? { ask } : {})}
       onNavigate={(to) => {
         onNavigate(to);
         // Opening a sheet or modal, or closing one, rebuilds the address: the filters go back in it.
@@ -146,6 +150,7 @@ export function AppView({
       changed={changed}
       onActed={() => setChanged((count) => count + 1)}
       {...(!over ? { tabs: { open: tabsOfAddress(address), choose } } : {})}
+      {...(!over ? { ask: { open: address.own?.ask, set: nav.ask } } : {})}
       {...(record ? { record } : {})}
       {...(over ? { over } : {})}
       {...(!over && overRecord ? { overRecord } : {})}

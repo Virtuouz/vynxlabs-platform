@@ -56,10 +56,16 @@ function useSummary(
 ): DrawerData["summary"] {
   const [summary, setSummary] = useState<DrawerData["summary"]>();
   const asked = JSON.stringify([widget.id, widget.type, widget.data, widget.config, filterValues]);
-  const reads = ["core/chart", "core/stat", "core/pivot", "labs/goal"].includes(widget.type);
+  // One not yet told what to read has nothing to ask for: the canvas asks for nothing either.
+  const reads =
+    ["core/chart", "core/stat", "core/pivot", "labs/goal"].includes(widget.type) &&
+    Object.keys(widget.data ?? {}).length > 0;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `asked` stands for what is read
   useEffect(() => {
-    if (!reads) return;
+    if (!reads) {
+      setSummary(undefined);
+      return;
+    }
     const controller = new AbortController();
     // The editor saves 700 ms after a change: wait for the draft that holds the change.
     const timer = setTimeout(() => {

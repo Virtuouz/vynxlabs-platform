@@ -296,6 +296,8 @@ test("widgets are added and removed, and what is wrong is said before anything c
   expect(stored.pages[0]?.widgets[1]?.at.y).toBe(6);
   // A widget not yet told what to read asks for nothing, and says what to do instead.
   expect(screen.getAllByText("Choose what it shows in Data.").length).toBe(2);
+  // Nor does its drawer, which waits a moment for the save before it reads.
+  await new Promise((done) => setTimeout(done, 1_100));
   expect(sent("GET", "/widget-data")).toEqual([]);
 
   fireEvent.click(await screen.findByRole("button", { name: /More about Chart/ }));

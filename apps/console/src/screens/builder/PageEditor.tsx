@@ -16,6 +16,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { notify } from "../../ask.tsx";
 import { edgeShadows } from "../../kit/edgeShadows.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
+import { groupPath } from "../../kit/inspector/groupChoices.tsx";
 import { InspectorHost } from "../../kit/inspector/InspectorHost.tsx";
 import {
   bindFilter,
@@ -209,6 +210,11 @@ export function PageEditor({
 }) {
   const { catalog } = useCatalog(root);
   const { groups: keyed } = useGroupKeys(root);
+  // What each group the rules name is called now: a renamed group keeps its key.
+  const groupNames = useMemo(
+    () => Object.fromEntries(keyed.map((one) => [groupPath(one), one.name])),
+    [keyed],
+  );
   const device = (frame?.name ?? "desktop") as "desktop" | "tablet" | "phone";
   // Every change leaves each container as tall as what it holds (phase 27).
   const onChange: typeof hostChange = (next, label, key) => {
@@ -652,6 +658,7 @@ export function PageEditor({
                   {...(refreshKey !== undefined ? { refreshKey } : {})}
                   {...opens}
                   device={device}
+                  groupNames={groupNames}
                   {...(layout?.viewAs ? { viewAs: layout.viewAs } : {})}
                   editing={{
                     readOnly,

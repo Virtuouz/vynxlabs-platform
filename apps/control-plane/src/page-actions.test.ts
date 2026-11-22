@@ -910,6 +910,16 @@ describe("who can run it", () => {
     expect(JSON.stringify(three.body)).toContain("Only sales, managers and admins can do this.");
   });
 
+  test("the interface is served with the names of the groups its rules name, so that a page need not list them", async () => {
+    const served = await alice.get(`${ws()}/interfaces/screens/invoices`);
+    expect(served.status, JSON.stringify(served.body)).toBe(200);
+    // A group that is gone is named by its key; every group the page names has an entry.
+    expect(served.body.groupNames).toMatchObject({ vanished: "vanished" });
+    expect(Object.keys(served.body.groupNames)).toEqual(
+      expect.arrayContaining(["finance", "managers", "vanished"]),
+    );
+  });
+
   test("it only narrows: a member of the group still meets the row policy", async () => {
     const hidden = await invoice({ team: "sales" });
     expect((await press(ivy, "gated", hidden)).status).toBe(404);

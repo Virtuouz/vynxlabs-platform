@@ -125,6 +125,8 @@ export interface PageViewProps {
    * `showWhen` on the user is judged for it. Rows are not: they are read as the builder.
    */
   viewAs?: { key: string; name: string };
+  /** What each group named in the rules is called now, by its path: the builder knows them; a served app is told them with the page (`user.groupNames`). */
+  groupNames?: Readonly<Record<string, string>>;
   /** Present while building: the canvas. */
   editing?: {
     /**
@@ -217,6 +219,8 @@ interface GridContext {
   user: ActingUser | undefined;
   /** While building as a group ("View as"): who the page is judged for, and what to call them. */
   viewing: { user: ActingUser; name: string } | undefined;
+  /** What each group named in the rules is called now, by the path the rules name it by. */
+  groupNames: Readonly<Record<string, string>> | undefined;
   /** A reorder on the phone's drawing: the widget is read before another, or last. */
   movePhone(id: string, before: string | undefined): void;
   onRecord(row: Readonly<Record<string, unknown>>): void;
@@ -662,7 +666,9 @@ function Cell({
               }
               why={(at, row) => {
                 const denied =
-                  building && !ctx.viewing ? undefined : whyNotRun(actionAt(widget, at), actor);
+                  building && !ctx.viewing
+                    ? undefined
+                    : whyNotRun(actionAt(widget, at), actor, ctx.groupNames);
                 if (denied) return denied;
                 const when = actionAt(widget, at)?.when;
                 const records = { this: record ? thisRow : null, event: row };
@@ -709,12 +715,12 @@ function Cell({
         >
           {hiddenFor}
         </span>
-      ) : building && seenByTag(widget.rules) ? (
+      ) : building && seenByTag(widget.rules, ctx.groupNames) ? (
         <span
           data-seen-by=""
           className="pointer-events-none absolute top-1 left-1 rounded-inner bg-sunken px-1.5 text-meta text-ink-muted"
         >
-          {seenByTag(widget.rules)}
+          {seenByTag(widget.rules, ctx.groupNames)}
         </span>
       ) : null}
       {(selected || held) && !editing?.readOnly ? (
@@ -1014,6 +1020,7 @@ export function PageView({
   widgets: given,
   device,
   viewAs,
+  groupNames,
   filters,
   registry,
   client,
@@ -1386,6 +1393,7 @@ export function PageView({
     thisRow,
     user,
     viewing: viewUser && viewAs ? { user: viewUser, name: viewAs.name } : undefined,
+    groupNames: groupNames ?? user?.groupNames,
     movePhone,
     onRecord: setThisRow,
     onClose: over ? () => onNavigate?.({ close: true }) : undefined,

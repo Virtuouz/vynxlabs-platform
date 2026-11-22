@@ -5,6 +5,7 @@ import { humanize } from "../kernel/data/query/inputs.js";
 import { forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { groupNamesFor } from "../kernel/pages/who.js";
 import { wildPath } from "./data.js";
 import { AnyObject, Id } from "./shared.js";
 
@@ -200,6 +201,12 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               path: Type.String(),
               body: AnyObject,
               tables: Type.Record(Type.String(), TableView),
+              groupNames: Type.Optional(
+                Type.Record(Type.String(), Type.String(), {
+                  description:
+                    "What each group the interface names (who may run, who sees) is called now, by the path it is named by.",
+                }),
+              ),
             }),
           },
         },
@@ -347,7 +354,12 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ],
           };
         }
-        return { path, body: body as unknown as Record<string, unknown>, tables };
+        return {
+          path,
+          body: body as unknown as Record<string, unknown>,
+          tables,
+          groupNames: await groupNamesFor(kernel, params.t, body),
+        };
       },
     );
   };

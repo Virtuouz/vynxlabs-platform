@@ -1,5 +1,5 @@
-import { Button, SelectField, TextField } from "@volvel/ui";
-import { X } from "@volvel/ui/icons";
+import { Button, TextField } from "@volvel/ui";
+import { ChevronDown, Search, X } from "@volvel/ui/icons";
 import type { Choice, FilterHost, WidgetViewProps } from "@volvel/widgets";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -35,8 +35,56 @@ const isRange = (value: unknown): value is DateRange =>
   typeof value === "object" && value !== null && "from" in value && "to" in value;
 
 // A control is the width of its cell on a phone, and its own width where there is room.
-const FIELD = "w-full @md/cell:w-44";
+const FIELD = "w-full @md/cell:w-auto";
 const SEARCH_FIELD = "w-full @md/cell:w-64";
+
+/** The one box a compact control is drawn in: its label, or a magnifier, inside the edge. */
+const BOX =
+  "relative flex h-control w-full min-w-0 items-center gap-2 rounded-control border border-line-control bg-surface px-3 text-body-sm focus-within:outline-2 focus-within:outline-action @md/cell:w-auto";
+
+/**
+ * A select with its label inside the box ("Clinic  All"), as the filter bar draws every choice. The
+ * label names the select for a screen reader; the words in the box are the same, shown.
+ */
+function CompactSelect({
+  name,
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className={`${BOX} pr-7 @md/cell:min-w-40`}>
+      <span aria-hidden="true" className="shrink-0 text-ink-muted">
+        {label}
+      </span>
+      <select
+        name={name}
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        className="min-w-0 flex-1 cursor-pointer appearance-none bg-transparent text-ink outline-none"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown
+        aria-hidden="true"
+        size={14}
+        className="pointer-events-none absolute right-2 text-ink-muted"
+      />
+    </label>
+  );
+}
 
 interface Control {
   filter: FilterSpec;
@@ -63,8 +111,8 @@ function DateRangeControl({ filter, label, value, onChange }: Control) {
   };
   return (
     <div className="flex w-full flex-wrap items-end gap-2 @md/cell:w-auto">
-      <div className="w-full @md/cell:w-44">
-        <SelectField
+      <div className="w-full @md/cell:w-auto">
+        <CompactSelect
           name={`filter-${filter.name}`}
           label={label}
           value={mode}
@@ -176,15 +224,24 @@ function TypedControl({ filter, label, value, onChange }: Control) {
         hand(typed);
       }}
     >
-      <div ref={box} className="relative">
-        <TextField
+      <div ref={box} className={BOX}>
+        {search ? (
+          <Search aria-hidden="true" size={14} className="shrink-0 text-ink-muted" />
+        ) : (
+          <span aria-hidden="true" className="shrink-0 text-ink-muted">
+            {label}
+          </span>
+        )}
+        <input
           name={`filter-${filter.name}`}
-          label={label}
-          {...(numeric ? { type: "number" as const } : {})}
+          aria-label={label}
+          type={numeric ? "number" : "text"}
+          value={typed}
+          onChange={(event) => setTyped(event.currentTarget.value)}
+          className="h-full min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-muted/70"
           {...(search
             ? {
-                type: "text" as const,
-                placeholder: "Search",
+                placeholder: label,
                 autoComplete: "off",
                 "data-search": "",
                 onKeyDown: (event: React.KeyboardEvent) => {
@@ -197,15 +254,13 @@ function TypedControl({ filter, label, value, onChange }: Control) {
                 },
               }
             : {})}
-          value={typed}
-          onChange={setTyped}
         />
         {search && typed !== "" ? (
           <button
             type="button"
             aria-label={`Clear ${label}`}
             onClick={clear}
-            className="absolute right-1 bottom-1 flex size-7 items-center justify-center rounded-inner text-ink-muted hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-action"
+            className="-mr-1.5 flex size-6 shrink-0 items-center justify-center rounded-inner text-ink-muted hover:bg-sunken hover:text-ink focus-visible:outline-2 focus-visible:outline-action"
           >
             <X aria-hidden="true" size={14} />
           </button>
@@ -255,7 +310,7 @@ function ChoiceControl({
   const current = typeof value === "string" ? value : "";
   return (
     <div className={FIELD}>
-      <SelectField
+      <CompactSelect
         name={`filter-${filter.name}`}
         label={label}
         value={current}
@@ -288,7 +343,7 @@ export function FilterView({ config, filters: host }: WidgetViewProps<FilterConf
   );
   if (config.filters.length === 0) return null;
   return (
-    <search aria-label="Filters" className="flex flex-wrap items-end gap-x-4 gap-y-3">
+    <search aria-label="Filters" className="flex flex-wrap items-end gap-x-3 gap-y-3">
       {config.filters.map((filter) => {
         const control: Control = {
           filter,

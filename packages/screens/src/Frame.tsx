@@ -1,6 +1,6 @@
 import type { PageWidget } from "@volvel/manifest";
 import { Button, Menu, Notice, Skeleton } from "@volvel/ui";
-import { Download } from "@volvel/ui/icons";
+import { Download, PanelRight } from "@volvel/ui/icons";
 import type { WidgetDefinition, WidgetState } from "@volvel/widgets";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { download, type Result, toCsv, toXlsx } from "./export.ts";
@@ -91,7 +91,8 @@ function Title({
       <button
         type="button"
         title="Rename"
-        className="-ml-1.5 min-w-0 truncate rounded-inner border border-dashed border-action/40 px-1.5 py-0.5 text-left text-title font-semibold"
+        data-chrome="title"
+        className="-ml-1.5 min-w-0 truncate rounded-inner border border-line-strong bg-surface px-1.5 py-0.5 text-left text-title font-semibold"
         onClick={(event) => {
           event.stopPropagation();
           setRenaming(true);
@@ -119,6 +120,7 @@ export function Frame({
   onRename,
   tabbable,
   container = false,
+  opens,
   children,
 }: {
   widget: PageWidget;
@@ -134,6 +136,8 @@ export function Frame({
    * the page's grid and what it holds under it, with no padding and no scrolling of its own.
    */
   container?: boolean;
+  /** Building: what a click on a row does, in words ("Invoice detail"), said at the right of the heading. */
+  opens?: string | undefined;
   children: ReactNode;
 }) {
   const name = nameOf(widget, definition);
@@ -143,7 +147,9 @@ export function Frame({
   // A widget drawn with no card (a button, a filter bar) has no title on the page: it is named in
   // the inspector, for the outline. A heading there would sit over what it draws.
   const bare = definition?.layout.frame === "none" && !container;
-  const heading = bare ? false : widget.title || widget.subtitle || (building && selected);
+  const heading = bare
+    ? false
+    : widget.title || widget.subtitle || (building && (selected || opens));
   const body = (() => {
     if (!definition) {
       return <Notice tone="danger">There is no widget called "{widget.type}".</Notice>;
@@ -184,6 +190,15 @@ export function Frame({
               renamable={building && selected && onRename !== undefined}
               onRename={(title) => onRename?.(title)}
             />
+            {building && opens ? (
+              <span
+                data-chrome="opens"
+                className="ml-auto flex shrink-0 items-center gap-1.5 text-body-sm text-ink-muted"
+              >
+                <PanelRight aria-hidden="true" size={14} />
+                Click opens <span className="text-ink">{opens}</span>
+              </span>
+            ) : null}
             {kept ? (
               <span className="ml-auto shrink-0">
                 <Menu

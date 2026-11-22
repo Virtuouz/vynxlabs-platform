@@ -23,6 +23,7 @@ export {
   gridOf,
   type Limits,
   limitsOf,
+  overlayWidth,
   placed,
   putAt,
   settle,

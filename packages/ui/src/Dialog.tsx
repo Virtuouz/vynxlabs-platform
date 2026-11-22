@@ -16,6 +16,8 @@ export interface DialogProps {
    * is always scrolled.
    */
   size?: "regular" | "wide" | "palette" | "table";
+  /** Its width in pixels, or `"full"` for the window less a margin, as its maker chose. It scrolls inside, at the height the window allows. */
+  width?: number | "full";
   /**
    * Called once it has left, after its motion. What closing it leads to, such as
    * opening another screen, waits for this, so the dialog is seen to go.
@@ -30,6 +32,7 @@ export function Dialog({
   title,
   description,
   size = "regular",
+  width,
   onClosed,
   children,
 }: DialogProps) {
@@ -57,6 +60,14 @@ export function Dialog({
                       : "top-[12vh] w-[min(30rem,calc(100vw-2rem))]"
                   }`
           }`}
+          {...(width !== undefined
+            ? {
+                style: {
+                  width: width === "full" ? "calc(100vw - 2rem)" : `${width}px`,
+                  maxWidth: "calc(100vw - 2rem)",
+                },
+              }
+            : {})}
         >
           <div className="flex items-start justify-between gap-3">
             <Base.Title className="m-0 text-title font-semibold">{title}</Base.Title>

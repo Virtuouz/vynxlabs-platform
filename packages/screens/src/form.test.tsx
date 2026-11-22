@@ -451,7 +451,7 @@ describe("while building", () => {
 });
 
 describe("a form in a side sheet or a modal", () => {
-  test("is drawn in a column at its own height, not at its rows of the grid", async () => {
+  test("is laid on the grid as placed, as a page is (the maker sizes the sheet)", async () => {
     const definition = corePack.definitions.find((one) => one.type === "core/form");
     if (!definition) throw new Error("core/form has no definition");
     const registry: ViewRegistry = new Map<string, ViewEntry>([
@@ -475,8 +475,9 @@ describe("a form in a side sheet or a modal", () => {
       if (!found) throw new Error("not drawn yet");
       return found;
     });
-    expect(cell.className).not.toContain("grid-row");
-    expect(cell.parentElement?.className).not.toContain("auto-rows");
+    expect(cell.className).toContain("grid-row");
+    expect(cell.parentElement?.className).toContain("auto-rows");
+    expect(cell.parentElement?.className).toContain("grid-cols-12");
   });
 
   test("a field shown in dollars doesn't borrow the column's description of cents", async () => {

@@ -21,6 +21,7 @@ import {
   ActionError,
   type FilterValues,
   type NavigateTo,
+  overlayWidth,
   type PageDataClient,
   PageView,
   Stepper,
@@ -400,6 +401,7 @@ function App() {
                 }
                 title={held.page.title}
                 size="wide"
+                width={overlayWidth(held.page)}
                 {...(stepping ? { footer: <Stepper stepping={stepping} onStep={step} /> } : {})}
               >
                 {draw(held.page, held.record, true)}
@@ -413,6 +415,7 @@ function App() {
                 onClose={() => go({ close: true })}
                 title={held.page.title}
                 size="wide"
+                width={overlayWidth(held.page)}
               >
                 {draw(held.page, held.record, true)}
               </Dialog>

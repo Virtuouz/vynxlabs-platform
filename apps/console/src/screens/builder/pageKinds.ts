@@ -1,4 +1,4 @@
-import { MAX_PAGES, type Page } from "@volvel/manifest";
+import { MAX_PAGES, PAGE_SIZES, type Page, type PageSize } from "@volvel/manifest";
 import type { PageKind } from "./contract.ts";
 import { slug } from "./data.ts";
 
@@ -21,16 +21,53 @@ export const pageLine = (page: Page): string => `${page.title} — ${KIND_NAMES[
 /** Whether the page is in the app's menu: only a plain page is. */
 export const inMenu = (page: Page): boolean => kindOf(page) === "page";
 
-/** How wide a side sheet and a modal are drawn while building, in pixels: as the served app draws them. */
-export const SHEET_WIDTH = 480;
-export const MODAL_WIDTH = 560;
+/** How wide each size of side sheet and modal is, in pixels: as the served app draws them. `full` is the window. */
+export const SIZE_WIDTH: Record<PageSize, number | undefined> = {
+  small: 480,
+  medium: 720,
+  large: 960,
+  xlarge: 1200,
+  full: undefined,
+};
+
+export const SIZE_NAMES: Record<PageSize, string> = {
+  small: "Small",
+  medium: "Medium",
+  large: "Large",
+  xlarge: "Extra large",
+  full: "Full",
+};
+
+/** The size a side sheet or modal page opens at: left out, medium. */
+export const sizeOf = (page: Page): PageSize => page.size ?? "medium";
+
+/** The size whose width is nearest a width in pixels; `full` is taken for anything past the extra large and a half. */
+export function snapSize(pixels: number): PageSize {
+  let best: PageSize = "small";
+  let gap = Number.POSITIVE_INFINITY;
+  for (const size of PAGE_SIZES) {
+    const width = SIZE_WIDTH[size] ?? 1500;
+    if (Math.abs(width - pixels) < gap) {
+      gap = Math.abs(width - pixels);
+      best = size;
+    }
+  }
+  return best;
+}
+
+/** The page with its size set; medium, the default, is left out. */
+export function withSize(page: Page, size: PageSize): Page {
+  const { size: _size, ...rest } = page;
+  return size === "medium" ? rest : { ...rest, size };
+}
 
 /** The page made into another kind, keeping what it can: a plain page opens on no record. */
 export function withKind(page: Page, kind: PageKind, table: string | undefined): Page {
-  const { kind: _kind, record: _record, ...rest } = page;
+  const { kind: _kind, record: _record, size: _size, ...rest } = page;
   const next: Page = { ...rest };
   if (kind !== "page") next.kind = kind;
   if (kind === "page") return next;
+  if (page.size && (kind === "sheet" || kind === "modal")) next.size = page.size;
   const keep = page.record?.table ?? table;
   if (keep) next.record = { table: keep };
   return next;

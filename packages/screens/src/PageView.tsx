@@ -159,8 +159,8 @@ interface GridContext {
   /** Closes the sheet or modal the page is shown in; absent when it is not. */
   onClose: (() => void) | undefined;
   overRecord: string | undefined;
-  /** Drawn in a column at its own height (a served side sheet or modal), not at its place on the grid. */
-  flow: boolean;
+  /** The pages of the app, to say by name what a click opens. */
+  pages: readonly Page[] | undefined;
   placement: Placement;
   /** Every widget as it is drawn now: held ones where they would land, containers as tall as they are. */
   drawn: readonly PageWidget[];
@@ -252,7 +252,6 @@ function Cell({
   };
 }) {
   const {
-    flow,
     client,
     filterValues,
     refreshKey,
@@ -376,6 +375,12 @@ function Cell({
       : {}),
   };
   const name = nameOf(widget, definition);
+  // Building: a table or list says what a click on a row does.
+  const opened = widget.on?.rowClick?.steps.find((step) => step.do === "open");
+  const opens =
+    building && definition && "rowClick" in definition.events && opened?.do === "open"
+      ? (ctx.pages?.find((one) => one.id === opened.page)?.title ?? opened.page)
+      : undefined;
   const hiddenOnPhones = definition?.layout.phone === "hide";
   const style = {
     "--col": `${at.x + 1} / span ${at.w}`,
@@ -400,10 +405,8 @@ function Cell({
       data-selected={selected ? "" : undefined}
       style={style}
       // A view may size what it draws by its cell's width: the container named `cell`.
-      className={`@container/cell relative flex min-h-0 min-w-0 flex-col ${
-        flow ? "" : "@2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)]"
-      } ${
-        selected ? "ring-2 ring-action" : ""
+      className={`@container/cell relative flex min-h-0 min-w-0 flex-col @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
+        selected ? "ring-2 ring-action" : building ? "hover:ring-1 hover:ring-action/40" : ""
       } ${fade || away ? "opacity-60" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
         building ? "cursor-grab touch-pan-y select-none active:cursor-grabbing" : ""
       }`}
@@ -437,6 +440,7 @@ function Cell({
         onRename={editing ? (title) => editing.onRename(widget.id, title) : undefined}
         tabbable={!narrow}
         container={container}
+        opens={opens}
       >
         {waiting ? (
           <p className="m-0 text-ink-muted">
@@ -514,6 +518,7 @@ function Cell({
         <>
           <span
             aria-hidden="true"
+            data-chrome="handle"
             className="pointer-events-none absolute -top-3 left-1/2 layer-sticky flex h-4 w-7 -translate-x-1/2 items-center justify-center rounded-inner bg-action text-action-ink"
           >
             <GripHorizontal size={14} />
@@ -521,6 +526,7 @@ function Cell({
           {!narrow ? (
             <span
               aria-hidden="true"
+              data-chrome="resize"
               title="Drag to change its size"
               className="absolute -right-1 -bottom-1 layer-sticky size-3 cursor-nwse-resize touch-none rounded-inner border-2 border-canvas bg-action after:absolute after:-inset-2 after:content-['']"
               onPointerDown={(event) => {
@@ -531,6 +537,7 @@ function Cell({
           ) : null}
           <span
             aria-hidden="true"
+            data-chrome="size"
             className="pointer-events-none absolute right-2 -bottom-8 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta text-ink"
           >
             {sizeWords(at)}
@@ -581,7 +588,7 @@ function WidgetGrid({
   const own = useRef<HTMLDivElement>(null);
   const ref = gridRef ?? own;
   const narrow = useNarrow(ref);
-  const { editing, placement, flow, drawn } = ctx;
+  const { editing, placement, drawn } = ctx;
   // Top to bottom and left to right, so the page reads in order without the grid.
   const ordered = useMemo(
     () => [...widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x),
@@ -606,11 +613,7 @@ function WidgetGrid({
             ...(inner.tab !== undefined ? { "data-grid-tab": inner.tab } : {}),
           }
         : {})}
-      className={`${
-        flow
-          ? "grid grid-cols-1 gap-3"
-          : "grid grid-cols-1 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12"
-      } ${inner && editing ? "min-h-10 rounded-inner" : ""} ${
+      className={`grid grid-cols-1 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12 ${inner && editing ? "min-h-10 rounded-inner" : ""} ${
         inner && landingHere ? "outline-2 outline-dashed outline-action/50 outline-offset-2" : ""
       }`}
       onClick={(event) => {
@@ -618,7 +621,7 @@ function WidgetGrid({
       }}
     >
       {inner && editing && widgets.length === 0 ? (
-        <p className="m-0 flex min-h-10 items-center justify-center rounded-inner border border-dashed border-line px-3 text-body-sm text-ink-muted [grid-column:1/-1]">
+        <p className="m-0 flex min-h-10 items-center justify-center rounded-inner bg-sunken/50 px-3 text-body-sm text-ink-muted [grid-column:1/-1]">
           Drag a widget here
         </p>
       ) : null}
@@ -900,9 +903,6 @@ export function PageView({
   };
 
   const narrow = useNarrow(gridRef);
-  // A served side sheet or modal is a column of its widgets, each as tall as what it holds:
-  // the grid's rows are sized for a page, and would leave a form's sheet half empty.
-  const flow = over === true && !editing;
 
   // Where everything is drawn: while something is held or carried, where it would all be
   // if it were let go now, so what is in the way is seen to move aside as it travels. What is
@@ -1002,7 +1002,7 @@ export function PageView({
     onRecord: setThisRow,
     onClose: over ? () => onNavigate?.({ close: true }) : undefined,
     overRecord,
-    flow,
+    pages,
     placement,
     drawn,
     stored: byId,

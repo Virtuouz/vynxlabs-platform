@@ -53,7 +53,7 @@ import {
 import { EditorShell } from "./EditorShell.tsx";
 import { GroupButtonsDialog } from "./GroupButtonsDialog.tsx";
 import { PageSettings } from "./PageSettings.tsx";
-import { MODAL_WIDTH, SHEET_WIDTH } from "./pageKinds.ts";
+import { SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
 import { RowClickOffer } from "./RowClickOffer.tsx";
 import {
   type Edit,
@@ -67,6 +67,7 @@ import {
 import { definitionOf, views } from "./registry.ts";
 import { type Box, type CarryRequest, type FilterValues, PageView, placed } from "./renderer.ts";
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
+import { SizeHandle } from "./SizeHandle.tsx";
 import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
 
 /**
@@ -413,9 +414,17 @@ export function PageEditor({
 
   // A side sheet is drawn at a sheet's width, a modal at a modal's, never wider than the screen size chosen.
   const kind = pageInfo?.page.kind;
-  const kindWidth = kind === "sheet" ? SHEET_WIDTH : kind === "modal" ? MODAL_WIDTH : undefined;
+  const overlay = pageInfo !== undefined && (kind === "sheet" || kind === "modal");
+  const size = pageInfo ? sizeOf(pageInfo.page) : "medium";
+  // While it is dragged the frame follows the pointer; it is written when it is let go.
+  const [dragged, setDragged] = useState<number>();
+  const kindWidth = overlay ? SIZE_WIDTH[size] : undefined;
   const width =
-    kindWidth !== undefined ? Math.min(kindWidth, frame?.width ?? kindWidth) : frame?.width;
+    dragged !== undefined
+      ? dragged
+      : kindWidth !== undefined
+        ? Math.min(kindWidth, frame?.width ?? kindWidth)
+        : frame?.width;
   const acts = widgets.some(
     (one) =>
       (one.on && Object.keys(one.on).length > 0) ||
@@ -444,52 +453,72 @@ export function PageEditor({
         </p>
       ) : null}
       <div
-        data-preview={frame?.name}
-        data-page-kind={kind ?? "page"}
-        className={
-          frame || kindWidth
-            ? "mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 transition-[max-width] motion-slow"
-            : ""
-        }
-        style={width ? { maxWidth: `${width}px` } : undefined}
+        className={overlay ? "relative mx-auto" : ""}
+        style={overlay && width ? { maxWidth: `${width}px` } : undefined}
       >
-        {widgets.length === 0 ? (
-          <EmptyState
-            title="Nothing on this page yet"
-            action={
-              <Button variant="primary" onClick={() => setAdding(true)}>
-                <Plus aria-hidden="true" size={16} /> Add to page
-              </Button>
+        <div
+          data-preview={frame?.name}
+          data-page-kind={kind ?? "page"}
+          data-page-size={overlay ? size : undefined}
+          className={
+            frame || overlay
+              ? `mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`
+              : ""
+          }
+          style={width && !overlay ? { maxWidth: `${width}px` } : undefined}
+        >
+          {widgets.length === 0 ? (
+            <EmptyState
+              title="Nothing on this page yet"
+              action={
+                <Button variant="primary" onClick={() => setAdding(true)}>
+                  <Plus aria-hidden="true" size={16} /> Add to page
+                </Button>
+              }
+            >
+              Add a table, a chart or a number. What you see is drawn from this workspace's rows, as
+              you may read them.
+            </EmptyState>
+          ) : (
+            <PageView
+              widgets={widgets}
+              filters={filters}
+              registry={views}
+              client={client}
+              filterValues={filterValues}
+              onFilterValues={setFilterValues}
+              {...(refreshKey !== undefined ? { refreshKey } : {})}
+              {...opens}
+              editing={{
+                selected,
+                onSelect,
+                onChange: fromCanvas,
+                onRename: (id, title) =>
+                  put(
+                    widgets.map((one) => (one.id === id ? { ...one, title } : one)),
+                    "renaming a widget",
+                    `title:${id}`,
+                  ),
+                onColumn: (id) => onSelect(id),
+                carrying,
+              }}
+            />
+          )}
+        </div>
+        {overlay && pageInfo ? (
+          <SizeHandle
+            size={size}
+            onDrag={setDragged}
+            onSize={(next, key) =>
+              pageInfo.onPage(
+                withSize(pageInfo.page, next),
+                `making ${pageInfo.page.title} ${SIZE_NAMES[next].toLowerCase()}`,
+                key,
+              )
             }
-          >
-            Add a table, a chart or a number. What you see is drawn from this workspace's rows, as
-            you may read them.
-          </EmptyState>
-        ) : (
-          <PageView
-            widgets={widgets}
-            filters={filters}
-            registry={views}
-            client={client}
-            filterValues={filterValues}
-            onFilterValues={setFilterValues}
-            {...(refreshKey !== undefined ? { refreshKey } : {})}
-            {...opens}
-            editing={{
-              selected,
-              onSelect,
-              onChange: fromCanvas,
-              onRename: (id, title) =>
-                put(
-                  widgets.map((one) => (one.id === id ? { ...one, title } : one)),
-                  "renaming a widget",
-                  `title:${id}`,
-                ),
-              onColumn: (id) => onSelect(id),
-              carrying,
-            }}
+            snap={snapSize}
           />
-        )}
+        ) : null}
       </div>
     </>
   );

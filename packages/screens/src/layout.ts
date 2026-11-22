@@ -217,3 +217,8 @@ export function duplicated<T extends Placed & { title?: string }>(
 
 /** What the chip says: how big, and where. */
 export const sizeWords = (at: Box) => `${at.w} × ${at.h} · col ${at.x + 1} · row ${at.y + 1}`;
+
+/** How wide a side sheet or modal opens, as its page says: in pixels, or the window. Left out, medium. */
+const OVERLAY_WIDTH = { small: 480, medium: 720, large: 960, xlarge: 1200, full: "full" } as const;
+export const overlayWidth = (page: { size?: keyof typeof OVERLAY_WIDTH }) =>
+  OVERLAY_WIDTH[page.size ?? "medium"];

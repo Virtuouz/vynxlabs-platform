@@ -13,6 +13,8 @@ export interface SideSheetProps {
   footer?: ReactNode;
   /** `wide` is for a sheet with a table or two columns in it. */
   size?: "regular" | "wide" | "narrow";
+  /** Its width in pixels, or `"full"` for the window less a margin, as its maker chose; on a phone it is the screen. Left out, `size`. */
+  width?: number | "full";
   /** The edge it comes from. A menu comes from the left. */
   side?: "right" | "left";
   /**
@@ -36,6 +38,7 @@ export function SideSheet({
   description,
   footer,
   size = "regular",
+  width: chosen,
   side = "right",
   returnFocus,
   children,
@@ -58,6 +61,14 @@ export function SideSheet({
               ? "left-0 sm:border-r data-[ending-style]:-translate-x-full data-[starting-style]:-translate-x-full"
               : "right-0 sm:border-l data-[ending-style]:translate-x-full data-[starting-style]:translate-x-full"
           } ${width}`}
+          {...(chosen !== undefined
+            ? {
+                style: {
+                  width: chosen === "full" ? "calc(100vw - 2rem)" : `${chosen}px`,
+                  maxWidth: "100vw",
+                },
+              }
+            : {})}
         >
           <div className="flex items-start justify-between gap-3 border-line border-b px-5 py-4">
             <div className="flex min-w-0 flex-col gap-1">

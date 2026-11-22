@@ -501,6 +501,8 @@ test("POLISH-007: by keyboard alone: the list takes the arrows, Enter reaches th
 }) => {
   const keys = await as(browser, MANAGER);
   await openApp(keys);
+  // The list is read before it is counted.
+  await expect(rows(keys).nth(1)).toBeVisible();
   const before = await rows(keys).count();
   // Into the list, and down it.
   await rows(keys).first().focus();

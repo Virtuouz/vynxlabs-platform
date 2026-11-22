@@ -526,6 +526,7 @@ export function PageEditor({
     : {};
   // A table whose click opens a side sheet shows that sheet over the canvas while it is chosen (board 3).
   const [inspectorTab, setInspectorTab] = useState<Tab>("data");
+  const [picked, setPicked] = useState<{ id: string; n: number }>();
   const [previewHidden, setPreviewHidden] = useState<ReadonlySet<string>>(new Set());
   const rowSheetPage =
     widget && pageInfo && choiceOf(widget, pageInfo.pages) === "detail"
@@ -546,6 +547,15 @@ export function PageEditor({
       ) : null}
       {layout?.viewAs ? <ViewAsNote name={layout.viewAs.name} /> : null}
       <div
+        // A row of the table clicked on the canvas is the record its sheet is previewed with.
+        onClickCapture={(event) => {
+          if (!rowSheet) return;
+          const row = (event.target as HTMLElement).closest<HTMLElement>("[data-record]");
+          const cell = row?.closest("[data-widget-cell]");
+          if (row?.dataset.record && cell?.getAttribute("data-widget-cell") === rowSheet.id) {
+            setPicked((before) => ({ id: row.dataset.record as string, n: (before?.n ?? 0) + 1 }));
+          }
+        }}
         className={overlay ? "relative mx-auto" : "relative"}
         style={overlay && width ? { maxWidth: `${width}px` } : undefined}
       >
@@ -557,6 +567,7 @@ export function PageEditor({
             page={rowSheet.page}
             pages={pageInfo.pages}
             catalog={catalog}
+            pick={picked}
             onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
             onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
           />

@@ -1,7 +1,7 @@
 import type { Page } from "@volvel/manifest";
 import { Button } from "@volvel/ui";
 import { ChevronLeft, ChevronRight, Eye, Pencil, X } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { count } from "../../kit/format.ts";
 import type { Catalog } from "../../kit/inspector/model.ts";
 import { pageClient } from "./client.ts";
@@ -116,7 +116,10 @@ export function SheetPreviewHost({
   catalog,
   onEditLayout,
   onClose,
+  pick,
 }: {
+  /** The row clicked on the canvas, when one was: the record the sheet is drawn for. */
+  pick?: { id: string; n: number } | undefined;
   root: string;
   source: Parameters<typeof pageClient>[1];
   /** The sheet's page. */
@@ -127,6 +130,10 @@ export function SheetPreviewHost({
   onClose: () => void;
 }) {
   const [chosen, setChosen] = useState<string>();
+  // A row clicked on the canvas is the record shown; the stepper then goes on from it.
+  useEffect(() => {
+    if (pick) setChosen(pick.id);
+  }, [pick]);
   const sample = useSampleRecords(root, page, catalog, chosen);
   const [values, setValues] = useState<FilterValues>({});
   const named = JSON.stringify(source);

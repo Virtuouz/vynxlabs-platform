@@ -40,7 +40,8 @@ export function press(
   record?: string,
 ) {
   if (!onPress) return {};
-  if (!on) return { onClick: onPress };
+  // A row that is only clickable (the builder's canvas) still says which record it stands for.
+  if (!on) return { onClick: onPress, "data-record": record };
   return {
     tabIndex: 0,
     "data-selected": selected ? "" : undefined,

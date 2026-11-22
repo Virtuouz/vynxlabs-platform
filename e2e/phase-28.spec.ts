@@ -1335,3 +1335,372 @@ test("POLISH-010: someone who may not publish is told why, in words, and what th
   await expectNoAxeViolations(person, "the builder as someone who may not publish");
   await person.context().close();
 });
+
+// ----- 4. Conditions in the column's own words -----
+
+/** How many invoices have each status, counted a page at a time from the API. */
+async function invoicesByStatus(): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  let after: string | undefined;
+  do {
+    const answer = await ok(
+      owner,
+      "GET",
+      `${W}/rows/invoices?limit=200${after ? `&cursor=${encodeURIComponent(after)}` : ""}`,
+    );
+    for (const row of answer.items as { status: string }[]) {
+      counts[row.status] = (counts[row.status] ?? 0) + 1;
+    }
+    after = answer.nextCursor ?? undefined;
+  } while (after);
+  return counts;
+}
+
+/** The rows a table draws on the canvas, without its heading. */
+const rowsDrawn = async (name: string) =>
+  (await widget(name).getByRole("row").count()) - 1;
+
+test("POLISH-004: Conditions: a date is \"in the last…\" or \"between\", a choice takes several values, and each time the table on the page has the rows the words say", async () => {
+  await openBuilder("tables", /^Blank/);
+  await addAndSave("tables", "blank", "Table", "core/table");
+  await chooseSource("Invoices");
+  await onlyTheWalks();
+  await expect.poll(() => rowsDrawn("Table")).toBe(INVOICES.length);
+  const within = (days: number) => INVOICES.filter((one) => one.ago <= days).length;
+
+  // A date: "is in the last 30 days" keeps the invoices of the last month.
+  await settings().getByRole("button", { name: /^Condition/ }).click();
+  let open = owner.getByRole("dialog", { name: "Only include rows where" });
+  await open.getByLabel("Field").selectOption({ label: "Issued on" });
+  await expect(choose(open, "is in the last")).toBeVisible();
+  for (const own of ["is after", "is before", "is between", "is empty"]) {
+    await expect(choose(open, own), `${own} is offered for a date`).toBeVisible();
+  }
+  await choose(open, "is in the last").click();
+  await open.getByRole("spinbutton", { name: "How many" }).fill("30");
+  await open.getByLabel("Unit").selectOption({ label: "days" });
+  await open.getByRole("button", { name: "Add" }).click();
+  await expect.poll(() => rowsDrawn("Table")).toBe(within(30));
+  expect(within(30), "the walk's own data tells the two apart").not.toBe(INVOICES.length);
+
+  // Taken out, all of them are back; then "is between" two days.
+  await settings()
+    .getByRole("group", { name: "Conditions rows must meet" })
+    .getByRole("button", { name: /Remove .*Issued on/i })
+    .click();
+  await expect.poll(() => rowsDrawn("Table")).toBe(INVOICES.length);
+  await settings().getByRole("button", { name: /^Condition/ }).click();
+  open = owner.getByRole("dialog", { name: "Only include rows where" });
+  await open.getByLabel("Field").selectOption({ label: "Issued on" });
+  await choose(open, "is between").click();
+  await open.getByLabel("From").fill(day(50));
+  await open.getByLabel("To").fill(day(5));
+  await open.getByRole("button", { name: "Add" }).click();
+  const between = INVOICES.filter((one) => one.ago <= 50 && one.ago >= 5).length;
+  await expect.poll(() => rowsDrawn("Table")).toBe(between);
+  await settings()
+    .getByRole("group", { name: "Conditions rows must meet" })
+    .getByRole("button", { name: /Remove .*Issued on/i })
+    .click();
+
+  // A choice: several values at once, each with how many rows it has.
+  await settings().getByRole("button", { name: /^Condition/ }).click();
+  open = owner.getByRole("dialog", { name: "Only include rows where" });
+  await open.getByLabel("Field").selectOption({ label: "Status" });
+  const group = open.getByRole("group", { name: "Any of" });
+  for (const value of ["paid", "unpaid", "void"]) {
+    await expect(group.getByRole("checkbox", { name: new RegExp(`^${value} \\d+ rows?$`) })).toBeVisible();
+  }
+  // The counts are the table's own: how many invoices have each status.
+  const really = await invoicesByStatus();
+  for (const value of ["paid", "unpaid", "void"]) {
+    await expect(
+      group.getByRole("checkbox", { name: `${value} ${really[value]} rows` }),
+      `${value} has ${really[value]} rows`,
+    ).toBeVisible();
+  }
+  await group.getByRole("checkbox", { name: /^paid \d+ rows?$/ }).check();
+  await group.getByRole("checkbox", { name: /^void \d+ rows?$/ }).check();
+  await open.getByRole("button", { name: "Add" }).click();
+  const some = INVOICES.filter((one) => one.status === "paid" || one.status === "void").length;
+  await expect.poll(() => rowsDrawn("Table")).toBe(some);
+  await expect(chip(/paid/)).toBeVisible();
+  await expect
+    .poll(async () => {
+      const saved = await draftWidget("tables", "blank", (one) => one.type === "core/table");
+      const filters = (saved?.data?.rows?.source?.visual?.filters ?? []) as Wid[];
+      return filters.some((one) => one.column === "status");
+    })
+    .toBe(true);
+  // Kept after a reload.
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await expect.poll(() => rowsDrawn("Table")).toBe(some);
+});
+
+// ----- 5. Who can run it -----
+
+/** Where a member of the workspace sees the served app, signed in as themselves. */
+async function openServed(person: Page, area: Area, page = "") {
+  await person.goto(`${served[area]}${page}`);
+  const staff = person
+    .getByRole("link", { name: /staff/i })
+    .or(person.getByRole("button", { name: /staff/i }));
+  if (await staff.count()) await staff.first().click();
+}
+
+/** Marks a table of an area with a row action "Mark paid" that only some groups may run. */
+async function giveRowAction(area: Area, page: string, widgetId: string, groups: string[]) {
+  const body = structuredClone((await ok(owner, "GET", `${W}/interfaces/${path(area)}`)).body);
+  const widgetOf = body.pages
+    .find((one: Wid) => one.id === page)
+    .widgets.find((one: Wid) => one.id === widgetId);
+  widgetOf.config = {
+    ...widgetOf.config,
+    select: true,
+    rowActions: [
+      {
+        id: "pay",
+        label: "Mark paid",
+        action: {
+          runBy: { groups },
+          steps: [
+            { do: "update", record: "event", set: { status: { value: "paid" } } },
+            { do: "message", text: "Marked paid", tone: "success" },
+          ],
+        },
+      },
+    ],
+  };
+  await ok(owner, "PUT", `${W}/drafts/${path(area)}`, {
+    kind: "interface",
+    schemaVersion: 2,
+    body,
+  });
+  await ok(owner, "POST", `${W}/changes/deploy`, {
+    paths: [path(area)],
+    message: `Phase 28 walk ${stamp}: who can run it`,
+  });
+}
+
+const statusOf = async (key: string): Promise<string> =>
+  (await ok(owner, "GET", `${W}/row/${made[key]?.id}/invoices`)).status;
+const setStatus = (key: string, status: string) =>
+  ok(owner, "PATCH", `${W}/row/${made[key]?.id}/invoices`, { status });
+
+test("POLISH-012: a row action limited to a group is greyed with the reason for someone outside, run by someone inside, and refused by the API when called directly", async ({
+  browser,
+}) => {
+  await giveRowAction("tables", "bulk", "pay", ["groups/practice-managers"]);
+  const rowFor = (person: Page, key: string) =>
+    person
+      .getByRole("region", { name: "To pay", exact: true })
+      .getByRole("row", { name: new RegExp(made[key]?.number ?? "") });
+
+  // Devi is in Billing, not among the Practice managers: the action is there, and off.
+  const outside = await signedInAs(browser, OUTSIDE);
+  await openServed(outside, "tables", "bulk");
+  await expect(rowFor(outside, "a")).toBeVisible({ timeout: 30_000 });
+  const off = rowFor(outside, "a").getByRole("button", { name: "Mark paid" });
+  await rowFor(outside, "a").hover();
+  await expect(off).toBeVisible();
+  await expect(off, "greyed for someone outside the group").toBeDisabled();
+  await off.hover({ force: true });
+  // The reason is in the group's name, not its key.
+  await expect(outside.getByText("Only Practice managers can do this.")).toBeVisible();
+  // Called straight to the API, the server refuses too, in the same words.
+  const refused = await call(outside, "POST", `${W}/page-actions`, {
+    of: "interface",
+    path: path("tables"),
+    page: "bulk",
+    widget: "pay",
+    at: "config/rowActions/0/action",
+    records: { event: made.a?.id },
+  });
+  expect(refused.status).toBe(403);
+  expect(JSON.stringify(refused.body)).toContain("Only Practice managers can do this");
+  expect(await statusOf("a"), "nothing changed").toBe("unpaid");
+  await outside.context().close();
+
+  // Rowan is a Practice manager as well as Billing: it runs for her.
+  const inside = await signedInAs(browser, BOTH);
+  await openServed(inside, "tables", "bulk");
+  await expect(rowFor(inside, "a")).toBeVisible({ timeout: 30_000 });
+  await rowFor(inside, "a").hover();
+  const on = rowFor(inside, "a").getByRole("button", { name: "Mark paid" });
+  await expect(on).toBeEnabled();
+  await on.click();
+  try {
+    await expect.poll(() => statusOf("a")).toBe("paid");
+  } finally {
+    await setStatus("a", "unpaid");
+    await inside.context().close();
+  }
+});
+
+test("POLISH-012: a group whose name is not its key: the reason greyed and the refusal both use the name people know it by", async ({
+  browser,
+}) => {
+  // A group is made as "Zed <stamp>", then renamed: its key stays what it was made as.
+  const made1 = await ok(owner, "POST", `/tenants/${TENANT_ID}/groups`, { name: `Zed ${stamp}` });
+  const NAME = `Reception ${stamp}`;
+  await ok(owner, "PATCH", `/tenants/${TENANT_ID}/groups/${made1.id}`, { name: NAME });
+  try {
+    expect(made1.key).not.toBe(NAME.toLowerCase().replace(/ /g, "-"));
+    await giveRowAction("tables", "bulk", "pay", [`groups/${made1.key}`]);
+    const outside = await signedInAs(browser, OUTSIDE);
+    await openServed(outside, "tables", "bulk");
+    const row = outside
+      .getByRole("region", { name: "To pay", exact: true })
+      .getByRole("row", { name: new RegExp(made.c?.number ?? "") });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.hover();
+    const off = row.getByRole("button", { name: "Mark paid" });
+    await expect(off).toBeDisabled();
+    await off.hover({ force: true });
+    // Greyed, with the reason in the name the group has now.
+    await expect(outside.getByText(`Only ${NAME} can do this.`)).toBeVisible();
+    // And the server, called directly, says the same.
+    const refused = await call(outside, "POST", `${W}/page-actions`, {
+      of: "interface",
+      path: path("tables"),
+      page: "bulk",
+      widget: "pay",
+      at: "config/rowActions/0/action",
+      records: { event: made.c?.id },
+    });
+    expect(refused.status).toBe(403);
+    expect(JSON.stringify(refused.body)).toContain(`Only ${NAME} can do this.`);
+    await outside.context().close();
+  } finally {
+    await call(owner, "DELETE", `/tenants/${TENANT_ID}/groups/${made1.id}`);
+  }
+});
+
+// ----- 6. Who can see it, and View as -----
+
+/** Publishes the open app through the check, as a person does. */
+async function publishThroughTheCheck() {
+  await openCheck();
+  await readyToPublish().getByRole("button", { name: /^Publish( \d+ changes?)?$/ }).click();
+  await expect(owner.getByText(/^Published\./).first()).toBeVisible();
+}
+test("POLISH-012: a widget limited to a group carries its tag, View as shows it as that group sees it, and a person of that group and one outside see the same in the served app", async ({
+  browser,
+}) => {
+  await openBuilder("rules", /^Blank/);
+  await addAndSave("rules", "blank", "Stat", "core/stat");
+  await chooseSource("Invoices");
+  const limited = await (async () => {
+    const second = await addAndSave("rules", "blank", "Stat", "core/stat");
+    await chooseSource("Invoices");
+    await tabOf("Display").click();
+    await rowOf("Title").click();
+    await editor().getByRole("textbox").first().fill("Managers only");
+    await owner.keyboard.press("Enter");
+    return second;
+  })();
+  await tabOf("Rules").click();
+  await settings().getByRole("button", { name: "Limit to a group" }).click();
+  await owner.getByRole("dialog", { name: "Groups" }).getByText("Practice managers", { exact: true }).click();
+  await owner.keyboard.press("Escape");
+  const saved = (await settle("rules", "blank", limited.id, (one) =>
+    one.rules?.seenBy?.groups?.length ? one : undefined,
+  )) as Wid;
+  expect(saved.rules.seenBy.groups).toEqual(["groups/practice-managers"]);
+  // On the canvas the widget says who it is shown to.
+  await expect(widget("Managers only")).toContainText("Only for Practice managers");
+
+  // View as: the page as a group sees it. Billing is not Practice managers, so the widget is gone.
+  const menu = owner.getByRole("button", { name: /^View as/ });
+  await menu.click();
+  await owner.getByRole("menuitem", { name: "Billing" }).click();
+  await expect(owner.getByRole("button", { name: "View as Billing" })).toBeVisible();
+  await expect(widget("Stat")).toBeVisible();
+  await expect(widget("Managers only")).toContainText("Hidden for Billing");
+  await owner.getByRole("button", { name: "View as Billing" }).click();
+  await owner.getByRole("menuitem", { name: "Practice managers" }).click();
+  await expect(widget("Managers only")).not.toContainText("Hidden for");
+  await owner.getByRole("button", { name: "View as Practice managers" }).click();
+  await owner.getByRole("menuitem", { name: "Me" }).click();
+  await expect(widget("Managers only")).not.toContainText("Hidden for");
+
+  // Published, what each person's session really shows agrees with View as.
+  await publishThroughTheCheck();
+  const devi = await signedInAs(browser, OUTSIDE);
+  await openServed(devi, "rules");
+  await expect(devi.getByRole("region", { name: "Stat", exact: true }).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(devi.getByRole("region", { name: "Managers only" }), "Devi is Billing: View as Billing hid it").toHaveCount(0);
+  await devi.context().close();
+  const rowan = await signedInAs(browser, BOTH);
+  await openServed(rowan, "rules");
+  await expect(rowan.getByRole("region", { name: "Managers only" }), "Rowan is a Practice manager").toBeVisible({
+    timeout: 30_000,
+  });
+  await rowan.context().close();
+});
+
+// ----- 7. Sheet and modal sizes -----
+
+/** The widths a side sheet or modal is made at, by size name (pageKinds.ts). */
+const SIZE_PX = { small: 480, medium: 720, large: 960, xlarge: 1200 } as const;
+
+test("POLISH-013: a sheet is sized by dragging its edge and a modal by the select, each snaps to a named size, and both open at that size in the published app after a reload", async () => {
+  await openBuilder("sizes", /^A sheet/);
+  const handle = owner.getByRole("slider", { name: "Size" });
+  await expect(handle).toBeVisible();
+  await expect(handle).toHaveAttribute("aria-valuetext", "Medium");
+  // The edge dragged left: a sheet is centred in its frame, so the edge goes half as far.
+  const at = await handle.boundingBox();
+  if (!at) throw new Error("the size handle is not on the page");
+  await owner.mouse.move(at.x + at.width / 2, at.y + at.height / 2);
+  await owner.mouse.down();
+  await expect(owner.getByRole("status").filter({ hasText: "Medium" }).first()).toBeVisible();
+  await owner.mouse.move(at.x - 130, at.y + at.height / 2, { steps: 12 });
+  await expect(owner.getByRole("status").filter({ hasText: "Small" }).first()).toBeVisible();
+  await owner.mouse.up();
+  await expect(handle).toHaveAttribute("aria-valuetext", "Small");
+  await expect.poll(async () => (await draftPage("sizes", "sheet")).size).toBe("small");
+  // The same size is in the page settings, as the select says it.
+  await expect(settings().getByRole("region", { name: "Page settings" }).getByLabel("Size")).toHaveValue("small");
+  // The keyboard: the arrows step through the sizes, one undoable step each.
+  await handle.focus();
+  await owner.keyboard.press("ArrowRight");
+  await expect(handle).toHaveAttribute("aria-valuetext", "Medium");
+  await owner.keyboard.press("ArrowLeft");
+  await expect(handle).toHaveAttribute("aria-valuetext", "Small");
+
+  // The modal's size is chosen in its settings.
+  await pages().getByRole("button", { name: /^A modal/ }).click();
+  await settings().getByRole("region", { name: "Page settings" }).getByLabel("Size").selectOption({ label: "Extra large" });
+  await expect.poll(async () => (await draftPage("sizes", "modal")).size).toBe("xlarge");
+  await expect(owner.getByRole("slider", { name: "Size" })).toHaveAttribute("aria-valuetext", "Extra large");
+  await owner.reload();
+  await pages().getByRole("button", { name: /^A modal/ }).click();
+  await expect(owner.getByRole("slider", { name: "Size" })).toHaveAttribute("aria-valuetext", "Extra large");
+  await pages().getByRole("button", { name: /^A sheet/ }).click();
+  await expect(owner.getByRole("slider", { name: "Size" })).toHaveAttribute("aria-valuetext", "Small");
+
+  // Published, each opens at its size, with its widgets laid out on its own grid.
+  await publishThroughTheCheck();
+  await owner.setViewportSize({ width: 1440, height: 900 });
+  await openServed(owner, "sizes");
+  await owner.goto(`${served.sizes}?sheet=sheet&record=${made.a?.id}`);
+  const sheet = owner.getByRole("dialog", { name: /A sheet/ });
+  await expect(sheet).toBeVisible({ timeout: 30_000 });
+  const sheetBox = await sheet.boundingBox();
+  expect(sheetBox && Math.abs(sheetBox.width - SIZE_PX.small) <= 24, `a small sheet is about ${SIZE_PX.small}px wide`).toBe(true);
+  await owner.goto(`${served.sizes}?modal=modal`);
+  const modal = owner.getByRole("dialog", { name: /A modal/ });
+  await expect(modal).toBeVisible({ timeout: 30_000 });
+  const modalBox = await modal.boundingBox();
+  expect(modalBox && Math.abs(modalBox.width - SIZE_PX.xlarge) <= 24, `an extra large modal is about ${SIZE_PX.xlarge}px wide`).toBe(true);
+  // And on a phone they are as wide as the screen allows, and nothing scrolls sideways.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  await owner.reload();
+  await expect(owner.getByRole("dialog", { name: /A modal/ })).toBeVisible({ timeout: 30_000 });
+  expect(await noSideways(owner)).toBe(true);
+  await owner.setViewportSize({ width: 1440, height: 1000 });
+});

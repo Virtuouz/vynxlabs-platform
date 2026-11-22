@@ -32,7 +32,33 @@ export function hiddenOnPhone(
 export function phoneSpan(widget: Laid): 1 | 2 {
   const how = widget.layout?.narrow;
   if (how === "full" || how === "stack") return 2;
+  // A place set by hand speaks in the twelve columns: half the row or less is one of the phone's two.
+  const own = widget.layout?.phone?.at;
+  if (own) return own.w <= 6 ? 1 : 2;
   return widget.at.w <= 3 ? 1 : 2;
+}
+
+/**
+ * What a device's place is while it is automatic, so that "Custom" starts from what the person
+ * was looking at: the desktop's on a tablet; on a phone, its row in the reading order, taking
+ * half the row (6 of 12 columns) or all of it.
+ */
+export function automaticAt(
+  widgets: readonly PageWidget[],
+  widget: PageWidget,
+  device: Device,
+): Box {
+  if (device !== "phone") return { ...widget.at };
+  const plain = widgets
+    .filter((one) => !one.in)
+    .map((one) => {
+      const { phone: _phone, ...layout } = one.layout ?? {};
+      return { ...one, layout };
+    });
+  const mine = plain.find((one) => one.id === widget.id);
+  const index = phoneOrder(plain).findIndex((one) => one.id === widget.id);
+  const half = mine !== undefined && phoneSpan(mine) === 1;
+  return { x: 0, y: Math.max(0, index), w: half ? 6 : 12, h: widget.at.h };
 }
 
 /** The place a widget has on the phone: set by hand, or else where it is on the desktop. */

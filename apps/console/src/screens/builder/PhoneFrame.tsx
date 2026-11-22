@@ -32,14 +32,18 @@ export function DeviceBanner({ device, changed }: { device: "tablet" | "phone"; 
  * ("Money ⋯") above what the page shows (board 6).
  */
 export function PhoneFrame({
+  on,
   title,
   width,
   children,
 }: {
+  /** Off, the children are drawn as they are (every other screen size). */
+  on: boolean;
   title: string;
   width: number;
   children: ReactNode;
 }) {
+  if (!on) return <>{children}</>;
   return (
     <div
       data-phone-frame=""

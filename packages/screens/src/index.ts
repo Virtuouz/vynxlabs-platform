@@ -31,6 +31,7 @@ export {
   without,
 } from "./layout.ts";
 export {
+  automaticAt,
   backToAutomatic,
   changedByHand,
   type Device,

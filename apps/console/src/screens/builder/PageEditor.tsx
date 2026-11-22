@@ -50,14 +50,15 @@ import {
 } from "./containers.ts";
 import { EditorShell } from "./EditorShell.tsx";
 import { GroupButtonsDialog } from "./GroupButtonsDialog.tsx";
+import { useGroupKeys } from "./groupKeys.ts";
 import { Outline } from "./Outline.tsx";
 import { PageSettings } from "./PageSettings.tsx";
+import { DeviceBanner, PhoneFrame, ViewAsNote } from "./PhoneFrame.tsx";
 import { SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
 import "../../kit/inspector/widgets/registerTables.tsx";
 import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
-import { RowClickOffer } from "./RowClickOffer.tsx";
 import { choiceOf, openedPage } from "./RowClickEditor.tsx";
-import { SheetPreviewHost } from "./SheetPreview.tsx";
+import { RowClickOffer } from "./RowClickOffer.tsx";
 import {
   type Edit,
   type FormPlan,
@@ -68,8 +69,17 @@ import {
   suggestionsFor,
 } from "./records.ts";
 import { definitionOf, views } from "./registry.ts";
-import { type Box, type CarryRequest, type FilterValues, PageView, placed } from "./renderer.ts";
+import {
+  automaticAt,
+  type Box,
+  type CarryRequest,
+  changedByHand,
+  type FilterValues,
+  PageView,
+  placed,
+} from "./renderer.ts";
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
+import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
 import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
 import { TextOnPage } from "./TextOnPage.tsx";
@@ -136,6 +146,7 @@ export function PageEditor({
   pages,
   canvasHead,
   frame,
+  layout,
   refreshKey,
   pageInfo,
 }: {
@@ -163,12 +174,19 @@ export function PageEditor({
   canvasHead?: ReactNode;
   /** The preview's width, when it is not the whole room. `name` marks which. */
   frame?: { name: string; width: number | undefined };
+  /** The phone and tablet previews and "View as": who the page is drawn for, and the question asked before a hand-made layout is written. */
+  layout?: {
+    viewAs?: { key: string; name: string } | undefined;
+    askLayout?: (device: "tablet" | "phone") => Promise<boolean>;
+  };
   /** Bumped by the host after a save, so each widget reads the page as it now is. */
   refreshKey?: number;
   /** For an app's page: its kind, its record and the app's pages. Left out for a dashboard. */
   pageInfo?: PageInfo;
 }) {
   const { catalog } = useCatalog(root);
+  const { groups: keyed } = useGroupKeys(root);
+  const device = (frame?.name ?? "desktop") as "desktop" | "tablet" | "phone";
   // Every change leaves each container as tall as what it holds (phase 27).
   const onChange: typeof hostChange = (next, label, key) =>
     hostChange({ ...next, widgets: fitContainers(next.widgets) }, label, key);
@@ -458,65 +476,85 @@ export function PageEditor({
       {pageInfo ? (
         <SampleBar page={pageInfo.page} sample={sample} onChoose={pageInfo.onRecord} />
       ) : null}
+      {device !== "desktop" && !overlay ? (
+        <DeviceBanner device={device} changed={changedByHand(widgets, device)} />
+      ) : null}
+      {layout?.viewAs ? <ViewAsNote name={layout.viewAs.name} /> : null}
       <div
         className={overlay ? "relative mx-auto" : "relative"}
         style={overlay && width ? { maxWidth: `${width}px` } : undefined}
       >
-        <div
-          data-preview={frame?.name}
-          data-page-kind={kind ?? "page"}
-          data-page-size={overlay ? size : undefined}
-          className={`mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
-          style={width && !overlay ? { maxWidth: `${width}px` } : undefined}
+        <PhoneFrame
+          on={device === "phone" && !overlay && width !== undefined}
+          title={pageInfo?.page.title ?? ""}
+          width={width ?? 390}
         >
-          {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
-          <div data-column-guides="" style={GUIDES}>
-            {widgets.length === 0 ? (
-              <EmptyState
-                title="Nothing on this page yet"
-                action={
-                  <Button variant="primary" onClick={() => setAdding(true)}>
-                    <Plus aria-hidden="true" size={16} /> Add to page
-                  </Button>
-                }
-              >
-                Add a table, a chart or a number. What you see is drawn from this workspace's rows,
-                as you may read them.
-              </EmptyState>
-            ) : (
-              <PageView
-                widgets={widgets}
-                filters={filters}
-                registry={views}
-                client={client}
-                filterValues={filterValues}
-                onFilterValues={setFilterValues}
-                {...(refreshKey !== undefined ? { refreshKey } : {})}
-                {...opens}
-                editing={{
-                  selected,
-                  onSelect,
-                  onChange: fromCanvas,
-                  onRename: (id, title) =>
-                    put(
-                      widgets.map((one) => (one.id === id ? { ...one, title } : one)),
-                      "renaming a widget",
-                      `title:${id}`,
-                    ),
-                  onColumn: (id, column) => {
-                    onSelect(id);
-                    requestColumn(id, column);
-                  },
-                  onEditText: (id) => {
-                    onSelect(id);
-                    setWriting(id);
-                  },
-                  carrying,
-                }}
-              />
-            )}
+          <div
+            data-preview={frame?.name}
+            data-page-kind={kind ?? "page"}
+            data-page-size={overlay ? size : undefined}
+            className={`mx-auto overflow-x-auto bg-canvas ${device === "phone" && !overlay ? "" : "rounded-panel border border-line p-3"} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
+            style={
+              width && !overlay && device !== "phone"
+                ? {
+                    maxWidth: `${width}px`,
+                    ...(device === "tablet" ? { minWidth: `${width}px` } : {}),
+                  }
+                : undefined
+            }
+          >
+            {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
+            <div data-column-guides="" style={GUIDES}>
+              {widgets.length === 0 ? (
+                <EmptyState
+                  title="Nothing on this page yet"
+                  action={
+                    <Button variant="primary" onClick={() => setAdding(true)}>
+                      <Plus aria-hidden="true" size={16} /> Add to page
+                    </Button>
+                  }
+                >
+                  Add a table, a chart or a number. What you see is drawn from this workspace's
+                  rows, as you may read them.
+                </EmptyState>
+              ) : (
+                <PageView
+                  widgets={widgets}
+                  filters={filters}
+                  registry={views}
+                  client={client}
+                  filterValues={filterValues}
+                  onFilterValues={setFilterValues}
+                  {...(refreshKey !== undefined ? { refreshKey } : {})}
+                  {...opens}
+                  device={device}
+                  {...(layout?.viewAs ? { viewAs: layout.viewAs } : {})}
+                  editing={{
+                    selected,
+                    onSelect,
+                    onChange: fromCanvas,
+                    ...(layout?.askLayout ? { askLayout: layout.askLayout } : {}),
+                    onRename: (id, title) =>
+                      put(
+                        widgets.map((one) => (one.id === id ? { ...one, title } : one)),
+                        "renaming a widget",
+                        `title:${id}`,
+                      ),
+                    onColumn: (id, column) => {
+                      onSelect(id);
+                      requestColumn(id, column);
+                    },
+                    onEditText: (id) => {
+                      onSelect(id);
+                      setWriting(id);
+                    },
+                    carrying,
+                  }}
+                />
+              )}
+            </div>
           </div>
-        </div>
+        </PhoneFrame>
         {rowSheet && pageInfo && !previewHidden.has(rowSheet.id) ? (
           <SheetPreviewHost
             key={rowSheet.page.id}
@@ -632,6 +670,10 @@ export function PageEditor({
                 flows={lists.flows}
                 scripts={lists.scripts}
                 groups={lists.groups}
+                endUserGroups={keyed
+                  .filter((one) => one.kind === "end_user")
+                  .map((one) => one.name)}
+                automaticAt={(one, on) => automaticAt(widgets, one, on)}
               />
             </>
           ) : pageInfo ? (

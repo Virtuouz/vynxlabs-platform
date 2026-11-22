@@ -1,5 +1,75 @@
-import type { InterfaceBody } from "@volvel/manifest";
-import { widgetChanges } from "./PublishDialog.tsx";
+import type { InterfaceBody, Page, PageWidget } from "@volvel/manifest";
+import { definitionOf } from "./registry.ts";
+
+/** What a widget with no title of its own is called: its kind, as "Add to page" names it. */
+const kindOf = (type: string) => definitionOf(type)?.title;
+const nameOfWidget = (widget: PageWidget) => widget.title || kindOf(widget.type) || widget.id;
+/** "Button", as a word in a sentence: "button". */
+const kindWord = (widget: PageWidget) => (kindOf(widget.type) ?? "widget").toLowerCase();
+
+/** How the draft differs from what people see now, widget by widget. */
+export function widgetChanges(published: InterfaceBody | undefined, draft: InterfaceBody) {
+  const out: {
+    page: string;
+    widget: string;
+    kind: string;
+    change: "added" | "changed" | "removed";
+  }[] = [];
+  const pagesBefore = new Map((published?.pages ?? []).map((page) => [page.id, page]));
+  const entry = (page: Page, widget: PageWidget, change: "added" | "changed" | "removed") =>
+    out.push({ page: page.title, widget: nameOfWidget(widget), kind: kindWord(widget), change });
+  for (const page of draft.pages) {
+    const before = new Map((pagesBefore.get(page.id)?.widgets ?? []).map((one) => [one.id, one]));
+    for (const widget of page.widgets) {
+      const was = before.get(widget.id);
+      if (!was) entry(page, widget, "added");
+      else if (JSON.stringify(was) !== JSON.stringify(widget)) entry(page, widget, "changed");
+      before.delete(widget.id);
+    }
+    for (const gone of before.values()) entry(page, gone, "removed");
+    pagesBefore.delete(page.id);
+  }
+  for (const page of pagesBefore.values())
+    for (const gone of page.widgets) entry(page, gone, "removed");
+  return out;
+}
+
+/** A page's own settings, without its widgets. */
+const settings = (page: Page) => {
+  const { widgets: _widgets, ...rest } = page;
+  return JSON.stringify(rest);
+};
+
+/**
+ * What publishing changes, in words, one line each: "Added page Invoice detail", "Added button
+ * Mark paid", "Changed form New invoice on Money". With nothing deployed yet, everything is new.
+ */
+export function draftChanges(deployed: InterfaceBody | undefined, draft: InterfaceBody): string[] {
+  const lines: string[] = [];
+  if (deployed && deployed.title !== draft.title) lines.push(`Renamed the app to ${draft.title}`);
+  const before = new Map((deployed?.pages ?? []).map((page) => [page.id, page]));
+  for (const page of draft.pages) {
+    const was = before.get(page.id);
+    if (!was) lines.push(`Added page ${page.title}`);
+    else if (settings(page) !== settings(was)) lines.push(`Changed the settings of ${page.title}`);
+    before.delete(page.id);
+  }
+  for (const page of before.values()) lines.push(`Removed page ${page.title}`);
+  // Pages in another order change the app's menu.
+  if (deployed) {
+    const kept = draft.pages.filter((page) => deployed.pages.some((one) => one.id === page.id));
+    const was = deployed.pages.filter((page) => draft.pages.some((one) => one.id === page.id));
+    if (kept.map((page) => page.id).join() !== was.map((page) => page.id).join())
+      lines.push("Changed the order of the pages");
+  }
+  const verb = { added: "Added", changed: "Changed", removed: "Removed" } as const;
+  for (const one of widgetChanges(deployed, draft)) {
+    lines.push(
+      `${verb[one.change]} ${one.kind} ${one.widget}${one.change === "added" ? "" : ` on ${one.page}`}`,
+    );
+  }
+  return lines;
+}
 
 /**
  * How many things the draft changes against what is deployed: the app's name, each page added,
@@ -10,24 +80,5 @@ export function draftChangeCount(
   deployed: InterfaceBody | undefined,
   draft: InterfaceBody,
 ): number {
-  let count = widgetChanges(deployed, draft).length;
-  if (!deployed) return count + draft.pages.length;
-  if (deployed.title !== draft.title) count += 1;
-  const before = new Map(deployed.pages.map((page) => [page.id, page]));
-  for (const page of draft.pages) {
-    const was = before.get(page.id);
-    if (!was) count += 1;
-    else {
-      const { widgets: _now, ...now } = page;
-      const { widgets: _then, ...then } = was;
-      if (JSON.stringify(now) !== JSON.stringify(then)) count += 1;
-    }
-    before.delete(page.id);
-  }
-  count += before.size;
-  // Pages in another order change the app's menu.
-  const kept = draft.pages.filter((page) => deployed.pages.some((one) => one.id === page.id));
-  const was = deployed.pages.filter((page) => draft.pages.some((one) => one.id === page.id));
-  if (kept.map((page) => page.id).join() !== was.map((page) => page.id).join()) count += 1;
-  return count;
+  return draftChanges(deployed, draft).length;
 }

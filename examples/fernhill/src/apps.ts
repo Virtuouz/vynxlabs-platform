@@ -428,8 +428,9 @@ export const performance = defineInterface({
           type: "core/section",
           title: "Today at the clinics",
           at: { x: 0, y: 2, w: 12, h: 4 },
+          subtitle: "How many visits there are, and where they stand, at the clinics chosen.",
           config: {
-            description: "How many visits there are, and where they stand, at the clinics chosen.",
+            folds: true,
           },
         },
         {
@@ -626,8 +627,8 @@ export const performance = defineInterface({
           type: "core/section",
           title: "Orders to VetSupply",
           at: { x: 0, y: 15, w: 12, h: 9 },
+          subtitle: "What the clinics have asked the supplier for, newest first.",
           config: {
-            description: "What the clinics have asked the supplier for, newest first.",
             folds: true,
           },
         },

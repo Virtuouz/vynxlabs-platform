@@ -241,7 +241,8 @@ export function PageEditor({
     const id = nextId(definition.type, widgets);
     let added: PageWidget = newWidget(definition, id, widgets);
     // Into the container that is chosen (or its child's), at the bottom of its grid; else at the end of the page.
-    const into = at ? undefined : addsTo;
+    // A Section or Tabs is never put in one: it goes on the page, whatever is chosen.
+    const into = at || definition.role === "container" ? undefined : addsTo;
     if (at) added = { ...added, at };
     else added = placedAtBottom(widgets, added, into);
     added = {

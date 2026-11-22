@@ -745,16 +745,6 @@ export const section = defineWidget({
   config: {
     type: "object",
     properties: {
-      description: {
-        type: "string",
-        maxLength: 300,
-        "x-volvel": hint({
-          tab: "display",
-          control: "text",
-          label: "A line under the heading",
-          order: 1,
-        }),
-      },
       folds: {
         type: "boolean",
         "x-volvel": hint({

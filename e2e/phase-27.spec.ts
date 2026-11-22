@@ -140,12 +140,21 @@ async function moveTo(name: string, to: string | RegExp) {
 }
 
 /** What the page's address says. */
-const decoded = (page: Page) => decodeURIComponent(page.url());
+/** The address as words: its path, and each search parameter as `name=value` (a space is written `+`). */
+const decoded = (page: Page) => {
+  const url = new URL(page.url());
+  const params = [...url.searchParams.entries()].map(([name, value]) => `${name}=${value}`);
+  return `${decodeURIComponent(url.pathname)}?${params.join("&")}`;
+};
 
 /** The walk's own app as it is drafted now, and one page of it. */
 const drafted = async (path = PAGE) => (await ok(owner, "GET", `${W}/drafts/${path}`)).body;
-const draftPage = async (id: string, path = PAGE) =>
-  (await drafted(path)).pages.find((one: { id: string }) => one.id === id);
+/** A page of the draft; none while the builder hasn't saved its first change (a save waits a moment). */
+const draftPage = async (id: string, path = PAGE) => {
+  const answer = await call(owner, "GET", `${W}/drafts/${path}`);
+  if (answer.status === 404) return undefined;
+  return answer.body.pages.find((one: { id: string }) => one.id === id);
+};
 // biome-ignore lint/suspicious/noExplicitAny: widgets are inspected freely
 type Wid = any;
 const draftWidget = async (page: string, match: (one: Wid) => boolean) =>
@@ -401,7 +410,7 @@ test("POLISH-006: Visits is a Section of stats and Tabs; the open tab is in the 
   await expect(clinics).toBeVisible({ timeout: 30_000 });
   // The stats are in the section.
   await expect(clinics.getByRole("region").first()).toBeVisible();
-  await expect(owner.getByRole("tablist")).toBeVisible();
+  await expect(owner.getByRole("tablist", { name: "Visits" })).toBeVisible();
   for (const name of ["By status", "By reason", "Every visit"]) {
     await expect(tab(owner, name)).toBeVisible();
   }
@@ -419,9 +428,12 @@ test("POLISH-006: Visits is a Section of stats and Tabs; the open tab is in the 
   await owner.goto(`${base}visits`);
   await owner.goto(link);
   await expect(tab(owner, "By reason")).toHaveAttribute("aria-selected", "true");
-  // The keyboard: the arrow moves to the next tab, as in any tab strip.
+  // The keyboard: the arrow moves to the next tab and Enter opens it, as the kit's tab strips do
+  // (the app's own pages too): a tab that reads its widgets isn't opened by passing over it.
   await tab(owner, "By reason").focus();
   await owner.keyboard.press("ArrowRight");
+  await expect(tab(owner, "Every visit")).toBeFocused();
+  await owner.keyboard.press("Enter");
   await expect(tab(owner, "Every visit")).toHaveAttribute("aria-selected", "true");
   await expectNoAxeViolations(owner, "Visits with its tabs");
 });
@@ -431,7 +443,7 @@ test("POLISH-005: on a phone Visits' tabs and what its Section holds are stacked
   await openApp(owner, "visits");
   const clinics = section(owner, "Today at the clinics");
   await expect(clinics).toBeVisible({ timeout: 30_000 });
-  await expect(owner.getByRole("tablist")).toBeVisible();
+  await expect(owner.getByRole("tablist", { name: "Visits" })).toBeVisible();
   expect(await noSideways(owner)).toBe(true);
   // What the section holds is one under another, not side by side.
   const inside = clinics.getByRole("region");
@@ -478,7 +490,7 @@ test("POLISH-006: Stock has a search that finds an item, a folding Orders to Vet
   expect(target, "the sandbox has stock to find").toBeTruthy();
   const others = lines.some((one) => one.item !== target);
   // GUESS: the page's search is a text box whose label begins "Search".
-  const search = owner.getByLabel(/^Search/).first();
+  const search = owner.getByRole("textbox", { name: /^Search/ }).first();
   await expect(search).toBeVisible();
   const before = await stock.getByRole("row").count();
   await search.fill(target);

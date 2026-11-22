@@ -267,7 +267,8 @@ export function AddToPage({
         <p className="m-0 text-body-sm text-ink-muted">
           {target ? (
             <>
-              Adds to <strong className="font-medium text-ink">{target}</strong>.{" "}
+              Adds to <strong className="font-medium text-ink">{target}</strong> (a Section or Tabs
+              goes on the page).{" "}
             </>
           ) : null}
           {onCarry

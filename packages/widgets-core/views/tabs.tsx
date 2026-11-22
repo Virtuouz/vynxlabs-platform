@@ -11,13 +11,14 @@ export function TabsView({
   config,
   place,
   tab,
+  title,
 }: WidgetViewProps<{ tabs: { id: string; title: string }[] }>) {
   const open = config.tabs.some((one) => one.id === tab?.open) ? tab?.open : config.tabs[0]?.id;
   return (
     // The strip is one row of the page's grid, with what is in the tab under it.
     <div className="[&_[role=tabpanel]]:pt-2.5">
       <Tabs
-        label="Tabs"
+        label={title ?? "Tabs"}
         value={open ?? ""}
         onChange={(id) => tab?.choose(id)}
         tabs={config.tabs.map((one) => ({

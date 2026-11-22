@@ -17,7 +17,7 @@ export function SectionView({
   place,
   building,
   emit,
-}: WidgetViewProps<{ description?: string; folds?: boolean; folded?: boolean }>) {
+}: WidgetViewProps<{ folds?: boolean; folded?: boolean }>) {
   const folds = config.folds === true;
   const folded = folds && config.folded === true;
   const body = useId();
@@ -55,9 +55,6 @@ export function SectionView({
               className={`transition-transform duration-[180ms] motion-reduce:transition-none ${folded ? "-rotate-90" : ""}`}
             />
           </button>
-        ) : null}
-        {config.description ? (
-          <p className="m-0 min-w-0 truncate text-body-sm text-ink-muted">{config.description}</p>
         ) : null}
       </div>
       <div

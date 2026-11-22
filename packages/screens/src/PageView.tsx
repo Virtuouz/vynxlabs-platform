@@ -420,6 +420,7 @@ function Cell({
             size={{ w: at.w, h: at.h, narrow }}
             emit={emit}
             building={building}
+            {...(widget.title ? { title: widget.title } : {})}
             {...extras}
             {...(place ? { place } : {})}
             {...tab}

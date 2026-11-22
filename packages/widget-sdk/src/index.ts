@@ -429,6 +429,8 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
   emit: (event: string, payload: EventPayload) => void;
   /** Whether the page is being built. A view may draw hints for the builder, never different data. */
   building: boolean;
+  /** The widget's title, as the page draws it over the view: what a view names its own parts by ("Visits", for a tab strip). */
+  title?: string;
   /**
    * Runs an action the widget holds, named by where it is: `on/<event>`, or a config
    * property the definition marks `action` (`config/<property>`) or `actions`

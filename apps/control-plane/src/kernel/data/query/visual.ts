@@ -27,6 +27,20 @@ export class VisualRefused extends Error {
   }
 }
 
+/**
+ * What a search adds: a row is kept when each word is found in at least one of the columns,
+ * whatever case it is in. The words are the text typed, split at spaces.
+ */
+export interface SearchCondition {
+  search: string;
+  columns: string[];
+}
+
+/** A condition a page's filters add to a visual query. */
+export type ExtraCondition = VisualCondition | SearchCondition;
+
+const MAX_SEARCH_COLUMNS = 12;
+
 export interface VisualTable {
   /** The table's columns by name, with what each holds and, for a reference, the table it points to. */
   columns: Map<string, { type: string; references: string | null }>;
@@ -58,7 +72,7 @@ export function compileVisual(
   query: VisualQuery,
   catalog: VisualCatalog,
   /** Conditions added by the dashboard's filters. */
-  extra: VisualCondition[] = [],
+  extra: ExtraCondition[] = [],
 ): CompiledVisual {
   const base = catalog.get(query.table);
   if (!base) {
@@ -149,9 +163,30 @@ export function compileVisual(
     return `${at.sql} ${operator} ${bind(one.value)}`;
   };
 
+  /** A search: every word is found in one of the columns, compared as text. */
+  const search = (one: SearchCondition, path: string): string[] => {
+    const words = one.search.split(/\s+/).filter((word) => word !== "");
+    if (words.length === 0) return [];
+    if (one.columns.length === 0 || one.columns.length > MAX_SEARCH_COLUMNS) {
+      throw new VisualRefused(
+        `${path}/columns`,
+        `a search looks in 1 to ${MAX_SEARCH_COLUMNS} columns`,
+      );
+    }
+    const looked = one.columns.map((name, index) => column(name, `${path}/columns/${index}`));
+    return words.map((word) => {
+      const bound = bind(`%${word.replace(/[\\%_]/g, "\\$&")}%`);
+      return `(${looked.map((at) => `${at.sql}::text ilike ${bound}`).join(" or ")})`;
+    });
+  };
+
   const where = [
     ...(query.filters ?? []).map((one, index) => condition(one, `/filters/${index}`)),
-    ...extra.map((one, index) => condition(one, `/dashboardFilters/${index}`)),
+    ...extra.flatMap((one, index) =>
+      "search" in one
+        ? search(one, `/dashboardFilters/${index}`)
+        : [condition(one, `/dashboardFilters/${index}`)],
+    ),
   ];
 
   const selected: { sql: string; name: string }[] = [];

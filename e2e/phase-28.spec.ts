@@ -288,6 +288,11 @@ test.beforeAll(async ({ browser }) => {
           title: "Invoices",
           widgets: [tableOf("list", "Invoices", { x: 0, y: 0, w: 12, h: 10 })],
         },
+        {
+          id: "bulk",
+          title: "To pay",
+          widgets: [tableOf("pay", "To pay", { x: 0, y: 0, w: 12, h: 10 })],
+        },
         { id: "blank", title: "Blank", widgets: [] },
       ],
     },
@@ -590,4 +595,339 @@ test("POLISH-009: a page that shows Invoices is offered next steps, and one appl
       .getByRole("button", { name: /^Search invoices/ }),
   ).toHaveCount(0);
   await owner.keyboard.press("Escape");
+});
+
+// ----- 3. One inspector journey per kind -----
+
+/** A tile of radio choices is drawn over a hidden input: press its label. */
+const choose = (inside: Locator, name: string | RegExp) =>
+  inside
+    .getByRole("radio", { name })
+    .first()
+    .locator("xpath=ancestor::label[1]");
+/** A switch of the inspector, by its name. */
+const flip = (name: string) => settings().getByRole("switch", { name });
+/** Adds a widget to the open page by the selector, and waits until the builder has saved it. */
+async function addAndSave(area: Area, page: string, name: string, type: string): Promise<Wid> {
+  const before = ((await draftPage(area, page)).widgets as Wid[]).filter(
+    (one) => one.type === type,
+  ).length;
+  await addWidget(name);
+  await expect
+    .poll(
+      async () =>
+        ((await draftPage(area, page)).widgets as Wid[]).filter((one) => one.type === type).length,
+    )
+    .toBe(before + 1);
+  return ((await draftPage(area, page)).widgets as Wid[]).filter((one) => one.type === type).at(-1);
+}
+/** Reads the widget with this id from the draft, once the builder has saved. */
+const widgetNow = async (area: Area, page: string, id: string): Promise<Wid> =>
+  draftWidget(area, page, (one) => one.id === id);
+/** Reads a row of the draft's widget until `read` says what is wanted. */
+const settle = async (area: Area, page: string, id: string, read: (one: Wid) => unknown) => {
+  let at: unknown;
+  await expect
+    .poll(async () => {
+      const one = await widgetNow(area, page, id);
+      at = one ? read(one) : undefined;
+      return JSON.stringify(at);
+    })
+    .not.toBe(undefined);
+  return at;
+};
+/** Chooses a source: the table the widget reads. */
+async function chooseSource(table: string) {
+  await rowOf("Source").click();
+  await pickIn(owner.getByRole("dialog", { name: "Where it reads from" }), table).click();
+  await expect(rowOf("Source")).toContainText(table);
+}
+
+test("POLISH-004: Chart: Measure, For each, the chart type and its colours are written, drawn, and kept after a reload", async () => {
+  await openBuilder("charts", /^Blank/);
+  const added = await addAndSave("charts", "blank", "Chart", "core/chart");
+  await chooseSource("Invoices");
+  // Measure: Sum of Total. The sentence under the rows says it in words.
+  let open = await openRow("Measure");
+  await open.getByLabel("What it works out").selectOption({ label: "Sum" });
+  await open.getByLabel("Of").or(open.getByLabel("Column")).first().selectOption({ label: "Total" });
+  await owner.keyboard.press("Escape");
+  await expect(rowOf("Measure")).toContainText("Sum");
+  // For each: Clinic. The columns are ordered by how well they group, and say how many values.
+  open = await openRow("For each");
+  await expect(choose(open, /^Clinic\b.*3 values/)).toBeVisible();
+  await choose(open, /^Clinic\b/).click();
+  await owner.keyboard.press("Escape");
+  await expect(rowOf("For each")).toContainText("Clinic");
+  await expect(settings()).toContainText("Reads as the sum of total for each clinic");
+  // The chart is drawn with the clinics.
+  const drawn = widget(/^Chart/);
+  for (const clinic of ["northside", "riverside", "hilltop"]) {
+    await expect(drawn.getByText(clinic, { exact: true }).first()).toBeVisible();
+  }
+  // Display: a type that fits, the colours, and the number format.
+  await tabOf("Display").click();
+  const kind = settings().getByRole("group", { name: "Chart type" });
+  await expect(kind.getByRole("radio", { name: /^Line needs a date/ })).toBeDisabled();
+  await choose(kind, /^Bar, sideways/).click();
+  open = await openRow("Colors");
+  await choose(open, "Warm").click();
+  await owner.keyboard.press("Escape");
+  open = await openRow("Numbers");
+  await choose(open, /^Money, whole/).click();
+  await owner.keyboard.press("Escape");
+  const config = await settle("charts", "blank", added.id, (one) =>
+    one.config?.colors === "warm" ? one : undefined,
+  );
+  const chart = config as Wid;
+  expect(chart.config.mark).toBe("bar");
+  expect(chart.config.horizontal).toBe(true);
+  const visual = chart.data.rows.source.visual;
+  expect(visual.measures[0]).toMatchObject({ fn: "sum", column: "total" });
+  expect(visual.groupBy[0].column).toBe("clinic");
+  // Kept after a reload.
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await outline().getByRole("button", { name: /^Chart/ }).click();
+  await expect(widget(/^Chart/).getByText("northside", { exact: true }).first()).toBeVisible();
+  await tabOf("Display").click();
+  await expect(rowOf("Colors")).toContainText("Warm");
+  await expect(rowOf("Numbers")).toContainText("Money");
+  await tabOf("Data").click();
+  await expect(rowOf("Measure")).toContainText("Sum");
+  await expect(rowOf("For each")).toContainText("Clinic");
+});
+
+/** What a table draws as its headings, left to right. */
+const headingsOf = async (name: string) =>
+  (await widget(name).getByRole("columnheader").allTextContents()).map((one) => one.trim());
+/** A column's own editor: opened from the inspector's list or from its heading on the page. */
+const columnEditor = (name: string) => owner.getByRole("dialog", { name: `Column · ${name}` });
+
+test("POLISH-004: Table: a column is renamed, hidden, reordered and formatted, and a heading on the page opens the same column", async () => {
+  await openBuilder("tables", /^Invoices/);
+  await outline()
+    .getByRole("button", { name: "Invoices", exact: true })
+    .click();
+  await tabOf("Display").click();
+  await expect(settings().getByRole("region", { name: "Columns" })).toContainText("5 of 5 shown");
+  expect(await headingsOf("Invoices")).toEqual(["Number", "Clinic", "Total", "Status", "Issued"]);
+  // Rename: the heading on the page says so at once.
+  await rowOf("Clinic").click();
+  await columnEditor("Clinic").getByRole("textbox", { name: "Heading" }).fill("Branch");
+  await owner.keyboard.press("Escape");
+  await expect.poll(() => headingsOf("Invoices")).toEqual(["Number", "Branch", "Total", "Status", "Issued"]);
+  // Hide: the eye. The count says how many are shown.
+  await settings().getByRole("button", { name: "Hide Issued" }).click();
+  await expect(settings().getByRole("region", { name: "Columns" })).toContainText("4 of 5 shown");
+  await expect.poll(() => headingsOf("Invoices")).toEqual(["Number", "Branch", "Total", "Status"]);
+  // Reorder from the keyboard: Alt and the arrow move Total before Branch.
+  await settings().getByRole("button", { name: /^Reorder Total/ }).focus();
+  await owner.keyboard.press("Alt+ArrowUp");
+  await expect.poll(() => headingsOf("Invoices")).toEqual(["Number", "Total", "Branch", "Status"]);
+  // The format: money, kept in cents. The numbers on the page say so.
+  await rowOf("Total").click();
+  await columnEditor("Total").getByRole("button", { name: /^Format/ }).click();
+  const formats = owner.getByRole("dialog").last();
+  await choose(formats, /^Money\b(?!,)/).click();
+  await formats.getByRole("switch", { name: "Stored in cents" }).check();
+  await owner.keyboard.press("Escape");
+  await owner.keyboard.press("Escape");
+  await expect(widget("Invoices").getByRole("row", { name: new RegExp(made.a?.number ?? "") })).toContainText("$123.45");
+  // A heading on the page opens the same column.
+  await widget("Invoices").getByRole("columnheader", { name: "Branch" }).getByText("Branch").click();
+  await expect(columnEditor("Branch")).toBeVisible();
+  await expect(columnEditor("Branch").getByRole("textbox", { name: "Heading" })).toHaveValue("Branch");
+  await owner.keyboard.press("Escape");
+  // All of it is kept after a reload (once the builder has saved: the header says so).
+  await expect
+    .poll(async () => {
+      const columns = ((await widgetNow("tables", "invoices", "list"))?.config?.columns ??
+        []) as Wid[];
+      const at = (name: string) => columns.findIndex((one) => one.column === name);
+      return (
+        columns.find((one) => one.column === "clinic")?.label === "Branch" &&
+        at("total") < at("clinic") &&
+        JSON.stringify(columns.find((one) => one.column === "total")).includes("currency")
+      );
+    })
+    .toBe(true);
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Invoices/ }).click();
+  expect(await headingsOf("Invoices")).toEqual(["Number", "Total", "Branch", "Status"]);
+  await expect(widget("Invoices").getByRole("row", { name: new RegExp(made.a?.number ?? "") })).toContainText("$123.45");
+});
+
+test("POLISH-004: Table: a column shown as a badge is offered each of its values to give a colour, and the chips on the page wear them", async () => {
+  await openBuilder("tables", /^Invoices/);
+  await outline().getByRole("button", { name: "Invoices", exact: true }).click();
+  await tabOf("Display").click();
+  await rowOf("Status").click();
+  await choose(columnEditor("Status"), "Badge").click();
+  // The values are the ones in the column: Conditions offers them with their counts, and so must this.
+  const colours = columnEditor("Status").getByRole("region", { name: "Badge colors" });
+  for (const value of ["paid", "unpaid", "void"]) {
+    await expect(colours.getByLabel(`Color of ${value}`), `a colour for ${value}`).toBeVisible();
+  }
+  await colours.getByLabel("Color of unpaid").selectOption({ label: "Attention" });
+  await colours.getByLabel("Color of paid").selectOption({ label: "Success" });
+  await owner.keyboard.press("Escape");
+  const table = await savedWidget("tables", "invoices", (one) => one.id === "list");
+  const status = (table.config.columns as Wid[]).find((one) => one.column === "status");
+  expect(status.as).toBe("badge");
+  expect(status.badges).toMatchObject({ unpaid: "attention", paid: "success" });
+  const row = widget("Invoices").getByRole("row", { name: new RegExp(made.a?.number ?? "") });
+  await expect(row.getByText("unpaid", { exact: true })).toBeVisible();
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Invoices/ }).click();
+  await expect(row.getByText("unpaid", { exact: true })).toBeVisible();
+});
+
+/** The editor of an action (a row action, a button above the table): the dialog named by what it says. */
+const actionEditor = (says: string) => owner.getByRole("dialog", { name: says });
+
+test("POLISH-004: Table: a row action is made in the inspector, run on the rows chosen in the published app, and who may run it is picked from the groups", async () => {
+  await openBuilder("tables", /^To pay/);
+  await outline().getByRole("button", { name: "To pay", exact: true }).click();
+  await tabOf("Actions").click();
+  // Several rows may be chosen, so an action can run on all of them.
+  await flip("Let people select several rows").check();
+  // A row action that marks the invoice paid, when it is unpaid, run only by Practice managers.
+  await settings().getByRole("button", { name: /^Row action$/ }).click();
+  await actionEditor("Action").getByRole("textbox", { name: "Says" }).fill("Mark paid");
+  await actionEditor("Mark paid").getByRole("button", { name: "Add a step" }).click();
+  await owner.getByRole("menuitem", { name: "Update the record" }).click();
+  await actionEditor("Mark paid").getByRole("button", { name: "Set another field" }).click();
+  await owner.getByRole("menuitem", { name: "Status", exact: true }).click();
+  await expect(actionEditor("Mark paid").getByText("Status", { exact: true }).first()).toBeVisible();
+  await actionEditor("Mark paid").getByRole("button", { name: /^Status becomes/ }).click();
+  await owner.getByRole("textbox").last().fill("paid");
+  await owner.keyboard.press("Enter");
+  await expect(actionEditor("Mark paid").getByRole("button", { name: "Status becomes paid" })).toBeVisible();
+  await expect(actionEditor("Mark paid")).toContainText("The clicked invoice");
+  await actionEditor("Mark paid").getByRole("button", { name: "Group" }).click();
+  await owner.getByRole("dialog", { name: "Groups" }).getByText("Practice managers", { exact: true }).click();
+  await owner.getByRole("dialog", { name: "Groups" }).getByRole("button", { name: "Done" }).click();
+  await actionEditor("Mark paid").getByRole("button", { name: "Done" }).click();
+  await savedWidget("tables", "bulk", (one) => one.id === "pay");
+  const saved = await settle("tables", "bulk", "pay", (one) =>
+    (one.config?.rowActions as Wid[] | undefined)?.[0]?.action?.runBy ? one : undefined,
+  );
+  const rowAction = ((saved as Wid).config.rowActions as Wid[])[0];
+  expect(rowAction.label).toBe("Mark paid");
+  expect(rowAction.action.runBy.groups).toEqual(["groups/practice-managers"]);
+  expect(rowAction.action.steps[0]).toMatchObject({ do: "update" });
+});
+
+// ----- 9. Publishing -----
+
+/** The pill that says how many changes the draft has against what people see. */
+const draftPill = () => owner.getByRole("button", { name: /^\d+ draft changes?$/ });
+/** "Ready to publish", the popover under the Publish button. */
+const readyToPublish = () => owner.locator("[data-publish-check]");
+const publishButton = () => owner.getByRole("button", { name: "Publish", exact: true });
+/** Opens the check, and waits until it has read what publishing does. */
+async function openCheck() {
+  await publishButton().first().click();
+  await expect(readyToPublish().getByRole("heading", { name: "Ready to publish" })).toBeVisible();
+  await expect(readyToPublish().getByText("Checking what publishing does…")).toHaveCount(0);
+}
+
+test("POLISH-010: the publish check blocks what cannot work, says why, passes once it is fixed, lists the changes, and publishing clears the pill", async () => {
+  await openBuilder("publish", /^Blank/);
+  await expect(owner.getByRole("status").filter({ hasText: "Published." })).toBeVisible();
+  await expect(draftPill()).toHaveCount(0);
+  await addAndSave("publish", "blank", "Chart", "core/chart");
+  await expect(draftPill()).toBeVisible();
+  // A chart with nothing to read cannot be saved as it is: Publish is off, and the page says why.
+  await expect(publishButton().first()).toBeDisabled();
+  await expect(owner.getByText(/To fix before it can be published/)).toBeVisible();
+  await expect(owner.getByText(/Chart needs a source to show/)).toBeVisible();
+  // Fixed: it reads the invoices. Now every check passes and the changes are listed.
+  await chooseSource("Invoices");
+  // A row action with no steps is another thing the check stops: its action is not complete.
+  await addAndSave("publish", "blank", "Table", "core/table");
+  await chooseSource("Invoices");
+  await tabOf("Actions").click();
+  await settings().getByRole("button", { name: /^Row action$/ }).click();
+  await actionEditor("Action").getByRole("button", { name: "Done" }).click();
+  await openCheck();
+  await expect(readyToPublish().getByRole("alert")).toContainText("Publish is off until");
+  await expect(readyToPublish().getByRole("button", { name: /^Publish/ })).toBeDisabled();
+  await expect(readyToPublish().locator('[data-check="fail"]').first()).toContainText(/not complete/);
+  await expectNoAxeViolations(owner, "the publish popover with a blocker");
+  await owner.keyboard.press("Escape");
+  await expect(readyToPublish()).toHaveCount(0);
+  await settings().getByRole("button", { name: /^Action No steps/ }).click();
+  await actionEditor("Action").getByRole("button", { name: "Add a step" }).click();
+  await owner.getByRole("menuitem", { name: "Show a message" }).click();
+  await actionEditor("Action").getByRole("button", { name: "Done" }).click();
+  await openCheck();
+  await expect(readyToPublish().locator('[data-check="fail"]')).toHaveCount(0);
+  await expect(readyToPublish().getByText("All data sources found")).toBeVisible();
+  const changes = readyToPublish().getByRole("region", { name: "Changes" });
+  await expect(changes).toContainText("2 changes");
+  await expect(changes).toContainText("Added chart");
+  await expect(changes).toContainText("Added table");
+  const publish = readyToPublish().getByRole("button", { name: "Publish 2 changes" });
+  await expect(publish).toBeEnabled();
+  await expectNoAxeViolations(owner, "the publish popover that passes");
+  await publish.click();
+  // Published: the pill is gone, the header says so, and the served app has the chart.
+  await expect.soft(draftPill(), "publishing clears the pill").toHaveCount(0);
+  await expect(owner.getByRole("status").filter({ hasText: "Published." })).toBeVisible();
+  const live = (await ok(owner, "GET", `${W}/interfaces/${path("publish")}`)).body;
+  expect(live.pages.find((one: { id: string }) => one.id === "blank").widgets).toHaveLength(2);
+  await owner.reload();
+  await expect(draftPill()).toHaveCount(0);
+  await expect(owner.getByRole("status").filter({ hasText: "Published." })).toBeVisible();
+  // Nothing is left to publish: the check says the app is as people see it.
+  await openCheck();
+  await expect(readyToPublish().getByRole("region", { name: "Changes" })).toContainText(
+    "The app is as people see it now.",
+  );
+  await owner.keyboard.press("Escape");
+});
+
+/** A member of Fernhill, signed in in a browser of their own. */
+async function signedInAs(
+  browser: import("./test.ts").Browser,
+  email: string,
+  size = { width: 1440, height: 1000 },
+): Promise<Page> {
+  const person = await (await browser.newContext({ viewport: size })).newPage();
+  await signInWithPassword(person, email, PASSWORD);
+  return person;
+}
+
+test("POLISH-010: someone who may not publish is told why, in words, and what they changed is not published", async ({
+  browser,
+}) => {
+  // Amara Okafor is Fernhill's clinical director, a viewer of the workspace: she may look at the
+  // builder, not publish.
+  // The maker leaves a change unpublished.
+  const body = structuredClone(await drafted("publish")) as { title: string; pages: Wid[] };
+  body.pages.push({ id: "extra", title: "Extra", widgets: [] });
+  await ok(owner, "PUT", `${W}/drafts/${path("publish")}`, { kind: "interface", schemaVersion: 2, body });
+  const person = await signedInAs(browser, "amara.okafor@fernhill.example");
+  await person.goto(`${L}/screens/${path("publish")}`);
+  await expect(person.getByRole("heading", { name: `Publish ${stamp}`, level: 1 })).toBeVisible({
+    timeout: 30_000,
+  });
+  const before = await drafted("publish");
+  const publish = person.getByRole("button", { name: "Publish", exact: true }).first();
+  await publish.click();
+  const check = person.locator("[data-publish-check]");
+  await expect(check.getByRole("button", { name: "Publish 1 change" })).toBeEnabled();
+  await check.getByRole("button", { name: "Publish 1 change" }).click();
+  await expect(
+    person.getByText(/You can change this app but not publish it here\. Ask someone who may deploy/),
+    "a person who may not publish is told why",
+  ).toBeVisible();
+  // Nothing was published by it, and the draft is kept.
+  const live = (await ok(owner, "GET", `${W}/interfaces/${path("publish")}`)).body;
+  expect(live.pages).toHaveLength(1);
+  expect((await drafted("publish")).pages).toHaveLength(2);
+  await expectNoAxeViolations(person, "the builder as someone who may not publish");
+  await person.context().close();
 });

@@ -29,6 +29,7 @@ import { ApprovalFlowsProvider } from "../../kit/inspector/widgets/approvalFlows
 import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
 import { useShortcut } from "../../kit/keys.ts";
 import { EditOnPage } from "../../kit/markdown/onThePage.ts";
+import { reducedMotion } from "../../kit/motion.ts";
 import { AddFormDialog } from "./AddFormDialog.tsx";
 import { AddToPage } from "./AddToPage.tsx";
 import { ButtonOffers } from "./ButtonOffers.tsx";
@@ -206,8 +207,15 @@ export function PageEditor({
     const cell = document.querySelector<HTMLElement>(
       `[data-canvas] [data-widget-cell="${CSS.escape(selected)}"]`,
     );
-    cell?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    cell?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
   }, [selected, value.widgets.length]);
+  // Another page opens at its top, not where the last one was scrolled to.
+  const pageId = pageInfo?.page.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the page changes, and reads nothing of it
+  useEffect(() => {
+    const canvas = document.querySelector<HTMLElement>("[data-canvas]");
+    if (canvas) canvas.scrollTop = 0;
+  }, [pageId]);
   const [forming, setForming] = useState(false);
   /** The button whose "Group with other buttons…" is open. */
   // The button asked about, and what it may be grouped with, as they were when asked: the

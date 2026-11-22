@@ -220,7 +220,8 @@ export const PREVIEWS: Record<string, Preview> = {
 const flowWords = (path: string, title: string | null) => {
   if (title) return title;
   const last = path.split("/").at(-1) ?? path;
-  return last.replace(/[_-]+/g, " ");
+  const words = last.replace(/[_-]+/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 };
 
 /**

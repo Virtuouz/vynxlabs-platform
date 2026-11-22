@@ -291,14 +291,14 @@ export function chartFor(
   };
   // What is along the bottom, as it fits: tilted or cut short, never one name over the next.
   const count = new Set(rows.map((row) => String(row[x]))).size;
-  const plot = Math.max(120, (room.width ?? 560) - 56);
+  const plot = Math.max(120, (room.width ?? 560) - 46);
   const band = plot / Math.max(1, count);
   const wide = room.measure ?? ((text: string) => text.length * 5.6);
   const longest = Math.max(
     0,
     ...rows.map((row) => wide(String(row[xField] ?? "").replace(/_/g, " "))),
   );
-  const tilted = !temporal && typeOf(x) !== "number" && count > 1 && longest > band * 0.92;
+  const tilted = !temporal && typeOf(x) !== "number" && count > 1 && longest > band * 0.98;
   const words = "replace(datum.label, regexp('_', 'g'), ' ')";
   const categoryAxis = {
     labelAngle: tilted ? -45 : 0,
@@ -306,7 +306,7 @@ export function chartFor(
     labelOverlap: tilted ? false : "greedy",
     labelLimit: tilted
       ? Math.min(110, Math.max(54, Math.floor(band * 2.4)))
-      : Math.max(48, Math.floor(band * 0.95)),
+      : Math.max(48, Math.floor(band)),
     labelExpr: words,
     grid: false,
   };

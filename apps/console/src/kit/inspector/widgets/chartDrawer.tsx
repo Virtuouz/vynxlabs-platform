@@ -19,6 +19,7 @@ import type { ChartKind, ChartShape } from "@volvel/widgets-core/views";
 import {
   chartFits,
   isComparing,
+  orderRows,
   PALETTES,
   suggestedMark,
   withCompare,
@@ -264,11 +265,15 @@ export function MiniChart({ kind, values }: { kind: ChartKind; values: readonly 
 }
 
 /** The figures a preview is drawn from: the real summary when the host gave it, else a sample. */
-function figures(query: Query, data: DrawerData | undefined) {
+function figures(query: Query, data: DrawerData | undefined, order?: unknown) {
   const summary = data?.summary ?? sampleSummary(query, data?.counts);
   const name = summary.values[0] ?? "";
   return {
-    values: summary.rows.map((row) => Number(row[name]) || 0),
+    // In the chart's own order, so that the small one is the shape of the one on the page.
+    values: (order === "biggest" || order === "smallest" || order === "label"
+      ? orderRows([...summary.rows], summary.breakdowns[0] ?? "", [name], order)
+      : summary.rows
+    ).map((row) => Number(row[name]) || 0),
     count: summary.rows.length,
     real: data?.summary !== undefined,
   };
@@ -285,7 +290,7 @@ export function ChartData({ env, data }: SectionProps) {
   const first = groups[0];
   const dated = first?.type !== undefined && TEMPORAL.has(first.type);
   const noun = first ? (dated ? (first.bucket ?? "day") : lower(first.column)) : "rows";
-  const shown = figures(query, data);
+  const shown = figures(query, data, dated ? undefined : env.config.order);
   const words = readsAs(query, env.config, shown.count);
   const kind = kindOf(env.config);
   const order = (env.config.order as string | undefined) ?? "came";

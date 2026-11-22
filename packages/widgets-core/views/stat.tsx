@@ -71,8 +71,9 @@ export function StatView(props: WidgetViewProps<StatConfig>) {
         {formatNumber(value, config.format)}
       </span>
       {against || caption ? (
-        // One line, as the boards draw it: the change, then the caption. The caption wins the
-        // room; with none, the period is named there. The whole sentence is the tooltip.
+        // The change, then the caption, over at most two lines: a narrow card wraps it under the
+        // change rather than cutting it. With no caption the period is named there. The whole
+        // sentence is the tooltip.
         <span
           title={against?.text}
           className="mt-1 flex min-w-0 items-start gap-x-1.5 text-[12.5px] text-ink-muted"
@@ -89,7 +90,7 @@ export function StatView(props: WidgetViewProps<StatConfig>) {
           ) : null}
           <span
             aria-hidden={against ? "true" : undefined}
-            className={`min-w-0 ${size.narrow ? "" : "truncate"}`}
+            className={`min-w-0 ${size.narrow ? "" : "line-clamp-2"}`}
             title={caption ?? undefined}
           >
             {caption ||

@@ -191,9 +191,7 @@ describe("Approvals in the selector", () => {
     const { dialog } = open({
       suggestions: {
         table: "this page",
-        items: [
-          { key: "approvals", label: "Approvals", hint: "Stock orders asks for a decision" },
-        ],
+        items: [{ key: "approvals", label: "Approvals", hint: "Stock orders asks for a decision" }],
         onPick,
       },
     });

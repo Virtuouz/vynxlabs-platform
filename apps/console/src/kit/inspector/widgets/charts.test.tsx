@@ -500,8 +500,12 @@ test("pivot data: the columns can be cut by another period", async () => {
 
 test("pivot display: shading and the two totals, shown unless switched off", () => {
   show(<Harness start={visits()} definition={pivot} tab="display" />);
+  // A new pivot is shaded, as board 15 draws it; the switch turns it off.
+  expect(
+    screen.getByRole("switch", { name: "Shade cells by size" }).getAttribute("aria-checked"),
+  ).toBe("true");
   fireEvent.click(screen.getByRole("switch", { name: "Shade cells by size" }));
-  expect(last().config?.shade).toBe(true);
+  expect(last().config?.shade).toBe(false);
   expect(
     screen.getByRole("switch", { name: "Total for each row" }).getAttribute("aria-checked"),
   ).toBe("true");

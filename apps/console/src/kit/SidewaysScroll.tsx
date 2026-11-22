@@ -32,7 +32,7 @@ export function SidewaysScroll({
   useEffect(() => {
     const element = box.current;
     if (!element) return;
-    const more = element.scrollWidth > element.clientWidth + 24;
+    const more = element.scrollWidth > element.clientWidth + 2;
     setEdges((before) =>
       before.more === more
         ? before
@@ -47,7 +47,7 @@ export function SidewaysScroll({
     const element = box.current;
     if (!element) return;
     const measure = () => {
-      const more = element.scrollWidth > element.clientWidth + 24;
+      const more = element.scrollWidth > element.clientWidth + 2;
       setEdges((before) => {
         const next = {
           more,

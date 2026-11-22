@@ -66,7 +66,7 @@ describe("the definitions", () => {
     expect(h.rowTotals).toMatchObject({ control: "switch" });
     expect(h.columnTotals).toMatchObject({ control: "switch" });
     expect(Object.keys(pivot.config.properties)).toContain("totals");
-    expect(pivot.defaults).toEqual({ rowTotals: true, columnTotals: true });
+    expect(pivot.defaults).toEqual({ shade: true, rowTotals: true, columnTotals: true });
   });
 });
 

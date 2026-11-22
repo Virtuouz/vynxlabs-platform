@@ -726,7 +726,7 @@ export const pivot = defineWidget({
     },
     additionalProperties: false,
   },
-  defaults: { rowTotals: true, columnTotals: true },
+  defaults: { rowTotals: true, columnTotals: true, shade: true },
   events: { cellClick: { gives: "group", label: "When a cell is clicked" } },
   layout: { min: { w: 4, h: 4 }, default: { w: 6, h: 7 }, phone: "stack" },
 });

@@ -29,7 +29,7 @@ import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, movedPage } from "./pageKinds.ts";
 import { problemWords } from "./publishCheck.ts";
 import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
-import type { Started } from "./starters.ts";
+import type { Start, Started } from "./starters.ts";
 
 export { VIEWPORTS };
 
@@ -73,6 +73,8 @@ export function AppBuilder({
   const [publishing, setPublishing] = useState(false);
   /** "+ Page" is asking what to start from. */
   const [addingPage, setAddingPage] = useState(false);
+  /** "A list of Invoices" asked for on an empty page: that page is what the start becomes. */
+  const [starting, setStarting] = useState<{ start: Start; table: string; page: string }>();
   const [reviewing, setReviewing] = useState(false);
   const revision = useRef<number | undefined>(undefined);
   const latest = useRef<InterfaceBody | undefined>(undefined);
@@ -309,7 +311,15 @@ export function AppBuilder({
   };
   /** A page made by "+ Page", with the sheet and the modal it needs: one step, which Undo takes back whole. */
   const addPage = (started: Started) => {
+    const empty = starting?.page;
     change((draft) => {
+      // Started on an empty page: that page is the start's first, not left behind empty.
+      const was = empty ? draft.pages.findIndex((one) => one.id === empty) : -1;
+      if (was >= 0 && draft.pages[was]?.widgets.length === 0 && draft.pages.length > 1) {
+        draft.pages.splice(was, 1);
+      } else if (was >= 0 && draft.pages[was]?.widgets.length === 0) {
+        draft.pages.length = 0;
+      }
       for (const added of started.pages) {
         if (draft.pages.length < MAX_PAGES && !draft.pages.some((one) => one.id === added.id)) {
           draft.pages.push(added);
@@ -317,6 +327,7 @@ export function AppBuilder({
       }
     }, "adding a page");
     setAddingPage(false);
+    setStarting(undefined);
     setPageId(started.open);
     setSelected(undefined);
     if (started.told)
@@ -525,6 +536,10 @@ export function AppBuilder({
             pages: body.pages,
             record: samples[page.id],
             onRecord: (id) => setSamples((before) => ({ ...before, [page.id]: id })),
+            onStart: (start, table) => {
+              setStarting({ start, table, page: page.id });
+              setAddingPage(true);
+            },
             onOpen: openPage,
             settingsOpen,
             onCloseSettings: () => setSettingsOpen(false),
@@ -584,7 +599,11 @@ export function AppBuilder({
       ) : null}
       <NewPageDialog
         open={addingPage}
-        onClose={() => setAddingPage(false)}
+        onClose={() => {
+          setAddingPage(false);
+          setStarting(undefined);
+        }}
+        preset={starting}
         root={root}
         pages={body.pages}
         onMake={addPage}

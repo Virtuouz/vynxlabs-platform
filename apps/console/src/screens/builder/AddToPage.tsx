@@ -56,6 +56,7 @@ export function AddToPage({
   onAdd,
   onCarry,
   suggestions,
+  onClosed,
   target,
   catalog,
   startTable,
@@ -70,6 +71,8 @@ export function AddToPage({
   /** Where a click adds, when it is not the end of the page: "Orders", "Views › By status". */
   target?: string | undefined;
   /** "This page shows Invoices. Common next steps: …": what is worth adding to what the page shows. */
+  /** Runs once it has closed and left: the editor puts the focus on the widget just placed. */
+  onClosed?: () => void;
   suggestions?: {
     table: string;
     items: readonly { key: string; label: string; hint?: string }[];
@@ -265,6 +268,7 @@ export function AddToPage({
       title="Add to page"
       size="wide"
       width={1042}
+      {...(onClosed ? { onClosed } : {})}
       bare
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the arrow keys walk the tiles inside; each is reachable by Tab as well */}
@@ -276,6 +280,12 @@ export function AddToPage({
           className="flex h-14 shrink-0 items-center gap-3 border-line border-b px-4"
           onSubmit={(event) => {
             event.preventDefault();
+            // A widget typed by its name is that widget, whatever a suggestion says about it.
+            const named = typed.trim().toLowerCase();
+            const exact = named
+              ? found.find((one) => one.title.toLowerCase().startsWith(named))
+              : undefined;
+            if (exact) return add(exact);
             const [first] = suggested;
             if (first) return pick(first.key);
             const [one] = found;

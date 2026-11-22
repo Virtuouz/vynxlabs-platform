@@ -177,6 +177,12 @@ export function RowsItUses({
 // ---------------------------------------------------------------------------
 // Source
 
+/** A saved query by its name, as a person says it: "Visits by clinic", not "reports/visits-by-clinic". */
+export const queryTitle = (path: string): string => {
+  const last = (path.split("/").pop() ?? path).replace(/[._-]+/g, " ").trim();
+  return last === "" ? path : last.charAt(0).toUpperCase() + last.slice(1);
+};
+
 function SourceRow({
   env,
   input,
@@ -223,9 +229,9 @@ function SourceRow({
     ...(offered.includes("query")
       ? catalog.queries.map((one) => ({
           value: `query:${one.path}`,
-          label: `Query: ${one.path}`,
+          label: queryTitle(one.path),
           icon: Database,
-          ...(one.description ? { hint: one.description } : {}),
+          hint: one.description || one.path,
         }))
       : []),
     ...(offered.includes("sql") ? [{ value: "sql:", label: "SQL written here", icon: Code2 }] : []),
@@ -251,6 +257,8 @@ function SourceRow({
       editor={
         <ChoiceList
           label="Where it reads from"
+          findLabel="Find a table or query"
+          onEnter
           value={value}
           options={options}
           onChange={(next) => {

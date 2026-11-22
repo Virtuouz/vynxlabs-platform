@@ -12,7 +12,7 @@ import { GRID } from "@volvel/screens";
 import { Button, Closing, EmptyState, Kbd } from "@volvel/ui";
 import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../../ask.tsx";
 import { edgeShadows } from "../../kit/edgeShadows.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
@@ -60,7 +60,7 @@ import { useGroupKeys } from "./groupKeys.ts";
 import { Outline } from "./Outline.tsx";
 import { PageSettings } from "./PageSettings.tsx";
 import { DeviceBanner, PhoneFrame, ViewAsNote } from "./PhoneFrame.tsx";
-import { SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
+import { kindOf, SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
 import { choiceOf, openedPage, RowClickEditor } from "./RowClickEditor.tsx";
 import {
   type Edit,
@@ -85,6 +85,7 @@ import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
 import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
 import { approvalsSuggestion } from "./selectorData.ts";
+import { STARTS, startWords } from "./starters.ts";
 import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
 import { TextOnPage } from "./TextOnPage.tsx";
 
@@ -141,6 +142,8 @@ export interface PageInfo {
   /** Another page of the app is changed, found by its id: the detail a row opens, made another kind. */
   onSetPage?: (next: Page, label: string) => void;
   onRemovePage: (() => void) | undefined;
+  /** "A list of Invoices" or "A record page for Invoice" from an empty page: asks the builder to make it (the empty page becomes it). */
+  onStart?: ((start: "list" | "record", table: string) => void) | undefined;
 }
 
 /**
@@ -222,6 +225,8 @@ export function PageEditor({
     hostChange({ ...next, widgets: fitContainers(next.widgets) }, label, key);
   };
   const [adding, setAdding] = useState(false);
+  /** The widget just placed: the focus goes to it when "Add to page" closes, its settings next. */
+  const justPlaced = useRef<string | undefined>(undefined);
   // A widget chosen in the outline, or one just added at the end of the page, is brought into view.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the count makes it run again once an added widget is drawn
   useEffect(() => {
@@ -268,6 +273,17 @@ export function PageEditor({
     page: pageInfo?.page ?? { id: "", title: "", widgets },
   };
   const suggested = pageInfo ? pageTable(context, mainTable(widgets, catalog)) : undefined;
+  // An empty page of an app offers the starts "Add a page" has, from the table the app reads most or its first.
+  const startTable =
+    pageInfo?.onStart && !readOnly && widgets.length === 0 && kindOf(pageInfo.page) === "page"
+      ? (suggested ?? catalog.tables[0]?.name)
+      : undefined;
+  const starts = startTable
+    ? [
+        { key: "start:list", label: startWords("list", startTable), hint: STARTS.list },
+        { key: "start:record", label: startWords("record", startTable), hint: STARTS.record },
+      ]
+    : [];
   const suggestedInfo = useTableInfo(root, suggested);
   const nextSteps = suggestionsFor(context, suggestedInfo);
   const widget = widgets.find((one) => one.id === selected);
@@ -287,7 +303,10 @@ export function PageEditor({
   /** A change that also touches filters and pages (a detail, a form, a next step): one step to Undo. */
   const apply = (edit: Edit, label: string) => {
     onChange({ widgets: edit.widgets, addPages: edit.addPages }, label);
-    if (edit.select) onSelect(edit.select);
+    if (edit.select) {
+      justPlaced.current = edit.select;
+      onSelect(edit.select);
+    }
     setAdding(false);
     setForming(false);
     setTold(edit.told);
@@ -296,6 +315,11 @@ export function PageEditor({
   // An approval step in the workspace, and none on the page to decide it: offered with the next steps.
   const approvalsOffered = pageInfo ? approvalsSuggestion(lists.approvals, widgets) : undefined;
   const pickNext = (key: string) => {
+    if (key.startsWith("start:") && startTable) {
+      setAdding(false);
+      pageInfo?.onStart?.(key === "start:list" ? "list" : "record", startTable);
+      return;
+    }
     if (key === "approvals") {
       const found = definitionOf("core/approvals");
       if (found) add(found);
@@ -336,6 +360,7 @@ export function PageEditor({
     if (definition.role === "filters" && !at) {
       const made = insertFilterWidget(widgets, definition, undefined, catalog);
       put(made.widgets, `adding ${definition.title.toLowerCase()}`);
+      justPlaced.current = made.id;
       onSelect(made.id);
       setAdding(false);
       setTold(`${definition.title} is added at the top of the page.`);
@@ -363,6 +388,7 @@ export function PageEditor({
       next = bindHolderFilters(next, filtersOf([added]), catalog);
     }
     put(next, `adding ${definition.title.toLowerCase()}`);
+    justPlaced.current = id;
     onSelect(id);
     setAdding(false);
     setTold(
@@ -638,9 +664,20 @@ export function PageEditor({
                   title="Nothing on this page yet"
                   action={
                     readOnly ? undefined : (
-                      <Button variant="primary" onClick={() => setAdding(true)}>
-                        <Plus aria-hidden="true" size={16} /> Add to page
-                      </Button>
+                      <span className="flex flex-wrap items-center justify-center gap-2">
+                        <Button variant="primary" onClick={() => setAdding(true)}>
+                          <Plus aria-hidden="true" size={16} /> Add to page
+                        </Button>
+                        {starts.map((one) => (
+                          <Button
+                            key={one.key}
+                            variant="secondary"
+                            onClick={() => pickNext(one.key)}
+                          >
+                            {one.label}
+                          </Button>
+                        ))}
+                      </span>
                     )
                   }
                 >
@@ -844,6 +881,15 @@ export function PageEditor({
         target={addsTo ? targetWords(widgets, addsTo) : undefined}
         catalog={catalog}
         startTable={suggested}
+        onClosed={() => {
+          const id = justPlaced.current;
+          justPlaced.current = undefined;
+          if (!id) return;
+          // The placed widget is the next stop, its settings after it, not the header the focus fell back to.
+          document
+            .querySelector<HTMLElement>(`[data-canvas] [data-widget-cell="${CSS.escape(id)}"]`)
+            ?.focus();
+        }}
         measure={widgets.find((one) => one.type === "core/stat" && one.title)?.title}
         onAdd={(definition) => {
           // A form is made from a table: it asks what it should do first.
@@ -853,11 +899,12 @@ export function PageEditor({
           } else add(definition);
         }}
         {...(widgets.length > 0 ? { onCarry: carry } : {})}
-        {...((suggested && nextSteps.length > 0) || approvalsOffered
+        {...((suggested && nextSteps.length > 0) || approvalsOffered || starts.length > 0
           ? {
               suggestions: {
                 table: suggested ? manyOf(suggested) : "this page",
                 items: [
+                  ...starts,
                   ...(suggested ? nextSteps : []).map(({ key, label, hint }) => ({
                     key,
                     label,

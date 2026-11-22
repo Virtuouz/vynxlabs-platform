@@ -675,8 +675,16 @@ function stepParts({
     case "script": {
       const flow = step.do === "flow";
       const list = flow
-        ? env.flows.map((one) => ({ path: one.path, schema: one.manualInput }))
-        : env.scripts.map((one) => ({ path: one.path, schema: one.inputSchema }));
+        ? env.flows.map((one) => ({
+            path: one.path,
+            title: one.title ?? null,
+            schema: one.manualInput,
+          }))
+        : env.scripts.map((one) => ({
+            path: one.path,
+            title: null as string | null,
+            schema: one.inputSchema,
+          }));
       const chosen = list.find((one) => one.path === step.path);
       return card(
         flow ? "Run a workflow" : "Run a script",
@@ -695,7 +703,10 @@ function stepParts({
             options={[
               { value: "", label: flow ? "Choose a workflow" : "Choose a script" },
               ...(step.path && !chosen ? [{ value: step.path, label: step.path }] : []),
-              ...list.map((one) => ({ value: one.path, label: one.path })),
+              ...list.map((one) => ({
+                value: one.path,
+                label: one.title ? `${one.title} (${one.path})` : one.path,
+              })),
             ]}
             onChange={(path) => {
               const { input: _before, ...rest } = step;

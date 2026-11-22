@@ -8,17 +8,14 @@ import {
   blankPage,
   listPage,
   recordPage,
+  STARTS,
   type Start,
   type Started,
   startTitle,
   startWords,
 } from "./starters.ts";
 
-const LINES: Record<Start, string> = {
-  blank: "Start from nothing and add what you need.",
-  list: "A search, the table, a side sheet that shows a row, and a button that adds one.",
-  record: "One record's details, and the rows of each table that refers to it.",
-};
+const LINES = STARTS;
 
 /**
  * "Add a page": a blank one, or one started from a table: a list of it, or a page for
@@ -31,8 +28,11 @@ export function NewPageDialog({
   root,
   pages,
   onMake,
+  preset,
 }: {
   open: boolean;
+  /** Opened from an empty page: the start and table it chose. */
+  preset?: { start: Start; table: string } | undefined;
   onClose: () => void;
   root: string;
   /** The app's pages: a new page's address is made unique among them, and a sheet it needs may already be there. */
@@ -46,9 +46,10 @@ export function NewPageDialog({
   const [typed, setTyped] = useState<string>();
   useEffect(() => {
     if (!open) return;
-    setStart("blank");
+    setStart(preset?.start ?? "blank");
+    setTable(preset?.table);
     setTyped(undefined);
-  }, [open]);
+  }, [open, preset]);
   // Started from the table the app reads most, else the first.
   const usual = useMemo(
     () =>

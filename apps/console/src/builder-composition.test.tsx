@@ -671,3 +671,32 @@ test("+ Page starts a record page on a table, with the rows that refer to it", a
   expect(page?.widgets.map((one) => one.type)).toEqual(["core/detail", "core/table"]);
   expect(problems(stored)).toEqual([]);
 });
+
+test("an empty page offers the table starters, on the canvas and in Add to page, and a start replaces the empty page", async () => {
+  stored = { title: "Sales", pages: [{ id: "home", title: "Home", widgets: [] }] };
+  await open();
+  // On the empty canvas, as "Add a page" words them.
+  fireEvent.click(await screen.findByRole("button", { name: "A list of Invoices" }));
+  const dialog = within(await screen.findByRole("dialog", { name: "Add a page" }));
+  expect(
+    (dialog.getByRole("radio", { name: /A list of Invoices/ }) as HTMLInputElement).checked,
+  ).toBe(true);
+  fireEvent.click(dialog.getByRole("button", { name: "Cancel" }));
+  // And in Add to page, among the suggestions.
+  fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+  const adding = within(await screen.findByRole("dialog", { name: "Add to page" }));
+  const offered = within(await adding.findByRole("region", { name: /Suggested for/ }));
+  expect(offered.getByText("An Invoice record page")).toBeTruthy();
+  fireEvent.click(offered.getByText("A list of Invoices"));
+  const again = within(await screen.findByRole("dialog", { name: "Add a page" }));
+  await waitFor(() =>
+    expect(
+      (again.getByRole("button", { name: "Add the page" }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(again.getByRole("button", { name: "Add the page" }));
+  await saved((body) => body.pages.some((one) => one.id === "invoices"));
+  // The empty page is the start, not left behind beside it.
+  expect(stored.pages.map((one) => one.id)).not.toContain("home");
+  expect(problems(stored)).toEqual([]);
+});

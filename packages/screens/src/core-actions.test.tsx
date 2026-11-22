@@ -210,7 +210,7 @@ describe("record detail", () => {
     );
     const heading = await screen.findByRole("heading", { name: /INV-1/ });
     // The status is a chip beside the heading.
-    expect(heading.parentElement?.textContent).toContain("Open");
+    expect(heading.parentElement?.parentElement?.textContent).toContain("Open");
     const money = screen.getByText("Money").closest("section") as HTMLElement;
     expect(within(money).getByText("$120.00")).toBeTruthy();
     expect(within(money).getByText(/Nov 20, 2026/)).toBeTruthy();

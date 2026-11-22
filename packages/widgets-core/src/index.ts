@@ -893,6 +893,19 @@ export const detail = defineWidget({
           order: 2,
         }),
       },
+      figure: {
+        ...RESULT_COLUMN,
+        "x-volvel": hint({
+          tab: "display",
+          control: "column",
+          of: "record",
+          types: ["number", "integer"],
+          level: "more",
+          label: "Big figure",
+          help: "Written large under the heading. Left out, the first money field is.",
+          order: 3,
+        }),
+      },
       fields: {
         type: "array",
         maxItems: 50,

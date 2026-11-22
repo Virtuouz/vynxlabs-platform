@@ -191,7 +191,7 @@ export function Frame({
     <>
       {heading ? (
         <header
-          className={`flex min-w-0 flex-col gap-0.5 ${container ? "min-h-7 justify-center" : "px-3.5 pt-3"}`}
+          className={`flex min-w-0 flex-col gap-0.5 ${container ? "min-h-7 justify-center" : "px-[14px] pt-3"}`}
         >
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0">
             <Title
@@ -249,8 +249,8 @@ export function Frame({
         <div
           tabIndex={tabbable && !container ? 0 : undefined}
           aria-busy={reading.stale ? true : undefined}
-          className={`flex min-h-0 flex-1 flex-col ${container ? "" : "gap-2 overflow-auto"} ${bare ? "justify-center" : container ? "" : "px-3.5 pb-3.5"} outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
-            bare || container ? "" : heading ? "pt-2.5" : "pt-3.5"
+          className={`flex min-h-0 flex-1 flex-col ${container ? "" : "gap-2 overflow-auto"} ${bare ? "justify-center" : container ? "" : "px-[14px] pb-[14px]"} outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
+            bare || container ? "" : heading ? "pt-[10px]" : "pt-[14px]"
           } ${reading.stale ? "opacity-50" : ""}`}
         >
           {reading.stale ? (

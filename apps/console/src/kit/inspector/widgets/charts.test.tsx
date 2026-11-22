@@ -305,7 +305,8 @@ test("look: show values on bars, axis titles with what they say, and a named pal
   expect(last().config?.values).toBe(true);
   expect(screen.getByText("Clinic along the bottom, Total up the side")).toBeTruthy();
   fireEvent.click(screen.getByRole("switch", { name: "Show axis titles" }));
-  expect(last().config?.axisTitles).toBe(false);
+  // The axes are untitled until asked, as the boards draw them: the switch starts off.
+  expect(last().config?.axisTitles).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: /^Colors/ }));
   fireEvent.click(await screen.findByRole("radio", { name: /Warm/ }));
   expect(last().config?.colors).toBe("warm");

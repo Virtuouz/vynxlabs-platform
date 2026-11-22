@@ -1,6 +1,7 @@
 import { showValue } from "@volvel/ui";
 import { ArrowDownRight, ArrowUpRight, Minus } from "@volvel/ui/icons";
 import type { ColumnInfo, RowsData } from "@volvel/widgets";
+import { choiceWords, formatDay } from "@volvel/widgets";
 import type { ReactNode } from "react";
 import { formatNumber, labelOf, numberOf, type ValueFormat } from "./format.ts";
 
@@ -62,26 +63,6 @@ export function DotBadge({
       {children}
     </span>
   );
-}
-
-/** A stored word as a chip reads it: "no_show" is "No show", "paid" is "Paid". */
-export const sentence = (value: string): string => {
-  const spaced = value.replace(/_+/g, " ").trim();
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
-};
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-/** A day as the boards write it: "Nov 20", and with its year when it is not this one. */
-export function shortDate(value: string, now = new Date()): string | undefined {
-  const found = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
-  if (!found) return undefined;
-  const month = MONTHS[Number(found[2]) - 1];
-  if (month === undefined) return undefined;
-  const day = Number(found[3]);
-  return Number(found[1]) === now.getFullYear()
-    ? `${month} ${day}`
-    : `${month} ${day}, ${found[1]}`;
 }
 
 /** An id as the boards set it: "INV-9338", "C-1001". */
@@ -205,7 +186,7 @@ export function cellOf(
   if (type === "enum" || type === "enum_list" || Array.isArray(value)) {
     const one = (item: unknown) => {
       const found = info?.values?.find((candidate) => candidate.value === item);
-      const words = found?.label ?? sentence(String(item));
+      const words = choiceWords(info, item);
       if (spec.as === "text") return <span key={String(item)}>{words}</span>;
       return (
         <DotBadge key={String(item)} tone={spec.badges?.[String(item)]} color={found?.color}>
@@ -222,7 +203,7 @@ export function cellOf(
   if (spec.as === "badge") {
     return (
       <DotBadge tone={spec.badges?.[String(value)]}>
-        {typeof value === "string" ? sentence(value) : formatNumber(value, spec.format)}
+        {typeof value === "string" ? choiceWords(info, value) : formatNumber(value, spec.format)}
       </DotBadge>
     );
   }
@@ -231,7 +212,7 @@ export function cellOf(
   }
   if (isCode(value)) return <span className="font-mono text-[12.5px]">{value}</span>;
   if (type === "date" && typeof value === "string") {
-    const day = shortDate(value);
+    const day = formatDay(value);
     if (day) return <span className="text-ink-muted">{day}</span>;
   }
   return showValue(type, value);

@@ -21,6 +21,8 @@ interface DetailAction {
 
 interface DetailConfig {
   heading?: string;
+  /** The big figure under the heading: a column. Left out: the first money field. */
+  figure?: string;
   status?: string;
   fields?: DetailField[];
   actions?: DetailAction[];
@@ -259,6 +261,11 @@ export function DetailView({
   const first = input.columns.find((column) => !SYSTEM_COLUMNS.has(column.name))?.name;
   const heading = config.heading ?? first;
   const status = config.status;
+  // A record with a money figure reads as the boards draw it: its number small, the figure big.
+  const figure =
+    config.figure ??
+    shown.find((field) => field.format?.style === "currency" && field.column !== heading)?.column;
+  const figured = figure !== undefined && record[figure] !== null && record[figure] !== undefined;
   const actions = config.actions ?? [];
   const wanted = Number(config.across);
   const across: 1 | 2 | 3 = wanted === 1 || wanted === 3 ? wanted : 2;
@@ -332,14 +339,32 @@ export function DetailView({
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        {heading ? (
-          <h3 className="m-0 min-w-0 break-words font-mono text-display font-semibold">
-            {cellOf({ column: heading }, infoOf(heading), record[heading], rows)}
-          </h3>
-        ) : null}
+      <div className="flex items-start gap-x-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          {heading ? (
+            <h3
+              className={`m-0 min-w-0 break-words font-mono ${
+                figured ? "text-meta font-normal text-ink-muted" : "text-display font-semibold"
+              }`}
+            >
+              {cellOf({ column: heading }, infoOf(heading), record[heading], rows)}
+            </h3>
+          ) : null}
+          {figured && figure ? (
+            <span className="text-[22px] leading-7 font-semibold tracking-[-0.01em] tabular-nums">
+              {cellOf(
+                shown.find((field) => field.column === figure) ?? { column: figure },
+                infoOf(figure),
+                record[figure],
+                rows,
+              )}
+            </span>
+          ) : null}
+        </div>
         {status && record[status] !== null && record[status] !== undefined ? (
-          <span>{cellOf({ column: status }, infoOf(status), record[status], rows)}</span>
+          <span className="shrink-0">
+            {cellOf({ column: status, as: "badge" }, infoOf(status), record[status], rows)}
+          </span>
         ) : null}
       </div>
       {actions.length > 0 ? (

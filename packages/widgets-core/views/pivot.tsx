@@ -1,4 +1,4 @@
-import type { SummaryData, WidgetViewProps } from "@volvel/widgets";
+import { formatDay, type SummaryData, type WidgetViewProps } from "@volvel/widgets";
 import { formatNumber, labelOf, numberOf, type ValueFormat } from "./format.ts";
 import { listensTo, PRESSABLE, press } from "./press.tsx";
 
@@ -123,7 +123,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
             ))}
             {turned.columns.map((name) => (
               <th key={name} scope="col" className={`${cell} text-meta font-medium text-ink-muted`}>
-                {name}
+                {formatDay(name) ?? name}
               </th>
             ))}
             {rowTotals && turned.columns.length > 1 ? (
@@ -142,7 +142,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
                   scope="row"
                   className="px-2.5 py-1.5 text-left font-normal whitespace-nowrap"
                 >
-                  {header}
+                  {formatDay(header) ?? header}
                 </th>
               ))}
               {row.cells.map((value, at) => (

@@ -609,6 +609,41 @@ export function formatNumber(value: unknown, format?: ValueFormat): string {
   return value === null || value === undefined ? "—" : String(value);
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * A day as the boards write it: "Nov 20", and "Nov 20, 2025" when it is not this year. The one
+ * way every widget and every drawer says a date; `undefined` for text that is not a day.
+ */
+export function formatDay(value: unknown, now: Date = new Date()): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const found = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(value);
+  const month = found ? MONTHS[Number(found[2]) - 1] : undefined;
+  if (!found || month === undefined) return undefined;
+  const day = Number(found[3]);
+  return Number(found[1]) === now.getFullYear()
+    ? `${month} ${day}`
+    : `${month} ${day}, ${found[1]}`;
+}
+
+/** A stored word as a chip reads it: "no_show" is "No show", "paid" is "Paid". */
+export function sentenceCase(value: string): string {
+  const spaced = value.replace(/_+/g, " ").trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/**
+ * What a choice value is called: the label its table gives it, else the value with a first-letter
+ * capital. For choice columns and badges only: free text (a clinic's name) is drawn as it is.
+ */
+export function choiceWords(
+  column: { values?: readonly { value: string; label?: string }[] } | undefined,
+  value: unknown,
+): string {
+  const found = column?.values?.find((one) => one.value === value);
+  return found?.label ?? sentenceCase(String(value));
+}
+
 /**
  * A pack as a page renderer takes it: its definitions, and a view for each.
  * `View` is the renderer's component type (React's, for the platform's own).

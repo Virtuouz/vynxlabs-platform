@@ -198,12 +198,16 @@ async function openBuilder(area: Area, pageTitle: RegExp, size = { width: 1440, 
   await owner.setViewportSize(size);
   await owner.goto(`${L}/screens/${path(area)}`);
   const choose = pages().getByRole("button", { name: pageTitle });
-  await expect(choose).toBeVisible({ timeout: 30_000 });
-  // At a narrow width choosing a page opens its settings as a sheet over the builder: the
-  // journeys that need the pane at 768 or 390 open it themselves.
   if (size.width > 900) {
+    await expect(choose).toBeVisible({ timeout: 30_000 });
     await choose.click();
     await expect(choose).toHaveAttribute("aria-pressed", "true");
+  } else {
+    // At a narrow width the pages and widgets are behind a button, and choosing a page opens
+    // its settings as a sheet: the journeys that need them open them themselves.
+    await expect(owner.getByRole("button", { name: "Pages and widgets" })).toBeVisible({
+      timeout: 30_000,
+    });
   }
 }
 
@@ -436,8 +440,11 @@ test("POLISH-005: the builder does not scroll sideways at 768 or at 390, and its
     await expect(owner.getByRole("heading", { name: `Frame ${stamp}`, level: 1 })).toBeVisible();
     await expect(widget("Stat 1")).toBeVisible();
     expect(await noSideways(owner), `no sideways scroll at ${width}`).toBe(true);
-    // The pane that lists the widgets is reached, whatever the width.
-    await expect(owner.getByRole("button", { name: /^Add to page/ }).first()).toBeAttached();
+    // The pane that lists the pages and widgets is reached, whatever the width.
+    await owner.getByRole("button", { name: "Pages and widgets" }).click();
+    await expect(pages().getByRole("button", { name: /^Tall/ })).toBeVisible();
+    await expect(owner.getByRole("button", { name: /^Add to page/ }).first()).toBeVisible();
+    await owner.keyboard.press("Escape");
     await owner.reload();
     await expect(owner.getByRole("heading", { name: `Frame ${stamp}`, level: 1 })).toBeVisible();
     expect(await noSideways(owner), `no sideways scroll at ${width} after a reload`).toBe(true);
@@ -822,7 +829,6 @@ test("POLISH-004: Goal: a value, a goal and when it is reached are written, draw
   await expect(goal).toContainText("60%");
   await expect(goal.getByRole("progressbar")).toBeVisible();
   // "Show the percentage" off takes the figure away.
-  await tabOf("Display").click();
   await flip("Show the percentage").uncheck();
   await expect(goal).not.toContainText("60%");
   const saved = (await settle("charts", "blank", added.id, (one) =>
@@ -974,6 +980,9 @@ test("POLISH-004: Form: made in its dialog on a table of choice, fields unchecke
   // The preview on the right is drawn from the settings on the left, live.
   const preview = dialog.getByRole("region", { name: "Preview" });
   await expect(preview).toContainText("New invoice");
+  // Only the required columns start ticked; Payment ref is ticked, shown, then unticked.
+  await expect(preview).not.toContainText("Payment ref");
+  await dialog.getByRole("checkbox", { name: "Payment ref" }).check();
   await expect(preview).toContainText("Payment ref");
   await dialog.getByRole("checkbox", { name: "Payment ref" }).uncheck();
   await expect(preview).not.toContainText("Payment ref");
@@ -1960,8 +1969,9 @@ async function setNarrow(
   await outline().getByRole("button", { name, exact: true }).click();
   await owner.getByRole("button", { name: `More about ${name}` }).click();
   await owner.getByRole("menuitem", { name: "Layout" }).click();
-  const narrow = settings().getByRole("group", { name: "On narrow screens" });
-  await choose(narrow, how).click();
+  await settings()
+    .getByRole("combobox", { name: "On narrow screens" })
+    .selectOption({ label: how === "Keep" ? "Keep the desktop layout" : how });
   await settings().getByRole("button", { name: "Back to settings" }).click();
 }
 
@@ -1995,13 +2005,10 @@ test("POLISH-005: on a phone each widget is automatic or set by hand (hide, full
   await owner.getByRole("button", { name: "More about Alpha" }).click();
   await owner.getByRole("menuitem", { name: "Layout" }).click();
   const pane = await settings().boundingBox();
-  const hide = await choose(
-    settings().getByRole("group", { name: "On narrow screens" }),
-    "Hide",
-  ).boundingBox();
+  const hide = await settings().getByRole("combobox", { name: "On narrow screens" }).boundingBox();
   expect(
     pane && hide && hide.x + hide.width <= pane.x + pane.width,
-    "Hide is inside the pane",
+    "the narrow-screens choice is inside the pane",
   ).toBe(true);
   await settings().getByRole("button", { name: "Back to settings" }).click();
 
@@ -2013,9 +2020,21 @@ test("POLISH-005: on a phone each widget is automatic or set by hand (hide, full
   await expect(owner.getByText("Phone layout is made from the desktop one.")).toBeVisible();
   await expect(owner.getByText(/Alpha is hidden on phones/)).toBeVisible();
   await expect(widget("Alpha")).toHaveCount(0);
+  // Once the rows have arrived the page stops moving: Gamma and Delta share a row.
+  await expect(widget("Rows")).toContainText(made.a?.number ?? "");
+  let gamma: { x: number; y: number; width: number; height: number } | null = null;
+  let delta: { x: number; y: number; width: number; height: number } | null = null;
+  await expect
+    .poll(
+      async () => {
+        gamma = await widget("Gamma").boundingBox();
+        delta = await widget("Delta").boundingBox();
+        return Boolean(gamma && delta && Math.abs(gamma.y - delta.y) < 4);
+      },
+      { message: "Gamma and Delta share a row" },
+    )
+    .toBe(true);
   const beta = await widget("Beta").boundingBox();
-  const gamma = await widget("Gamma").boundingBox();
-  const delta = await widget("Delta").boundingBox();
   const rows = await widget("Rows").boundingBox();
   expect(beta && gamma && delta && rows).toBeTruthy();
   if (!(beta && gamma && delta && rows)) return;
@@ -2071,8 +2090,16 @@ test("POLISH-005: on a phone each widget is automatic or set by hand (hide, full
       const beta = await at("Beta");
       const gamma = await at("Gamma");
       const rows = await at("Rows");
+      const delta = await at("Delta");
       return Boolean(
-        beta && gamma && rows && gamma.y >= beta.y + beta.height - 1 && rows.y >= gamma.y,
+        delta &&
+          gamma &&
+          Math.abs(delta.y - gamma.y) < 4 &&
+          beta &&
+          gamma &&
+          rows &&
+          gamma.y >= beta.y + beta.height - 1 &&
+          rows.y >= gamma.y,
       );
     })
     .toBe(true);
@@ -2203,7 +2230,7 @@ test("POLISH-014: an earlier draft is picked from what each save kept, previewed
   await expect(preview).toContainText("Restoring it changes the draft");
   await history.getByRole("button", { name: "Restore", exact: true }).click();
   await expect(history).toHaveCount(0);
-  await expect(owner.getByText(/The draft saved .* is back\./)).toBeVisible();
+  await expect(owner.getByText(/Restored the draft saved .*\./)).toBeVisible();
   await expect(outline().getByRole("button")).toHaveCount(was);
   // It is the draft now, saved like any change.
   await expect
@@ -2350,7 +2377,8 @@ test("Acceptance, invoices: a table of invoices, a click that opens the record, 
   const created = await ok(owner, "GET", `${W}/rows/invoices?limit=20&sort=-created_at`);
   const row = (created.items as Wid[]).find((one) => one.number === number);
   expect(row, "the invoice was made").toBeTruthy();
-  if (row) made.new = { id: row.id, number };
+  // It is the walk's own, and it must not be counted by what the other walks count: gone at once.
+  if (row) await call(owner, "DELETE", `${W}/rows/invoices/${row.id}`);
   expect(row?.total).toBe(4200);
   await setStatus("c", "unpaid");
 });
@@ -2600,6 +2628,7 @@ for (const scheme of ["light", "dark"] as const) {
       await owner.keyboard.press("Escape");
       // The settings as a drawer, at 768.
       await openBuilder("tables", /^Invoices/, { width: 768, height: 900 });
+      await owner.getByRole("button", { name: "Pages and widgets" }).click();
       await pages()
         .getByRole("button", { name: /^Invoices/ })
         .click();

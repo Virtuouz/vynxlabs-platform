@@ -347,7 +347,6 @@ describe("the core pack draws from wire data", () => {
     const grouped = JSON.parse((await screen.findByTestId("chart")).dataset.spec as string);
     // The series is named by its label ("Paid"); the rows keep the stored value, which a click gives.
     expect(grouped.encoding.xOffset.field).toBe("status_label");
-    expect(grouped.encoding.xOffset.field).toBe("status");
   });
 
   test("a pivot: the last breakdown across the top, and totals", async () => {

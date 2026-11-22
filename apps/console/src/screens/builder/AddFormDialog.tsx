@@ -105,7 +105,7 @@ export function AddFormDialog({
         </>
       }
     >
-      <div className="grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
+      <div className="grid gap-6 md:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
         <div className="flex min-w-0 flex-col gap-4">
           <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
             <legend className="mb-2 p-0 text-body-sm font-medium text-ink">

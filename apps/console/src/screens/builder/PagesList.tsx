@@ -35,7 +35,7 @@ export function PagesList({
 }) {
   const flip = useFlip<HTMLUListElement>(pages.map((one) => one.id).join(","));
   return (
-    <section aria-labelledby="pages" className="flex flex-col gap-1">
+    <section aria-labelledby="pages" className="flex shrink-0 flex-col gap-1">
       <div className="flex items-center justify-between px-1">
         <h2 id="pages" className="m-0 text-label text-ink-muted uppercase">
           Pages

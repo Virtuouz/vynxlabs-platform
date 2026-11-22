@@ -38,8 +38,8 @@ const SHORT_TEXT = 80;
 /** Tiles across, by the width of the widget's own cell: one on a phone, then as many as asked. */
 const GRID = {
   1: "grid-cols-1",
-  2: "grid-cols-1 @[28rem]/cell:grid-cols-2",
-  3: "grid-cols-1 @[24rem]/cell:grid-cols-2 @[40rem]/cell:grid-cols-3",
+  2: "grid-cols-1 @[16rem]/cell:grid-cols-2",
+  3: "grid-cols-1 @[16rem]/cell:grid-cols-2 @[36rem]/cell:grid-cols-3",
 } as const;
 
 /** What a column holds that an editor here can't: never edited in place. */
@@ -279,9 +279,9 @@ export function DetailView({
       <div
         key={field.column}
         data-field={field.column}
-        className={`flex min-w-0 flex-col gap-0.5 rounded-control border border-line bg-surface p-3 ${
+        className={`flex min-w-0 flex-col gap-0.5 rounded-inner ${
           pressable
-            ? "cursor-text hover:bg-sunken focus-visible:outline-2 focus-visible:outline-action"
+            ? "-mx-2 -my-1 cursor-text px-2 py-1 hover:bg-sunken focus-visible:outline-2 focus-visible:outline-action"
             : ""
         }`}
         {...(pressable
@@ -322,7 +322,11 @@ export function DetailView({
     );
   };
   const group = (list: readonly DetailField[]) => (
-    <dl className={`m-0 grid gap-3 ${GRID[across]}`}>{list.map(draw)}</dl>
+    <dl
+      className={`m-0 grid gap-x-6 gap-y-4 rounded-panel border border-line bg-surface p-4 ${GRID[across]}`}
+    >
+      {list.map(draw)}
+    </dl>
   );
 
   return (

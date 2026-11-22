@@ -52,9 +52,21 @@ export function PageSettings({
   const tables = catalog.tables.map((one) => ({ value: one.name, label: heading(one.name) }));
   const opensOnRecord = kind !== "page";
   const PageIcon = pageIconOf(page.icon);
+  const KindIcon = KIND_TILE_ICONS[kind];
   return (
     <section className="flex flex-col gap-4" aria-label="Page settings">
-      <h2 className="m-0 text-heading-sm">{page.title}</h2>
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden="true"
+          className="flex size-9 shrink-0 items-center justify-center rounded-control border border-line-control bg-sunken text-action"
+        >
+          <KindIcon size={16} />
+        </span>
+        <div className="min-w-0">
+          <h2 className="m-0 truncate text-emphasis">{page.title}</h2>
+          <p className="m-0 text-meta text-ink-muted">{KIND_NAMES[kind]}</p>
+        </div>
+      </div>
       <fieldset className="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0">
         <legend className="mb-1.5 p-0 text-body-sm font-medium">Page type</legend>
         <div role="radiogroup" aria-label="Page type" className="grid grid-cols-2 gap-2">
@@ -126,33 +138,29 @@ export function PageSettings({
       />
       {kind === "page" ? (
         <div className="flex flex-col gap-1.5">
-          <div className="flex items-end gap-2">
-            <span
-              aria-hidden="true"
-              data-page-icon-preview=""
-              className="mb-px flex size-9 shrink-0 items-center justify-center rounded-control border border-line text-ink-muted"
-            >
-              {PageIcon ? <PageIcon size={16} /> : null}
-            </span>
-            <div className="min-w-0 flex-1">
-              <SelectField
-                label="Icon"
-                name="page-icon"
-                value={page.icon && PAGE_ICONS[page.icon] ? page.icon : ""}
-                options={[
-                  { value: "", label: "No icon" },
-                  ...Object.entries(PAGE_ICONS).map(([value, one]) => ({
-                    value,
-                    label: one.label,
-                  })),
-                ]}
-                onChange={(value) => {
-                  const { icon: _icon, ...rest } = page;
-                  onChange(value ? { ...rest, icon: value } : rest, "choosing the page's icon");
-                }}
-              />
-            </div>
-          </div>
+          <SelectField
+            label="Icon"
+            name="page-icon"
+            icon={
+              PageIcon ? (
+                <span data-page-icon-preview="" className="flex">
+                  <PageIcon size={16} />
+                </span>
+              ) : undefined
+            }
+            value={page.icon && PAGE_ICONS[page.icon] ? page.icon : ""}
+            options={[
+              { value: "", label: "No icon" },
+              ...Object.entries(PAGE_ICONS).map(([value, one]) => ({
+                value,
+                label: one.label,
+              })),
+            ]}
+            onChange={(value) => {
+              const { icon: _icon, ...rest } = page;
+              onChange(value ? { ...rest, icon: value } : rest, "choosing the page's icon");
+            }}
+          />
           <p className="m-0 text-meta text-ink-muted">Drawn beside its title in the app's menu.</p>
         </div>
       ) : (

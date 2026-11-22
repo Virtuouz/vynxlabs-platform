@@ -43,7 +43,7 @@ export function SheetPreview({
   return (
     // An anchor that stays at the top of what is in view as the canvas scrolls, so the sheet is
     // always as tall as the canvas is: on a wide screen the canvas is the window onto the page.
-    <div className="pointer-events-none sticky top-0 z-10 h-0 w-full">
+    <div className="pointer-events-none sticky top-0 layer-sheet h-0 w-full">
       <aside
         aria-label={`Preview of ${title}`}
         data-sheet-preview=""

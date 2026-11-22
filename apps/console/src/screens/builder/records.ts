@@ -208,7 +208,7 @@ export function makeDetail(
     (list.config?.rowActions as
       | { id: string; label: string; tone?: string; action: Action }[]
       | undefined) ?? [];
-  const detail = detailWidget(table, title, { x: 0, y: 0, w: 12, h: 12 }, rowActions);
+  const detail = detailWidget(table, { x: 0, y: 0, w: 12, h: 12 }, rowActions);
   return {
     page: { id, title, kind: "sheet", record: { table: table.name }, widgets: [detail] },
     click: openRecord(id),
@@ -221,7 +221,6 @@ export function makeDetail(
  */
 export function detailWidget(
   table: TableInfo,
-  title: string,
   at: PageWidget["at"],
   rowActions: readonly { id: string; label: string; tone?: string; action: Action }[] = [],
 ): PageWidget {
@@ -233,7 +232,7 @@ export function detailWidget(
   return {
     id: "detail",
     type: "core/detail",
-    title,
+    // The sheet says what it is in its own header; the record's heading is the first thing it shows.
     at,
     data: { record: { source: { record: "this" } } },
     config: {

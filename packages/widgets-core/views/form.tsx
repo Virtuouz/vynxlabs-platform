@@ -587,7 +587,7 @@ function FormBody({
       noValidate
       aria-busy={pending}
       onSubmit={submit}
-      className="flex min-w-0 max-w-xl flex-col gap-4"
+      className="flex min-w-0 flex-col gap-4"
     >
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
       {note ? <Notice tone="plain">{note}</Notice> : null}
@@ -602,7 +602,21 @@ function FormBody({
               {section.title}
             </h3>
           ) : null}
-          {section.fields.map(draw)}
+          {/* Two across once the form has the room (a large modal, a wide page); long text takes the row. */}
+          <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-4 @[34rem]/cell:grid-cols-2">
+            {section.fields.map((field) => {
+              const { kind, column } = info(field);
+              const whole = kind === "longtext" || kind === "json" || column.multiple === true;
+              return (
+                <div
+                  key={field.column}
+                  className={`min-w-0 ${whole ? "@[34rem]/cell:col-span-2" : ""}`}
+                >
+                  {draw(field)}
+                </div>
+              );
+            })}
+          </div>
         </div>
       ))}
       {building ? (

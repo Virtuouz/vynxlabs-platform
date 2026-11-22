@@ -156,9 +156,7 @@ export function recordPage(
   catalog: Catalog,
 ): Started {
   const noun = oneOf(table.name);
-  const widgets: PageWidget[] = [
-    detailWidget(table, `${noun} detail`, { x: 0, y: 0, w: 12, h: 9 }),
-  ];
+  const widgets: PageWidget[] = [detailWidget(table, { x: 0, y: 0, w: 12, h: 9 })];
   const related = catalog.tables
     .flatMap((other) =>
       other.columns

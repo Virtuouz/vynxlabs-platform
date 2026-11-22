@@ -344,7 +344,8 @@ describe("record detail options", () => {
     const grid = container.querySelector("dl") as HTMLElement;
     expect(grid.className).toContain("grid-cols-3".replace("grid-cols-3", "grid-cols-1"));
     expect(grid.className).toContain("/cell:grid-cols-3");
-    expect(container.querySelector("[data-field=total]")?.className).toContain("border");
+    // The fields are one card of tiles across, set off together.
+    expect(grid.className).toContain("border");
   });
 
   test("edit: a click opens an editor, Enter saves through config/edit, Escape cancels", async () => {

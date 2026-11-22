@@ -10,7 +10,7 @@ Apps made here and apps written in the repository are the same kind of thing onc
 
 ## What is on a page
 
-- **Widgets** sit on a grid of twelve columns. Each has a place and a size. On a phone the widgets stack in one column, in the order of the page.
+- **Widgets** sit on a grid of twelve columns. Each has a place and a size. On a phone the page is made from the desktop one without work: the widgets stack in the order of the page, a table becomes a list, and a widget can be left out there or set by hand. See [the phone](app-builder-editor).
 - **Search and filter** is a widget that sits where you put it, usually along the top: a search box, a clinic, a range of dates. A person who opens the page types and chooses, and every widget that is bound to one of them asks again. A filter has a value it starts with, so the page always says what it is showing.
 - A widget is bound to a filter on purpose. When you add a filter, or a widget, the builder binds every widget whose table has that filter's column, and says which. A widget over a table without the column is left alone.
 - **Sections** and **Tabs** group widgets. A Section is a heading with widgets under it, and may fold. Tabs shows one view at a time. Each holds its widgets on a grid of its own, one level deep, and on a phone what it holds is stacked.
@@ -35,9 +35,9 @@ A record page, a side sheet and a modal that opens on a record each say the tabl
 
 ## Showing and changing one record
 
-- **Record detail** shows one record: a heading, a status chip, its fields in the order and the groups you choose, and **actions**. Put its buttons in an **Action group** above it, as the invoice sheet does with Mark paid, Edit and Void. Put it on a side sheet and a table can open any of its rows into it.
+- **Record detail** shows one record: a heading, a status chip, its fields in the order and the groups you choose, and **actions**. Put its buttons in an **Action group** above it, as the invoice sheet does with Mark paid, Send invoice and Edit, and Void under **⋯**. Its fields are in sections, one to three across. It can follow the row selected in a table on the page, or show the signed-in person's own record, matched by their email: that is how a portal shows "my details". Put it on a side sheet and a table can open any of its rows into it.
 - **Form** makes a record or changes the one that is open. Each field's control is picked from its column's type: text, a number, a date, a choice from the column's values, and for a column that points at another table, a search over that table's rows by name. A column that is required is asked for, and the form says what is wrong beside the field. **The button says** is in the form's Display, and **When it is sent** in its Actions.
-- **Button** does one thing when it is pressed. Its look is **Main**, **Plain** or **Careful**.
+- **Button** does one thing when it is pressed. Its style is **Main**, **Normal**, **Quiet** or **Danger**, it may have an icon, and it sits in its own cell by a position you pick.
 
 Add a form, a detail or a button from **Add to page**. When a page shows a table, the list opens with suggestions of what goes with it: "Invoice detail", "New invoice form". **+ Page** starts a page from a table in the same way.
 
@@ -67,11 +67,11 @@ A widget can also be **shown only when** something is true, such as "the current
 
 A table or a list says what a click on a row does, from **Actions**, **When a row is clicked**. The usual choice is **Open record detail**: pick the side sheet or record page to open, and the row's record goes into it. If the table has no detail yet, **Make an invoice detail** makes a side sheet with a Record detail on it, with the table's columns already in it, and opens it on click.
 
-A table or a list can also have **row actions**: buttons at the end of each row, and in the detail of that row. Each is an action in the words above, with its own question and its own **when**. A row where the action may not be pressed doesn't offer it.
+A table or a list can also have **row actions**: buttons at the end of each row, and in the detail of that row. Each is an action in the words above, with its own question and its own **when**. A row where the action may not be pressed doesn't offer it. A table can have **buttons above it**, on its heading line, and can let people **select several rows**, so a row action runs on each.
 
 ## Who can press a button
 
-Whoever may open the app may press its buttons. The button is the permission, not the person's role:
+Whoever may open the app may press its buttons, unless the action names who may. The button is the permission, not the person's role:
 
 - An action changes **only the fields it names, to the values it names**. A button that sets Status to Paid can't change the Total, whoever presses it.
 - It works only on **rows the person may read**. A front-desk person at one clinic can mark their clinic's invoices paid, and is told there is no such invoice for another clinic's.
@@ -80,7 +80,9 @@ Whoever may open the app may press its buttons. The button is the permission, no
 
 In the builder, the draft's buttons are pressed only by someone who may edit the interface. A published app's buttons are the deployed ones, and the people the app is shared with press those. Each change is kept in the audit trail with the app, the page and the button's name.
 
-Because a button is a grant, read what it names before you publish.
+**Who can run it** narrows this. An action may name groups, of members or of end users. With groups named, the server refuses everyone else, a call made straight to the API too, and a person outside them sees the button greyed, with "Only Billing can do this". It never widens anything: rows read, fields named and conditions still hold. A widget can likewise be shown **only to some groups** (**Who can see it**), which is only what is drawn: hiding a widget is not security, and the table's row rules decide what a person reads.
+
+Because a button is a grant, read what it names before you publish. The publish check lists the actions and the groups they name.
 
 ## Changing an app's title
 

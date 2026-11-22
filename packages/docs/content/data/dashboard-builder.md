@@ -19,9 +19,13 @@ A dashboard's filters are a **Search and filter** widget, placed where you want 
 
 A **Section** groups widgets under a heading, and may fold. **Tabs** shows one view at a time, and the open tab is in the address. Drag a widget into one, or use **⋯ › Move to**, as in an app.
 
-A date range can also be what a stat or a chart is **compared** with: "Compared with the period before" uses the same length of time, ending where the range begins, and a chart draws it as a dashed line.
+A date range can also be what a stat or a chart is **compared** with: **Compare with the period before** is one switch. It uses the same length of time, ending where the range begins, and a chart draws it as a dashed line. A stat then shows the change as a percent or an amount, and **Going up is** Good or Bad sets its colour. A chart over time can also be smoothed and show a mark at each point, and a bar chart can show its values and be put in order, biggest first.
 
 When a filter is added, every widget whose table has its column is bound to it, and the editor says which. For a saved query or SQL, bind the filter to the parameter by hand.
+
+A Section can be a **Card**, and Tabs can be drawn as **Pills**. A Text widget can be a Note, a Warning or a Tip. **Filters sit** in a row, or behind a "Filters" button, which suits a phone.
+
+The page can be seen as a **Phone** or **Tablet** from the editor's header, and a widget can be hidden or stacked there, with a priority. See [building an interface](../build/app-builder-editor) for the phone layout, **View as** and restoring an earlier draft.
 
 ## Changing a widget
 

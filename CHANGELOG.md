@@ -2,6 +2,32 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 28, the builder as the boards draw it, a phone layout, and publishing after a check
+
+The builder looks and works as the owner's nineteen boards draw it, and an app has a phone layout, a readiness check before it is published, "View as" a group, and earlier drafts that can be restored. Nothing made before needs migrating: every new setting is optional, and a page without them is drawn as before, except that a list's places are renamed (see below).
+
+### For operators
+
+- **The console is set in Geist** (and Geist Mono for numbers such as "INV-9338"), with 36 px controls and hairline-separated panels. Instance branding may still change the face.
+- **The builder has one header row:** the app's name (renamed in place), "3 draft changes", Desktop, Tablet and Phone, View as, Undo and Redo, Preview and Publish. Pages and "On this page" are in the left pane; "Add to page" is a panel under a search that matches words ("What do you want people to do here?"), with suggestions, a preview and what each widget is good for. Nothing is sent anywhere.
+- **Every widget's inspector is one pattern:** the same header, four tabs with a dot where something is set, and grouped rows that open small editors. Page filters are chips, conditions are sentences, and one number-format picker shows the real number.
+- **A phone layout is made without work.** Each widget on a tablet or a phone is automatic or set by hand; narrow screens keep it full width, stack it or hide it; a priority decides what stays near the top. A table is drawn as a list on a phone, and the filters collapse to "Filters".
+- **Publish opens "Ready to publish".** It says what is missing (sources not found, actions not complete, forms not valid, a group that no longer exists, widgets hidden on a phone) and what will change, and offers "Try as" a group first.
+- **View as** shows the page, its widgets, rules and actions as a group sees them. **History** restores an earlier draft.
+- **Who can run an action.** A button, a row action, an Action group's button, a form's submit or a chart's click may name groups of members or of end users. Anyone else is refused by the server, a call made straight to the API too, and sees it greyed ("Only Billing can do this"). It only narrows. A widget can be shown only to some groups; that decides what is drawn and is not security.
+- **A sheet or a modal is sized by its maker:** drag its edge in the builder to Small, Medium, Large, Extra large or Full. Served, it opens at that size, with its widgets laid out as placed; they stack only on a narrow screen. This replaces phase 26's rule that a served sheet or modal drew its widgets in one column.
+- **A Markdown alert in a widget is drawn as a callout** with a rail and an icon. The Text widget is edited with the documentation's editor, with Source and Preview, a menu of components, and "Edit on the page".
+- **Fernhill shows it:** Clinic performance's invoices are a table with status badges, a total, row actions, "select several" and buttons above it; the invoice sheet is large, with sections and a Mark paid that Practice managers and Billing run; Visits uses a card Section and pill Tabs. The setup makes a **Billing** member group (Rowan Ellis, Devi Shah) and says so at its end; the front desk board follows the selected visit, and the pet owners' account has "My details", the owner's own client row.
+
+### For tenant developers
+
+- `Action.runBy?: { groups }` and `WidgetRules.seenBy?: { groups }` name groups by path (`groups/<key>`, `end-user-groups/<key>`, or a bare key). `runBy` is enforced on the server and checked again at publish.
+- A data input's source may be `{ selected: "<table or list id>" }` (the row chosen in it, on an app page) or `{ own: { table, by } }` (the current user's own row, where `by` holds their email).
+- `Page.size` (`small`, `medium`, `large`, `xlarge`, `full`) and `Page.icon` (a name from the kit's icon set). `PageWidget.layout` is `{ tablet?: { at }, phone?: { at }, narrow?: "full" | "stack" | "hide", priority? }`; leaving out tablet or phone means automatic.
+- **Widget options.** `core/chart`: `smooth`, `points`, `values`, `axisTitles`, `colors`, `order`, `fillGaps`, and `compare` (a switch, with the page's date filter in `compareTo`). `core/stat`: `compare`, `delta`, `goodWhen`. `core/table`: a column's `as: "badge"` with `badges`, `align`, `width`, `sortable`, `total`, `phone`; `rowHeight`, `empty`, `stripes`, `buttons`, `select`. `core/list`: places `title`, `subtitle`, `right`, `badge`, `picture` (they replace `primary`, `secondary`, `meta` and `status`) and `look`. `core/detail`: `across`, `edit`, and a field's `section`. `core/button`: `tone: "quiet"`, `icon`, `full`, `place`. `core/actions`: `lineUp`, `showUpTo`, `place`, each button's `icon`. `core/section`: `look`. `core/tabs`: `look`, `opensFirst`, `remember`. `core/filter`: `sit`. `core/text`: `look`. `labs/goal`: `goalFrom`, `reached`.
+- **In the widget SDK:** `InspectorHint.group` names the group a setting is drawn in, and the controls `position`, `tiles`, `slots`, `icon` and `groups` are new.
+- The editing core of the documentation's Markdown editor is a kit component, used by the console's docs and by the Text widget.
+
 ## Unreleased: phase 27, pages composed of sections, tabs, a search bar and toolbars
 
 A page holds its widgets in Sections and Tabs. Its search box and filters are a widget on the page, Search and filter, and related buttons are one toolbar, an Action group. Suggestions help start a page from a table. **Nothing made before is kept as it was:** a page's or a dashboard's own `filters` are refused. Re-run the examples' setup, or move them into a Search and filter widget.

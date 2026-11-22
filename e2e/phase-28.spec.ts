@@ -328,7 +328,22 @@ test.beforeAll(async ({ browser }) => {
         },
       ],
     },
-    phone: { title: `Phone ${stamp}`, pages: [{ id: "blank", title: "Blank", widgets: [] }] },
+    phone: {
+      title: `Phone ${stamp}`,
+      pages: [
+        {
+          id: "blank",
+          title: "Blank",
+          widgets: [
+            countOf("alpha", "Alpha", { x: 0, y: 0, w: 6, h: 3 }),
+            countOf("beta", "Beta", { x: 6, y: 0, w: 6, h: 3 }),
+            tableOf("rows", "Rows", { x: 0, y: 3, w: 12, h: 8 }),
+            countOf("gamma", "Gamma", { x: 0, y: 11, w: 4, h: 3 }),
+            countOf("delta", "Delta", { x: 4, y: 11, w: 4, h: 3 }),
+          ],
+        },
+      ],
+    },
     publish: { title: `Publish ${stamp}`, pages: [{ id: "blank", title: "Blank", widgets: [] }] },
     invoices: { title: `Invoices ${stamp}`, pages: [{ id: "blank", title: "Blank", widgets: [] }] },
     appointments: {
@@ -1577,6 +1592,37 @@ test("POLISH-012: a group whose name is not its key: the reason greyed and the r
   }
 });
 
+test("POLISH-004: Table: with several rows selectable, an action runs on every row chosen and on no other, in one go", async ({
+  browser,
+}) => {
+  await giveRowAction("tables", "bulk", "pay", ["groups/practice-managers"]);
+  const person = await signedInAs(browser, BOTH);
+  try {
+    await openServed(person, "tables", "bulk");
+    const table = person.getByRole("region", { name: "To pay", exact: true });
+    await expect(table.getByRole("row", { name: new RegExp(made.a?.number ?? "") })).toBeVisible({
+      timeout: 30_000,
+    });
+    // Three of the walk's six: the unpaid ones, by their checkboxes.
+    for (const key of ["a", "c", "e"]) {
+      await table
+        .getByRole("row", { name: new RegExp(made[key]?.number ?? "") })
+        .getByRole("checkbox")
+        .check();
+    }
+    const chosen = table.getByRole("region", { name: "Rows chosen" });
+    await expect(chosen).toContainText("3 chosen");
+    await chosen.getByRole("button", { name: "Mark paid" }).click();
+    // The action runs on all three; the others are as they were.
+    for (const key of ["a", "c", "e"]) await expect.poll(() => statusOf(key)).toBe("paid");
+    expect(await statusOf("b")).toBe("paid");
+    expect(await statusOf("f")).toBe("void");
+  } finally {
+    for (const key of ["a", "c", "e"]) await setStatus(key, "unpaid");
+    await person.context().close();
+  }
+});
+
 // ----- 6. Who can see it, and View as -----
 
 /** Publishes the open app through the check, as a person does. */
@@ -1703,4 +1749,208 @@ test("POLISH-013: a sheet is sized by dragging its edge and a modal by the selec
   await expect(owner.getByRole("dialog", { name: /A modal/ })).toBeVisible({ timeout: 30_000 });
   expect(await noSideways(owner)).toBe(true);
   await owner.setViewportSize({ width: 1440, height: 1000 });
+});
+
+// ----- 8. The phone -----
+
+/** "On narrow screens" for a widget, from ⋯ › Layout; then back to the settings. */
+async function setNarrow(name: string, how: "Automatic" | "Keep" | "Full width" | "Stack below" | "Hide") {
+  await outline().getByRole("button", { name, exact: true }).click();
+  await owner.getByRole("button", { name: `More about ${name}` }).click();
+  await owner.getByRole("menuitem", { name: "Layout" }).click();
+  const narrow = settings().getByRole("group", { name: "On narrow screens" });
+  await choose(narrow, how).click();
+  await settings().getByRole("button", { name: "Back to settings" }).click();
+}
+
+test("POLISH-005: on a phone each widget is automatic or set by hand (hide, full width, keep, stack below); the preview draws it, the publish check warns of what is hidden, and the served page at 390 is the preview", async () => {
+  await openBuilder("phone", /^Blank/);
+  await setNarrow("Alpha", "Hide");
+  await setNarrow("Beta", "Full width");
+  await setNarrow("Gamma", "Keep");
+  await setNarrow("Delta", "Keep");
+  await setNarrow("Rows", "Stack below");
+  await expect
+    .poll(async () => (await draftWidget("phone", "blank", (one) => one.id === "alpha"))?.layout?.narrow)
+    .toBe("hide");
+  expect((await draftWidget("phone", "blank", (one) => one.id === "beta")).layout.narrow).toBe("full");
+  expect((await draftWidget("phone", "blank", (one) => one.id === "gamma")).layout.narrow).toBe("keep");
+  expect((await draftWidget("phone", "blank", (one) => one.id === "delta")).layout.narrow).toBe("keep");
+  expect((await draftWidget("phone", "blank", (one) => one.id === "rows")).layout.narrow).toBe("stack");
+  // The inspector's segments are all reachable: none is clipped off the edge of the pane.
+  await outline().getByRole("button", { name: "Alpha", exact: true }).click();
+  await owner.getByRole("button", { name: "More about Alpha" }).click();
+  await owner.getByRole("menuitem", { name: "Layout" }).click();
+  const pane = await settings().boundingBox();
+  const hide = await choose(settings().getByRole("group", { name: "On narrow screens" }), "Hide").boundingBox();
+  expect.soft(pane && hide && hide.x + hide.width <= pane.x + pane.width, "Hide is inside the pane").toBe(true);
+  await settings().getByRole("button", { name: "Back to settings" }).click();
+
+  // The phone preview: a banner, a placeholder for what is hidden, and the table as a list.
+  await owner.getByRole("radiogroup", { name: "Screen size" }).getByRole("radio", { name: "Phone" }).click();
+  await expect(owner.getByText("Phone layout is made from the desktop one.")).toBeVisible();
+  await expect(owner.getByText(/Alpha is hidden on phones/)).toBeVisible();
+  await expect(widget("Alpha")).toHaveCount(0);
+  const beta = await widget("Beta").boundingBox();
+  const gamma = await widget("Gamma").boundingBox();
+  const delta = await widget("Delta").boundingBox();
+  const rows = await widget("Rows").boundingBox();
+  expect(beta && gamma && delta && rows).toBeTruthy();
+  if (!(beta && gamma && delta && rows)) return;
+  expect(Math.abs(beta.width - rows.width), "Beta is as wide as the page").toBeLessThan(4);
+  expect(gamma.width, "Gamma keeps its half of the row").toBeLessThan(beta.width * 0.6);
+  expect(Math.abs(gamma.y - delta.y), "Gamma and Delta share a row").toBeLessThan(4);
+  expect(rows.y, "Rows is stacked below Gamma and Delta").toBeGreaterThan(gamma.y);
+  await expect(widget("Rows").getByRole("table"), "the table is a list on a phone").toHaveCount(0);
+  // Said before it is published: what the phone hides is a warning, and does not stop Publish.
+  await openCheck();
+  await expect(readyToPublish().locator('[data-check="warn"]').first()).toContainText(/Phone layout hides 1 widget/);
+  await expect(readyToPublish().getByRole("button", { name: /^Publish \d+ changes?$/ })).toBeEnabled();
+  await expectNoAxeViolations(owner, "the publish popover with a warning");
+  await readyToPublish().getByRole("button", { name: /^Publish \d+ changes?$/ }).click();
+  await expect(owner.getByText(/^Published\./).first()).toBeVisible();
+
+  // The published page at 390 is the preview: the same widgets in the same order, as wide.
+  const inFrame = {
+    names: [] as string[],
+    wide: {} as Record<string, number>,
+  };
+  for (const name of ["Beta", "Gamma", "Delta", "Rows"]) {
+    const box = await widget(name).boundingBox();
+    if (box) {
+      inFrame.names.push(name);
+      inFrame.wide[name] = box.width / rows.width;
+    }
+  }
+  const sheet = await browserPage();
+  await sheet.setViewportSize({ width: 390, height: 844 });
+  await openServed(sheet, "phone");
+  await expect(sheet.getByRole("region", { name: "Beta", exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(sheet.getByRole("region", { name: "Alpha", exact: true }), "Alpha is hidden on phones").toHaveCount(0);
+  const at = async (name: string) => (await sheet.getByRole("region", { name, exact: true }).boundingBox()) ?? undefined;
+  const served = { beta: await at("Beta"), gamma: await at("Gamma"), delta: await at("Delta"), rows: await at("Rows") };
+  expect(served.beta && served.gamma && served.delta && served.rows).toBeTruthy();
+  if (served.beta && served.gamma && served.delta && served.rows) {
+    const order = [served.beta, served.gamma, served.rows].map((one) => one.y);
+    expect(order, "the same order down the page").toEqual([...order].sort((a, b) => a - b));
+    const page = served.beta.width;
+    expect(Math.abs(served.beta.width / served.rows.width - (inFrame.wide.Beta ?? 1)), "Beta as wide as in the preview").toBeLessThan(0.08);
+    expect(Math.abs(served.gamma.width / page - (inFrame.wide.Gamma ?? 0.5) / (inFrame.wide.Beta ?? 1)), "Gamma as wide as in the preview").toBeLessThan(0.08);
+    expect(Math.abs(served.delta.y - served.gamma.y), "Delta beside Gamma, as in the preview").toBeLessThan(4);
+  }
+  expect(await noSideways(sheet)).toBe(true);
+  await expectNoAxeViolations(sheet, "a served page on a phone");
+  await sheet.context().close();
+});
+
+/** A fresh signed-in page of the owner's, for looking at what is served. */
+async function browserPage(): Promise<Page> {
+  const next = await owner.context().browser()?.newContext({ viewport: { width: 1440, height: 900 } });
+  if (!next) throw new Error("no browser");
+  const page = await next.newPage();
+  await signInWithPassword(page, OWNER, PASSWORD);
+  return page;
+}
+
+test("POLISH-008: a drag on the phone preview asks once, and writes only the phone layout, never the desktop's", async () => {
+  await openBuilder("phone", /^Blank/, { width: 1440, height: 1900 });
+  const before = structuredClone(await draftPage("phone", "blank")) as Wid;
+  await owner
+    .getByRole("radiogroup", { name: "Screen size" })
+    .getByRole("radio", { name: "Phone" })
+    .click();
+  await expect(owner.getByText("Phone layout is made from the desktop one.")).toBeVisible();
+  // The rows have arrived, so nothing moves under the pointer.
+  await expect(widget("Rows")).toContainText(made.f?.number ?? "");
+  const drag = async (name: string, above: string) => {
+    const from = await widget(name).boundingBox();
+    const to = await widget(above).boundingBox();
+    if (!from || !to) throw new Error("not on the page");
+    await owner.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await owner.mouse.down();
+    await owner.mouse.move(to.x + to.width / 2, to.y + 10, { steps: 14 });
+    await owner.mouse.up();
+  };
+  const sure = owner.getByRole("dialog", { name: /Change the phone layout by hand/ });
+  await drag("Gamma", "Beta");
+  await expect(sure).toBeVisible();
+  await expect(sure).toContainText("made from the desktop one");
+  await sure.getByRole("button", { name: "Change the phone layout" }).click();
+  await expect(sure).toHaveCount(0);
+  const gamma = (await settle("phone", "blank", "gamma", (one) =>
+    one.layout?.phone?.at ? one : undefined,
+  )) as Wid;
+  expect(gamma.layout.phone.at, "Gamma has a place of its own on the phone").toBeTruthy();
+  // The desktop is as it was: every widget is where it was, at the size it was.
+  const after = await draftPage("phone", "blank");
+  for (const one of before.widgets as Wid[]) {
+    const now = (after.widgets as Wid[]).find((other) => other.id === one.id);
+    expect(now?.at, `${one.id} is where it was on the desktop`).toEqual(one.at);
+    expect(now?.layout?.tablet, `${one.id} has no tablet place`).toBeUndefined();
+  }
+  // Asked once: the next drag goes straight through.
+  await drag("Delta", "Beta");
+  await expect(sure).toHaveCount(0);
+  await expect
+    .poll(async () => (await widgetNow("phone", "blank", "delta"))?.layout?.phone?.at !== undefined)
+    .toBe(true);
+  // And "Go back to automatic" in its Layout is the way back.
+  await outline().getByRole("button", { name: "Gamma", exact: true }).click();
+  await owner.getByRole("button", { name: "More about Gamma" }).click();
+  await owner.getByRole("menuitem", { name: "Layout" }).click();
+  await choose(settings().getByRole("group", { name: "Phone" }), "Automatic").click();
+  await expect
+    .poll(async () => (await widgetNow("phone", "blank", "gamma"))?.layout?.phone)
+    .toBeUndefined();
+  await owner
+    .getByRole("radiogroup", { name: "Screen size" })
+    .getByRole("radio", { name: "Desktop" })
+    .click();
+  await owner.setViewportSize({ width: 1440, height: 1000 });
+});
+
+// ----- 9. Draft history -----
+
+test("POLISH-014: an earlier draft is picked from what each save kept, previewed, restored as one step, and one Undo takes it back whole", async () => {
+  await openBuilder("appointments", /^Blank/);
+  await addAndSave("appointments", "blank", "Stat", "core/stat");
+  await chooseSource("Invoices");
+  await addAndSave("appointments", "blank", "Chart", "core/chart");
+  await chooseSource("Invoices");
+  await addAndSave("appointments", "blank", "Table", "core/table");
+  await expect(outline().getByRole("button")).toHaveCount(3);
+  // The draft saved so far is on the server; the history is what each save put aside.
+  await expect
+    .poll(async () => ((await draftPage("appointments", "blank")).widgets as Wid[]).length)
+    .toBe(3);
+  await owner.getByRole("button", { name: "More ways to publish" }).click();
+  await owner.getByRole("menuitem", { name: "Restore an earlier draft" }).click();
+  const history = owner.getByRole("dialog", { name: "Restore an earlier draft" });
+  await expect(history).toBeVisible();
+  const kept = history.getByRole("list", { name: "Earlier drafts" }).getByRole("button");
+  expect(await kept.count(), "saves kept what they replaced").toBeGreaterThanOrEqual(1);
+  await expectNoAxeViolations(owner, "the Restore an earlier draft dialog");
+  // The preview names what restoring changes. Each earlier draft has fewer widgets than now.
+  const preview = history.getByRole("region", { name: "Preview" });
+  await kept.last().click();
+  const was = Number(/Blank \((\d+)\)/.exec((await preview.textContent()) ?? "")?.[1]);
+  expect(was, "the oldest kept draft has fewer widgets than the three of now").toBeLessThan(3);
+  await expect(preview).toContainText("Restoring it changes the draft");
+  await history.getByRole("button", { name: "Restore", exact: true }).click();
+  await expect(history).toHaveCount(0);
+  await expect(owner.getByText(/The draft saved .* is back\./)).toBeVisible();
+  await expect(outline().getByRole("button")).toHaveCount(was);
+  // It is the draft now, saved like any change.
+  await expect
+    .poll(async () => ((await draftPage("appointments", "blank")).widgets as Wid[]).length)
+    .toBe(was);
+  // One step: a single Undo brings back all three widgets.
+  await owner.getByRole("button", { name: "Undo restoring an earlier draft" }).click();
+  await expect(outline().getByRole("button")).toHaveCount(3);
+  await expect
+    .poll(async () => ((await draftPage("appointments", "blank")).widgets as Wid[]).length)
+    .toBe(3);
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await expect(outline().getByRole("button")).toHaveCount(3);
 });

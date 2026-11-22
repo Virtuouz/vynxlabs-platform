@@ -820,7 +820,7 @@ test("POLISH-003: a button offers to be grouped with the one beside it, and the 
   await expect(widget("Email")).toBeVisible();
 });
 
-test("POLISH-003: + Page offers A list of Invoices, which makes a page with a search, a table, a detail sheet and a New invoice form", async () => {
+test("POLISH-003: + Page offers A list of Invoices, which makes a page with a search, a table, a detail sheet and a New invoice form opened from a button on the table", async () => {
   await openBuilder(`screens/${PAGE}`, /^Play/);
   const known = new Set(((await drafted()).pages as Wid[]).map((one) => one.id));
   await owner.getByRole("button", { name: "Add a page", exact: true }).click();
@@ -847,8 +847,12 @@ test("POLISH-003: + Page offers A list of Invoices, which makes a page with a se
   const sheet = pageOf(table?.on?.rowClick?.steps?.[0]?.page);
   expect(sheet?.kind).toBe("sheet");
   expect((sheet?.widgets as Wid[]).map((one) => one.type)).toContain("core/detail");
-  const button = widgets.find((one) => one.type === "core/button");
-  const modal = pageOf(button?.on?.click?.steps?.[0]?.page);
+  // The button is on the table's heading line (its `buttons`), not a separate widget over it.
+  expect(widgets.some((one) => one.type === "core/button")).toBe(false);
+  const button = ((table?.config.buttons ?? []) as Wid[]).find((one) =>
+    /^New /.test(one.label as string),
+  );
+  const modal = pageOf(button?.action?.steps?.[0]?.page);
   expect(modal?.kind).toBe("modal");
   expect((modal?.widgets as Wid[]).map((one) => one.type)).toContain("core/form");
   expect(all.filter((one) => one.kind === "sheet" && one.title === sheet?.title)).toHaveLength(1);

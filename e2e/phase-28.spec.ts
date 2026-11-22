@@ -1295,20 +1295,34 @@ test("POLISH-004: Table: a column shown as a badge is offered each of its values
   for (const value of ["paid", "unpaid", "void"]) {
     await expect(colours.getByLabel(`Color of ${value}`), `a colour for ${value}`).toBeVisible();
   }
-  await colours.getByLabel("Color of unpaid").selectOption({ label: "Attention" });
-  await colours.getByLabel("Color of paid").selectOption({ label: "Success" });
+  // The colour of a value is a menu, as the drawer draws every picker of this kind: no <select>.
+  await colours.getByLabel("Color of unpaid").click();
+  await owner
+    .getByRole("menu", { name: "Color of unpaid" })
+    .getByRole("menuitem", { name: "Amber" })
+    .click();
+  await colours.getByLabel("Color of paid").click();
+  await owner
+    .getByRole("menu", { name: "Color of paid" })
+    .getByRole("menuitem", { name: "Green" })
+    .click();
   await owner.keyboard.press("Escape");
-  const table = await savedWidget("tables", "invoices", (one) => one.id === "list");
-  const status = (table.config.columns as Wid[]).find((one) => one.column === "status");
+  // The draft exists from the start: wait for the save of this change, not for the widget.
+  const statusOf = async () =>
+    (
+      (await draftWidget("tables", "invoices", (one) => one.id === "list"))?.config.columns as Wid[]
+    )?.find((one) => one.column === "status");
+  await expect.poll(async () => (await statusOf())?.badges?.paid).toBe("success");
+  const status = await statusOf();
   expect(status.as).toBe("badge");
   expect(status.badges).toMatchObject({ unpaid: "attention", paid: "success" });
   const row = widget("Invoices").getByRole("row", { name: new RegExp(made.a?.number ?? "") });
-  await expect(row.getByText("unpaid", { exact: true })).toBeVisible();
+  await expect(row.getByText("Unpaid", { exact: true })).toBeVisible();
   await owner.reload();
   await pages()
     .getByRole("button", { name: /^Invoices/ })
     .click();
-  await expect(row.getByText("unpaid", { exact: true })).toBeVisible();
+  await expect(row.getByText("Unpaid", { exact: true })).toBeVisible();
 });
 
 /** The editor of an action (a row action, a button above the table): the dialog named by what it says. */

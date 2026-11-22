@@ -117,15 +117,23 @@ export function listPage(table: TableInfo, title: string, pages: readonly Page[]
   const modal = form ?? formModal(plan, taken);
   if (!form) added.push(modal);
 
-  const body: PageWidget[] = [
-    openButton("new", form ? `New ${noun.toLowerCase()}` : plan.title, modal.id, {
-      x: 0,
-      y: 0,
-      w: 3,
-      h: 1,
-    }),
-    withRowClick(grid, click),
-  ];
+  // The button that makes a new one is on the table's own heading line, and moves with it.
+  const withButton: PageWidget = {
+    ...grid,
+    at: { ...grid.at, y: 0 },
+    config: {
+      ...grid.config,
+      buttons: [
+        {
+          id: "new",
+          label: form ? `New ${noun.toLowerCase()}` : plan.title,
+          tone: "primary",
+          action: { steps: [{ do: "open", page: modal.id }] },
+        },
+      ],
+    },
+  };
+  const body: PageWidget[] = [withRowClick(withButton, click)];
   // The search bar goes at the top and binds itself to what reads the table, as the inspector does.
   const filter = widgetRegistry().get(FILTER_WIDGET);
   page.widgets =

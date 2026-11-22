@@ -260,7 +260,7 @@ export function PageEditor({
     setForming(false);
     setTold(edit.told);
   };
-  const makeForm = (plan: FormPlan) => apply(formEdit(context, plan), "adding a form");
+  const makeForm = (plan: FormPlan) => apply(formEdit(context, plan, selected), "adding a form");
   const pickNext = (key: string) => {
     if (key === "form") {
       setAdding(false);
@@ -773,7 +773,8 @@ export function PageEditor({
           root={root}
           catalog={catalog}
           initialTable={suggested}
-          pageRecordTable={pageInfo.page.record?.table}
+          context={context}
+          from={selected}
           takenTitles={(pageInfo?.pages ?? []).map((one) => one.title)}
           onMake={makeForm}
         />

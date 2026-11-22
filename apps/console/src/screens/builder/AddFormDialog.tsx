@@ -8,10 +8,13 @@ import {
   controlWords,
   defaultPlan,
   type FormPlan,
+  formLine,
+  formPlacement,
   formWidget,
   isSystem,
   manyOf,
   oneOf,
+  type PageContext,
   type TableInfo,
 } from "./records.ts";
 import { corePack } from "./renderer.ts";
@@ -37,7 +40,8 @@ export function AddFormDialog({
   root,
   catalog,
   initialTable,
-  pageRecordTable,
+  context,
+  from,
   takenTitles = [],
   onMake,
 }: {
@@ -47,8 +51,10 @@ export function AddFormDialog({
   catalog: Catalog;
   /** The table the page shows, when it shows one. */
   initialTable: string | undefined;
-  /** The table of the record the page is open on, when it is a record page, side sheet or modal. */
-  pageRecordTable?: string | undefined;
+  /** The page being built: where the form's button can go. */
+  context: PageContext;
+  /** The widget the form was added from, when it was a table: its button goes there first. */
+  from?: string | undefined;
   /** The titles of the app's pages: a modal named as one of them is said to be so. */
   takenTitles?: string[];
   onMake: (plan: FormPlan) => void;
@@ -87,7 +93,7 @@ export function AddFormDialog({
       footer={
         <>
           <p className="m-0 mr-auto min-w-0 text-body-sm text-ink-muted">
-            {plan ? footNote(plan, pageRecordTable) : null}
+            {plan ? formLine(plan, formPlacement(context, plan, from)) : null}
           </p>
           <Button variant="quiet" onClick={onClose}>
             Cancel
@@ -396,19 +402,4 @@ function FormPreview({ info, plan }: { info: TableInfo | undefined; plan: FormPl
       </p>
     </section>
   );
-}
-
-/**
- * What making the form does besides making it, as `formEdit` will do it: the line has to be
- * true in every case it is shown. A modal made to make a record gets a button at the end of
- * the page; one that changes a record gets one only on a page open on a record of its table;
- * a form on the page is added at the end of it.
- */
-export function footNote(plan: FormPlan, pageRecordTable: string | undefined): string {
-  const table = manyOf(plan.table.name);
-  if (plan.where === "page") return "The form is added at the end of this page.";
-  if (plan.mode === "create") return `Also adds a “${plan.title}” button at the end of this page.`;
-  if (pageRecordTable === plan.table.name)
-    return `Also adds a “${plan.title}” button at the end of this page, which opens on the record.`;
-  return `No button is added here: this page is not open on a record of ${table}. Open the form from a button on one that is.`;
 }

@@ -1,4 +1,5 @@
 export { corePack } from "@volvel/widgets-core/views";
+export { AppView, inMenu } from "./AppView.tsx";
 export {
   type ActionsHost,
   actionAt,

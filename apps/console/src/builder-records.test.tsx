@@ -3,7 +3,6 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { filtersOf, type InterfaceBody } from "@volvel/manifest";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { footNote } from "./screens/builder/AddFormDialog.tsx";
 import { InterfaceBuilder } from "./screens/builder/AppBuilder.tsx";
 import { KIND_LINE, pageLine, withKind } from "./screens/builder/pageKinds.ts";
 import {
@@ -11,7 +10,9 @@ import {
   defaultPlan,
   detailEdit,
   formEdit,
+  formLine,
   formModal,
+  formPlacement,
   formWidget,
   onThisRecord,
   type PageContext,
@@ -362,11 +363,12 @@ test("Add a form writes the form, the modal it opens in and the button that open
       },
     },
   });
-  const button = pageOf("money")?.widgets.find((widget) => widget.type === "core/button");
-  expect(button).toMatchObject({
-    config: { label: "New invoice" },
-    on: { click: { steps: [{ do: "open", page: "new-invoice" }] } },
-  });
+  // The page has the Invoices table, so the button goes on it, not beside it.
+  const grid = pageOf("money")?.widgets.find((widget) => widget.id === "invoices");
+  expect(grid?.config?.buttons).toMatchObject([
+    { label: "New invoice", action: { steps: [{ do: "open", page: "new-invoice" }] } },
+  ]);
+  expect(pageOf("money")?.widgets.some((widget) => widget.type === "core/button")).toBe(false);
 });
 
 test("Add to page suggests what follows from the table the page shows, each correctly connected", async () => {
@@ -430,9 +432,13 @@ test("what is written is the same when it is made without the screen", () => {
     defaultPlan(invoices, "edit"),
   );
   expect(edit.addPages[0]).toMatchObject({ kind: "modal", record: { table: "invoices" } });
-  expect(edit.widgets.at(-1)).toMatchObject({
-    on: { click: { steps: [{ do: "open", record: "this" }] } },
-  });
+  // The page has the table, so each of its rows can open the form.
+  expect(edit.widgets.find((one) => one.id === "invoices")?.config?.rowActions).toContainEqual(
+    expect.objectContaining({
+      label: "Edit invoice",
+      action: { steps: [{ do: "open", page: "edit-invoice", record: "event" }] },
+    }),
+  );
   expect(onThisRecord(markPaid as never).steps[0]).toMatchObject({ record: "this" });
   expect(withKind({ id: "a", title: "A", widgets: [] }, "sheet", "invoices")).toMatchObject({
     kind: "sheet",
@@ -516,28 +522,80 @@ test("a new form starts a date today, and the Add a form row says so", () => {
   expect(controlWords(dated.columns[1] as never, "edit")).toBe("Date");
 });
 
-test("the line under Add a form is true in every case: it names the button only when one is added", () => {
-  const plan = (mode: "create" | "edit", where: "modal" | "page") => ({
-    ...defaultPlan(invoices, mode),
-    where,
+test("the button of a form goes on the table, and the line under Add a form says where", () => {
+  const table = (id: string, more: object = {}) => ({
+    id,
+    type: "core/table",
+    at,
+    data: { rows: { source: { visual: { table: "invoices" } } } },
+    ...more,
   });
-  expect(footNote(plan("create", "modal"), undefined)).toMatch(/Also adds a “New invoice” button/);
-  expect(footNote(plan("create", "page"), undefined)).toBe(
-    "The form is added at the end of this page.",
+  const context = (widgets: object[], record?: string) =>
+    ({
+      widgets,
+      filters: [],
+      pages: [],
+      page: {
+        id: "p",
+        title: "P",
+        widgets: [],
+        ...(record ? { kind: "record", record: { table: record } } : {}),
+      },
+    }) as never as PageContext;
+  const plan = (mode: "create" | "edit") => ({
+    ...defaultPlan(invoices, mode),
+    where: "modal" as const,
+  });
+
+  // One table: its `buttons` gain the button, in one edit, and no widget is added.
+  const one = context([table("a")]);
+  const made = formEdit(one, plan("create"));
+  expect(made.widgets).toHaveLength(1);
+  expect(made.widgets[0]?.config?.buttons).toEqual([
+    {
+      id: "new",
+      label: "New invoice",
+      tone: "primary",
+      action: { steps: [{ do: "open", page: made.addPages[0]?.id }] },
+    },
+  ]);
+  expect(formLine(plan("create"), formPlacement(one, plan("create")))).toBe(
+    "Also adds a “New invoice” button to the Invoices table.",
   );
-  expect(footNote(plan("edit", "modal"), "invoices")).toMatch(
-    /Also adds an? “Edit invoice” button/,
+  // Several: the one it was added from, else the first, said in the line.
+  const two = context([table("a"), table("b")]);
+  expect(
+    formEdit(two, plan("create"), "b").widgets.map(
+      (w) => (w.config?.buttons as unknown[] | undefined)?.length ?? 0,
+    ),
+  ).toEqual([0, 1]);
+  expect(
+    formEdit(two, plan("create")).widgets.map(
+      (w) => (w.config?.buttons as unknown[] | undefined)?.length ?? 0,
+    ),
+  ).toEqual([1, 0]);
+  expect(formLine(plan("create"), formPlacement(two, plan("create")))).toMatch(/the first/);
+  // None: a button at the end of the page, said so.
+  const none = context([]);
+  expect(formEdit(none, plan("create")).widgets).toHaveLength(1);
+  expect(formEdit(none, plan("create")).widgets[0]?.type).toBe("core/button");
+  expect(formLine(plan("create"), formPlacement(none, plan("create")))).toMatch(
+    /no Invoices table/,
   );
-  expect(footNote(plan("edit", "modal"), undefined)).toMatch(/No button is added here/);
-  // And formEdit does what the line says.
-  const context = {
-    widgets: [],
-    filters: [],
-    pages: [],
-    page: { id: "p", title: "P", widgets: [] } as never,
-  };
-  expect(formEdit(context, plan("create", "modal")).widgets).toHaveLength(1);
-  expect(formEdit(context, plan("edit", "modal")).widgets).toHaveLength(0);
+  // Edit: a row action on the table; with no table, a button only on a record page of it.
+  expect(formEdit(one, plan("edit")).widgets[0]?.config?.rowActions).toEqual([
+    {
+      id: "edit",
+      label: "Edit invoice",
+      action: { steps: [{ do: "open", page: "edit-invoice", record: "event" }] },
+    },
+  ]);
+  expect(formLine(plan("edit"), formPlacement(one, plan("edit")))).toMatch(/to each row/);
+  expect(formEdit(none, plan("edit")).widgets).toHaveLength(0);
+  expect(formLine(plan("edit"), formPlacement(none, plan("edit")))).toMatch(
+    /No button is added here/,
+  );
+  expect(formEdit(context([], "invoices"), plan("edit")).widgets).toHaveLength(1);
 });
 
 test("each After saving choice writes the steps it says", () => {

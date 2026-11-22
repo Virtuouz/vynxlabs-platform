@@ -188,14 +188,24 @@ export function AppBuilder({
     (pending.has(path) && (changes === undefined || changes > 0));
   const served = apps.data?.items.find((app) => app.path === appPath);
   const url = served?.url;
-  // The draft's own preview, when the app has one and there is a draft to see.
-  const previewUrl = hasChanges && served?.preview ? served.preview : url;
   const acts = runsActions(page?.widgets ?? []);
   /** Writes the draft only when there is something unsaved: looking at the check changes nothing. */
   const settle = async () => {
     if (!dirty.current && saving === "saved") return true;
     dirty.current = false;
     return save(body);
+  };
+  /** The draft, drawn as the app will be used, in a new tab: what is unsaved is saved first. */
+  const openPreview = async () => {
+    // Opened now, in the click, so a pop-up blocker lets it through; pointed at the preview once the draft is saved.
+    const tab = window.open("", "_blank");
+    if (!(await settle())) {
+      tab?.close();
+      return;
+    }
+    const address = `${link}/screens/${path}/preview`;
+    if (tab) tab.location.href = address;
+    else window.open(address, "_blank");
   };
   const review = async () => {
     if (await settle()) {
@@ -350,12 +360,8 @@ export function AppBuilder({
     ),
     more: (
       <PreviewButton
-        href={previewUrl}
-        note={
-          acts
-            ? "Opens the app as people see it. Buttons and row actions don't run while the page is being built; published, they change this workspace's records."
-            : "Opens the app as people see it, in a new tab."
-        }
+        onOpen={() => void openPreview()}
+        note="Opens the draft as people will use it, in a new tab. Actions change this workspace's rows."
       />
     ),
     primary: (

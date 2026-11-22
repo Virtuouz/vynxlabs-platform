@@ -412,12 +412,86 @@ export function openButton(
   };
 }
 
+/** The most buttons a table's heading line holds (its schema's limit). */
+const TABLE_BUTTONS_MAX = 5;
+
+/** Where the button that opens a form goes, and what it is. */
+export type FormPlacement =
+  | { kind: "table-button"; table: PageWidget; several: boolean }
+  | { kind: "row-action"; table: PageWidget; several: boolean }
+  | { kind: "page-button" }
+  | { kind: "none" };
+
 /**
- * "Add a form": the form; for a modal, the page it opens as and a button on
- * this page that opens it. An edit form opens on the record, so its button is
- * only added where there is one: on a page that is open on a record of the table.
+ * Where a modal form's opening button goes. A form that makes a record gets a button on the
+ * heading line of the table of that record on this page (the one it was added from, else the
+ * first), written into that table's `buttons`; one that changes a record gets an action on each
+ * of that table's rows. A page with no such table gets a button at the end of the page, when
+ * the form can be opened from it, and none else.
  */
-export function formEdit(context: PageContext, plan: FormPlan): Edit {
+export function formPlacement(
+  context: PageContext,
+  plan: FormPlan,
+  from?: string | undefined,
+): FormPlacement {
+  if (plan.where === "page") return { kind: "none" };
+  const table = plan.table.name;
+  const tables = context.widgets.filter(
+    (one) =>
+      one.type === "core/table" &&
+      tableOf(one) === table &&
+      (plan.mode === "create"
+        ? ((one.config?.buttons as unknown[] | undefined)?.length ?? 0) < TABLE_BUTTONS_MAX
+        : true),
+  );
+  const target = tables.find((one) => one.id === from) ?? tables[0];
+  if (target) {
+    return {
+      kind: plan.mode === "create" ? "table-button" : "row-action",
+      table: target,
+      several: tables.length > 1,
+    };
+  }
+  if (plan.mode === "create" || context.page.record?.table === table)
+    return { kind: "page-button" };
+  return { kind: "none" };
+}
+
+/** A table's name for the people building: "Invoices" for the table "invoices", else its heading. */
+const nameOfTable = (widget: PageWidget) => widget.title || manyOf(tableOf(widget) ?? "rows");
+
+/** What the line under Add a form says about the button, true of what `formEdit` then does. */
+export function formLine(plan: FormPlan, placement: FormPlacement): string {
+  const table = manyOf(plan.table.name);
+  const noun = oneOf(plan.table.name).toLowerCase();
+  if (plan.where === "page") return "The form is added at the end of this page.";
+  switch (placement.kind) {
+    case "table-button":
+      return `Also adds a “${plan.title}” button to the ${table} table${
+        placement.several
+          ? ` (the ${nameOfTable(placement.table)} table you chose, else the first)`
+          : ""
+      }.`;
+    case "row-action":
+      return `Also adds “${plan.title}” to each row of the ${table} table${
+        placement.several
+          ? ` (${nameOfTable(placement.table)}, the one you chose, else the first)`
+          : ""
+      }.`;
+    case "page-button":
+      return plan.mode === "create"
+        ? `This page has no ${table} table, so a “${plan.title}” button is added at the end of the page.`
+        : `Also adds a “${plan.title}” button at the end of this page, which opens on the ${noun}.`;
+    default:
+      return `No button is added here: this page has no ${table} table and is not open on a ${noun}. Open the form from a button on one that is.`;
+  }
+}
+
+/**
+ * "Add a form": the form; for a modal, the page it opens as and the button that opens it, put
+ * where `formPlacement` says. One edit, so one undo.
+ */
+export function formEdit(context: PageContext, plan: FormPlan, from?: string): Edit {
   const { widgets, pages } = context;
   const table = plan.table.name;
   if (plan.where === "page") {
@@ -432,25 +506,62 @@ export function formEdit(context: PageContext, plan: FormPlan): Edit {
   }
   const modal = formModal(plan, pages);
   const pageId = modal.id;
-  const opensOnRecord = plan.mode === "edit";
-  const hereHasRecord = context.page.record?.table === table;
-  const addButton = !opensOnRecord || hereHasRecord;
-  const next = [...widgets];
+  const placement = formPlacement(context, plan, from);
+  let next = [...widgets];
   let select: string | undefined;
-  if (addButton) {
+  let told: string;
+  if (placement.kind === "table-button" || placement.kind === "row-action") {
+    const key = placement.kind === "table-button" ? "buttons" : "rowActions";
+    const held = (placement.table.config?.[key] as { id: string }[] | undefined) ?? [];
+    const id = uniqueId(
+      placement.kind === "table-button" ? "new" : "edit",
+      held.map((one) => one.id),
+    );
+    const added = {
+      id,
+      label: plan.title,
+      ...(placement.kind === "table-button" ? { tone: "primary" } : {}),
+      action: {
+        steps: [
+          {
+            do: "open",
+            page: pageId,
+            ...(placement.kind === "row-action" ? { record: "event" } : {}),
+          },
+        ],
+      },
+    };
+    next = next.map((one) =>
+      one.id === placement.table.id
+        ? { ...one, config: { ...one.config, [key]: [...held, added] } }
+        : one,
+    );
+    select = placement.table.id;
+    told =
+      placement.kind === "table-button"
+        ? `The form “${plan.title}” is made as a modal, with a button above the ${manyOf(table)} table that opens it.`
+        : `The form “${plan.title}” is made as a modal, and each row of the ${manyOf(table)} table can open it.`;
+  } else if (placement.kind === "page-button") {
     const id = nextId("core/button", widgets);
     const y = bottomOf(widgets);
-    next.push(openButton(id, plan.title, pageId, { x: 0, y, w: 3, h: 1 }, opensOnRecord));
+    next.push(openButton(id, plan.title, pageId, { x: 0, y, w: 3, h: 1 }, plan.mode === "edit"));
     select = id;
+    told = `The form “${plan.title}” is made as a modal, with a button at the end of the page that opens it.`;
+  } else {
+    told = `The form “${plan.title}” is made as a modal. Open it from a button on a record's page.`;
   }
   return {
     widgets: next,
     addPages: [modal],
     ...(select ? { select } : {}),
-    told: addButton
-      ? `The form “${plan.title}” is made as a modal, with a button that opens it.`
-      : `The form “${plan.title}” is made as a modal. Open it from a button on a record's page.`,
+    told,
   };
+}
+
+/** `base`, or `base-2`, `base-3` … the first not among `taken`. */
+function uniqueId(base: string, taken: readonly string[]): string {
+  if (!taken.includes(base)) return base;
+  for (let n = 2; ; n += 1) if (!taken.includes(`${base}-${n}`)) return `${base}-${n}`;
 }
 
 // ----- "Add to page": next steps -----

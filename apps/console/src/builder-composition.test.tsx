@@ -571,20 +571,16 @@ test("the page starters make valid pages: a list with its sheet and form, and a 
   ]);
   expect(list.open).toBe("invoices");
   const page = list.pages[0];
-  expect(page?.widgets.map((one) => one.type)).toEqual([
-    "core/filter",
-    "core/button",
-    "core/table",
-  ]);
+  expect(page?.widgets.map((one) => one.type)).toEqual(["core/filter", "core/table"]);
   const grid = page?.widgets.find((one) => one.type === "core/table");
   expect(grid?.on?.rowClick).toEqual({
     steps: [{ do: "open", page: "invoice-detail", record: "event" }],
   });
   expect(grid?.data?.rows?.filters).toMatchObject([{ columns: ["number"] }]);
-  expect(page?.widgets.find((one) => one.type === "core/button")).toMatchObject({
-    config: { label: "New invoice" },
-    on: { click: { steps: [{ do: "open", page: "new-invoice" }] } },
-  });
+  // The button that makes a new one is on the table's own heading line.
+  expect(grid?.config?.buttons).toMatchObject([
+    { id: "new", label: "New invoice", action: { steps: [{ do: "open", page: "new-invoice" }] } },
+  ]);
   expect(problems({ title: "t", pages: [...pages, ...list.pages] })).toEqual([]);
 
   // A sheet or form the app has is used, not made again.

@@ -185,29 +185,13 @@ export function ViewAsMenu({
   );
 }
 
-/** "▷ Preview": the app as people see it, in a new tab. */
-export function PreviewButton({ href, note }: { href: string | undefined; note: string }) {
-  if (!href) {
-    return (
-      <Button
-        disabled
-        tooltip="Publish once, and the app can be previewed here."
-        aria-label="Preview"
-      >
-        <Play aria-hidden="true" size={14} /> Preview
-      </Button>
-    );
-  }
+/** "▷ Preview": the draft as people will use it, in a new tab at the builder's address. */
+export function PreviewButton({ onOpen, note }: { onOpen: () => void; note: string }) {
   return (
     <Tooltip label={note}>
-      <a
-        href={href}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex h-control items-center justify-center gap-2 rounded-control border border-line-control bg-surface px-3 font-medium whitespace-nowrap text-ink no-underline hover:bg-sunken"
-      >
+      <Button onClick={onOpen}>
         <Play aria-hidden="true" size={14} /> Preview
-      </a>
+      </Button>
     </Tooltip>
   );
 }

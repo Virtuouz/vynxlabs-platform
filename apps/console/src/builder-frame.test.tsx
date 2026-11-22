@@ -193,17 +193,16 @@ test("Publish is a split button: the main part opens the review, the arrow holds
   expect(await screen.findByText("Ready to publish")).toBeTruthy();
 });
 
-test("Preview opens the published app in a new tab, and is off before there is one", async () => {
+test("Preview opens the draft's own preview in a new tab, once what is unsaved is saved", async () => {
+  const tab = { location: { href: "" }, close: vi.fn() };
+  const opened = vi.spyOn(window, "open").mockReturnValue(tab as never);
   await open();
-  expect((screen.getByRole("button", { name: "Preview" }) as HTMLButtonElement).disabled).toBe(
-    true,
-  );
-  cleanup();
-  url = "https://vx.example/apps/sales/";
-  await open();
-  const link = await screen.findByRole("link", { name: /Preview/ });
-  expect(link.getAttribute("href")).toBe(url);
-  expect(link.getAttribute("target")).toBe("_blank");
+  const button = screen.getByRole("button", { name: "Preview" }) as HTMLButtonElement;
+  expect(button.disabled).toBe(false);
+  fireEvent.click(button);
+  await waitFor(() => expect(tab.location.href).toMatch(/\/screens\/.+\/preview$/));
+  expect(opened).toHaveBeenCalledWith("", "_blank");
+  opened.mockRestore();
 });
 
 test("each page is one row with its kind at the right, and + in the heading adds a page", async () => {

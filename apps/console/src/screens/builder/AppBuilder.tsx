@@ -115,6 +115,7 @@ export function AppBuilder({
       (draft) => {
         if (!current) return;
         revision.current = draft.revision;
+        setProblems(draft.problems ?? []);
         setBody(draft.body);
       },
       () => current && setNoDraft(true),

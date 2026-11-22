@@ -478,7 +478,19 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           throw notFound(`A draft at ${path}`);
         }
         const owned = await ownership(workspace.id, [row.key]);
-        return { ...summarize(row, owned.get(row.key)), body: row.body };
+        // What is wrong with it, as when it was saved: a draft read again after a reload is as
+        // true as it was after the change.
+        const problems =
+          row.kind === "interface" && !row.deleted
+            ? await interfaceProblems(kernel, workspace, row.body as unknown as InterfaceBody)
+            : row.kind === "dashboard" && !row.deleted
+              ? await dashboardProblems(kernel, workspace, row.body as unknown as DashboardBody)
+              : undefined;
+        return {
+          ...summarize(row, owned.get(row.key)),
+          body: row.body,
+          ...(problems ? { problems } : {}),
+        };
       },
     );
 

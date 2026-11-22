@@ -26,6 +26,12 @@ export interface CheckItem {
   at?: { page: string; widget: string };
 }
 
+/** Something the server refused, in the page's words, and the widget it is about when that is known. */
+export interface Refused {
+  text: string;
+  at?: { page: string; widget: string } | undefined;
+}
+
 /** What the check is made against: the workspace as it is now. */
 export interface Known {
   /** `undefined` while it is still being read: that check is left out rather than guessed. */
@@ -146,10 +152,10 @@ export function checksFor(input: {
   body: InterfaceBody;
   known: Known;
   definitionOf: (type: string) => WidgetDefinition | undefined;
-  /** What saving the draft refused, as the server words it. */
-  problems: readonly string[];
+  /** What saving the draft refused, as the server words it, and where. */
+  problems: readonly Refused[];
   /** What deploying would refuse, and what it would warn of. */
-  refusal: readonly string[];
+  refusal: readonly Refused[];
   warnings: readonly string[];
 }): CheckItem[] {
   const { body, known, definitionOf } = input;
@@ -234,7 +240,13 @@ export function checksFor(input: {
           : undefined;
     items.push(
       why
-        ? { id: `form:${widget.id}`, state: "fail", text: `${name} form can't save`, detail: why }
+        ? {
+            id: `form:${widget.id}`,
+            state: "fail",
+            text: `${name} form can't save`,
+            detail: why,
+            at: { page: page.id, widget: widget.id },
+          }
         : { id: `form:${widget.id}`, state: "ok", text: `${name} form is valid` },
     );
   }
@@ -313,9 +325,19 @@ export function checksFor(input: {
     }
   }
 
-  // What saving and deploying refuse, in the server's words.
-  for (const message of [...input.problems, ...input.refusal]) {
-    items.push({ id: `refused:${message}`, state: "fail", text: message });
+  // What saving and deploying refuse, in the server's words. The same refusal said by both, or by
+  // the same place twice, is listed once.
+  const said = new Set<string>();
+  for (const one of [...input.problems, ...input.refusal]) {
+    const key = `${one.at?.widget ?? ""}|${one.text}`;
+    if (said.has(key)) continue;
+    said.add(key);
+    items.push({
+      id: `refused:${key}`,
+      state: "fail",
+      text: one.text,
+      ...(one.at ? { at: one.at } : {}),
+    });
   }
   for (const message of input.warnings) {
     items.push({ id: `warned:${message}`, state: "warn", text: message });
@@ -419,4 +441,16 @@ export function problemWords(problem: { path: string; message: string }, body: I
 export function plainly(message: string, body: InterfaceBody): string {
   const found = /^(\/body\/pages\/\d+\S*)\s+(.*)$/.exec(message);
   return found ? problemWords({ path: found[1] ?? "", message: found[2] ?? "" }, body) : message;
+}
+
+/** The page and widget a refusal is about, from the place the server names. */
+export function problemAt(
+  problem: { path: string },
+  body: InterfaceBody,
+): { page: string; widget: string } | undefined {
+  const found = /^\/body\/pages\/(\d+)\/widgets\/(\d+)/.exec(problem.path);
+  if (!found) return undefined;
+  const page = body.pages[Number(found[1])];
+  const widget = page?.widgets[Number(found[2])];
+  return page && widget ? { page: page.id, widget: widget.id } : undefined;
 }

@@ -6,7 +6,13 @@ import { useLoad } from "../../api.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import { draftChanges } from "./changes.ts";
 import { useGroupKeys } from "./groupKeys.ts";
-import { type CheckItem, checksFor, mostAffectedGroup, problemWords } from "./publishCheck.ts";
+import {
+  type CheckItem,
+  checksFor,
+  mostAffectedGroup,
+  problemAt,
+  problemWords,
+} from "./publishCheck.ts";
 import { definitionOf } from "./registry.ts";
 
 interface Preview {
@@ -20,6 +26,8 @@ const MARK = {
   warn: { icon: TriangleAlert, label: "Worth knowing", tone: "text-attention" },
   fail: { icon: X, label: "Needs fixing", tone: "text-danger" },
 } as const;
+
+const plural = (count: number, one: string) => `${count} ${count === 1 ? one : `${one}s`}`;
 
 /**
  * "Ready to publish" (board 6): what publishing would find wrong, or worth knowing, and what it
@@ -108,14 +116,19 @@ export function PublishCheck({
         body,
         known,
         definitionOf,
-        problems: problems.map((one) => `${problemWords(one, body)}.`.replace(/\.\.$/, ".")),
-        refusal: [
-          ...(asked?.refusal
-            ? asked.refusal.errors.length > 0
-              ? asked.refusal.errors.map((one) => problemWords(one, body))
-              : [asked.refusal.detail]
-            : []),
-        ],
+        problems: problems.map((one) => ({
+          text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
+          at: problemAt(one, body),
+        })),
+        refusal: asked?.refusal
+          ? asked.refusal.errors.length > 0
+            ? asked.refusal.errors.map((one) => ({
+                // The same words as a saved problem's, so that one failure is one line.
+                text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
+                at: problemAt(one, body),
+              }))
+            : [{ text: asked.refusal.detail }]
+          : [],
         warnings: (asked?.summary?.warnings ?? []).map((one) => one.message),
       }),
     [body, known, problems, asked],
@@ -127,10 +140,18 @@ export function PublishCheck({
   const tryGroup = keyed.loaded ? mostAffectedGroup(body, known.groups ?? []) : undefined;
   const tryName = keyed.groups.find((group) => group.key === tryGroup)?.name;
 
+  const heading = !ready
+    ? "Checking before you publish"
+    : blocked
+      ? blockers.length > 0
+        ? `Not ready to publish: ${plural(blockers.length, "thing")} to fix`
+        : "Not ready to publish"
+      : "Ready to publish";
+
   return (
     <div data-publish-check="" className="flex flex-col gap-3 p-4 text-ink">
       <header className="flex flex-col gap-0.5">
-        <h2 className="m-0 text-title font-semibold">Ready to publish</h2>
+        <h2 className="m-0 text-title font-semibold">{heading}</h2>
         <p className="m-0 text-body-sm text-ink-muted">
           {deployed === null
             ? `Publishes to ${workspace.data?.name ?? "this workspace"} for the first time. Nobody sees it until then.`

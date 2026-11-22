@@ -1,7 +1,7 @@
 import type { InterfaceBody, PageWidget } from "@volvel/manifest";
 import { expect, test } from "vitest";
 import { draftChanges } from "./screens/builder/changes.ts";
-import { checksFor, plainly, problemWords } from "./screens/builder/publishCheck.ts";
+import { checksFor, plainly, problemAt, problemWords } from "./screens/builder/publishCheck.ts";
 
 const form = (data: PageWidget["data"]): PageWidget => ({
   id: "form",
@@ -165,4 +165,22 @@ test("a refusal names the thing, and says what it needs, never in the schema's w
       made,
     ),
   ).toBe("Action group on Edit invoice: needs fields");
+});
+
+test("one refusal said by the save and by the deploy is one line, and it links to its widget", () => {
+  const made = body(form(undefined));
+  const at = problemAt({ path: "/body/pages/0/widgets/0/config/fields" }, made);
+  expect(at).toEqual({ page: "edit", widget: "form" });
+  const said = { text: "form on Edit invoice: needs a source to show.", at };
+  const items = checksFor({
+    body: made,
+    known,
+    definitionOf: () => undefined,
+    problems: [said],
+    refusal: [said],
+    warnings: [],
+  });
+  const refused = items.filter((one) => one.id.startsWith("refused:"));
+  expect(refused).toHaveLength(1);
+  expect(refused[0]?.at).toEqual({ page: "edit", widget: "form" });
 });

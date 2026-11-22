@@ -16,6 +16,7 @@ import { openActionOf } from "./subView.ts";
 import {
   ActionSubView,
   BUTTONS_NOTE,
+  LIST_ROW_ACTIONS_NOTE,
   ROW_ACTIONS_NOTE,
   TableButtonsSection,
   TableColumnsSection,
@@ -140,11 +141,25 @@ registerDrawer(TABLE, {
 // the generic rows; the two groups share one picker.
 const PLACES = ["title", "subtitle", "right", "badge", "picture"];
 
+registerDrawer(LIST, { tab: "actions", order: 0, section: ActionSubView });
+
 registerDrawer(LIST, {
   tab: "actions",
   group: "When a row is clicked",
   order: 1,
+  when: nothingOpen,
   render: (env) => <TableRowClickSection env={env} bare />,
+});
+
+// The same card as the Table's: a row for each action and a dashed "Row action" to add one.
+registerDrawer(LIST, {
+  tab: "actions",
+  group: "Row actions",
+  order: 2,
+  when: nothingOpen,
+  hides: ["rowActions"],
+  note: LIST_ROW_ACTIONS_NOTE,
+  render: (env) => <TableRowActionsSection env={env} bare />,
 });
 
 registerDrawer(LIST, {

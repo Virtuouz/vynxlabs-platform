@@ -35,6 +35,13 @@ export interface Started {
   told: string;
 }
 
+/** What each start makes, in a line: said in "Add a page", on an empty page and in "Add to page". */
+export const STARTS: Record<Start, string> = {
+  blank: "Start from nothing and add what you need.",
+  list: "A search, the table, a side sheet that shows a row, and a button that adds one.",
+  record: "One record's details, and the rows of each table that refers to it.",
+};
+
 /** The most tables a record page lists the rows of: a page holds at most thirty widgets. */
 const MOST_RELATED = 6;
 

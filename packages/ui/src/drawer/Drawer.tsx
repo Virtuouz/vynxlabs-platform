@@ -356,6 +356,7 @@ export function DrawerEditor({
   // told it is shut first, so it arrives with the starting style that a click on its trigger gives it.
   const opening = useOpening(open === true);
   const controlled = open === undefined ? {} : { open: opening };
+  const popup = useRef<HTMLDivElement>(null);
   return (
     <Popover.Root
       {...controlled}
@@ -372,7 +373,33 @@ export function DrawerEditor({
           {...(boundary ? { collisionBoundary: boundary } : {})}
           className="layer-popover"
         >
-          <Popover.Popup className="flex max-h-[min(34rem,var(--available-height))] w-[22rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-panel border border-line bg-raised text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:opacity-0">
+          <Popover.Popup
+            ref={popup}
+            // Focus stays in it while it is open, as in a dialog: Tab from the last control goes to the first.
+            onKeyDown={(event: KeyboardEvent) => {
+              if (event.key !== "Tab") return;
+              const back = event.shiftKey;
+              // Let the browser move on; if that took it out of the editor, bring it round to the other end.
+              requestAnimationFrame(() => {
+                const box = popup.current;
+                if (!box || box.contains(document.activeElement)) return;
+                const tabbable = [
+                  ...box.querySelectorAll<HTMLElement>(
+                    "a[href], button:not([disabled]), input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+                  ),
+                ].filter((one) => one.getClientRects().length > 0);
+                (back ? tabbable.at(-1) : tabbable[0])?.focus();
+              });
+            }}
+            // Focus starts on what the editor is for (a search, the chosen row, the first field), not on Close.
+            initialFocus={() =>
+              popup.current?.querySelector<HTMLElement>("[data-autofocus]") ??
+              popup.current?.querySelector<HTMLElement>(
+                "input[type=radio]:checked, input[type=radio], [role=radio][aria-checked=true], textarea:not([disabled]), input:not([disabled]):not([type=hidden]):not([type=checkbox])",
+              ) ??
+              true
+            }
+            className="flex max-h-[min(34rem,var(--available-height))] w-[22rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-panel border border-line bg-raised text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:opacity-0">
             <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-3">
               <Popover.Title className="m-0 text-body-sm font-semibold">{title}</Popover.Title>
               <Popover.Close

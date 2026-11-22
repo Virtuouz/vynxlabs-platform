@@ -421,7 +421,7 @@ export function ActionSubView({ env }: { env: Env }) {
       <ActionControl
         env={env}
         id={`${env.widget.id}-${one.id}`}
-        label={`What ${one.label || noun} does`}
+        label={!one.label || one.label === "Action" || one.label === "Button" ? "What it does" : `What ${one.label} does`}
         help={undefined}
         action={one.action}
         onChange={(next, key) =>
@@ -543,6 +543,7 @@ export function TableRowClickSection({ env, bare }: TableSectionProps) {
   );
 }
 
+export const LIST_ROW_ACTIONS_NOTE = "On each record, and in its detail.";
 export const ROW_ACTIONS_NOTE = "Shown at the end of the row on hover, and in the detail sheet.";
 export const BUTTONS_NOTE =
   "Replaces the separate action group placed above the table today. The buttons move with the table.";

@@ -1502,7 +1502,10 @@ export function PageView({
     const ghost = (at: Box, into: WidgetIn | undefined): PageWidget =>
       ({ id: CARRIED, type: "", at, ...(into ? { in: into } : {}) }) as PageWidget;
     const lifted = held?.how === "move" ? heldWas : undefined;
-    if (held && lifted) {
+    if (held && lifted && !held.open) {
+      // Just come over a container: it says it would take it, and nothing moves until it is rested there.
+      list = widgets;
+    } else if (held && lifted) {
       // What is dragged follows the pointer; where it would land is drawn in its place.
       const tall = needs[held.id];
       const at =
@@ -1517,7 +1520,7 @@ export function PageView({
       list = putAt([...kept, ghost(at, held.in)], CARRIED, at, held.in, roles);
     } else if (held && heldWas) {
       list = putAt(widgets, held.id, held.at, held.in, roles);
-    } else if (carrying?.at) {
+    } else if (carrying?.at && carrying.open) {
       list = putAt(
         [...widgets, ghost(carrying.at, carrying.in)],
         CARRIED,
@@ -1533,9 +1536,13 @@ export function PageView({
       least: (id) => (held?.how === "stretch" && held.id === id ? undefined : needs[id]),
       folded: (id) => foldedKey.split(",").includes(id),
       // What is held, or what is carried, stays where it is put: the landing is drawn where it lands.
-      ...(held && !lifted ? { pin: held.id } : lifted || carrying?.at ? { pin: CARRIED } : {}),
+      ...(held && !lifted
+        ? { pin: held.id }
+        : (lifted && held?.open) || (carrying?.at && carrying.open)
+          ? { pin: CARRIED }
+          : {}),
     });
-    if (held && lifted && !leaving) return [...fitted, { ...lifted, at: held.at }];
+    if (held?.open && lifted && !leaving) return [...fitted, { ...lifted, at: held.at }];
     return fitted;
   }, [
     widgets,
@@ -1544,6 +1551,7 @@ export function PageView({
     leaving,
     carrying?.at,
     carrying?.in,
+    carrying?.open,
     roles,
     editing,
     foldedKey,
@@ -1763,7 +1771,7 @@ export function PageView({
         style={held || carrying ? { minHeight: restingTall.current } : undefined}
       >
         <WidgetGrid ctx={ctx} widgets={topLevel(drawn)} gridRef={gridRef} />
-        {carrying && !carrying.at ? <Carried carrying={carrying} /> : null}
+        {carrying && !(carrying.at && carrying.open) ? <Carried carrying={carrying} /> : null}
         <span role="status" className="sr-only">
           {placement.said}
         </span>

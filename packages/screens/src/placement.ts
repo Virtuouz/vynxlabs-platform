@@ -30,6 +30,34 @@ const FASTEST = 18;
 /** How far into a container, in rows, a pointer is before it is in it: its edges are for what goes above and below. */
 const INSIDE = 0.35;
 
+/** How long a pointer rests over a container before it makes room, in milliseconds: passing over one is not resting. */
+const REST_MS = 220;
+
+/** Whether the grid that is come over is open, and telling when one that is rested over opens. */
+function resting(home: WidgetIn | undefined, opened: () => void) {
+  let at = home;
+  let open = true;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return {
+    over: (into: WidgetIn | undefined, atOnce: boolean): boolean => {
+      if (sameIn(into, at)) {
+        if (atOnce) open = true;
+        return open;
+      }
+      at = into;
+      clearTimeout(timer);
+      open = atOnce || into === undefined || sameIn(into, home);
+      if (!open)
+        timer = setTimeout(() => {
+          open = true;
+          opened();
+        }, REST_MS);
+      return open;
+    },
+    end: () => clearTimeout(timer),
+  };
+}
+
 /** The key a widget being carried onto the page is drawn under, before it is a widget. */
 export const CARRIED = "__carried";
 
@@ -67,6 +95,8 @@ export interface Carrying {
   at: Box | undefined;
   /** The container's grid it would land on; absent for the page's own. */
   in?: WidgetIn | undefined;
+  /** That grid makes room for it: one it has only just come over does not yet. */
+  open: boolean;
 }
 
 /** A grid inside a container, which something can be dropped on. */
@@ -98,6 +128,11 @@ export interface Placement {
         at: Box;
         how: HowMoved;
         in: WidgetIn | undefined;
+        /**
+         * The grid it is over makes room for it. A container it has only just come over does not
+         * yet, so that one that is passed over on the way to somewhere else moves nothing.
+         */
+        open: boolean;
         /** A dragged thing's own size, in pixels: it keeps it while it follows the pointer. */
         size?: { width: number; height: number };
       }
@@ -410,12 +445,13 @@ export function usePlacement({
     if (how === "stretch") event.preventDefault();
     trailing.current = trail;
     /** Told only when where it would land changes: the page is drawn again for that, not for every pixel. */
-    const tell = (at: Box, into: WidgetIn | undefined) =>
+    const tell = (at: Box, into: WidgetIn | undefined, open = true) =>
       setHeld((before) =>
-        before?.id === id && same(before.at, at) && sameIn(before.in, into)
+        before?.id === id && same(before.at, at) && sameIn(before.in, into) && before.open === open
           ? before
-          : { id, at, how, in: into, ...(size ? { size } : {}) },
+          : { id, at, how, in: into, open, ...(size ? { size } : {}) },
       );
+    const rest = resting(origin, () => place());
     const place = () => {
       if (how === "stretch") {
         const now = cellOf(pointer, home);
@@ -438,7 +474,7 @@ export function usePlacement({
       if (found.header && found.into && !sameIn(latestIn, found.into)) onOpen?.(found.into);
       latestIn = found.into;
       latest = found.at;
-      tell(latest, latestIn);
+      tell(latest, latestIn, rest.over(latestIn, found.header));
     };
     const follow = (moving: PointerEvent) => {
       pointer = { x: moving.clientX, y: moving.clientY };
@@ -458,6 +494,7 @@ export function usePlacement({
       window.removeEventListener("blur", cancel);
       window.removeEventListener("keydown", onEscape, true);
       stopScrolling?.();
+      rest.end();
       ending.current = undefined;
       if (card && dragging && how === "move") {
         letGo.current = { id, from: card.getBoundingClientRect() };
@@ -511,13 +548,20 @@ export function usePlacement({
     let landing: Box | undefined;
     let into: WidgetIn | undefined;
     let intoBefore: WidgetIn | undefined;
+    let open = true;
     const tell = () =>
       setCarrying((before) =>
         // Over the page it is drawn where it would land, and only that changes what is drawn.
-        before?.at && landing && same(before.at, landing) && sameIn(before.in, into)
+        before?.at &&
+        landing &&
+        same(before.at, landing) &&
+        sameIn(before.in, into) &&
+        before.open &&
+        open
           ? before
-          : { card, pointer, at: landing, in: into },
+          : { card, pointer, at: landing, in: into, open },
       );
+    const rest = resting(undefined, () => place());
     const place = () => {
       const now = cellOf(pointer);
       into = undefined;
@@ -540,6 +584,7 @@ export function usePlacement({
         into = found?.into;
         if (found?.header && into && !sameIn(intoBefore, into)) onOpen?.(into);
         intoBefore = into;
+        open = rest.over(into, found?.header === true);
       }
       tell();
     };
@@ -553,6 +598,7 @@ export function usePlacement({
       window.removeEventListener("pointercancel", cancel);
       window.removeEventListener("keydown", onEscape, true);
       stopScrolling();
+      rest.end();
       ending.current = undefined;
       setCarrying(undefined);
     };

@@ -542,7 +542,7 @@ export function PageEditor({
             data-preview={frame?.name}
             data-page-kind={kind ?? "page"}
             data-page-size={overlay ? size : undefined}
-            className={`mx-auto overflow-x-auto bg-canvas ${device === "phone" && !overlay ? "" : "rounded-panel border border-line p-3"} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
+            className={`mx-auto overflow-x-auto bg-canvas ${device === "phone" && !overlay ? "" : frame ? "rounded-panel border border-line p-3" : "rounded-panel p-3"} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
             style={
               width && !overlay && device !== "phone"
                 ? {

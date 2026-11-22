@@ -1231,7 +1231,8 @@ export function PageView({
       ...(editing ? {} : { grow: true }),
       least: (id) => needs[id],
       folded: (id) => foldedKey.split(",").includes(id),
-      ...(held ? { pin: held.id } : {}),
+      // What is held, or what is carried, stays where it is put: the landing is drawn where it lands.
+      ...(held ? { pin: held.id } : carrying?.at ? { pin: CARRIED } : {}),
     });
   }, [widgets, held, heldWas, leaving, carrying?.at, roles, editing, foldedKey, needs]);
 

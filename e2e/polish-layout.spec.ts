@@ -26,16 +26,18 @@ test.afterAll(async () => {
 
 test("every workbench's first row starts within 160 px of the top", async () => {
   await ctx.page.setViewportSize({ width: 1440, height: 900 });
+  // Every workbench is measured before anything is said, so one over its limit does not hide the others.
+  const over: string[] = [];
   for (const [name, path] of workbenches(ctx)) {
     // As a returning member sees it: a description shown on the first visit folds after it.
     // This file no longer follows the recording that used to open every screen first.
     await open(ctx.page, path as string);
     await open(ctx.page, path as string);
     const top = await firstRowTop(ctx.page);
-    expect(top, `${name} shows a first row`).not.toBeNull();
-    // Soft: every workbench is measured, so one over its limit does not hide the others.
-    expect.soft(top as number, `${name}'s first row`).toBeLessThanOrEqual(160);
+    if (top === null) over.push(`${name} shows no first row`);
+    else if (top > 160) over.push(`${name}'s first row is at ${top}`);
   }
+  expect(over, "workbenches whose first row is not within 160 px").toEqual([]);
 });
 
 /** A2-08: a table's rows, and its definition, scroll in one place, and the page does not. */

@@ -1,9 +1,9 @@
 import { DOC_CSS, type Root } from "@volvel/markup";
 import { type Components, type ReactOptions, renderReact } from "@volvel/markup/react";
+import { CircleCheck, Info, OctagonAlert, TriangleAlert } from "lucide-react";
 import { type ReactNode, useMemo } from "react";
 import { Details } from "./Details.tsx";
 import { servedComponents } from "./DocServed.tsx";
-import { Notice } from "./Notice.tsx";
 import { Tabs } from "./Tabs.tsx";
 import { Term } from "./Term.tsx";
 import { Kbd } from "./Tooltip.tsx";
@@ -32,18 +32,38 @@ const THEMED = `
 .vd-doc.vd-served { font-size: 16px; line-height: 1.6; }
 `;
 
-const TONE = { info: "plain", success: "success", warning: "attention", danger: "danger" } as const;
+/** An alert's type, as its rail, icon and words are coloured. */
+const ALERT = {
+  info: { rail: "bg-action", ink: "text-action", Icon: Info, label: "Note" },
+  success: { rail: "bg-success", ink: "text-success", Icon: CircleCheck, label: "Done" },
+  warning: { rail: "bg-attention", ink: "text-attention", Icon: TriangleAlert, label: "Warning" },
+  danger: { rail: "bg-danger", ink: "text-danger", Icon: OctagonAlert, label: "Danger" },
+} as const;
 
 /** The kit's own components, for the parts of a page that are more than text. */
 const KIT: Components = {
-  alert: ({ type, title, children }) => (
-    <div className="mb-4">
-      <Notice tone={TONE[type]}>
-        {title ? <p className="m-0 mb-1 font-semibold">{title}</p> : null}
-        <div className="[&>:last-child]:mb-0">{children}</div>
-      </Notice>
-    </div>
-  ),
+  // A callout, as the documentation site draws one: a coloured rail and an icon for its type,
+  // its border kept wherever it sits (inside a widget's card too, where a notice drops its own).
+  alert: ({ type, title, children }) => {
+    const tone = ALERT[type] ?? ALERT.info;
+    return (
+      <div
+        role="note"
+        aria-label={typeof title === "string" && title ? title : tone.label}
+        className="relative mb-4 rounded-panel border border-line bg-surface py-3 pr-4 pl-10"
+      >
+        <span
+          aria-hidden="true"
+          className={`absolute top-3 bottom-3 left-2 w-0.5 rounded-full ${tone.rail}`}
+        />
+        <tone.Icon aria-hidden="true" size={16} className={`absolute top-3.5 left-4 ${tone.ink}`} />
+        {title ? <p className="m-0 mb-1 font-semibold text-ink">{title}</p> : null}
+        <div className={`[&>:last-child]:mb-0 ${title ? "text-ink-muted" : "text-ink"}`}>
+          {children}
+        </div>
+      </div>
+    );
+  },
   tabs: ({ tabs }) => (
     <div className="mb-4">
       <Tabs

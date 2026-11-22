@@ -232,7 +232,7 @@ export function groupButtons(
           action: clickOf(one),
         };
       }),
-      align: "start",
+      lineUp: "left",
     },
   };
   const gone = new Set(buttons.map((one) => one.id));
@@ -284,7 +284,7 @@ export function detailActionsToGroup(
     title: "Actions",
     at: { x: detail.at.x, y: detail.at.y, w: detail.at.w, h: 1 },
     ...(detail.in ? { in: detail.in } : {}),
-    config: { actions: structuredClone(actions), align: "start" },
+    config: { actions: structuredClone(actions), lineUp: "left" },
   };
   const next = widgets.map((one): PageWidget => {
     if (one.id === detail.id) {

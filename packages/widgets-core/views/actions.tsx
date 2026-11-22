@@ -1,35 +1,43 @@
 import { Button, Menu } from "@volvel/ui";
-import { ChevronDown, LoaderCircle } from "@volvel/ui/icons";
+import { Ellipsis, LoaderCircle } from "@volvel/ui/icons";
 import type { WidgetViewProps } from "@volvel/widgets";
 import { useLayoutEffect, useRef, useState } from "react";
+import { NamedIcon, placeOf, type Tone, VARIANT } from "./look.tsx";
 import { CANNOT_NOW, useRunning } from "./press.tsx";
 
 interface ActionsConfig {
   actions: {
     id: string;
     label: string;
-    tone?: "primary" | "default" | "danger";
+    tone?: Tone;
+    icon?: string;
     action: unknown;
   }[];
-  align?: "start" | "end";
+  lineUp?: "left" | "right" | "spread";
+  showUpTo?: number;
+  place?: string;
 }
-
-const VARIANT = { primary: "primary", default: "secondary", danger: "danger-solid" } as const;
 
 /** The space between buttons, in pixels: `gap-2`. */
 const GAP = 8;
 
 /**
- * How many of the buttons, from the first, fit in `room` pixels when the rest go under More.
- * Not measured yet (a width of nothing) is all of them: nothing is hidden on a guess.
+ * How many of the buttons, from the first, fit in `room` pixels when the rest go under the
+ * \u22ef menu, and never more than `limit` ("Show up to"). Not measured yet (a width of
+ * nothing) is as many as `limit` allows: nothing is hidden on a guess.
  */
-export function fitCount(room: number, widths: readonly number[], more: number): number {
+export function fitCount(
+  room: number,
+  widths: readonly number[],
+  more: number,
+  limit = Number.POSITIVE_INFINITY,
+): number {
   const all = widths.length;
-  if (room <= 0 || widths.some((one) => one <= 0)) return all;
+  if (room <= 0 || widths.some((one) => one <= 0)) return Math.min(all, limit);
   const row = (count: number) =>
     widths.slice(0, count).reduce((sum, one) => sum + one, 0) + GAP * Math.max(0, count - 1);
-  if (row(all) <= room) return all;
-  let count = all - 1;
+  if (limit >= all && row(all) <= room) return all;
+  let count = Math.min(all - 1, limit);
   while (count > 0 && row(count) + GAP + more > room) count -= 1;
   return count;
 }
@@ -38,7 +46,8 @@ export function fitCount(room: number, widths: readonly number[], more: number):
  * Action group: related buttons in a row, the first the main one. Each runs its action
  * through the host, with the page's record when the page is open on one; it is disabled,
  * with the reason, when its conditions do not hold, and shows it is under way. What does not
- * fit the widget's width goes under More, which a keyboard reaches like any menu.
+ * fit the widget's width, or pass `showUpTo`, goes in the \u22ef menu, which a keyboard reaches like
+ * any menu. It lines up left, right or spread, and stands in its cell by `place`.
  */
 export function ActionsView({ config, act, can, why, building }: WidgetViewProps<ActionsConfig>) {
   const { running, run } = useRunning();
@@ -68,7 +77,16 @@ export function ActionsView({ config, act, can, why, building }: WidgetViewProps
   }, [labels]);
 
   const inert = building || !act;
-  const shown = fitCount(room, sizes.items, sizes.more);
+  const limit =
+    typeof config.showUpTo === "number" && config.showUpTo >= 1
+      ? Math.floor(config.showUpTo)
+      : Number.POSITIVE_INFINITY;
+  const shown = fitCount(room, sizes.items, sizes.more, limit);
+  const lineUp = config.lineUp ?? "left";
+  const spot = placeOf(config.place);
+  // Spread and Right say the row's side; Left leaves it to the place's column.
+  const side =
+    lineUp === "spread" ? "justify-between" : lineUp === "right" ? "justify-end" : spot.justify;
   const where = (index: number) => `config/actions/${index}/action`;
   const allowed = (index: number) => (inert ? false : (can?.(where(index)) ?? true));
   const reason = (index: number) => why?.(where(index)) ?? CANNOT_NOW;
@@ -84,7 +102,8 @@ export function ActionsView({ config, act, can, why, building }: WidgetViewProps
     <div
       ref={box}
       data-actions=""
-      className={`relative flex w-full items-center gap-2 ${config.align === "end" ? "justify-end" : "justify-start"}`}
+      data-line-up={lineUp}
+      className={`relative flex h-full w-full ${spot.items} gap-2 ${side}`}
     >
       {visible.map((one, index) =>
         inert ? (
@@ -95,6 +114,7 @@ export function ActionsView({ config, act, can, why, building }: WidgetViewProps
             aria-disabled="true"
             className="cursor-default"
           >
+            <NamedIcon name={one.icon} />
             {one.label}
           </Button>
         ) : (
@@ -106,22 +126,22 @@ export function ActionsView({ config, act, can, why, building }: WidgetViewProps
             tooltip={allowed(index) ? undefined : reason(index)}
             onClick={() => press(one.id, index)}
           >
+            <NamedIcon name={one.icon} />
             {one.label}
           </Button>
         ),
       )}
       {hidden.length > 0 ? (
         <Menu
-          align={config.align === "end" ? "end" : "start"}
-          triggerClassName="inline-flex h-control items-center justify-center gap-2 rounded-control border border-line-control bg-surface px-3 font-medium whitespace-nowrap text-ink hover:bg-sunken focus-visible:outline-2 focus-visible:outline-action"
+          align={lineUp === "right" || spot.justify === "justify-end" ? "end" : "start"}
+          ariaLabel="More"
+          triggerClassName="inline-flex h-control aspect-square items-center justify-center rounded-control border border-line-control bg-surface font-medium text-ink hover:bg-sunken focus-visible:outline-2 focus-visible:outline-action"
           label={
-            <>
-              {pending ? (
-                <LoaderCircle aria-hidden="true" size={14} className="shrink-0 animate-spin" />
-              ) : null}
-              More
-              <ChevronDown aria-hidden="true" size={14} />
-            </>
+            pending ? (
+              <LoaderCircle aria-hidden="true" size={14} className="shrink-0 animate-spin" />
+            ) : (
+              <Ellipsis aria-hidden="true" size={16} />
+            )
           }
           items={hidden.map((one, offset) => {
             const index = shown + offset;
@@ -129,6 +149,7 @@ export function ActionsView({ config, act, can, why, building }: WidgetViewProps
             return {
               label: one.label,
               danger: one.tone === "danger",
+              ...(one.icon ? { icon: <NamedIcon name={one.icon} size={14} /> } : {}),
               // A menu item that may not be pressed says why beside it, and does nothing.
               ...(allowed(index) || inert
                 ? {}
@@ -154,12 +175,17 @@ export function ActionsView({ config, act, can, why, building }: WidgetViewProps
             tabIndex={-1}
             className="shrink-0"
           >
+            <NamedIcon name={one.icon} />
             {one.label}
           </Button>
         ))}
-        <Button data-measure="more" variant="secondary" tabIndex={-1} className="shrink-0">
-          More
-          <ChevronDown aria-hidden="true" size={14} />
+        <Button
+          data-measure="more"
+          variant="secondary"
+          tabIndex={-1}
+          className="aspect-square shrink-0 px-0"
+        >
+          <Ellipsis aria-hidden="true" size={16} />
         </Button>
       </div>
     </div>

@@ -231,7 +231,7 @@ describe("record detail", () => {
         registry={registryWith({})}
       />,
     );
-    const fold = await screen.findByText("Show another field (1 hidden)");
+    const fold = await screen.findByText("+ Show another field (1 hidden)");
     expect(fold.closest("details")?.hasAttribute("open")).toBe(false);
     expect(screen.getByText("Internal code")).toBeTruthy();
   });

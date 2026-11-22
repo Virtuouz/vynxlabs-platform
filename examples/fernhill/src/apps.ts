@@ -361,7 +361,7 @@ export const performance = defineInterface({
           type: "core/actions",
           at: { x: 0, y: 19, w: 12, h: 1 },
           config: {
-            align: "end",
+            lineUp: "right",
             actions: [
               {
                 id: "new-invoice",

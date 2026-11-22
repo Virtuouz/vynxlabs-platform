@@ -43,11 +43,17 @@ export type NavigateTo =
 
 type Row = Readonly<Record<string, unknown>>;
 
+/** What saving a field edited in place is, to the host. */
+const EDIT_IN_PLACE: Action = { steps: [], done: "Saved" };
+
 /** The action a widget holds at a place: `on/<event>`, `config/<property>`, or `config/<property>/<index>/action`. */
 export function actionAt(widget: PageWidget, at: string): Action | undefined {
   const parts = at.split("/");
   if (parts[0] === "on" && parts.length === 2) return widget.on?.[parts[1] as string];
   if (parts[0] !== "config") return undefined;
+  // A record detail that lets people edit in place: the edit is an action of its own, with no
+  // steps to run here. The server checks the fields as it does an action's.
+  if (at === "config/edit") return widget.config?.edit === true ? EDIT_IN_PLACE : undefined;
   const property = widget.config?.[parts[1] as string];
   if (parts.length === 2) return isAction(property) ? property : undefined;
   if (parts.length === 4 && parts[3] === "action" && Array.isArray(property)) {
@@ -74,6 +80,64 @@ export function holds(
     (one) => "user" in one || records[one.of ?? "this"] !== undefined,
   );
   return conditionsHold(known, { this: records.this ?? null, event: records.event ?? null }, user);
+}
+
+/** A group's title from its path or key: the last segment, hyphens and underscores as spaces, first letter capital. */
+export function groupTitle(path: string): string {
+  const last = path.split("/").filter(Boolean).at(-1) ?? path;
+  const words = last.replace(/[-_]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** "Practice managers and Billing" / "A, B and C". */
+function listOf(items: readonly string[]): string {
+  return items.length <= 1
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
+
+/**
+ * Whether the person is in one of `groups` (paths). `ActingUser.groups` holds the names and keys
+ * the runtime knows (and paths when the served app gives them): a path matches itself, or its
+ * last segment (the key).
+ */
+export function inGroups(groups: readonly string[], user: ActingUser | undefined): boolean {
+  const mine = user?.groups ?? [];
+  return groups.some(
+    (path) => mine.includes(path) || mine.includes(path.split("/").at(-1) ?? path),
+  );
+}
+
+/** Whether the person may run the action by its `runBy`; no groups named means anyone. The server decides again. */
+export function mayRun(action: Action | undefined, user: ActingUser | undefined): boolean {
+  const groups = action?.runBy?.groups;
+  return !groups || groups.length === 0 || inGroups(groups, user);
+}
+
+/** "Only Practice managers and Billing can do this", when the person is outside the action's groups. */
+export function whyNotRun(
+  action: Action | undefined,
+  user: ActingUser | undefined,
+): string | undefined {
+  if (mayRun(action, user)) return undefined;
+  return `Only ${listOf((action?.runBy?.groups ?? []).map(groupTitle))} can do this`;
+}
+
+/** Whether a widget is drawn to this person by `rules.seenBy`; drawing only, never security. */
+export function seenByUser(
+  rules: { seenBy?: { groups: string[] } } | undefined,
+  user: ActingUser | undefined,
+): boolean {
+  const groups = rules?.seenBy?.groups;
+  return !groups || groups.length === 0 || inGroups(groups, user);
+}
+
+/** The small tag a widget carries while building: "Only for Practice managers". */
+export function seenByTag(
+  rules: { seenBy?: { groups: string[] } } | undefined,
+): string | undefined {
+  const groups = rules?.seenBy?.groups;
+  return groups && groups.length > 0 ? `Only for ${listOf(groups.map(groupTitle))}` : undefined;
 }
 
 /** A confirmation's text, with `{column}` filled from the record it is about. */

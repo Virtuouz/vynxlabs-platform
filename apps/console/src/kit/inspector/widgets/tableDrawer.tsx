@@ -18,9 +18,9 @@ import {
 } from "@volvel/ui";
 import { ListOrdered, Trash2, Type, Zap } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { ActionControl } from "../actionControls.tsx";
+import { ActionControl, actionContext } from "../actionControls.tsx";
 import type { Action } from "../actionModel.ts";
-import { conditionSentence } from "../actionModel.ts";
+import { type ActionContext, conditionSentence } from "../actionModel.ts";
 import type { Env } from "../controls.tsx";
 import { configSettings, heading, uniqueName, withConfig } from "../model.ts";
 import { ActionRules } from "../RulesTab.tsx";
@@ -279,10 +279,10 @@ export function TableDisplay(props: TableSectionProps) {
 type Labelled = { id: string; label: string; tone?: string; action: Action };
 
 /** What an action says in a line: when it may be pressed, or whether it asks first. */
-export function actionSummary(action: Action | undefined): string {
+export function actionSummary(action: Action | undefined, ctx?: ActionContext): string {
   if (!action) return "Nothing yet";
   const when = action.when?.length
-    ? `Only when ${action.when.map((one) => conditionSentence(one)).join(" and ")}`
+    ? `Only when ${[...new Set(action.when.map((one) => conditionSentence(one, ctx)))].join(" and ")}`
     : undefined;
   if (when) return when;
   if (action.confirm) return "Asks to confirm";
@@ -339,7 +339,7 @@ function ActionRows({
           key={one.id}
           label={one.label || firstLabel}
           {...(icon ? { icon } : {})}
-          value={actionSummary(one.action)}
+          value={actionSummary(one.action, actionContext(env))}
           editorTitle={one.label || firstLabel}
           open={openId === one.id}
           onOpenChange={(next) => setOpenId(next ? one.id : undefined)}

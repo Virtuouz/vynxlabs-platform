@@ -152,9 +152,14 @@ export function configOf(
   return { ...(definition.defaults ?? {}), ...(widget.config ?? {}) };
 }
 
-/** `when`: equality only, against the configuration as the view sees it. */
+/**
+ * `when`: equality against the configuration as the view sees it; a list is "any of these",
+ * and `null` in it stands for a setting left unset.
+ */
 export function isShown(hint: InspectorHint, config: Record<string, unknown>): boolean {
-  return Object.entries(hint.when ?? {}).every(([name, value]) => config[name] === value);
+  return Object.entries(hint.when ?? {}).every(([name, value]) =>
+    Array.isArray(value) ? value.includes(config[name] ?? null) : config[name] === value,
+  );
 }
 
 /** Whether a tab has anything to draw. Rules and Actions say what is so even when nothing can be set. */
@@ -693,4 +698,34 @@ export function unbindDeclared(widgets: readonly PageWidget[], gone: PageWidget)
     .map((one) => one.name)
     .filter((name) => !still.has(name));
   return widgets.map((one) => lost.reduce((next, name) => unbindFilter(next, name), one));
+}
+
+/** A Text's own heading when it has none set: the words in bold that begin it ("**In dollars.** Every…"). */
+export function textHeading(text: unknown): string | undefined {
+  if (typeof text !== "string") return undefined;
+  const found = /^\s*(?:#{1,6}\s+(.+?)\s*(?:\n|$)|\*\*(.+?)\*\*)/.exec(text);
+  const said = (found?.[1] ?? found?.[2] ?? "")
+    .replace(/[*_`]/g, "")
+    .replace(/[.:]\s*$/, "")
+    .trim();
+  if (said === "") return undefined;
+  return said.length > 40 ? `${said.slice(0, 39).trimEnd()}…` : said;
+}
+
+/** What a widget is called where it is named: its title, a Text's heading, else what it is. */
+export function widgetName(
+  widget: {
+    id: string;
+    type: string;
+    title?: string | undefined;
+    config?: Record<string, unknown> | undefined;
+  },
+  definition: { title: string } | undefined,
+): string {
+  if (widget.title) return widget.title;
+  if (widget.type === "core/text") {
+    const heading_ = textHeading(widget.config?.text);
+    if (heading_) return heading_;
+  }
+  return definition?.title || widget.id;
 }

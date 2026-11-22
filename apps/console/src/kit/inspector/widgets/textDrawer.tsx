@@ -51,6 +51,14 @@ export function LookTiles({
   );
 }
 
+/** The words as the drawer shows them: cut at a word with "…" when they run long. */
+const SHOWN = 240;
+export function cut(text: string): string {
+  if (text.length <= SHOWN) return text;
+  const at = text.lastIndexOf(" ", SHOWN);
+  return `${text.slice(0, at > SHOWN / 2 ? at : SHOWN).trimEnd()}…`;
+}
+
 export function TextContentSection({ env }: { env: Env }) {
   const edit = useEditOnPage();
   const [large, setLarge] = useState(false);
@@ -100,7 +108,7 @@ export function TextContentSection({ env }: { env: Env }) {
         <div className="flex flex-col gap-3 px-3 py-3">
           {text.trim() ? (
             <div className="max-h-40 overflow-hidden text-body-sm text-ink">
-              <Markdown text={text} profile="page" />
+              <Markdown text={cut(text)} profile="page" />
             </div>
           ) : (
             <p className="m-0 text-body-sm text-ink-muted">Nothing written yet.</p>

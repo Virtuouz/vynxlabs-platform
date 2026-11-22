@@ -1009,7 +1009,7 @@ export const form = defineWidget({
         "x-volvel": hint({
           tab: "data",
           control: "segmented",
-          label: "It",
+          label: "What it does",
           choices: { create: "Makes a new record", edit: "Changes the record that is open" },
           order: 1,
         }),
@@ -1446,6 +1446,8 @@ export const approvals = defineWidget({
           group: "Looks like",
           control: "segmented",
           label: "A click opens",
+          // The Queue look has the request open beside its list: a click opens nothing there.
+          when: { look: ["rows", "cards", null] },
           choices: { sheet: "Sheet", modal: "Modal", nothing: "None" },
           order: 1.5,
         }),

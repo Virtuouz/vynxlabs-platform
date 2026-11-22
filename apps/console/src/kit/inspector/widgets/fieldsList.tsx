@@ -87,15 +87,22 @@ export function itemsOf(env: Env, rows: readonly FieldRow[], kind: FieldsKind): 
       });
     }
     current = row.section;
+    const today =
+      kind === "form" &&
+      typeof row.initial === "object" &&
+      row.initial !== null &&
+      (row.initial as { kind?: unknown }).kind === "today";
     const flags = [
       kind === "form" && row.required ? "Required" : undefined,
       row.hidden ? "Hidden" : undefined,
+      today ? "Today by default" : undefined,
     ].filter(Boolean);
     const what = kindOfColumn(env, row.column);
     items.push({
       id: `${FIELD}${row.column}`,
       label: row.label || heading(row.column),
-      sub: [...flags, flags.length > 0 ? what.toLowerCase() : what].join(" · "),
+      // "Required · picker", "Today by default" (a date says what it is by that), else the control alone.
+      sub: [...flags, ...(today ? [] : [flags.length > 0 ? what.toLowerCase() : what])].join(" · "),
       ...(row.hidden ? { hidden: true } : {}),
     });
   }

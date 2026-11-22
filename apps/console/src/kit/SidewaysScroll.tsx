@@ -60,7 +60,7 @@ export function SidewaysScroll({
           data-scroll-sign=""
           className="m-0 mb-1 flex items-center gap-1.5 text-meta text-ink-muted"
         >
-          <MoveHorizontal aria-hidden="true" size={12} className="shrink-0" />
+          <MoveHorizontal aria-hidden="true" size={14} className="shrink-0" />
           {hint}
         </p>
       ) : null}

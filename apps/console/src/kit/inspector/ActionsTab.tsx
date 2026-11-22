@@ -4,7 +4,7 @@
  * rules that opens the Rules tab (board 4).
  */
 import { ChevronRight, Lock } from "lucide-react";
-import { ActionEditor } from "./actionControls.tsx";
+import { ActionEditor, actionContext } from "./actionControls.tsx";
 import type { Action } from "./actionModel.ts";
 import { actionSlots } from "./actionSlots.ts";
 import { ConfigControl, type Env } from "./controls.tsx";
@@ -33,7 +33,8 @@ export function RulesSummary({
   const summary = rulesSummary({
     showWhen: env.widget.rules?.showWhen,
     seenBy: env.widget.rules?.seenBy?.groups.map((path) => groupName(path, choices)),
-    pressedWhen: slots.flatMap((slot) => slot.action?.when ?? []),
+    pressedBy: slots.map((slot) => ({ label: slot.label, when: slot.action?.when ?? [] })),
+    ctx: actionContext(env),
     runBy: unique(
       slots
         .flatMap((slot) => slot.action?.runBy?.groups ?? [])

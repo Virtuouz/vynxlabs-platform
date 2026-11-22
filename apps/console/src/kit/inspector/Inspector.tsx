@@ -58,6 +58,7 @@ import {
   type ScriptChoice,
   type TabFate,
   tabsOf,
+  widgetName,
 } from "./model.ts";
 import { RulesTab } from "./RulesTab.tsx";
 
@@ -134,7 +135,7 @@ export function Inspector(props: InspectorProps) {
   const prefix = useId();
   const menu = useRef<HTMLSpanElement>(null);
   const cameBack = useRef(false);
-  const name = widget.title || definition?.title || widget.id;
+  const name = widgetName(widget, definition);
 
   // Coming back from Layout, focus goes back to the ⋯ it was opened from.
   useEffect(() => {

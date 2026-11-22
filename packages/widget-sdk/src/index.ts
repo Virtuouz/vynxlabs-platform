@@ -187,7 +187,7 @@ export interface InspectorHint {
   types?: readonly string[];
   /** For `choice` and `segmented`: what each value is called. */
   choices?: Record<string, string>;
-  /** Only shown when other properties of config have these values. Equality only. */
+  /** Only shown when other properties of config have these values. Equality; a list is any of its values, and `null` in it is the property left unset. */
   when?: Record<string, unknown>;
   /** Where it is in its tab, lower first. */
   order?: number;

@@ -258,8 +258,16 @@ function FieldSetter({
           <span className="text-body-sm text-ink-muted">{verb}</span>
           <ChipEditor
             title={`${heading(name)} ${verb}`}
-            chip={valueChipWords(value, ctx)}
-            label={`${heading(name)} ${verb} ${valueChipWords(value, ctx)}`}
+            chip={valueChipWords(
+              value,
+              ctx,
+              columns.find((one) => one.name === name),
+            )}
+            label={`${heading(name)} ${verb} ${valueChipWords(
+              value,
+              ctx,
+              columns.find((one) => one.name === name),
+            )}`}
           >
             <ValuePicker
               id={`${id}-${name}`}

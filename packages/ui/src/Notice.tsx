@@ -2,15 +2,17 @@ import type { ReactNode } from "react";
 import { useContained } from "./Panel.tsx";
 
 const tones = {
+  info: "bg-action-soft text-ink",
   attention: "bg-attention-soft text-ink",
   danger: "bg-danger-soft text-ink",
   success: "bg-success-soft text-ink",
   plain: "bg-surface text-ink",
 };
 const edges = {
-  attention: "border border-attention/40",
-  danger: "border border-danger/40",
-  success: "border border-success/40",
+  info: "border border-action/30",
+  attention: "border border-attention/30",
+  danger: "border border-danger/30",
+  success: "border border-success/30",
   plain: "border border-line",
 };
 

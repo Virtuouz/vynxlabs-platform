@@ -6,12 +6,19 @@ import {
   ComboboxField,
   ContextMenu,
   Details,
+  Dialog,
   Doc,
   Grid,
   Kbd,
+  Menu,
   Notice,
+  Popover,
+  SegmentedControl,
   SelectField,
+  SideSheet,
   Skeleton,
+  Switch,
+  Tabs,
   Term,
   TermScope,
   TextField,
@@ -19,7 +26,7 @@ import {
   Tree,
   type TreeNode,
 } from "@volvel/ui";
-import { GitCompareArrows } from "lucide-react";
+import { Ellipsis, GitCompareArrows, Table2 } from "lucide-react";
 import { useState } from "react";
 import { Identifier } from "../kit/copy.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -126,6 +133,11 @@ export function KitSheet() {
   const [page, setPage] = useState("support/refunds");
   const [chip, setChip] = useState("all");
   const [stage, setStage] = useState("review");
+  const [look, setLook] = useState("main");
+  const [full, setFull] = useState(false);
+  const [dialog, setDialog] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState("data");
   return (
     // Each sample of the kit is shown in a panel of its own: the polish measure of boxes in
     // boxes leaves the sheet out (e2e/measure.ts), and still measures what draws over what.
@@ -268,12 +280,13 @@ export function KitSheet() {
             <Button>Secondary</Button>
             <Button variant="quiet">Quiet</Button>
             <Button variant="danger">Delete</Button>
+            <Button variant="dashed">+ Add a step</Button>
             <Button variant="promote">Promote to production</Button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="small">Small, 28</Button>
-            <Button>Regular, 32 here</Button>
-            <Button size="large">Large, 36</Button>
+            <Button>Regular, 36</Button>
+            <Button size="large">Large, 40</Button>
             <Button variant="primary" loading>
               Saving
             </Button>
@@ -651,6 +664,156 @@ export function KitSheet() {
           </div>
         </div>
       </section>
+
+      <section className="flex flex-col gap-3">
+        <SectionLabel>The boards' parts</SectionLabel>
+        <Panel className="flex flex-col gap-5 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="main">Main</Button>
+            <Button variant="normal">Normal</Button>
+            <Button variant="quiet">Quiet</Button>
+            <Button variant="danger">Danger</Button>
+            <Button variant="dashed">+ Add a condition</Button>
+            <Kbd>esc</Kbd>
+            <Kbd>A</Kbd>
+            <Kbd>⌘K</Kbd>
+          </div>
+          <div className="grid gap-3 md:grid-cols-4">
+            <SelectField
+              name="kit-inline-clinic"
+              label="Clinic"
+              inline
+              value="all"
+              options={[
+                { value: "all", label: "All" },
+                { value: "north", label: "Northside" },
+              ]}
+              onChange={() => {}}
+            />
+            <SelectField
+              name="kit-inline-issued"
+              label="Issued"
+              inline
+              value="30"
+              options={[{ value: "30", label: "Last 30 days" }]}
+              onChange={() => {}}
+            />
+            <TextField
+              name="kit-inline-search"
+              label="Search"
+              inline
+              value=""
+              placeholder="invoices"
+              onChange={() => {}}
+            />
+            <Switch label="Full width" checked={full} onChange={setFull} />
+          </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <SegmentedControl
+              label="Button look"
+              value={look}
+              onChange={setLook}
+              options={[
+                { value: "main", label: "Main" },
+                { value: "normal", label: "Normal" },
+                { value: "quiet", label: "Quiet" },
+              ]}
+            />
+            <SegmentedControl
+              label="Line up"
+              size="small"
+              value="left"
+              onChange={() => {}}
+              options={[
+                { value: "left", label: "Left" },
+                { value: "right", label: "Right" },
+                { value: "spread", label: "Spread" },
+              ]}
+            />
+            <Switch label="Stored in cents" checked onChange={() => {}} />
+          </div>
+          <div className="grid gap-5 md:grid-cols-2">
+            <Tabs
+              label="Underline tabs"
+              tabs={[
+                { id: "a", label: "Overview", content: "Underline tabs, as before." },
+                { id: "b", label: "Runs", content: "The runs." },
+              ]}
+            />
+            <Tabs
+              label="Inspector tabs"
+              variant="pills"
+              dense
+              value={inspectorTab}
+              onChange={setInspectorTab}
+              tabs={[
+                {
+                  id: "data",
+                  label: "Data",
+                  dot: true,
+                  content: "Pills: a track, the open tab raised.",
+                },
+                { id: "display", label: "Display", dot: true, content: "Display." },
+                { id: "actions", label: "Actions", content: "Actions." },
+                { id: "rules", label: "Rules", count: 2, content: "Rules." },
+              ]}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Menu
+              label={<Ellipsis aria-hidden="true" size={16} />}
+              ariaLabel="More"
+              triggerClassName="flex size-9 items-center justify-center rounded-control border border-line-strong hover:bg-hover"
+              items={[
+                { label: "Duplicate", onSelect: () => {}, icon: <Table2 size={14} />, keys: "⌘D" },
+                { label: "Layout", onSelect: () => {}, current: true },
+                { label: "Delete", onSelect: () => {}, danger: true, separated: true },
+              ]}
+            />
+            <Popover trigger={<Button>Popover</Button>} title="Ready to publish">
+              Three checks passed. One warning about a hidden widget.
+            </Popover>
+            <Button onClick={() => setDialog(true)}>Dialog</Button>
+            <Button onClick={() => setSheet(true)}>Side sheet</Button>
+          </div>
+          <Notice tone="info">This page shows Invoices. Common next steps: Invoice detail.</Notice>
+        </Panel>
+      </section>
+
+      <Dialog
+        open={dialog}
+        onClose={() => setDialog(false)}
+        title="Add a form"
+        icon={<Table2 size={16} />}
+        footer={
+          <>
+            <span className="mr-auto text-meta text-ink-muted">
+              Also adds a "New invoice" button.
+            </span>
+            <Button onClick={() => setDialog(false)}>Cancel</Button>
+            <Button variant="main" onClick={() => setDialog(false)}>
+              Create form
+            </Button>
+          </>
+        }
+      >
+        <SelectField
+          name="kit-dialog-table"
+          label="Table"
+          value="invoices"
+          options={[{ value: "invoices", label: "Invoices" }]}
+          onChange={() => {}}
+        />
+      </Dialog>
+      <SideSheet
+        open={sheet}
+        onClose={() => setSheet(false)}
+        title="Invoiced by week"
+        description="Chart"
+        icon={<Table2 size={16} />}
+      >
+        <Switch label="Full width" checked={full} onChange={setFull} />
+      </SideSheet>
 
       <section className="flex flex-col gap-3">
         <SectionLabel>Empty canvas</SectionLabel>

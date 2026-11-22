@@ -302,12 +302,12 @@ test("branding saves only the tokens that are set, and shows the server's error 
     (document.querySelector(`[data-swatch="${name}"]`) as HTMLElement).style.background;
   expect(swatch("tokens-action")).toBe("#7c3aed");
   expect(swatch("tokens-surface")).toBe("#ffffff");
-  expect(swatch("dark-surface")).toBe("#18212d");
+  expect(swatch("dark-surface")).toBe("#11161d");
   // The preview carries every value: the kit's, with what is typed over it.
   const preview = (scheme: string) =>
     (document.querySelector(`[data-preview="${scheme}"]`) as HTMLElement).style;
   expect(preview("light").getPropertyValue("--vx-action")).toBe("#7c3aed");
-  expect(preview("dark").getPropertyValue("--vx-action")).toBe("#5cb8d6");
+  expect(preview("dark").getPropertyValue("--vx-action")).toBe("#5cc2e6");
 
   fireEvent.input(screen.getByLabelText("surface, light"), { target: { value: "url(x)" } });
   fireEvent.input(screen.getByLabelText("ink, dark"), { target: { value: " #fafafa " } });

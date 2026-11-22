@@ -169,6 +169,15 @@ test.beforeAll(async ({ browser }) => {
   const money = pages.find((one: { id: string }) => one.id === "money");
   const list = money.widgets.find((one: { id: string }) => one.id === "list");
   list.data.rows.source.visual.filters = [{ column: "number", op: "contains", value: PREFIX }];
+  // The example lets only Practice managers and Billing, who are team members, run Mark paid
+  // (`runBy`, checked on the server), so a read-only end user could never press it. What this walk
+  // proves is that a button is its own grant, so the walk's copy of the action runs for anyone who
+  // may press it; who may run it is proven by the control plane's own test (page-actions.test.ts).
+  const mark = pages
+    .find((one: { id: string }) => one.id === "invoice")
+    .widgets.find((one: { id: string }) => one.id === "invoice-actions").config.actions[0];
+  expect(mark.action.runBy).toBeTruthy();
+  delete mark.action.runBy;
   await ok(owner, "PUT", `${W}/drafts/${PAGE}`, {
     kind: "interface",
     schemaVersion: 2,

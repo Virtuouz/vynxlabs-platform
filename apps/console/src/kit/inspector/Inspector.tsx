@@ -4,7 +4,7 @@
  * type by name, so a pack's widget has settings the day it is registered.
  *
  * A header with the widget's title and kind and a ⋯ menu (Layout, Duplicate,
- * Remove); then the tabs its definition has (Data, Display, Actions, Rules),
+ * Move to, Remove); then the tabs its definition has (Data, Display, Actions, Rules),
  * each showing its main settings and one "More … options" disclosure, never
  * deeper (08, S9 §inspector).
  */
@@ -17,7 +17,7 @@ import {
   type WidgetDefinition,
   WidgetRegistry,
 } from "@volvel/widgets";
-import { ArrowLeft, Copy, Ellipsis, LayoutGrid, Trash2 } from "lucide-react";
+import { ArrowLeft, Copy, CornerDownRight, Ellipsis, LayoutGrid, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link } from "../../router.tsx";
 import { formatCombo } from "../keys.ts";
@@ -26,6 +26,7 @@ import { type Action, type Condition, conditionSentence, firstCondition } from "
 import { ConditionsEditor } from "./conditions.tsx";
 import { ConfigControl, type Env } from "./controls.tsx";
 import { DataControl } from "./dataControls.tsx";
+import { type MovePlace, MoveTo } from "./MoveTo.tsx";
 import {
   type Catalog,
   type ConfigSetting,
@@ -58,6 +59,11 @@ export interface InspectorProps {
   onChange: (next: PageWidget, label: string, key?: string) => void;
   onDuplicate: () => void;
   onRemove: () => void;
+  /** ⋯ › Move to: where the widget can go (the page, a Section, a tab), and the move. Left out: no such item. */
+  places?: readonly MovePlace[] | undefined;
+  onMove?: ((place: string) => void) | undefined;
+  /** What a container holds, in words ("holds 3 widgets"), for its header. */
+  holds?: string | undefined;
   /** Where a table's row rules are changed, if the reader may go there. */
   rowRules?: ((table: string) => string) | undefined;
   /** The page the widget is on (its kind and the table of its record), when it is an app's. */
@@ -81,6 +87,7 @@ function aboutMore(labels: readonly string[]): string {
 export function Inspector(props: InspectorProps) {
   const { widget, definition } = props;
   const [view, setView] = useState<"settings" | "layout">("settings");
+  const [moving, setMoving] = useState(false);
   const name = widget.title || definition?.title || widget.id;
 
   if (!definition) {
@@ -101,7 +108,8 @@ export function Inspector(props: InspectorProps) {
   }
 
   const pack = WidgetRegistry.packOf(definition.type);
-  const kind = pack === "core" ? definition.title : `${definition.title} · ${heading(pack)} pack`;
+  const named = pack === "core" ? definition.title : `${definition.title} · ${heading(pack)} pack`;
+  const kind = props.holds ? `${named} · ${props.holds}` : named;
 
   if (view === "layout") {
     return (
@@ -156,6 +164,15 @@ export function Inspector(props: InspectorProps) {
               keys: formatCombo("Mod+d"),
               onSelect: props.onDuplicate,
             },
+            ...(props.places && props.places.length > 0 && props.onMove
+              ? [
+                  {
+                    label: "Move to…",
+                    icon: <CornerDownRight aria-hidden="true" size={14} />,
+                    onSelect: () => setMoving(true),
+                  },
+                ]
+              : []),
             {
               label: "Remove",
               icon: <Trash2 aria-hidden="true" size={14} />,
@@ -166,6 +183,15 @@ export function Inspector(props: InspectorProps) {
           ]}
         />
       </div>
+      {props.places && props.onMove ? (
+        <MoveTo
+          open={moving}
+          onClose={() => setMoving(false)}
+          name={name}
+          places={props.places}
+          onChoose={props.onMove}
+        />
+      ) : null}
       <Tabs
         dense
         label={`Settings of ${name}`}

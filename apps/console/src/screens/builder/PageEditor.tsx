@@ -1,4 +1,5 @@
 import {
+  childrenOf,
   MAX_PAGE_WIDGETS,
   MAX_WIDGET_HEIGHT,
   newWidget,
@@ -6,7 +7,10 @@ import {
   type Page,
   type PageFilter,
   type PageWidget,
+  tabsOf,
+  topLevel,
 } from "@volvel/manifest";
+import { isContainer } from "@volvel/manifest/parts";
 import { Button, EmptyState } from "@volvel/ui";
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
@@ -14,18 +18,27 @@ import { type ReactNode, useMemo, useState } from "react";
 import { notify } from "../../ask.tsx";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import { Inspector } from "../../kit/inspector/Inspector.tsx";
-import {
-  bindFilter,
-  defaultInputs,
-  duplicated,
-  mainTable,
-  newId,
-  settleOnGrid,
-  withoutWidget,
-} from "../../kit/inspector/model.ts";
+import { bindFilter, defaultInputs, mainTable, settleOnGrid } from "../../kit/inspector/model.ts";
 import { AddFormDialog } from "./AddFormDialog.tsx";
 import { AddToPage } from "./AddToPage.tsx";
 import { type PageSource, pageClient } from "./client.ts";
+import {
+  duplicateWidget,
+  fitContainers,
+  holds,
+  moveInto,
+  nameOf,
+  nextId,
+  placedAtBottom,
+  placesFor,
+  registryRoles,
+  removalWords,
+  removeWidget,
+  resolved,
+  targetOfSelection,
+  targetWords,
+  withoutOrphans,
+} from "./containers.ts";
 import { EditorShell } from "./EditorShell.tsx";
 import { type FilterChange, PageFilterSettings } from "./PageFilters.tsx";
 import { PageSettings } from "./PageSettings.tsx";
@@ -88,7 +101,7 @@ export function PageEditor({
   source,
   draft = false,
   value,
-  onChange,
+  onChange: hostChange,
   selected,
   onSelect,
   shell,
@@ -128,6 +141,9 @@ export function PageEditor({
   pageInfo?: PageInfo;
 }) {
   const { catalog } = useCatalog(root);
+  // Every change leaves each container as tall as what it holds (phase 27).
+  const onChange: typeof hostChange = (next, label, key) =>
+    hostChange({ ...next, widgets: fitContainers(next.widgets) }, label, key);
   const [adding, setAdding] = useState(false);
   const [forming, setForming] = useState(false);
   const sample = useSampleRecords(root, pageInfo?.page, catalog, pageInfo?.record);
@@ -152,6 +168,8 @@ export function PageEditor({
   const nextSteps = suggestionsFor(context, suggestedInfo);
   const widget = widgets.find((one) => one.id === selected);
   const full = widgets.length >= MAX_PAGE_WIDGETS;
+  // "Add to page" adds into the container that is chosen (or that holds the widget that is).
+  const addsTo = resolved(widgets, targetOfSelection(widgets, selected));
 
   const put = (next: PageWidget[], label: string, key?: string) =>
     onChange({ widgets: next, filters }, label, key);
@@ -189,9 +207,12 @@ export function PageEditor({
 
   /** Adds a widget: at the end of the page, or where it was carried to (`at`). */
   const add = (definition: WidgetDefinition, at?: Box) => {
-    const id = newId(definition.type, widgets);
+    const id = nextId(definition.type, widgets);
     let added: PageWidget = newWidget(definition, id, widgets);
+    // Into the container that is chosen (or its child's), at the bottom of its grid; else at the end of the page.
+    const into = at ? undefined : addsTo;
     if (at) added = { ...added, at };
+    else added = placedAtBottom(widgets, added, into);
     added = {
       ...added,
       ...(Object.keys(definition.data).length > 0
@@ -207,7 +228,9 @@ export function PageEditor({
     setTold(
       at
         ? `${definition.title} is added at column ${at.x + 1}, row ${at.y + 1}.`
-        : `${definition.title} is added at the end of the page.`,
+        : into
+          ? `${definition.title} is added to ${targetWords(widgets, into)}.`
+          : `${definition.title} is added at the end of the page.`,
     );
   };
 
@@ -235,24 +258,77 @@ export function PageEditor({
     });
   };
 
+  /** A widget removed, a container with all it holds: one step to Undo, and the toast says what went. */
   const remove = (id: string) => {
-    const gone = widgets.find((one) => one.id === id);
-    const name = gone?.title ? `“${gone.title}”` : "the widget";
-    put(withoutWidget(widgets, id), `removing ${name}`);
+    const gone = removeWidget(widgets, id);
+    if (gone.removed.length === 0) return;
+    const words = removalWords(gone.removed);
+    put(gone.widgets, `removing ${words}`);
     onSelect(undefined);
-    notify.success(`Removed ${name}.`, { action: { label: "Undo", onClick: shell.history.undo } });
+    notify.success(`Removed ${words}.`, { action: { label: "Undo", onClick: shell.history.undo } });
   };
 
+  /** A widget copied just under itself; a container with all it holds. */
   const duplicate = (id: string) => {
-    const copy = duplicated(widgets, id);
-    if (!copy) return;
-    put(copy.widgets, "duplicating a widget");
+    const copy = duplicateWidget(widgets, id);
+    if (copy.id === undefined) {
+      setTold(copy.reason);
+      return;
+    }
+    put(
+      copy.widgets,
+      copy.count > 1
+        ? `duplicating ${nameOf(widgets.find((one) => one.id === id) as PageWidget)} and the ${copy.count - 1 === 1 ? "widget" : `${copy.count - 1} widgets`} in it`
+        : "duplicating a widget",
+    );
     onSelect(copy.id);
+  };
+
+  /** ⋯ › Move to: the widget put in a Section, a tab, or back on the page. It stays chosen. */
+  const move = (id: string, key: string) => {
+    const place = placesFor(widgets, id).find((one) => one.key === key);
+    const one = widgets.find((other) => other.id === id);
+    if (!place || !one) return;
+    const result = moveInto(widgets, id, place.target);
+    if (!result.moved) {
+      setTold(result.reason ?? "It could not be moved.");
+      return;
+    }
+    put(result.widgets, `moving ${nameOf(one)} to ${place.label}`);
+    onSelect(id);
+    setTold(`${nameOf(one)} is moved to ${place.label}.`);
+  };
+
+  /**
+   * A change the canvas made (a drag, a resize, a rename, its own Delete key). A container it
+   * removed takes what it held, which is said, and can be undone.
+   */
+  const fromCanvas = (next: PageWidget[], label: string) => {
+    const { widgets: kept, orphans } = withoutOrphans(next);
+    if (orphans.length === 0) return put(next, label);
+    const ids = new Set(next.map((one) => one.id));
+    const container = widgets.find((one) => !ids.has(one.id) && one.id === orphans[0]?.in?.widget);
+    const words = removalWords(container ? [container, ...orphans] : orphans);
+    put(kept, `removing ${words}`);
+    onSelect(undefined);
+    notify.success(`Removed ${words}.`, { action: { label: "Undo", onClick: shell.history.undo } });
   };
 
   const filtersChanged = (next: FilterChange, label: string, key?: string) =>
     onChange({ widgets: next.widgets, filters: next.filters }, label, key);
 
+  const outlineRow = (one: PageWidget, inside: boolean) => (
+    <button
+      type="button"
+      aria-current={one.id === selected ? "true" : undefined}
+      onClick={() => onSelect(one.id)}
+      className={`w-full truncate rounded-inner py-1 pr-2 text-left text-body-sm ${
+        inside ? "pl-5" : "pl-2"
+      } ${one.id === selected ? "bg-selected text-action" : "text-ink hover:bg-sunken"}`}
+    >
+      {nameOf(one)}
+    </button>
+  );
   const outline = (
     <>
       {pages}
@@ -264,22 +340,14 @@ export function PageEditor({
           <p className="m-0 text-body-sm text-ink-muted">Nothing yet.</p>
         ) : (
           <ul className="m-0 flex list-none flex-col p-0">
-            {[...widgets]
-              .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x)
-              .map((one) => (
-                <li key={one.id}>
-                  <button
-                    type="button"
-                    aria-current={one.id === selected ? "true" : undefined}
-                    onClick={() => onSelect(one.id)}
-                    className={`w-full truncate rounded-inner px-2 py-1 text-left text-body-sm ${
-                      one.id === selected ? "bg-selected text-action" : "text-ink hover:bg-sunken"
-                    }`}
-                  >
-                    {one.title || definitionOf(one.type)?.title || one.id}
-                  </button>
-                </li>
-              ))}
+            {reading(topLevel(widgets)).map((one) => (
+              <li key={one.id}>
+                {outlineRow(one, false)}
+                {isContainer(one, registryRoles) ? (
+                  <Held container={one} widgets={widgets} row={outlineRow} />
+                ) : null}
+              </li>
+            ))}
           </ul>
         )}
       </section>
@@ -364,7 +432,7 @@ export function PageEditor({
             editing={{
               selected,
               onSelect,
-              onChange: (next, label) => put(next, label),
+              onChange: fromCanvas,
               onRename: (id, title) =>
                 put(
                   widgets.map((one) => (one.id === id ? { ...one, title } : one)),
@@ -414,6 +482,9 @@ export function PageEditor({
                 onChange={edit}
                 onDuplicate={() => duplicate(widget.id)}
                 onRemove={() => remove(widget.id)}
+                places={placesFor(widgets, widget.id)}
+                onMove={(key) => move(widget.id, key)}
+                holds={holds(widgets, widget)}
                 rowRules={(table) => `${link}/tables/${table}?view=definition`}
                 // What an action may touch and open: this page's kind and record, the app's pages,
                 // and the workspace's flows, scripts and groups.
@@ -445,6 +516,7 @@ export function PageEditor({
         open={adding}
         onClose={() => setAdding(false)}
         surface={surface}
+        target={addsTo ? targetWords(widgets, addsTo) : undefined}
         onAdd={(definition) => {
           // A form is made from a table: it asks what it should do first.
           if (definition.type === "core/form" && pageInfo) {
@@ -472,5 +544,59 @@ export function PageEditor({
         {told}
       </span>
     </>
+  );
+}
+
+/** Widgets in reading order: by row, then by column. */
+const reading = (list: readonly PageWidget[]) =>
+  [...list].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x);
+
+/** What a container holds, under it in "On this page": by tab for Tabs, each tab with its name over it. */
+function Held({
+  container,
+  widgets,
+  row,
+}: {
+  container: PageWidget;
+  widgets: readonly PageWidget[];
+  row: (widget: PageWidget, inside: boolean) => ReactNode;
+}) {
+  const tabs = tabsOf(container);
+  const held = childrenOf(widgets, container.id);
+  if (held.length === 0) return null;
+  const groups =
+    tabs.length > 0
+      ? [
+          ...tabs.map((tab) => ({
+            key: tab.id,
+            title: tab.title as string | undefined,
+            items: reading(held.filter((one) => one.in?.tab === tab.id)),
+          })),
+          {
+            key: "",
+            title: undefined,
+            items: reading(held.filter((one) => !tabs.some((tab) => tab.id === one.in?.tab))),
+          },
+        ]
+      : [{ key: "", title: undefined, items: reading(held) }];
+  return (
+    <ul className="m-0 flex list-none flex-col p-0">
+      {groups
+        .filter((group) => group.items.length > 0)
+        .map((group) => (
+          <li key={group.key}>
+            {group.title ? (
+              <span className="block truncate py-0.5 pl-5 text-meta text-ink-subtle">
+                {group.title}
+              </span>
+            ) : null}
+            <ul className="m-0 flex list-none flex-col p-0">
+              {group.items.map((one) => (
+                <li key={one.id}>{row(one, true)}</li>
+              ))}
+            </ul>
+          </li>
+        ))}
+    </ul>
   );
 }

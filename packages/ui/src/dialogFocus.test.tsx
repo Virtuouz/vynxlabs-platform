@@ -16,6 +16,28 @@ test("a dialog opens with the focus on what marks itself data-autofocus", async 
   await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Find")));
 });
 
+test("a dialog that asks for something to type opens with the focus in the first field, not on Close", async () => {
+  render(
+    <Dialog open onClose={() => undefined} title="Make an app">
+      <input type="checkbox" aria-label="Switch" />
+      <input aria-label="Name" />
+      <input aria-label="Address" />
+    </Dialog>,
+  );
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Name")));
+});
+
+test("a dialog with nothing to type keeps the focus on its first control", async () => {
+  render(
+    <Dialog open onClose={() => undefined} title="Remove it?">
+      <button type="button">Remove</button>
+    </Dialog>,
+  );
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" })),
+  );
+});
+
 test("a bare dialog keeps its title for a screen reader and draws no bar or close button of its own", async () => {
   render(
     <Dialog open onClose={() => undefined} title="Add to page" bare>

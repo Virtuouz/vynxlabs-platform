@@ -35,6 +35,10 @@ export interface DialogProps {
   children: ReactNode;
 }
 
+/** A field a person types into: not a switch, a choice, a file or a hidden one. */
+const TEXT_FIELD =
+  'textarea:not([disabled]), input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"])';
+
 export function Dialog({
   open,
   onClose,
@@ -63,8 +67,14 @@ export function Dialog({
         <Base.Backdrop className="fixed inset-0 layer-dialog bg-scrim transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Base.Popup
           ref={popup}
-          // What marks itself `data-autofocus` (a search field) gets the focus; else the first control does.
-          initialFocus={() => popup.current?.querySelector<HTMLElement>("[data-autofocus]") ?? true}
+          // What marks itself `data-autofocus` (a search field) gets the focus; else the first
+          // field to type in, so a dialog that asks for a name takes the name as it opens; else
+          // the first control does.
+          initialFocus={() =>
+            popup.current?.querySelector<HTMLElement>("[data-autofocus]") ??
+            popup.current?.querySelector<HTMLElement>(TEXT_FIELD) ??
+            true
+          }
           className={`fixed layer-dialog flex flex-col overflow-hidden border-line bg-surface shadow-modal transition-[opacity,scale] motion-slow data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0 ${
             size === "table"
               ? "inset-0 flex flex-col md:inset-auto md:top-[8vh] md:left-1/2 md:h-[84vh] md:w-[min(76rem,calc(100vw-3rem))] md:-translate-x-1/2 md:rounded-overlay md:border"

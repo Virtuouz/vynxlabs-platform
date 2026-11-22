@@ -49,7 +49,7 @@ export const corePack: CorePack = {
 };
 
 export { fitCount } from "./actions.tsx";
-export { metaOf, relativeTime, valueWords, whyNot } from "./approvals.tsx";
+export { metaOf, pastTime, relativeTime, valueWords, whyNot } from "./approvals.tsx";
 export {
   type ChartKind,
   type ChartNeed,

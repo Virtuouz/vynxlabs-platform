@@ -171,6 +171,12 @@ describe("the list", () => {
     expect(within(sheet).getByRole("heading", { name: "Approve order 2" })).toBeTruthy();
     fireEvent.keyDown(sheet, { key: "Escape" });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // The focus is back on the row the sheet was last on, not lost to the page.
+    await waitFor(() =>
+      expect((document.activeElement as HTMLElement).getAttribute("data-approval-row")).toBe(
+        "run-2/ask",
+      ),
+    );
   });
 
   test("opens: nothing puts each request's buttons on the page", () => {
@@ -229,6 +235,7 @@ describe("the list", () => {
     expect(screen.getByRole("radio", { name: /Waiting/ })).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: /Decided/ }));
     expect(screen.getByText("Rejected by Maya Brooks")).toBeTruthy();
+    expect(screen.getByText(/1 hour ago · from an app/)).toBeTruthy();
     expect(screen.getByText("“Too much stock”")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
   });
@@ -370,6 +377,63 @@ describe("deciding", () => {
     // Only the other request still has its buttons.
     expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  });
+
+  test("a request decided first by someone else stays after the page reads again, until Done", async () => {
+    const decide = vi.fn<Decide>(async () => ({
+      ok: false,
+      conflict: true,
+      message: "Maya Brooks approved this a moment ago.",
+    }));
+    const view = draw({ look: "queue" }, data([item(1), item(2)]), { decide });
+    fireEvent.click(screen.getAllByRole("button", { name: "Approve" })[0] as HTMLElement);
+    await screen.findAllByText("Maya Brooks approved this a moment ago.");
+    // The page reads again: the request is gone from what waits.
+    view.again({ data: { requests: data([item(2)]) } });
+    expect(screen.getAllByText("Maya Brooks approved this a moment ago.").length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.getAllByText("Approve order 1").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() =>
+      expect(
+        (document.querySelector("[data-approval-detail]") as HTMLElement).getAttribute(
+          "data-approval-detail",
+        ),
+      ).toBe("run-2/ask"),
+    );
+  });
+
+  test("with reduced motion a decided request is gone at once, though the page has not read again", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      (query: string) =>
+        ({
+          matches: query.includes("prefers-reduced-motion"),
+          media: query,
+          addEventListener() {},
+          removeEventListener() {},
+        }) as unknown as MediaQueryList,
+    );
+    try {
+      const decide = vi.fn<Decide>(async () => ok());
+      draw({ opens: "nothing" }, data([item(1), item(2)]), { decide });
+      fireEvent.click(screen.getAllByRole("button", { name: "Approve" })[0] as HTMLElement);
+      await waitFor(() => expect(decide).toHaveBeenCalled());
+      await waitFor(() => expect(screen.queryByText("Approve order 1")).toBeNull());
+      expect(document.querySelector("[data-leaving]")).toBeNull();
+      expect(screen.getByText("Approve order 2")).toBeTruthy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("with motion the request is kept, collapsing, for a moment", async () => {
+    const decide = vi.fn<Decide>(async () => ok());
+    draw({ opens: "nothing" }, data([item(1), item(2)]), { decide });
+    fireEvent.click(screen.getAllByRole("button", { name: "Approve" })[0] as HTMLElement);
+    await waitFor(() => expect(document.querySelector("[data-leaving]")).not.toBeNull());
+    expect(screen.getByText("Approve order 2")).toBeTruthy();
   });
 
   test("the next request is chosen and takes the focus, not the top of the page", async () => {

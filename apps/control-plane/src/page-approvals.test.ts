@@ -2,8 +2,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import {
+  type Bundle,
+  type BundleManifest,
+  bundleDigest,
+  resolveKeyReferences,
+} from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { detailFieldNames } from "./kernel/flows/approvers.js";
 import { approvalStanding, fieldsOf, readApprovals } from "./kernel/pages/approvals.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -706,6 +712,72 @@ describe("deciding", () => {
     expect((await decide(bob, step.id, "approve", sent)).status).toBe(200);
     const audit = await alice.get(`/tenants/${tenant}/audit?action=approval.approved`);
     expect(audit.body.items[0].actorId).toBe(ids.bob);
+  });
+});
+
+describe("what the builder is offered", () => {
+  test("the flows list says which flows have an approval step, and what each shows its approvers", async () => {
+    const listed = await alice.get(`${ws()}/flows`);
+    expect(listed.status).toBe(200);
+    const reorder = listed.body.items.find((one: Any) => one.path === "orders/reorder");
+    expect(reorder.approvals).toEqual([
+      {
+        node: "ask",
+        title: "Approve a stock order",
+        fields: ["clinic", "item", "total", "api_key", "notes"],
+      },
+    ]);
+  });
+
+  test("the names a step's detail gives are read from the keys it writes, once each", () => {
+    expect(detailFieldNames("{'clinic': trigger.clinic, 'total': steps.q.output.amount}")).toEqual([
+      "clinic",
+      "total",
+    ]);
+    expect(detailFieldNames("{\"a b\": 1, \"a b\": 2, 'c': {'d': 1}}")).toEqual(["a b", "c", "d"]);
+    // Not a literal object: nothing to offer.
+    expect(detailFieldNames("steps.quote.output")).toEqual([]);
+    expect(detailFieldNames(undefined)).toEqual([]);
+  });
+});
+
+describe("following the flow", () => {
+  test("the workspace says which interfaces ask the approvals of a flow, so a rename or removal is seen coming", async () => {
+    const found = await alice.get(`${ws()}/references?kind=flow&name=orders/reorder`);
+    expect(found.status).toBe(200);
+    expect(found.body.items).toContainEqual(
+      expect.objectContaining({
+        target: { kind: "flow", name: "orders/reorder" },
+        by: { kind: "interface", path: "screens/approvals" },
+        how: "asks for its approvals",
+      }),
+    );
+  });
+
+  test("a flow named by its old key is followed to its path when a bundle is built", () => {
+    const manifests = [
+      {
+        kind: "flow",
+        path: "orders/restock",
+        key: "orders/reorder",
+        schemaVersion: 1,
+        ownership: "code",
+        body: {},
+      },
+      {
+        kind: "interface",
+        path: "screens/x",
+        schemaVersion: 2,
+        ownership: "code",
+        body: { pages: [{ widgets: [approvalsWidget("q", { flows: ["orders/reorder"] })] }] },
+      },
+    ] as Any;
+    const { manifests: made, rewritten } = resolveKeyReferences(manifests);
+    const moved = made as Any;
+    expect(moved[1].body.pages[0].widgets[0].data.requests.source.approvals.flows).toEqual([
+      "orders/restock",
+    ]);
+    expect(rewritten).toHaveLength(1);
   });
 });
 

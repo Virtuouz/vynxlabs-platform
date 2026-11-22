@@ -50,6 +50,12 @@ export function relativeTime(iso: string, now: number): string {
   return seconds < 0 ? "just now" : "in a moment";
 }
 
+/** When something that has happened happened: a clock a little ahead of the server's still says "just now". */
+export function pastTime(iso: string, now: number): string {
+  const ahead = new Date(iso).getTime() - now;
+  return ahead > 0 && ahead < 60_000 ? "just now" : relativeTime(iso, now);
+}
+
 /** The meta line's parts: "Reorder", "asked 2 hours ago", "due in 2 days" (overdue says so, in danger). */
 export function metaOf(
   item: ApprovalItem,
@@ -179,14 +185,17 @@ function Decision({ item, now }: { item: ApprovalItem; now: number }) {
   const decision = item.decision;
   if (!decision) return null;
   const where =
-    decision.via === "app" ? "in an app" : decision.via === "email" ? "from the mail" : "";
+    decision.via === "app"
+      ? "from an app"
+      : decision.via === "email"
+        ? "from the mail"
+        : "in the console";
   return (
     <p className="m-0 text-body-sm text-ink-muted">
       <span className="text-ink">
         {decision.approved ? "Approved" : "Rejected"} by {decision.by}
       </span>
-      {decision.at ? ` ${relativeTime(decision.at, now)}` : ""}
-      {where ? ` ${where}` : ""}
+      {decision.at ? ` · ${pastTime(decision.at, now)}` : ""} · {where}
       {decision.comment ? <span className="block text-ink">“{decision.comment}”</span> : null}
     </p>
   );
@@ -373,7 +382,11 @@ function Detail(props: DetailProps) {
             {item.title}
           </Heading>
         )}
-        <Status item={item} overdue={meta.overdue && !settled} />
+        {settled ? (
+          <DotBadge tone="neutral">Decided</DotBadge>
+        ) : (
+          <Status item={item} overdue={meta.overdue} />
+        )}
         {sample ? (
           <span className="rounded-full border border-dashed border-line-strong px-2 py-0.5 text-meta text-ink-muted">
             Sample
@@ -574,15 +587,20 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
   const opens = config.opens ?? "sheet";
   const advance = config.advance !== false;
   const region = useRef<HTMLDivElement>(null);
+  const lastSheet = useRef<string>(undefined);
 
   const [view, setView] = useState<"waiting" | "decided">("waiting");
   const [selected, setSelected] = useState<string>();
   const [sheet, setSheet] = useState<string>();
   const [pending, setPending] = useState<Set<string>>(new Set());
-  const [settled, setSettled] = useState<Map<string, string>>(new Map());
-  const [leaving, setLeaving] = useState<Map<string, { item: ApprovalItem; at: number }>>(
-    new Map(),
-  );
+  // A request someone else decided first stays, saying who and what, until it is put away.
+  const [settled, setSettled] = useState<
+    Map<string, { message: string; item: ApprovalItem; at: number }>
+  >(new Map());
+  // What has just been decided, until it has left. With reduced motion it is not drawn at all.
+  const [leaving, setLeaving] = useState<
+    Map<string, { item: ApprovalItem; at: number; still: boolean }>
+  >(new Map());
   const [notice, setNotice] = useState<{ tone: "success" | "info"; text: string }>();
   const [focus, setFocus] = useState<string | null>();
 
@@ -595,18 +613,26 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
 
   // What is drawn: what waits, with what has just been decided kept in its place until it has left.
   const list = useMemo(() => {
-    const shown = base.map((item) => ({ item, leaving: leaving.has(item.id) }));
+    const shown = base
+      .filter((item) => leaving.get(item.id)?.still !== true)
+      .map((item) => ({ item, leaving: leaving.has(item.id) }));
     for (const [id, ghost] of leaving) {
-      if (!base.some((item) => item.id === id)) {
+      if (!ghost.still && !base.some((item) => item.id === id)) {
         shown.splice(Math.min(ghost.at, shown.length), 0, { item: ghost.item, leaving: true });
       }
     }
+    for (const [id, held] of settled) {
+      if (!base.some((item) => item.id === id) && !leaving.has(id)) {
+        shown.splice(Math.min(held.at, shown.length), 0, { item: held.item, leaving: false });
+      }
+    }
     return shown;
-  }, [base, leaving]);
+  }, [base, leaving, settled]);
   const live = list.filter((one) => !one.leaving).map((one) => one.item);
   const current =
     look === "queue" ? (live.find((item) => item.id === selected) ?? live[0]) : undefined;
   const inSheet = sheet ? live.find((item) => item.id === sheet) : undefined;
+  if (sheet) lastSheet.current = sheet;
 
   const reasonFor = (item: ApprovalItem) =>
     whyNot(item, { building: building === true, can: decide !== undefined });
@@ -628,8 +654,7 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
   }, [focus]);
 
   const leave = useCallback((item: ApprovalItem, at: number) => {
-    if (reducedMotion()) return;
-    setLeaving((now) => new Map(now).set(item.id, { item, at }));
+    setLeaving((now) => new Map(now).set(item.id, { item, at, still: reducedMotion() }));
     setTimeout(
       () =>
         setLeaving((now) => {
@@ -665,8 +690,11 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
     if (!outcome.ok) {
       if (outcome.conflict) {
         // Someone else got there first: the request says who and what, and stays to be read.
-        setSettled((now) => new Map(now).set(item.id, outcome.message));
-        setNotice({ tone: "info", text: outcome.message });
+        const at = Math.max(
+          0,
+          live.findIndex((one) => one.id === item.id),
+        );
+        setSettled((now) => new Map(now).set(item.id, { message: outcome.message, item, at }));
         return undefined;
       }
       return outcome.message;
@@ -695,7 +723,7 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
       config={config}
       disabledReason={reasonFor(item)}
       pending={pending.has(item.id)}
-      settled={settled.get(item.id)}
+      settled={settled.get(item.id)?.message}
       onDismiss={() => {
         setSettled((now) => {
           const next = new Map(now);
@@ -884,9 +912,10 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
       </Button>
     </div>
   ) : null;
+  // Closing a sheet gives the focus back to the row it was last on, which is no longer `sheet` by then.
   const returnTo = () =>
     region.current?.querySelector<HTMLElement>(
-      `[data-approval-row="${CSS.escape(sheet ?? "")}"]`,
+      `[data-approval-row="${CSS.escape(lastSheet.current ?? "")}"]`,
     ) ?? region.current;
   const overlay =
     !building && look !== "queue" && opens !== "nothing" ? (

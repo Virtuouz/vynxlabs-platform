@@ -464,3 +464,21 @@ describe("the model and the registry", () => {
     ).toEqual({ column: "a" });
   });
 });
+
+describe("choices a column offers for badge colours and the List's Badge place", () => {
+  test("a text column with a few values is a choice, and values nobody has yet stay offered", async () => {
+    const { offersType } = await import("../controls.tsx");
+    const { withListedChoices } = await import("./columnModel.ts");
+    const few = { name: "status", type: "text", references: null, distinct: 3 };
+    expect(offersType(["enum"], few)).toBe(true);
+    expect(offersType(["enum"], { ...few, distinct: 200 })).toBe(false);
+    expect(offersType(["enum"], { name: "id", type: "uuid", references: null })).toBe(false);
+    const facts = { name: "status", type: "text", choices: ["void"] };
+    expect(withListedChoices(facts, [{ value: "paid" }, { value: "unpaid" }])?.choices).toEqual([
+      "void",
+      "paid",
+      "unpaid",
+    ]);
+    expect(withListedChoices(facts, undefined)).toBe(facts);
+  });
+});

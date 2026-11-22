@@ -134,7 +134,8 @@ export function SlotsGroup({
     const column = columnOfSlot(env.config, slot);
     if (!column) return "";
     const value = sample?.[column];
-    return value === undefined || value === null || value === "" ? heading(column) : String(value);
+    if (value === undefined || value === null || value === "") return heading(column);
+    return typeof value === "object" ? "{…}" : String(value);
   };
   const filled = settings.filter((one) => columnOfSlot(env.config, one.name));
   const empty = settings.filter((one) => !columnOfSlot(env.config, one.name));

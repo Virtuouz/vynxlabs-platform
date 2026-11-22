@@ -87,7 +87,10 @@ export function holds(
 }
 
 /** A group's title from its path or key: the last segment, hyphens and underscores as spaces, first letter capital. */
-export function groupTitle(path: string): string {
+export function groupTitle(path: string, names?: Readonly<Record<string, string>>): string {
+  // What the group is called now: a group renamed keeps its key, so the key is only a fallback.
+  const named = names?.[path];
+  if (named) return named;
   const last = path.split("/").filter(Boolean).at(-1) ?? path;
   const words = last.replace(/[-_]+/g, " ").trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
@@ -127,9 +130,10 @@ export function mayRun(action: Action | undefined, user: ActingUser | undefined)
 export function whyNotRun(
   action: Action | undefined,
   user: ActingUser | undefined,
+  names?: Readonly<Record<string, string>>,
 ): string | undefined {
   if (mayRun(action, user)) return undefined;
-  return `Only ${listOf((action?.runBy?.groups ?? []).map(groupTitle))} can do this.`;
+  return `Only ${listOf((action?.runBy?.groups ?? []).map((path) => groupTitle(path, names)))} can do this.`;
 }
 
 /** Whether a widget is drawn to this person by `rules.seenBy`; drawing only, never security. */
@@ -144,9 +148,12 @@ export function seenByUser(
 /** The small tag a widget carries while building: "Only for Practice managers". */
 export function seenByTag(
   rules: { seenBy?: { groups: string[] } } | undefined,
+  names?: Readonly<Record<string, string>>,
 ): string | undefined {
   const groups = rules?.seenBy?.groups;
-  return groups && groups.length > 0 ? `Only for ${listOf(groups.map(groupTitle))}` : undefined;
+  return groups && groups.length > 0
+    ? `Only for ${listOf(groups.map((path) => groupTitle(path, names)))}`
+    : undefined;
 }
 
 /** A confirmation's text, with `{column}` filled from the record it is about. */
@@ -262,13 +269,18 @@ export function useActions(host: ActionsHost): {
       const now = latest.current;
       if (!now.client.act) throw new ActionError("Actions can't be run here.");
       const response = await now.client.act(request.widget.id, request.at, {
-        records: {
-          ...(now.record ? { this: now.record } : {}),
-          ...(request.record ? { event: request.record } : {}),
-          ...(request.records && request.records.length > 0
-            ? { events: [...request.records] }
-            : {}),
-        },
+        records:
+          request.at === "config/edit" && request.record
+            ? // A field edited in place changes the record the detail shows, whichever way the detail
+              // came by it (the page's, a row selected, the user's own, the one a sheet was opened on).
+              { this: request.record }
+            : {
+                ...(now.record ? { this: now.record } : {}),
+                ...(request.record ? { event: request.record } : {}),
+                ...(request.records && request.records.length > 0
+                  ? { events: [...request.records] }
+                  : {}),
+              },
         ...(inputs && Object.keys(inputs).length > 0 ? { inputs } : {}),
       });
       let said = false;

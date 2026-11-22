@@ -22,6 +22,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ActionControl, actionContext } from "../actionControls.tsx";
 import type { Action } from "../actionModel.ts";
 import { type ActionContext, conditionSentence } from "../actionModel.ts";
+import { useColumnValues } from "../catalog.ts";
 import type { Env } from "../controls.tsx";
 import { configSettings, heading, named, uniqueName, withConfig } from "../model.ts";
 import { ActionRules } from "../RulesTab.tsx";
@@ -34,6 +35,7 @@ import {
   shownCount,
   unused,
   withColumn,
+  withListedChoices,
 } from "./columnModel.ts";
 import { clearColumnRequest, useColumnRequest } from "./columnRequest.ts";
 import { FullSegments } from "./FullSegments.tsx";
@@ -57,9 +59,13 @@ const writeConfig = (env: Env, name: string, value: unknown, label: string, key?
 
 /** COLUMNS: a row for each, to drag, hide and open. */
 export function TableColumnsSection({ env, bare, ...source }: TableSectionProps) {
-  const { names, facts } = useTableData(env, source);
+  const { names, facts, table } = useTableData(env, source);
   const stored = env.config.columns as ColumnSetting[] | undefined;
-  const columns = columnsOf(stored, names);
+  // A table that names no columns draws them all but JSON, which says nothing in a cell.
+  const columns = columnsOf(
+    stored,
+    names.filter((name) => facts.find((one) => one.name === name)?.type !== "json"),
+  );
   const request = useColumnRequest(env.widget.id);
   const [open, setOpen] = useState<{ column: string; canvas: boolean } | undefined>();
   const holder = useRef<HTMLDivElement>(null);
@@ -78,7 +84,14 @@ export function TableColumnsSection({ env, bare, ...source }: TableSectionProps)
     clearColumnRequest();
   };
   const spec = open ? columns.find((one) => one.column === open.column) : undefined;
-  const factsOfOpen = facts.find((one) => one.name === open?.column);
+  const shownFacts = facts.find((one) => one.name === open?.column);
+  // What Conditions lists for the column is what its badge colours list.
+  const listed = useColumnValues(
+    source.root ?? env.catalog.root,
+    table,
+    open && spec?.as === "badge" ? shownFacts : undefined,
+  );
+  const factsOfOpen = withListedChoices(shownFacts, listed);
   const change = (patch: Partial<ColumnSetting>) => {
     if (!open) return;
     // A table that lists no columns yet lists them all as soon as one is changed.

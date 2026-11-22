@@ -28,6 +28,7 @@ import { PagesList } from "./PagesList.tsx";
 import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, movedPage } from "./pageKinds.ts";
 import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
+import { problemWords } from "./publishCheck.ts";
 import type { Started } from "./starters.ts";
 
 export { VIEWPORTS };
@@ -360,13 +361,6 @@ export function AppBuilder({
   };
 
   /** Where a problem is, in the words of the page: its page and widget. */
-  const where = (problemPath: string) => {
-    const match = /^\/body\/pages\/(\d+)(?:\/widgets\/(\d+))?/.exec(problemPath);
-    const at = match ? body.pages[Number(match[1])] : undefined;
-    const on = at && match?.[2] !== undefined ? at.widgets[Number(match[2])] : undefined;
-    return [at?.title, on ? on.title || heading(on.id) : undefined].filter(Boolean).join(" › ");
-  };
-
   const shell = {
     bleed: true,
     title: body.title || "Untitled app",
@@ -432,6 +426,11 @@ export function AppBuilder({
               problems={problems}
               publishing={publishing}
               onPublish={() => void publish()}
+              onGo={(at) => {
+                setPageId(at.page);
+                setSelected(at.widget);
+                setReviewing(false);
+              }}
               onTry={(group) => {
                 setViewAs({ as: "group", group: group.key, name: group.name });
                 setReviewing(false);
@@ -489,9 +488,7 @@ export function AppBuilder({
             <strong>To fix before it can be published:</strong>
             <ul className="mt-1 mb-0 pl-5">
               {problems.map((problem) => (
-                <li key={`${problem.path} ${problem.message}`}>
-                  {where(problem.path)}: {problem.message}.
-                </li>
+                <li key={`${problem.path} ${problem.message}`}>{problemWords(problem, body)}.</li>
               ))}
             </ul>
           </Notice>

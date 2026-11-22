@@ -65,6 +65,17 @@ describe("who can run it, and who is shown it", () => {
     expect(mayRun({ steps, runBy: { groups: [] } }, undefined)).toBe(true);
   });
 
+  test("the reason and the tag say a group by the name it has now, not by its key", () => {
+    const names = { "groups/zed-x": "Reception X" };
+    const action = { steps, runBy: { groups: ["groups/zed-x"] } };
+    expect(whyNotRun(action, { id: "u", groups: [] })).toBe("Only Zed x can do this.");
+    expect(whyNotRun(action, { id: "u", groups: [] }, names)).toBe("Only Reception X can do this.");
+    expect(whyNotRun(action, { id: "u", groups: [], groupNames: names })).toBe(
+      "Only Zed x can do this.",
+    );
+    expect(seenByTag({ seenBy: { groups: ["groups/zed-x"] } }, names)).toBe("Only for Reception X");
+  });
+
   test("seenBy draws only for those groups, and builds a tag", () => {
     const rules = { seenBy: { groups: ["practice-managers"] } };
     expect(seenByUser(rules, { id: "u", groups: ["practice-managers"] })).toBe(true);
@@ -374,6 +385,8 @@ describe("record detail options", () => {
     const call = client.act.mock.calls[0] as unknown[];
     expect(call[1]).toBe("config/edit");
     expect(JSON.stringify(call)).toContain('"total":20');
+    // The edited record is `this`, never an `event`, whatever the detail's record came from.
+    expect(JSON.stringify(call[2])).toContain('"records":{"this":"a"}');
     // Escape leaves without saving.
     fireEvent.click(await screen.findByRole("button", { name: "Edit Note" }));
     const note = await screen.findByLabelText("Note");

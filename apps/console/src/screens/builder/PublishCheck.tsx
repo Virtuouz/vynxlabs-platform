@@ -6,7 +6,7 @@ import { useLoad } from "../../api.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import { draftChanges } from "./changes.ts";
 import { useGroupKeys } from "./groupKeys.ts";
-import { type CheckItem, checksFor, mostAffectedGroup, plainly } from "./publishCheck.ts";
+import { type CheckItem, checksFor, mostAffectedGroup, problemWords } from "./publishCheck.ts";
 import { definitionOf } from "./registry.ts";
 
 interface Preview {
@@ -38,6 +38,7 @@ export function PublishCheck({
   publishing,
   onPublish,
   onTry,
+  onGo,
 }: {
   root: string;
   path: string;
@@ -53,6 +54,8 @@ export function PublishCheck({
   onPublish: () => void;
   /** "Try as Billing first": View as that group, and the panel closes. */
   onTry: (group: { key: string; name: string }) => void;
+  /** "Show it": the page and the widget a check is about are shown in the builder, and the panel closes. */
+  onGo?: ((at: { page: string; widget: string }) => void) | undefined;
 }) {
   // Only what has a draft is asked about: a page nobody has changed has none, and asking for it
   // is refused ("A draft at … was not found"), which read as a problem with the app.
@@ -105,11 +108,11 @@ export function PublishCheck({
         body,
         known,
         definitionOf,
-        problems: problems.map((one) => `${plainly(one.message, body)}.`.replace(/\.\.$/, ".")),
+        problems: problems.map((one) => `${problemWords(one, body)}.`.replace(/\.\.$/, ".")),
         refusal: [
           ...(asked?.refusal
             ? asked.refusal.errors.length > 0
-              ? asked.refusal.errors.map((one) => plainly(one.message, body))
+              ? asked.refusal.errors.map((one) => problemWords(one, body))
               : [asked.refusal.detail]
             : []),
         ],
@@ -154,6 +157,15 @@ export function PublishCheck({
                     </span>
                     {one.detail ? (
                       <span className="text-meta text-ink-muted">{one.detail}</span>
+                    ) : null}
+                    {one.at && onGo ? (
+                      <button
+                        type="button"
+                        onClick={() => onGo(one.at as { page: string; widget: string })}
+                        className="w-fit cursor-pointer border-0 bg-transparent p-0 text-meta text-action underline outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus"
+                      >
+                        Show it
+                      </button>
                     ) : null}
                   </span>
                 </li>

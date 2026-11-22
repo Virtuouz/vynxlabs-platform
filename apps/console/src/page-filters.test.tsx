@@ -436,3 +436,40 @@ test("the last tab cannot be removed", () => {
     (screen.getByRole("button", { name: "Remove the tab Only" }) as HTMLButtonElement).disabled,
   ).toBe(true);
 });
+
+test("a table or list that names no columns is searched in the text columns it draws, not only its first", () => {
+  const visits: Catalog = {
+    tables: [
+      {
+        name: "appointments",
+        columns: [
+          { name: "number", type: "text", references: null },
+          { name: "pet", type: "uuid", references: "pets" },
+          { name: "pet_name", type: "text", references: null },
+          { name: "reason", type: "text", references: null },
+          { name: "lines", type: "json", references: null },
+        ],
+      },
+    ],
+    queries: [],
+    maySql: false,
+  };
+  const reads = (type: string, config?: Record<string, unknown>): PageWidget => ({
+    id: "w",
+    type,
+    at: { x: 0, y: 0, w: 12, h: 6 },
+    data: { rows: { source: { visual: { table: "appointments" } } } },
+    ...(config ? { config } : {}),
+  });
+  const everyText = ["number", "pet_name", "reason"];
+  expect(searchColumns(reads("core/table"), "appointments", visits)).toEqual(everyText);
+  expect(searchColumns(reads("core/table", { columns: [] }), "appointments", visits)).toEqual(
+    everyText,
+  );
+  expect(searchColumns(reads("core/list"), "appointments", visits)).toEqual(["number"]);
+  const slots = { title: "pet_name", subtitle: "reason" };
+  expect(searchColumns(reads("core/list", slots), "appointments", visits)).toEqual([
+    "pet_name",
+    "reason",
+  ]);
+});

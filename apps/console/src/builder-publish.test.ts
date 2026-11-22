@@ -1,7 +1,7 @@
 import type { InterfaceBody, PageWidget } from "@volvel/manifest";
 import { expect, test } from "vitest";
 import { draftChanges } from "./screens/builder/changes.ts";
-import { checksFor, plainly } from "./screens/builder/publishCheck.ts";
+import { checksFor, plainly, problemWords } from "./screens/builder/publishCheck.ts";
 
 const form = (data: PageWidget["data"]): PageWidget => ({
   id: "form",
@@ -52,9 +52,9 @@ test("a form that reads nothing still has no table chosen", () => {
 
 test("what the server refused is said in the page's words", () => {
   const made = body(form(undefined));
-  expect(plainly("/body/pages/0/widgets/0/config/x must NOT have fewer than 1 items", made)).toBe(
-    "form on Edit invoice: needs at least 1",
-  );
+  expect(
+    plainly("/body/pages/0/widgets/0/config/fields must NOT have fewer than 1 items", made),
+  ).toBe("form on Edit invoice: needs at least 1 field");
   expect(plainly("Something else", made)).toBe("Something else");
 });
 
@@ -122,4 +122,47 @@ test("an app served at its own address says approvals are decided in the console
   expect(has(widgets, "none")).toBe(false);
   // A page with no Approvals widget is not told.
   expect(has(body(form(undefined)), "separate")).toBe(false);
+});
+
+test("a refusal names the thing, and says what it needs, never in the schema's words", () => {
+  const made = body({
+    id: "group",
+    type: "core/actions",
+    title: "Action group",
+    at: { x: 0, y: 0, w: 6, h: 1 },
+    config: { actions: [{ id: "a", label: "Do it", action: { steps: [] } }] },
+  });
+  expect(
+    problemWords(
+      {
+        path: "/body/pages/0/widgets/0/config/actions/0/action/steps",
+        message: "must NOT have fewer than 1 items",
+      },
+      made,
+    ),
+  ).toBe("Do it on Edit invoice has no steps yet");
+  expect(
+    problemWords(
+      {
+        path: "/body/pages/0/widgets/0/config/columns",
+        message: "must NOT have fewer than 1 items",
+      },
+      made,
+    ),
+  ).toBe("Action group on Edit invoice: needs at least 1 column");
+  expect(
+    problemWords(
+      {
+        path: "/body/pages/0/widgets/0/config/rowActions",
+        message: "must NOT have more than 8 items",
+      },
+      made,
+    ),
+  ).toBe("Action group on Edit invoice: has more than 8 row actions; 8 is the most");
+  expect(
+    problemWords(
+      { path: "/body/pages/0/widgets/0/config", message: "must have required property 'fields'" },
+      made,
+    ),
+  ).toBe("Action group on Edit invoice: needs fields");
 });

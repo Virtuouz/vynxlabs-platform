@@ -380,6 +380,8 @@ export interface ActingUser {
   name?: string;
   /** The names of the groups the person is in. */
   groups: readonly string[];
+  /** What each group the page's rules name is called now, by the path they name it by. */
+  groupNames?: Readonly<Record<string, string>>;
 }
 
 /**

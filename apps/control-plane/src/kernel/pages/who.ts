@@ -40,7 +40,7 @@ export async function callerGroupKeys(
 }
 
 /** What each group path is called now: its title, or the key when the group is gone. */
-async function groupTitles(
+export async function groupTitles(
   kernel: Kernel,
   tenantId: string,
   paths: readonly string[],
@@ -130,4 +130,39 @@ export async function principalEmail(
     return row?.email;
   }
   return undefined;
+}
+
+/** The paths of the groups a page names: who may run an action (`runBy`) and who sees a widget (`seenBy`). */
+export function groupPathsIn(value: unknown): string[] {
+  const found = new Set<string>();
+  const walk = (one: unknown) => {
+    if (Array.isArray(one)) {
+      for (const item of one) walk(item);
+      return;
+    }
+    if (typeof one !== "object" || one === null) return;
+    for (const [key, inner] of Object.entries(one as Record<string, unknown>)) {
+      const groups = (inner as { groups?: unknown } | null)?.groups;
+      if ((key === "runBy" || key === "seenBy") && Array.isArray(groups)) {
+        for (const path of groups) if (typeof path === "string") found.add(path);
+      } else walk(inner);
+    }
+  };
+  walk(value);
+  return [...found];
+}
+
+/**
+ * What each group a page names is called now, by the path the page names it by. Sent with the page,
+ * since a person using an app may not list the tenant's groups, and a group renamed keeps its key.
+ */
+export async function groupNamesFor(
+  kernel: Kernel,
+  tenantId: string,
+  body: unknown,
+): Promise<Record<string, string>> {
+  const paths = groupPathsIn(body);
+  if (paths.length === 0) return {};
+  const titles = await groupTitles(kernel, tenantId, paths);
+  return Object.fromEntries(paths.map((path, at) => [path, titles[at] as string]));
 }

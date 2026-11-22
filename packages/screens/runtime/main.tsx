@@ -21,6 +21,8 @@ import {
 /** What the platform gives for an interface: its body, and what each table it reads holds. */
 interface InterfaceView {
   body: InterfaceBody;
+  /** What each group the page names is called now, by the path it is named by. */
+  groupNames?: Record<string, string>;
 }
 
 /** The platform's packs: what a page made in the console may hold. */
@@ -191,6 +193,7 @@ function App() {
         ...(who.email ? { email: who.email } : {}),
         ...(who.name ? { name: who.name } : {}),
         groups: [...(who.groups ?? []), ...(who.groupKeys ?? [])],
+        ...(view?.groupNames ? { groupNames: view.groupNames } : {}),
       }
     : undefined;
   const clientForPage = useCallback(

@@ -778,6 +778,16 @@ describe("a draft", () => {
     ),
   });
 
+  test("holds a button with no steps yet, says so as a problem, and is not deployed with it", async () => {
+    const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
+      kind: "interface",
+      schemaVersion: 2,
+      body: draftOf([button("unfinished", 8, { steps: [] })]),
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(JSON.stringify(saved.body.problems)).toContain("must NOT have fewer than 1 items");
+  });
+
   test("is refused to an end user and run by an editor", async () => {
     const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
       kind: "interface",
@@ -898,6 +908,16 @@ describe("who can run it", () => {
     const three = await press(ivy, "other", id);
     expect(three.status).toBe(403);
     expect(JSON.stringify(three.body)).toContain("Only sales, managers and admins can do this.");
+  });
+
+  test("the interface is served with the names of the groups its rules name, so that a page need not list them", async () => {
+    const served = await alice.get(`${ws()}/interfaces/screens/invoices`);
+    expect(served.status, JSON.stringify(served.body)).toBe(200);
+    // A group that is gone is named by its key; every group the page names has an entry.
+    expect(served.body.groupNames).toMatchObject({ vanished: "vanished" });
+    expect(Object.keys(served.body.groupNames)).toEqual(
+      expect.arrayContaining(["finance", "managers", "vanished"]),
+    );
   });
 
   test("it only narrows: a member of the group still meets the row policy", async () => {

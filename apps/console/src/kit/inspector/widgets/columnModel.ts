@@ -72,6 +72,19 @@ export function factsOf(
   });
 }
 
+/**
+ * A column's facts with the values the server counted for it added after those its definition
+ * gives: a text column that holds a few named things (a status) is a choice too, and a value no
+ * row has yet stays offered.
+ */
+export function withListedChoices(
+  facts: ColumnFacts | undefined,
+  listed: readonly { value: string }[] | undefined,
+): ColumnFacts | undefined {
+  if (!facts || !listed?.length) return facts;
+  return { ...facts, choices: [...new Set([...facts.choices, ...listed.map((one) => one.value)])] };
+}
+
 export const isNumberType = (type: string) => type === "integer" || type === "number";
 export const isDateType = (type: string) => type === "date" || type === "timestamp";
 const LONG = /^(notes?|description|body|comments?|message|details?)$/;

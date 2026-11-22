@@ -65,8 +65,22 @@ import { DataControl, FormatRow } from "./dataControls.tsx";
 import { FieldsControl, PageControl } from "./fieldsControl.tsx";
 import { FiltersControl } from "./filtersControl.tsx";
 import { useChosenGroups } from "./groupChoices.tsx";
-import type { Catalog, ConfigSetting, FlowChoice, ScriptChoice, TabFate } from "./model.ts";
-import { heading, resultNames, visualOf, withConfig, withSystemColumns } from "./model.ts";
+import type {
+  Catalog,
+  CatalogColumn,
+  ConfigSetting,
+  FlowChoice,
+  ScriptChoice,
+  TabFate,
+} from "./model.ts";
+import {
+  heading,
+  isChoiceLike,
+  resultNames,
+  tableOfInput,
+  withConfig,
+  withSystemColumns,
+} from "./model.ts";
 import { TabsControl } from "./tabsControl.tsx";
 import { type GroupChoice, groupName } from "./timelineModel.ts";
 
@@ -108,6 +122,15 @@ export interface Env {
   rowClickEditor?: ReactNode;
 }
 
+/**
+ * Whether a column suits a place that names types. A place that asks for a choice (`enum`) is
+ * given every column that is choice-like: text the server counted to a few values, as Conditions
+ * and a table's badge colours count it.
+ */
+export function offersType(types: readonly string[], column: CatalogColumn): boolean {
+  return types.includes(column.type) || (types.includes("enum") && isChoiceLike(column));
+}
+
 /** The columns a column control offers for a data input. */
 export function columnOptions(
   env: Env,
@@ -115,12 +138,12 @@ export function columnOptions(
   types?: readonly string[],
 ): Option[] {
   const input = of ? env.widget.data?.[of] : undefined;
-  const visual = visualOf(input);
-  const table = visual ? env.catalog.tables.find((one) => one.name === visual.table) : undefined;
+  const named = tableOfInput(input, env.page, env.widgets);
+  const table = named ? env.catalog.tables.find((one) => one.name === named) : undefined;
   const columns = table ? withSystemColumns(table.columns) : [];
   if (types) {
     return columns
-      .filter((column) => types.includes(column.type))
+      .filter((column) => offersType(types, column))
       .map((column) => ({ value: column.name, label: heading(column.name) }));
   }
   const declared = of ? env.definition.data[of] : undefined;

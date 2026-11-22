@@ -7,7 +7,7 @@ import { actions, button, detail, filter, form, section, tabs, text } from "@vol
 import { type ComponentType, useState } from "react";
 import { afterEach, expect, test } from "vitest";
 import type { Env } from "../controls.tsx";
-import type { Catalog } from "../model.ts";
+import { type Catalog, onThePagesRecord, tableOfInput } from "../model.ts";
 import { ActionsDisplaySection, buttonLine } from "./actionsDrawer.tsx";
 import { ButtonDisplaySection } from "./buttonDrawer.tsx";
 import { DetailDataSection, DetailDisplaySection } from "./detailDrawer.tsx";
@@ -203,6 +203,66 @@ test("fields across and editing in place are written", () => {
   expect(mine(seen).config.across).toBe(3);
   fireEvent.click(screen.getByRole("switch", { name: "Let people edit fields in place" }));
   expect(mine(seen).config.edit).toBe(true);
+});
+
+const sheet: Page = {
+  id: "sheet",
+  title: "Invoice sheet",
+  kind: "sheet",
+  record: { table: "invoices" },
+  widgets: [],
+};
+
+test("a detail wired to the record the page opens with lists that table's fields, to hide, section and reorder", () => {
+  const seen = mount(
+    detail,
+    { data: { record: { source: { record: "this" } } } },
+    DetailDisplaySection,
+    { page: sheet },
+  );
+  const list = screen.getByRole("list", { name: "Fields" });
+  expect(list.textContent).toContain("Number");
+  expect(list.textContent).toContain("Total");
+  // A section is added: it starts on the last field and is written.
+  fireEvent.click(screen.getByRole("button", { name: /Field or section/ }));
+  fireEvent.change(screen.getByLabelText("New section"), { target: { value: "Money" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
+  const written = mine(seen).config.fields as { column: string; section?: string }[];
+  expect(written.length).toBeGreaterThan(3);
+  expect(written.at(-1)?.section).toBe("Money");
+});
+
+test("a new record detail or an edit form starts on the record the page opens with; a plain page leaves it alone", () => {
+  const added = (type: string, config?: Record<string, unknown>): PageWidget => ({
+    id: "w",
+    type,
+    at: { x: 0, y: 0, w: 6, h: 4 },
+    ...(config ? { config } : {}),
+  });
+  const wired = onThePagesRecord(added("core/detail"), sheet);
+  expect(wired.data?.record?.source).toEqual({ record: "this" });
+  expect(onThePagesRecord(added("core/detail"), { ...sheet, kind: "page" }).data).toBeUndefined();
+  expect(onThePagesRecord(added("core/form", { mode: "create" }), sheet).data).toBeUndefined();
+  expect(
+    onThePagesRecord(added("core/form", { mode: "edit" }), sheet).data?.record?.source,
+  ).toEqual({ record: "this" });
+  // Back to making records, the form reads the table again.
+  expect(
+    onThePagesRecord({ ...wired, type: "core/form", config: { mode: "create" } }, sheet).data
+      ?.record?.source,
+  ).toEqual({ visual: { table: "invoices" } });
+  // Wired to something else already: left alone.
+  const own = { ...added("core/detail"), data: { record: { source: { selected: "t1" } } } };
+  expect(onThePagesRecord(own, sheet)).toBe(own);
+});
+
+test("the table a record input reads is found whichever way it is wired", () => {
+  expect(tableOfInput({ source: { record: "this" } }, sheet)).toBe("invoices");
+  expect(tableOfInput({ source: { own: { table: "clients", by: "email" } } }, undefined)).toBe(
+    "clients",
+  );
+  expect(tableOfInput({ source: { selected: "t1" } }, undefined, [table("t1")])).toBe("invoices");
+  expect(tableOfInput({ source: { record: "this" } }, undefined)).toBeUndefined();
 });
 
 // ---------------------------------------------------------------------------

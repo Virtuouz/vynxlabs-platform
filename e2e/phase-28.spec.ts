@@ -1295,24 +1295,45 @@ test("POLISH-004: Table: a column shown as a badge is offered each of its values
   for (const value of ["paid", "unpaid", "void"]) {
     await expect(colours.getByLabel(`Color of ${value}`), `a colour for ${value}`).toBeVisible();
   }
-  await colours.getByLabel("Color of unpaid").selectOption({ label: "Attention" });
-  await colours.getByLabel("Color of paid").selectOption({ label: "Success" });
+  // The colour of a value is a menu, as the drawer draws every picker of this kind: no <select>.
+  await colours.getByLabel("Color of unpaid").click();
+  await owner
+    .getByRole("menu", { name: "Color of unpaid" })
+    .getByRole("menuitem", { name: "Amber" })
+    .click();
+  await colours.getByLabel("Color of paid").click();
+  await owner
+    .getByRole("menu", { name: "Color of paid" })
+    .getByRole("menuitem", { name: "Green" })
+    .click();
   await owner.keyboard.press("Escape");
-  const table = await savedWidget("tables", "invoices", (one) => one.id === "list");
-  const status = (table.config.columns as Wid[]).find((one) => one.column === "status");
+  // The draft exists from the start: wait for the save of this change, not for the widget.
+  const statusOf = async () =>
+    (
+      (await draftWidget("tables", "invoices", (one) => one.id === "list"))?.config.columns as Wid[]
+    )?.find((one) => one.column === "status");
+  await expect.poll(async () => (await statusOf())?.badges?.paid).toBe("success");
+  const status = await statusOf();
   expect(status.as).toBe("badge");
   expect(status.badges).toMatchObject({ unpaid: "attention", paid: "success" });
   const row = widget("Invoices").getByRole("row", { name: new RegExp(made.a?.number ?? "") });
-  await expect(row.getByText("unpaid", { exact: true })).toBeVisible();
+  await expect(row.getByText("Unpaid", { exact: true })).toBeVisible();
   await owner.reload();
   await pages()
     .getByRole("button", { name: /^Invoices/ })
     .click();
-  await expect(row.getByText("unpaid", { exact: true })).toBeVisible();
+  await expect(row.getByText("Unpaid", { exact: true })).toBeVisible();
 });
 
 /** The editor of an action (a row action, a button above the table): the dialog named by what it says. */
-const actionEditor = (says: string) => owner.getByRole("dialog", { name: says });
+// A row action is edited in the settings pane now (J2), a button's in a dialog.
+const actionEditor = (says: string) => owner.getByRole("dialog", { name: says }).or(settings());
+/** Leaves an action's editor: Done in its dialog, Back in the settings pane. */
+const doneWith = (says: string) =>
+  owner
+    .getByRole("dialog", { name: says })
+    .getByRole("button", { name: "Done" })
+    .or(settings().getByRole("button", { name: /^Back/ }));
 
 test("POLISH-004: Table: a row action is made in the inspector, run on the rows chosen in the published app, and who may run it is picked from the groups", async () => {
   await openBuilder("tables", /^To pay/);
@@ -1347,7 +1368,7 @@ test("POLISH-004: Table: a row action is made in the inspector, run on the rows 
     .getByText("Practice managers", { exact: true })
     .click();
   await owner.getByRole("dialog", { name: "Groups" }).getByRole("button", { name: "Done" }).click();
-  await actionEditor("Mark paid").getByRole("button", { name: "Done" }).click();
+  await doneWith("Mark paid").click();
   await savedWidget("tables", "bulk", (one) => one.id === "pay");
   const saved = await settle("tables", "bulk", "pay", (one) =>
     (one.config?.rowActions as Wid[] | undefined)?.[0]?.action?.runBy ? one : undefined,
@@ -1391,7 +1412,7 @@ test("POLISH-010: the publish check blocks what cannot work, says why, passes on
   await settings()
     .getByRole("button", { name: /^Row action$/ })
     .click();
-  await actionEditor("Action").getByRole("button", { name: "Done" }).click();
+  await doneWith("Action").click();
   await openCheck();
   await expect(readyToPublish().getByRole("alert")).toContainText("Publish is off until");
   await expect(readyToPublish().getByRole("button", { name: /^Publish/ })).toBeDisabled();
@@ -1406,7 +1427,7 @@ test("POLISH-010: the publish check blocks what cannot work, says why, passes on
     .click();
   await actionEditor("Action").getByRole("button", { name: "Add a step" }).click();
   await owner.getByRole("menuitem", { name: "Show a message" }).click();
-  await actionEditor("Action").getByRole("button", { name: "Done" }).click();
+  await doneWith("Action").click();
   await openCheck();
   await expect(readyToPublish().locator('[data-check="fail"]')).toHaveCount(0);
   await expect(readyToPublish().getByText("All data sources found")).toBeVisible();
@@ -1562,19 +1583,21 @@ test('POLISH-004: Conditions: a date is "in the last…" or "between", a choice 
   const group = open.getByRole("group", { name: "Any of" });
   for (const value of ["paid", "unpaid", "void"]) {
     await expect(
-      group.getByRole("checkbox", { name: new RegExp(`^${value} \\d+ rows?$`, "i") }),
+      group.getByRole("checkbox", { name: new RegExp(`^${value} [\\d,]+ rows?$`, "i") }),
     ).toBeVisible();
   }
   // The counts are the table's own: how many invoices have each status.
   const really = await invoicesByStatus();
   for (const value of ["paid", "unpaid", "void"]) {
     await expect(
-      group.getByRole("checkbox", { name: new RegExp(`^${value} ${really[value]} rows$`, "i") }),
+      group.getByRole("checkbox", {
+        name: new RegExp(`^${value} ${Number(really[value]).toLocaleString("en-US")} rows$`, "i"),
+      }),
       `${value} has ${really[value]} rows`,
     ).toBeVisible();
   }
-  await group.getByRole("checkbox", { name: /^paid \d+ rows?$/i }).check();
-  await group.getByRole("checkbox", { name: /^void \d+ rows?$/i }).check();
+  await group.getByRole("checkbox", { name: /^paid [\d,]+ rows?$/i }).check();
+  await group.getByRole("checkbox", { name: /^void [\d,]+ rows?$/i }).check();
   await open.getByRole("button", { name: "Add" }).click();
   const some = INVOICES.filter((one) => one.status === "paid" || one.status === "void").length;
   await expect.poll(() => rowsDrawn("Table")).toBe(some);
@@ -2250,7 +2273,7 @@ test("Acceptance, invoices: a table of invoices, a click that opens the record, 
     .click();
   await owner.getByRole("textbox").last().fill("paid");
   await owner.keyboard.press("Enter");
-  await actionEditor("Mark paid").getByRole("button", { name: "Done" }).click();
+  await doneWith("Mark paid").click();
 
   // A form for a new invoice: its modal, and a button on the table that opens it.
   await owner
@@ -2368,16 +2391,32 @@ test("Acceptance, appointments: a page started from the appointments table, its 
   const some = (await ok(owner, "GET", `${W}/rows/appointments?limit=200`)).items as Wid[];
   const target = some.find((one) => one.pet_name)?.pet_name as string;
   expect(target, "the sandbox has appointments to find").toBeTruthy();
-  const howMany = some.filter((one) => one.pet_name === target).length;
+  // How many visits the pet has in all (the sample above is only the first 200 appointments): the
+  // first page of the list shows at most 25 of them.
+  const visits = (
+    await ok(
+      owner,
+      "GET",
+      `${W}/rows/appointments?filter=${encodeURIComponent(JSON.stringify({ column: "pet_name", value: target }))}&limit=100`,
+    )
+  ).items as Wid[];
+  const howMany = Math.min(25, visits.length);
   await owner.setViewportSize({ width: 1440, height: 1000 });
   await owner.goto(`${served.appointments}${made1.id}`);
   const search = owner.getByRole("textbox", { name: /^Search/ }).first();
   await expect(search).toBeVisible({ timeout: 30_000 });
   const rowsOf = () => owner.getByRole("row");
   await expect.poll(async () => (await rowsOf().count()) > 5).toBe(true);
-  const all = await rowsOf().count();
   await search.fill(target);
-  await expect.poll(async () => (await rowsOf().count()) < all).toBe(true);
+  // Every row of the list, below its header, is a visit of that pet: the search looks in the pet's
+  // name, which the list draws. (A common name fills the page, so the count may not fall.)
+  await expect
+    .poll(async () => {
+      const count = await rowsOf().count();
+      return count > 1 && (await rowsOf().filter({ hasText: target }).count()) === count - 1;
+    })
+    .toBe(true);
+  await expect(owner.getByText("Nothing matches the filters.")).toHaveCount(0);
   await expect(owner.getByText(target).first()).toBeVisible();
   expect(
     await rowsOf().count(),

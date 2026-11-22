@@ -16,6 +16,7 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { notify } from "../../ask.tsx";
 import { edgeShadows } from "../../kit/edgeShadows.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
+import { groupPath } from "../../kit/inspector/groupChoices.tsx";
 import { InspectorHost } from "../../kit/inspector/InspectorHost.tsx";
 import {
   bindFilter,
@@ -23,6 +24,7 @@ import {
   defaultInputs,
   insertFilterWidget,
   mainTable,
+  onThePagesRecord,
   settleOnGrid,
   unbindDeclared,
 } from "../../kit/inspector/model.ts";
@@ -208,6 +210,11 @@ export function PageEditor({
 }) {
   const { catalog } = useCatalog(root);
   const { groups: keyed } = useGroupKeys(root);
+  // What each group the rules name is called now: a renamed group keeps its key.
+  const groupNames = useMemo(
+    () => Object.fromEntries(keyed.map((one) => [groupPath(one), one.name])),
+    [keyed],
+  );
   const device = (frame?.name ?? "desktop") as "desktop" | "tablet" | "phone";
   // Every change leaves each container as tall as what it holds (phase 27).
   const onChange: typeof hostChange = (next, label, key) => {
@@ -314,8 +321,10 @@ export function PageEditor({
   };
 
   /** A widget changed in the inspector; if its place changed, what it now lies on moves out of its way. */
-  const edit = (changed: PageWidget, label: string, key?: string) => {
-    const before = widgets.find((one) => one.id === changed.id);
+  const edit = (changedAs: PageWidget, label: string, key?: string) => {
+    const before = widgets.find((one) => one.id === changedAs.id);
+    // A form changed to edit is on the record the page opens with.
+    const changed = onThePagesRecord(changedAs, pageInfo?.page);
     const next = widgets.map((one) => (one.id === changed.id ? changed : one));
     const moved = before && JSON.stringify(before.at) !== JSON.stringify(changed.at);
     put(moved ? settleOnGrid(next, changed.id) : next, label, key);
@@ -346,6 +355,7 @@ export function PageEditor({
         ? { data: defaultInputs(definition, mainTable(widgets, catalog), catalog) }
         : {}),
     };
+    added = onThePagesRecord(added, pageInfo?.page);
     if (added.data && Object.keys(added.data).length === 0) delete added.data;
     for (const filter of filters) added = bindFilter(added, filter, catalog, widgets);
     let next = at ? placed([...widgets, added], id, at) : [...widgets, added];
@@ -648,6 +658,7 @@ export function PageEditor({
                   {...(refreshKey !== undefined ? { refreshKey } : {})}
                   {...opens}
                   device={device}
+                  groupNames={groupNames}
                   {...(layout?.viewAs ? { viewAs: layout.viewAs } : {})}
                   editing={{
                     readOnly,

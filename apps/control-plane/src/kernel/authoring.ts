@@ -210,7 +210,19 @@ export async function saveDraft(
       ownership: "ui",
       body,
     });
-    if (!validation.ok) throw badRequest("The manifest is not valid.", validation.issues);
+    // A page is built a step at a time: a draft holds an action that has no steps yet, as it holds
+    // other unfinished things. The checks of the page say it, and publishing refuses it.
+    const unfinished = (issue: { path: string; message: string }) =>
+      /\/steps$/.test(issue.path) && issue.message === "must NOT have fewer than 1 items";
+    if (
+      !validation.ok &&
+      !(
+        (input.kind === "interface" || input.kind === "dashboard") &&
+        validation.issues.every(unfinished)
+      )
+    ) {
+      throw badRequest("The manifest is not valid.", validation.issues);
+    }
   }
 
   if (resource && resource.kind !== input.kind) {

@@ -14,6 +14,7 @@ import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { notify } from "../../ask.tsx";
+import { edgeShadows } from "../../kit/edgeShadows.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import { InspectorHost } from "../../kit/inspector/InspectorHost.tsx";
 import {
@@ -444,10 +445,26 @@ export function PageEditor({
     notify.success(`Removed ${words}.`, { action: { label: "Undo", onClick: shell.history.undo } });
   };
 
+  // An app's builder: the pages and what is on this page each take a fair share of the pane and scroll on their own, with an edge that says where there is more; the foot never covers them.
+  const shared = pageInfo !== undefined;
   const outline = (
     <>
-      {pages}
-      <section aria-labelledby="on-the-page" className="flex shrink-0 flex-col gap-1">
+      {shared ? (
+        <div
+          data-outline-pages=""
+          className="min-h-20 shrink-0 overflow-y-auto lg:max-h-[38%]"
+          style={edgeShadows()}
+        >
+          {pages}
+        </div>
+      ) : (
+        pages
+      )}
+      <section
+        aria-labelledby="on-the-page"
+        className={`flex flex-col gap-1 ${shared ? "min-h-20 flex-1 overflow-y-auto" : "shrink-0"}`}
+        style={shared ? edgeShadows() : undefined}
+      >
         <h2 id="on-the-page" className="m-0 px-1 text-label text-ink-muted uppercase">
           On this page
         </h2>
@@ -463,8 +480,10 @@ export function PageEditor({
           />
         )}
       </section>
-      {/* Stays in view at the foot of the pane as the outline scrolls behind it. */}
-      <div className="sticky bottom-0 flex shrink-0 flex-col bg-inherit pt-1 pb-1">
+      {/* At the foot of the pane, outside what scrolls: it never covers the pages or the widgets. */}
+      <div
+        className={`flex shrink-0 flex-col bg-inherit pt-1 pb-1 ${shared ? "" : "sticky bottom-0"}`}
+      >
         <Button
           variant="quiet"
           disabled={full}

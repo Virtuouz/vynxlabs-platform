@@ -318,10 +318,29 @@ describe("table actions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Row action" }));
     const added = (last().config?.rowActions ?? []) as { id: string }[];
     expect(added).toHaveLength(3);
+    // The new one opens in the drawer, in place of the tab, with Back.
+    fireEvent.click(await screen.findByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Button" }));
     expect((last().config?.buttons ?? []) as unknown[]).toHaveLength(2);
     fireEvent.click(await screen.findByRole("button", { name: /^Remove / }));
     expect((last().config?.buttons ?? []) as unknown[]).toHaveLength(1);
+  });
+
+  test("a row action opens in the drawer as a sub-view with Back, and the tab is back after it", async () => {
+    show(
+      <Harness start={withActions()} definition={table}>
+        {(env) => <TableActions env={env} />}
+      </Harness>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Mark paid/ }));
+    expect(await screen.findByRole("button", { name: "Back" })).toBeTruthy();
+    expect(screen.getByLabelText("Says")).toBeTruthy();
+    // Nothing else of the tab is drawn beside it.
+    expect(screen.queryByText("Selecting rows")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(
+      await screen.findByRole("switch", { name: "Let people select several rows" }),
+    ).toBeTruthy();
   });
 
   test("a table whose click does nothing says so", () => {

@@ -11,7 +11,9 @@ import { heading, searchColumns, visualOf } from "../model.ts";
 import { type ColumnSetting, columnsOf, shownCount } from "./columnModel.ts";
 import { ListLookSection } from "./listDrawer.tsx";
 import { SlotsControl, SlotsGroup, slotSettings } from "./slots.tsx";
+import { openActionOf } from "./subView.ts";
 import {
+  ActionSubView,
   BUTTONS_NOTE,
   ROW_ACTIONS_NOTE,
   TableButtonsSection,
@@ -23,6 +25,11 @@ import {
 } from "./tableDrawer.tsx";
 
 const TABLE = "core/table";
+
+/** While a row action or button is open in the drawer, it is the whole Actions tab. */
+const nothingOpen = (env: Env) => openActionOf(env.widget.id) === undefined;
+
+registerDrawer(TABLE, { tab: "actions", order: 0, section: ActionSubView });
 
 /** The page's search box this table follows, with the columns it looks in (board 13's "Searching"). */
 function searchOf(env: Env): { label: string; columns: string[] } | undefined {
@@ -91,6 +98,7 @@ registerDrawer(TABLE, {
   tab: "actions",
   group: "When a row is clicked",
   order: 1,
+  when: nothingOpen,
   render: (env) => <TableRowClickSection env={env} bare />,
 });
 
@@ -98,6 +106,7 @@ registerDrawer(TABLE, {
   tab: "actions",
   group: "Row actions",
   order: 2,
+  when: nothingOpen,
   hides: ["rowActions"],
   note: ROW_ACTIONS_NOTE,
   render: (env) => <TableRowActionsSection env={env} bare />,
@@ -107,6 +116,7 @@ registerDrawer(TABLE, {
   tab: "actions",
   group: "Buttons above the table",
   order: 3,
+  when: nothingOpen,
   hides: ["buttons"],
   note: BUTTONS_NOTE,
   render: (env) => <TableButtonsSection env={env} bare />,
@@ -116,6 +126,7 @@ registerDrawer(TABLE, {
   tab: "actions",
   group: "Selecting rows",
   order: 4,
+  when: nothingOpen,
   hides: ["select"],
   render: (env) => <TableSelectSection env={env} bare />,
 });

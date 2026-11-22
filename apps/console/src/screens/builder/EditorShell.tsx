@@ -237,7 +237,7 @@ export function EditorShell({
             aria-label="On this page"
             className={
               bleed
-                ? "flex shrink-0 flex-col gap-4 border-line border-t bg-structure px-2 py-4 max-lg:max-h-[45vh] max-lg:overflow-y-auto lg:w-58 lg:overflow-y-auto lg:border-r"
+                ? "flex shrink-0 flex-col gap-4 border-line border-t bg-structure px-2 py-4 max-lg:max-h-[45vh] max-lg:overflow-y-auto lg:min-h-0 lg:w-58 lg:overflow-hidden lg:border-r"
                 : "flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-60 lg:overflow-y-auto lg:border-r lg:border-line lg:pr-3"
             }
           >

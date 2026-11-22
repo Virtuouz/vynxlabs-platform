@@ -233,7 +233,7 @@ export function AppBuilder({
     setRestoring(false);
     setPageId(undefined);
     setSelected(undefined);
-    notify.success(`The draft saved ${ago(savedAt)} is back.`, {
+    notify.success(`Restored the draft saved ${ago(savedAt)}.`, {
       action: { label: "Undo", onClick: history.undo },
     });
   };

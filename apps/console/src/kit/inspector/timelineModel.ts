@@ -14,7 +14,7 @@ import {
   type Step,
   singular,
 } from "./actionModel.ts";
-import { type CatalogColumn, choiceWords, heading, isChoiceLike } from "./model.ts";
+import { type CatalogColumn, choiceWords, heading, isChoiceLike, named } from "./model.ts";
 
 const article = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 
@@ -41,7 +41,7 @@ export function stepSummary(
       return step.path ? `Run the script ${step.path}` : "Run a script";
     case "open": {
       const page = pages.find((one) => one.id === step.page);
-      return `Open ${page?.title ?? (step.page || "a page")}`;
+      return `Open ${named(page?.title ?? (step.page || "a page"))}`;
     }
     case "close":
       return "Close";

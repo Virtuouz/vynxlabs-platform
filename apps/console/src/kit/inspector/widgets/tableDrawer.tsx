@@ -22,7 +22,7 @@ import { ActionControl, actionContext } from "../actionControls.tsx";
 import type { Action } from "../actionModel.ts";
 import { type ActionContext, conditionSentence } from "../actionModel.ts";
 import type { Env } from "../controls.tsx";
-import { configSettings, heading, uniqueName, withConfig } from "../model.ts";
+import { configSettings, heading, named, uniqueName, withConfig } from "../model.ts";
 import { ActionRules } from "../RulesTab.tsx";
 import { AnchoredColumnEditor, CanvasColumnEditor } from "./ColumnEditor.tsx";
 import {
@@ -36,7 +36,9 @@ import {
 } from "./columnModel.ts";
 import { clearColumnRequest, useColumnRequest } from "./columnRequest.ts";
 import { FullSegments } from "./FullSegments.tsx";
+import { BackHead } from "./recordShared.tsx";
 import { Section } from "./Section.tsx";
+import { openAction, useOpenAction } from "./subView.ts";
 import { type TableSource, useTableData } from "./tableData.ts";
 
 /** What every section of these drawers is given. */
@@ -291,9 +293,9 @@ export function actionSummary(action: Action | undefined, ctx?: ActionContext): 
 }
 
 /**
- * A list of labelled actions as rows ("Mark paid · Only when Status is Unpaid"), each opening
- * its action's editor, and a dashed add. The editor is the action editor the inspector has today;
- * the step editor of the Actions tab takes its place.
+ * A list of labelled actions as rows ("Mark paid · Only when Status is Unpaid"). A row opens its
+ * action in the drawer, as a sub-view with "‹ Back" (`ActionSubView`), as the Action group's
+ * buttons do: its steps, who may run it, and a confirmation drawn over the canvas.
  */
 function ActionRows({
   env,
@@ -321,7 +323,6 @@ function ActionRows({
   const max = typeof setting?.schema.maxItems === "number" ? setting.schema.maxItems : 6;
   const put = (next: Labelled[], label: string, key?: string) =>
     writeConfig(env, name, next, label, key);
-  const [openId, setOpenId] = useState<string | undefined>();
   const add = () => {
     const id = uniqueName(
       firstLabel,
@@ -330,7 +331,7 @@ function ActionRows({
       "-",
     );
     put([...list, { id, label: firstLabel, action: { steps: [] } }], `adding ${noun}`);
-    setOpenId(id);
+    openAction(env.widget.id, { name, id });
   };
   return (
     <Section bare={bare} label={group} note={note}>
@@ -340,69 +341,7 @@ function ActionRows({
           label={one.label || firstLabel}
           {...(icon ? { icon } : {})}
           value={actionSummary(one.action, actionContext(env))}
-          editorTitle={one.label || firstLabel}
-          open={openId === one.id}
-          onOpenChange={(next) => setOpenId(next ? one.id : undefined)}
-          editor={
-            <div className="flex flex-col gap-3">
-              <TextField
-                name={`${env.widget.id}-${one.id}-label`}
-                label="Says"
-                required={false}
-                maxLength={40}
-                value={one.label}
-                onChange={(text) =>
-                  put(
-                    list.map((was) => (was.id === one.id ? { ...was, label: text } : was)),
-                    `changing ${noun}`,
-                    `${name}:${env.widget.id}:${one.id}:label`,
-                  )
-                }
-              />
-              <ActionControl
-                env={env}
-                id={`${env.widget.id}-${one.id}`}
-                label={`What ${one.label || noun} does`}
-                help={undefined}
-                action={one.action}
-                onChange={(next, key) =>
-                  put(
-                    list.map((was) =>
-                      was.id === one.id ? { ...was, action: next ?? { steps: [] } } : was,
-                    ),
-                    `changing ${noun}`,
-                    key === undefined ? undefined : `${name}:${env.widget.id}:${one.id}:${key}`,
-                  )
-                }
-              />
-              <ActionRules
-                env={env}
-                id={`${env.widget.id}-${one.id}-rules`}
-                action={one.action}
-                onChange={(next, key) =>
-                  put(
-                    list.map((was) => (was.id === one.id ? { ...was, action: next } : was)),
-                    `changing who can run ${noun}`,
-                    key === undefined ? undefined : `${name}:${env.widget.id}:${one.id}:${key}`,
-                  )
-                }
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  setOpenId(undefined);
-                  put(
-                    list.filter((was) => was.id !== one.id),
-                    `removing ${noun}`,
-                  );
-                }}
-                className="inline-flex h-8 w-fit cursor-pointer items-center gap-1.5 rounded-control px-2 text-body-sm text-danger outline-offset-2 hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-focus"
-              >
-                <Trash2 aria-hidden="true" size={14} />
-                Remove {one.label || noun}
-              </button>
-            </div>
-          }
+          onClick={() => openAction(env.widget.id, { name, id: one.id })}
         />
       ))}
       {list.length < max ? (
@@ -413,6 +352,91 @@ function ActionRows({
         </div>
       ) : null}
     </Section>
+  );
+}
+
+const NOUNS = { rowActions: "row action", buttons: "button" } as const;
+
+/** The open row action or button, drawn in place of the whole Actions tab, with "‹ Back". */
+export function ActionSubView({ env }: { env: Env }) {
+  const which = useOpenAction(env.widget.id);
+  const box = useRef<HTMLDivElement>(null);
+  const name = which?.name === "rowActions" || which?.name === "buttons" ? which.name : undefined;
+  const list = (name && Array.isArray(env.config[name]) ? env.config[name] : []) as Labelled[];
+  const one = list.find((was) => was.id === which?.id);
+  const here = one !== undefined;
+  // Keyboard: the sub-view takes the focus where it opens, on its Back button.
+  useEffect(() => {
+    if (here) box.current?.querySelector("button")?.focus();
+  }, [here]);
+  if (!which || !name || !one) return null;
+  const noun = NOUNS[name];
+  const put = (next: Labelled[], label: string, key?: string) =>
+    writeConfig(env, name, next, label, key);
+  return (
+    <div ref={box} className="flex flex-col gap-4">
+      <BackHead
+        onBack={() => openAction(env.widget.id, undefined)}
+        title={one.label || noun}
+        kind={noun.charAt(0).toUpperCase() + noun.slice(1)}
+      />
+      <TextField
+        name={`${env.widget.id}-${one.id}-label`}
+        label="Says"
+        required={false}
+        maxLength={40}
+        value={one.label}
+        onChange={(text) =>
+          put(
+            list.map((was) => (was.id === one.id ? { ...was, label: text } : was)),
+            `changing ${noun}`,
+            `${name}:${env.widget.id}:${one.id}:label`,
+          )
+        }
+      />
+      <ActionControl
+        env={env}
+        id={`${env.widget.id}-${one.id}`}
+        label={`What ${one.label || noun} does`}
+        help={undefined}
+        action={one.action}
+        onChange={(next, key) =>
+          put(
+            list.map((was) =>
+              was.id === one.id ? { ...was, action: next ?? { steps: [] } } : was,
+            ),
+            `changing ${noun}`,
+            key === undefined ? undefined : `${name}:${env.widget.id}:${one.id}:${key}`,
+          )
+        }
+      />
+      <ActionRules
+        env={env}
+        id={`${env.widget.id}-${one.id}-rules`}
+        action={one.action}
+        onChange={(next, key) =>
+          put(
+            list.map((was) => (was.id === one.id ? { ...was, action: next } : was)),
+            `changing who can run ${noun}`,
+            key === undefined ? undefined : `${name}:${env.widget.id}:${one.id}:${key}`,
+          )
+        }
+      />
+      <button
+        type="button"
+        onClick={() => {
+          openAction(env.widget.id, undefined);
+          put(
+            list.filter((was) => was.id !== one.id),
+            `removing ${noun}`,
+          );
+        }}
+        className="inline-flex h-8 w-fit cursor-pointer items-center gap-1.5 rounded-control px-2 text-body-sm text-danger outline-offset-2 hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-focus"
+      >
+        <Trash2 aria-hidden="true" size={14} />
+        Remove {one.label || noun}
+      </button>
+    </div>
   );
 }
 
@@ -433,7 +457,7 @@ export function rowClickWords(widget: PageWidget, env: Pick<Env, "pages">) {
         : page
           ? "Full page"
           : undefined;
-  return { does: `Open ${page?.title ?? open.page}`, opensAs };
+  return { does: `Open ${named(page?.title ?? open.page)}`, opensAs };
 }
 
 /**
@@ -553,6 +577,8 @@ export function TableSelectSection({ env, bare }: TableSectionProps) {
 export function TableActions(
   props: TableSectionProps & { rowClickEditor?: ReactNode; rowClickOffer?: ReactNode },
 ) {
+  const open = useOpenAction(props.env.widget.id);
+  if (open) return <ActionSubView env={props.env} />;
   return (
     <>
       <TableRowClickSection {...props} />

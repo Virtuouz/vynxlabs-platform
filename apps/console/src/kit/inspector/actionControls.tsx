@@ -970,6 +970,17 @@ function sentenceOf(
         ),
         more: false,
       };
+    // A step whose title already says it gets a line that says something else, not the title again.
+    case "close":
+      return {
+        sentence: <span>Closes the sheet or dialog this page is open in</span>,
+        more: false,
+      };
+    case "rows":
+      return {
+        sentence: <span>Opens them in a side sheet. It only reads.</span>,
+        more: false,
+      };
     default:
       return { sentence: <span>{summary}</span>, more: true };
   }

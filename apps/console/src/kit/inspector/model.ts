@@ -729,3 +729,6 @@ export function widgetName(
   }
   return definition?.title || widget.id;
 }
+
+/** A page's title inside a sentence: a leading "The" is not a capital there ("Open the visit chosen"). */
+export const named = (title: string): string => title.replace(/^The /, "the ");

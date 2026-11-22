@@ -118,10 +118,14 @@ export function InspectorHost({
     return out;
   }, [found]);
   // The same read the sample bar makes, so it is asked once.
+  // Where the page has no record of its own, the widget's own table gives the first row, so the confirmation is written with a real one.
+  const sampleTable = sample.table ?? table;
   const rows = useLoadOf<{ items: Record<string, unknown>[] }>(
-    sample.table ? `${root}/rows/${sample.table}?limit=25` : null,
+    sampleTable ? `${root}/rows/${sampleTable}?limit=25` : null,
   );
-  const row = rows.data?.items.find((one) => one.id === sample.record);
+  const row = sample.record
+    ? rows.data?.items.find((one) => one.id === sample.record)
+    : rows.data?.items[0];
   const data: DrawerData = { ...(summary ? { summary } : {}), counts };
   return (
     <GroupsProvided groups={groupKeys}>

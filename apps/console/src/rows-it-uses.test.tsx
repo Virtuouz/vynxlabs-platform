@@ -132,7 +132,7 @@ test("a choice column's values are chosen, several make an array, and the chip s
   // Editing it writes as it goes: two values are "is one of".
   fireEvent.click(panel().getByRole("button", { name: "Status is Void" }));
   editor = await dialog();
-  fireEvent.click(editor.getByLabelText(/^paid/));
+  fireEvent.click(editor.getByLabelText(/^Paid/));
   expect(last().filters).toEqual([{ column: "status", op: "in", value: ["void", "paid"] }]);
   expect(panel().getByRole("button", { name: "Status is Void, Paid" })).toBeTruthy();
 });

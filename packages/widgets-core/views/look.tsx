@@ -38,7 +38,8 @@ export const VARIANT = {
   primary: "primary",
   default: "secondary",
   quiet: "quiet",
-  danger: "danger-solid",
+  // An outline in red, as the boards draw Void (boards 4 and 17).
+  danger: "danger",
 } as const;
 
 type IconComponent = ComponentType<{ size?: number; className?: string; "aria-hidden"?: "true" }>;

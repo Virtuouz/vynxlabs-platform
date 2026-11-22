@@ -36,6 +36,7 @@ test("a dialog opens at the width its maker chose and scrolls inside", async () 
   const dialog = (await screen.findByRole("dialog")) as HTMLElement;
   expect(dialog.style.width).toBe("1200px");
   expect(dialog.style.maxWidth).toBe("calc(100vw - 2rem)");
-  expect(dialog.className).toContain("overflow-y-auto");
+  // The box keeps its header and footer; its body scrolls.
+  expect(dialog.querySelector(".overflow-y-auto")).toBeTruthy();
   expect(dialog.className).toContain("max-h-[88vh]");
 });

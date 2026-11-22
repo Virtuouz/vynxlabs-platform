@@ -91,8 +91,9 @@ describe("Action group", () => {
     const buttons = await screen.findAllByRole("button");
     expect(buttons.map((one) => one.textContent)).toEqual(["Send", "Print", "Void"]);
     expect(buttons[0]?.className).toContain("bg-action");
-    expect(buttons[1]?.className).toContain("bg-surface");
-    expect(buttons[2]?.className).toContain("bg-danger");
+    // Normal is outlined, and Danger an outline in red, as board 17 draws them.
+    expect(buttons[1]?.className).toContain("border-line-strong");
+    expect(buttons[2]?.className).toContain("text-danger");
     fireEvent.click(screen.getByRole("button", { name: "Print" }));
     await waitFor(() => expect(client.act).toHaveBeenCalledTimes(1));
     expect(client.act.mock.calls[0]?.slice(0, 2)).toEqual(["group", "config/actions/1/action"]);

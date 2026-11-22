@@ -156,7 +156,9 @@ describe("button options", () => {
       />,
     );
     const button = await screen.findByRole("button", { name: "Send" });
-    expect(button.className).toContain("text-action");
+    // Quiet is text with a wash on hover, no edge (board 17).
+    expect(button.className).toContain("hover:bg-hover");
+    expect(button.className).not.toContain("border");
     expect(button.className).toContain("w-full");
     expect(button.querySelector("svg")).toBeTruthy();
     const holder = button.parentElement as HTMLElement;

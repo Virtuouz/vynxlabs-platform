@@ -2381,16 +2381,32 @@ test("Acceptance, appointments: a page started from the appointments table, its 
   const some = (await ok(owner, "GET", `${W}/rows/appointments?limit=200`)).items as Wid[];
   const target = some.find((one) => one.pet_name)?.pet_name as string;
   expect(target, "the sandbox has appointments to find").toBeTruthy();
-  const howMany = some.filter((one) => one.pet_name === target).length;
+  // How many visits the pet has in all (the sample above is only the first 200 appointments): the
+  // first page of the list shows at most 25 of them.
+  const visits = (
+    await ok(
+      owner,
+      "GET",
+      `${W}/rows/appointments?filter=${encodeURIComponent(JSON.stringify({ column: "pet_name", value: target }))}&limit=100`,
+    )
+  ).items as Wid[];
+  const howMany = Math.min(25, visits.length);
   await owner.setViewportSize({ width: 1440, height: 1000 });
   await owner.goto(`${served.appointments}${made1.id}`);
   const search = owner.getByRole("textbox", { name: /^Search/ }).first();
   await expect(search).toBeVisible({ timeout: 30_000 });
   const rowsOf = () => owner.getByRole("row");
   await expect.poll(async () => (await rowsOf().count()) > 5).toBe(true);
-  const all = await rowsOf().count();
   await search.fill(target);
-  await expect.poll(async () => (await rowsOf().count()) < all).toBe(true);
+  // Every row of the list, below its header, is a visit of that pet: the search looks in the pet's
+  // name, which the list draws. (A common name fills the page, so the count may not fall.)
+  await expect
+    .poll(async () => {
+      const count = await rowsOf().count();
+      return count > 1 && (await rowsOf().filter({ hasText: target }).count()) === count - 1;
+    })
+    .toBe(true);
+  await expect(owner.getByText("Nothing matches the filters.")).toHaveCount(0);
   await expect(owner.getByText(target).first()).toBeVisible();
   expect(
     await rowsOf().count(),

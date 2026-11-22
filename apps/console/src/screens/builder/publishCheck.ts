@@ -22,6 +22,8 @@ export interface CheckItem {
   text: string;
   /** A line under it: what, and where. */
   detail?: string;
+  /** The widget it is about, so the check can take the builder there. */
+  at?: { page: string; widget: string };
 }
 
 /** What the check is made against: the workspace as it is now. */
@@ -161,9 +163,13 @@ export function checksFor(input: {
       const own = nameAlong(one.widget, one.at.split("/").slice(1));
       const name = own ?? nameOf(one.widget, definitionOf(one.widget.type));
       return [
-        why === NO_STEPS
-          ? `${name} on ${one.page.title} ${why}`
-          : `${name} on ${one.page.title}: ${why}`,
+        {
+          text:
+            why === NO_STEPS
+              ? `${name} on ${one.page.title} ${why}`
+              : `${name} on ${one.page.title}: ${why}`,
+          at: { page: one.page.id, widget: one.widget.id },
+        },
       ];
     });
     items.push(
@@ -177,7 +183,8 @@ export function checksFor(input: {
             id: "actions",
             state: "fail",
             text: `${broken.length} of ${plural(actions.length, "action")} ${broken.length === 1 ? "is" : "are"} not complete`,
-            detail: sentence(broken),
+            detail: sentence(broken.map((one) => one.text)),
+            at: broken[0]?.at as { page: string; widget: string },
           },
     );
   }

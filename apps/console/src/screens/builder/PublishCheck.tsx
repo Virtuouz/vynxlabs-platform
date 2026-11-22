@@ -38,6 +38,7 @@ export function PublishCheck({
   publishing,
   onPublish,
   onTry,
+  onGo,
 }: {
   root: string;
   path: string;
@@ -53,6 +54,8 @@ export function PublishCheck({
   onPublish: () => void;
   /** "Try as Billing first": View as that group, and the panel closes. */
   onTry: (group: { key: string; name: string }) => void;
+  /** "Show it": the page and the widget a check is about are shown in the builder, and the panel closes. */
+  onGo?: ((at: { page: string; widget: string }) => void) | undefined;
 }) {
   // Only what has a draft is asked about: a page nobody has changed has none, and asking for it
   // is refused ("A draft at … was not found"), which read as a problem with the app.
@@ -154,6 +157,15 @@ export function PublishCheck({
                     </span>
                     {one.detail ? (
                       <span className="text-meta text-ink-muted">{one.detail}</span>
+                    ) : null}
+                    {one.at && onGo ? (
+                      <button
+                        type="button"
+                        onClick={() => onGo(one.at as { page: string; widget: string })}
+                        className="w-fit cursor-pointer border-0 bg-transparent p-0 text-meta text-action underline outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus"
+                      >
+                        Show it
+                      </button>
                     ) : null}
                   </span>
                 </li>

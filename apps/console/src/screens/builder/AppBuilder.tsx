@@ -426,6 +426,11 @@ export function AppBuilder({
               problems={problems}
               publishing={publishing}
               onPublish={() => void publish()}
+              onGo={(at) => {
+                setPageId(at.page);
+                setSelected(at.widget);
+                setReviewing(false);
+              }}
               onTry={(group) => {
                 setViewAs({ as: "group", group: group.key, name: group.name });
                 setReviewing(false);

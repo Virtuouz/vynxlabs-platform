@@ -145,8 +145,8 @@ test("an app served to a tenant's people looks as reviewed, at each width and in
     }
     await visitor.context().close();
   }
-  // In the builder, the page has the room: at a laptop's size the canvas takes 60% of the work
-  // area or more. A phone's preview lays the page out as a phone does: one column.
+  // In the builder, the page has the room: at a laptop's size the canvas takes more than half of
+  // the work area beside a 232 px outline and the 403 px settings the boards draw (8 to 19). A phone's preview lays the page out as a phone does: one column.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/t/${tenant.id}/workspaces/${dev.id}/screens/screens/stock`);
   const canvas = page.locator("[data-canvas]");
@@ -158,8 +158,7 @@ test("an app served to a tenant's people looks as reviewed, at each width and in
     const main = document.querySelector("main")?.getBoundingClientRect().width ?? 1;
     return (document.querySelector("[data-canvas]")?.getBoundingClientRect().width ?? 0) / main;
   });
-  // Soft: the rest of the builder is still walked when the canvas is short of its room.
-  expect.soft(share, "the canvas share of the work area at 1440").toBeGreaterThanOrEqual(0.6);
+  expect(share, "the canvas share of the work area at 1440").toBeGreaterThanOrEqual(0.52);
   await page.getByRole("radio", { name: /Phone/ }).click();
   const stacked = async () => {
     const list = await canvas.getByRole("group", { name: "Stock" }).first().boundingBox();

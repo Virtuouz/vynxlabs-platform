@@ -8,7 +8,7 @@ import {
   type PageFilter,
   type PageWidget,
 } from "@volvel/manifest";
-import { badRequest, forbidden, forbiddenBecause, notFound } from "../errors.js";
+import { badRequest, forbiddenBecause, notFound } from "../errors.js";
 import { findWorkspace, type RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 

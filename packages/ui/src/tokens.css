@@ -408,16 +408,16 @@ input[type="radio"]:not(.sr-only):disabled {
  */
 @media (forced-colors: active) {
   :is(
-      [aria-current="page"],
-      [aria-current="true"],
-      [aria-selected="true"],
-      [aria-pressed="true"],
-      [aria-checked="true"],
-      [data-selected],
-      [data-state="on"],
-      [data-state="active"],
-      [data-state="checked"]
-    ):not(:focus-visible, input, svg) {
+    [aria-current="page"],
+    [aria-current="true"],
+    [aria-selected="true"],
+    [aria-pressed="true"],
+    [aria-checked="true"],
+    [data-selected],
+    [data-state="on"],
+    [data-state="active"],
+    [data-state="checked"]
+  ):not(:focus-visible, input, svg) {
     outline: 2px solid Highlight;
     outline-offset: -2px;
   }

@@ -12,7 +12,7 @@ import {
   widgetRegistry,
 } from "@volvel/manifest";
 import type { ColumnInfo, DataInputDeclaration } from "@volvel/widgets";
-import { badRequest, forbidden, forbiddenBecause, HttpError, notFound } from "../../errors.js";
+import { badRequest, forbiddenBecause, HttpError, notFound } from "../../errors.js";
 import type { RequestContext } from "../../http.js";
 import type { Kernel } from "../../kernel.js";
 import { type ApprovalsWire, readApprovals } from "../../pages/approvals.js";

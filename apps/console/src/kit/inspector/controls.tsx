@@ -25,8 +25,10 @@ import { amount } from "../format.ts";
 import { ActionControl, ActionsControl } from "./actionControls.tsx";
 import { DataControl } from "./dataControls.tsx";
 import { FieldsControl, PageControl } from "./fieldsControl.tsx";
-import type { Catalog, ConfigSetting, FlowChoice, ScriptChoice } from "./model.ts";
+import { FiltersControl } from "./filtersControl.tsx";
+import type { Catalog, ConfigSetting, FlowChoice, ScriptChoice, TabFate } from "./model.ts";
 import { heading, resultNames, visualOf, withConfig, withSystemColumns } from "./model.ts";
+import { TabsControl } from "./tabsControl.tsx";
 
 /** What every control is given: the widget, its definition, and how to write it. */
 export interface Env {
@@ -50,6 +52,16 @@ export interface Env {
   scripts: readonly ScriptChoice[];
   /** The names of the groups of members, for "the current user is in …". */
   groups: readonly string[];
+  /** Every widget of the page, this one as it is now (a filter reaches the others). */
+  widgets: readonly PageWidget[];
+  /** Writes the page's widgets: for a change that reaches other widgets (a filter followed, a tab removed). */
+  writeAll: (next: PageWidget[], label: string, key?: string) => void;
+  /** Takes back the last step, for what is removed with an Undo beside it. */
+  undo?: (() => void) | undefined;
+  /** Adds a Search and filter widget at the top of the page, as "Add to page" does. */
+  addFilters?: (() => void) | undefined;
+  /** Removes a tab of this container, with what it held moved to another tab or removed. */
+  onRemoveTab?: ((tab: string, fate: TabFate) => void) | undefined;
 }
 
 /** The columns a column control offers for a data input. */
@@ -184,7 +196,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
           label={hint.label}
           hint={
             dates.length === 0
-              ? "The page has no filter for a range of dates yet. Add one under Filters on the page."
+              ? "The page has no filter for a range of dates yet. Add one to its Search and filter."
               : (help ?? "")
           }
           value={typeof value === "string" ? value : ""}
@@ -284,6 +296,10 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
           onChange={(next) => set(next, false)}
         />
       );
+    case "tabs":
+      return <TabsControl env={env} field={field} />;
+    case "pageFilters":
+      return <FiltersControl env={env} field={field} setting={setting} />;
     case "source":
     case "measure":
     case "breakdown":

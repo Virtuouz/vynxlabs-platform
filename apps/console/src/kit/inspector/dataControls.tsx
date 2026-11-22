@@ -18,7 +18,14 @@ import {
   type VisualOperator,
   type VisualQuery,
 } from "@volvel/manifest";
-import { Button, ComboboxField, NumberField, SelectField, TextField } from "@volvel/ui";
+import {
+  Button,
+  ComboboxField,
+  MultiSelectField,
+  NumberField,
+  SelectField,
+  TextField,
+} from "@volvel/ui";
 import {
   BREAKDOWN_CADENCES,
   CADENCE_WORDS,
@@ -35,9 +42,11 @@ import {
   defaultInputs,
   filterColumn,
   heading,
+  MAX_SEARCH_COLUMNS,
   measureName,
   renamedResult,
   resultNames,
+  searchColumns,
   sourcesOf,
   tidyVisual,
   visualOf,
@@ -206,11 +215,6 @@ function SourceControl({
   const showSql = current === "sql" || writing;
   const { catalog } = env;
   const visual = visualOf(data);
-  const bound = (data?.filters ?? []).map((binding) => binding.filter);
-  const named = (name: string) =>
-    env.filters.find((one) => one.name === name)?.label ?? heading(name);
-  const [changing, setChanging] = useState(false);
-  const field = `${env.widget.id}-${input}-source`;
   const key = `source:${env.widget.id}:${input}`;
 
   /** A table chosen starts the input over for that table, following the filters whose column it has. */
@@ -303,39 +307,33 @@ function SourceControl({
         <p className="m-0 text-body-sm text-ink-muted">It gives its own columns.</p>
       ) : null}
       {data && env.filters.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          <p className="m-0 flex flex-wrap items-baseline gap-x-2 text-body-sm text-ink-muted">
-            <span>
-              {bound.length > 0
-                ? `Follows the page filters: ${[...new Set(bound)].map(named).join(", ")}.`
-                : "Follows none of the page filters."}
-            </span>
-            <button
-              type="button"
-              id={`${field}-change`}
-              className="rounded-inner text-action underline underline-offset-2 hover:bg-action-soft"
-              aria-expanded={changing}
-              onClick={() => setChanging((now) => !now)}
-            >
-              {changing ? "Done" : "Change"}
-            </button>
+        <FollowFilters
+          env={env}
+          input={input}
+          columns={withSystemColumns(
+            catalog.tables.find((one) => one.name === visual?.table)?.columns ?? [],
+          )}
+        />
+      ) : null}
+      {data && env.filters.length === 0 && env.addFilters ? (
+        <div className="flex flex-col items-start gap-2">
+          <p className="m-0 text-body-sm text-ink-muted">
+            Add Search and filter to let people narrow this page.
           </p>
-          {changing ? (
-            <FollowFilters
-              env={env}
-              input={input}
-              columns={withSystemColumns(
-                catalog.tables.find((one) => one.name === visual?.table)?.columns ?? [],
-              )}
-            />
-          ) : null}
+          <Button size="small" onClick={env.addFilters}>
+            <Plus aria-hidden="true" size={14} /> Add Search and filter
+          </Button>
         </div>
       ) : null}
     </div>
   );
 }
 
-/** Which of the page's filters narrow this input, and where each goes. */
+/**
+ * Which of the page's filters narrow this input, each by its label with a switch, and where
+ * each goes: the column a filter narrows, the columns a search looks in, or the parameter of
+ * a saved query or SQL it fills.
+ */
 function FollowFilters({
   env,
   input,
@@ -343,7 +341,7 @@ function FollowFilters({
 }: {
   env: Env;
   input: string;
-  columns: { name: string }[];
+  columns: { name: string; type?: string }[];
 }) {
   const data = env.widget.data?.[input] as DataInput;
   const visual = visualOf(data);
@@ -357,6 +355,11 @@ function FollowFilters({
     );
   };
   const follow = (filter: PageFilter): FilterBinding[] => {
+    if (visual && filter.type === "search") {
+      const looks = searchColumns(env.widget, visual.table, env.catalog);
+      const text = columns.filter((one) => one.type === "text").map((one) => one.name);
+      return [{ filter: filter.name, columns: looks.length > 0 ? looks : text.slice(0, 1) }];
+    }
     if (visual) {
       const column = columns.some((one) => one.name === filterColumn(filter))
         ? filterColumn(filter)
@@ -371,66 +374,96 @@ function FollowFilters({
       : [{ filter: filter.name, parameter: filter.name }];
   };
   return (
-    <ul className="m-0 flex list-none flex-col gap-2 rounded-control border border-line p-3">
-      {env.filters.map((filter) => {
-        const mine = bindings.filter((one) => one.filter === filter.name);
-        const on = mine.length > 0;
-        const name = filter.label ?? heading(filter.name);
-        return (
-          <li key={filter.name} className="flex flex-col gap-1">
-            <label className="flex items-center gap-2 text-body-sm font-medium text-ink">
-              <input
-                type="checkbox"
-                className="size-4 accent-(--vx-action)"
-                checked={on}
-                onChange={(event) =>
-                  save(
-                    event.currentTarget.checked
-                      ? [...bindings, ...follow(filter)]
-                      : bindings.filter((one) => one.filter !== filter.name),
-                    `changing which filters ${env.widget.title || "the widget"} follows`,
-                  )
-                }
-              />
-              {name}
-            </label>
-            {on && visual ? (
-              <SelectField
-                name={`${env.widget.id}-${input}-bind-${filter.name}`}
-                label={`Column that ${name} narrows`}
-                value={mine[0]?.column ?? ""}
-                options={columns.map((column) => ({
-                  value: column.name,
-                  label: heading(column.name),
-                }))}
-                onChange={(column) =>
-                  save(
-                    bindings.map((one) => (one.filter === filter.name ? { ...one, column } : one)),
-                    "changing the column a filter narrows",
-                  )
-                }
-              />
-            ) : null}
-            {on && !visual
-              ? mine.map((binding) => (
-                  <TextField
-                    key={binding.part ?? "value"}
-                    name={`${env.widget.id}-${input}-param-${filter.name}-${binding.part ?? "value"}`}
-                    label={`Parameter that ${name} fills${binding.part ? ` (${binding.part})` : ""}`}
-                    value={binding.parameter ?? ""}
-                    onChange={(parameter) =>
-                      save(
-                        bindings.map((one) => (one === binding ? { ...one, parameter } : one)),
-                        "changing the parameter a filter fills",
-                      )
-                    }
-                  />
-                ))
-              : null}
-          </li>
-        );
-      })}
-    </ul>
+    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+      <legend className="p-0 text-body-sm font-medium text-ink">Follows the page filters</legend>
+      <ul className="m-0 flex list-none flex-col gap-2 rounded-control border border-line p-3">
+        {env.filters.map((filter) => {
+          const mine = bindings.filter((one) => one.filter === filter.name);
+          const on = mine.length > 0;
+          const name = filter.label ?? heading(filter.name);
+          return (
+            <li key={filter.name} className="flex flex-col gap-1">
+              <label className="flex items-center gap-2 text-body-sm font-medium text-ink">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-(--vx-action)"
+                  checked={on}
+                  onChange={(event) =>
+                    save(
+                      event.currentTarget.checked
+                        ? [...bindings, ...follow(filter)]
+                        : bindings.filter((one) => one.filter !== filter.name),
+                      `changing which filters ${env.widget.title || "the widget"} follows`,
+                    )
+                  }
+                />
+                {name}
+              </label>
+              {on && visual && filter.type === "search" ? (
+                <MultiSelectField
+                  label={`Columns ${name} looks in`}
+                  options={columns
+                    .filter((one) => one.type === "text")
+                    .map((one) => ({ value: one.name, label: heading(one.name) }))}
+                  value={mine[0]?.columns ?? (mine[0]?.column ? [mine[0].column] : [])}
+                  placeholder="None"
+                  hint={`Up to ${MAX_SEARCH_COLUMNS}. A row is kept when any of them has the words.`}
+                  onChange={(next) => {
+                    const chosen = next.slice(0, MAX_SEARCH_COLUMNS);
+                    // A search that looks nowhere is not following.
+                    save(
+                      chosen.length === 0
+                        ? bindings.filter((one) => one.filter !== filter.name)
+                        : bindings.map((one) =>
+                            one.filter === filter.name
+                              ? { filter: filter.name, columns: chosen }
+                              : one,
+                          ),
+                      "changing the columns a search looks in",
+                    );
+                  }}
+                />
+              ) : null}
+              {on && visual && filter.type !== "search" ? (
+                <SelectField
+                  name={`${env.widget.id}-${input}-bind-${filter.name}`}
+                  label={`Column that ${name} narrows`}
+                  value={mine[0]?.column ?? ""}
+                  options={columns.map((column) => ({
+                    value: column.name,
+                    label: heading(column.name),
+                  }))}
+                  onChange={(column) =>
+                    save(
+                      bindings.map((one) =>
+                        one.filter === filter.name ? { ...one, column } : one,
+                      ),
+                      "changing the column a filter narrows",
+                    )
+                  }
+                />
+              ) : null}
+              {on && !visual
+                ? mine.map((binding) => (
+                    <TextField
+                      key={binding.part ?? "value"}
+                      name={`${env.widget.id}-${input}-param-${filter.name}-${binding.part ?? "value"}`}
+                      label={`Parameter that ${name} fills${binding.part ? ` (${binding.part})` : ""}`}
+                      value={binding.parameter ?? ""}
+                      onChange={(parameter) =>
+                        save(
+                          bindings.map((one) => (one === binding ? { ...one, parameter } : one)),
+                          "changing the parameter a filter fills",
+                        )
+                      }
+                    />
+                  ))
+                : null}
+            </li>
+          );
+        })}
+      </ul>
+    </fieldset>
   );
 }
 

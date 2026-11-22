@@ -773,7 +773,6 @@ export {
   FILTER_WIDGET,
   tabsOf,
   topLevel,
-  withFilters,
 } from "./parts.js";
 
 /** The widgets of a page that set its filters: those whose definition's role is `filters`. */

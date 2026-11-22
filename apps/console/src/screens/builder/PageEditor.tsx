@@ -1,11 +1,12 @@
 import {
   childrenOf,
+  FILTER_WIDGET,
+  filtersOf,
   MAX_PAGE_WIDGETS,
   MAX_WIDGET_HEIGHT,
   newWidget,
   PAGE_COLUMNS,
   type Page,
-  type PageFilter,
   type PageWidget,
   tabsOf,
   topLevel,
@@ -18,7 +19,16 @@ import { type ReactNode, useMemo, useState } from "react";
 import { notify } from "../../ask.tsx";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import { Inspector } from "../../kit/inspector/Inspector.tsx";
-import { bindFilter, defaultInputs, mainTable, settleOnGrid } from "../../kit/inspector/model.ts";
+import {
+  bindFilter,
+  bindHolderFilters,
+  defaultInputs,
+  insertFilterWidget,
+  mainTable,
+  settleOnGrid,
+  unbindDeclared,
+  withPageFilters,
+} from "../../kit/inspector/model.ts";
 import { AddFormDialog } from "./AddFormDialog.tsx";
 import { AddToPage } from "./AddToPage.tsx";
 import { type PageSource, pageClient } from "./client.ts";
@@ -40,7 +50,6 @@ import {
   withoutOrphans,
 } from "./containers.ts";
 import { EditorShell } from "./EditorShell.tsx";
-import { type FilterChange, PageFilterSettings } from "./PageFilters.tsx";
 import { PageSettings } from "./PageSettings.tsx";
 import { MODAL_WIDTH, SHEET_WIDTH } from "./pageKinds.ts";
 import { RowClickOffer } from "./RowClickOffer.tsx";
@@ -58,10 +67,12 @@ import { definitionOf, views } from "./registry.ts";
 import { type Box, type CarryRequest, type FilterValues, PageView, placed } from "./renderer.ts";
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
 
-/** What the editor changes: a page's widgets and its filters. Everything else about a page or a dashboard is its host's. */
+/**
+ * What the editor changes: a page's widgets. Its filters are those of its Search and filter
+ * widgets (`filtersOf`). Everything else about a page or a dashboard is its host's.
+ */
 export interface PageValue {
   widgets: PageWidget[];
-  filters: PageFilter[];
   /** Pages this change also makes: the detail a click opens, the modal a button opens. Added with it, as one step. */
   addPages?: Page[];
 }
@@ -87,7 +98,7 @@ export interface PageInfo {
 /**
  * The one editor of a page of widgets, in an app's builder and in a dashboard
  * (S9): "On this page" and "Add to page" on the left, the page drawn from the
- * workspace's rows in the middle, with its filters under it, and the chosen
+ * workspace's rows in the middle, and the chosen
  * widget's settings on the right, generated from its definition.
  *
  * It is controlled: it is given the page and says what it should become. Its
@@ -156,7 +167,8 @@ export function PageEditor({
     () => pageClient(root, source, draft, sample.record),
     [root, draft, named, sample.record],
   );
-  const { widgets, filters } = value;
+  const { widgets } = value;
+  const filters = filtersOf(widgets);
   const context: PageContext = {
     widgets,
     filters,
@@ -172,11 +184,13 @@ export function PageEditor({
   const addsTo = resolved(widgets, targetOfSelection(widgets, selected));
 
   const put = (next: PageWidget[], label: string, key?: string) =>
-    onChange({ widgets: next, filters }, label, key);
+    onChange({ widgets: next }, label, key);
 
   /** A change that also touches filters and pages (a detail, a form, a next step): one step to Undo. */
   const apply = (edit: Edit, label: string) => {
-    onChange({ widgets: edit.widgets, filters: edit.filters, addPages: edit.addPages }, label);
+    // A suggestion that still speaks of the page's filters as one list: kept by its Search and filter widget.
+    const kept = withPageFilters(edit.widgets, edit.filters, definitionOf(FILTER_WIDGET), catalog);
+    onChange({ widgets: kept, addPages: edit.addPages }, label);
     if (edit.select) onSelect(edit.select);
     setAdding(false);
     setForming(false);
@@ -207,6 +221,15 @@ export function PageEditor({
 
   /** Adds a widget: at the end of the page, or where it was carried to (`at`). */
   const add = (definition: WidgetDefinition, at?: Box) => {
+    // A Search and filter goes at the top, where the reader looks for it, with what follows it bound.
+    if (definition.role === "filters" && !at) {
+      const made = insertFilterWidget(widgets, definition, undefined, catalog);
+      put(made.widgets, `adding ${definition.title.toLowerCase()}`);
+      onSelect(made.id);
+      setAdding(false);
+      setTold(`${definition.title} is added at the top of the page.`);
+      return;
+    }
     const id = nextId(definition.type, widgets);
     let added: PageWidget = newWidget(definition, id, widgets);
     // Into the container that is chosen (or its child's), at the bottom of its grid; else at the end of the page.
@@ -221,7 +244,10 @@ export function PageEditor({
     };
     if (added.data && Object.keys(added.data).length === 0) delete added.data;
     for (const filter of filters) added = bindFilter(added, filter, catalog, widgets);
-    const next = at ? placed([...widgets, added], id, at) : [...widgets, added];
+    let next = at ? placed([...widgets, added], id, at) : [...widgets, added];
+    if (definition.role === "filters") {
+      next = bindHolderFilters(next, filtersOf([added]), catalog);
+    }
     put(next, `adding ${definition.title.toLowerCase()}`);
     onSelect(id);
     setAdding(false);
@@ -263,7 +289,9 @@ export function PageEditor({
     const gone = removeWidget(widgets, id);
     if (gone.removed.length === 0) return;
     const words = removalWords(gone.removed);
-    put(gone.widgets, `removing ${words}`);
+    // What a removed Search and filter declared is no longer followed by anything.
+    const next = gone.removed.reduce((list, one) => unbindDeclared(list, one), gone.widgets);
+    put(next, `removing ${words}`);
     onSelect(undefined);
     notify.success(`Removed ${words}.`, { action: { label: "Undo", onClick: shell.history.undo } });
   };
@@ -304,8 +332,12 @@ export function PageEditor({
    * removed takes what it held, which is said, and can be undone.
    */
   const fromCanvas = (next: PageWidget[], label: string) => {
-    const { widgets: kept, orphans } = withoutOrphans(next);
-    if (orphans.length === 0) return put(next, label);
+    // A Search and filter the canvas removed takes its filters' bindings with it.
+    const kept0 = widgets
+      .filter((one) => !next.some((other) => other.id === one.id))
+      .reduce((list, gone) => unbindDeclared(list, gone), next);
+    const { widgets: kept, orphans } = withoutOrphans(kept0);
+    if (orphans.length === 0) return put(kept0, label);
     const ids = new Set(next.map((one) => one.id));
     const container = widgets.find((one) => !ids.has(one.id) && one.id === orphans[0]?.in?.widget);
     const words = removalWords(container ? [container, ...orphans] : orphans);
@@ -313,9 +345,6 @@ export function PageEditor({
     onSelect(undefined);
     notify.success(`Removed ${words}.`, { action: { label: "Undo", onClick: shell.history.undo } });
   };
-
-  const filtersChanged = (next: FilterChange, label: string, key?: string) =>
-    onChange({ widgets: next.widgets, filters: next.filters }, label, key);
 
   const outlineRow = (one: PageWidget, inside: boolean) => (
     <button
@@ -445,12 +474,6 @@ export function PageEditor({
           />
         )}
       </div>
-      <PageFilterSettings
-        filters={filters}
-        widgets={widgets}
-        catalog={catalog}
-        onChange={filtersChanged}
-      />
     </>
   );
 
@@ -480,6 +503,12 @@ export function PageEditor({
                 neighbours={widgets.filter((one) => one.id !== widget.id)}
                 catalog={catalog}
                 onChange={edit}
+                widgets={widgets}
+                onChangeWidgets={put}
+                onUndo={shell.history.undo}
+                {...(definitionOf(FILTER_WIDGET)
+                  ? { onAddFilters: () => add(definitionOf(FILTER_WIDGET) as WidgetDefinition) }
+                  : {})}
                 onDuplicate={() => duplicate(widget.id)}
                 onRemove={() => remove(widget.id)}
                 places={placesFor(widgets, widget.id)}

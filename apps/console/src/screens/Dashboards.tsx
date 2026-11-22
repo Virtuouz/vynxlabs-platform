@@ -4,8 +4,6 @@ import {
   type DashboardRefresh,
   DEFAULT_DASHBOARD_REFRESH,
   filtersOf,
-  widgetRegistry,
-  withFilters,
 } from "@volvel/manifest";
 import {
   Button,
@@ -443,14 +441,13 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           link={link}
           surface="dashboard"
           source={{ of: "dashboard", id }}
-          value={{ widgets: body.widgets, filters: filtersOf(body.widgets) }}
+          value={{ widgets: body.widgets }}
           selected={selected}
           onSelect={setSelected}
           refreshKey={refreshKey}
           onChange={(next, label, key) => {
             history.record(label, key);
-            // The dashboard's filters are kept by its Search and filter widget.
-            keep({ ...body, widgets: withFilters(next.widgets, next.filters, widgetRegistry()) });
+            keep({ ...body, widgets: next.widgets });
           }}
           shell={{
             title: loaded.title,

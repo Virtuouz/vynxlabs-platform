@@ -7,7 +7,12 @@ import { placed, without } from "@volvel/screens";
  */
 
 import {
+  childrenOf,
+  containerHeight,
   type DataInput,
+  displayGuess,
+  FILTER_WIDGET,
+  type FilterBinding,
   groupName,
   MAX_WIDGET_HEIGHT,
   PAGE_COLUMNS,
@@ -273,10 +278,42 @@ const hasColumn = (catalog: Catalog, table: string, column: string) =>
     (one) => one.name === column,
   );
 
+/** The most columns a search looks in for one widget. */
+export const MAX_SEARCH_COLUMNS = 4;
+
+/**
+ * The text columns of `table` that a search looks in for a widget: the ones it shows (a
+ * table's or a list's configured columns of type text), else the table's display column,
+ * at most `MAX_SEARCH_COLUMNS`.
+ */
+export function searchColumns(widget: PageWidget, table: string, catalog: Catalog): string[] {
+  const columns = withSystemColumns(
+    catalog.tables.find((one) => one.name === table)?.columns ?? [],
+  );
+  const text = new Set(columns.filter((one) => one.type === "text").map((one) => one.name));
+  const config = widget.config ?? {};
+  const shown: unknown[] = Array.isArray(config.columns)
+    ? (config.columns as { column?: unknown; hidden?: boolean }[])
+        .filter((one) => one.hidden !== true)
+        .map((one) => one.column)
+    : [
+        config.primary,
+        config.secondary,
+        ...(Array.isArray(config.meta) ? (config.meta as unknown[]) : []),
+      ];
+  const picked = [
+    ...new Set(shown.filter((one): one is string => typeof one === "string" && text.has(one))),
+  ].slice(0, MAX_SEARCH_COLUMNS);
+  if (picked.length > 0) return picked;
+  const display = displayGuess(columns.map((one) => ({ name: one.name, type: one.type })));
+  return display && text.has(display) ? [display] : [];
+}
+
 /**
  * Binds a page filter to every data input of a widget whose table has the
  * filter's column (contract, "Page filters"). An input already bound to it,
  * and one that is a saved query or SQL (which fills a parameter it names), is left as it is.
+ * A search is bound to the text columns the widget shows (`searchColumns`).
  */
 export function bindFilter(
   widget: PageWidget,
@@ -303,12 +340,18 @@ export function bindFilter(
   for (const [name, input] of Object.entries(widget.data)) {
     const visual = visualOf(input);
     const bound = (input.filters ?? []).some((binding) => binding.filter === filter.name);
-    const column = visual && !bound ? columnFor(visual.table) : undefined;
-    if (column) {
-      data[name] = {
-        ...input,
-        filters: [...(input.filters ?? []), { filter: filter.name, column }],
-      };
+    let binding: FilterBinding | undefined;
+    if (visual && !bound) {
+      if (filter.type === "search") {
+        const columns = searchColumns(widget, visual.table, catalog);
+        if (columns.length > 0) binding = { filter: filter.name, columns };
+      } else {
+        const column = columnFor(visual.table);
+        if (column) binding = { filter: filter.name, column };
+      }
+    }
+    if (binding) {
+      data[name] = { ...input, filters: [...(input.filters ?? []), binding] };
       changed = true;
     } else data[name] = input;
   }
@@ -329,6 +372,213 @@ export function unbindFilter(widget: PageWidget, filterName: string): PageWidget
   }
   if (next.config?.compareTo === filterName) next = withConfig(next, "compareTo", undefined);
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// The filters of a Search and filter widget
+
+/** A name made from words and kept unique among `taken`: `Search invoices` as `search_invoices`. */
+export function uniqueName(
+  words: string,
+  taken: readonly string[],
+  fallback: string,
+  separator: "_" | "-" = "_",
+): string {
+  const cleaned = words
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, separator)
+    .replace(new RegExp(`^[^a-z]+|${separator}+$`, "g"), "")
+    .slice(0, 30);
+  const base = cleaned || fallback;
+  let name = base;
+  for (let n = 2; taken.includes(name); n += 1) name = `${base}${separator}${n}`;
+  return name;
+}
+
+/** What a column suggests a filter on it is: a range of dates, one of a list, a number, or text. */
+export function filterTypeFor(column: CatalogColumn): PageFilter["type"] {
+  if (column.type === "date" || column.type === "timestamp") return "date_range";
+  if (column.type === "integer" || column.type === "number") return "number";
+  if (column.type === "enum" || column.type === "boolean" || column.references) return "choice";
+  return "text";
+}
+
+/** What the page's tables are called in a sentence: "invoices" for `invoices`, "clinic visits" for `clinic_visits`. */
+export const tableWords = (table: string): string => table.replace(/[_.-]+/g, " ").toLowerCase();
+
+/** A new search: "Search invoices" when the page's table is known, else "Search". */
+export function newSearch(table: string | undefined, taken: readonly string[]): PageFilter {
+  const label = table ? `Search ${tableWords(table)}` : "Search";
+  return { name: uniqueName(label, taken, "search"), label, type: "search" };
+}
+
+/**
+ * A new filter by a column. It is named for the column (that is the column it narrows on
+ * every widget whose table has it), and the name is never changed after, so bindings hold.
+ */
+export function newColumnFilter(
+  column: CatalogColumn,
+  table: string,
+  taken: readonly string[],
+): PageFilter {
+  const type = filterTypeFor(column);
+  return {
+    name: uniqueName(column.name, taken, "filter"),
+    label: heading(column.name.replace(/_at$|_on$/, "")),
+    type,
+    ...(type === "date_range" ? { default: "last_30_days" } : {}),
+    ...(type === "choice" ? { from: { table, column: column.name } } : {}),
+  };
+}
+
+/** Every widget of the page, with each filter of `holder` bound where its column or text is (a new filter, or a new holder). */
+export function bindHolderFilters(
+  widgets: readonly PageWidget[],
+  filters: readonly PageFilter[],
+  catalog: Catalog,
+): PageWidget[] {
+  return widgets.map((widget) =>
+    filters.reduce(
+      (one, filter) =>
+        bindFilter(
+          one,
+          filter,
+          catalog,
+          widgets.filter((other) => other.id !== widget.id),
+        ),
+      widget,
+    ),
+  );
+}
+
+/** The widgets of a page with a Search and filter widget added at the top, and what is on the page's own grid moved down under it. */
+export function insertFilterWidget(
+  widgets: readonly PageWidget[],
+  definition: WidgetDefinition,
+  filters: readonly PageFilter[] | undefined,
+  catalog: Catalog,
+): { widgets: PageWidget[]; id: string } {
+  const id = newId(definition.type, widgets);
+  const { w, h } = definition.layout.default;
+  const added: PageWidget = {
+    id,
+    type: definition.type,
+    title: definition.title,
+    at: { x: 0, y: 0, w, h },
+    config: {
+      ...(definition.defaults ?? {}),
+      ...(filters ? { filters: [...filters] } : {}),
+    },
+  };
+  const taken = filtersOfWidgets(widgets).map((one) => one.name);
+  // A name the page already has is not declared twice.
+  const own = (added.config?.filters as PageFilter[] | undefined) ?? [];
+  const named = own.map((one) => {
+    const name = taken.includes(one.name) ? uniqueName(one.name, taken, "filter") : one.name;
+    taken.push(name);
+    return name === one.name ? one : { ...one, name };
+  });
+  added.config = { ...added.config, filters: named };
+  const moved = widgets.map((one) =>
+    one.in ? one : { ...one, at: { ...one.at, y: one.at.y + h } },
+  );
+  return { widgets: bindHolderFilters([added, ...moved], named, catalog), id };
+}
+
+/** The filters every Search and filter widget of `widgets` declares (the platform's own definition). */
+function filtersOfWidgets(widgets: readonly PageWidget[]): PageFilter[] {
+  return widgets
+    .filter((one) => one.type === FILTER_WIDGET)
+    .flatMap((one) =>
+      Array.isArray(one.config?.filters) ? (one.config.filters as PageFilter[]) : [],
+    );
+}
+
+/**
+ * The page's widgets with `filters` as what its Search and filter widget holds: for a
+ * change that still speaks of the page's filters as one list (a suggestion). Added
+ * ones are put in the first widget, or in a new one at the top.
+ */
+export function withPageFilters(
+  widgets: readonly PageWidget[],
+  filters: readonly PageFilter[],
+  definition: WidgetDefinition | undefined,
+  catalog: Catalog,
+): PageWidget[] {
+  const have = new Set(filtersOfWidgets(widgets).map((one) => one.name));
+  const added = filters.filter((one) => !have.has(one.name));
+  if (added.length === 0) return [...widgets];
+  const holder = widgets.find((one) => one.type === FILTER_WIDGET);
+  if (!holder) {
+    return definition
+      ? insertFilterWidget(widgets, definition, added, catalog).widgets
+      : [...widgets];
+  }
+  return widgets.map((one) =>
+    one.id === holder.id
+      ? {
+          ...one,
+          config: {
+            ...one.config,
+            filters: [...(Array.isArray(one.config?.filters) ? one.config.filters : []), ...added],
+          },
+        }
+      : one,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// The tabs of a container
+
+/** What becomes of the widgets of a tab that is removed: moved to another tab, or removed with it. */
+export type TabFate = { move: string } | { remove: true };
+
+/**
+ * The page's widgets with a tab of a container removed, and what it held moved to the end of
+ * another tab or removed with it. A local version; the builder's `removeTab` replaces it
+ * where the containers are edited.
+ */
+export function removeTabFrom(
+  widgets: readonly PageWidget[],
+  container: string,
+  tab: string,
+  fate: TabFate,
+): PageWidget[] {
+  const holder = widgets.find((one) => one.id === container);
+  const tabs = tabsFor(holder);
+  if (!holder || tabs.length <= 1) return [...widgets];
+  const held = childrenOf(widgets, container, tab).map((one) => one.id);
+  let next: PageWidget[];
+  if ("move" in fate) {
+    const target = fate.move;
+    const below = childrenOf(widgets, container, target).reduce(
+      (low, one) => Math.max(low, one.at.y + one.at.h),
+      0,
+    );
+    let y = below;
+    next = widgets.map((one) => {
+      if (!held.includes(one.id)) return one;
+      const at = { ...one.at, y };
+      y += one.at.h;
+      return { ...one, in: { widget: container, tab: target }, at };
+    });
+  } else {
+    next = widgets.filter((one) => !held.includes(one.id));
+  }
+  return next.map((one) => {
+    if (one.id !== container) return one;
+    const kept = {
+      ...one,
+      config: { ...one.config, tabs: tabs.filter((each) => each.id !== tab) },
+    };
+    return { ...kept, at: { ...kept.at, h: Math.max(kept.at.h, containerHeight(kept, next)) } };
+  });
+}
+
+/** The tabs a container holds. */
+export function tabsFor(widget: PageWidget | undefined): { id: string; title: string }[] {
+  const tabs = widget?.config?.tabs;
+  return Array.isArray(tabs) ? (tabs as { id: string; title: string }[]) : [];
 }
 
 // ---------------------------------------------------------------------------
@@ -446,4 +696,17 @@ export function duplicated(
     at: { ...source.at, y: source.at.y + source.at.h },
   };
   return { widgets: settleOnGrid([...widgets, copy], copyId), id: copyId };
+}
+
+/**
+ * The widgets of a page once `gone` (a Search and filter widget that was taken off it) is
+ * not there: what followed the filters it declared, and no other widget declares, follows
+ * nothing.
+ */
+export function unbindDeclared(widgets: readonly PageWidget[], gone: PageWidget): PageWidget[] {
+  const still = new Set(filtersOfWidgets(widgets).map((one) => one.name));
+  const lost = filtersOfWidgets([gone])
+    .map((one) => one.name)
+    .filter((name) => !still.has(name));
+  return widgets.map((one) => lost.reduce((next, name) => unbindFilter(next, name), one));
 }

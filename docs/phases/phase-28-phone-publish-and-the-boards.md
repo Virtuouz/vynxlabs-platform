@@ -179,6 +179,19 @@ The owner replaced the file on 2026-11-22 with nineteen boards. Boards 7 to 19 d
   - A filter's editor: its label, kind and starting value, and which widgets it narrows, as checkboxes.
   - Text: a callout style chosen by looking at it (Plain, Note, Warning, Tip), and the words edited on the page with a small toolbar. Markdown is kept for steps, tabs and folds.
 
+## The owner's further asks (2026-11-22)
+
+- **Modals and side sheets are sized by their maker, from small to big.** They no longer force a stacked layout:
+  - In the builder, a modal or sheet page's frame is resized by dragging its edge. It snaps to Small, Medium, Large, Extra large or Full, also set in Page settings.
+  - Served, it opens at that size, and its widgets are laid out on its grid as placed. That replaces phase 26's rule that a served overlay draws its widgets in one column. They stack only where the width is narrow (a phone).
+- **A Button is placed within its own cell** by a 3 × 3 position picker on its Display tab: top, middle or bottom by left, centre or right. An Action group takes the same picker, for one control.
+- **The Text widget's editor is the documentation's Markdown editor.** It has Source and Preview modes and the component authoring help (inserting an alert, steps, tabs, a fold, with the docs' assistance). It is drawn from board 19:
+  - the callout style tiles;
+  - "Edit on the page", which opens the editor in place, with the preview showing what readers will see.
+
+  The docs editor's editing core (source, preview, mode, the component help) is taken out of `apps/console/src/screens/docs/DocEditor.tsx` into a shared kit component, used by both.
+- **A Markdown alert was drawn as plain text** inside a widget's card: the kit's plain notice drops its border inside a panel. It is now a callout with a rail and an icon, as the documentation draws it (fixed on phase 27's branch, `f962d32`). Every component of the Markdown profile is to be checked rendered in a widget, in light and dark: alert, steps, tabs, fold, term, key and field.
+
 ## Owner decisions
 
 Answered by the owner on 2026-11-22.

@@ -161,7 +161,7 @@ function useReads(widgets: readonly PageWidget[], saved: number | undefined): nu
       .map(({ id, type, data, config }) => ({ id, type, data, config }))
       .sort((a, b) => (a.id < b.id ? -1 : 1)),
   );
-  const state = useRef({ text, changedAt: saved ?? 0, seen: saved ?? 0, count: saved ?? 0 });
+  const state = useRef({ text, changedAt: Number.NEGATIVE_INFINITY, seen: saved ?? 0, count: saved ?? 0 });
   const now = state.current;
   if (saved === undefined) return undefined;
   if (now.text !== text) {

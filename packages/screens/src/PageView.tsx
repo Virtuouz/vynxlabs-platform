@@ -2,7 +2,7 @@ import type { Page, PageFilter, PageWidget } from "@volvel/manifest";
 import { type ActingUser, type Condition, conditionWords } from "@volvel/manifest/action";
 import { EmptyState, Panel, useFlip } from "@volvel/ui";
 import { GripHorizontal } from "@volvel/ui/icons";
-import type { ActOutcome, Choice, EventPayload } from "@volvel/widgets";
+import type { ActOutcome, Choice, EventPayload, FilterHost } from "@volvel/widgets";
 import type React from "react";
 import {
   type CSSProperties,
@@ -24,8 +24,8 @@ import {
   recordOf,
   useActions,
 } from "./actions.tsx";
-import { FilterBar } from "./FilterBar.tsx";
 import { Frame, nameOf } from "./Frame.tsx";
+import { useFilterHost } from "./filterHost.ts";
 import { duplicated, limitsOf, placed, sizeWords, without } from "./layout.ts";
 import {
   type Box,
@@ -143,7 +143,10 @@ function Cell({
   fade,
   onClose,
   overRecord,
+  filterHost,
 }: {
+  /** A Search and filter widget's: the page's filters, and how to set them. */
+  filterHost: FilterHost | undefined;
   /** Closes the sheet or modal the page is shown in; absent when it is not. */
   onClose: (() => void) | undefined;
   overRecord: string | undefined;
@@ -262,6 +265,7 @@ function Cell({
   const extras = {
     ...(onClose ? { close: onClose } : {}),
     ...(selectedRecord ? { selectedRecord } : {}),
+    ...(filterHost ? { filters: filterHost } : {}),
   };
   const name = nameOf(widget, definition);
   const hiddenOnPhones = definition?.layout.phone === "hide";
@@ -402,7 +406,7 @@ function Cell({
 }
 
 /**
- * A page: its filters and its widgets on twelve columns. Each widget reads its
+ * A page: its widgets on twelve columns, the filters among them (Search and filter widgets). Each widget reads its
  * own data, under the viewer's permissions, from the client. With `editing` it
  * is the builder's canvas: a click chooses a widget, which is dragged by
  * itself and stretched by its corner, moved a cell with the arrows, changed in
@@ -449,7 +453,14 @@ export function PageView({
   // What decides whether a widget is shown, as far as the browser knows it.
   const shownNow = (conditions: readonly Condition[] | undefined) =>
     holds(conditions, { this: record ? thisRow : null }, user);
-  const read = useFilterOptions(filters, client, filterOptions);
+  // What each Search and filter widget is given: the filters are drawn where the widget sits.
+  const hostFor = useFilterHost({
+    filters,
+    values: filterValues,
+    onValues: onFilterValues,
+    client,
+    given: filterOptions,
+  });
   // Top to bottom and left to right, so the page reads in order without the grid.
   const ordered = useMemo(
     () => [...widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x),
@@ -534,11 +545,10 @@ export function PageView({
     });
   }, [carryRequest]);
   const emptyMessage =
-    filters.length > 0 ? "Nothing matches the filters above." : "There is nothing here yet.";
+    filters.length > 0 ? "Nothing matches the filters." : "There is nothing here yet.";
 
   return (
     <div className="flex flex-col gap-3">
-      <FilterBar filters={filters} values={filterValues} onChange={onFilterValues} options={read} />
       {widgets.length === 0 ? (
         <EmptyState
           title={editing ? "Nothing on this page yet" : "This page has nothing on it yet"}
@@ -604,6 +614,15 @@ export function PageView({
                 fade={fade}
                 onClose={over ? () => onNavigate?.({ close: true }) : undefined}
                 overRecord={overRecord}
+                filterHost={
+                  entry?.definition.role === "filters"
+                    ? hostFor(
+                        Array.isArray(widget.config?.filters)
+                          ? (widget.config.filters as PageFilter[])
+                          : [],
+                      )
+                    : undefined
+                }
                 handlers={{
                   onPointerDown: (event, how) => {
                     // A press on a widget that is not a drag chooses it by click, below.
@@ -646,43 +665,6 @@ export function PageView({
       </div>
       {actions.node}
     </div>
-  );
-}
-
-/**
- * The values each choice filter offers: those the page lists, those the host
- * gave, and for a filter over a table's column, those the client reads. A
- * read that fails leaves the filter to be typed into, as before it was read.
- */
-function useFilterOptions(
-  filters: readonly PageFilter[],
-  client: PageDataClient,
-  given: Readonly<Record<string, readonly string[]>> | undefined,
-): Readonly<Record<string, readonly string[]>> | undefined {
-  const [read, setRead] = useState<Record<string, readonly string[]>>({});
-  const wanted = filters
-    .filter(
-      (filter) =>
-        filter.type === "choice" && filter.from && !filter.choices && !given?.[filter.name],
-    )
-    .map((filter) => filter.name)
-    .join(",");
-  useEffect(() => {
-    if (!client.options || wanted === "") return;
-    let live = true;
-    for (const name of wanted.split(",")) {
-      client.options(name).then(
-        (values) => live && setRead((now) => ({ ...now, [name]: values })),
-        () => undefined,
-      );
-    }
-    return () => {
-      live = false;
-    };
-  }, [client, wanted]);
-  return useMemo(
-    () => (given || Object.keys(read).length > 0 ? { ...read, ...given } : undefined),
-    [given, read],
   );
 }
 

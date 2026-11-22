@@ -7,6 +7,7 @@ import {
   EmptyState,
   FieldMarks,
   type JsonSchema,
+  MoneyField,
   MultiSelectField,
   Notice,
   NumberField,
@@ -16,6 +17,7 @@ import {
   TextField,
 } from "@volvel/ui";
 import type { ColumnInfo, RecordData, WidgetViewProps } from "@volvel/widgets";
+import { moneyFormatOf } from "@volvel/widgets";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /** One field of the form, as `config.fields` lists it. */
@@ -85,7 +87,9 @@ function kindOf(column: FormColumn): Kind {
   if (type === "date") return "date";
   if (type === "timestamp") return "timestamp";
   if (type === "json") return "json";
-  if (type === "money" || column.format?.style === "currency") return "money";
+  if (type === "money" || (column.format ?? moneyFormatOf(column))?.style === "currency") {
+    return "money";
+  }
   if (type === "integer") return "integer";
   if (type === "number") return "number";
   if (typeof column.maxLength === "number" && column.maxLength > 1000) return "longtext";
@@ -94,8 +98,18 @@ function kindOf(column: FormColumn): Kind {
   return "text";
 }
 
-/** Money is held as minor units, and drawn and typed as dollars unless the format says whole units. */
-const perUnit = (column: FormColumn) => (column.format?.minorUnits === false ? 1 : 100);
+/**
+ * The money a field is typed in: its own format, else what the table says the column holds. It is
+ * kept as minor units (cents) when that says so, and typed as dollars; a column of type `money`
+ * is cents.
+ */
+export function moneyOf(column: FormColumn): { currency: string; minorUnits: boolean } {
+  const known = column.format?.style === "currency" ? column.format : moneyFormatOf(column);
+  return {
+    currency: known?.currency ?? "USD",
+    minorUnits: known?.minorUnits ?? column.type.toLowerCase() === "money",
+  };
+}
 
 /** The schema of one column, so the checks are the kit's own (`checkValue`). */
 function schemaOf(column: FormColumn, kind: Kind): JsonSchema {
@@ -272,6 +286,8 @@ function FormBody({
   const [values, setValues] = useState<Values>(begin);
   const [typed, setTyped] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // What is typed in a money field and is not an amount: it blocks sending, in words.
+  const [problems, setProblems] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string>();
   const [note, setNote] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -319,6 +335,11 @@ function FormBody({
         continue;
       }
       const value = values[column.name];
+      const typedWrong = problems[column.name];
+      if (typedWrong) {
+        found[column.name] = typedWrong;
+        continue;
+      }
       if (required && isEmpty(value)) {
         found[column.name] = "This is required.";
         continue;
@@ -326,8 +347,8 @@ function FormBody({
       properties[column.name] = schemaOf(column, kind);
       if (!isEmpty(value)) subject[column.name] = value;
     }
-    const problems = checkValue({ type: "object", properties }, subject);
-    for (const [pointer, message] of Object.entries(problems)) {
+    const checked = checkValue({ type: "object", properties }, subject);
+    for (const [pointer, message] of Object.entries(checked)) {
       const name = pointer.replace(/^\//, "").split("/")[0] ?? "";
       if (name && !found[name]) found[name] = message;
     }
@@ -387,6 +408,7 @@ function FormBody({
       if (!edit) {
         setValues(begin());
         setTyped({});
+        setProblems({});
         setErrors({});
       }
       return;
@@ -506,22 +528,28 @@ function FormBody({
           />
         );
       case "money": {
-        const divide = perUnit(column);
-        const hint = common.hint
-          ? common.hint
-          : column.format?.currency && column.format.currency !== "USD"
-            ? `In ${column.format.currency}.`
-            : "In dollars.";
+        const money = moneyOf(column);
+        // The column's own words speak of how it is kept ("in cents"); this field says the currency.
+        const { hint: _kept, ...rest } = common;
         return (
-          <NumberField
+          <MoneyField
             key={name}
-            {...common}
-            hint={hint}
-            step={divide === 1 ? 1 : 0.01}
-            value={typeof held === "number" ? held / divide : undefined}
-            onChange={(next) =>
-              set(name, next === undefined ? undefined : Math.round(next * divide))
-            }
+            {...rest}
+            {...(field.help ? { hint: field.help } : {})}
+            currency={money.currency}
+            minorUnits={money.minorUnits}
+            value={typeof held === "number" ? held : undefined}
+            onChange={(next, problem) => {
+              set(name, next);
+              setProblems((now) => {
+                if (problem === undefined) {
+                  if (!(name in now)) return now;
+                  const { [name]: _dropped, ...kept } = now;
+                  return kept;
+                }
+                return { ...now, [name]: problem };
+              });
+            }}
           />
         );
       }

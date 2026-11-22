@@ -5,6 +5,7 @@
  */
 import type { ValueFormat } from "@volvel/manifest";
 import { sampleOf } from "@volvel/ui";
+import { moneyFormatOf } from "@volvel/widgets";
 import { type Catalog, heading, withSystemColumns } from "../model.ts";
 
 export type Tone = "success" | "attention" | "danger" | "neutral" | "action";
@@ -40,6 +41,8 @@ export interface ColumnFacts {
   choices: readonly string[];
   /** What each choice is called, where the table's definition says. */
   labels?: Readonly<Record<string, string>>;
+  /** How the table says the column is written (money kept in cents), when it does. */
+  format?: ValueFormat;
 }
 
 /** A column's facts, from the catalog's table, the table's definition if loaded, and the rows. */
@@ -47,7 +50,14 @@ export function factsOf(
   names: readonly string[],
   catalog: Catalog,
   table: string | undefined,
-  info?: { columns: readonly { name: string; type: string; values: readonly string[] }[] },
+  info?: {
+    columns: readonly {
+      name: string;
+      type: string;
+      values: readonly string[];
+      description?: string | undefined;
+    }[];
+  },
   rows?: readonly Record<string, unknown>[],
 ): ColumnFacts[] {
   const own = catalog.tables.find((one) => one.name === table);
@@ -63,9 +73,15 @@ export function factsOf(
     const labels = Object.fromEntries(
       (known?.values ?? []).flatMap((one) => (one.label ? [[one.value, one.label]] : [])),
     );
+    const type = detailed?.type ?? known?.type ?? "text";
+    const format = moneyFormatOf({
+      type,
+      description: known?.description ?? detailed?.description,
+    });
     return {
       name,
-      type: detailed?.type ?? known?.type ?? "text",
+      type,
+      ...(format ? { format } : {}),
       choices: choices.slice(0, 50),
       ...(Object.keys(labels).length > 0 ? { labels } : {}),
     };
@@ -104,7 +120,8 @@ export const shownCount = (columns: readonly ColumnSetting[]) =>
 /** What a column is drawn as, in a word or a sample: "Text", "$123.45", "Badge", "Nov 20". */
 export function shownAs(spec: ColumnSetting, facts: ColumnFacts | undefined): string {
   if (spec.as === "badge") return "Badge";
-  if (spec.format) return sampleOf(123.45, { ...spec.format, minorUnits: false });
+  const format = spec.format ?? facts?.format;
+  if (format) return sampleOf(123.45, { ...format, minorUnits: false });
   const type = facts?.type ?? "text";
   if (isNumberType(type)) return "123.45";
   if (isDateType(type)) return "Nov 20";

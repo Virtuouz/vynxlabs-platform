@@ -12,6 +12,8 @@
  * and rows. It draws from the widget's definition and the host's lists (pages, flows, scripts,
  * groups), so a pack's widget with an `action` setting has this editor the day it is registered.
  */
+
+import { confirmWords, DEFAULT_CONFIRM_TITLE, isDefaultTitle } from "@volvel/screens";
 import {
   Button,
   CheckboxField,
@@ -324,12 +326,15 @@ function ConfirmBody({
   widgetId,
   confirm,
   ctx,
+  named,
   onChange,
 }: {
   id: string;
   widgetId: string;
   confirm: NonNullable<Action["confirm"]>;
   ctx: ActionContext;
+  /** What the action's button says: the confirmation's own words are made from it. */
+  named?: string | undefined;
   onChange: (next: NonNullable<Action["confirm"]>, key?: string) => void;
 }) {
   const ask = confirm.ask ?? [];
@@ -346,11 +351,16 @@ function ConfirmBody({
     <>
       <TokenText
         label="Confirmation title"
-        placeholder="Are you sure?"
+        placeholder={named ? `Made from the action: “${named} the …?”` : DEFAULT_CONFIRM_TITLE}
         maxLength={120}
         fields={fields}
-        value={confirm.title}
-        onChange={(title) => onChange({ ...confirm, title }, `${id}:confirm-title`)}
+        value={isDefaultTitle(confirm.title) ? "" : confirm.title}
+        onChange={(title) =>
+          onChange(
+            { ...confirm, title: title.trim() === "" ? DEFAULT_CONFIRM_TITLE : title },
+            `${id}:confirm-title`,
+          )
+        }
       />
       <TokenText
         label="Confirmation text"
@@ -486,6 +496,8 @@ function ConfirmBody({
       <ConfirmPreview
         widgetId={widgetId}
         confirm={{ title: confirm.title, text: confirm.text, button: confirm.button }}
+        label={named}
+        table={table}
       />
     </>
   );
@@ -1015,9 +1027,12 @@ export function ActionEditor({
   onChange,
   startCollapsed = true,
   trigger,
+  named,
 }: {
   env: Env;
   id: string;
+  /** What the button that runs it says, for the confirmation's words. */
+  named?: string | undefined;
   /** "When clicked": the event, or what presses it. */
   heading: string;
   action: Action | undefined;
@@ -1047,7 +1062,7 @@ export function ActionEditor({
       ? [
           {
             label: "Ask to confirm",
-            onSelect: () => put({ ...current, confirm: { title: "Are you sure?" } }),
+            onSelect: () => put({ ...current, confirm: { title: DEFAULT_CONFIRM_TITLE } }),
           },
         ]
       : []),
@@ -1073,13 +1088,25 @@ export function ActionEditor({
             icon: MessageSquare,
             fixed: true,
             more: true,
-            sentence: <TokenSentence text={current.confirm.title} fields={confirmFields(ctx)} />,
+            sentence: (
+              <TokenSentence
+                text={
+                  confirmWords({
+                    label: named,
+                    confirm: current.confirm,
+                    table: tableOfRef(ctx, ctx.defaultRef) ?? ctx.thisTable ?? ctx.eventTable,
+                  }).title
+                }
+                fields={confirmFields(ctx)}
+              />
+            ),
             body: (
               <ConfirmBody
                 id={id}
                 widgetId={env.widget.id}
                 confirm={current.confirm}
                 ctx={ctx}
+                named={named}
                 onChange={(confirm, key) => put({ ...current, confirm }, key)}
               />
             ),
@@ -1302,6 +1329,7 @@ export function ActionsControl({
                   env={env}
                   id={`${id}-${one.id}`}
                   heading="When pressed"
+                  named={one.label}
                   action={one.action}
                   onChange={(next) => set(at, { action: next ?? { steps: [] } })}
                 />

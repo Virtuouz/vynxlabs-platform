@@ -1,7 +1,14 @@
 import { Button, Details } from "@volvel/ui";
 import type { ColumnInfo, RecordData, RowsData, WidgetViewProps } from "@volvel/widgets";
+import { formatOfColumn, moneyText, parseMoney } from "@volvel/widgets";
 import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
-import { type ColumnSpec, cellOf, defaultColumns, SYSTEM_COLUMNS } from "./cells.tsx";
+import {
+  type Tone as BadgeTone,
+  type ColumnSpec,
+  cellOf,
+  defaultColumns,
+  SYSTEM_COLUMNS,
+} from "./cells.tsx";
 import { labelOf } from "./format.ts";
 import { NamedIcon, type Tone, VARIANT } from "./look.tsx";
 import { CANNOT_NOW, useRunning } from "./press.tsx";
@@ -24,6 +31,8 @@ interface DetailConfig {
   /** The big figure under the heading: a column. Left out: the first money field. */
   figure?: string;
   status?: string;
+  /** The tones the status chip gives each value, as the table it was made from has them. */
+  statusBadges?: Record<string, BadgeTone>;
   fields?: DetailField[];
   actions?: DetailAction[];
   /** Tiles across. A number, or the digit as text. */
@@ -76,6 +85,17 @@ function showField(
   return cellOf(field, info, value, rows);
 }
 
+/** The money a field is, in the widget's format or as the table says: how it is typed and kept. */
+function moneyOf(
+  field: DetailField,
+  info: ColumnInfo | undefined,
+): { currency: string; minorUnits: boolean } | undefined {
+  const format = formatOfColumn(field.format, info);
+  return format?.style === "currency"
+    ? { currency: format.currency ?? "USD", minorUnits: format.minorUnits === true }
+    : undefined;
+}
+
 /** The fields to show: the config's, or every column that is not a system one. */
 function fieldsOf(config: DetailConfig, columns: readonly ColumnInfo[]): DetailField[] {
   if (config.fields && config.fields.length > 0) return config.fields;
@@ -107,6 +127,7 @@ function FieldEditor({
   value,
   label,
   choices,
+  money,
   save,
   stop,
 }: {
@@ -114,12 +135,20 @@ function FieldEditor({
   info: ColumnInfo | undefined;
   value: unknown;
   label: string;
+  /** The column is money: typed as the person writes an amount, kept as the table keeps it. */
+  money?: { currency: string; minorUnits: boolean } | undefined;
   choices: WidgetViewProps["choices"];
   save: (value: unknown) => Promise<string | undefined>;
   stop: () => void;
 }) {
   const type = info?.type ?? "text";
-  const [draft, setDraft] = useState(value === null || value === undefined ? "" : String(value));
+  const [draft, setDraft] = useState(
+    value === null || value === undefined
+      ? ""
+      : money && typeof value === "number"
+        ? moneyText(value, money)
+        : String(value),
+  );
   const [problem, setProblem] = useState<string>();
   const [saving, setSaving] = useState(false);
   const [offered, setOffered] = useState<readonly { value: string; label: string }[]>([]);
@@ -129,14 +158,25 @@ function FieldEditor({
 
   const commit = async () => {
     if (saving) return;
+    let amount: number | null | undefined;
+    if (money) {
+      const read = parseMoney(draft, money);
+      if (!read.ok) {
+        setProblem(read.message);
+        return;
+      }
+      amount = read.value ?? null;
+    }
     const parsed: unknown =
-      draft === ""
-        ? null
-        : type === "number" || type === "integer"
-          ? Number(draft)
-          : type === "boolean"
-            ? draft === "true"
-            : draft;
+      amount !== undefined
+        ? amount
+        : draft === ""
+          ? null
+          : type === "number" || type === "integer"
+            ? Number(draft)
+            : type === "boolean"
+              ? draft === "true"
+              : draft;
     setSaving(true);
     const failed = await save(parsed);
     setSaving(false);
@@ -201,8 +241,15 @@ function FieldEditor({
         // biome-ignore lint/a11y/noAutofocus: opened by the person's own click, the editor takes the keys
         autoFocus
         type={
-          type === "number" || type === "integer" ? "number" : type === "date" ? "date" : "text"
+          money
+            ? "text"
+            : type === "number" || type === "integer"
+              ? "number"
+              : type === "date"
+                ? "date"
+                : "text"
         }
+        {...(money ? { inputMode: "decimal" as const, placeholder: moneyText(0, money) } : {})}
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
       />
@@ -266,7 +313,7 @@ export function DetailView({
   // A record with a money figure reads as the boards draw it: its number small, the figure big.
   const figure =
     config.figure ??
-    shown.find((field) => field.format?.style === "currency" && field.column !== heading)?.column;
+    shown.find((field) => moneyOf(field, infoOf(field.column)) && field.column !== heading)?.column;
   const figured = figure !== undefined && record[figure] !== null && record[figure] !== undefined;
   const actions = config.actions ?? [];
   const wanted = Number(config.across);
@@ -321,6 +368,7 @@ export function DetailView({
               value={record[field.column]}
               label={label}
               choices={choices}
+              money={moneyOf(field, infoOf(field.column))}
               save={(value) => saveField(field.column, value)}
               stop={() => setEditing(undefined)}
             />
@@ -365,7 +413,16 @@ export function DetailView({
         </div>
         {status && record[status] !== null && record[status] !== undefined ? (
           <span className="shrink-0">
-            {cellOf({ column: status, as: "badge" }, infoOf(status), record[status], rows)}
+            {cellOf(
+              {
+                column: status,
+                as: "badge",
+                ...(config.statusBadges ? { badges: config.statusBadges } : {}),
+              },
+              infoOf(status),
+              record[status],
+              rows,
+            )}
           </span>
         ) : null}
       </div>

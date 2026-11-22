@@ -90,6 +90,11 @@ export function ActionsTab({
           env={env}
           id={`${env.widget.id}-on-${name}`}
           heading={event.label}
+          named={
+            env.widget.type === "core/button"
+              ? String(env.widget.config?.label ?? env.widget.title ?? "")
+              : undefined
+          }
           action={env.widget.on?.[name]}
           onChange={(next, key) => setEvent(name, next, key)}
         />

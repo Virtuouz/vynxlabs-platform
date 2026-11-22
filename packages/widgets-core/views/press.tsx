@@ -1,4 +1,5 @@
-import { Button } from "@volvel/ui";
+import { Button, Menu } from "@volvel/ui";
+import { Ellipsis, LoaderCircle } from "@volvel/ui/icons";
 import type { ActOutcome, WidgetViewProps } from "@volvel/widgets";
 import { type KeyboardEvent, useState } from "react";
 
@@ -74,9 +75,11 @@ export function useRunning() {
 }
 
 /**
- * A row's actions, at the end of the row. Shown on hover and focus of the row, and always
- * when `always` (a phone, a touch screen). Each is disabled by `can` and runs with the row.
- * The row must be a `group/row`.
+ * A row's actions, at the end of the row. Shown on hover and focus of the row on a screen that
+ * points. On a phone (`always`) or a touch screen they are not three buttons on every row: several
+ * are one ⋯ that opens them, each greyed with its reason (the person is outside its group, or its
+ * `when` does not hold for this row), and one is its own button. Each runs with the row. The row
+ * must be a `group/row`.
  */
 export function RowActionButtons({
   actions,
@@ -93,36 +96,86 @@ export function RowActionButtons({
 }) {
   const { running, run } = useRunning();
   if (actions.length === 0) return null;
+  const state = actions.map((item, at) => {
+    const where = `config/rowActions/${at}/action`;
+    const decides = !props.building || props.viewing === true;
+    const allowed = decides ? (props.can?.(where, row) ?? true) : false;
+    return {
+      item,
+      where,
+      allowed,
+      reason: !allowed && decides ? (props.why?.(where, row) ?? CANNOT_NOW) : undefined,
+    };
+  });
+  const go = (item: RowAction, where: string) =>
+    void run(item.id, () => props.act?.(where, { record }));
+  const buttons = (
+    <span className="inline-flex items-center gap-1">
+      {state.map(({ item, where, allowed, reason }) => (
+        <Button
+          key={item.id}
+          size="small"
+          variant={item.tone === "danger" ? "danger" : "quiet"}
+          disabled={!allowed || running !== undefined}
+          loading={running === item.id}
+          tooltip={reason}
+          onClick={(event) => {
+            // Not the row's own press.
+            event.stopPropagation();
+            go(item, where);
+          }}
+        >
+          {item.label}
+        </Button>
+      ))}
+    </span>
+  );
+  const several = actions.length > 1;
+  const menu = (
+    // Not the row's own press either: a tap on the ⋯ opens the menu and does no more.
+    // biome-ignore lint/a11y/noStaticElementInteractions: stops the row's click, the menu inside is the control
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the menu inside takes the keys
+    <span className="inline-flex" onClick={(event) => event.stopPropagation()}>
+      <Menu
+        align="end"
+        ariaLabel="Row actions"
+        triggerClassName="inline-flex size-8 items-center justify-center rounded-control text-ink-muted hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-action"
+        label={
+          running !== undefined ? (
+            <LoaderCircle aria-hidden="true" size={14} className="animate-spin" />
+          ) : (
+            <Ellipsis aria-hidden="true" size={16} />
+          )
+        }
+        items={state.map(({ item, where, allowed, reason }) => ({
+          label: item.label,
+          danger: item.tone === "danger",
+          // An action that may not be run says why beside it, and does nothing.
+          ...(allowed
+            ? {}
+            : {
+                detail: <span className="text-meta text-ink-muted">{reason ?? CANNOT_NOW}</span>,
+              }),
+          onSelect: () => {
+            if (allowed && running === undefined) go(item, where);
+          },
+        }))}
+      />
+    </span>
+  );
+  // A phone: one ⋯ (or the single button). A screen that points: buttons on hover. A touch
+  // screen wider than a phone: the same ⋯, as hover does not exist there.
+  if (always) return several ? menu : buttons;
   return (
-    <span
-      className={`inline-flex items-center gap-1 transition-opacity motion-fast ${
-        always
-          ? ""
-          : "opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100"
-      }`}
-    >
-      {actions.map((item, at) => {
-        const where = `config/rowActions/${at}/action`;
-        const decides = !props.building || props.viewing === true;
-        const allowed = decides ? (props.can?.(where, row) ?? true) : false;
-        return (
-          <Button
-            key={item.id}
-            size="small"
-            variant={item.tone === "danger" ? "danger" : "quiet"}
-            disabled={!allowed || running !== undefined}
-            loading={running === item.id}
-            tooltip={!allowed && decides ? (props.why?.(where, row) ?? CANNOT_NOW) : undefined}
-            onClick={(event) => {
-              // Not the row's own press.
-              event.stopPropagation();
-              void run(item.id, () => props.act?.(where, { record }));
-            }}
-          >
-            {item.label}
-          </Button>
-        );
-      })}
+    <span className="inline-flex items-center">
+      <span
+        className={`transition-opacity motion-fast opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 ${
+          several ? "[@media(hover:none)]:hidden" : "[@media(hover:none)]:opacity-100"
+        }`}
+      >
+        {buttons}
+      </span>
+      {several ? <span className="hidden [@media(hover:none)]:inline-flex">{menu}</span> : null}
     </span>
   );
 }

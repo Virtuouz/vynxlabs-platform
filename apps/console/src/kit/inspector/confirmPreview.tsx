@@ -9,6 +9,7 @@
  * `SampleRecordProvider`, which the builder may wrap the inspector in; without it, a field is
  * drawn by its name.
  */
+import { confirmWords } from "@volvel/screens";
 import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { fillTokens } from "./timelineModel.ts";
@@ -64,12 +65,17 @@ export function ConfirmPreview({
   confirm,
   step = 1,
   record,
+  label,
+  table,
 }: {
   /** The widget whose cell the preview sits beside. */
   widgetId: string;
   confirm: PreviewConfirm;
   step?: number;
   record?: Readonly<Record<string, unknown>> | undefined;
+  /** What the action's button says, and the table of its record: the words made when none are written. */
+  label?: string | undefined;
+  table?: string | undefined;
 }) {
   const sample = useContext(SampleRecord);
   const [at, setAt] = useState<{ left: number; top: number } | undefined>(undefined);
@@ -93,6 +99,8 @@ export function ConfirmPreview({
 
   if (!at) return null;
   const values = record ?? sample;
+  // The words the served app draws (`confirmWords`), with the sample record's values.
+  const words = confirmWords({ label, confirm, table, row: values });
   return createPortal(
     <aside
       aria-label={`What people will see, step ${step}`}
@@ -102,16 +110,16 @@ export function ConfirmPreview({
       <p className="m-0 text-label font-semibold tracking-wide text-ink-muted uppercase">
         What people will see · Step {step}
       </p>
-      <p className="m-0 mt-2 text-body font-semibold">{fillTokens(confirm.title, values)}</p>
-      {confirm.text ? (
-        <p className="m-0 mt-2 text-body-sm text-ink-muted">{fillTokens(confirm.text, values)}</p>
+      <p className="m-0 mt-2 text-body font-semibold">{fillTokens(words.title, values)}</p>
+      {words.text ? (
+        <p className="m-0 mt-2 text-body-sm text-ink-muted">{fillTokens(words.text, values)}</p>
       ) : null}
       <div className="mt-4 flex justify-end gap-2">
         <span className="inline-flex h-8 items-center rounded-control border border-line-control px-3 text-body-sm">
-          Cancel
+          {words.dismiss}
         </span>
         <span className="inline-flex h-8 items-center rounded-control bg-action px-3 text-body-sm font-medium text-action-ink">
-          {confirm.button || "Confirm"}
+          {words.button}
         </span>
       </div>
       <p className="m-0 mt-3 text-meta text-ink-muted">

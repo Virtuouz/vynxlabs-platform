@@ -185,6 +185,12 @@ export const queryRoutes =
                       name: Type.String(),
                       type: Type.String(),
                       references: NullableString,
+                      description: Type.Optional(
+                        Type.String({
+                          description:
+                            "What the column holds, when its definition says (in cents, say).",
+                        }),
+                      ),
                       values: Type.Optional(
                         Type.Array(
                           Type.Object({
@@ -214,6 +220,20 @@ export const queryRoutes =
         const catalog = (await loadCatalog(data, params.w)).filter(
           (table) => table.status === "active",
         );
+        // What a column is for is in its table's definition, not in the catalog.
+        const defined = new Map(
+          (
+            await db
+              .selectFrom("resource")
+              .select(["path", "body"])
+              .where("workspace_id", "=", params.w)
+              .where("kind", "=", "table")
+              .execute()
+          ).map((one) => [
+            one.path,
+            (one.body as { columns?: Record<string, { description?: string }> } | null)?.columns,
+          ]),
+        );
         const tables = [];
         for (const table of catalog) {
           const allowed = await ctx.allowed("data:read", {
@@ -235,6 +255,9 @@ export const queryRoutes =
                   name: column.name,
                   type: column.type,
                   references: column.referenceTable,
+                  ...(defined.get(table.name)?.[column.name]?.description
+                    ? { description: defined.get(table.name)?.[column.name]?.description as string }
+                    : {}),
                   ...(column.options?.values
                     ? {
                         values: column.options.values.map((one) => {

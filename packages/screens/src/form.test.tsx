@@ -142,7 +142,7 @@ describe("controls by column type", () => {
     draw(null, create);
     await ready();
     expect((screen.getByLabelText(/Number/) as HTMLInputElement).type).toBe("text");
-    expect((screen.getByLabelText(/Total/) as HTMLInputElement).type).toBe("number");
+    expect((screen.getByLabelText(/Total/) as HTMLInputElement).type).toBe("text");
     expect((screen.getByLabelText(/Lines/) as HTMLInputElement).type).toBe("number");
     expect(screen.getAllByRole("button", { name: "Open calendar" })).toHaveLength(2);
     expect((screen.getByLabelText(/Paid in full/) as HTMLInputElement).type).toBe("checkbox");
@@ -351,7 +351,7 @@ describe("edit", () => {
     draw(record, edit);
     await ready();
     expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("INV-1");
-    expect((screen.getByLabelText(/Total/) as HTMLInputElement).value).toBe("120");
+    expect((screen.getByLabelText(/Total/) as HTMLInputElement).value).toBe("120.00");
     expect((screen.getByLabelText(/Status/) as HTMLSelectElement).value).toBe("open");
     expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe("Nov 20, 2026");
     expect((screen.getByLabelText(/Notes/) as HTMLTextAreaElement).value).toBe("First");

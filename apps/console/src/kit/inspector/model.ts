@@ -27,7 +27,7 @@ import {
   type Tab,
   type WidgetDefinition,
 } from "@volvel/widgets";
-import { DEFAULT_COLUMNS, defaultColumns } from "@volvel/widgets-core/views";
+import { DEFAULT_COLUMNS, defaultColumns, SYSTEM_COLUMNS } from "@volvel/widgets-core/views";
 import { drawersFor } from "./custom.ts";
 
 /** A column of a table, as the workspace's schema says. */
@@ -35,6 +35,8 @@ export interface CatalogColumn {
   name: string;
   type: string;
   references: string | null;
+  /** What the column holds, as its table's definition says. */
+  description?: string;
   /** How many different values the column holds, when the schema says. Orders a breakdown's choices. */
   distinct?: number;
   /** The count above is a floor: the column has more values than the server counts. */
@@ -675,6 +677,12 @@ export function mainTable(widgets: readonly PageWidget[], catalog: Catalog): str
 }
 
 const TEMPORAL = new Set(["date", "timestamp"]);
+/** Columns that hold a handful of named things, so that they make a grid's headings. */
+const GROUPING = /^(status|state|stage|type|kind|category|clinic|channel|priority|species|role)$/;
+/** When a row was made or is due: the date a grid is cut by. */
+const WHEN_MADE = /(^|_)(issued|created|starts?|date|due|on|scheduled|opened|booked)(_|$)/;
+/** What happens to some rows only (chased, paid, sent, cancelled…): a poor heading. */
+const MOSTLY_EMPTY = /(chased|paid|sent|cancel+ed|completed|closed|deleted|resolved|reminded)/;
 
 /** The data inputs a new widget starts with when the page's table is obvious: a count, by the first date or kind. */
 export function defaultInputs(
@@ -695,7 +703,30 @@ export function defaultInputs(
       const values = declared.values ?? { min: 1, max: 1 };
       const breakdowns = declared.breakdowns ?? { min: 0, max: 1 };
       if (values.min > 0) visual.measures = [{ fn: "count", as: "count" }];
-      if (breakdowns.min > 0) {
+      if (breakdowns.min > 1) {
+        // A grid (a Pivot) wants one breakdown down the side and another across the top: the
+        // table's choices and references first, then its dates by month, then its text.
+        const kinds = (test: (column: CatalogColumn) => boolean) =>
+          columns.filter((column) => !SYSTEM_COLUMNS.has(column.name) && test(column));
+        // A few named things to put down the side (a status, a clinic), then when something was
+        // made or is due, then what it refers to; a column that is mostly empty is no heading.
+        const across = [
+          ...kinds((column) => column.type === "enum"),
+          ...kinds((column) => column.type === "text" && GROUPING.test(column.name)),
+          ...kinds((column) => TEMPORAL.has(column.type) && WHEN_MADE.test(column.name)),
+          ...kinds((column) => column.references !== null),
+          ...kinds((column) => TEMPORAL.has(column.type) && !MOSTLY_EMPTY.test(column.name)),
+          ...kinds((column) => column.type === "text"),
+        ]
+          .filter((column, at, all) => all.findIndex((one) => one.name === column.name) === at)
+          .slice(0, breakdowns.min);
+        if (across.length > 0) {
+          visual.groupBy = across.map((column) => ({
+            column: column.name,
+            ...(TEMPORAL.has(column.type) ? { bucket: "month" as const } : {}),
+          }));
+        }
+      } else if (breakdowns.min > 0) {
         const by =
           columns.find((column) => column.name !== "updated_at" && TEMPORAL.has(column.type)) ??
           columns.find((column) => column.type === "enum") ??

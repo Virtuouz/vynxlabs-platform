@@ -29,6 +29,7 @@ import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, movedPage } from "./pageKinds.ts";
 import { problemWords } from "./publishCheck.ts";
 import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
+import { syncSheetActions } from "./sheetActions.ts";
 import type { Start, Started } from "./starters.ts";
 
 export { VIEWPORTS };
@@ -580,6 +581,7 @@ export function AppBuilder({
               (draft) => {
                 const target = draft.pages.find((one) => one.id === page.id);
                 if (!target) return;
+                const before = target.widgets;
                 target.widgets = next.widgets;
                 // What the change also made: the sheet a click opens, the modal a button opens.
                 for (const added of next.addPages ?? []) {
@@ -590,6 +592,8 @@ export function AppBuilder({
                     draft.pages.push(added);
                   }
                 }
+                // A table's row actions are also its sheet's toolbar: kept in step here, once.
+                syncSheetActions(draft.pages, page.id, before);
               },
               label,
               key,

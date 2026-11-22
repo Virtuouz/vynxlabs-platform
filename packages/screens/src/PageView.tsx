@@ -3,7 +3,14 @@ import { type ActingUser, type Condition, conditionWords } from "@volvel/manifes
 import { childrenOf, isContainer, type Roles, tabsOf, topLevel } from "@volvel/manifest/parts";
 import { EmptyState, Panel, useFlip } from "@volvel/ui";
 import { EyeOff, GripHorizontal } from "@volvel/ui/icons";
-import type { ActOutcome, Choice, DecideOutcome, EventPayload, FilterHost } from "@volvel/widgets";
+import type {
+  ActOutcome,
+  Choice,
+  ColumnInfo,
+  DecideOutcome,
+  EventPayload,
+  FilterHost,
+} from "@volvel/widgets";
 import { calloutEdge, valueFor } from "@volvel/widgets-core/views";
 import type React from "react";
 import {
@@ -69,6 +76,7 @@ import {
   type PageDataClient,
   type ViewEntry,
   type ViewRegistry,
+  type WireData,
 } from "./types.ts";
 import { useWidgetData } from "./useWidgetData.ts";
 
@@ -662,6 +670,7 @@ function Cell({
                             : record
                               ? thisRow
                               : undefined,
+                        facts: factsOf(rowsRead ?? recordRead),
                         input: groupInput,
                         inputs: given?.inputs,
                         ...amongOf(),
@@ -1040,6 +1049,14 @@ const gridKey = (into: WidgetIn | undefined) => gridOf({ in: into });
  * size with Shift and the arrows, copied with ⌘D or Ctrl+D, removed with
  * Delete, and let go with Esc.
  */
+/** What a widget read of its columns and of the names references point at: the words of a confirmation. */
+const factsOf = (
+  wire: WireData | undefined,
+): { columns: ColumnInfo[]; names?: Record<string, Record<string, string>> } | undefined =>
+  wire?.shape === "rows" || wire?.shape === "record"
+    ? { columns: wire.columns, ...(wire.names ? { names: wire.names } : {}) }
+    : undefined;
+
 export function PageView({
   widgets: given,
   device,

@@ -12,8 +12,10 @@ import {
   type PageFilter,
   type PageWidget,
   topLevel,
+  type ValueFormat,
   widgetRegistry,
 } from "@volvel/manifest";
+import { moneyFormatOf } from "@volvel/widgets";
 import {
   bindHolderFilters,
   type Catalog,
@@ -89,6 +91,7 @@ export function infoFromCatalog(catalog: Catalog, name: string): TableInfo | und
       type: column.type,
       required: false,
       ...(column.references ? { references: column.references } : {}),
+      ...(column.description ? { description: column.description } : {}),
       values: [],
     })),
   };
@@ -219,11 +222,30 @@ export function makeDetail(
     (list.config?.rowActions as
       | { id: string; label: string; tone?: string; action: Action }[]
       | undefined) ?? [];
-  const detail = detailWidget(table, { x: 0, y: 0, w: 12, h: 12 }, rowActions);
+  const detail = detailWidget(table, { x: 0, y: 0, w: 12, h: 12 }, rowActions, list);
   return {
     page: { id, title, kind: "sheet", record: { table: table.name }, widgets: [detail] },
     click: openRecord(id),
   };
+}
+
+/** The column settings of a table, by column, in the table's order: what its rows are drawn with. */
+interface CarriedColumn {
+  column: string;
+  label?: string;
+  format?: ValueFormat;
+  as?: string;
+  badges?: Record<string, string>;
+}
+function carriedColumns(from: PageWidget | undefined): Map<string, CarriedColumn> {
+  const specs = from?.config?.columns;
+  const out = new Map<string, CarriedColumn>();
+  if (!Array.isArray(specs)) return out;
+  for (const spec of specs as CarriedColumn[]) {
+    if (spec && typeof spec.column === "string" && !out.has(spec.column))
+      out.set(spec.column, spec);
+  }
+  return out;
 }
 
 /**
@@ -234,12 +256,45 @@ export function detailWidget(
   table: TableInfo,
   at: PageWidget["at"],
   rowActions: readonly { id: string; label: string; tone?: string; action: Action }[] = [],
+  from?: PageWidget,
 ): PageWidget {
   const shown = table.columns.filter(
     (column) => !isSystem(column.name) || column.name === "created_at",
   );
-  const heading_ = displayGuess(table.columns) ?? shown[0]?.name ?? "id";
-  const status = table.columns.find((column) => column.type === "enum")?.name;
+  // A list says what names a row and what its badge is; a table does not: the table's own guess.
+  const place = (name: string) => {
+    const one = from?.type === "core/list" ? from.config?.[name] : undefined;
+    return typeof one === "string" && table.columns.some((column) => column.name === one)
+      ? one
+      : undefined;
+  };
+  const heading_ = place("title") ?? displayGuess(table.columns) ?? shown[0]?.name ?? "id";
+  // What the table the click comes from already says of its columns (their headings, formats and
+  // badges) is said again here: the same column is not written two ways.
+  const carried = carriedColumns(from);
+  const status =
+    place("badge") ??
+    [...carried.values()].find((spec) => spec.as === "badge" && spec.column !== heading_)?.column ??
+    table.columns.find((column) => column.type === "enum")?.name;
+  const statusBadges = status ? carried.get(status)?.badges : undefined;
+  const order = (column: InfoColumn) => {
+    const at = [...carried.keys()].indexOf(column.name);
+    return at === -1 ? carried.size : at;
+  };
+  const fields = shown
+    .filter((column) => column.name !== heading_ && column.name !== status)
+    .map((column, at) => ({ column, at }))
+    .sort((a, b) => order(a.column) - order(b.column) || a.at - b.at)
+    .map(({ column }) => {
+      const spec = carried.get(column.name);
+      return {
+        column: column.name,
+        ...(spec?.label ? { label: spec.label } : {}),
+        ...(spec?.format ? { format: spec.format } : startingFormat(column)),
+        ...(spec?.as === "badge" ? { as: "badge" } : {}),
+        ...(spec?.as === "badge" && spec.badges ? { badges: spec.badges } : {}),
+      };
+    });
   return {
     id: "detail",
     type: "core/detail",
@@ -249,9 +304,8 @@ export function detailWidget(
     config: {
       heading: heading_,
       ...(status ? { status } : {}),
-      fields: shown
-        .filter((column) => column.name !== heading_ && column.name !== status)
-        .map((column) => ({ column: column.name })),
+      ...(statusBadges && Object.keys(statusBadges).length > 0 ? { statusBadges } : {}),
+      fields,
       ...(rowActions.length > 0
         ? {
             actions: rowActions.map((one) => ({
@@ -290,10 +344,16 @@ export function detailEdit(context: PageContext, widget: PageWidget, table: Tabl
 
 // ----- Forms -----
 
-/** Whether a number is money: its definition says so, in cents or in a currency. */
-const isMoney = (column: InfoColumn) =>
-  (column.type === "integer" || column.type === "number") &&
-  /\b(cents|minor units?|money|currency|dollars|euros|pounds)\b/i.test(column.description ?? "");
+/** Whether a number is money: its definition says so, in cents or in a currency (the one rule widgets share). */
+const isMoney = (column: InfoColumn) => moneyFormatOf(column) !== undefined;
+
+/** `{ format }` for a column whose table says it is money, else nothing: what a new field or column starts with. */
+export const startingFormat = (
+  column: InfoColumn | undefined,
+): { format: NonNullable<ReturnType<typeof moneyFormatOf>> } | Record<string, never> => {
+  const format = moneyFormatOf(column);
+  return format ? { format } : {};
+};
 
 /** A default, as a person reads it: a choice by its words, a date "today". */
 function defaultWords(column: InfoColumn, mode: "create" | "edit"): string | undefined {
@@ -438,6 +498,7 @@ export function formWidget(plan: FormPlan, id: string, at: PageWidget["at"]): Pa
         return {
           column: name,
           ...(column?.required ? { required: true } : {}),
+          ...startingFormat(column),
           // A new record's date starts at today; the person filling it in may change it.
           ...(plan.mode === "create" && column?.type === "date"
             ? { initial: { kind: "today" } }

@@ -723,3 +723,5 @@ export interface WidgetPack<View = unknown> {
   definitions: readonly WidgetDefinition[];
   views: Readonly<Record<string, View>>;
 }
+
+export * from "./money.js";

@@ -112,6 +112,8 @@ export function NumberFormatPicker({
                 name={name}
                 checked={on}
                 onChange={() => onChange(format)}
+                // A choice already shown (a format the table gave) is written when it is chosen again.
+                onClick={() => on && onChange(format)}
                 className="sr-only"
               />
               <span>{one.label}</span>

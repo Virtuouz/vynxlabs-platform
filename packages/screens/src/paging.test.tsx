@@ -12,7 +12,11 @@ import { Frame } from "./Frame.tsx";
 afterEach(cleanup);
 
 const col = (name: string, type = "text", label = name) => ({ name, type, label });
-const columns = [col("id", "uuid", "Id"), col("number", "text", "Number"), col("total", "number", "Total")];
+const columns = [
+  col("id", "uuid", "Id"),
+  col("number", "text", "Number"),
+  col("total", "number", "Total"),
+];
 const rowsOf = [
   { id: "a", number: "INV-1", total: 300 },
   { id: "b", number: "INV-2", total: 100 },
@@ -24,7 +28,10 @@ function paged(over: Partial<RowsData> = {}) {
   const more = vi.fn();
   render(
     <View
-      config={{ select: true, columns: [{ column: "number" }, { column: "total", sortable: true }] }}
+      config={{
+        select: true,
+        columns: [{ column: "number" }, { column: "total", sortable: true }],
+      }}
       data={{ rows: { shape: "rows", columns, rows: rowsOf, more, total: 12772, ...over } }}
       size={{ w: 12, h: 8, narrow: false }}
       emit={() => {}}
@@ -63,11 +70,9 @@ describe("rows a page at a time", () => {
     fireEvent.click(screen.getByTitle("Sort by Total"));
     expect(sortBy).toHaveBeenCalledWith({ column: "total", descending: false });
     const body = within(screen.getAllByRole("rowgroup")[1] as HTMLElement);
-    expect(body.getAllByRole("row").map((row) => within(row).getAllByRole("cell")[1]?.textContent)).toEqual([
-      "INV-1",
-      "INV-2",
-      "INV-3",
-    ]);
+    expect(
+      body.getAllByRole("row").map((row) => within(row).getAllByRole("cell")[1]?.textContent),
+    ).toEqual(["INV-1", "INV-2", "INV-3"]);
   });
 
   test("says that only the rows shown can be chosen", () => {

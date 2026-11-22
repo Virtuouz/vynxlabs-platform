@@ -1083,15 +1083,30 @@ describe("a rows input is read a page at a time", () => {
       total: 1,
     }));
     expect((await alice.post(`${ws()}/rows/invoices`, { rows: more })).status).toBe(201);
+    // A table's page is its "Rows at a time", 25 unless it says; the first page says how many there are.
     const first = (await asked(alice, onPage("list"))).body.inputs.rows;
-    expect(first.rows).toHaveLength(100);
+    expect(first.rows).toHaveLength(25);
+    expect(first.total).toBe(123);
     expect(typeof first.next).toBe("string");
-    const second = (await asked(alice, onPage("list", { input: "rows", cursor: first.next }))).body
-      .inputs.rows;
-    expect(second.rows).toHaveLength(23);
-    expect(second.next).toBeUndefined();
-    const all = [...first.rows, ...second.rows].map((row: Any) => row.id);
+    const all = first.rows.map((row: Any) => row.id);
+    let next: string | undefined = first.next;
+    while (next) {
+      const page = (await asked(alice, onPage("list", { input: "rows", cursor: next }))).body.inputs
+        .rows;
+      expect(page.total).toBeUndefined();
+      all.push(...page.rows.map((row: Any) => row.id));
+      next = page.next;
+    }
+    expect(all).toHaveLength(123);
     expect(new Set(all).size).toBe(123);
+    // A download asks for bigger pages, and the order is the table's, over every row.
+    const big = (
+      await asked(alice, onPage("list", { input: "rows", cursor: first.next, size: "200" }))
+    ).body.inputs.rows;
+    expect(big.rows).toHaveLength(98);
+    const sorted = (await asked(alice, onPage("list", { sort: "-number" }))).body.inputs.rows;
+    expect(sorted.rows[0].number >= sorted.rows[24].number).toBe(true);
+    expect((await asked(alice, onPage("list", { sort: "nope" }))).status).toBe(400);
     // A cursor that was not given is refused, and so is a cursor with no input.
     expect((await asked(alice, onPage("list", { input: "rows", cursor: "!!" }))).status).toBe(400);
     expect((await asked(alice, onPage("list", { cursor: first.next }))).status).toBe(400);

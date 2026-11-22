@@ -107,7 +107,9 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
     return { group };
   };
   return (
-    <ScrollsSideways label={`${heading} by ${summary.breakdowns.map((name) => labelOf(summary.columns, name)).join(" and ")}, scrolls sideways`}>
+    <ScrollsSideways
+      label={`${heading} by ${summary.breakdowns.map((name) => labelOf(summary.columns, name)).join(" and ")}, scrolls sideways`}
+    >
       {/* table-allowed: a pivot heads its rows and its columns alike, which a list of rows does not */}
       <table className="w-full border-separate border-spacing-1 text-body-sm">
         <caption className="sr-only">

@@ -185,6 +185,7 @@ export function useWidgetData({
     return drawn;
   }, [inputs, more.loading, page, sorting]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `asked` stands for the filters, order and widget
   const all = useCallback(async () => {
     if (!inputs) return inputs;
     const whole: Record<string, WireData> = { ...inputs };
@@ -213,7 +214,6 @@ export function useWidgetData({
       whole[name] = { ...rest, rows, names };
     }
     return whole;
-    // biome-ignore lint/correctness/useExhaustiveDependencies: `asked` stands for the filters, order and widget
   }, [client, inputs, asked]);
 
   const retry = useCallback(() => setAttempt((count) => count + 1), []);

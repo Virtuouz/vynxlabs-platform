@@ -103,7 +103,9 @@ export function pageOf(widget: PageWidget, asked?: number): number {
     widget.type === "core/table"
       ? (widget.config?.pageSize ?? widgetRegistry().get(widget.type)?.defaults?.pageSize)
       : undefined;
-  return typeof size === "number" && Number.isInteger(size) ? Math.min(Math.max(size, 1), 200) : ROWS_PAGE;
+  return typeof size === "number" && Number.isInteger(size)
+    ? Math.min(Math.max(size, 1), 200)
+    : ROWS_PAGE;
 }
 
 export interface ReadRequest {
@@ -419,7 +421,10 @@ export async function readWidget(
   /** How many rows a query finds in all. */
   const totalOf = async (asked: WidgetQuery): Promise<{ total?: number }> => {
     try {
-      const counted = await run({ ...asked, text: `select count(*) as n from (${asked.text}) as vx_c` });
+      const counted = await run({
+        ...asked,
+        text: `select count(*) as n from (${asked.text}) as vx_c`,
+      });
       const n = Number(counted.rows[0]?.[0]);
       return Number.isFinite(n) ? { total: n } : {};
     } catch {

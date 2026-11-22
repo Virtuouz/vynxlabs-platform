@@ -1,5 +1,5 @@
-export { AppSkeleton } from "./AppSkeleton.tsx";
 export { corePack } from "@volvel/widgets-core/views";
+export { AppSkeleton } from "./AppSkeleton.tsx";
 export { AppView, inMenu } from "./AppView.tsx";
 export {
   type ActionsHost,

@@ -32,6 +32,7 @@ export function ScrollsSideways({ label, children }: { label: string; children: 
   const shade = "pointer-events-none absolute inset-y-0 w-6 from-ink/15 to-transparent";
   return (
     <div className="relative min-w-0" data-scrolls-sideways={wide ? "" : undefined}>
+      {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: the label is only set with the region role */}
       <div
         ref={ref}
         role={wide ? "region" : undefined}

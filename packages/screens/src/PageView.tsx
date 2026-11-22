@@ -50,6 +50,7 @@ import {
   phoneOrder,
   phoneSpans,
 } from "./narrow.ts";
+import { useOneStop } from "./oneStop.ts";
 import {
   type Box,
   CARRIED,
@@ -69,7 +70,6 @@ import {
   type ViewEntry,
   type ViewRegistry,
 } from "./types.ts";
-import { useOneStop } from "./oneStop.ts";
 import { useWidgetData } from "./useWidgetData.ts";
 
 export interface PageViewProps {
@@ -371,10 +371,7 @@ function Cell({
     client,
     widget,
     reads:
-      definition !== undefined &&
-      Object.keys(definition.data).length > 0 &&
-      !waiting &&
-      !noRecord,
+      definition !== undefined && Object.keys(definition.data).length > 0 && !waiting && !noRecord,
     filterValues,
     refreshKey,
     // A table says what it says when empty, in the words its maker chose.

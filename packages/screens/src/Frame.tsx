@@ -173,7 +173,8 @@ export function Frame({
     (most, wire) => (wire.shape === "rows" && wire.total ? Math.max(most, wire.total) : most),
     0,
   );
-  const capped = total > DOWNLOAD_ROWS ? ` (the first ${DOWNLOAD_ROWS.toLocaleString("en-US")} rows)` : "";
+  const capped =
+    total > DOWNLOAD_ROWS ? ` (the first ${DOWNLOAD_ROWS.toLocaleString("en-US")} rows)` : "";
   const keep = async (save: (result: Result) => void) => {
     const whole = resultOf(await reading.all()) ?? kept;
     if (whole) save(whole);

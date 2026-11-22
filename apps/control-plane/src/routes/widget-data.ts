@@ -74,14 +74,16 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               Type.Integer({
                 minimum: 1,
                 maximum: 1000,
-                description: "With `input`: how many rows to read, in place of the widget's own page size.",
+                description:
+                  "With `input`: how many rows to read, in place of the widget's own page size.",
               }),
             ),
             sort: Type.Optional(
               Type.String({
                 minLength: 1,
                 maxLength: 80,
-                description: "A rows input of a table in the order of this column (`-name` for descending), over all its rows.",
+                description:
+                  "A rows input of a table in the order of this column (`-name` for descending), over all its rows.",
               }),
             ),
             cursor: Type.Optional(

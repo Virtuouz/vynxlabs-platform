@@ -11,6 +11,7 @@ afterEach(cleanup);
 function Card({ active }: { active: boolean }) {
   const stop = useOneStop(active);
   return (
+    // biome-ignore lint/a11y/noNoninteractiveTabindex: the card is the stop, as on the canvas
     <section ref={stop.ref} aria-label="card" tabIndex={0} {...stop.props}>
       <button type="button">One</button>
       <a href="#x">Two</a>

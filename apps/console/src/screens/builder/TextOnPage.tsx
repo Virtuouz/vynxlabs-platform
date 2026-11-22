@@ -86,7 +86,7 @@ export function TextOnPage({
         label={`Text of ${title}`}
         value={written}
         onChange={setWritten}
-        height={`${place.height - 52}px`}
+        height={`${place.height - (place.full ? 112 : 52)}px`}
         autoFocus
         modes={["source", "split", "preview"]}
         path={`widget/${widget}.md`}

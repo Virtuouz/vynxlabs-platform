@@ -363,7 +363,8 @@ export function DrawerEditor({
           side={side}
           align="start"
           sideOffset={8}
-          collisionPadding={8}
+          // Below the app's top bar (3.5rem), never over it: the list shrinks and scrolls, its footer stays.
+          collisionPadding={{ top: 56, right: 8, bottom: 8, left: 8 }}
           {...(boundary ? { collisionBoundary: boundary } : {})}
           className="layer-popover"
         >

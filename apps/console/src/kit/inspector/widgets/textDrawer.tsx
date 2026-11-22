@@ -8,7 +8,7 @@ import { Hash, Pencil, Type } from "lucide-react";
 import { useState } from "react";
 import { MarkdownEditor } from "../../markdown/MarkdownEditor.tsx";
 import { useEditOnPage } from "../../markdown/onThePage.ts";
-import { withText } from "../model.ts";
+import { textHeading, withText } from "../model.ts";
 import { type Env, Group, setConfig } from "./recordShared.tsx";
 
 export type TextLook = "plain" | "note" | "warning" | "tip";
@@ -52,7 +52,7 @@ export function LookTiles({
 }
 
 /** The words as the drawer shows them: cut at a word with "…" when they run long. */
-const SHOWN = 240;
+const SHOWN = 140;
 export function cut(text: string): string {
   if (text.length <= SHOWN) return text;
   const at = text.lastIndexOf(" ", SHOWN);
@@ -85,7 +85,10 @@ export function TextContentSection({ env }: { env: Env }) {
         <DrawerRow
           label="Heading"
           icon={Type}
-          value={env.widget.title || <span className="text-ink-muted">Add a heading</span>}
+          value={
+            env.widget.title ||
+            textHeading(text) || <span className="text-ink-muted">Add a heading</span>
+          }
           editorTitle="Heading"
           editor={
             <TextField

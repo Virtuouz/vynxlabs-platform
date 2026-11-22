@@ -110,7 +110,7 @@ export function ButtonDisplaySection({ env }: { env: Env }) {
         onLabel={(next) => setConfig(env, "label", next, "what it says", true)}
         onIcon={(next) => setConfig(env, "icon", next, "its icon")}
       />
-      <Group label="Style" note="Actions and Rules: the shared tabs.">
+      <Group label="Style">
         <DrawerBlock>
           <ToneTiles
             tone={typeof env.config.tone === "string" ? env.config.tone : undefined}

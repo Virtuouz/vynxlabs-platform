@@ -495,8 +495,9 @@ function TabBody({
   if (tab === "data" && blocks.length === 0 && READS_NO_ROWS.has(definition.type)) {
     return (
       <p className="m-0 px-1 text-body-sm text-ink-muted">
-        {definition.type === "core/actions" ? "An action group" : "A button"} reads no rows. What it
-        does is on the Actions tab.
+        {definition.type === "core/actions"
+          ? "An action group reads no rows. What each button does is on its own Actions tab: choose a button in Display."
+          : "A button reads no rows. What it does is on the Actions tab."}
       </p>
     );
   }

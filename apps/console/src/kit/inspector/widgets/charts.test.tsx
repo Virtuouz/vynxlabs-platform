@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { show } from "../../../testing.tsx";
 import type { Env } from "../controls.tsx";
 import { drawersFor } from "../custom.ts";
-import { type Catalog, configOf } from "../model.ts";
+import { type Catalog, configOf, heading } from "../model.ts";
 import { type DrawerData, DrawerDataProvider } from "./chartShared.tsx";
 import "./registerCharts.ts";
 
@@ -484,6 +484,16 @@ test("pivot data: Measure, Rows and Columns, and a shaded grid from the data", (
   const grid = screen.getByRole("img", { name: /A grid of 3 rows and 3 columns/ });
   expect(grid.textContent).toContain("Sep");
   expect(grid.querySelectorAll("span.h-5").length).toBe(9);
+});
+
+test("pivot data: a column the other side uses changes places with it", async () => {
+  show(<Harness start={visits()} definition={pivot} tab="data" />);
+  const [rows, columns] = visualOf(visits(), "rows").groupBy ?? [];
+  fireEvent.click(screen.getByRole("button", { name: /^Rows/ }));
+  const dialog = await screen.findByRole("dialog");
+  const name = heading(columns?.column ?? "");
+  fireEvent.click(within(dialog).getByRole("radio", { name: new RegExp(`^${name}`) }));
+  expect(visualOf(last(), "rows").groupBy).toEqual([columns, rows]);
 });
 
 test("pivot data: the columns can be cut by another period", async () => {

@@ -36,3 +36,15 @@ test("an app with no pages named keeps the shapes, and a page with no markers is
   });
   expect(plain).toContain("<body>x</body>");
 });
+
+test("an app written as code keeps its own title, and a dollar sign in a name is one", () => {
+  const code = injectContext("<html><head><title>Mine</title></head><body></body></html>", {
+    base: "/a/",
+    themeHref: "/t.css",
+    data: { app: { title: "Theirs", pages: [{ id: "p", title: "P" }] } },
+  });
+  expect(code).toContain("<title>Mine</title>");
+  expect(at({ title: "Costs $& more", pages: [{ id: "p", title: "$' page" }] })).toContain(
+    "<h1>Costs $&amp; more</h1>",
+  );
+});

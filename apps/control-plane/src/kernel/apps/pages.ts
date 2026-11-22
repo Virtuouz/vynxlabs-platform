@@ -394,14 +394,15 @@ export function injectContext(
       )
     : [];
   let filled = html;
-  if (title !== undefined) {
+  // Only the platform's own page has the places for them: an app written as code keeps its markup.
+  // The replacements are functions, so a "$" in a name is a "$".
+  if (title !== undefined && html.includes("<!--vx:title-->")) {
     filled = filled
-      .replace(/<!--vx:title-->/g, escapeHtml(title))
-      .replace(/<title>[^<]*<\/title>/i, `<title>${escapeHtml(title)}</title>`);
+      .replace(/<!--vx:title-->/g, () => escapeHtml(title))
+      .replace(/<title>[^<]*<\/title>/i, () => `<title>${escapeHtml(title)}</title>`);
   }
   if (names.length > 0) {
-    filled = filled.replace(
-      /<!--vx:pages-->[\s\S]*?<!--\/vx:pages-->/g,
+    filled = filled.replace(/<!--vx:pages-->[\s\S]*?<!--\/vx:pages-->/g, () =>
       names
         .map(
           (name) =>

@@ -322,13 +322,10 @@ test("a pivot of loans by month and status is built from menus, with no SQL writ
   const measure = await openSetting(page, inspector, "Measure");
   await measure.getByLabel("What it works out").selectOption("count");
   await closeSetting(page, measure);
+  // It starts as a grid of status by month. The months go down the side: the two change places.
   const rows = await openSetting(page, inspector, "Rows");
   await choose(rows, /^Lent on/);
-  await choose(rows, "Month");
   await closeSetting(page, rows);
-  const columns = await openSetting(page, inspector, "Columns");
-  await choose(columns, /^Status/);
-  await closeSetting(page, columns);
   const pivot = page.locator("section[data-selected]");
   // In the last 30 days: two out, one late, three in all.
   await expect(pivot).toContainText("out");

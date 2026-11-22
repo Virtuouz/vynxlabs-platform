@@ -483,14 +483,33 @@ export function BreakdownRow({
   const one = groups[at];
   if (!one && (none === undefined || at > groups.length)) return null;
   const every = columnsOf(env, visual);
-  // The columns another breakdown already uses are not offered again.
+  // A column another breakdown uses is offered to one that has a column of its own, and the two
+  // change places (a pivot's rows and columns are swapped). One being added is offered the rest.
   const used = groups.filter((_, index) => index !== at).map((g) => g.column);
-  const columns = every.filter((c) => !used.includes(c.name));
+  const columns = one ? every : every.filter((c) => !used.includes(c.name));
   const column = columns.find((c) => c.name === one?.column);
   const table = env.catalog.tables.find((t) => t.name === visual.table);
   const hasGapSetting = "fillGaps" in env.definition.config.properties;
 
   const change = (next: BreakdownValue) => {
+    const other = groups.findIndex((g, index) => index !== at && g.column === next.column);
+    const held = groups[other];
+    if (one && held) {
+      const groupBy = groups.map((g, index) => (index === at ? held : index === other ? one : g));
+      const types = groupBy.map((g) => ({
+        column: g.column,
+        type: every.find((c) => c.name === g.column)?.type,
+      }));
+      writeVisual(
+        env,
+        input,
+        { ...visual, groupBy },
+        "swapping what it is broken down by",
+        undefined,
+        after ? after(env.widget, types) : env.widget,
+      );
+      return;
+    }
     const entry = { column: next.column, ...(next.bucket ? { bucket: next.bucket } : {}) };
     const groupBy = one ? groups.map((g, index) => (index === at ? entry : g)) : [...groups, entry];
     const renamed = one

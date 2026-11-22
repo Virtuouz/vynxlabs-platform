@@ -323,7 +323,7 @@ export const performance = defineInterface({
         {
           id: "note",
           type: "core/text",
-          at: { x: 0, y: 2, w: 12, h: 3 },
+          at: { x: 0, y: 2, w: 12, h: 2 },
           config: {
             look: "note",
             text: "**In dollars.** Every amount here is in dollars, as the clinics invoice. Change **Issued** to look at another stretch of time. A void invoice is left out of the totals.",
@@ -333,7 +333,7 @@ export const performance = defineInterface({
           id: "invoiced",
           type: "core/stat",
           title: "Invoiced",
-          at: { x: 0, y: 5, w: 3, h: 3 },
+          at: { x: 0, y: 4, w: 3, h: 3 },
           data: { value: invoiceValue("invoiced", "sum") },
           config: {
             format: DOLLARS,
@@ -350,7 +350,7 @@ export const performance = defineInterface({
           id: "unpaid",
           type: "core/stat",
           title: "Unpaid",
-          at: { x: 3, y: 5, w: 3, h: 3 },
+          at: { x: 3, y: 4, w: 3, h: 3 },
           data: {
             value: invoiceValue("unpaid", "sum", [{ column: "status", op: "eq", value: "unpaid" }]),
           },
@@ -369,7 +369,7 @@ export const performance = defineInterface({
           id: "average",
           type: "core/stat",
           title: "Average invoice",
-          at: { x: 6, y: 5, w: 3, h: 3 },
+          at: { x: 6, y: 4, w: 3, h: 3 },
           data: { value: invoiceValue("average", "avg") },
           config: {
             format: DOLLARS,
@@ -384,7 +384,7 @@ export const performance = defineInterface({
           id: "goal",
           type: "labs/goal",
           title: "This month",
-          at: { x: 9, y: 5, w: 3, h: 3 },
+          at: { x: 9, y: 4, w: 3, h: 3 },
           data: {
             value: {
               source: {
@@ -415,7 +415,7 @@ export const performance = defineInterface({
           id: "by-week",
           type: "core/chart",
           title: "Invoiced by week",
-          at: { x: 0, y: 8, w: 8, h: 8 },
+          at: { x: 0, y: 7, w: 8, h: 8 },
           data: invoicesBy({ column: "issued_on", bucket: "week" }),
           config: {
             mark: "line",
@@ -432,7 +432,7 @@ export const performance = defineInterface({
           id: "by-clinic",
           type: "core/chart",
           title: "By clinic",
-          at: { x: 8, y: 8, w: 4, h: 8 },
+          at: { x: 8, y: 7, w: 4, h: 8 },
           data: invoicesBy({ column: "clinic" }),
           // A phone has no room for a second chart: it is left out there (board 6).
           layout: { narrow: "hide" },
@@ -442,7 +442,7 @@ export const performance = defineInterface({
         {
           id: "managers",
           type: "core/text",
-          at: { x: 0, y: 16, w: 12, h: 3 },
+          at: { x: 0, y: 15, w: 12, h: 3 },
           config: {
             text: ":::alert[For practice managers]{type=info}\nOwners are texted about invoices unpaid for two weeks every Monday morning. Press an invoice to see it, mark it paid, void it, or change it.\n:::",
           },
@@ -452,7 +452,7 @@ export const performance = defineInterface({
           id: "list",
           type: "core/table",
           title: "Invoices",
-          at: { x: 0, y: 19, w: 12, h: 10 },
+          at: { x: 0, y: 18, w: 12, h: 10 },
           data: {
             rows: {
               source: {
@@ -710,7 +710,7 @@ export const performance = defineInterface({
           id: "waiting",
           type: "core/approvals",
           title: "Orders waiting for a manager",
-          at: { x: 0, y: 3, w: 12, h: 13 },
+          at: { x: 0, y: 3, w: 12, h: 9 },
           data: {
             requests: { source: { approvals: { flows: ["inventory/reorder"], whose: "all" } } },
           },
@@ -734,7 +734,7 @@ export const performance = defineInterface({
           id: "lines",
           type: "core/table",
           title: "Stock",
-          at: { x: 0, y: 16, w: 12, h: 12 },
+          at: { x: 0, y: 12, w: 12, h: 12 },
           data: {
             rows: {
               source: { visual: { table: "inventory", sort: [{ by: "on_hand" }] } },
@@ -743,8 +743,8 @@ export const performance = defineInterface({
           },
           config: {
             columns: [
-              { column: "clinic" },
               { column: "item" },
+              { column: "clinic" },
               { column: "category" },
               { column: "on_hand", label: "On hand" },
               { column: "reorder_at", label: "Reorder at" },
@@ -757,7 +757,7 @@ export const performance = defineInterface({
           id: "orders-section",
           type: "core/section",
           title: "Orders to VetSupply",
-          at: { x: 0, y: 28, w: 12, h: 9 },
+          at: { x: 0, y: 24, w: 12, h: 9 },
           subtitle: "What the clinics have asked the supplier for, newest first.",
           config: {
             folds: true,

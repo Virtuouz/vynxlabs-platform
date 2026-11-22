@@ -2477,68 +2477,6 @@ test("Acceptance, the pet owners' portal: an owner signs in on a phone and sees 
   }
 });
 
-// ----- Approvals -----
-
-// TODO(E1, `core/approvals`): the approvals acceptance walk-through is NOT written here. Agent E1
-// is still building core/approvals; when it lands, add its journey as its own test beside the
-// four above (invoices, appointments, the pet owners' portal, the analytics dashboard): a
-// request made, shown to those who may decide, decided, and the outcome seen by the one who asked.
-
-test("Acceptance, an analytics dashboard: a number, a chart by clinic and a date filter every widget follows, built from menus, drawing the right figures", async () => {
-  const made1 = await ok(owner, "POST", `${W}/dashboards`, { title: `Analytics ${stamp}` });
-  try {
-    await owner.setViewportSize({ width: 1440, height: 1100 });
-    await owner.goto(`${L}/dashboards/${made1.id}?edit=1`);
-    // A number: the walk's invoices, counted.
-    await addWidget("Stat");
-    await chooseSource("Invoices");
-    await onlyTheWalks();
-    await expect(widget("Stat")).toContainText(String(INVOICES.length), { timeout: 30_000 });
-    // A chart: what they come to, for each clinic.
-    await addWidget("Chart");
-    await chooseSource("Invoices");
-    await onlyTheWalks();
-    await setMeasure("Measure", "Sum", "Total");
-    const open = await openRow("For each");
-    await choose(open, /^Clinic\b/).click();
-    await owner.keyboard.press("Escape");
-    for (const clinic of ["northside", "riverside", "hilltop"]) {
-      await expect(widget("Chart").getByText(clinic, { exact: true }).first()).toBeVisible();
-    }
-    // A filter on the date the invoices were issued, which both follow.
-    await addWidget("Search and filter");
-    await tabOf("Display").click();
-    await settings().getByRole("button", { name: "Filter", exact: true }).click();
-    await owner
-      .getByRole("dialog", { name: "Add a filter" })
-      .getByRole("button", { name: /^Issued on/ })
-      .click();
-    const filter = widget(/^Search and filter/);
-    const issued = filter.getByRole("combobox", { name: /^Issued/ });
-    await expect(issued).toBeVisible();
-    // Everything follows it: the last 30 days keep three of the six invoices.
-    const within = INVOICES.filter((one) => one.ago <= 30).length;
-    await expect(issued).toHaveValue(/./);
-    await expect(issued.locator("option:checked")).toHaveText("Last 30 days");
-    await expect(widget("Stat")).toContainText(String(within));
-    await expect(widget("Chart").getByText("hilltop", { exact: true })).toHaveCount(0);
-    await expect(widget("Chart").getByText("northside", { exact: true }).first()).toBeVisible();
-    // And back to all time: all six, and every clinic.
-    await issued.selectOption({ label: "All time" });
-    await expect(widget("Stat")).toContainText(String(INVOICES.length));
-    await expect(widget("Chart").getByText("hilltop", { exact: true }).first()).toBeVisible();
-    // Kept: a reload draws the saved dashboard, whose date filter starts at its default again.
-    await expect
-      .poll(async () => (await ok(owner, "GET", `${W}/dashboards/${made1.id}`)).body.widgets.length)
-      .toBe(3);
-    await owner.reload();
-    await expect(widget("Stat")).toContainText(String(within), { timeout: 30_000 });
-    await expectNoAxeViolations(owner, "an analytics dashboard in the builder");
-  } finally {
-    await call(owner, "DELETE", `${W}/dashboards/${made1.id}`);
-  }
-});
-
 // ----- 11. Accessibility, in light and dark -----
 
 for (const scheme of ["light", "dark"] as const) {

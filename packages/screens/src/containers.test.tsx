@@ -237,20 +237,20 @@ describe("a Section that folds", () => {
 
   test("hides what it holds, and stays folded after a reload", async () => {
     const first = render(<Page widgets={folding()} foldKey="app.visits" />);
-    const button = await screen.findByRole("button", { name: "Fold this section" });
+    const button = await screen.findByRole("button", { name: /^(Fold|Unfold) / });
     expect(button.getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(button);
     await waitFor(() => expect(screen.queryByText("Inside words")).toBeNull());
     expect(
-      screen.getByRole("button", { name: "Fold this section" }).getAttribute("aria-expanded"),
+      screen.getByRole("button", { name: /^(Fold|Unfold) / }).getAttribute("aria-expanded"),
     ).toBe("false");
     expect(window.localStorage.getItem("volvel.fold.app.visits.sec")).toBe("1");
     first.unmount();
     render(<Page widgets={folding()} foldKey="app.visits" />);
-    await screen.findByRole("button", { name: "Fold this section" });
+    await screen.findByRole("button", { name: /^(Fold|Unfold) / });
     expect(screen.queryByText("Inside words")).toBeNull();
     // Opened again, it is kept open.
-    fireEvent.click(screen.getByRole("button", { name: "Fold this section" }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Fold|Unfold) / }));
     expect(await screen.findByText("Inside words")).toBeTruthy();
     expect(window.localStorage.getItem("volvel.fold.app.visits.sec")).toBe("0");
   });
@@ -264,7 +264,7 @@ describe("a Section that folds", () => {
     });
     render(<Page widgets={folding()} foldKey="app.visits" />);
     expect(await screen.findByText("Inside words")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Fold this section" }));
+    fireEvent.click(screen.getByRole("button", { name: /^(Fold|Unfold) / }));
     await waitFor(() => expect(screen.queryByText("Inside words")).toBeNull());
   });
 
@@ -274,7 +274,7 @@ describe("a Section that folds", () => {
       text("note", "Inside words", box(0, 0, 6, 2), { widget: "sec" }),
     ];
     const served = render(<Page widgets={list} />);
-    await screen.findByRole("button", { name: "Fold this section" });
+    await screen.findByRole("button", { name: /^(Fold|Unfold) / });
     expect(screen.queryByText("Inside words")).toBeNull();
     served.unmount();
     render(

@@ -418,7 +418,7 @@ export const performance = defineInterface({
                 type: "choice",
                 from: { table: "appointments", column: "clinic" },
               },
-              { name: "when", label: "When", type: "date_range", default: "today" },
+              { name: "when", label: "When", type: "date_range", default: "last_30_days" },
             ],
             reset: true,
           },
@@ -426,9 +426,10 @@ export const performance = defineInterface({
         {
           id: "today",
           type: "core/section",
-          title: "Today at the clinics",
+          title: "At the clinics",
           at: { x: 0, y: 2, w: 12, h: 4 },
-          subtitle: "How many visits there are, and where they stand, at the clinics chosen.",
+          subtitle:
+            "How many visits there are, and where they stand, in the range and at the clinics chosen.",
           config: {
             folds: true,
           },

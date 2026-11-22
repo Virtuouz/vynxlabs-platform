@@ -299,7 +299,11 @@ function TabBody({
         key="title"
         name={`${env.widget.id}-title`}
         label="Title"
-        hint="Or click the title on the page."
+        hint={
+          env.definition.layout.frame === "none"
+            ? "What it is called in the outline. It isn't drawn on the page."
+            : "Or click the title on the page."
+        }
         required={false}
         maxLength={100}
         value={env.widget.title ?? ""}

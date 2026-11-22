@@ -140,11 +140,10 @@ export function Frame({
   const state: WidgetState = definition ? reading.state : { status: "ready" };
   const kept = !building && state.status === "ready" ? resultOf(reading.read) : undefined;
   const followed = Object.values(reading.read ?? {}).find((wire) => wire.followed)?.followed;
-  // A widget drawn with no card (a button) shows its title only while it is being renamed.
+  // A widget drawn with no card (a button, a filter bar) has no title on the page: it is named in
+  // the inspector, for the outline. A heading there would sit over what it draws.
   const bare = definition?.layout.frame === "none" && !container;
-  const heading = bare
-    ? building && selected
-    : widget.title || widget.subtitle || (building && selected);
+  const heading = bare ? false : widget.title || widget.subtitle || (building && selected);
   const body = (() => {
     if (!definition) {
       return <Notice tone="danger">There is no widget called "{widget.type}".</Notice>;

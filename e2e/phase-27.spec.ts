@@ -419,7 +419,7 @@ test("POLISH-005: Money's bar fits a phone: the search box is whole and the page
 
 test("POLISH-006: Visits is a Section of stats and Tabs; the open tab is in the address and survives a reload, and the arrow keys change it", async () => {
   await openApp(owner, "visits");
-  const clinics = section(owner, "Today at the clinics");
+  const clinics = section(owner, "At the clinics");
   await expect(clinics).toBeVisible({ timeout: 30_000 });
   // The stats are in the section.
   await expect(clinics.getByRole("region").first()).toBeVisible();
@@ -454,7 +454,7 @@ test("POLISH-006: Visits is a Section of stats and Tabs; the open tab is in the 
 test("POLISH-005: on a phone Visits' tabs and what its Section holds are stacked, and nothing scrolls sideways", async () => {
   await owner.setViewportSize({ width: 390, height: 844 });
   await openApp(owner, "visits");
-  const clinics = section(owner, "Today at the clinics");
+  const clinics = section(owner, "At the clinics");
   await expect(clinics).toBeVisible({ timeout: 30_000 });
   await expect(owner.getByRole("tablist", { name: "Visits" })).toBeVisible();
   expect(await noSideways(owner)).toBe(true);
@@ -470,7 +470,7 @@ test("POLISH-005: on a phone Visits' tabs and what its Section holds are stacked
 
 test("POLISH-006: a Section that folds is folded by a press, stays folded after a reload, and opens again", async () => {
   await openApp(owner, "visits");
-  const clinics = section(owner, "Today at the clinics");
+  const clinics = section(owner, "At the clinics");
   await expect(foldButton(clinics, true)).toBeVisible({ timeout: 30_000 });
   await expect(clinics.getByRole("region").first()).toBeVisible();
   await foldButton(clinics, true).click();
@@ -478,16 +478,16 @@ test("POLISH-006: a Section that folds is folded by a press, stays folded after 
   await expect(clinics.getByRole("region")).toHaveCount(0);
   // Folded stays folded after a reload (kept in this browser).
   await owner.reload();
-  await expect(foldButton(section(owner, "Today at the clinics"), false)).toBeVisible({
+  await expect(foldButton(section(owner, "At the clinics"), false)).toBeVisible({
     timeout: 30_000,
   });
-  await expect(section(owner, "Today at the clinics").getByRole("region")).toHaveCount(0);
+  await expect(section(owner, "At the clinics").getByRole("region")).toHaveCount(0);
   // By keyboard: Enter on the fold button opens it, and the stats are back.
-  await foldButton(section(owner, "Today at the clinics"), false).focus();
+  await foldButton(section(owner, "At the clinics"), false).focus();
   await owner.keyboard.press("Enter");
-  await expect(foldButton(section(owner, "Today at the clinics"), true)).toBeVisible();
+  await expect(foldButton(section(owner, "At the clinics"), true)).toBeVisible();
   await owner.reload();
-  await expect(foldButton(section(owner, "Today at the clinics"), true)).toBeVisible({
+  await expect(foldButton(section(owner, "At the clinics"), true)).toBeVisible({
     timeout: 30_000,
   });
 });

@@ -40,6 +40,7 @@ import {
   type Box,
   CARRIED,
   type Carrying,
+  GRID,
   type HowMoved,
   isControl,
   type Card as PlaceCard,
@@ -182,6 +183,34 @@ interface GridContext {
   nameOf(id: string): string;
   /** What a Search and filter widget is given, for the filters it declares. */
   hostFor(filters: readonly PageFilter[]): FilterHost;
+  /** A widget drawn at its own height (a Search and filter) says how tall it is, in pixels. */
+  measured(id: string, pixels: number): void;
+}
+
+/**
+ * What a widget draws, measured when `on`: its height is told as it changes (a filter bar that
+ * wraps on a narrow page), so the page can draw it as tall as it is. Otherwise only what it draws.
+ */
+function Measured({
+  on,
+  onSize,
+  children,
+}: {
+  on: boolean;
+  onSize: (pixels: number) => void;
+  children: React.ReactNode;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const told = useRef(onSize);
+  told.current = onSize;
+  useEffect(() => {
+    const node = box.current;
+    if (!on || !node || typeof ResizeObserver === "undefined") return;
+    const watch = new ResizeObserver(() => told.current(node.offsetHeight));
+    watch.observe(node);
+    return () => watch.disconnect();
+  }, [on]);
+  return on ? <div ref={box}>{children}</div> : <>{children}</>;
 }
 
 /** Whether an event is for this cell and not for a widget drawn inside it. */
@@ -414,56 +443,65 @@ function Cell({
             {building ? "Choose what it shows in Data." : "Nothing is set up here yet."}
           </p>
         ) : View ? (
-          <View
-            config={config}
-            data={reading.data}
-            size={{ w: at.w, h: at.h, narrow }}
-            emit={emit}
-            building={building}
-            {...(widget.title ? { title: widget.title } : {})}
-            {...extras}
-            {...(place ? { place } : {})}
-            {...tab}
-            {...(building || !client.act
-              ? {}
-              : {
-                  act: (
-                    at: string,
-                    given?: { record?: string; inputs?: Readonly<Record<string, unknown>> },
-                  ) =>
-                    run({
-                      widget,
-                      at,
-                      record: given?.record,
-                      row: given?.record ? lookup(given.record) : undefined,
-                      input: groupInput,
-                      inputs: given?.inputs,
-                      among: amongIds(),
-                    }),
-                })}
-            can={(at, row) =>
-              holds(actionAt(widget, at)?.when, { this: record ? thisRow : null, event: row }, user)
-            }
-            why={(at, row) => {
-              const when = actionAt(widget, at)?.when;
-              const records = { this: record ? thisRow : null, event: row };
-              const failing = (when ?? []).filter((one) => !holds([one], records, user));
-              return failing.length > 0
-                ? `Only when ${failing.map((one) => conditionWords(one)).join(" and ")}.`
-                : undefined;
-            }}
-            listens={(event) => !building && widget.on?.[event] !== undefined}
-            {...(client.choices
-              ? {
-                  choices: (
-                    input: string,
-                    column: string,
-                    search: string,
-                  ): Promise<readonly Choice[]> =>
-                    client.choices?.(widget.id, input, column, search) ?? Promise.resolve([]),
-                }
-              : {})}
-          />
+          <Measured
+            on={entry?.definition.role === "filters"}
+            onSize={(pixels) => ctx.measured(widget.id, pixels)}
+          >
+            <View
+              config={config}
+              data={reading.data}
+              size={{ w: at.w, h: at.h, narrow }}
+              emit={emit}
+              building={building}
+              {...(widget.title ? { title: widget.title } : {})}
+              {...extras}
+              {...(place ? { place } : {})}
+              {...tab}
+              {...(building || !client.act
+                ? {}
+                : {
+                    act: (
+                      at: string,
+                      given?: { record?: string; inputs?: Readonly<Record<string, unknown>> },
+                    ) =>
+                      run({
+                        widget,
+                        at,
+                        record: given?.record,
+                        row: given?.record ? lookup(given.record) : undefined,
+                        input: groupInput,
+                        inputs: given?.inputs,
+                        among: amongIds(),
+                      }),
+                  })}
+              can={(at, row) =>
+                holds(
+                  actionAt(widget, at)?.when,
+                  { this: record ? thisRow : null, event: row },
+                  user,
+                )
+              }
+              why={(at, row) => {
+                const when = actionAt(widget, at)?.when;
+                const records = { this: record ? thisRow : null, event: row };
+                const failing = (when ?? []).filter((one) => !holds([one], records, user));
+                return failing.length > 0
+                  ? `Only when ${failing.map((one) => conditionWords(one)).join(" and ")}.`
+                  : undefined;
+              }}
+              listens={(event) => !building && widget.on?.[event] !== undefined}
+              {...(client.choices
+                ? {
+                    choices: (
+                      input: string,
+                      column: string,
+                      search: string,
+                    ): Promise<readonly Choice[]> =>
+                      client.choices?.(widget.id, input, column, search) ?? Promise.resolve([]),
+                  }
+                : {})}
+            />
+          </Measured>
         ) : null}
       </Frame>
       {fade ? (
@@ -875,6 +913,9 @@ export function PageView({
   const heldWas = held ? byId.get(held.id) : undefined;
   const leaving =
     held !== undefined && heldWas !== undefined && gridKey(held.in) !== gridKey(heldWas.in);
+  // The rows a Search and filter needs at the width it is drawn: its bar wraps on a narrow page,
+  // and it is drawn as tall as that, what is below moved down (the page keeps the height it was given).
+  const [needs, setNeeds] = useState<Readonly<Record<string, number>>>({});
   const foldedKey = widgets
     .filter((one) => foldedNow(one))
     .map((one) => one.id)
@@ -900,10 +941,11 @@ export function PageView({
     // served; a folded one is short.
     return fitContainers(list, roles, {
       ...(editing ? {} : { grow: true }),
+      least: (id) => needs[id],
       folded: (id) => foldedKey.split(",").includes(id),
       ...(held ? { pin: held.id } : {}),
     });
-  }, [widgets, held, heldWas, leaving, carrying?.at, roles, editing, foldedKey]);
+  }, [widgets, held, heldWas, leaving, carrying?.at, roles, editing, foldedKey, needs]);
 
   // A widget that was not on the page when it was opened has arrived: added, copied or carried in.
   const known = useRef<Set<string> | undefined>(undefined);
@@ -973,6 +1015,10 @@ export function PageView({
     duplicate,
     nameOf: name,
     hostFor,
+    measured: (id, pixels) => {
+      const rows = Math.max(1, Math.ceil((pixels + GRID.gap) / (GRID.row + GRID.gap)));
+      setNeeds((now) => (now[id] === rows ? now : { ...now, [id]: rows }));
+    },
   };
 
   return (

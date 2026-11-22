@@ -149,10 +149,22 @@ export const FOLDED_ROWS = CONTAINER_HEAD_ROWS + 1;
 export function fitContainers<T extends PageWidget>(
   widgets: readonly T[],
   roles: Roles,
-  how: { grow?: boolean; folded?: (id: string) => boolean; pin?: string } = {},
+  how: {
+    grow?: boolean;
+    folded?: (id: string) => boolean;
+    pin?: string;
+    /** The rows a widget needs at the width it is drawn (a Search and filter whose bar wraps): it is drawn at least so tall. */
+    least?: (id: string) => number | undefined;
+  } = {},
 ): readonly T[] {
   let next: T[] | undefined;
   for (const [index, widget] of widgets.entries()) {
+    const needs = how.least?.(widget.id);
+    if (needs !== undefined && needs > widget.at.h && !isContainer(widget, roles)) {
+      next ??= copied(widgets);
+      (next[index] as T).at.h = Math.min(needs, 40);
+      continue;
+    }
     if (widget.in || !isContainer(widget, roles)) continue;
     const fits = containerHeight(widget, widgets);
     const h = how.folded?.(widget.id) ? FOLDED_ROWS : how.grow ? Math.max(widget.at.h, fits) : fits;

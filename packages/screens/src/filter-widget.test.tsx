@@ -89,7 +89,7 @@ describe("Search and filter, drawn where the widget sits", () => {
     // In its widget's section, which is a cell of the page's grid; not a bar before the grid.
     const cell = bar.closest("section");
     expect(cell?.getAttribute("aria-label")).toBe("Search and filter");
-    expect(bar.parentElement?.parentElement).toBe(cell);
+    expect(cell?.contains(bar)).toBe(true);
     expect(container.firstElementChild?.firstElementChild?.contains(bar)).toBe(true);
     expect(container.querySelectorAll("search")).toHaveLength(1);
     // It is drawn with no card around it.

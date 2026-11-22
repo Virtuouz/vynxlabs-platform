@@ -1,5 +1,5 @@
 import type { PageWidget } from "@volvel/manifest";
-import { corePack } from "@volvel/widgets-core";
+import { stat, text } from "@volvel/widgets-core";
 import { expect, test } from "vitest";
 import { type Catalog, withMoneyStart } from "./kit/inspector/model.ts";
 
@@ -22,8 +22,6 @@ const catalog: Catalog = {
   queries: [],
   maySql: true,
 };
-const stat = corePack.definitions.find((one) => one.type === "core/stat");
-const text = corePack.definitions.find((one) => one.type === "core/text");
 
 const over = (column: string | undefined, config?: Record<string, unknown>): PageWidget => ({
   id: "s",

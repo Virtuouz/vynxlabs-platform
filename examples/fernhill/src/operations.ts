@@ -360,7 +360,7 @@ export const operations = defineInterface({
           at: at(0, 2, 12, 5),
           config: {
             look: "tip",
-            text: "**A morning at Fernhill.** Start here, then follow the menu.\n\n:::steps\n1. Look at **Right now**: who is booked, who is waiting, who is done.\n2. Check in a visit from the table, or select several and check them in together.\n3. Open **Stock** if a clinic is running low, and **Money** for what is unpaid.\n:::\n\nPress :kbd[Esc] to close any window this app opens.",
+            text: "**A morning at Fernhill.** Start here, then follow the menu.\n\n:::steps\n1. Look at **Right now**: who is booked, who is waiting, who is done.\n2. Check in a visit from the table, or press it to open its record.\n3. Open **Stock** if a clinic is running low, and **Money** for what is unpaid.\n:::\n\nPress :kbd[Esc] to close any window this app opens.",
           },
         },
         {
@@ -368,7 +368,7 @@ export const operations = defineInterface({
           type: "core/section",
           title: "Right now",
           subtitle: "In the range and at the clinics chosen. Folds away if you do not need it.",
-          at: at(0, 6, 12, 5),
+          at: at(0, 7, 12, 5),
           config: { look: "card", folds: true },
         },
         {
@@ -430,7 +430,7 @@ export const operations = defineInterface({
         {
           id: "tools",
           type: "core/actions",
-          at: at(0, 11, 12, 1),
+          at: at(0, 12, 12, 1),
           config: {
             lineUp: "spread",
             showUpTo: 3,
@@ -483,8 +483,8 @@ export const operations = defineInterface({
           id: "board",
           type: "core/table",
           title: "Visits",
-          subtitle: "Move a visit on from here, or select several to move them together.",
-          at: at(0, 12, 8, 13),
+          subtitle: "Move a visit on from here, or press it to open it.",
+          at: at(0, 13, 8, 13),
           data: {
             rows: {
               source: {
@@ -497,7 +497,6 @@ export const operations = defineInterface({
             },
           },
           config: {
-            select: true,
             rowHeight: "compact",
             pageSize: 15,
             empty: "No visits in this range. Widen it under Filters.",
@@ -505,7 +504,7 @@ export const operations = defineInterface({
               { column: "starts_at", label: "When", sortable: true },
               { column: "pet_name", label: "Pet" },
               { column: "clinic", phone: false },
-              { column: "reason", width: "fixed", phone: false },
+              { column: "reason" },
               { column: "status", as: "badge", badges: { ...VISIT_BADGES } },
             ],
             rowActions: [
@@ -547,7 +546,7 @@ export const operations = defineInterface({
           type: "core/list",
           title: "Waiting room",
           subtitle: "Checked in, oldest first.",
-          at: at(8, 12, 4, 13),
+          at: at(8, 13, 4, 13),
           data: {
             rows: {
               source: {
@@ -581,7 +580,7 @@ export const operations = defineInterface({
         {
           id: "hilltop",
           type: "core/text",
-          at: at(0, 25, 12, 2),
+          at: at(0, 26, 12, 2),
           config: {
             look: "warning",
             text: "**Hilltop is closed on Saturdays.** A visit booked there for a Saturday needs moving before the day.",
@@ -1702,7 +1701,7 @@ export const operations = defineInterface({
         {
           id: "intro",
           type: "core/text",
-          at: at(0, 0, 8, 2),
+          at: at(0, 0, 8, 1),
           config: {
             text: "People who asked to register through the public form. Press a row to read it; call them back, then mark it called.",
           },
@@ -1710,7 +1709,7 @@ export const operations = defineInterface({
         {
           id: "add",
           type: "core/button",
-          at: at(8, 0, 4, 2),
+          at: at(8, 0, 4, 1),
           config: {
             label: "Add a callback",
             icon: "mail",
@@ -1723,7 +1722,7 @@ export const operations = defineInterface({
           id: "queue",
           type: "core/table",
           title: "To call back",
-          at: at(0, 2, 7, 8),
+          at: at(0, 1, 7, 12),
           data: {
             rows: {
               source: {
@@ -1781,7 +1780,7 @@ export const operations = defineInterface({
           id: "chosen",
           type: "core/detail",
           title: "The one chosen",
-          at: at(7, 2, 5, 8),
+          at: at(7, 1, 5, 12),
           data: { record: { source: { selected: "queue" } } },
           config: {
             heading: "name",
@@ -1885,10 +1884,7 @@ export const operations = defineInterface({
             statusBadges: { ...INVOICE_BADGES },
             figure: "total",
             across: 2,
-            fields: [
-              { column: "total", label: "Total", format: DOLLARS, section: "Invoice" },
-              ...INVOICE_FIELDS,
-            ],
+            fields: [...INVOICE_FIELDS],
           },
         },
       ],
@@ -2015,7 +2011,6 @@ export const operations = defineInterface({
             heading: "pet_name",
             status: "status",
             statusBadges: { ...VISIT_BADGES },
-            figure: "minutes",
             across: 2,
             fields: [
               { column: "number", label: "Visit", section: "The visit" },
@@ -2118,16 +2113,9 @@ export const operations = defineInterface({
         {
           id: "book",
           type: "core/button",
-          at: at(9, 0, 3, 1),
+          at: at(8, 0, 4, 1),
           config: { label: "Take a visit request", icon: "inbox", tone: "primary", full: true },
           on: { click: { steps: [{ do: "open", page: "request-visit" }] } },
-        },
-        {
-          id: "back",
-          type: "core/button",
-          at: at(0, 0, 3, 1),
-          config: { label: "All pets", icon: "paw-print", tone: "quiet" },
-          on: { click: { steps: [{ do: "open", page: "pets" }] } },
         },
         {
           id: "detail",
@@ -2136,7 +2124,6 @@ export const operations = defineInterface({
           data: { record: { source: { record: "this" } } },
           config: {
             heading: "name",
-            figure: "weight_lb",
             across: 3,
             edit: true,
             fields: [
@@ -2372,11 +2359,18 @@ export const operations = defineInterface({
         {
           id: "low",
           type: "core/table",
-          title: "Running lowest",
+          title: "Running lowest, not yet on order",
           at: at(0, 0, 12, 12),
           data: {
             rows: {
-              source: { visual: { table: "inventory", sort: [{ by: "on_hand" }], limit: 15 } },
+              source: {
+                visual: {
+                  table: "inventory",
+                  filters: [{ column: "reorder_pending", op: "ne", value: true }],
+                  sort: [{ by: "on_hand" }],
+                  limit: 15,
+                },
+              },
             },
           },
           config: {

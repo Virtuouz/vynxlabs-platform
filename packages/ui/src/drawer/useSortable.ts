@@ -44,9 +44,9 @@ interface Drag {
   settling?: "place" | "back";
 }
 
-export interface UseSortable {
+export interface UseSortable<E extends HTMLElement = HTMLUListElement> {
   /** The element that holds the rows (the `ul`). */
-  list: RefObject<HTMLElement | null>;
+  list: RefObject<E | null>;
   /** Spread on each row. */
   row: (id: string) => {
     ref: (node: HTMLElement | null) => void;
@@ -84,7 +84,7 @@ export interface UseSortable {
  * `ids` are the rows that can be moved, in order; give `onReorder` the new order. Put `list` on the
  * element that holds the rows and `row(id)` on each row, `handle(id)` on its handle.
  */
-export function useSortable({
+export function useSortable<E extends HTMLElement = HTMLUListElement>({
   ids,
   onReorder,
   nameOf,
@@ -97,11 +97,11 @@ export function useSortable({
   nameOf?: (id: string) => string;
   /** What gets the focus back after a keyboard move (the row may be remade). */
   focus?: string;
-}): UseSortable {
+}): UseSortable<E> {
   const [said, setSaid] = useState("");
   const [drag, setDrag] = useState<Drag | undefined>();
   const rows = useRef(new Map<string, HTMLElement>());
-  const list = useRef<HTMLElement | null>(null);
+  const list = useRef<E | null>(null);
   const slots = useRef(new Map<string, Slot>());
   const gap = useRef(0);
   const pointer = useRef({
@@ -172,12 +172,17 @@ export function useSortable({
   const place = (id: string, from: string[], dy: number) => {
     const mine = slots.current.get(id);
     if (!mine) return from;
-    const middle = mine.top + dy + mine.height / 2;
+    // Its edge that leads, in the way it is going, has to pass the middle of another row to change places.
+    const top = mine.top + dy;
+    const bottom = top + mine.height;
+    const was = from.indexOf(id);
     const others = from.filter((one) => one !== id);
     let to = 0;
     for (const one of others) {
       const slot = slots.current.get(one);
-      if (slot && middle > slot.top + slot.height / 2) to += 1;
+      if (!slot) continue;
+      const middle = slot.top + slot.height / 2;
+      if (from.indexOf(one) < was ? top >= middle : bottom > middle) to += 1;
     }
     const next = [...others];
     next.splice(to, 0, id);

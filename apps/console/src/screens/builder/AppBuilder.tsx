@@ -585,6 +585,14 @@ export function AppBuilder({
               {...(readOnly
                 ? {}
                 : {
+                    onReorder: (ids: string[]) =>
+                      change((draft) => {
+                        const by = new Map(draft.pages.map((one) => [one.id, one]));
+                        draft.pages = ids.flatMap((id) => {
+                          const one = by.get(id);
+                          return one ? [one] : [];
+                        });
+                      }, "moving a page"),
                     onMove: (id: string, by: -1 | 1) =>
                       change((draft) => {
                         draft.pages = movedPage(draft.pages, id, by);

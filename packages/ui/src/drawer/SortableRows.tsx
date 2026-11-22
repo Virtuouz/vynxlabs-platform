@@ -1,5 +1,5 @@
 import { ChevronRight, Eye, EyeOff, GripVertical } from "lucide-react";
-import type { ComponentType, ReactNode, RefObject } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { LIFTED, useSortable } from "./useSortable.ts";
 
 export interface SortableItem {
@@ -51,11 +51,7 @@ export function SortableRows({
 
   return (
     <>
-      <ul
-        ref={sort.list as RefObject<HTMLUListElement>}
-        aria-label={label}
-        className="m-0 list-none divide-y divide-line p-0"
-      >
+      <ul ref={sort.list} aria-label={label} className="m-0 list-none divide-y divide-line p-0">
         {items.map((item) => {
           const id = item.id;
           const active = id === activeId;

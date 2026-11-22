@@ -114,7 +114,10 @@ const menu = async (name: string, item: string | RegExp) => {
 test("the outline lists what a container holds under it, by tab", async () => {
   await open();
   const list = outline();
-  const names = list.getAllByRole("button").map((one) => one.textContent);
+  const names = list
+    .getAllByRole("button")
+    .map((one) => one.textContent)
+    .filter(Boolean);
   expect(names).toEqual(["Orders", "First", "Second", "Views", "Status notes", "Loose note"]);
   // A Tabs' tabs are headings over what is in them, and a child is indented.
   expect(list.getByText("By status")).toBeTruthy();

@@ -5,9 +5,16 @@
  * What a field offers follows what its widget's schema allows, so a pack's own
  * `fields` setting is drawn the same way.
  */
-import { Button, CheckboxField, MoveButtons, SelectField, TextField, useFlip } from "@volvel/ui";
+import {
+  Button,
+  CheckboxField,
+  LIFTED,
+  MoveButtons,
+  SelectField,
+  TextField,
+  useSortable,
+} from "@volvel/ui";
 import { GripVertical } from "lucide-react";
-import { useState } from "react";
 import { moved } from "./actionModel.ts";
 import { columnOptions, type Env } from "./controls.tsx";
 import { type ConfigSetting, heading } from "./model.ts";
@@ -88,8 +95,15 @@ export function FieldsControl({
   const rows: FieldSetting[] = value?.length
     ? value
     : options.map((one) => ({ column: one.value }));
-  const holder = useFlip<HTMLUListElement>(rows.map((one) => one.column).join(" "));
-  const [dragging, setDragging] = useState<number | undefined>();
+  // The grip drags; the arrows and Alt+Up/Down move one place: all slide (useSortable).
+  const sort = useSortable({
+    ids: rows.map((one) => one.column),
+    nameOf: (column) => heading(column),
+    onReorder: (ids) => {
+      const by = new Map(rows.map((row) => [row.column, row]));
+      onChange(ids.flatMap((id) => (by.has(id) ? [by.get(id) as FieldSetting] : [])));
+    },
+  });
   const change = (at: number, patch: Partial<FieldSetting>) => {
     onChange(
       rows.map((row, index) => {
@@ -110,25 +124,23 @@ export function FieldsControl({
       {setting.hint.help ? (
         <p className="m-0 text-body-sm text-ink-muted">{setting.hint.help}</p>
       ) : null}
-      <ul ref={holder} className="m-0 flex list-none flex-col gap-2 p-0">
+      <ul ref={sort.list} className="m-0 flex list-none flex-col gap-2 p-0">
         {rows.map((row, at) => (
           <li
             key={row.column}
-            data-flip-key={row.column}
-            draggable
-            onDragStart={() => setDragging(at)}
-            onDragOver={(event) => dragging !== undefined && event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              if (dragging !== undefined) onChange(moved(rows, dragging, at));
-              setDragging(undefined);
-            }}
-            onDragEnd={() => setDragging(undefined)}
-            className="flex flex-col gap-2 rounded-control border border-line p-2"
+            {...sort.row(row.column)}
+            className={`flex flex-col gap-2 rounded-control border border-line bg-surface p-2 ${LIFTED}`}
           >
             <div className="flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1 text-body-sm font-medium text-ink">
-                <GripVertical aria-hidden="true" size={14} className="shrink-0 text-ink-subtle" />
+                <button
+                  type="button"
+                  {...sort.handle(row.column)}
+                  aria-label={`Reorder ${heading(row.column)}. Alt and the up or down arrow move it.`}
+                  className="grid size-6 shrink-0 cursor-grab place-items-center rounded-inner text-ink-subtle hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+                >
+                  <GripVertical aria-hidden="true" size={14} />
+                </button>
                 <span className="truncate">{heading(row.column)}</span>
               </span>
               <MoveButtons
@@ -192,6 +204,9 @@ export function FieldsControl({
           </li>
         ))}
       </ul>
+      <span role="status" className="sr-only">
+        {sort.said}
+      </span>
       {left.length > 0 ? (
         <SelectField
           name={`${field}-add`}

@@ -1,7 +1,7 @@
 import type { Page } from "@volvel/manifest";
-import { Button, MoveButtons, useFlip } from "@volvel/ui";
+import { Button, LIFTED, MoveButtons, useSortable } from "@volvel/ui";
 import type { LucideIcon } from "lucide-react";
-import { AppWindow, File, FileText, PanelRight, Plus } from "lucide-react";
+import { AppWindow, File, FileText, GripVertical, PanelRight, Plus } from "lucide-react";
 import type { PageKind } from "./contract.ts";
 import { KIND_NAMES, kindOf } from "./pageKinds.ts";
 
@@ -25,6 +25,7 @@ export function PagesList({
   onChoose,
   onAdd,
   onMove,
+  onReorder,
 }: {
   pages: readonly Page[];
   current: string | undefined;
@@ -33,8 +34,16 @@ export function PagesList({
   onAdd: (() => void) | undefined;
   /** Left out when the pages may not be reordered (read only). */
   onMove?: ((id: string, by: -1 | 1) => void) | undefined;
+  /** Dragging a page by its grip: the ids in their new order. */
+  onReorder?: ((ids: string[]) => void) | undefined;
 }) {
-  const flip = useFlip<HTMLUListElement>(pages.map((one) => one.id).join(","));
+  const byId = new Map(pages.map((one) => [one.id, one]));
+  const sort = useSortable({
+    ids: pages.map((one) => one.id),
+    nameOf: (id) => byId.get(id)?.title ?? "the page",
+    onReorder: (ids) => onReorder?.(ids),
+  });
+  const draggable = pages.length > 1 && onReorder !== undefined;
   return (
     <section aria-labelledby="pages" className="flex shrink-0 flex-col gap-1">
       <div className="flex items-center justify-between px-1">
@@ -54,7 +63,7 @@ export function PagesList({
           </Button>
         ) : null}
       </div>
-      <ul ref={flip} className="m-0 flex list-none flex-col gap-0.5 p-0">
+      <ul ref={sort.list} className="m-0 flex list-none flex-col gap-0.5 p-0">
         {pages.map((one, at) => {
           const here = one.id === current;
           const kind = kindOf(one);
@@ -62,11 +71,24 @@ export function PagesList({
           return (
             <li
               key={one.id}
-              data-flip-key={one.id}
-              className={`group relative flex items-center rounded-inner ${
+              {...sort.row(one.id)}
+              onKeyDown={(event) => {
+                if (draggable) sort.rowKeyDown(event, one.id);
+              }}
+              className={`group relative flex items-center rounded-inner ${LIFTED} ${
                 here ? "bg-selected text-action" : "text-ink hover:bg-sunken"
               }`}
             >
+              {draggable ? (
+                <button
+                  type="button"
+                  {...sort.handle(one.id)}
+                  aria-label={`Reorder ${one.title}. Alt and the up or down arrow move it.`}
+                  className="-mr-1 ml-0.5 grid h-7 w-5 shrink-0 cursor-grab place-items-center rounded-inner text-ink-subtle opacity-0 hover:text-ink focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-focus group-hover:opacity-100 pointer-coarse:opacity-100"
+                >
+                  <GripVertical aria-hidden="true" size={14} />
+                </button>
+              ) : null}
               <button
                 type="button"
                 aria-pressed={here}
@@ -101,6 +123,9 @@ export function PagesList({
           );
         })}
       </ul>
+      <span role="status" className="sr-only">
+        {sort.said}
+      </span>
     </section>
   );
 }

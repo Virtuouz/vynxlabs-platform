@@ -7,6 +7,19 @@ const nameOfWidget = (widget: PageWidget) => widget.title || kindOf(widget.type)
 /** "Button", as a word in a sentence: "button". */
 const kindWord = (widget: PageWidget) => (kindOf(widget.type) ?? "widget").toLowerCase();
 
+/**
+ * A value as text, whatever order its keys are in and with no undefined: the store keeps JSON with
+ * its keys in an order of its own, and what the builder holds in memory has the order it was built
+ * in. The same app is the same app (phase 28, F4).
+ */
+export function canonical(value: unknown): string {
+  return JSON.stringify(value, (_key, inner) =>
+    inner && typeof inner === "object" && !Array.isArray(inner)
+      ? Object.fromEntries(Object.entries(inner).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      : inner,
+  );
+}
+
 /** How the draft differs from what people see now, widget by widget. */
 export function widgetChanges(published: InterfaceBody | undefined, draft: InterfaceBody) {
   const out: {
@@ -23,7 +36,7 @@ export function widgetChanges(published: InterfaceBody | undefined, draft: Inter
     for (const widget of page.widgets) {
       const was = before.get(widget.id);
       if (!was) entry(page, widget, "added");
-      else if (JSON.stringify(was) !== JSON.stringify(widget)) entry(page, widget, "changed");
+      else if (canonical(was) !== canonical(widget)) entry(page, widget, "changed");
       before.delete(widget.id);
     }
     for (const gone of before.values()) entry(page, gone, "removed");
@@ -37,7 +50,7 @@ export function widgetChanges(published: InterfaceBody | undefined, draft: Inter
 /** A page's own settings, without its widgets. */
 const settings = (page: Page) => {
   const { widgets: _widgets, ...rest } = page;
-  return JSON.stringify(rest);
+  return canonical(rest);
 };
 
 /**

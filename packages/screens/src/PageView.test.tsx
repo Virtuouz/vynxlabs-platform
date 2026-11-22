@@ -470,7 +470,7 @@ describe("the frame", () => {
     );
     expect(await screen.findByText("Nothing matches the filters.")).toBeTruthy();
     // They are how they start: what is left is to take them off.
-    expect(screen.getByRole("button", { name: "Show everything" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Show everything" })).toBeTruthy();
   });
 
   test("an empty search says the words searched; Clear filters puts back how the page starts", async () => {

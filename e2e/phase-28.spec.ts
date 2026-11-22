@@ -385,7 +385,7 @@ test.afterAll(async () => {
   if (!owner) return;
   if (W) {
     for (const one of Object.values(made))
-      await call(owner, "DELETE", `${W}/rows/invoices/${one.id}`);
+      await call(owner, "DELETE", `${W}/row/${one.id}/invoices`);
     for (const area of AREAS) {
       for (const name of [path(area), appOf(area)]) {
         await call(owner, "DELETE", `${W}/drafts/${name}`);
@@ -2122,10 +2122,12 @@ test("POLISH-005: on a phone each widget is automatic or set by hand (hide, full
       Math.abs(served.gamma.width / page - (inFrame.wide.Gamma ?? 0.5) / (inFrame.wide.Beta ?? 1)),
       "Gamma as wide as in the preview",
     ).toBeLessThan(0.08);
-    expect(
-      Math.abs(served.delta.y - served.gamma.y),
-      "Delta beside Gamma, as in the preview",
-    ).toBeLessThan(4);
+    await expect
+      .poll(
+        async () => Math.abs(((await at("Delta"))?.y ?? 1e6) - ((await at("Gamma"))?.y ?? 0)) < 4,
+        { message: "Delta beside Gamma, as in the preview" },
+      )
+      .toBe(true);
   }
   expect(await noSideways(sheet)).toBe(true);
   await expectNoAxeViolations(sheet, "a served page on a phone");
@@ -2378,7 +2380,7 @@ test("Acceptance, invoices: a table of invoices, a click that opens the record, 
   const row = (created.items as Wid[]).find((one) => one.number === number);
   expect(row, "the invoice was made").toBeTruthy();
   // It is the walk's own, and it must not be counted by what the other walks count: gone at once.
-  if (row) await call(owner, "DELETE", `${W}/rows/invoices/${row.id}`);
+  if (row) await call(owner, "DELETE", `${W}/row/${row.id}/invoices`);
   expect(row?.total).toBe(4200);
   await setStatus("c", "unpaid");
 });
@@ -2538,7 +2540,7 @@ test("Acceptance, the pet owners' portal: an owner signs in on a phone and sees 
     }
     expect(requested.length).toBeGreaterThan(0);
   } finally {
-    for (const id of requested) await call(owner, "DELETE", `${W}/rows/visit_requests/${id}`);
+    for (const id of requested) await call(owner, "DELETE", `${W}/row/${id}/visit_requests`);
     await person.context().close();
   }
 });

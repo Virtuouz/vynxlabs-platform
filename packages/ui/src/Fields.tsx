@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { DateInput } from "./DateInput.tsx";
 import { TermText } from "./Term.tsx";
 
 /** A control's own box. An invalid one has a danger edge, beside the words that say why. */
@@ -455,7 +456,11 @@ export function utcInstant(wallClock: string): string {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
-/** The browser's own date picker: it follows the person's locale and works on a phone. */
+/**
+ * A date, or a date and a time, in the kit's own box: the person's date as words ("Nov 21, 2026"),
+ * typed or picked from a calendar (`DateInput`). On a touch screen the button opens the phone's
+ * own picker. The value in and out is the string described on `DateFieldProps`.
+ */
 export function DateField({
   label,
   hint,
@@ -463,33 +468,45 @@ export function DateField({
   withTime,
   timeZone = "local",
   onChange,
+  labelHidden = false,
   ...input
 }: DateFieldProps) {
   const utc = withTime && timeZone === "UTC";
-  const shown = utc
-    ? {
-        ...input,
-        value: utcInputValue(input.value),
-        min: utcInputValue(input.min),
-        max: utcInputValue(input.max),
-      }
-    : input;
+  const [problem, setProblem] = useState<string | undefined>();
+  const [own, setOwn] = useState("");
+  const controlled = input.value !== undefined;
+  const given = controlled ? (input.value ?? "") : own;
+  const wall = utc ? (utcInputValue(given) ?? "") : given;
+  const range = (edge: string | undefined) => (utc ? utcInputValue(edge) : edge);
   const note = utc ? (hint ? `${hint} Times are in UTC.` : "Times are in UTC.") : hint;
   return (
     <FieldFrame
       label={label}
       {...(note ? { hint: note } : {})}
-      error={error}
+      error={error ?? problem}
       required={input.required}
+      labelHidden={labelHidden}
     >
       <Field.Control
-        {...Object.fromEntries(Object.entries(shown).filter(([, value]) => value !== undefined))}
-        type={withTime ? "datetime-local" : "date"}
-        className={control}
-        onChange={(event: ChangeEvent<HTMLInputElement>) => {
-          const value = event.currentTarget.value;
-          onChange?.(utc ? utcInstant(value) : value);
-        }}
+        render={(props) => (
+          <DateInput
+            boxProps={props as Record<string, unknown>}
+            name={input.name}
+            value={wall}
+            formValue={utc ? utcInstant(wall) : wall}
+            {...(withTime ? { withTime } : {})}
+            min={range(input.min)}
+            max={range(input.max)}
+            required={input.required}
+            disabled={input.disabled}
+            onProblem={setProblem}
+            onChange={(next) => {
+              const value = utc ? utcInstant(next) : next;
+              if (!controlled) setOwn(value);
+              onChange?.(value);
+            }}
+          />
+        )}
       />
     </FieldFrame>
   );

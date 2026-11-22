@@ -17,6 +17,7 @@ export {
   seriesColors,
 } from "./chartTheme.ts";
 export { CONTRAST_NEEDED, contrastRatio, luminance } from "./contrast.ts";
+export { DateInput, type DateInputProps } from "./DateInput.tsx";
 export { Details } from "./Details.tsx";
 export { Dialog } from "./Dialog.tsx";
 export {
@@ -36,8 +37,8 @@ export {
   control as fieldControl,
   DateField,
   FieldFrame,
-  FieldMarks,
   FieldHelp,
+  FieldMarks,
   NumberField,
   SelectField,
   TextAreaField,

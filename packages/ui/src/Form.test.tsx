@@ -42,7 +42,7 @@ describe("form", () => {
     expect(priority.value).toBe("normal");
     // A required choice that has a value offers no empty option.
     expect([...priority.options].map((option) => option.value)).toEqual(["low", "normal", "high"]);
-    expect((screen.getByLabelText("Due date") as HTMLInputElement).type).toBe("date");
+    expect((screen.getByLabelText("Due date") as HTMLInputElement).type).toBe("text");
     expect(screen.getByRole("checkbox", { name: "Gift wrap" })).toBeTruthy();
     expect(screen.getByLabelText("Notes").tagName).toBe("TEXTAREA");
     expect(screen.getByRole("button", { name: "Place order" })).toBeTruthy();
@@ -231,7 +231,6 @@ describe("form", () => {
       />,
     );
     const input = screen.getByLabelText("At") as HTMLInputElement;
-    expect(input.type).toBe("datetime-local");
-    expect(input.value).toBe("2026-03-09T14:30");
+    expect(input.value).toBe("Mar 9, 2026, 2:30 PM");
   });
 });

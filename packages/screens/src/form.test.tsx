@@ -144,8 +144,7 @@ describe("controls by column type", () => {
     expect((screen.getByLabelText(/Number/) as HTMLInputElement).type).toBe("text");
     expect((screen.getByLabelText(/Total/) as HTMLInputElement).type).toBe("number");
     expect((screen.getByLabelText(/Lines/) as HTMLInputElement).type).toBe("number");
-    expect((screen.getByLabelText(/Issued/) as HTMLInputElement).type).toBe("date");
-    expect((screen.getByLabelText(/Sent/) as HTMLInputElement).type).toBe("datetime-local");
+    expect(screen.getAllByRole("button", { name: "Open calendar" })).toHaveLength(2);
     expect((screen.getByLabelText(/Paid in full/) as HTMLInputElement).type).toBe("checkbox");
     expect(screen.getByLabelText(/Notes/).tagName).toBe("TEXTAREA");
     const status = screen.getByLabelText(/Status/) as HTMLSelectElement;
@@ -354,7 +353,7 @@ describe("edit", () => {
     expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("INV-1");
     expect((screen.getByLabelText(/Total/) as HTMLInputElement).value).toBe("120");
     expect((screen.getByLabelText(/Status/) as HTMLSelectElement).value).toBe("open");
-    expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe("2026-11-20");
+    expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe("Nov 20, 2026");
     expect((screen.getByLabelText(/Notes/) as HTMLTextAreaElement).value).toBe("First");
     expect(screen.getByPlaceholderText("Search client")).toBeTruthy();
   });
@@ -527,6 +526,9 @@ describe("what a field starts with", () => {
     const two = (n: number) => String(n).padStart(2, "0");
     return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
   };
+  /** Today as the date box shows it: "Nov 21, 2026". */
+  const shownToday = () =>
+    new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date());
   const starts = (fields: object[], mode = "create") => ({
     mode,
     fields,
@@ -537,7 +539,7 @@ describe("what a field starts with", () => {
     draw(null, starts([{ column: "issued", initial: { kind: "today" } }, { column: "sent" }]));
     await ready();
     const issued = screen.getByLabelText(/Issued/) as HTMLInputElement;
-    expect(issued.value).toBe(todayText());
+    expect(issued.value).toBe(shownToday());
     type(/Issued/, "2026-01-02");
     expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe("2026-01-02");
     expect((screen.getByLabelText(/Sent/) as HTMLInputElement).value).toBe("");
@@ -591,7 +593,7 @@ describe("what a field starts with", () => {
       ),
     );
     await ready();
-    expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe("2020-05-05");
+    expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe("May 5, 2020");
     expect((screen.getByLabelText(/Sent/) as HTMLInputElement).value).toBe("");
   });
 
@@ -602,7 +604,7 @@ describe("what a field starts with", () => {
     type(/Number/, "INV-9");
     fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
     await waitFor(() =>
-      expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe(todayText()),
+      expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe(shownToday()),
     );
   });
 });

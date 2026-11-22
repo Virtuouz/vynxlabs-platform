@@ -41,7 +41,7 @@ export function Popover({
       <Base.Portal>
         <Base.Positioner side={side} align={align} sideOffset={6} className="layer-popover">
           <Base.Popup
-            className={`rounded-panel border border-line-strong text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0 ${
+            className={`max-h-(--available-height) overflow-y-auto rounded-panel border border-line-strong text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0 ${
               wide
                 ? "w-[23.875rem] max-w-[90vw] overflow-hidden bg-raised p-0"
                 : "max-w-sm bg-raised p-3"

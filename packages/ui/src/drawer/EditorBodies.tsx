@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect, useId, useRef } from "react";
+import { DateInput } from "../DateInput.tsx";
 import { SegmentedControl } from "../Pickers.tsx";
 import { DashedAdd, type DrawerIcon } from "./Drawer.tsx";
 
@@ -244,21 +245,33 @@ export function ConditionEditor({
                 <label htmlFor={`${id}-value`} className="sr-only">
                   Value
                 </label>
-                <input
-                  id={`${id}-value`}
-                  type={input}
-                  value={current.value === undefined ? "" : String(current.value)}
-                  onChange={(event) => {
-                    const text = event.target.value;
-                    const { value: _, ...rest } = current;
-                    onChange(
-                      text === ""
-                        ? rest
-                        : { ...rest, value: input === "number" ? Number(text) : text },
-                    );
-                  }}
-                  className={`${control} w-full`}
-                />
+                {input === "date" ? (
+                  <DateInput
+                    id={`${id}-value`}
+                    compact
+                    value={current.value === undefined ? "" : String(current.value)}
+                    onChange={(text) => {
+                      const { value: _, ...rest } = current;
+                      onChange(text === "" ? rest : { ...rest, value: text });
+                    }}
+                  />
+                ) : (
+                  <input
+                    id={`${id}-value`}
+                    type={input}
+                    value={current.value === undefined ? "" : String(current.value)}
+                    onChange={(event) => {
+                      const text = event.target.value;
+                      const { value: _, ...rest } = current;
+                      onChange(
+                        text === ""
+                          ? rest
+                          : { ...rest, value: input === "number" ? Number(text) : text },
+                      );
+                    }}
+                    className={`${control} w-full`}
+                  />
+                )}
               </div>
             ) : null}
           </div>
@@ -346,26 +359,44 @@ function BetweenInput({
         <label htmlFor={`${id}-from`} className="sr-only">
           From
         </label>
-        <input
-          id={`${id}-from`}
-          type={kind}
-          value={pair[0] === undefined ? "" : String(pair[0])}
-          onChange={(event) => set(0, event.target.value)}
-          className={`${control} w-full`}
-        />
+        {kind === "date" ? (
+          <DateInput
+            id={`${id}-from`}
+            compact
+            value={pair[0] === undefined ? "" : String(pair[0])}
+            onChange={(text) => set(0, text)}
+          />
+        ) : (
+          <input
+            id={`${id}-from`}
+            type={kind}
+            value={pair[0] === undefined ? "" : String(pair[0])}
+            onChange={(event) => set(0, event.target.value)}
+            className={`${control} w-full`}
+          />
+        )}
       </div>
       <span className="text-body-sm text-ink-muted">and</span>
       <div>
         <label htmlFor={`${id}-to`} className="sr-only">
           To
         </label>
-        <input
-          id={`${id}-to`}
-          type={kind}
-          value={pair[1] === undefined ? "" : String(pair[1])}
-          onChange={(event) => set(1, event.target.value)}
-          className={`${control} w-full`}
-        />
+        {kind === "date" ? (
+          <DateInput
+            id={`${id}-to`}
+            compact
+            value={pair[1] === undefined ? "" : String(pair[1])}
+            onChange={(text) => set(1, text)}
+          />
+        ) : (
+          <input
+            id={`${id}-to`}
+            type={kind}
+            value={pair[1] === undefined ? "" : String(pair[1])}
+            onChange={(event) => set(1, event.target.value)}
+            className={`${control} w-full`}
+          />
+        )}
       </div>
     </div>
   );

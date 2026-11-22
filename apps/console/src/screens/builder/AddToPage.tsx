@@ -58,6 +58,7 @@ export function AddToPage({
   target,
   catalog,
   startTable,
+  measure,
 }: {
   open: boolean;
   onClose: () => void;
@@ -77,13 +78,16 @@ export function AddToPage({
   catalog?: Catalog;
   /** The table the page already uses: where a widget that reads one starts. */
   startTable?: string | undefined;
+  /** What the page calls its first number ("Invoiced"): the examples in the preview use the page's own words. */
+  measure?: string | undefined;
 }) {
   const [search, setSearch] = useState("");
   const [lit, setLit] = useState<string>();
   const typed = search.trim();
   const needle = wordsOf(typed).length > 0 ? wordsOf(typed) : typed.toLowerCase().split(/\s+/);
   const everything = typed === "";
-  const facts = factsOf(catalog?.tables.find((one) => one.name === startTable));
+  const baseFacts = factsOf(catalog?.tables.find((one) => one.name === startTable));
+  const facts = baseFacts && measure ? { ...baseFacts, measure } : baseFacts;
   const matches = (definition: WidgetDefinition) =>
     everything ||
     matchesWords(

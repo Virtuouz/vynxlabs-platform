@@ -735,6 +735,7 @@ export function PageEditor({
         target={addsTo ? targetWords(widgets, addsTo) : undefined}
         catalog={catalog}
         startTable={suggested}
+        measure={widgets.find((one) => one.type === "core/stat" && one.title)?.title}
         onAdd={(definition) => {
           // A form is made from a table: it asks what it should do first.
           if (definition.type === "core/form" && pageInfo) {

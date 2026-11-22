@@ -418,8 +418,9 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     </Dialog>
   );
   const refreshSelect = (
-    <div className="w-44">
+    <div className="w-56">
       <SelectField
+        inline
         name="refresh"
         label="Refreshes"
         value={String(refresh)}
@@ -464,11 +465,11 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
             ),
             more: (
               <>
+                {refreshSelect}
                 <Button onClick={() => setSharing(true)}>Share</Button>
                 {menu}
               </>
             ),
-            after: refreshSelect,
           }}
         />
         {sharingDialog}

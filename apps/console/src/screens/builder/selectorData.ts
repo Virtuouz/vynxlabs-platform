@@ -39,6 +39,8 @@ export interface TableFacts {
   group: string | undefined;
   group2: string | undefined;
   number: string | undefined;
+  /** What the page already calls its measure (a number it shows: "Invoiced"), so the examples use its words. */
+  measure?: string | undefined;
 }
 
 const label = (name: string) => name.replace(/_(at|on|id)$/, "").replace(/_/g, " ");
@@ -125,8 +127,8 @@ export const PREVIEWS: Record<string, Preview> = {
     goodFor: (t) =>
       pad(
         [
-          `${many(t)} ${t?.date ? "by week" : "over time"}`,
-          ...(t?.group ? [`${many(t)}${by(t, "group")}`] : []),
+          `${t?.measure ?? many(t)} ${t?.date ? "by week" : "over time"}`,
+          ...(t?.group ? [`${t.measure ?? many(t)}${by(t, "group")}`] : []),
         ],
         ["Visits by vet, by month", "Revenue by clinic"],
       ),

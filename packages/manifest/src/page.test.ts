@@ -1,13 +1,15 @@
 import { defineWidget, WidgetRegistry } from "@volvel/widgets";
-import { coreRegistry } from "@volvel/widgets-core";
+import { approvals, coreRegistry } from "@volvel/widgets-core";
 import { describe, expect, it } from "vitest";
 import { registerPlatformKinds } from "./kinds.js";
 import {
   checkDashboard,
   checkInterface,
+  flowsWithoutApprovals,
   type InterfaceBody,
   newWidget,
   type PageWidget,
+  widgetFlows,
 } from "./page.js";
 import { KindRegistry } from "./registry.js";
 import type { TableBody } from "./table.js";
@@ -490,6 +492,7 @@ describe("composition (phase 27)", () => {
   });
 });
 
+<<<<<<< HEAD
 describe("what a form's field starts with", () => {
   const form = (initial: unknown, column = "total"): PageWidget => ({
     id: "new",
@@ -526,5 +529,100 @@ describe("what a form's field starts with", () => {
 
   it("refuses a start the schema does not know", () => {
     expect(said(form({ kind: "tomorrow" })).length).toBeGreaterThan(0);
+=======
+describe("approvals (phase 28, decision 0007)", () => {
+  const widget = (source: object, extra: Partial<PageWidget> = {}): PageWidget => ({
+    id: "queue",
+    type: "core/approvals",
+    at: { x: 0, y: 0, w: 6, h: 9 },
+    data: { requests: { source } as never },
+    ...extra,
+  });
+  const flowOf = (path: string) =>
+    path === "stock/reorder"
+      ? { nodes: [{ type: "trigger" }, { type: "approval" }] }
+      : path === "plain"
+        ? { nodes: [{ type: "trigger" }] }
+        : null;
+  const issues = (widgets: PageWidget[], known = true) =>
+    checkInterface(body(widgets), tableOf, undefined, known ? flowOf : undefined).map(
+      (one) => `${one.path} ${one.message}`,
+    );
+
+  it("passes the schema: the widget's source is the workspace's approvals, each flow by path", () => {
+    const kinds = new KindRegistry();
+    registerPlatformKinds(kinds);
+    const manifest = (source: object) => ({
+      kind: "interface",
+      schemaVersion: 2,
+      path: "screens/approvals",
+      workspace: "sandbox",
+      ownership: "code",
+      body: body([widget(source)]),
+    });
+    expect(kinds.validateManifest(manifest({ approvals: {} })).ok).toBe(true);
+    expect(
+      kinds.validateManifest(manifest({ approvals: { flows: ["stock/reorder"], whose: "all" } }))
+        .ok,
+    ).toBe(true);
+    // Not a flow's path, not a known `whose`, nothing beside them.
+    expect(kinds.validateManifest(manifest({ approvals: { flows: ["Not A Path"] } })).ok).toBe(
+      false,
+    );
+    expect(kinds.validateManifest(manifest({ approvals: { whose: "everyone" } })).ok).toBe(false);
+    expect(kinds.validateManifest(manifest({ approvals: { rows: 1 } })).ok).toBe(false);
+  });
+
+  it("accepts every flow, or the flows it names that exist", () => {
+    expect(issues([widget({ approvals: {} })])).toEqual([]);
+    expect(issues([widget({ approvals: { flows: ["stock/reorder"] } })])).toEqual([]);
+  });
+
+  it("refuses a flow that is not there when the flows are known, and ignores them when they are not", () => {
+    expect(issues([widget({ approvals: { flows: ["stock/reorder", "gone"] } })])).toEqual([
+      '/body/pages/0/widgets/0/data/requests/source/approvals/flows/1 there is no flow "gone"',
+    ]);
+    expect(issues([widget({ approvals: { flows: ["gone"] } })], false)).toEqual([]);
+  });
+
+  it("a flow with no approval step is not an error, and is found for the publish check to say", () => {
+    const w = widget({ approvals: { flows: ["plain", "stock/reorder"] } });
+    expect(issues([w])).toEqual([]);
+    expect(flowsWithoutApprovals([w], flowOf)).toEqual(["plain"]);
+    expect(widgetFlows([w])).toEqual(["plain", "stock/reorder"]);
+  });
+
+  it("reads approvals only: a table source is refused, and a table's widget cannot read approvals", () => {
+    expect(issues([widget({ visual: { table: "invoices" } })])).toEqual([
+      "/body/pages/0/widgets/0/data/requests/source Approvals reads approvals: choose which",
+    ]);
+    const table: PageWidget = {
+      id: "t",
+      type: "core/table",
+      at: { x: 0, y: 0, w: 6, h: 4 },
+      data: { rows: { source: { approvals: {} } as never } },
+    };
+    expect(issues([table])).toEqual([
+      "/body/pages/0/widgets/0/data/rows/source Table can't read approvals",
+    ]);
+  });
+
+  it("is for an app, not a dashboard", () => {
+    expect(
+      checkDashboard({ widgets: [widget({ approvals: {} })] }, tableOf).map((one) => one.message),
+    ).toEqual(expect.arrayContaining(["Approvals can't be used on a dashboard"]));
+  });
+
+  it("is added reading approvals for the viewer, and its settings are checked", () => {
+    const added = newWidget(approvals, "queue", []);
+    expect(added.data).toEqual({ requests: { source: { approvals: { whose: "mine" } } } });
+    expect(issues([{ ...added, config: { ...added.config, look: "table" } }])[0]).toMatch(
+      /\/config\/look/,
+    );
+    expect(issues([{ ...added, config: { askWhy: "sometimes" } }])[0]).toMatch(/\/config\/askWhy/);
+    expect(issues([{ ...added, config: { fields: [{ name: "total", label: "Sum" }] } }])).toEqual(
+      [],
+    );
+>>>>>>> c31d761 (Phase 28 E1: the Approvals drawer, the selector's tile, drawing and suggestion, the flows list's approval steps, and their tests)
   });
 });

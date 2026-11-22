@@ -6,10 +6,17 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { PageWidget } from "@volvel/manifest";
 import type { ApprovalItem, ApprovalsData, DecideOutcome, WidgetViewProps } from "@volvel/widgets";
-import { ApprovalsView, corePack, metaOf, relativeTime, valueWords, whyNot } from "@volvel/widgets-core/views";
+import {
+  ApprovalsView,
+  corePack,
+  metaOf,
+  relativeTime,
+  valueWords,
+  whyNot,
+} from "@volvel/widgets-core/views";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { ActionError, type PageDataClient, viewRegistry, type WireData } from "./types.ts";
 import { PageView } from "./PageView.tsx";
+import { ActionError, type PageDataClient, viewRegistry, type WireData } from "./types.ts";
 
 afterEach(() => {
   cleanup();
@@ -50,7 +57,15 @@ function draw(
 ) {
   const View = ApprovalsView as unknown as (props: WidgetViewProps) => React.ReactNode;
   const props: WidgetViewProps = {
-    config: { look: "rows", opens: "sheet", askWhy: "rejecting", approveLabel: "Approve", rejectLabel: "Reject", advance: true, ...config },
+    config: {
+      look: "rows",
+      opens: "sheet",
+      askWhy: "rejecting",
+      approveLabel: "Approve",
+      rejectLabel: "Reject",
+      advance: true,
+      ...config,
+    },
     data: { requests: input },
     size: { w: 6, h: 9, narrow: false },
     emit: () => {},
@@ -61,8 +76,7 @@ function draw(
   const view = render(<View {...props} />);
   return {
     ...view,
-    again: (next: Partial<WidgetViewProps>) =>
-      view.rerender(<View {...{ ...props, ...next }} />),
+    again: (next: Partial<WidgetViewProps>) => view.rerender(<View {...{ ...props, ...next }} />),
   };
 }
 
@@ -108,7 +122,9 @@ describe("the list", () => {
     const list = screen.getByRole("list", { name: "Requests waiting" });
     expect(within(list).getAllByRole("button")).toHaveLength(2);
     expect(within(list).getByText("Approve order 1")).toBeTruthy();
-    expect(within(list).getAllByText("Reorder · asked 2 hours ago · due in 2 days")).toHaveLength(2);
+    expect(within(list).getAllByText("Reorder · asked 2 hours ago · due in 2 days")).toHaveLength(
+      2,
+    );
     expect(within(list).getAllByText(/northside · \$1,840\.00/)).toHaveLength(2);
   });
 
@@ -147,7 +163,9 @@ describe("the list", () => {
     const sheet = await screen.findByRole("dialog");
     expect(within(sheet).getByRole("heading", { name: "Approve order 1" })).toBeTruthy();
     expect(within(sheet).getByText("1 of 2")).toBeTruthy();
-    expect((within(sheet).getByRole("button", { name: /Previous/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (within(sheet).getByRole("button", { name: /Previous/ }) as HTMLButtonElement).disabled,
+    ).toBe(true);
     fireEvent.click(within(sheet).getByRole("button", { name: /Next/ }));
     expect(within(sheet).getByText("2 of 2")).toBeTruthy();
     expect(within(sheet).getByRole("heading", { name: "Approve order 2" })).toBeTruthy();
@@ -183,8 +201,12 @@ describe("the list", () => {
     expect(within(detail).getByText("$1,840.00")).toBeTruthy();
     expect(within(detail).getByText("Yes")).toBeTruthy();
     expect(detail.querySelectorAll("[data-field]")).toHaveLength(4);
-    expect(within(detail).getByRole("button", { name: "Approve" }).className).toContain("bg-action");
-    expect(within(detail).getByRole("button", { name: "Reject" }).className).toContain("text-danger");
+    expect(within(detail).getByRole("button", { name: "Approve" }).className).toContain(
+      "bg-action",
+    );
+    expect(within(detail).getByRole("button", { name: "Reject" }).className).toContain(
+      "text-danger",
+    );
   });
 
   test("on a phone the buttons are full width", () => {
@@ -195,7 +217,13 @@ describe("the list", () => {
 
   test("decided ones are behind a switch, with who decided and why", () => {
     const done = item(9, {
-      decision: { approved: false, by: "Maya Brooks", at: hours(1), comment: "Too much stock", via: "app" },
+      decision: {
+        approved: false,
+        by: "Maya Brooks",
+        at: hours(1),
+        comment: "Too much stock",
+        via: "app",
+      },
     });
     draw({ decided: true }, data([item(1)], [done]));
     expect(screen.getByRole("radio", { name: /Waiting/ })).toBeTruthy();
@@ -211,7 +239,9 @@ describe("who may decide", () => {
     draw({ opens: "nothing" }, data([item(1, { mayDecide: false })]));
     const approve = screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement;
     expect(approve.disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Reject" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
     expect(screen.getByText("Only the Practice managers group can decide this.")).toBeTruthy();
   });
 
@@ -270,7 +300,9 @@ describe("deciding", () => {
     expect(await screen.findByText("Say why it is rejected.")).toBeTruthy();
     fireEvent.change(box, { target: { value: "  Too much stock  " } });
     fireEvent.click(confirm);
-    await waitFor(() => expect(decide).toHaveBeenCalledWith("run-1/ask", "reject", "Too much stock"));
+    await waitFor(() =>
+      expect(decide).toHaveBeenCalledWith("run-1/ask", "reject", "Too much stock"),
+    );
   });
 
   test("Escape closes the box and leaves the request as it was", () => {
@@ -315,7 +347,10 @@ describe("deciding", () => {
   });
 
   test("a refusal from the server is said under the buttons and the request stays", async () => {
-    const decide = vi.fn<Decide>(async () => ({ ok: false, message: "Only the Practice managers group can decide this." }));
+    const decide = vi.fn<Decide>(async () => ({
+      ok: false,
+      message: "Only the Practice managers group can decide this.",
+    }));
     draw({ opens: "nothing" }, data([item(1)]), { decide });
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect((await screen.findByRole("alert")).textContent).toContain("Only the Practice managers");
@@ -373,7 +408,9 @@ describe("deciding", () => {
     const decide = vi.fn<Decide>(async () => ok("Approved “Approve order 1” as Rowan Ellis."));
     const { container } = draw({ opens: "nothing" }, data([item(1)]), { decide });
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    await waitFor(() => expect(document.activeElement).toBe(container.querySelector("[data-approvals]")));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(container.querySelector("[data-approvals]")),
+    );
     expect(screen.getByRole("status").textContent).toContain("Approved");
   });
 
@@ -384,7 +421,9 @@ describe("deciding", () => {
     const sheet = await screen.findByRole("dialog");
     fireEvent.click(within(sheet).getByRole("button", { name: "Approve" }));
     await waitFor(() =>
-      expect(within(screen.getByRole("dialog")).getByRole("heading", { name: "Approve order 2" })).toBeTruthy(),
+      expect(
+        within(screen.getByRole("dialog")).getByRole("heading", { name: "Approve order 2" }),
+      ).toBeTruthy(),
     );
   });
 });
@@ -449,7 +488,9 @@ describe("in a page", () => {
   test("a host with no way to decide draws the buttons greyed with why", async () => {
     page({});
     await screen.findByText("Approve order 1");
-    expect((screen.getAllByRole("button", { name: "Approve" })[0] as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      (screen.getAllByRole("button", { name: "Approve" })[0] as HTMLButtonElement).disabled,
+    ).toBe(true);
     expect(screen.getAllByText("Deciding isn't available here.").length).toBeGreaterThan(0);
   });
 
@@ -465,7 +506,9 @@ describe("in a page", () => {
     }));
     page({ decide, read });
     fireEvent.click((await screen.findAllByRole("button", { name: "Approve" }))[0] as HTMLElement);
-    await waitFor(() => expect(decide).toHaveBeenCalledWith("queue", "run-1/ask", "approve", undefined));
+    await waitFor(() =>
+      expect(decide).toHaveBeenCalledWith("queue", "run-1/ask", "approve", undefined),
+    );
     expect(await screen.findByText("Approved “Approve order 1” as Rowan Ellis.")).toBeTruthy();
     await waitFor(() => expect(read.mock.calls.length).toBeGreaterThan(1));
   });
@@ -476,6 +519,8 @@ describe("in a page", () => {
     });
     page({ decide });
     fireEvent.click((await screen.findAllByRole("button", { name: "Approve" }))[0] as HTMLElement);
-    expect((await screen.findAllByText("Maya Brooks rejected this a moment ago.")).length).toBeGreaterThan(0);
+    expect(
+      (await screen.findAllByText("Maya Brooks rejected this a moment ago.")).length,
+    ).toBeGreaterThan(0);
   });
 });

@@ -57,6 +57,7 @@ import { PageSettings } from "./PageSettings.tsx";
 import { DeviceBanner, PhoneFrame, ViewAsNote } from "./PhoneFrame.tsx";
 import { SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
 import { choiceOf, openedPage, RowClickEditor } from "./RowClickEditor.tsx";
+import { ApprovalFlowsProvider } from "../../kit/inspector/widgets/approvalFlows.tsx";
 import {
   type Edit,
   type FormPlan,
@@ -79,6 +80,7 @@ import {
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
 import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
+import { approvalsSuggestion } from "./selectorData.ts";
 import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
 import { TextOnPage } from "./TextOnPage.tsx";
 
@@ -261,7 +263,14 @@ export function PageEditor({
     setTold(edit.told);
   };
   const makeForm = (plan: FormPlan) => apply(formEdit(context, plan), "adding a form");
+  // An approval step in the workspace, and none on the page to decide it: offered with the next steps.
+  const approvalsOffered = pageInfo ? approvalsSuggestion(lists.approvals, widgets) : undefined;
   const pickNext = (key: string) => {
+    if (key === "approvals") {
+      const found = definitionOf("core/approvals");
+      if (found) add(found);
+      return;
+    }
     if (key === "form") {
       setAdding(false);
       setForming(true);
@@ -309,7 +318,8 @@ export function PageEditor({
     else added = placedAtBottom(widgets, added, into);
     added = {
       ...added,
-      ...(Object.keys(definition.data).length > 0
+      // A widget that says what it is added with (Approvals reads the workspace's) keeps it.
+      ...(definition.initialData === undefined && Object.keys(definition.data).length > 0
         ? { data: defaultInputs(definition, mainTable(widgets, catalog), catalog) }
         : {}),
     };
@@ -644,6 +654,7 @@ export function PageEditor({
                   }
                 />
               ) : null}
+              <ApprovalFlowsProvider root={root} link={link}>
               <InspectorHost
                 key={widget.id}
                 root={root}
@@ -709,6 +720,7 @@ export function PageEditor({
                 scripts={lists.scripts}
                 automaticAt={(one, on) => automaticAt(widgets, one, on)}
               />
+              </ApprovalFlowsProvider>
             </>
           ) : pageInfo ? (
             <PageSettings
@@ -743,11 +755,18 @@ export function PageEditor({
           } else add(definition);
         }}
         {...(widgets.length > 0 ? { onCarry: carry } : {})}
-        {...(suggested && nextSteps.length > 0
+        {...((suggested && nextSteps.length > 0) || approvalsOffered
           ? {
               suggestions: {
-                table: manyOf(suggested),
-                items: nextSteps.map(({ key, label, hint }) => ({ key, label, hint })),
+                table: suggested ? manyOf(suggested) : "this page",
+                items: [
+                  ...(suggested ? nextSteps : []).map(({ key, label, hint }) => ({
+                    key,
+                    label,
+                    hint,
+                  })),
+                  ...(approvalsOffered ? [approvalsOffered] : []),
+                ],
                 onPick: pickNext,
               },
             }

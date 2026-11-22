@@ -2,6 +2,7 @@ import type { Page, PageFilter, PageWidget, WidgetIn } from "@volvel/manifest";
 import { type ActingUser, type Condition, conditionWords } from "@volvel/manifest/action";
 import { childrenOf, isContainer, type Roles, tabsOf, topLevel } from "@volvel/manifest/parts";
 import { EmptyState, Panel, useFlip } from "@volvel/ui";
+<<<<<<< HEAD
 import { EyeOff, GripHorizontal } from "@volvel/ui/icons";
 import type {
   ActOutcome,
@@ -10,6 +11,10 @@ import type {
   EventPayload,
   FilterHost,
 } from "@volvel/widgets";
+=======
+import { GripHorizontal } from "@volvel/ui/icons";
+import type { ActOutcome, Choice, DecideOutcome, EventPayload, FilterHost } from "@volvel/widgets";
+>>>>>>> c31d761 (Phase 28 E1: the Approvals drawer, the selector's tile, drawing and suggestion, the flows list's approval steps, and their tests)
 import type React from "react";
 import {
   type CSSProperties,

@@ -76,8 +76,11 @@ export async function interfaceProblems(
     ).map((row) => row.path),
   );
   return [
-    ...checkInterface(body, (path) => tables.get(path), undefined, (path) =>
-      flows.has(path) ? { nodes: [] } : null,
+    ...checkInterface(
+      body,
+      (path) => tables.get(path),
+      undefined,
+      (path) => (flows.has(path) ? { nodes: [] } : null),
     ),
     ...missingTables(body, tables, sources),
   ];

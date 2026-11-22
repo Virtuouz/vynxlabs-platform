@@ -121,9 +121,7 @@ function Fields({ item, compact }: { item: ApprovalItem; compact?: boolean }) {
   return (
     <dl
       className={`m-0 grid gap-2 ${
-        compact
-          ? "grid-cols-2"
-          : "grid-cols-1 @[28rem]/cell:grid-cols-2 @[48rem]/cell:grid-cols-3"
+        compact ? "grid-cols-2" : "grid-cols-1 @[28rem]/cell:grid-cols-2 @[48rem]/cell:grid-cols-3"
       }`}
     >
       {item.fields.map((field) => (
@@ -222,9 +220,9 @@ function Decider({ item, config, disabledReason, pending, onDecide }: DeciderPro
     askWhy === "always" || (askWhy !== "never" && which === "reject");
 
   // Opening the box puts the cursor in it: the reason is what comes next.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the box opens
   useEffect(() => {
-    if (asking === "approve" || asking === "reject") box.current?.querySelector("textarea")?.focus();
+    if (asking === "approve" || asking === "reject")
+      box.current?.querySelector("textarea")?.focus();
     if (asking === "confirm") box.current?.querySelector("button")?.focus();
   }, [asking]);
 
@@ -359,7 +357,8 @@ interface DetailProps extends Omit<DeciderProps, "disabledReason"> {
 
 /** One request in full, as Record detail draws a record: title and status, the meta line, the fields, the buttons. */
 function Detail(props: DetailProps) {
-  const { item, now, settled, onDismiss, config, pending, onDecide, disabledReason, sample } = props;
+  const { item, now, settled, onDismiss, config, pending, onDecide, disabledReason, sample } =
+    props;
   const Heading = props.heading ?? "h3";
   const meta = metaOf(item, now);
   return (
@@ -447,22 +446,23 @@ function Row({
           data-approval-row={item.id}
           data-selected={selected ? "" : undefined}
           aria-current={selected ? "true" : undefined}
-          tabIndex={open && !leaving ? 0 : undefined}
-          role={open ? "button" : undefined}
-          aria-label={open ? `${item.title}, ${meta.text}` : undefined}
-          onClick={open ? onOpen : undefined}
-          onFocus={onFocus}
-          onKeyDown={
-            open
-              ? (event) => {
+          // Only a row that opens something is pressed, and that one takes Enter and Space.
+          {...(open
+            ? {
+                role: "button",
+                tabIndex: leaving ? undefined : 0,
+                "aria-label": `${item.title}, ${meta.text}`,
+                onClick: onOpen,
+                onFocus,
+                onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
                   if (event.target !== event.currentTarget) return;
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     onOpen?.();
                   }
-                }
-              : undefined
-          }
+                },
+              }
+            : {})}
           className={`flex min-w-0 items-center gap-3 outline-none ${
             card
               ? "rounded-control border border-line bg-surface p-3 data-[selected]:border-action"
@@ -489,7 +489,9 @@ function Row({
           ) : meta.overdue ? (
             <DotBadge tone="danger">Overdue</DotBadge>
           ) : null}
-          {open ? <ChevronRight aria-hidden="true" size={16} className="shrink-0 text-ink-muted" /> : null}
+          {open ? (
+            <ChevronRight aria-hidden="true" size={16} className="shrink-0 text-ink-muted" />
+          ) : null}
         </div>
       </div>
     </li>
@@ -586,10 +588,7 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
   const decidedOnes = real?.decided ?? [];
   // A page being built with nothing waiting shows what a request looks like, said to be a sample.
   const sample = building && waiting.length === 0 && leaving.size === 0;
-  const base = useMemo(
-    () => (sample ? [sampleOf(now)] : waiting),
-    [sample, now, waiting],
-  );
+  const base = useMemo(() => (sample ? [sampleOf(now)] : waiting), [sample, now, waiting]);
 
   // What is drawn: what waits, with what has just been decided kept in its place until it has left.
   const list = useMemo(() => {
@@ -610,14 +609,17 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
     whyNot(item, { building: building === true, can: decide !== undefined });
 
   // The focus goes to the next request, or to the widget when none is left: not the top of the page.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when a request has been asked to take it
   useEffect(() => {
     if (focus === undefined) return;
     const target =
       focus === null
         ? null
-        : (region.current?.querySelector<HTMLElement>(`[data-approval-row="${CSS.escape(focus)}"]`) ??
-          region.current?.querySelector<HTMLElement>(`[data-approval-detail="${CSS.escape(focus)}"]`));
+        : (region.current?.querySelector<HTMLElement>(
+            `[data-approval-row="${CSS.escape(focus)}"]`,
+          ) ??
+          region.current?.querySelector<HTMLElement>(
+            `[data-approval-detail="${CSS.escape(focus)}"]`,
+          ));
     (target ?? region.current)?.focus({ preventScroll: true });
     setFocus(undefined);
   }, [focus]);
@@ -697,7 +699,13 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
           next.delete(item.id);
           return next;
         });
-        leave(item, Math.max(0, live.findIndex((one) => one.id === item.id)));
+        leave(
+          item,
+          Math.max(
+            0,
+            live.findIndex((one) => one.id === item.id),
+          ),
+        );
         setSheet(undefined);
       }}
       onDecide={onDecide}
@@ -722,7 +730,6 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
   ) : null;
 
   const noticeBar = notice ? (
-    // biome-ignore lint/a11y/useSemanticElements: a status that is read out when it changes
     <div
       role="status"
       aria-live="polite"
@@ -746,7 +753,7 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
       data-approvals-empty=""
       className="flex flex-col items-center gap-2 rounded-panel border border-dashed border-line px-5 py-8 text-center"
     >
-      <CircleCheck aria-hidden="true" size={24} className="text-ink-muted" />
+      <CircleCheck aria-hidden="true" size={20} className="text-ink-muted" />
       <p className="m-0 text-ink-muted">{config.empty || NOTHING_WAITS}</p>
     </div>
   );
@@ -790,7 +797,11 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
             {list.map((entry) => rowOf(entry))}
           </ul>
           <div className="min-w-0 rounded-panel border border-line p-4">
-            {current ? detail(current) : <p className="m-0 text-ink-muted">Choose one to read it.</p>}
+            {current ? (
+              detail(current)
+            ) : (
+              <p className="m-0 text-ink-muted">Choose one to read it.</p>
+            )}
           </div>
         </div>
       );
@@ -910,7 +921,6 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
     );
 
   return (
-    // biome-ignore lint/a11y/noNoninteractiveTabindex: the focus lands here when the last request is decided
     <div
       ref={region}
       tabIndex={-1}

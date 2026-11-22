@@ -374,6 +374,40 @@
                             "own"
                           ],
                           "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "approvals": {
+                              "type": "object",
+                              "description": "The approval steps of the workspace's flows that wait for a decision, for a member who may read them.",
+                              "properties": {
+                                "flows": {
+                                  "type": "array",
+                                  "maxItems": 20,
+                                  "uniqueItems": true,
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                                    "maxLength": 255
+                                  },
+                                  "description": "The flows, by path. Left out: every flow with an approval step."
+                                },
+                                "whose": {
+                                  "enum": [
+                                    "mine",
+                                    "all"
+                                  ],
+                                  "description": "`mine` lists only those the viewer may decide; `all` every one they may read."
+                                }
+                              },
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "approvals"
+                          ],
+                          "additionalProperties": false
                         }
                       ],
                       "description": "What it reads: a table from menus, a saved query, SQL on a dashboard, or the page's record."

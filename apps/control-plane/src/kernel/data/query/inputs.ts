@@ -835,7 +835,8 @@ export async function readWidget(
       }
       continue;
     }
-    if (declared.shape === "approvals") throw badRequest("An approvals input has no table to read.");
+    if (declared.shape === "approvals")
+      throw badRequest("An approvals input has no table to read.");
     const asked = await inputQuery(kernel, at, input, page, { shape: declared.shape });
     const size = declared.shape === "record" ? 1 : ROWS_PAGE;
     const result = await run(asked, { limit: size, offset }).catch((error) => {

@@ -38,16 +38,27 @@ export function useCatalog(root: string): {
  */
 export function useActionLists(root: string): {
   flows: FlowChoice[];
+  /** The workflows with an approval step, which an Approvals widget may ask of. */
+  approvals: { path: string; title: string | null }[];
   scripts: ScriptChoice[];
   groups: string[];
 } {
-  const flows = useLoad<{ items: (FlowChoice & { triggers: string[] })[] }>(`${root}/flows`);
+  const flows = useLoad<{
+    items: (FlowChoice & {
+      triggers: string[];
+      title?: string | null;
+      approvals?: unknown[];
+    })[];
+  }>(`${root}/flows`);
   const scripts = useLoad<{ items: ScriptChoice[] }>(`${root}/scripts`);
   const groups = useLoad<{ items: { name: string }[] }>(
     `${root.split("/workspaces/")[0] ?? ""}/groups?limit=200`,
   );
   return {
     flows: (flows.data?.items ?? []).filter((one) => one.triggers.includes("manual")),
+    approvals: (flows.data?.items ?? [])
+      .filter((one) => (one.approvals ?? []).length > 0)
+      .map((one) => ({ path: one.path, title: one.title ?? null })),
     scripts: scripts.data?.items ?? [],
     groups: (groups.data?.items ?? []).map((one) => one.name),
   };

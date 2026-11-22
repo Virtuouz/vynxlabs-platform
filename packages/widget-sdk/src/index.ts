@@ -524,11 +524,7 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
    * viewer's own standing and records who decided. Absent while building, and on a host that
    * cannot decide (nothing is then drawn as pressable).
    */
-  decide?: (
-    id: string,
-    decision: "approve" | "reject",
-    comment?: string,
-  ) => Promise<DecideOutcome>;
+  decide?: (id: string, decision: "approve" | "reject", comment?: string) => Promise<DecideOutcome>;
   /** Whether an action the widget holds may be pressed now, for a row: its `when`, as the host reads it. */
   can?: (at: string, row?: Readonly<Record<string, unknown>>) => boolean;
   /** Why an action can't be pressed now, in the reader's words ("Status is Unpaid"); nothing when it can. */

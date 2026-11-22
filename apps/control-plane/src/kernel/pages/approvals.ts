@@ -1,16 +1,11 @@
 import { sql } from "@volvel/db";
 import type { PageWidget } from "@volvel/manifest";
-import { check } from "../authorize.js";
 import type { Db, Principal } from "../audit.js";
+import { check } from "../authorize.js";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "../errors.js";
 import { redact } from "../execution/redact.js";
+import { approversOf, approverTitles, describeApprovers, isApprover } from "../flows/approvers.js";
 import { decideApproval, kickFlow } from "../flows/engine.js";
-import {
-  approverTitles,
-  approversOf,
-  describeApprovers,
-  isApprover,
-} from "../flows/approvers.js";
 import type { RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { type LocatedPage, locatePage, type PageRequest } from "./locate.js";
@@ -68,7 +63,10 @@ export interface ApprovalsWire {
 const EMPTY: ApprovalsWire = { shape: "approvals", waiting: [], decided: [], more: false };
 
 const humanize = (name: string) => {
-  const text = name.replace(/[._/-]+/g, " ").replace(/\s+/g, " ").trim();
+  const text = name
+    .replace(/[._/-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   return text === "" ? name : (text[0] as string).toUpperCase() + text.slice(1);
 };
 
@@ -421,7 +419,9 @@ export async function decideFromPage(
 
   const standing = await approvalStanding(db, ctx.principal, at);
   if (!standing?.write || !standing.read) {
-    throw forbidden("the approval:read and approval:write permissions, as a member of this workspace");
+    throw forbidden(
+      "the approval:read and approval:write permissions, as a member of this workspace",
+    );
   }
   if (!(await seenBy(kernel, widget, at.tenantId, standing.memberId, draft))) {
     throw notFound("The widget");
@@ -438,8 +438,7 @@ export async function decideFromPage(
     ]);
   }
   const askWhy = widget.config?.askWhy;
-  const needsWhy =
-    askWhy === "always" || (askWhy !== "never" && request.decision === "reject");
+  const needsWhy = askWhy === "always" || (askWhy !== "never" && request.decision === "reject");
   if (needsWhy && !comment) {
     throw badRequest(
       request.decision === "reject"

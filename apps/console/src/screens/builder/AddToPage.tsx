@@ -26,6 +26,7 @@ const SUGGESTION_ICON: Record<string, string> = {
   detail: "detail",
   form: "form",
   mark: "button",
+  approvals: "approvals",
   filter: "filter",
   group: "actions",
   section: "section",

@@ -49,6 +49,7 @@ export const corePack: CorePack = {
 };
 
 export { fitCount } from "./actions.tsx";
+export { metaOf, relativeTime, valueWords, whyNot } from "./approvals.tsx";
 export {
   type ChartKind,
   type ChartNeed,
@@ -71,7 +72,6 @@ export {
   relativeRange,
   valueFor,
 } from "./filterValues.ts";
-export { metaOf, relativeTime, valueWords, whyNot } from "./approvals.tsx";
 export { shadeOf } from "./pivot.tsx";
 export { changeTone } from "./stat.tsx";
 export {

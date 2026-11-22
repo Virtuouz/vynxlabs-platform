@@ -13,6 +13,7 @@ export type Drawing =
   | "goal"
   | "button"
   | "actions"
+  | "approvals"
   | "section"
   | "tabs"
   | "filter"
@@ -165,6 +166,19 @@ export const PREVIEWS: Record<string, Preview> = {
     reads: false,
     goodFor: () => ["Mark paid, Send, Edit", "Approve or reject", "A toolbar over a table"],
   },
+  "core/approvals": {
+    drawing: "approvals",
+    about:
+      "Requests waiting for a decision. Pick one, read its details, approve or reject, and the next one is there. Who may decide is set on the workflow's step.",
+    words:
+      "sign off approve approval approvals requests review decide reject queue inbox pending waiting workflow manager",
+    reads: false,
+    goodFor: () => [
+      "Stock orders waiting for a manager",
+      "Time off to sign off",
+      "Refunds to review",
+    ],
+  },
   "core/section": {
     drawing: "section",
     about: "A heading over widgets that belong together, plain or as a card, which can fold away.",
@@ -201,6 +215,32 @@ export const PREVIEWS: Record<string, Preview> = {
   },
 };
 
+const flowWords = (path: string, title: string | null) => {
+  if (title) return title;
+  const last = path.split("/").at(-1) ?? path;
+  return last.replace(/[_-]+/g, " ");
+};
+
+/**
+ * The card offered when the workspace has a workflow with an approval step and the page has no
+ * Approvals widget to decide it: what waits for a decision is worth a place where people work.
+ */
+export function approvalsSuggestion(
+  flows: readonly { path: string; title: string | null }[],
+  widgets: readonly { type: string }[],
+): { key: "approvals"; label: string; hint: string } | undefined {
+  if (flows.length === 0 || widgets.some((one) => one.type === "core/approvals")) return undefined;
+  const [first] = flows;
+  return {
+    key: "approvals",
+    label: "Approvals",
+    hint:
+      flows.length === 1 && first
+        ? `${flowWords(first.path, first.title)} waits for a decision`
+        : `${flows.length} workflows wait for a decision`,
+  };
+}
+
 export const GENERIC: Preview = {
   drawing: "generic",
   about: "A widget from a pack added to this workspace.",
@@ -220,6 +260,7 @@ export const SUGGESTION_WORDS: Record<string, string> = {
   filter: "narrow status filter",
   group: "toolbar buttons group",
   section: "heading numbers card",
+  approvals: "sign off approve requests review waiting decision workflow",
 };
 
 const FILLER = new Set(

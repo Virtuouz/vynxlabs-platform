@@ -31,7 +31,7 @@ let bob: Client; // a manager, may decide
 let bea: Client; // a manager too
 let erin: Client; // reads approvals only
 let dora: Client; // may open the page and nothing more
-let ids: Record<string, string> = {};
+const ids: Record<string, string> = {};
 
 const ws = (id = dev) => `/tenants/${tenant}/workspaces/${id}`;
 const manifest = (kind: string, path: string, body: object): BundleManifest =>
@@ -87,9 +87,19 @@ const screen = {
         approvalsWidget(
           "limited",
           { flows: ["orders/reorder"] },
-          { fields: [{ name: "item" }, { name: "clinic", label: "Where" }, { name: "x", hidden: true }] },
+          {
+            fields: [
+              { name: "item" },
+              { name: "clinic", label: "Where" },
+              { name: "x", hidden: true },
+            ],
+          },
         ),
-        approvalsWidget("secrets", { flows: ["orders/reorder"] }, { fields: [{ name: "api_key" }] }),
+        approvalsWidget(
+          "secrets",
+          { flows: ["orders/reorder"] },
+          { fields: [{ name: "api_key" }] },
+        ),
         // Never asks why.
         approvalsWidget("quiet", { flows: ["orders/reorder"] }, { askWhy: "never" }),
         // Seen by managers only.
@@ -174,7 +184,8 @@ function browser() {
 }
 
 /** The console's clients are at the API's own root; a browser is at an address of its own. */
-const prefix = (who: unknown) => ([alice, bob, bea, erin, dora].includes(who as Client) ? "" : "/api/v1");
+const prefix = (who: unknown) =>
+  [alice, bob, bea, erin, dora].includes(who as Client) ? "" : "/api/v1";
 const read = (who: { get: (url: string) => Promise<Any> }, widget: string, extra = "") =>
   who.get(
     `${prefix(who)}${ws()}/widget-data?of=interface&path=screens/approvals&page=main&widget=${widget}${extra}`,
@@ -192,10 +203,14 @@ const decide = (
   more: object = {},
   widget = "queue",
 ) =>
-  who.post(
-    `${prefix(who)}${ws()}/page-approvals`,
-    { path: "screens/approvals", page: "main", widget, id, decision, ...more },
-  );
+  who.post(`${prefix(who)}${ws()}/page-approvals`, {
+    path: "screens/approvals",
+    page: "main",
+    widget,
+    id,
+    decision,
+    ...more,
+  });
 
 /** Starts a run of a flow and waits until it asks. Gives the id the widget names the step by. */
 async function ask(
@@ -205,7 +220,14 @@ async function ask(
 ): Promise<{ run: string; id: string }> {
   const started = await alice.post(`${ws(workspace)}/flow-runs`, {
     flow,
-    input: { clinic: "northside", item: "Gauze", total: 1840, key: "sk-live-123", notes: "", ...input },
+    input: {
+      clinic: "northside",
+      item: "Gauze",
+      total: 1840,
+      key: "sk-live-123",
+      notes: "",
+      ...input,
+    },
   });
   expect(started.status, JSON.stringify(started.body)).toBe(201);
   const run = started.body.id as string;
@@ -288,7 +310,11 @@ beforeAll(async () => {
     await alice.post(`/tenants/${tenant}/workspaces`, { slug: "dev", name: "Dev", type: "dev" })
   ).body.id;
   other = (
-    await alice.post(`/tenants/${tenant}/workspaces`, { slug: "dev2", name: "Dev two", type: "dev" })
+    await alice.post(`/tenants/${tenant}/workspaces`, {
+      slug: "dev2",
+      name: "Dev two",
+      type: "dev",
+    })
   ).body.id;
   for (const [workspace, withScreen] of [
     [dev, true],
@@ -403,9 +429,9 @@ describe("reading what waits", () => {
       { type: "end_user", id: ids.ivy ?? "00000000-0000-4000-8000-000000000001", tenantId: tenant },
       { type: "service_account", id: "00000000-0000-4000-8000-000000000002", tenantId: tenant },
     ]) {
-      expect(await approvalStanding(t.db, principal as Any, { tenantId: tenant, workspaceId: dev })).toBe(
-        undefined,
-      );
+      expect(
+        await approvalStanding(t.db, principal as Any, { tenantId: tenant, workspaceId: dev }),
+      ).toBe(undefined);
       const got = await readApprovals(t.kernel, ctx(principal), {
         at: { tenantId: tenant, workspaceId: dev },
         widget,
@@ -425,7 +451,9 @@ describe("reading what waits", () => {
     const { check } = await import("./kernel/authorize.js");
     expect((await check(t.db, appOnly, "approval:write", at2)).allowed).toBe(false);
     // Suspended: nothing.
-    expect(await approvalStanding(t.db, { type: "member", id: ids.sam as string }, at2)).toBe(undefined);
+    expect(await approvalStanding(t.db, { type: "member", id: ids.sam as string }, at2)).toBe(
+      undefined,
+    );
   });
 
   test("the operator, in through an access grant, is given nothing", async () => {
@@ -625,10 +653,16 @@ describe("deciding", () => {
   test("a suspended member cannot decide", async () => {
     const step = await ask("orders/reorder");
     // Sam's own sign-in would not even open; his standing is what is asked.
-    expect(await approvalStanding(t.db, { type: "member", id: ids.sam as string }, {
-      tenantId: tenant,
-      workspaceId: dev,
-    })).toBe(undefined);
+    expect(
+      await approvalStanding(
+        t.db,
+        { type: "member", id: ids.sam as string },
+        {
+          tenantId: tenant,
+          workspaceId: dev,
+        },
+      ),
+    ).toBe(undefined);
     expect((await decide(bob, step.id, "approve")).status).toBe(200);
   });
 

@@ -18,7 +18,7 @@ const catalog: Catalog = {
   maySql: false,
 };
 const at = { x: 0, y: 0, w: 6, h: 4 };
-const read = (visual: object): PageWidget["data"] => ({ rows: { source: { visual } } }) as never;
+const read = (visual: object): NonNullable<PageWidget["data"]> => ({ rows: { source: { visual } } }) as never;
 
 test("nothing wrong, nothing to fix: whatever is set", () => {
   const widget: PageWidget = {

@@ -21,6 +21,7 @@ import {
 } from "@volvel/ui";
 import type { ActOutcome, EventPayload } from "@volvel/widgets";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ConfirmFacts, confirmWords, isDefaultTitle } from "./confirmWords.ts";
 import {
   ActionError,
   type FilterValues,
@@ -28,7 +29,6 @@ import {
   type ViewRegistry,
   type WireData,
 } from "./types.ts";
-import { type ConfirmFacts, confirmWords, isDefaultTitle } from "./confirmWords.ts";
 import { toWidgetData } from "./wire.ts";
 
 /** Where a page may be taken to by an action, as the host is asked. */

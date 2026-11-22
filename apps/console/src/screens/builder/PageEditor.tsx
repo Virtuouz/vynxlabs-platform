@@ -84,8 +84,8 @@ import {
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
 import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
-import { startingConfigFor } from "./startingConfig.ts";
 import { approvalsSuggestion } from "./selectorData.ts";
+import { startingConfigFor } from "./startingConfig.ts";
 import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
 import { TextOnPage } from "./TextOnPage.tsx";
 

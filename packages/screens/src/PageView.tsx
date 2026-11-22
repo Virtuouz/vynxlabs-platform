@@ -72,11 +72,11 @@ import {
 import { recallTab, rememberTab } from "./tabMemory.ts";
 import {
   ActionError,
-  type WireData,
   type FilterValues,
   type PageDataClient,
   type ViewEntry,
   type ViewRegistry,
+  type WireData,
 } from "./types.ts";
 import { useWidgetData } from "./useWidgetData.ts";
 

@@ -70,7 +70,8 @@ function recordWords(input: ConfirmInput): string {
   const dated = (name: string) => {
     const value = row[name];
     const kind = types.get(name);
-    return typeof value === "string" && (kind === undefined || kind === "date" || kind === "timestamp")
+    return typeof value === "string" &&
+      (kind === undefined || kind === "date" || kind === "timestamp")
       ? formatDay(value)
       : undefined;
   };

@@ -1,5 +1,5 @@
 import { Tooltip as Base } from "@base-ui/react/tooltip";
-import { type ReactElement, type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 /** A key or combination, as a person presses it: `⌘K`, `Esc`, `g then r`. */
 export function Kbd({ children }: { children: ReactNode }) {
@@ -54,11 +54,11 @@ export function Tooltip({
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   // Shown by a tap: the finger lifting is not the pointer leaving, so hover's close is ignored.
   const tapped = useRef(false);
-  const hide = () => {
+  const hide = useCallback(() => {
     clearTimeout(timer.current);
     tapped.current = false;
     setOpen(false);
-  };
+  }, []);
   useEffect(() => () => clearTimeout(timer.current), []);
   // A tap anywhere else puts it away.
   useEffect(() => {
@@ -72,7 +72,7 @@ export function Tooltip({
       clearTimeout(soon);
       document.removeEventListener("pointerdown", away);
     };
-  }, [open]);
+  }, [open, hide]);
   const touch = tapToShow
     ? {
         onPointerUp: (event: { pointerType: string }) => {

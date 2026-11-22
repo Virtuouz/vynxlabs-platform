@@ -12,6 +12,8 @@
  * and rows. It draws from the widget's definition and the host's lists (pages, flows, scripts,
  * groups), so a pack's widget with an `action` setting has this editor the day it is registered.
  */
+
+import { confirmWords, DEFAULT_CONFIRM_TITLE, isDefaultTitle } from "@volvel/screens";
 import {
   Button,
   CheckboxField,
@@ -23,7 +25,6 @@ import {
   SelectField,
   TextField,
 } from "@volvel/ui";
-import { DEFAULT_CONFIRM_TITLE, isDefaultTitle } from "@volvel/screens";
 import {
   AlertTriangle,
   Check,
@@ -1076,7 +1077,18 @@ export function ActionEditor({
             icon: MessageSquare,
             fixed: true,
             more: true,
-            sentence: <TokenSentence text={current.confirm.title} fields={confirmFields(ctx)} />,
+            sentence: (
+              <TokenSentence
+                text={
+                  confirmWords({
+                    label: named,
+                    confirm: current.confirm,
+                    table: tableOfRef(ctx, ctx.defaultRef) ?? ctx.thisTable ?? ctx.eventTable,
+                  }).title
+                }
+                fields={confirmFields(ctx)}
+              />
+            ),
             body: (
               <ConfirmBody
                 id={id}

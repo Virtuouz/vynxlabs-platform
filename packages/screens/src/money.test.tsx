@@ -29,13 +29,7 @@ describe("money known from the table, in the table, list and detail", () => {
   };
   test("a table with no format of its own draws cents as money", () => {
     render(
-      <TableView
-        config={{}}
-        data={{ rows: data }}
-        size={size}
-        emit={() => {}}
-        building={false}
-      />,
+      <TableView config={{}} data={{ rows: data }} size={size} emit={() => {}} building={false} />,
     );
     expect(screen.getByText("$65.00")).toBeTruthy();
     expect(screen.queryByText("6,500")).toBeNull();
@@ -153,7 +147,11 @@ describe("money in the form", () => {
 describe("money edited in place in a detail", () => {
   test("takes 123.45 and saves 12345", async () => {
     const act = vi.fn(async () => ({ ok: true as const }));
-    const record: RecordData = { shape: "record", columns, record: { id: "1", number: "INV-1", total: 6500 } };
+    const record: RecordData = {
+      shape: "record",
+      columns,
+      record: { id: "1", number: "INV-1", total: 6500 },
+    };
     render(
       <DetailView
         config={{ heading: "number", edit: true }}
@@ -177,7 +175,11 @@ describe("money edited in place in a detail", () => {
   });
   test("refuses more than two decimals and saves nothing", async () => {
     const act = vi.fn(async () => ({ ok: true as const }));
-    const record: RecordData = { shape: "record", columns, record: { id: "1", number: "INV-1", total: 6500 } };
+    const record: RecordData = {
+      shape: "record",
+      columns,
+      record: { id: "1", number: "INV-1", total: 6500 },
+    };
     render(
       <DetailView
         config={{ heading: "number", edit: true }}

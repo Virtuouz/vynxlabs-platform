@@ -14,7 +14,6 @@ import {
   sortedBy,
   totalOf,
 } from "./cells.tsx";
-import { RowsBox } from "./rowsBox.tsx";
 import {
   CANNOT_NOW,
   listensTo,
@@ -25,6 +24,7 @@ import {
   useRunning,
   type WithSelected,
 } from "./press.tsx";
+import { RowsBox } from "./rowsBox.tsx";
 
 /** A button on the table's heading line: the shape of an Action group's. */
 interface TableButton {

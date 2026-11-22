@@ -27,8 +27,8 @@ import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
 import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, movedPage } from "./pageKinds.ts";
-import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
 import { problemWords } from "./publishCheck.ts";
+import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
 import { syncSheetActions } from "./sheetActions.ts";
 import type { Started } from "./starters.ts";
 

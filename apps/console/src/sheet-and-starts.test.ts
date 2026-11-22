@@ -1,6 +1,7 @@
 import type { Page, PageWidget } from "@volvel/manifest";
+import { widgetRegistry } from "@volvel/manifest";
 import { describe, expect, test } from "vitest";
-import { defaultInputs, type Catalog, type CatalogTable } from "./kit/inspector/model.ts";
+import { type Catalog, type CatalogTable, defaultInputs } from "./kit/inspector/model.ts";
 import { showsNothing } from "./screens/builder/publishCheck.ts";
 import {
   detailWidget,
@@ -12,7 +13,6 @@ import {
 } from "./screens/builder/records.ts";
 import { sheetActionsFor, syncSheetActions } from "./screens/builder/sheetActions.ts";
 import { placesFor, startingConfigFor } from "./screens/builder/startingConfig.ts";
-import { widgetRegistry } from "@volvel/manifest";
 
 const invoices: CatalogTable = {
   name: "invoices",
@@ -27,7 +27,12 @@ const invoices: CatalogTable = {
       references: null,
       description: "What is owed, in cents.",
     },
-    { name: "status", type: "enum", references: null, values: [{ value: "unpaid" }, { value: "paid" }] },
+    {
+      name: "status",
+      type: "enum",
+      references: null,
+      values: [{ value: "unpaid" }, { value: "paid" }],
+    },
     { name: "issued", type: "date", references: null },
   ],
 };
@@ -81,7 +86,11 @@ describe("the detail made from a table carries the table's columns", () => {
       config: {
         columns: [
           { column: "issued", label: "Billed on" },
-          { column: "total", label: "Amount", format: { style: "currency", currency: "EUR", minorUnits: true } },
+          {
+            column: "total",
+            label: "Amount",
+            format: { style: "currency", currency: "EUR", minorUnits: true },
+          },
           { column: "status", as: "badge", badges: { paid: "success", unpaid: "attention" } },
         ],
       },
@@ -225,7 +234,7 @@ describe("a new List, Pivot and Record detail start with something placed", () =
     const made = startingConfigFor(detail, invoices, { widgets: [table([])] });
     expect(made.data?.record?.source).toEqual({ selected: "table" });
     expect(made.config?.heading).toBe("number");
-    expect((made.config?.fields as { column: string }[]).length).toBeGreaterThan(2);
+    expect(((made.config?.fields as { column: string }[]) ?? []).length).toBeGreaterThan(2);
   });
   test("a Pivot starts with a grid: two breakdowns, not one", () => {
     const pivot = widgetRegistry().get("core/pivot");
@@ -255,7 +264,9 @@ describe("the publish check names what shows nothing yet", () => {
       id: "p",
       type: "core/pivot",
       at: { x: 0, y: 0, w: 6, h: 6 },
-      data: { rows: { source: { visual: { table: "invoices", groupBy: [{ column: "status" }] } } } },
+      data: {
+        rows: { source: { visual: { table: "invoices", groupBy: [{ column: "status" }] } } },
+      },
     };
     expect(showsNothing(pivot)).toMatch(/rows and the columns/);
     const record: PageWidget = { id: "d", type: "core/detail", at: { x: 0, y: 0, w: 6, h: 6 } };

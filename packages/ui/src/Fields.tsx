@@ -1,4 +1,5 @@
 import { Field } from "@base-ui/react/field";
+import { moneyText, parseMoney } from "@volvel/widgets";
 import { ChevronDown } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
@@ -10,7 +11,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { moneyText, parseMoney } from "@volvel/widgets";
 import { DateInput } from "./DateInput.tsx";
 import { TermText } from "./Term.tsx";
 
@@ -437,7 +437,11 @@ export interface MoneyFieldProps extends Common {
 function symbolOf(currency: string): string {
   try {
     return (
-      new Intl.NumberFormat(undefined, { style: "currency", currency, currencyDisplay: "narrowSymbol" })
+      new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency,
+        currencyDisplay: "narrowSymbol",
+      })
         .formatToParts(0)
         .find((part) => part.type === "currency")?.value ?? currency
     );
@@ -453,7 +457,16 @@ function symbolOf(currency: string): string {
  * or has more than two decimals.
  */
 export function MoneyField(props: MoneyFieldProps) {
-  const { label, hint, error, value, onChange, currency = "USD", minorUnits = true, ...input } = props;
+  const {
+    label,
+    hint,
+    error,
+    value,
+    onChange,
+    currency = "USD",
+    minorUnits = true,
+    ...input
+  } = props;
   const options = { minorUnits, currency };
   const [text, setText] = useState(() => (value === undefined ? "" : moneyText(value, options)));
   const [left, setLeft] = useState(false);

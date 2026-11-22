@@ -57,7 +57,8 @@ export function placesFor(table: CatalogTable): Places {
           !taken.has(column.name) && (column.type === "date" || column.type === "timestamp"),
       ) ??
       columns.find(
-        (column) => !taken.has(column.name) && (column.type === "integer" || column.type === "number"),
+        (column) =>
+          !taken.has(column.name) && (column.type === "integer" || column.type === "number"),
       ),
   );
   const subtitle = take(

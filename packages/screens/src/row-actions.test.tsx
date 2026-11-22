@@ -51,7 +51,9 @@ describe("a row's actions", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Row actions" }));
     fireEvent.click(await screen.findByText("Mark paid"));
-    await waitFor(() => expect(view.act).toHaveBeenCalledWith("config/rowActions/0/action", { record: "r" }));
+    await waitFor(() =>
+      expect(view.act).toHaveBeenCalledWith("config/rowActions/0/action", { record: "r" }),
+    );
   });
 
   test("one action stays its own button, even on a phone", () => {

@@ -42,9 +42,9 @@ describe("the words of a confirmation", () => {
     expect(words.title).toBe("Void the invoice INV-9?");
   });
   test("a label of several words reads as a sentence", () => {
-    expect(confirmWords({ label: "Mark paid", table: "invoices", row: { number: "INV-9" } }).title).toBe(
-      "Mark paid for the invoice INV-9?",
-    );
+    expect(
+      confirmWords({ label: "Mark paid", table: "invoices", row: { number: "INV-9" } }).title,
+    ).toBe("Mark paid for the invoice INV-9?");
   });
   test("with no row it says 'this' and the noun", () => {
     expect(confirmWords({ label: "Cancel", table: "appointments" }).title).toBe(

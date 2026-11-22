@@ -11,10 +11,11 @@ import {
   type Page,
   type PageFilter,
   type PageWidget,
-  type ValueFormat,
   topLevel,
+  type ValueFormat,
   widgetRegistry,
 } from "@volvel/manifest";
+import { moneyFormatOf } from "@volvel/widgets";
 import {
   bindHolderFilters,
   type Catalog,
@@ -23,7 +24,6 @@ import {
   visualOf,
   withPageFilters,
 } from "../../kit/inspector/model.ts";
-import { moneyFormatOf } from "@volvel/widgets";
 import { nextId } from "./containers.ts";
 import type { Action, Condition, Step } from "./contract.ts";
 import { kindOf, uniquePageId } from "./pageKinds.ts";
@@ -242,7 +242,8 @@ function carriedColumns(from: PageWidget | undefined): Map<string, CarriedColumn
   const out = new Map<string, CarriedColumn>();
   if (!Array.isArray(specs)) return out;
   for (const spec of specs as CarriedColumn[]) {
-    if (spec && typeof spec.column === "string" && !out.has(spec.column)) out.set(spec.column, spec);
+    if (spec && typeof spec.column === "string" && !out.has(spec.column))
+      out.set(spec.column, spec);
   }
   return out;
 }
@@ -273,8 +274,7 @@ export function detailWidget(
   const carried = carriedColumns(from);
   const status =
     place("badge") ??
-    [...carried.values()].find((spec) => spec.as === "badge" && spec.column !== heading_)
-      ?.column ??
+    [...carried.values()].find((spec) => spec.as === "badge" && spec.column !== heading_)?.column ??
     table.columns.find((column) => column.type === "enum")?.name;
   const statusBadges = status ? carried.get(status)?.badges : undefined;
   const order = (column: InfoColumn) => {

@@ -290,7 +290,9 @@ export function DetailView({
   if (record === null) {
     return (
       <p className="m-0 text-ink-muted">
-        {building ? "Opens on a record of the table you choose in Data." : "There is nothing here for you yet."}
+        {building
+          ? "Opens on a record of the table you choose in Data."
+          : "There is nothing here for you yet."}
       </p>
     );
   }
@@ -412,7 +414,11 @@ export function DetailView({
         {status && record[status] !== null && record[status] !== undefined ? (
           <span className="shrink-0">
             {cellOf(
-              { column: status, as: "badge", ...(config.statusBadges ? { badges: config.statusBadges } : {}) },
+              {
+                column: status,
+                as: "badge",
+                ...(config.statusBadges ? { badges: config.statusBadges } : {}),
+              },
               infoOf(status),
               record[status],
               rows,

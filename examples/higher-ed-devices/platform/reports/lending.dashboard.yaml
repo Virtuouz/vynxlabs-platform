@@ -148,7 +148,7 @@ body:
             - { filter: lent, column: checked_out_at }
       config:
         columns:
-          - { column: kind, label: Kind, as: chip }
+          - { column: kind, label: Kind, as: badge }
           - { column: loans, label: Loans, as: bar }
           - { column: students, label: Students }
     - id: by-month

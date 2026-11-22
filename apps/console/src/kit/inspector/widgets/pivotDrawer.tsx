@@ -3,14 +3,12 @@
  * of the grid. Display: its heading, how numbers look, shading, and the totals.
  */
 import { DrawerBlock, DrawerGroup } from "@volvel/ui";
+import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
 import { shadeOf } from "@volvel/widgets-core/views";
-import { BreakdownRow } from "./breakdownRow.tsx";
 import {
   ConfigToggle,
   type DrawerData,
   groupsOf,
-  HeadingRows,
-  MeasureRow,
   NumbersRow,
   type Query,
   queryOf,
@@ -100,9 +98,9 @@ export function PivotData({ env, data }: SectionProps) {
       label="What to show"
       note="Same questions as a chart, with rows and columns in place of “for each”."
     >
-      <MeasureRow env={env} label="Measure" />
-      <BreakdownRow env={env} query={query} at={0} label="Rows" data={data} />
-      <BreakdownRow env={env} query={query} at={columnsAt} label="Columns" data={data} />
+      <MeasureRow env={env} input="rows" at={0} label="Measure" />
+      <BreakdownRow env={env} input="rows" at={0} label="Rows" />
+      <BreakdownRow env={env} input="rows" at={columnsAt} label="Columns" none="Nothing" />
       <DrawerBlock>
         <PivotPreview query={query} data={data} />
       </DrawerBlock>
@@ -114,9 +112,6 @@ export function PivotDisplay({ env }: SectionProps) {
   const legacy = env.config.totals as boolean | undefined;
   return (
     <>
-      <DrawerGroup label="Heading">
-        <HeadingRows env={env} caption={{ kind: "subtitle" }} />
-      </DrawerGroup>
       <DrawerGroup label="Look">
         <NumbersRow env={env} sample={1234} />
         <ConfigToggle env={env} name="shade" label="Shade cells by size" />

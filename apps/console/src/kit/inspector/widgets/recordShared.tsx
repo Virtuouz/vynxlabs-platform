@@ -24,7 +24,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import { createContext, type ReactNode, useContext } from "react";
+import type { ReactNode } from "react";
 import type { Env } from "../controls.tsx";
 import { withConfig } from "../model.ts";
 
@@ -220,19 +220,9 @@ export function reorderBy<T extends { id: string }>(
 }
 
 // ---------------------------------------------------------------------------
-// Inside the shell's own group
+// Groups
 
-const Flat = createContext<{ n: number } | undefined>(undefined);
-
-/**
- * The drawer shell draws each registered piece inside a group of its own. A section is written
- * with `Group`s; under `FlatSection` a `Group` draws only its rows (with a quiet heading for
- * every group after the first, whose heading is the shell's), so a section is not boxed twice.
- */
-export function FlatSection({ children }: { children: ReactNode }) {
-  return <Flat.Provider value={{ n: 0 }}>{children}</Flat.Provider>;
-}
-
+/** A group of the drawer: a section's own `DrawerGroup`. */
 export function Group({
   label,
   note,
@@ -244,23 +234,9 @@ export function Group({
   aside?: ReactNode;
   children: ReactNode;
 }) {
-  const flat = useContext(Flat);
-  if (!flat) {
-    return (
-      <DrawerGroup label={label} {...(note ? { note } : {})} {...(aside ? { aside } : {})}>
-        {children}
-      </DrawerGroup>
-    );
-  }
-  const first = flat.n === 0;
-  flat.n += 1;
   return (
-    <>
-      {first ? null : (
-        <p className="m-0 px-3 pt-3 text-label font-semibold text-ink-muted uppercase">{label}</p>
-      )}
+    <DrawerGroup label={label} {...(note ? { note } : {})} {...(aside ? { aside } : {})}>
       {children}
-      {note ? <p className="m-0 px-3 py-2 text-meta text-ink-muted">{note}</p> : null}
-    </>
+    </DrawerGroup>
   );
 }

@@ -54,15 +54,14 @@ import {
   X,
   Zap,
 } from "@volvel/ui/icons";
-import type { Surface, WidgetDefinition } from "@volvel/widgets";
+import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Pencil } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import { amount } from "../format.ts";
 import { MarkdownEditor } from "../markdown/MarkdownEditor.tsx";
 import { useEditOnPage } from "../markdown/onThePage.ts";
 import { ActionControl, ActionsControl } from "./actionControls.tsx";
 import { settingControlFor, tilePreviewFor } from "./custom.ts";
-import { DataControl } from "./dataControls.tsx";
+import { DataControl, FormatRow } from "./dataControls.tsx";
 import { FieldsControl, PageControl } from "./fieldsControl.tsx";
 import { FiltersControl } from "./filtersControl.tsx";
 import type { Catalog, ConfigSetting, FlowChoice, ScriptChoice, TabFate } from "./model.ts";
@@ -103,6 +102,12 @@ export interface Env {
   addFilters?: (() => void) | undefined;
   /** Removes a tab of this container, with what it held moved to another tab or removed. */
   onRemoveTab?: ((tab: string, fate: TabFate) => void) | undefined;
+  /** Chooses another widget of the page: a Section's "Holds" rows select what they name. */
+  select?: ((id: string) => void) | undefined;
+  /** Switches the drawer to a tab of this widget. */
+  openTab?: ((tab: Tab) => void) | undefined;
+  /** "When a row is clicked", as the builder draws it (a table's or a list's); the Actions tab places it. */
+  rowClickEditor?: ReactNode;
 }
 
 /** The columns a column control offers for a data input. */
@@ -227,10 +232,9 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
     }
     case "format":
       return (
-        <FormatControl
-          field={field}
+        <FormatRow
           label={hint.label}
-          format={value as ValueFormat | undefined}
+          value={value as ValueFormat | undefined}
           onChange={(format) => set(format)}
         />
       );
@@ -480,110 +484,6 @@ export function formatSummary(format: ValueFormat | undefined): string {
   ]
     .filter(Boolean)
     .join(" · ");
-}
-
-/** The sample a format is shown with. */
-const SAMPLE = 43120;
-
-function FormatControl({
-  field,
-  label,
-  format,
-  onChange,
-}: {
-  field: string;
-  label: string;
-  format: ValueFormat | undefined;
-  onChange: (format: ValueFormat | undefined) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const shown = format ? amount(format.minorUnits ? SAMPLE * 100 : SAMPLE, format) : amount(SAMPLE);
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-body-sm font-medium text-ink" id={`${field}-label`}>
-        {label}
-      </span>
-      <Button
-        variant="secondary"
-        className="w-full justify-between"
-        aria-expanded={open}
-        aria-controls={`${field}-panel`}
-        onClick={() => setOpen((now) => !now)}
-      >
-        <span className="min-w-0 truncate">{formatSummary(format)}</span>
-        <span aria-hidden="true" className="text-ink-muted">
-          {open ? "Close" : "Change"}
-        </span>
-      </Button>
-      <span className="text-body-sm text-ink-muted">Shown as {shown}</span>
-      {open ? (
-        <div
-          id={`${field}-panel`}
-          className="flex flex-col gap-2 rounded-control border border-line p-3"
-        >
-          <SelectField
-            name={`${field}-style`}
-            label="Written as"
-            value={format?.style ?? ""}
-            options={[
-              { value: "", label: "As it comes" },
-              { value: "number", label: "A number: 1,234.5" },
-              { value: "currency", label: "Money: $1,234.50" },
-              { value: "percent", label: "A percent: 0.25 as 25%" },
-            ]}
-            onChange={(style) =>
-              onChange(
-                style
-                  ? {
-                      ...(format?.style === style ? format : {}),
-                      style: style as ValueFormat["style"],
-                      ...(style === "currency" ? { currency: format?.currency ?? "USD" } : {}),
-                    }
-                  : undefined,
-              )
-            }
-          />
-          {format?.style === "currency" ? (
-            <>
-              <TextField
-                name={`${field}-currency`}
-                label="Currency"
-                hint="A three-letter code, such as USD or EUR."
-                value={format.currency ?? "USD"}
-                maxLength={3}
-                onChange={(code) => onChange({ ...format, currency: code.toUpperCase() || "USD" })}
-              />
-              <CheckboxField
-                name={`${field}-cents`}
-                label="Kept in cents"
-                hint="The numbers are in hundredths, and shown divided by 100."
-                checked={format.minorUnits === true}
-                onChange={(minorUnits) => {
-                  const { minorUnits: _before, ...rest } = format;
-                  onChange(minorUnits ? { ...rest, minorUnits: true } : rest);
-                }}
-              />
-            </>
-          ) : null}
-          {format ? (
-            <SelectField
-              name={`${field}-decimals`}
-              label="Decimal places"
-              value={format.decimals === undefined ? "" : String(format.decimals)}
-              options={[
-                { value: "", label: "As usual" },
-                ...[0, 1, 2, 3, 4].map((n) => ({ value: String(n), label: String(n) })),
-              ]}
-              onChange={(places) => {
-                const { decimals: _before, ...rest } = format;
-                onChange(places === "" ? rest : { ...rest, decimals: Number(places) });
-              }}
-            />
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------

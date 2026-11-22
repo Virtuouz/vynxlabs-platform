@@ -1,7 +1,7 @@
 /**
  * Action group's drawer (board 17, right): its buttons as rows that open their own Display,
  * Actions and Rules (a sub-view with "‹ Back"), and how they line up. A button's Actions and
- * Rules are stand-ins for the shared tabs (B2) until they are wired in.
+ * Actions and Rules are the shared editors (`ActionEditor`, `ActionRules`).
  */
 import type { Action, Condition } from "@volvel/manifest";
 import {
@@ -19,7 +19,8 @@ import {
 } from "@volvel/ui";
 import { Ellipsis } from "lucide-react";
 import { useState } from "react";
-import { ActionEditor, actionContext } from "../actionControls.tsx";
+import { actionContext, ActionEditor } from "../actionControls.tsx";
+import { ActionRules } from "../RulesTab.tsx";
 import { ConditionsEditor } from "../conditions.tsx";
 import { uniqueName } from "../model.ts";
 import { ButtonLabelGroup, ToneTiles } from "./buttonDrawer.tsx";
@@ -140,7 +141,6 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
             </>
           ) : null}
           {tab === "actions" ? (
-            // STAND-IN: B2's collapsed step list replaces this editor.
             <ActionEditor
               env={env}
               id={`${prefix}-action`}
@@ -156,21 +156,14 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
             />
           ) : null}
           {tab === "rules" ? (
-            // STAND-IN: the shared Rules tab (B2) replaces this.
-            <Group label="Can be pressed when">
-              <DrawerBlock>
-                <ConditionsEditor
-                  id={`${prefix}-when`}
-                  conditions={action.when}
-                  ctx={actionContext(env)}
-                  groups={env.groups}
-                  onChange={(when) => {
-                    const { when: _before, ...rest } = action;
-                    patch({ action: when ? { ...rest, when } : rest });
-                  }}
-                />
-              </DrawerBlock>
-            </Group>
+            <ActionRules
+              env={env}
+              id={`${prefix}-rules`}
+              action={action}
+              onChange={(next, key) =>
+                replace({ ...current, action: next }, "who can run a button", key ? "rules" : undefined)
+              }
+            />
           ) : null}
         </DrawerPanel>
         {buttons.length > 1 ? (

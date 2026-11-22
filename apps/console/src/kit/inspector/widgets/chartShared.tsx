@@ -17,7 +17,7 @@ import {
 import type { ColumnInfo, SummaryData } from "@volvel/widgets";
 import { MEASURE_FUNCTIONS, MEASURE_WORDS } from "@volvel/widgets";
 import { Calendar, Hash, List, Type } from "lucide-react";
-import type { ComponentType, ReactNode } from "react";
+import { type ComponentType, createContext, type ReactNode, useContext } from "react";
 import type { Env } from "../controls.tsx";
 import type { CatalogColumn } from "../model.ts";
 import {
@@ -47,6 +47,14 @@ export interface SectionProps {
 }
 
 export type DrawerSection = (props: SectionProps) => ReactNode;
+
+const DataContext = createContext<DrawerData | undefined>(undefined);
+
+/** Gives the sections what the real rows say: the chosen widget's summary and its columns' counts. */
+export const DrawerDataProvider = DataContext.Provider;
+
+/** What the real rows say, when the host has read them. */
+export const useDrawerData = (): DrawerData | undefined => useContext(DataContext);
 
 export const TEMPORAL = new Set(["date", "timestamp"]);
 export const NUMERIC = new Set(["integer", "number"]);
@@ -124,181 +132,6 @@ export function setter(env: Env) {
       words,
       joined ? `config:${env.widget.id}:${name}` : undefined,
     );
-}
-
-/** The widget's measures, with the first renamed, its sort and the columns of the config that name it following. */
-export function withMeasure(
-  env: Env,
-  query: Query,
-  at: number,
-  fn: (typeof MEASURE_FUNCTIONS)[number],
-  column: string | undefined,
-): { visual: VisualQuery; widget: PageWidget } {
-  const measures = query.visual.measures ?? [];
-  const old = measures[at];
-  if (!old) return { visual: query.visual, widget: env.widget };
-  const others = measures.filter((_, index) => index !== at).map((one) => one.as);
-  const wasAuto = old.as === measureName(old.fn, old.column, others);
-  const as = wasAuto ? measureName(fn, column, others) : old.as;
-  const next = measures.map((one, index) =>
-    index === at ? { fn, ...(column ? { column } : {}), as } : one,
-  );
-  const visual: VisualQuery = {
-    ...query.visual,
-    measures: next,
-    ...(query.visual.sort
-      ? { sort: query.visual.sort.map((one) => (one.by === old.as ? { ...one, by: as } : one)) }
-      : {}),
-  };
-  return {
-    visual,
-    widget:
-      as === old.as
-        ? env.widget
-        : renamedResult(env.definition, env.widget, query.input, old.as, as),
-  };
-}
-
-/** "Sum of Total", "Count of rows". */
-export function measureWords(measure: { fn: string; column?: string | undefined } | undefined) {
-  if (!measure) return undefined;
-  const fn = MEASURE_WORDS[measure.fn as keyof typeof MEASURE_WORDS] ?? measure.fn;
-  return measure.fn === "count" && !measure.column
-    ? "Count of rows"
-    : `${fn} of ${heading(measure.column ?? "")}`;
-}
-
-/**
- * A stand-in for the shared measure editor: one row that opens a function and a column.
- * Replaced by B3's MeasureEditor at integration.
- */
-// replaced by B3's MeasureEditor at integration
-export function MeasureRow({ env, label, at = 0 }: { env: Env; label: string; at?: number }) {
-  const query = queryOf(env);
-  const measure = query?.visual.measures?.[at];
-  if (!query) return <DrawerRow label={label} value={undefined} />;
-  const allowed = (fn: string) =>
-    query.columns.filter((column) =>
-      fn === "count_distinct"
-        ? true
-        : fn === "sum" || fn === "avg"
-          ? NUMERIC.has(column.type)
-          : NUMERIC.has(column.type) || TEMPORAL.has(column.type),
-    );
-  const change = (fn: (typeof MEASURE_FUNCTIONS)[number], column: string | undefined) => {
-    const made = withMeasure(env, query, at, fn, column);
-    query.write(
-      made.visual,
-      "changing the value it works out",
-      `measure:${env.widget.id}:${at}`,
-      made.widget,
-    );
-  };
-  return (
-    <DrawerRow
-      label={label}
-      icon={Hash}
-      value={measureWords(measure)}
-      editorTitle={label}
-      editor={
-        measure ? (
-          <div className="flex flex-col gap-3">
-            <SelectField
-              name={`${env.widget.id}-fn-${at}`}
-              label="Works out"
-              value={measure.fn}
-              options={MEASURE_FUNCTIONS.map((fn) => ({ value: fn, label: MEASURE_WORDS[fn] }))}
-              onChange={(value) => {
-                const fn = value as (typeof MEASURE_FUNCTIONS)[number];
-                const keep =
-                  measure.column && allowed(fn).some((one) => one.name === measure.column);
-                change(
-                  fn,
-                  fn === "count" ? undefined : keep ? measure.column : allowed(fn)[0]?.name,
-                );
-              }}
-            />
-            {measure.fn === "count" ? null : (
-              <SelectField
-                name={`${env.widget.id}-column-${at}`}
-                label="Of"
-                value={measure.column ?? ""}
-                options={allowed(measure.fn).map((column) => ({
-                  value: column.name,
-                  label: heading(column.name),
-                }))}
-                onChange={(column) => change(measure.fn, column)}
-              />
-            )}
-          </div>
-        ) : null
-      }
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Columns, ordered by how well they group
-
-export interface Grouping {
-  column: CatalogColumn;
-  /** Good for grouping: few values, a choice, or a date. */
-  good: boolean;
-  /** What is said of it: "3 values", "a date", "every row differs". */
-  hint: string;
-  order: number;
-}
-
-const COUNT_FOR_GOOD = 60;
-const isSystemId = (column: CatalogColumn) =>
-  column.name === "id" || column.type === "uuid" || column.name.endsWith("_id");
-
-/** The columns, those that group well first (the fewest values first), and what is known of each. */
-export function groupings(
-  columns: readonly CatalogColumn[],
-  counts: DrawerData["counts"],
-  except: readonly string[] = [],
-): Grouping[] {
-  const all = columns
-    .filter((column) => !except.includes(column.name))
-    .filter((column) => column.name !== "updated_at")
-    .map((column): Grouping => {
-      const count = counts?.[column.name];
-      const when = TEMPORAL.has(column.type);
-      if (isSystemId(column)) {
-        return { column, good: false, hint: "every row differs", order: 1e9 };
-      }
-      if (when) {
-        return { column, good: column.name !== "created_at", hint: "a date", order: 40 };
-      }
-      if (count !== undefined) {
-        return {
-          column,
-          good: count <= COUNT_FOR_GOOD && !NUMERIC.has(column.type),
-          hint: `${count} ${count === 1 ? "value" : "values"}`,
-          order: count,
-        };
-      }
-      if (column.type === "enum" || column.type === "boolean" || column.references) {
-        return {
-          column,
-          good: true,
-          hint: column.type === "boolean" ? "2 values" : "a few values",
-          order: 10,
-        };
-      }
-      return {
-        column,
-        good: false,
-        hint: NUMERIC.has(column.type) ? "a number" : "every row may differ",
-        order: 1e6,
-      };
-    });
-  return all.sort((a, b) => a.order - b.order);
-}
-
-export function columnIcon(type: string) {
-  return TEMPORAL.has(type) ? Calendar : NUMERIC.has(type) ? Hash : type === "text" ? Type : List;
 }
 
 // ---------------------------------------------------------------------------
@@ -395,42 +228,6 @@ export function sampleSummary(
 
 // ---------------------------------------------------------------------------
 // Rows
-
-/** A row that opens a text field: a title, a caption. */
-export function TextRow({
-  idPrefix,
-  label,
-  value,
-  placeholder,
-  maxLength,
-  onChange,
-}: {
-  idPrefix: string;
-  label: string;
-  value: string | undefined;
-  placeholder?: string;
-  maxLength?: number;
-  onChange: (text: string) => void;
-}) {
-  return (
-    <DrawerRow
-      label={label}
-      icon={Type}
-      value={value || <span className="text-ink-muted">{placeholder ?? "Not set"}</span>}
-      editorTitle={label}
-      editor={
-        <TextField
-          name={`${idPrefix}-${label}`}
-          label={label}
-          required={false}
-          value={value ?? ""}
-          {...(maxLength ? { maxLength } : {})}
-          onChange={onChange}
-        />
-      }
-    />
-  );
-}
 
 /** A switch row for a boolean of the widget's configuration. `on` is how the stored value reads. */
 export function ConfigToggle({
@@ -538,54 +335,6 @@ export function NumbersRow({ env, sample }: { env: Env; sample?: number }) {
       icon={Hash}
       onChange={(next) => set("format", next, "changing how numbers are written")}
     />
-  );
-}
-
-/** Title and caption as rows, for a widget whose caption is a config property or its subtitle. */
-export function HeadingRows({
-  env,
-  caption,
-}: {
-  env: Env;
-  /** `config` writes the `caption` property; `subtitle` writes the widget's own. */
-  caption: { kind: "config"; name: string; label?: string } | { kind: "subtitle" };
-}) {
-  const { widget } = env;
-  const set = setter(env);
-  const label = caption.kind === "config" ? (caption.label ?? "Caption") : "Caption";
-  const text =
-    caption.kind === "config"
-      ? typeof env.config[caption.name] === "string"
-        ? (env.config[caption.name] as string)
-        : undefined
-      : widget.subtitle;
-  return (
-    <>
-      <TextRow
-        idPrefix={widget.id}
-        label="Title"
-        value={widget.title}
-        onChange={(value) =>
-          env.write(withText(widget, "title", value), "changing the title", `title:${widget.id}`)
-        }
-      />
-      <TextRow
-        idPrefix={widget.id}
-        label={label}
-        value={text}
-        placeholder="Add a line under the title"
-        maxLength={200}
-        onChange={(value) =>
-          caption.kind === "config"
-            ? set(caption.name, value, "changing the caption")
-            : env.write(
-                withText(widget, "subtitle", value),
-                "changing the caption",
-                `subtitle:${widget.id}`,
-              )
-        }
-      />
-    </>
   );
 }
 

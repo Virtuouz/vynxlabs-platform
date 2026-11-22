@@ -26,6 +26,7 @@ registerDrawer(TABLE, {
   tab: "display",
   group: "Columns",
   order: 1,
+  headingLast: true,
   hides: ["columns"],
   aside: (env) =>
     shownCount(
@@ -88,6 +89,7 @@ registerDrawer(LIST, {
   tab: "display",
   group: "Each row looks like",
   order: 1,
+  headingLast: true,
   hides: PLACES,
   render: (env) => <SlotsGroup env={env} bare part="preview" />,
 });

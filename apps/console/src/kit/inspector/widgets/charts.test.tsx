@@ -10,7 +10,12 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { show } from "../../../testing.tsx";
 import type { Env } from "../controls.tsx";
 import { type Catalog, configOf } from "../model.ts";
-import { type DrawerData, drawerSections } from "./chartSections.ts";
+import { drawersFor } from "../custom.ts";
+import { type DrawerData, DrawerDataProvider } from "./chartShared.tsx";
+import "./registerCharts.ts";
+
+const drawerSections = (type: string, tab: string) =>
+  drawersFor(type, tab as "data").flatMap((one) => (one.group === undefined ? [one.section] : []));
 
 const catalog: Catalog = {
   tables: [
@@ -96,12 +101,12 @@ function Harness({
     writeAll: () => {},
   };
   return (
-    <div>
+    <DrawerDataProvider value={data}>
       {drawerSections(definition.type, tab).map((Section, at) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: a fixed list
-        <Section key={at} env={env} {...(data ? { data } : {})} />
+        <Section key={at} env={env} />
       ))}
-    </div>
+    </DrawerDataProvider>
   );
 }
 

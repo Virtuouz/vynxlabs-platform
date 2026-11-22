@@ -13,14 +13,11 @@ import type { Page, PageFilter, PageWidget } from "@volvel/manifest";
 import {
   Button,
   Details,
-  DrawerBlock,
   DrawerGroup,
   DrawerHeader,
   DrawerPanel,
-  DrawerRow,
   DrawerTabs,
   Menu,
-  TextField,
 } from "@volvel/ui";
 import {
   type Surface,
@@ -33,10 +30,12 @@ import { Copy, CornerDownRight, Ellipsis, LayoutGrid, Trash2 } from "lucide-reac
 import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { outlineIcon } from "../../screens/builder/widgetIcons.ts";
 import { formatCombo } from "../keys.ts";
-import { ActionsTab } from "./ActionsTab.tsx";
+import { ActionsTab, RulesSummary } from "./ActionsTab.tsx";
+import "./widgets/registerAll.ts";
 import { type Env, SettingRow } from "./controls.tsx";
-import { drawersFor, hiddenSettings, tabLabelFor } from "./custom.ts";
+import { drawersFor, headingPlace, hiddenData, hiddenSettings, tabLabelFor } from "./custom.ts";
 import { DataControl } from "./dataControls.tsx";
+import { hasHeading, HeadingGroup } from "./heading.tsx";
 import { type Device, LayoutPanel } from "./LayoutPanel.tsx";
 import { type MovePlace, MoveTo } from "./MoveTo.tsx";
 import {
@@ -52,7 +51,6 @@ import {
   type ScriptChoice,
   type TabFate,
   tabsOf,
-  withText,
 } from "./model.ts";
 import { RulesTab } from "./RulesTab.tsx";
 
@@ -98,6 +96,10 @@ export interface InspectorProps {
   onAddFilters?: () => void;
   /** Removes a tab of this container with what it held moved or removed; the container editor's own, when it has one. */
   onRemoveTab?: (tab: string, fate: TabFate) => void;
+  /** Chooses another widget of the page (a Section's "Holds" rows). */
+  onSelect?: ((id: string) => void) | undefined;
+  /** "When a row is clicked" as the builder draws it, for a table or a list. */
+  rowClickEditor?: ReactNode;
   /** ⋯ › Layout: what a device's automatic place is now, for "Custom" to start from. */
   automaticAt?: (widget: PageWidget, device: Device) => PageWidget["at"];
 }
@@ -197,6 +199,9 @@ export function Inspector(props: InspectorProps) {
     undo: props.onUndo,
     addFilters: props.onAddFilters,
     onRemoveTab: props.onRemoveTab,
+    select: props.onSelect,
+    openTab: setTab,
+    rowClickEditor: props.rowClickEditor,
   };
   const tabs = tabsOf(definition);
   const current = tabs.includes(tab) ? tab : (tabs[0] ?? "display");
@@ -268,7 +273,12 @@ export function Inspector(props: InspectorProps) {
         }))}
       />
       <DrawerPanel idPrefix={prefix} tab={current}>
-        <TabBody tab={current} env={env} rowRules={props.rowRules} />
+        <TabBody
+          tab={current}
+          env={env}
+          rowRules={props.rowRules}
+          onOpenRules={() => setTab("rules")}
+        />
       </DrawerPanel>
     </div>
   );
@@ -308,11 +318,15 @@ export function tabHasSettings(env: Env, tab: Tab): boolean {
 // ---------------------------------------------------------------------------
 // One tab
 
+interface Block {
+  key: string;
+  order: number;
+  node: ReactNode;
+}
 interface Item {
   key: string;
   order: number;
   node: ReactNode;
-  more?: string | undefined;
 }
 interface Group {
   label: string;
@@ -328,117 +342,71 @@ function TabBody({
   tab,
   env,
   rowRules,
+  onOpenRules,
 }: {
   tab: Tab;
   env: Env;
   rowRules: InspectorProps["rowRules"];
+  onOpenRules: () => void;
 }) {
-  if (tab === "actions") return <ActionsTab env={env} />;
   if (tab === "rules") return <RulesTab env={env} rowRules={rowRules} />;
-
   const { definition } = env;
+  if (tab === "actions" && drawersFor(definition.type, "actions").length === 0) {
+    return <ActionsTab env={env} onOpenRules={onOpenRules} />;
+  }
+
   const groups = new Map<string, Group>();
   const more: ReactNode[] = [];
   const moreLabels: string[] = [];
+  const blocks: Block[] = [];
   const add = (label: string, item: Item) => {
     const group = groups.get(label) ?? { label, items: [] };
     group.items.push(item);
     groups.set(label, group);
   };
 
-  // The data inputs' controls, in the order the definition gives. A widget with several inputs
-  // says which is which: each input is a group.
-  const inputs = Object.keys(definition.data);
+  // The data parts are groups of their own ("Rows it uses", "What it shows"), in the order the
+  // definition gives, less what the widget's own sections draw.
+  const hiddenParts = hiddenData(definition.type);
   const parts = tab === "data" ? dataParts(definition) : [];
   parts.forEach((part: DataPart, at) => {
+    if (hiddenParts.has(part.control)) return;
+    const key = `${part.input}:${part.control}`;
     const node = (
-      <DrawerBlock key={`${part.input}:${part.control}`}>
-        <DataControl
-          env={env}
-          input={part.input}
-          control={part.control}
-          label={part.label}
-          help={part.help}
-        />
-      </DrawerBlock>
+      <DataControl
+        key={key}
+        env={env}
+        input={part.input}
+        control={part.control}
+        label={part.label}
+        help={part.help}
+        hide={hiddenParts}
+      />
     );
     if (part.level !== "main") {
       more.push(node);
       moreLabels.push(part.label);
       return;
     }
-    const label =
-      inputs.length > 1 ? (definition.data[part.input]?.label ?? heading(part.input)) : "Data";
-    add(label, { key: `${part.input}:${part.control}`, order: at - parts.length, node });
+    blocks.push({ key, order: at - parts.length, node });
   });
 
-  if (tab === "display") {
-    add("Title", {
-      key: "title",
-      order: -2000,
-      node: (
-        <DrawerRow
-          key="title"
-          label="Title"
-          value={env.widget.title || undefined}
-          editorTitle="Title"
-          editor={
-            <TextField
-              name={`${env.widget.id}-title`}
-              label="Title"
-              hint={
-                definition.layout.frame === "none"
-                  ? "What it is called in the outline. It isn't drawn on the page."
-                  : "Or click the title on the page."
-              }
-              required={false}
-              maxLength={100}
-              value={env.widget.title ?? ""}
-              onChange={(text) =>
-                env.write(
-                  withText(env.widget, "title", text),
-                  "renaming the widget",
-                  `title:${env.widget.id}`,
-                )
-              }
-            />
-          }
-        />
-      ),
-    });
-    add("Title", {
-      key: "subtitle",
-      order: -1999,
-      node: (
-        <DrawerRow
-          key="subtitle"
-          label="Under it"
-          value={env.widget.subtitle || undefined}
-          editorTitle="A line under the title"
-          editor={
-            <TextField
-              name={`${env.widget.id}-subtitle`}
-              label="A line under the title"
-              hint="What the numbers are, or what to notice."
-              required={false}
-              maxLength={200}
-              value={env.widget.subtitle ?? ""}
-              onChange={(text) =>
-                env.write(
-                  withText(env.widget, "subtitle", text),
-                  "changing the line under the title",
-                  `subtitle:${env.widget.id}`,
-                )
-              }
-            />
-          }
-        />
-      ),
-    });
+  // The heading: first in the tab, last (a table, a list, a detail, a form), or where a section
+  // puts it. A frameless widget has none.
+  if (tab === "display" && hasHeading(env)) {
+    const place = headingPlace(definition.type, tab);
+    if (place !== "own") {
+      blocks.push({
+        key: "heading",
+        order: place === "last" ? 1e6 : -2000,
+        node: <HeadingGroup env={env} />,
+      });
+    }
   }
 
   // The settings, each in the group its hint names, or one named by the tab.
-  const hidden = hiddenSettings(definition.type, tab);
+  const hidden = hiddenSettings(definition.type);
+  if (hasHeading(env)) hidden.add("caption");
   const settings = configSettings(definition, tab).filter(
     (one) => isShown(one.hint, env.config) && !hidden.has(one.name),
   );
@@ -457,15 +425,17 @@ function TabBody({
     });
   });
 
-  // What the widget's own drawer pieces add.
+  // What the widget's own pieces add: rows into a group, or a whole section.
   drawersFor(definition.type, tab).forEach((piece, at) => {
     if (piece.when && !piece.when(env)) return;
+    const order = piece.order ?? 1000 + at / 1000;
+    if (piece.group === undefined) {
+      const Section = piece.section;
+      blocks.push({ key: `section:${at}`, order, node: <Section env={env} /> });
+      return;
+    }
     const group = groups.get(piece.group) ?? { label: piece.group, items: [] };
-    group.items.push({
-      key: `custom:${at}`,
-      order: piece.order ?? 1000 + at / 1000,
-      node: piece.render(env),
-    });
+    group.items.push({ key: `custom:${at}`, order, node: piece.render(env) });
     const note = called(piece.note, env);
     const aside = called(piece.aside, env);
     if (note !== undefined) group.note = note;
@@ -473,27 +443,32 @@ function TabBody({
     groups.set(piece.group, group);
   });
 
-  const ordered = [...groups.values()]
-    .map((group) => ({
-      ...group,
-      items: [...group.items].sort((a, b) => a.order - b.order),
-    }))
-    .sort((a, b) => (a.items[0]?.order ?? 0) - (b.items[0]?.order ?? 0));
-
-  return (
-    <>
-      {ordered.map((group) => (
+  for (const group of groups.values()) {
+    const items = [...group.items].sort((a, b) => a.order - b.order);
+    blocks.push({
+      key: `group:${group.label}`,
+      order: items[0]?.order ?? 0,
+      node: (
         <DrawerGroup
-          key={group.label}
           label={group.label}
           {...(group.note ? { note: group.note } : {})}
           {...(group.aside ? { aside: group.aside } : {})}
         >
-          {group.items.map((item) => (
+          {items.map((item) => (
             <Fragment key={item.key}>{item.node}</Fragment>
           ))}
         </DrawerGroup>
+      ),
+    });
+  }
+  blocks.sort((a, b) => a.order - b.order);
+
+  return (
+    <>
+      {blocks.map((block) => (
+        <Fragment key={block.key}>{block.node}</Fragment>
       ))}
+      {tab === "actions" ? <RulesSummary env={env} onOpenRules={onOpenRules} /> : null}
       {more.length > 0 ? (
         <Details
           summary={

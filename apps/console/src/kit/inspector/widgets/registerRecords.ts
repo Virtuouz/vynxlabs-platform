@@ -1,8 +1,8 @@
 /**
  * The drawers of the record, action, layout and filter widgets (phase 28, B6), registered with
  * the drawer shell (`../custom.ts`) as a side effect of importing this file. Each widget's
- * section is one piece; it replaces the generic rows of the settings it draws (`hides`), and
- * `FlatSection` keeps it from being boxed twice inside the shell's group.
+ * section is a piece of its own that draws its `DrawerGroup`s; it replaces the generic rows of
+ * the settings it draws (`hides`).
  */
 
 import type { Tab } from "@volvel/widgets";
@@ -14,7 +14,7 @@ import { ButtonDisplaySection } from "./buttonDrawer.tsx";
 import { DetailDataSection, DetailDisplaySection } from "./detailDrawer.tsx";
 import { FilterDisplaySection } from "./filterDrawer.tsx";
 import { FormDisplaySection } from "./formDrawer.tsx";
-import { ButtonPreview, FlatSection, iconOf } from "./recordShared.tsx";
+import { ButtonPreview, iconOf } from "./recordShared.tsx";
 import { SectionDisplaySection } from "./sectionDrawer.tsx";
 import { TabsDisplaySection } from "./tabsDrawer.tsx";
 import { CalloutPreview, TextContentSection } from "./textDrawer.tsx";
@@ -33,47 +33,40 @@ type Section = ComponentType<{ env: Env }>;
 function piece(
   type: string,
   tab: Tab,
-  group: string,
-  Section: Section,
-  hides: readonly string[],
-  dot?: (env: Env) => boolean,
+  section: Section,
+  options: {
+    hides?: readonly string[];
+    hidesData?: readonly ("source" | "conditions" | "sort" | "limit" | "measure" | "breakdown")[];
+    headingLast?: boolean;
+    dot?: (env: Env) => boolean;
+  } = {},
 ) {
-  registerDrawer(type, {
-    tab,
-    group,
-    order: 0,
-    hides,
-    render: (env) => createElement(FlatSection, null, createElement(Section, { env })),
-    ...(dot ? { dot } : {}),
-  });
+  registerDrawer(type, { tab, order: 0, section, ...options });
 }
 
-piece(
-  "core/detail",
-  "data",
-  "Shows",
-  DetailDataSection,
-  [],
-  (env) => env.widget.data?.record !== undefined,
-);
-piece("core/detail", "display", "Fields", DetailDisplaySection, ["fields", "across", "edit"]);
-piece("core/form", "display", "Fields", FormDisplaySection, ["fields", "submitLabel"]);
-piece("core/button", "display", "Label", ButtonDisplaySection, [
-  "label",
-  "icon",
-  "tone",
-  "full",
-  "place",
-]);
-piece("core/actions", "display", "Buttons", ActionsDisplaySection, ["lineUp", "showUpTo", "place"]);
-piece("core/section", "display", "Holds", SectionDisplaySection, ["look", "folds"]);
-piece("core/tabs", "display", "Tabs", TabsDisplaySection, [
-  "tabs",
-  "opensFirst",
-  "look",
-  "remember",
-]);
-piece("core/filter", "display", "Filters", FilterDisplaySection, ["sit"]);
+piece("core/detail", "data", DetailDataSection, {
+  hidesData: ["source"],
+  dot: (env) => env.widget.data?.record !== undefined,
+});
+piece("core/detail", "display", DetailDisplaySection, {
+  hides: ["fields", "across", "edit"],
+  headingLast: true,
+});
+piece("core/form", "display", FormDisplaySection, {
+  hides: ["fields", "submitLabel"],
+  headingLast: true,
+});
+piece("core/button", "display", ButtonDisplaySection, {
+  hides: ["label", "icon", "tone", "full", "place"],
+});
+piece("core/actions", "display", ActionsDisplaySection, {
+  hides: ["actions", "lineUp", "showUpTo", "place"],
+});
+piece("core/section", "display", SectionDisplaySection, { hides: ["look", "folds"] });
+piece("core/tabs", "display", TabsDisplaySection, {
+  hides: ["tabs", "opensFirst", "look", "remember"],
+});
+piece("core/filter", "display", FilterDisplaySection, { hides: ["filters", "sit"] });
 
 // What a style tile draws: the real button in its tone, the callout in its look.
 registerTilePreview("core/button", "tone", (value, env) =>
@@ -84,4 +77,4 @@ registerTilePreview("core/button", "tone", (value, env) =>
   }),
 );
 registerTilePreview("core/text", "look", (value) => createElement(CalloutPreview, { look: value }));
-piece("core/text", "display", "Style", TextContentSection, ["text", "look"]);
+piece("core/text", "display", TextContentSection, { hides: ["text", "look"] });

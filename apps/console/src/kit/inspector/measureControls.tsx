@@ -4,7 +4,7 @@
  * opens an editor; the editors are exported so a widget's own drawer (the chart's three
  * questions) puts them where its words ask for them.
  */
-import { groupName, type VisualFunction } from "@volvel/manifest";
+import { groupName, type PageWidget, type VisualFunction } from "@volvel/manifest";
 import {
   DashedAdd,
   DrawerGroup,
@@ -396,55 +396,77 @@ export function BreakdownEditor({
   );
 }
 
-/** A breakdown of an input as a row: "Break down by  Issued on · Weekly ›". */
+/**
+ * A breakdown of an input as a row: "Break down by  Issued on · Weekly ›". With `none`, a row
+ * for a breakdown there is not yet reads that ("Nothing") and picking a column adds it.
+ */
 export function BreakdownRow({
   env,
   input,
   at,
   label,
+  none,
+  after,
 }: {
   env: Env;
   input: string;
   at: number;
   label: string;
+  /** What the row reads while there is no breakdown at this place: "Nothing". Left out: no row then. */
+  none?: string;
+  /** What else changes with it (the chart type a new answer suggests), given the widget and the breakdowns now. */
+  after?: (
+    widget: PageWidget,
+    groups: { column: string; type: string | undefined }[],
+  ) => PageWidget;
 }) {
   const visual = visualOf(env.widget.data?.[input]);
   if (!visual) return null;
   const limits = env.definition.data[input]?.breakdowns ?? { min: 0, max: 1 };
   const groups = visual.groupBy ?? [];
   const one = groups[at];
-  if (!one) return null;
+  if (!one && (none === undefined || at > groups.length)) return null;
   const columns = columnsOf(env, visual);
-  const column = columns.find((c) => c.name === one.column);
+  const column = columns.find((c) => c.name === one?.column);
   const table = env.catalog.tables.find((t) => t.name === visual.table);
   const hasGapSetting = "fillGaps" in env.definition.config.properties;
 
   const change = (next: BreakdownValue) => {
-    const groupBy = groups.map((g, index) =>
-      index === at ? { column: next.column, ...(next.bucket ? { bucket: next.bucket } : {}) } : g,
-    );
-    const renamed = renameIn(
-      env,
-      input,
-      { ...visual, groupBy },
-      groupName(one),
-      groupName(groupBy[at] ?? one),
-    );
+    const entry = { column: next.column, ...(next.bucket ? { bucket: next.bucket } : {}) };
+    const groupBy = one ? groups.map((g, index) => (index === at ? entry : g)) : [...groups, entry];
+    const renamed = one
+      ? renameIn(
+          env,
+          input,
+          { ...visual, groupBy },
+          groupName(one),
+          groupName(groupBy[at] ?? one),
+        )
+      : { visual: { ...visual, groupBy }, widget: env.widget };
+    const widget = after
+      ? after(
+          renamed.widget,
+          groupBy.map((g) => ({
+            column: g.column,
+            type: columns.find((c) => c.name === g.column)?.type,
+          })),
+        )
+      : renamed.widget;
     writeVisual(
       env,
       input,
       renamed.visual,
       "changing what it is broken down by",
       `breakdown:${env.widget.id}:${input}:${at}`,
-      renamed.widget,
+      widget,
     );
   };
   return (
     <DrawerRow
       label={label}
       icon={iconOfType(column?.type ?? "text", column?.references)}
-      value={heading(one.column)}
-      hint={one.bucket ? CADENCE_WORDS[one.bucket] : undefined}
+      value={one ? heading(one.column) : <span className="text-ink-muted">{none}</span>}
+      hint={one?.bucket ? CADENCE_WORDS[one.bucket] : undefined}
       editorTitle={label}
       editor={
         <BreakdownEditor
@@ -466,15 +488,27 @@ export function BreakdownRow({
                 },
               }
             : {})}
-          {...(groups.length > limits.min
+          {...(one && groups.length > limits.min
             ? {
-                onRemove: () =>
+                onRemove: () => {
+                  const groupBy = groups.filter((_, index) => index !== at);
                   writeVisual(
                     env,
                     input,
-                    { ...visual, groupBy: groups.filter((_, index) => index !== at) },
+                    { ...visual, groupBy },
                     "removing a breakdown",
-                  ),
+                    undefined,
+                    after
+                      ? after(
+                          env.widget,
+                          groupBy.map((g) => ({
+                            column: g.column,
+                            type: columns.find((c) => c.name === g.column)?.type,
+                          })),
+                        )
+                      : undefined,
+                  );
+                },
               }
             : {})}
         />

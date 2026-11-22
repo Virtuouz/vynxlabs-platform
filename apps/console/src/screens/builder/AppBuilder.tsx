@@ -347,7 +347,7 @@ export function AppBuilder({
     ),
     primary: (
       <PublishSplit
-        disabled={typeof saving === "object"}
+        disabled={problems.length > 0 || typeof saving === "object"}
         onPublish={() => void review()}
         openHref={url}
         restore={() => setRestoring(true)}

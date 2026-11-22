@@ -15,6 +15,16 @@ const api = `/api/v1${root}`;
 let stored: InterfaceBody;
 let deployed: InterfaceBody | undefined;
 let url: string | undefined;
+/** What the control plane has kept of earlier saves, newest first. */
+let kept: {
+  id: string;
+  revision: number;
+  deleted: boolean;
+  reason: string;
+  savedById: string | null;
+  savedAt: string;
+  body: InterfaceBody;
+}[] = [];
 
 const text = (id: string, title: string, at: PageWidget["at"]) =>
   ({ id, type: "core/text", title, at, config: { text: title } }) as PageWidget;
@@ -45,6 +55,7 @@ beforeEach(() => {
   deployed = body();
   (deployed.pages[0] as { widgets: PageWidget[] }).widgets = three().slice(0, 2);
   url = undefined;
+  kept = [];
   const routes: Record<string, (sent: unknown) => [number, unknown]> = {
     [`GET ${api}/drafts/screens/sales`]: () => [200, { revision: 1, body: stored }],
     [`PUT ${api}/drafts/screens/sales`]: (saved) => {
@@ -67,6 +78,17 @@ beforeEach(() => {
       200,
       { items: [{ name: "Billing" }, { name: "Managers" }] },
     ],
+    [`GET ${api}/group-keys`]: () => [
+      200,
+      {
+        items: [
+          { key: "billing", name: "Billing", kind: "member" },
+          { key: "managers", name: "Managers", kind: "member" },
+        ],
+      },
+    ],
+    [`GET ${root}`.replace("/tenants", "/api/v1/tenants")]: () => [200, { name: "Sandbox" }],
+    [`GET ${api}/draft-history/screens/sales`]: () => [200, { items: kept }],
     [`GET ${api}/flows`]: () => [200, { items: [] }],
     [`GET ${api}/scripts`]: () => [200, { items: [] }],
     [`GET ${api}/queries/schema`]: () => [200, { tables: [], functions: [], maySql: false }],
@@ -128,7 +150,7 @@ test("the header counts what the draft changes against what is published, and th
   // Charlie is the one change.
   const pill = await screen.findByRole("button", { name: "1 draft change" });
   fireEvent.click(pill);
-  expect(await screen.findByRole("dialog", { name: "Publish Sales" })).toBeTruthy();
+  expect(await screen.findByText("Ready to publish")).toBeTruthy();
 });
 
 test("the screen sizes are in the header and set the width the page is drawn at", async () => {
@@ -166,10 +188,9 @@ test("Publish is a split button: the main part opens the review, the arrow holds
     "Open the published app",
     "Restore an earlier draft",
   ]);
-  // Draft history is built later: the item is off, and says when.
-  expect(items[2]?.getAttribute("aria-disabled")).toBe("true");
+  expect(items[2]?.getAttribute("aria-disabled")).toBeNull();
   fireEvent.click(items[0] as HTMLElement);
-  expect(await screen.findByRole("dialog", { name: "Publish Sales" })).toBeTruthy();
+  expect(await screen.findByText("Ready to publish")).toBeTruthy();
 });
 
 test("Preview opens the published app in a new tab, and is off before there is one", async () => {
@@ -287,4 +308,122 @@ test("the draft's changes are counted against what is deployed", () => {
   expect(draftChangeCount(body(), draft)).toBe(2);
   // Nothing deployed yet: every page and widget is new.
   expect(draftChangeCount(undefined, body())).toBe(3 + 3);
+});
+
+// ----- Phone, the publish check, View as and draft history (phase 28, B8) -----
+
+const aside = (extra: Partial<PageWidget> = {}) =>
+  ({
+    id: "by",
+    type: "core/text",
+    title: "By clinic",
+    at: { x: 0, y: 9, w: 12, h: 3 },
+    config: { text: "By clinic" },
+    ...extra,
+  }) as PageWidget;
+const withAside = (extra: Partial<PageWidget> = {}) => {
+  (stored.pages[0] as { widgets: PageWidget[] }).widgets.push(aside(extra));
+};
+
+test("the phone preview is drawn in a device, says what was changed by hand, and keeps a hidden widget as a place-holder", async () => {
+  withAside({ layout: { narrow: "hide" } });
+  (stored.pages[0] as { widgets: PageWidget[] }).widgets[0] = {
+    ...text("a", "Alpha", { x: 0, y: 0, w: 12, h: 3 }),
+    layout: { phone: { at: { x: 0, y: 5, w: 12, h: 3 } } },
+  };
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: 390,
+  } as DOMRect);
+  await open();
+  expect(document.querySelector("[data-device-banner]")).toBeNull();
+  fireEvent.click(
+    within(within(header()).getByRole("radiogroup", { name: "Screen size" })).getByRole("radio", {
+      name: "Phone",
+    }),
+  );
+  expect(document.querySelector("[data-phone-frame]")).toBeTruthy();
+  const banner = document.querySelector("[data-device-banner]") as HTMLElement;
+  expect(banner.textContent).toContain("Phone layout is made from the desktop one.");
+  expect(banner.textContent).toContain("1 widget changed by hand");
+  expect(await screen.findByText("By clinic is hidden on phones")).toBeTruthy();
+});
+
+test("Ready to publish: checks, what changes, Try as, and a blocking problem", async () => {
+  withAside({
+    layout: { narrow: "hide" },
+    rules: { seenBy: { groups: ["billing"] } },
+  });
+  await open();
+  fireEvent.click(screen.getAllByRole("button", { name: "Publish" })[0] as HTMLElement);
+  expect(await screen.findByRole("heading", { name: "Ready to publish" })).toBeTruthy();
+  expect(
+    screen.getByText("Publishes to Sandbox. The live app keeps working until then."),
+  ).toBeTruthy();
+  expect(await screen.findByText("Phone layout hides 1 widget")).toBeTruthy();
+  expect(screen.getByText("By clinic, on Money")).toBeTruthy();
+  expect(screen.getByText("2 changes")).toBeTruthy();
+  expect(screen.getByText("Added text Charlie")).toBeTruthy();
+  const publish = screen.getByRole("button", { name: "Publish 2 changes" }) as HTMLButtonElement;
+  expect(publish.disabled).toBe(false);
+  // The group the rules touch most.
+  fireEvent.click(screen.getByRole("button", { name: "Try as Billing first" }));
+  expect(await screen.findByRole("button", { name: "View as Billing" })).toBeTruthy();
+});
+
+test("a table that is not there, or a group that is gone, is said before publishing", async () => {
+  withAside({ rules: { seenBy: { groups: ["vanished"] } } });
+  (stored.pages[0] as { widgets: PageWidget[] }).widgets.push({
+    id: "t",
+    type: "core/table",
+    title: "Ghosts",
+    at: { x: 0, y: 12, w: 12, h: 4 },
+    data: { rows: { source: { visual: { table: "ghost" } } } },
+    config: { columns: [] },
+  } as PageWidget);
+  await open();
+  fireEvent.click(screen.getAllByRole("button", { name: "Publish" })[0] as HTMLElement);
+  expect(await screen.findByText("1 data source not found")).toBeTruthy();
+  expect(screen.getByText(/1 group named in the rules no longer exists/)).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: /^Publish \d+ changes?$/ }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+});
+
+test("View as a group draws a widget it may not see faded, says rows are the builder's, and Me restores", async () => {
+  withAside({ rules: { seenBy: { groups: ["managers"] } } });
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "View as Me" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Billing" }));
+  expect(await screen.findByText("Hidden for Billing")).toBeTruthy();
+  expect(
+    screen.getByText(/Rows are yours: View as shows what Billing sees of the page/),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "View as Billing" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Me" }));
+  await waitFor(() => expect(screen.queryByText("Hidden for Billing")).toBeNull());
+  expect(document.querySelector("[data-view-as-note]")).toBeNull();
+});
+
+test("an earlier draft is listed and restored as one step", async () => {
+  const earlier = body();
+  (earlier.pages[0] as { widgets: PageWidget[] }).widgets = three().slice(0, 1);
+  kept = [
+    {
+      id: "k1",
+      revision: 1,
+      deleted: false,
+      reason: "replaced",
+      savedById: null,
+      savedAt: new Date(Date.now() - 3_600_000).toISOString(),
+      body: earlier,
+    },
+  ];
+  await open();
+  fireEvent.click(screen.getByRole("button", { name: "More ways to publish" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Restore an earlier draft" }));
+  const dialog = within(await screen.findByRole("dialog", { name: "Restore an earlier draft" }));
+  expect(await dialog.findByText("Removed text Bravo on Money")).toBeTruthy();
+  fireEvent.click(dialog.getByRole("button", { name: "Restore" }));
+  await saved(() => stored.pages[0]?.widgets.length === 1);
+  expect(order()).toEqual(["a"]);
 });

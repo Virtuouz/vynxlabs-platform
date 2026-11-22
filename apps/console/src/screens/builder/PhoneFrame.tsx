@@ -47,12 +47,12 @@ export function PhoneFrame({
   return (
     <div
       data-phone-frame=""
-      className="mx-auto flex min-w-0 flex-col rounded-[2.25rem] border-2 border-line-strong bg-canvas p-3"
+      className="mx-auto flex min-w-0 flex-col rounded-overlay border-2 border-line-strong bg-canvas p-3"
       style={{ maxWidth: `${width}px` }}
     >
       <div className="flex items-center justify-between px-2 pt-1 pb-3">
         <span className="min-w-0 truncate text-title font-semibold text-ink">{title}</span>
-        <Ellipsis aria-hidden="true" size={18} className="text-ink-muted" />
+        <Ellipsis aria-hidden="true" size={16} className="text-ink-muted" />
       </div>
       <div className="min-w-0 overflow-x-hidden">{children}</div>
     </div>

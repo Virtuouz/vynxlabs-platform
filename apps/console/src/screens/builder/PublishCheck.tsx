@@ -124,7 +124,7 @@ export function PublishCheck({
               const mark = MARK[one.state];
               const Icon = mark.icon;
               return (
-                <li key={one.id} data-check={one.state} className="flex items-start gap-2.5">
+                <li key={one.id} data-check={one.state} className="flex items-start gap-3">
                   <Icon aria-hidden="true" size={16} className={`mt-0.5 shrink-0 ${mark.tone}`} />
                   <span className="flex min-w-0 flex-col">
                     <span>

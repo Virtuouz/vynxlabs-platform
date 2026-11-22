@@ -222,7 +222,7 @@ export function PublishSplit({
         <Popover
           open={check.open}
           onOpenChange={(next) => (next ? onPublish() : check.onOpenChange(false))}
-          title="Ready to publish"
+          title="What publishing does"
           titleHidden
           align="end"
           wide

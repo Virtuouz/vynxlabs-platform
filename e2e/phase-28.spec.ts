@@ -1582,19 +1582,21 @@ test('POLISH-004: Conditions: a date is "in the last…" or "between", a choice 
   const group = open.getByRole("group", { name: "Any of" });
   for (const value of ["paid", "unpaid", "void"]) {
     await expect(
-      group.getByRole("checkbox", { name: new RegExp(`^${value} \\d+ rows?$`, "i") }),
+      group.getByRole("checkbox", { name: new RegExp(`^${value} [\\d,]+ rows?$`, "i") }),
     ).toBeVisible();
   }
   // The counts are the table's own: how many invoices have each status.
   const really = await invoicesByStatus();
   for (const value of ["paid", "unpaid", "void"]) {
     await expect(
-      group.getByRole("checkbox", { name: new RegExp(`^${value} ${really[value]} rows$`, "i") }),
+      group.getByRole("checkbox", {
+        name: new RegExp(`^${value} ${Number(really[value]).toLocaleString("en-US")} rows$`, "i"),
+      }),
       `${value} has ${really[value]} rows`,
     ).toBeVisible();
   }
-  await group.getByRole("checkbox", { name: /^paid \d+ rows?$/i }).check();
-  await group.getByRole("checkbox", { name: /^void \d+ rows?$/i }).check();
+  await group.getByRole("checkbox", { name: /^paid [\d,]+ rows?$/i }).check();
+  await group.getByRole("checkbox", { name: /^void [\d,]+ rows?$/i }).check();
   await open.getByRole("button", { name: "Add" }).click();
   const some = INVOICES.filter((one) => one.status === "paid" || one.status === "void").length;
   await expect.poll(() => rowsDrawn("Table")).toBe(some);

@@ -1,5 +1,6 @@
 import { Combobox as Base } from "@base-ui/react/combobox";
 import { Check, X } from "lucide-react";
+import { useState } from "react";
 import { FieldFrame } from "./Fields.tsx";
 
 export interface Option {
@@ -120,6 +121,35 @@ export interface MultiSelectFieldProps extends Common {
   /** The chosen options' values, in the order they were chosen. */
   value: readonly string[];
   onChange: (value: string[]) => void;
+  /**
+   * The list is drawn in the flow, under the box, and pushes what follows down (a dialog's Done),
+   * instead of over it as a popup. For a field in a dialog, where a popup would cover the button.
+   */
+  inline?: boolean;
+}
+
+/** The list drawn in place, for a field whose popup would cover what follows it. */
+function InlineItems({ empty }: { empty: string }) {
+  return (
+    <div className="mt-1 max-h-56 overflow-y-auto rounded-control border border-line bg-surface p-1">
+      <Base.Empty className="px-2 py-1.5 text-ink-muted empty:hidden">{empty}</Base.Empty>
+      <Base.List>
+        {(option: Option) => (
+          <Base.Item
+            key={option.value}
+            value={option}
+            className={row}
+            {...(option.disabled ? { disabled: true } : {})}
+          >
+            <Base.ItemIndicator className="flex w-3.5 text-action">
+              <Check aria-hidden="true" size={14} />
+            </Base.ItemIndicator>
+            <span className="truncate">{option.label}</span>
+          </Base.Item>
+        )}
+      </Base.List>
+    </div>
+  );
 }
 
 /** Several choices from a list that can be searched by typing. Each choice shows as a chip. */
@@ -133,7 +163,11 @@ export function MultiSelectField({
   placeholder,
   disabled,
   empty = "Nothing matches.",
+  inline = false,
 }: MultiSelectFieldProps) {
+  // The list opens when the box takes the focus, not only when it is pressed. Esc closes the
+  // list first, and keeps what was picked: the dialog around it stays until the next Esc.
+  const [open, setOpen] = useState(false);
   const chosen = value
     .map((one) => options.find((option) => option.value === one))
     .filter((option): option is Option => option !== undefined);
@@ -146,6 +180,9 @@ export function MultiSelectField({
         onValueChange={(next: Option[]) => onChange(next.map((option) => option.value))}
         itemToStringLabel={text}
         isItemEqualToValue={same}
+        open={open}
+        onOpenChange={(next: boolean) => setOpen(next)}
+        {...(inline ? { inline: true } : {})}
         {...(disabled ? { disabled: true } : {})}
       >
         <Base.Chips className={box}>
@@ -169,13 +206,22 @@ export function MultiSelectField({
                 ))}
                 <Base.Input
                   className={input}
+                  onFocus={() => setOpen(true)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" && open) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      event.nativeEvent.stopImmediatePropagation();
+                      setOpen(false);
+                    }
+                  }}
                   {...(placeholder && selected.length === 0 ? { placeholder } : {})}
                 />
               </>
             )}
           </Base.Value>
         </Base.Chips>
-        <Items empty={empty} />
+        {inline ? open ? <InlineItems empty={empty} /> : null : <Items empty={empty} />}
       </Base.Root>
     </FieldFrame>
   );

@@ -1,26 +1,33 @@
 import { type InterfaceBody, MAX_PAGES } from "@volvel/manifest";
-import { Button, Notice, TextField } from "@volvel/ui";
-import { Monitor, Smartphone, Tablet } from "lucide-react";
+import { Button, Notice } from "@volvel/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../../api.ts";
 import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { useHistory } from "../../kit/history.ts";
+import { useActionLists } from "../../kit/inspector/catalog.ts";
 import { heading } from "../../kit/inspector/model.ts";
 import { Loading } from "../../kit/LoadState.tsx";
+import {
+  DeviceSwitch,
+  DraftPill,
+  PreviewButton,
+  PublishSplit,
+  VIEW_AS_ME,
+  VIEWPORTS,
+  type ViewAs,
+  ViewAsMenu,
+} from "./BuilderHeader.tsx";
+import { draftChangeCount } from "./changes.ts";
 import { type DraftAnswer, type Listed, slug } from "./data.ts";
 import { NewPageDialog } from "./NewPageDialog.tsx";
+import { runsActions } from "./outline.ts";
 import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
 import { PublishDialog } from "./PublishDialog.tsx";
 import { canAddPage, movedPage } from "./pageKinds.ts";
 import type { Started } from "./starters.ts";
 
-/** The sizes the preview can be drawn at. */
-export const VIEWPORTS = {
-  desktop: { label: "Desktop", width: undefined, icon: Monitor },
-  tablet: { label: "Tablet", width: 768, icon: Tablet },
-  phone: { label: "Phone", width: 390, icon: Smartphone },
-} as const;
+export { VIEWPORTS };
 
 // ----- The builder -----
 
@@ -50,6 +57,11 @@ export function AppBuilder({
   /** The pages a side sheet or a modal was opened from, so closing goes back. */
   const [trail, setTrail] = useState<string[]>([]);
   const [viewport, setViewport] = useState<keyof typeof VIEWPORTS>("desktop");
+  /**
+   * Who the page is looked at as: the maker ("Me") or one of the app's groups. The header records
+   * the choice and shows it; what is drawn for a group follows from `viewAs`.
+   */
+  const [viewAs, setViewAs] = useState<ViewAs>(VIEW_AS_ME);
   /** Counted up when a save is kept, so the preview reads the draft as it now is. */
   const [kept, setKept] = useState(0);
   const [saving, setSaving] = useState<Saving>("saved");
@@ -73,7 +85,12 @@ export function AppBuilder({
   const dirty = useRef(false);
   const list = useLoad<{ items: Listed[] }>(`${root}/interfaces`);
   const drafts = useLoad<{ items: { path: string }[] }>(`${root}/drafts`);
-  const apps = useLoad<{ items: { path: string; url: string }[] }>(`${root}/apps`);
+  const apps = useLoad<{ items: { path: string; url: string; preview?: string }[] }>(
+    `${root}/apps`,
+  );
+  /** What people see now: what the draft's changes are counted against. Not there until it is published. */
+  const deployed = useLoad<{ body: InterfaceBody }>(`${root}/interfaces/${path}`);
+  const { groups } = useActionLists(root);
 
   // What is saved and not deployed, or else what is deployed.
   useEffect(() => {
@@ -157,7 +174,19 @@ export function AppBuilder({
   const pending = new Set(drafts.data?.items.map((draft) => draft.path));
   const hasChanges =
     pending.has(path) || (appPath !== null && pending.has(appPath)) || saving !== "saved";
-  const url = apps.data?.items.find((app) => app.path === appPath)?.url;
+  const served = apps.data?.items.find((app) => app.path === appPath);
+  const url = served?.url;
+  // The draft's own preview, when the app has one and there is a draft to see.
+  const previewUrl = hasChanges && served?.preview ? served.preview : url;
+  const changes =
+    deployed.data === undefined && !deployed.error
+      ? undefined
+      : draftChangeCount(deployed.data?.body, body);
+  const acts = runsActions(page?.widgets ?? []);
+  const review = async () => {
+    dirty.current = false;
+    if (await save(body)) setReviewing(true);
+  };
   const publish = async () => {
     setPublishing(true);
     try {
@@ -258,42 +287,37 @@ export function AppBuilder({
     savedWords: hasChanges ? "Saved. Not published yet." : "Published.",
     history,
     saveNow,
-    more: url ? (
-      <a href={url} target="_blank" rel="noreferrer" className="text-body-sm text-action">
-        Open the app
-      </a>
-    ) : null,
-    primary: (
-      <Button
-        variant="primary"
-        disabled={problems.length > 0 || typeof saving === "object"}
-        onClick={async () => {
-          dirty.current = false;
-          if (await save(body)) setReviewing(true);
-        }}
-      >
-        Publish
-      </Button>
+    onRename: (title: string) =>
+      change(
+        (draft) => {
+          draft.title = title;
+        },
+        "renaming the app",
+        "title",
+      ),
+    pill: changes ? <DraftPill count={changes} onOpen={() => void review()} /> : null,
+    tools: (
+      <>
+        <DeviceSwitch value={viewport} onChange={setViewport} />
+        <ViewAsMenu value={viewAs} groups={groups} onChange={setViewAs} />
+      </>
     ),
-    after: (
-      <div className="w-80 max-w-full">
-        <TextField
-          label="Name of the app"
-          name="app-title"
-          value={body.title}
-          maxLength={200}
-          required
-          onChange={(title) =>
-            change(
-              (draft) => {
-                if (title) draft.title = title;
-              },
-              "renaming the app",
-              "title",
-            )
-          }
-        />
-      </div>
+    more: (
+      <PreviewButton
+        href={previewUrl}
+        note={
+          acts
+            ? "Opens the app as people see it. Buttons and row actions don't run while the page is being built; published, they change this workspace's records."
+            : "Opens the app as people see it, in a new tab."
+        }
+      />
+    ),
+    primary: (
+      <PublishSplit
+        disabled={problems.length > 0 || typeof saving === "object"}
+        onPublish={() => void review()}
+        openHref={url}
+      />
     ),
     notices: (
       <>
@@ -371,39 +395,6 @@ export function AppBuilder({
           shell={shell}
           refreshKey={kept}
           frame={{ name: viewport, width: VIEWPORTS[viewport].width }}
-          canvasHead={
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-              <div
-                role="radiogroup"
-                aria-label="Screen size"
-                className="flex rounded-control border border-line p-0.5"
-              >
-                {(Object.keys(VIEWPORTS) as (keyof typeof VIEWPORTS)[]).map((one) => {
-                  const Icon = VIEWPORTS[one].icon;
-                  return (
-                    // biome-ignore lint/a11y/useSemanticElements: a segmented control of toggle buttons
-                    <button
-                      key={one}
-                      type="button"
-                      role="radio"
-                      aria-checked={viewport === one}
-                      onClick={() => setViewport(one)}
-                      className={`flex items-center gap-1.5 rounded-inner px-3 py-1 text-meta ${
-                        viewport === one ? "bg-selected text-ink" : "text-ink-muted hover:text-ink"
-                      }`}
-                    >
-                      <Icon aria-hidden="true" size={14} /> {VIEWPORTS[one].label}
-                      {VIEWPORTS[one].width ? (
-                        <span className="font-mono text-tag text-ink-subtle">
-                          {VIEWPORTS[one].width}
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          }
           pageInfo={{
             page,
             pages: body.pages,

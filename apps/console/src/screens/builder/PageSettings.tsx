@@ -1,9 +1,18 @@
 import type { Page } from "@volvel/manifest";
 import { Button, SelectField, TextField } from "@volvel/ui";
+import { AppWindow, File, FileText, type LucideIcon, PanelRight } from "lucide-react";
 import { useState } from "react";
 import { type Catalog, heading } from "../../kit/inspector/model.ts";
 import type { PageKind } from "./contract.ts";
 import { KIND_LINE, KIND_NAMES, kindOf, withKind } from "./pageKinds.ts";
+
+/** Page type's tiles (board 2). */
+const KIND_TILE_ICONS: Record<PageKind, LucideIcon> = {
+  page: File,
+  record: FileText,
+  sheet: PanelRight,
+  modal: AppWindow,
+};
 
 const TOPIC = /^[a-z0-9][a-z0-9_-]*$/;
 
@@ -36,24 +45,39 @@ export function PageSettings({
   return (
     <section className="flex flex-col gap-4" aria-label="Page settings">
       <h2 className="m-0 text-heading-sm">{page.title}</h2>
-      <SelectField
-        label="Page type"
-        name="page-kind"
-        value={kind}
-        hint={KIND_LINE}
-        options={(Object.keys(KIND_NAMES) as PageKind[]).map((one) => ({
-          value: one,
-          label: KIND_NAMES[one],
-        }))}
-        onChange={(value) => {
-          const next = value as PageKind;
-          const table = page.record?.table ?? mostReadTable ?? tables[0]?.value;
-          onChange(
-            withKind(page, next, next === "modal" ? page.record?.table : table),
-            `making ${page.title} a ${KIND_NAMES[next].toLowerCase()}`,
-          );
-        }}
-      />
+      <fieldset className="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0">
+        <legend className="mb-1.5 p-0 text-body-sm font-medium">Page type</legend>
+        <div role="radiogroup" aria-label="Page type" className="grid grid-cols-2 gap-2">
+          {(Object.keys(KIND_NAMES) as PageKind[]).map((one) => {
+            const Icon = KIND_TILE_ICONS[one];
+            return (
+              // biome-ignore lint/a11y/useSemanticElements: a tile chosen by looking at it
+              <button
+                key={one}
+                type="button"
+                role="radio"
+                aria-checked={kind === one}
+                onClick={() => {
+                  if (kind === one) return;
+                  const table = page.record?.table ?? mostReadTable ?? tables[0]?.value;
+                  onChange(
+                    withKind(page, one, one === "modal" ? page.record?.table : table),
+                    `making ${page.title} a ${KIND_NAMES[one].toLowerCase()}`,
+                  );
+                }}
+                className={`flex h-9 items-center gap-2 rounded-control border px-3 text-body-sm ${
+                  kind === one
+                    ? "border-action bg-action-soft text-action"
+                    : "border-line-control text-ink hover:bg-sunken"
+                }`}
+              >
+                <Icon aria-hidden="true" size={14} className="shrink-0" /> {KIND_NAMES[one]}
+              </button>
+            );
+          })}
+        </div>
+        <p className="m-0 text-meta text-ink-muted">{KIND_LINE}</p>
+      </fieldset>
       {opensOnRecord ? (
         <SelectField
           label="Table of its record"

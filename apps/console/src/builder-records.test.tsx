@@ -190,15 +190,15 @@ test("a page's kind is listed beside it, set in its settings, and a page is reor
   fireEvent.click(list.getByRole("button", { name: /Money\s*Page/ }));
   const settings = within(await screen.findByRole("region", { name: "Page settings" }));
   expect(settings.getByText(KIND_LINE)).toBeTruthy();
-  fireEvent.change(settings.getByLabelText("Page type"), { target: { value: "modal" } });
+  fireEvent.click(settings.getByRole("radio", { name: "Modal" }));
   await saved((body) => body.pages[0]?.kind === "modal");
   // A modal that makes a new record opens on none; a side sheet opens on one, so the table of it is asked.
   expect(pageOf("money")?.record).toBeUndefined();
-  fireEvent.change(settings.getByLabelText("Page type"), { target: { value: "sheet" } });
+  fireEvent.click(settings.getByRole("radio", { name: "Side sheet" }));
   await saved((body) => body.pages[0]?.kind === "sheet");
   expect(pageOf("money")?.record).toEqual({ table: "invoices" });
   expect(settings.getByLabelText("Table of its record")).toBeTruthy();
-  fireEvent.change(settings.getByLabelText("Page type"), { target: { value: "page" } });
+  fireEvent.click(settings.getByRole("radio", { name: "Page" }));
   await saved((body) => body.pages[0]?.kind === undefined && body.pages[0]?.record === undefined);
 
   // Reordered.

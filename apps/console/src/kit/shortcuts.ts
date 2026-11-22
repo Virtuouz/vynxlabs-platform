@@ -77,6 +77,7 @@ const declared = {
   },
   close: { keys: ["Escape"], label: "Close what is open beside the list", scope: "Lists" },
 
+  "add.widget": { keys: ["a"], label: "Add to the page being built", scope: "Editors" },
   save: { keys: ["Mod+S"], label: "Save now", scope: "Editors" },
   run: { keys: ["Mod+Enter"], label: "Run the draft", scope: "Editors" },
   undo: { keys: ["Mod+Z"], label: "Undo", scope: "Editors", notInFields: true },

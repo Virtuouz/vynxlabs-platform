@@ -304,7 +304,7 @@ test("widgets are added and removed, and what is wrong is said before anything c
   expect(stored.pages[0]?.widgets[1]?.at.y).toBe(6);
 
   // A page is added through a dialog of the console's own, never the browser's.
-  fireEvent.click(screen.getByRole("button", { name: "Page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a page" }));
   await answer("Add the page", "By month");
   await waitFor(() => expect(stored.pages.map((page) => page.id)).toEqual(["main", "by-month"]), {
     timeout: 4000,

@@ -1,5 +1,4 @@
 import {
-  childrenOf,
   FILTER_WIDGET,
   filtersOf,
   MAX_PAGE_WIDGETS,
@@ -8,11 +7,9 @@ import {
   PAGE_COLUMNS,
   type Page,
   type PageWidget,
-  tabsOf,
-  topLevel,
 } from "@volvel/manifest";
-import { isContainer } from "@volvel/manifest/parts";
-import { Button, EmptyState } from "@volvel/ui";
+import { GRID } from "@volvel/screens";
+import { Button, EmptyState, Kbd } from "@volvel/ui";
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
@@ -28,6 +25,7 @@ import {
   settleOnGrid,
   unbindDeclared,
 } from "../../kit/inspector/model.ts";
+import { useShortcut } from "../../kit/keys.ts";
 import { EditOnPage } from "../../kit/markdown/onThePage.ts";
 import { AddFormDialog } from "./AddFormDialog.tsx";
 import { AddToPage } from "./AddToPage.tsx";
@@ -42,7 +40,6 @@ import {
   nextId,
   placedAtBottom,
   placesFor,
-  registryRoles,
   removalWords,
   removeTab,
   removeWidget,
@@ -53,6 +50,7 @@ import {
 } from "./containers.ts";
 import { EditorShell } from "./EditorShell.tsx";
 import { GroupButtonsDialog } from "./GroupButtonsDialog.tsx";
+import { Outline } from "./Outline.tsx";
 import { PageSettings } from "./PageSettings.tsx";
 import { SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
 import { RowClickOffer } from "./RowClickOffer.tsx";
@@ -81,6 +79,14 @@ export interface PageValue {
   /** Pages this change also makes: the detail a click opens, the modal a button opens. Added with it, as one step. */
   addPages?: Page[];
 }
+
+/**
+ * The page grid's columns, faintly, behind the widgets: twelve columns of equal width with `GRID.gap`
+ * between them, over the grid's own box (the frame's padding is outside it).
+ */
+const GUIDES = {
+  backgroundImage: `repeating-linear-gradient(to right, color-mix(in srgb, var(--color-action) 8%, transparent) 0, color-mix(in srgb, var(--color-action) 8%, transparent) calc((100% - ${(GRID.columns - 1) * GRID.gap}px) / ${GRID.columns}), transparent calc((100% - ${(GRID.columns - 1) * GRID.gap}px) / ${GRID.columns}), transparent calc((100% + ${GRID.gap}px) / ${GRID.columns}))`,
+} as const;
 
 /** What a page of an app is, to the editor: its kind and record, the app's other pages, and what is changed about the page itself. */
 export interface PageInfo {
@@ -197,6 +203,9 @@ export function PageEditor({
   const full = widgets.length >= MAX_PAGE_WIDGETS;
   // "Add to page" adds into the container that is chosen (or that holds the widget that is).
   const addsTo = resolved(widgets, targetOfSelection(widgets, selected));
+
+  // A opens "Add to page" when focus is not in a field (`useShortcut` leaves single keys to the page).
+  useShortcut("add.widget", () => setAdding(true), { enabled: !full && !adding });
 
   const put = (next: PageWidget[], label: string, key?: string) =>
     onChange({ widgets: next }, label, key);
@@ -369,51 +378,40 @@ export function PageEditor({
     notify.success(`Removed ${words}.`, { action: { label: "Undo", onClick: shell.history.undo } });
   };
 
-  const outlineRow = (one: PageWidget, inside: boolean) => (
-    <button
-      type="button"
-      aria-current={one.id === selected ? "true" : undefined}
-      onClick={() => onSelect(one.id)}
-      className={`w-full truncate rounded-inner py-1 pr-2 text-left text-body-sm ${
-        inside ? "pl-5" : "pl-2"
-      } ${one.id === selected ? "bg-selected text-action" : "text-ink hover:bg-sunken"}`}
-    >
-      {nameOf(one)}
-    </button>
-  );
   const outline = (
     <>
       {pages}
-      <section aria-labelledby="on-the-page" className="flex flex-col gap-1">
-        <h2 id="on-the-page" className="m-0 text-label text-ink-subtle uppercase">
+      <section aria-labelledby="on-the-page" className="flex min-h-0 flex-col gap-1">
+        <h2 id="on-the-page" className="m-0 px-1 text-label text-ink-subtle uppercase">
           On this page
         </h2>
         {widgets.length === 0 ? (
-          <p className="m-0 text-body-sm text-ink-muted">Nothing yet.</p>
+          <p className="m-0 px-1 text-body-sm text-ink-muted">Nothing yet.</p>
         ) : (
-          <ul className="m-0 flex list-none flex-col p-0">
-            {reading(topLevel(widgets)).map((one) => (
-              <li key={one.id}>
-                {outlineRow(one, false)}
-                {isContainer(one, registryRoles) ? (
-                  <Held container={one} widgets={widgets} row={outlineRow} />
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <Outline
+            widgets={widgets}
+            selected={selected}
+            onSelect={onSelect}
+            onReorder={(next, label) => put(next, label)}
+            onSaid={setTold}
+          />
         )}
       </section>
-      <div>
-        <Button
-          size="small"
-          variant="primary"
-          disabled={full}
-          tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
-          onClick={() => setAdding(true)}
-        >
-          <Plus aria-hidden="true" size={14} /> Add to page
-        </Button>
-      </div>
+      <Button
+        variant="quiet"
+        disabled={full}
+        aria-label="Add to page"
+        aria-keyshortcuts="A"
+        tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
+        className="w-full justify-center border border-action bg-action-soft"
+        onClick={() => setAdding(true)}
+      >
+        <Plus aria-hidden="true" size={14} /> Add to page <Kbd>A</Kbd>
+      </Button>
+      <p className="m-0 hidden px-1 text-meta text-ink-muted lg:block">
+        Drag in the outline or on the page to reorder. Alt with the arrow keys moves the chosen
+        widget in the outline.
+      </p>
     </>
   );
 
@@ -430,13 +428,6 @@ export function PageEditor({
       : kindWidth !== undefined
         ? Math.min(kindWidth, frame?.width ?? kindWidth)
         : frame?.width;
-  const acts = widgets.some(
-    (one) =>
-      (one.on && Object.keys(one.on).length > 0) ||
-      (Array.isArray(one.config?.rowActions) && one.config.rowActions.length > 0) ||
-      (Array.isArray(one.config?.actions) && one.config.actions.length > 0) ||
-      one.config?.submit !== undefined,
-  );
   // What the renderer is told beyond the data (phase 26): the page's record, and what its steps open.
   const opens = pageInfo
     ? {
@@ -451,12 +442,6 @@ export function PageEditor({
       {pageInfo ? (
         <SampleBar page={pageInfo.page} sample={sample} onChoose={pageInfo.onRecord} />
       ) : null}
-      {acts && pageInfo ? (
-        <p className="m-0 mb-3 text-body-sm text-ink-muted">
-          Buttons and row actions don't run while the page is being built. Published, they change
-          this workspace's records.
-        </p>
-      ) : null}
       <div
         className={overlay ? "relative mx-auto" : ""}
         style={overlay && width ? { maxWidth: `${width}px` } : undefined}
@@ -465,54 +450,53 @@ export function PageEditor({
           data-preview={frame?.name}
           data-page-kind={kind ?? "page"}
           data-page-size={overlay ? size : undefined}
-          className={
-            frame || overlay
-              ? `mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`
-              : ""
-          }
+          className={`mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
           style={width && !overlay ? { maxWidth: `${width}px` } : undefined}
         >
-          {widgets.length === 0 ? (
-            <EmptyState
-              title="Nothing on this page yet"
-              action={
-                <Button variant="primary" onClick={() => setAdding(true)}>
-                  <Plus aria-hidden="true" size={16} /> Add to page
-                </Button>
-              }
-            >
-              Add a table, a chart or a number. What you see is drawn from this workspace's rows, as
-              you may read them.
-            </EmptyState>
-          ) : (
-            <PageView
-              widgets={widgets}
-              filters={filters}
-              registry={views}
-              client={client}
-              filterValues={filterValues}
-              onFilterValues={setFilterValues}
-              {...(refreshKey !== undefined ? { refreshKey } : {})}
-              {...opens}
-              editing={{
-                selected,
-                onSelect,
-                onChange: fromCanvas,
-                onRename: (id, title) =>
-                  put(
-                    widgets.map((one) => (one.id === id ? { ...one, title } : one)),
-                    "renaming a widget",
-                    `title:${id}`,
-                  ),
-                onColumn: (id) => onSelect(id),
-                onEditText: (id) => {
-                  onSelect(id);
-                  setWriting(id);
-                },
-                carrying,
-              }}
-            />
-          )}
+          {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
+          <div data-column-guides="" style={GUIDES}>
+            {widgets.length === 0 ? (
+              <EmptyState
+                title="Nothing on this page yet"
+                action={
+                  <Button variant="primary" onClick={() => setAdding(true)}>
+                    <Plus aria-hidden="true" size={16} /> Add to page
+                  </Button>
+                }
+              >
+                Add a table, a chart or a number. What you see is drawn from this workspace's rows,
+                as you may read them.
+              </EmptyState>
+            ) : (
+              <PageView
+                widgets={widgets}
+                filters={filters}
+                registry={views}
+                client={client}
+                filterValues={filterValues}
+                onFilterValues={setFilterValues}
+                {...(refreshKey !== undefined ? { refreshKey } : {})}
+                {...opens}
+                editing={{
+                  selected,
+                  onSelect,
+                  onChange: fromCanvas,
+                  onRename: (id, title) =>
+                    put(
+                      widgets.map((one) => (one.id === id ? { ...one, title } : one)),
+                      "renaming a widget",
+                      `title:${id}`,
+                    ),
+                  onColumn: (id) => onSelect(id),
+                  onEditText: (id) => {
+                    onSelect(id);
+                    setWriting(id);
+                  },
+                  carrying,
+                }}
+              />
+            )}
+          </div>
         </div>
         {overlay && pageInfo ? (
           <SizeHandle
@@ -700,59 +684,5 @@ export function PageEditor({
         {told}
       </span>
     </EditOnPage.Provider>
-  );
-}
-
-/** Widgets in reading order: by row, then by column. */
-const reading = (list: readonly PageWidget[]) =>
-  [...list].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x);
-
-/** What a container holds, under it in "On this page": by tab for Tabs, each tab with its name over it. */
-function Held({
-  container,
-  widgets,
-  row,
-}: {
-  container: PageWidget;
-  widgets: readonly PageWidget[];
-  row: (widget: PageWidget, inside: boolean) => ReactNode;
-}) {
-  const tabs = tabsOf(container);
-  const held = childrenOf(widgets, container.id);
-  if (held.length === 0) return null;
-  const groups =
-    tabs.length > 0
-      ? [
-          ...tabs.map((tab) => ({
-            key: tab.id,
-            title: tab.title as string | undefined,
-            items: reading(held.filter((one) => one.in?.tab === tab.id)),
-          })),
-          {
-            key: "",
-            title: undefined,
-            items: reading(held.filter((one) => !tabs.some((tab) => tab.id === one.in?.tab))),
-          },
-        ]
-      : [{ key: "", title: undefined, items: reading(held) }];
-  return (
-    <ul className="m-0 flex list-none flex-col p-0">
-      {groups
-        .filter((group) => group.items.length > 0)
-        .map((group) => (
-          <li key={group.key}>
-            {group.title ? (
-              <span className="block truncate py-0.5 pl-5 text-meta text-ink-subtle">
-                {group.title}
-              </span>
-            ) : null}
-            <ul className="m-0 flex list-none flex-col p-0">
-              {group.items.map((one) => (
-                <li key={one.id}>{row(one, true)}</li>
-              ))}
-            </ul>
-          </li>
-        ))}
-    </ul>
   );
 }

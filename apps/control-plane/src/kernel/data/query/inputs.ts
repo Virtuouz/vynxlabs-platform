@@ -37,6 +37,7 @@ import {
 } from "./filters.js";
 import { QueryRefused } from "./parse.js";
 import { checkFor, QUERY_ROWS, type QueryResult, refusal, runQuery } from "./run.js";
+import { type RowsGroup, rowsGroupKey } from "./visual.js";
 import {
   asRows,
   conditionsFor,
@@ -63,6 +64,8 @@ export type WireData =
       next?: string;
       /** With a next page: how many rows there are in all, as the filters leave them. Sent with the first page. */
       total?: number;
+      /** Rows grouped by a column, with a next page: how many rows each group has in all. Sent with the first page. */
+      groups?: { key: unknown; count: number }[];
       /** For a reference column: the name of the row each id points to. */
       names?: Record<string, Record<string, string>>;
       followed?: { names: string; now: string };
@@ -130,6 +133,8 @@ export interface ReadRequest {
   size?: number;
   /** A table's rows in the order of this column (`-name` for descending): the whole table's, not the page's. */
   sort?: string;
+  /** Where whoever looks is, as an IANA time zone: what a time's day is, for rows grouped by day. */
+  zone?: string;
   /** With `only`: read the rows behind one group of that summary, by the groups' names. */
   behind?: Record<string, unknown>;
   /** The page's widgets, for a `{ selected }` source to find the table it was chosen in. */
@@ -140,6 +145,26 @@ export interface ReadRequest {
   draft?: boolean;
   /** Where the request arrived takes no decisions: the approvals say they are decided in the console. */
   elsewhere?: boolean;
+}
+
+/**
+ * What a list or a table's rows are grouped by, as its widget is set: a column of the table it
+ * reads. Rows that are totals already, or of something other than a table, are not grouped.
+ */
+export function groupRowsOf(
+  widget: PageWidget,
+  visual: VisualQuery,
+): { column: string; by?: "day" | "week" | "month"; descending?: boolean } | undefined {
+  const given = widget.config?.groupRows as
+    | { column?: unknown; by?: unknown; descending?: unknown }
+    | undefined;
+  if (typeof given?.column !== "string" || given.column === "") return undefined;
+  if ((visual.groupBy?.length ?? 0) > 0 || (visual.measures?.length ?? 0) > 0) return undefined;
+  return {
+    column: given.column,
+    ...(given.by === "day" || given.by === "week" || given.by === "month" ? { by: given.by } : {}),
+    ...(given.descending === true ? { descending: true } : {}),
+  };
 }
 
 /** A condition no row meets: no row has an empty `id`. */
@@ -429,6 +454,32 @@ export async function readWidget(
       });
       const n = Number(counted.rows[0]?.[0]);
       return Number.isFinite(n) ? { total: n } : {};
+    } catch {
+      return {};
+    }
+  };
+
+  /** How many rows each group has, of those a query finds. */
+  const groupsOf = async (
+    asked: WidgetQuery,
+    lead: RowsGroup,
+    type: string,
+  ): Promise<{ groups?: { key: unknown; count: number }[] }> => {
+    const parameters = [...asked.parameters];
+    const key = rowsGroupKey(lead, type, `vx_c."${lead.column}"`, (value) => {
+      parameters.push(value);
+      return `$${parameters.length}`;
+    });
+    try {
+      const counted = await run(
+        {
+          ...asked,
+          text: `select ${key} as k, count(*) as n from (${asked.text}) as vx_c group by 1`,
+          parameters,
+        },
+        { limit: QUERY_ROWS.most, offset: 0 },
+      );
+      return { groups: counted.rows.map(([k, n]) => ({ key: k ?? null, count: Number(n) })) };
     } catch {
       return {};
     }
@@ -876,6 +927,53 @@ export async function readWidget(
         },
       };
     }
+    // Rows kept together by a column: it leads their order, and within a group they are as asked.
+    let lead: RowsGroup | undefined;
+    let leadType = "text";
+    const grouped =
+      declared.shape === "rows" && "visual" in input.source
+        ? groupRowsOf(widget, input.source.visual)
+        : undefined;
+    if (grouped && "visual" in input.source) {
+      const source = input.source.visual;
+      const held = catalog.tables.get(source.table);
+      const of = held?.columns.find(
+        (one) => one.name === grouped.column && one.status === "active",
+      );
+      leadType =
+        grouped.column === "created_at" || grouped.column === "updated_at"
+          ? "timestamp"
+          : (of?.type ?? "text");
+      const ordered = { by: grouped.column, ...(grouped.descending ? { descending: true } : {}) };
+      const inDays = leadType === "date" || leadType === "timestamp";
+      const sort = source.sort ?? [];
+      input = {
+        ...input,
+        source: {
+          visual: {
+            ...source,
+            // The view groups by what a row holds, so every row holds it.
+            ...(source.columns && !source.columns.includes(grouped.column)
+              ? { columns: [...source.columns, grouped.column] }
+              : {}),
+            // With no order of their own, the rows of a day are by its time.
+            sort: held
+              ? sort.length === 0 && inDays
+                ? [ordered]
+                : sort
+              : [ordered, ...sort.filter((one) => one.by !== grouped.column)],
+          },
+        },
+      };
+      // A table of a data source is put in order by the column alone.
+      if (held) {
+        lead = {
+          ...grouped,
+          zone: request.zone ?? "UTC",
+          ...(of?.options?.values ? { values: of.options.values.map((one) => one.value) } : {}),
+        };
+      }
+    }
     const outside = await external(input, offset);
     if (outside) {
       if (declared.shape === "record") {
@@ -894,7 +992,10 @@ export async function readWidget(
     }
     if (declared.shape === "approvals")
       throw badRequest("An approvals input has no table to read.");
-    const asked = await inputQuery(kernel, at, input, page, { shape: declared.shape });
+    const asked = await inputQuery(kernel, at, input, page, {
+      shape: declared.shape,
+      ...(lead ? { lead } : {}),
+    });
     const size = declared.shape === "record" ? 1 : pageOf(widget, request.size);
     const result = await run(asked, { limit: size, offset }).catch((error) => {
       // A chosen or own row the caller may not read is told as one that is not there.
@@ -938,6 +1039,7 @@ export async function readWidget(
       rows,
       ...(result.truncated ? { next: encodeCursor(offset + rows.length) } : {}),
       ...(result.truncated && offset === 0 ? await totalOf(asked) : {}),
+      ...(lead && result.truncated && offset === 0 ? await groupsOf(asked, lead, leadType) : {}),
       ...(Object.keys(pointed).length > 0 ? { names: pointed } : {}),
       ...(asked.followed ? { followed: asked.followed } : {}),
     };

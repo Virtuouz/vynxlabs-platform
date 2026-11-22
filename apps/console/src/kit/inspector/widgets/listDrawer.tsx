@@ -5,6 +5,7 @@
 
 import { DrawerBlock, SegmentedControl } from "@volvel/ui";
 import type { Env } from "../controls.tsx";
+import { GroupRowsRow } from "../groupRowsControl.tsx";
 import { withConfig } from "../model.ts";
 import { FullSegments } from "./FullSegments.tsx";
 import { Section } from "./Section.tsx";
@@ -16,6 +17,7 @@ export function ListLookSection({ env, bare }: { env: Env; bare?: boolean }) {
   const look = env.config.look === "cards" ? "cards" : "list";
   return (
     <Section bare={bare} label="Look">
+      <GroupRowsRow env={env} />
       <DrawerBlock label="Rows">
         <FullSegments>
           <SegmentedControl

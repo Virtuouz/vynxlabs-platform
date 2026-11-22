@@ -119,6 +119,7 @@ The app is one `defineInterface` in `src/operations.ts`: 6 pages in the menu and
 | Widget and option | Where |
 | --- | --- |
 | Table: badges, currency, dates, `align`, `width: fixed`, `sortable`, `total`, `phone: false`, `hidden`, `as: bar`, `rowHeight`, `stripes`, `empty`, `pageSize`, `select` (several rows), `buttons`, `rowActions`, `rowClick` | Money (Invoices: total, select, buttons, four row actions), Today (compact, `phone: false`, empty text), Visits (stripes, `hidden` notes, total of minutes, `width: fixed` on the reason), Stock (`as: bar`, stripes) |
+| Rows grouped under headings: by day, by month, by a choice | Today (Visits, by day), Visits (Every visit, latest day first), a pet's record page (Visits, by month), Pets (Handle with care, by species) |
 | Table over a saved query | Visits, "Vets" |
 | List, `list` and `cards`, the title / subtitle / right / badge places, row actions, `rowClick` | Pets (cards), Handle with care (list), Waiting room (cards with a row action), Owner sheet |
 | Stat: caption, format, `compare` with delta `percent` and `absolute`, `goodWhen` up and down, `trendBy`, `click` | Today, Money |

@@ -10,6 +10,7 @@ import { badRequest, forbidden, forbiddenBecause, notFound } from "../kernel/err
 import { access, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { locatePage, UUID } from "../kernel/pages/locate.js";
+import { isTimeZone } from "../kernel/zones.js";
 import { AnyObject, Id } from "./shared.js";
 
 /** The most values a choice filter offers. */
@@ -87,6 +88,14 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "A rows input of a table in the order of this column (`-name` for descending), over all its rows.",
               }),
             ),
+            zone: Type.Optional(
+              Type.String({
+                minLength: 1,
+                maxLength: 64,
+                description:
+                  "The reader's time zone, such as Europe/Berlin: which day a time is on, for rows a list or a table groups by day, week or month. UTC when left out.",
+              }),
+            ),
             cursor: Type.Optional(
               Type.String({
                 maxLength: 200,
@@ -125,6 +134,9 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const { ctx, params, query } = request;
         if (query.cursor !== undefined && query.input === undefined) {
           throw badRequest("A cursor pages one data input: say which with `input`.");
+        }
+        if (query.zone !== undefined && !isTimeZone(query.zone)) {
+          throw badRequest(`${query.zone} is not a time zone.`);
         }
         let given: unknown;
         if (query.filters !== undefined) {
@@ -189,6 +201,7 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ...(behind ? { behind } : {}),
           ...(chosen ? { chosen } : {}),
           ...(query.sort !== undefined ? { sort: query.sort } : {}),
+          ...(query.zone !== undefined ? { zone: query.zone } : {}),
           ...(query.size !== undefined && query.input !== undefined ? { size: query.size } : {}),
           ...(kernel.hosts.runsCodeApps(await kernel.hosts.place(request))
             ? { elsewhere: true }

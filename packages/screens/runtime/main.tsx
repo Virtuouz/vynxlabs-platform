@@ -66,6 +66,7 @@ function clientFor(path: string, page: string, record?: string): PageDataClient 
       if (options.input) query.set("input", options.input);
       if (options.cursor) query.set("cursor", options.cursor);
       if (options.sort) query.set("sort", options.sort);
+      if (options.zone) query.set("zone", options.zone);
       if (options.size) query.set("size", String(options.size));
       if (options.chosen && Object.keys(options.chosen).length > 0) {
         query.set("chosen", JSON.stringify(options.chosen));

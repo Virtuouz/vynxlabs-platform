@@ -23,6 +23,8 @@ export type WireData =
       next?: string;
       /** With a next page: how many rows there are in all. Sent with the first page. */
       total?: number;
+      /** Rows grouped by a column, with a next page: how many rows each group has in all. Sent with the first page. */
+      groups?: { key: unknown; count: number }[];
       /** For a reference column: the name of the row each id points to. */
       names?: Record<string, Record<string, string>>;
       followed?: Followed;
@@ -96,6 +98,8 @@ export interface PageDataClient {
       chosen?: Readonly<Record<string, string>>;
       /** A table's rows in the order of this column (`-name` for descending), over all its rows. */
       sort?: string;
+      /** The reader's time zone, for rows grouped by day: which day a time is on. */
+      zone?: string;
       /** With `input`: how many rows to read, in place of the widget's own page (a download reads big ones). */
       size?: number;
     },

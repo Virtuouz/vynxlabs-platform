@@ -25,6 +25,7 @@ import type { Action } from "../actionModel.ts";
 import { type ActionContext, conditionSentence } from "../actionModel.ts";
 import { useColumnValues } from "../catalog.ts";
 import type { Env } from "../controls.tsx";
+import { GroupRowsRow } from "../groupRowsControl.tsx";
 import { configSettings, heading, named, uniqueName, withConfig } from "../model.ts";
 import { ActionRules } from "../RulesTab.tsx";
 import { AnchoredColumnEditor, CanvasColumnEditor } from "./ColumnEditor.tsx";
@@ -214,6 +215,7 @@ export function TableLookSection({ env, bare }: TableSectionProps) {
     writeConfig(env, name, value, label, key ?? `config:${env.widget.id}:${name}`);
   return (
     <Section bare={bare} label="Look">
+      <GroupRowsRow env={env} />
       <DrawerBlock label="Row height">
         <FullSegments>
           <SegmentedControl

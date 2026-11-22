@@ -497,6 +497,7 @@ export const operations = defineInterface({
             },
           },
           config: {
+            groupRows: { column: "starts_at", by: "day" },
             rowHeight: "compact",
             pageSize: 15,
             empty: "No visits in this range. Widen it under Filters.",
@@ -837,6 +838,7 @@ export const operations = defineInterface({
             },
           },
           config: {
+            groupRows: { column: "starts_at", by: "day", descending: true },
             stripes: true,
             pageSize: 25,
             empty: "No visit matches. Clear a filter to see more.",
@@ -1347,7 +1349,12 @@ export const operations = defineInterface({
               filters: [{ filter: "clinic", column: "clinic" }],
             },
           },
-          config: { look: "list", title: "name", subtitle: "alert", right: "species" },
+          config: {
+            look: "list",
+            title: "name",
+            subtitle: "alert",
+            groupRows: { column: "species" },
+          },
           on: opens("pet"),
         },
         {
@@ -2217,6 +2224,7 @@ export const operations = defineInterface({
           },
           config: {
             empty: "This pet has had no visits yet.",
+            groupRows: { column: "starts_at", by: "month", descending: true },
             columns: [
               { column: "starts_at", label: "When" },
               { column: "reason" },

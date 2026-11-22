@@ -95,7 +95,7 @@ registerDrawer(TABLE, {
   tab: "display",
   group: "Look",
   order: 2,
-  hides: ["rowHeight", "pageSize", "empty", "stripes"],
+  hides: ["groupRows", "rowHeight", "pageSize", "empty", "stripes"],
   render: (env) => <TableLookSection env={env} bare />,
 });
 
@@ -182,7 +182,7 @@ registerDrawer(LIST, {
   tab: "display",
   group: "Look",
   order: 3,
-  hides: ["look"],
+  hides: ["groupRows", "look"],
   render: (env) => <ListLookSection env={env} bare />,
 });
 

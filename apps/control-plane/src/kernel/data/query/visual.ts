@@ -71,6 +71,40 @@ const NUMERIC = new Set(["integer", "number"]);
 const ORDERED = new Set(["integer", "number", "timestamp", "date", "text", "enum"]);
 const TEMPORAL = new Set(["timestamp", "date"]);
 
+/** What rows may be gathered under: a day, a choice, text or a yes or no. */
+const GROUPABLE = new Set(["date", "timestamp", "enum", "text", "boolean"]);
+
+/** Rows kept together by one column, ahead of whatever else they are in order of. */
+export interface RowsGroup {
+  column: string;
+  /** For a date or a time: how long each group is. */
+  by?: "day" | "week" | "month";
+  descending?: boolean;
+  /** The time zone a time's day is counted in: that of whoever reads it. */
+  zone: string;
+  /** For a choice: its values in the order its table lists them. */
+  values?: readonly string[];
+}
+
+/**
+ * What a row's group is, as SQL over its column: the day (the week's Monday, the month's first)
+ * where the reader is, or the value itself. `sql` is the column as the query names it.
+ */
+export function rowsGroupKey(
+  group: RowsGroup,
+  type: string,
+  sql: string,
+  bind: (value: unknown) => string,
+): string {
+  if (type === "timestamp") {
+    return `date_trunc('${group.by ?? "day"}', timezone(${bind(group.zone)}::text, ${sql}))::date`;
+  }
+  if (type === "date" && group.by && group.by !== "day") {
+    return `date_trunc('${group.by}', ${sql}::timestamp)::date`;
+  }
+  return sql;
+}
+
 export function compileVisual(
   query: VisualQuery,
   catalog: VisualCatalog,
@@ -78,6 +112,8 @@ export function compileVisual(
   extra: ExtraCondition[] = [],
   /** What "today" is for a `last` condition; days are counted in UTC, as a page's relative ranges are. */
   today: Date = new Date(),
+  /** Rows kept together by a column. */
+  lead?: RowsGroup,
 ): CompiledVisual {
   const base = catalog.get(query.table);
   if (!base) {
@@ -293,6 +329,31 @@ export function compileVisual(
     if (rows) return `${column(one.by, `/sort/${index}/by`).sql} ${direction}`;
     throw new VisualRefused(`/sort/${index}/by`, `the result has no column "${one.by}"`);
   });
+  // What leads the order, written over the column as the query that holds it names it.
+  const led = (): ((name: string) => string[]) | undefined => {
+    if (!lead) return undefined;
+    const at = column(lead.column, "/groupRows/column");
+    if (!GROUPABLE.has(at.type)) {
+      throw new VisualRefused(
+        "/groupRows/column",
+        `rows cannot be grouped by "${lead.column}", which is a ${at.type}`,
+      );
+    }
+    const direction = `${lead.descending ? "desc" : "asc"} nulls last`;
+    // Choices come as their table lists them, and one it no longer lists after them.
+    return (name) => [
+      ...(at.type === "enum" && lead.values
+        ? [`array_position(${bind([...lead.values])}::text[], ${name}::text) ${direction}`]
+        : []),
+      `${rowsGroupKey(lead, at.type, name, bind)} ${direction}`,
+    ];
+  };
+  const leading = led();
+  // With a limit, the rows are chosen in their own order, and those are what is grouped.
+  const grouped = leading !== undefined && query.limit !== undefined;
+  if (leading && lead && !grouped) {
+    order.unshift(...leading(column(lead.column, "/groupRows/column").sql));
+  }
   // Groups with no order asked for come in their own order, so a chart reads left to right.
   if (order.length === 0 && groups.length > 0) {
     order.push(...groups.map((_, index) => `${index + 1} asc nulls last`));
@@ -315,5 +376,13 @@ export function compileVisual(
   ]
     .filter(Boolean)
     .join(" ");
+  if (leading && lead && grouped) {
+    const ordered = [...leading(`vx_l.${quoted(lead.column)}`), "vx_l.vx_n"].join(", ");
+    return {
+      sql: `select ${names.map((name) => `vx_l.${quoted(name)}`).join(", ")} from (select vx_q.*, row_number() over () as vx_n from (${sql}) as vx_q) as vx_l order by ${ordered}`,
+      parameters,
+      columns: names,
+    };
+  }
   return { sql, parameters, columns: names };
 }

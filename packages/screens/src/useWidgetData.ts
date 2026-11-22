@@ -70,7 +70,10 @@ export function useWidgetData({
 }): Reading {
   const [attempt, setAttempt] = useState(0);
   // What the widget is and reads, without what only asks again.
-  const of = JSON.stringify([widget.type, widget.data, filterValues, chosen]);
+  const groupRows = widget.config?.groupRows;
+  const of = JSON.stringify([widget.type, widget.data, filterValues, chosen, groupRows]);
+  // Rows grouped by day are grouped by the reader's days, which the server has to be told.
+  const zone = groupRows ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
   const [inputs, setInputs] = useState<Record<string, WireData> | undefined>(() => {
     const had = kept?.get(widget.id);
     return reads && had?.of === of ? had.inputs : undefined;
@@ -92,6 +95,7 @@ export function useWidgetData({
     widget.data,
     config?.compareTo,
     config?.trendBy,
+    groupRows,
     filterValues,
     refreshKey,
     chosen,
@@ -111,6 +115,7 @@ export function useWidgetData({
         signal: controller.signal,
         ...(chosen ? { chosen } : {}),
         ...(sortOf ? { sort: sortOf } : {}),
+        ...(zone ? { zone } : {}),
       })
       .then(
         (read) => {
@@ -148,6 +153,7 @@ export function useWidgetData({
           signal: controller.signal,
           ...(chosen ? { chosen } : {}),
           ...(sortOf ? { sort: sortOf } : {}),
+          ...(zone ? { zone } : {}),
         })
         .then(
           (read) => {
@@ -221,6 +227,7 @@ export function useWidgetData({
           size: Math.min(1000, DOWNLOAD_ROWS - rows.length),
           ...(chosen ? { chosen } : {}),
           ...(sortOf ? { sort: sortOf } : {}),
+          ...(zone ? { zone } : {}),
         });
         const next = read.inputs[name];
         if (next?.shape !== "rows") break;
@@ -248,6 +255,7 @@ export function useWidgetData({
         cursor,
         ...(chosen ? { chosen } : {}),
         ...(sortOf ? { sort: sortOf } : {}),
+        ...(zone ? { zone } : {}),
       });
       const next = read.inputs[input];
       return next?.shape === "rows"

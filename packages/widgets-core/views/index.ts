@@ -22,6 +22,7 @@ import { TabsView } from "./tabs.tsx";
 import { calloutEdge, TextView } from "./text.tsx";
 
 /** What a pack is to whatever draws pages: its definitions, and a view for each type. */
+export { periodWords } from "./groups.tsx";
 export interface CorePack {
   definitions: readonly WidgetDefinition[];
   // biome-ignore lint/suspicious/noExplicitAny: each view has the configuration type of its own widget

@@ -9,6 +9,7 @@ import type { Kernel } from "../kernel/kernel.js";
 import { resolveResource } from "../kernel/resolve.js";
 import { deleteResource, putResource } from "../kernel/resources.js";
 import { setSecret } from "../kernel/secrets.js";
+import { isTimeZone } from "../kernel/zones.js";
 import {
   AnyObject,
   Id,
@@ -23,15 +24,6 @@ import {
 } from "./shared.js";
 
 /** Whether the runtime knows a zone by this name. */
-function isTimeZone(name: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en", { timeZone: name });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 const WorkspaceType = Type.Union([Type.Literal("production"), Type.Literal("dev")]);
 const Workspace = Type.Object({
   id: Id,

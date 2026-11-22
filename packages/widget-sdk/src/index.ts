@@ -158,6 +158,8 @@ export const CONTROLS = [
   "groups",
   /** Fields of a table, in order, each with its label and help (a form's, a record detail's). */
   "fields",
+  /** The column a list's or a table's rows are kept together by. */
+  "groupRows",
   // a data input's parts
   "source",
   "measure",
@@ -380,6 +382,8 @@ export interface RowsData {
   more?: () => void;
   /** With a next page: how many rows there are in all, as the filters leave them. */
   total?: number;
+  /** For rows grouped by a column, with a next page: how many rows each group has in all, by what the group is. */
+  groups?: readonly { key: unknown; count: number }[];
   /**
    * A table's rows in the order of one column, read from the server over all its rows, not the
    * page's. Left out when every row is here already and the view may sort them itself.

@@ -210,6 +210,18 @@ export function tabProblems(input: TabProblemInput): TabProblem[] {
   const empty = showsNothing(widget);
   // What a list places is its Display; where a detail's record or a pivot's grid comes from is Data.
   if (empty) add(widget.type === "core/list" ? "display" : "data", empty);
+  const grouped = (widget.config?.groupRows as { column?: unknown } | undefined)?.column;
+  const read = widget.data?.rows?.source;
+  if (typeof grouped === "string" && grouped !== "" && read) {
+    if ("visual" in read) {
+      const columns = known ? tables.get(read.visual.table) : undefined;
+      if (columns && !columns.has(grouped) && !["created_at", "updated_at"].includes(grouped)) {
+        add("display", `Group rows by: ${grouped} is not in ${read.visual.table} any more.`);
+      }
+    } else if ("query" in read || "sql" in read) {
+      add("display", "Group rows by: only rows read from a table can be grouped. Choose Nothing.");
+    }
+  }
   for (const key of ["rowActions", "buttons"] as const) {
     const list = widget.config?.[key];
     if (!Array.isArray(list)) continue;

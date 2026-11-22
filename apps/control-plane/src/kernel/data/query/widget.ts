@@ -13,7 +13,13 @@ import { resolveResource } from "../../resolve.js";
 import { loadCatalog } from "../apply.js";
 import type { CatalogTable } from "../plan.js";
 import { dayAfter, daysIn, type FilterValues, rangeOf } from "./filters.js";
-import { compileVisual, type ExtraCondition, type VisualCatalog, VisualRefused } from "./visual.js";
+import {
+  compileVisual,
+  type ExtraCondition,
+  type RowsGroup,
+  type VisualCatalog,
+  VisualRefused,
+} from "./visual.js";
 
 /**
  * What a data input of a widget asks, as SQL and the values it is given: its source, with the
@@ -153,9 +159,10 @@ export function writeVisual(
   catalog: VisualCatalog,
   extra: ExtraCondition[] = [],
   at = "/query",
+  lead?: RowsGroup,
 ) {
   try {
-    return compileVisual(query, catalog, extra);
+    return compileVisual(query, catalog, extra, new Date(), lead);
   } catch (error) {
     if (!(error instanceof VisualRefused)) throw error;
     throw badRequest("The query cannot be run.", [
@@ -182,6 +189,8 @@ export interface InputKind {
   shape: "rows" | "summary" | "record";
   /** For a figure's trend: its number over the time it covers, one row to a day, week or month. */
   trend?: { by: string };
+  /** For rows: kept together by a column (a list or a table grouped by day). */
+  lead?: RowsGroup;
 }
 
 /** A visual query asked for as rows: it carries each row's id, and a stable order. */
@@ -236,6 +245,7 @@ export async function inputQuery(
       page.catalog,
       conditionsFor(input, filters, page.values),
       "/source/visual",
+      kind.lead,
     );
     return { text: written.sql, parameters: written.parameters, columns: written.columns };
   }

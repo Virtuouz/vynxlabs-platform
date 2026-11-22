@@ -45,6 +45,30 @@ const LABELLED_ACTIONS = {
   },
 } as const;
 
+/** What a list's or a table's rows are kept together by, each group under a heading. */
+const groupRows = (order: number) =>
+  ({
+    type: "object",
+    properties: {
+      column: RESULT_COLUMN,
+      // For a date or a time: how long each group is.
+      by: { enum: ["day", "week", "month"] },
+      descending: { type: "boolean" },
+    },
+    required: ["column"],
+    additionalProperties: false,
+    "x-volvel": hint({
+      tab: "display",
+      group: "Look",
+      control: "groupRows",
+      of: "rows",
+      types: ["date", "timestamp", "enum", "text", "boolean"],
+      label: "Group rows by",
+      help: "A heading over the rows of each day, week, month or value, with how many there are.",
+      order,
+    }),
+  }) as const;
+
 /** Many rows, dense and sortable. */
 export const table = defineWidget({
   type: "core/table",
@@ -115,6 +139,7 @@ export const table = defineWidget({
           order: 1,
         }),
       },
+      groupRows: groupRows(1),
       rowHeight: {
         enum: ["comfortable", "compact"],
         "x-volvel": hint({
@@ -268,6 +293,7 @@ export const list = defineWidget({
           order: 6,
         }),
       },
+      groupRows: groupRows(7),
       rowActions: {
         ...LABELLED_ACTIONS,
         "x-volvel": hint({

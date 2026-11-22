@@ -363,6 +363,33 @@ describe("list slots", () => {
   });
   const slots = { title: "number", subtitle: "client", right: "total", badge: "status" };
 
+  test("Group rows by: a date by day, week or month, and which is first; Nothing takes it off", () => {
+    show(
+      <Harness start={listWidget(slots)} definition={list}>
+        {(env) => <ListDisplay env={env} info={info} rows={rows} />}
+      </Harness>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Group rows by\s*Nothing/ }));
+    const editor = screen.getByRole("dialog", { name: "Group rows by" });
+    const column = within(editor).getByLabelText("Column") as HTMLSelectElement;
+    // Dates first, then choices; numbers are not offered.
+    const offered = [...column.options].map((one) => one.value);
+    expect(offered.slice(0, 2)).toEqual(["", "issued"]);
+    expect(offered).toContain("status");
+    expect(offered).not.toContain("total");
+    fireEvent.change(column, { target: { value: "issued" } });
+    expect(last().config?.groupRows).toEqual({ column: "issued", by: "day" });
+    fireEvent.click(within(editor).getByRole("radio", { name: "Month" }));
+    fireEvent.click(within(editor).getByRole("radio", { name: "Latest" }));
+    expect(last().config?.groupRows).toEqual({ column: "issued", by: "month", descending: true });
+    // A choice has no period.
+    fireEvent.change(column, { target: { value: "status" } });
+    expect(last().config?.groupRows).toEqual({ column: "status" });
+    expect(within(editor).queryByRole("radio", { name: "Month" })).toBeNull();
+    fireEvent.change(column, { target: { value: "" } });
+    expect(last().config?.groupRows).toBeUndefined();
+  });
+
   test("draws the sample row's values in labelled slots, and a row for each", () => {
     show(
       <Harness start={listWidget(slots)} definition={list}>

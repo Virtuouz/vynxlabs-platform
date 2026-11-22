@@ -65,6 +65,7 @@ import { DataControl, FormatRow } from "./dataControls.tsx";
 import { FieldsControl, PageControl } from "./fieldsControl.tsx";
 import { FiltersControl } from "./filtersControl.tsx";
 import { useChosenGroups } from "./groupChoices.tsx";
+import { GroupRowsRow } from "./groupRowsControl.tsx";
 import type {
   Catalog,
   CatalogColumn,
@@ -460,6 +461,8 @@ export function ConfigControl({
           onChange={(next) => set(next, false)}
         />
       );
+    case "groupRows":
+      return <GroupRowsRow env={env} of={hint.of ?? "rows"} />;
     case "slots":
       // The List's sample row is drawn by what registers it (`registerSettingControl`).
       return (
@@ -875,6 +878,7 @@ const INLINE = new Set([
   "tabs",
   "pageFilters",
   "slots",
+  "groupRows",
   "source",
   "measure",
   "breakdown",

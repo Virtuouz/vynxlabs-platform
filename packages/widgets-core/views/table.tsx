@@ -14,6 +14,7 @@ import {
   sortedBy,
   totalOf,
 } from "./cells.tsx";
+import { GroupHeading, type GroupRows, groupsOf, type RowGroup, underItsDay } from "./groups.tsx";
 import {
   CANNOT_NOW,
   listensTo,
@@ -45,6 +46,8 @@ interface TableConfig {
   /** What the table says with no rows. The host draws it; see `PageView`. */
   empty?: string;
   stripes?: boolean;
+  /** A heading over the rows of each day, or of each value of a column. */
+  groupRows?: GroupRows;
 }
 
 /** "Show more", for a view whose rows come a page at a time. */
@@ -208,6 +211,8 @@ export function PhoneRows({
   view,
   ticked,
   onTick,
+  groupRows,
+  groups,
 }: {
   data: RowsData;
   specs: ColumnSpec[] | undefined;
@@ -221,6 +226,9 @@ export function PhoneRows({
   /** With rows to tick: which are, and how to tick one. */
   ticked?: ReadonlySet<string>;
   onTick?: (id: string, on: boolean) => void;
+  /** With the rows grouped: by what, and the groups. */
+  groupRows?: GroupRows | undefined;
+  groups?: readonly RowGroup[] | undefined;
 }) {
   const shown = columnsToShow(specs, data).filter(({ spec }) => spec.phone !== false);
   const [head, ...rest] = shown;
@@ -230,15 +238,16 @@ export function PhoneRows({
   const badge = rest.find(isBadge);
   const right = rest.find((one) => one !== badge && isNumeric(one.info));
   const under = rest.filter((one) => one !== badge && one !== right);
-  return (
+  const drawn = (column: string, value: unknown, spec: ColumnSpec, info: ColumnInfo | undefined) =>
+    underItsDay(groupRows, data, column, value) ?? cellOf(spec, info, value, data);
+  const listOf = (items: readonly { row: Readonly<Record<string, unknown>>; id: string }[]) => (
     <ul className="m-0 flex list-none flex-col p-0">
-      {data.rows.map((row, at) => {
-        const id = rowId(row, at);
+      {items.map(({ row, id }) => {
         const lines = under
           .map(({ spec, info }) => ({
             key: spec.column,
             value: row[spec.column],
-            node: cellOf(spec, info, row[spec.column], data),
+            node: drawn(spec.column, row[spec.column], spec, info),
           }))
           .filter((one) => one.value !== null && one.value !== undefined && one.value !== "");
         return (
@@ -262,7 +271,7 @@ export function PhoneRows({
             ) : null}
             <span className="flex min-w-0 flex-1 flex-col gap-0.5">
               <strong className="block truncate font-medium">
-                {cellOf(head.spec, head.info, row[head.spec.column], data)}
+                {drawn(head.spec.column, row[head.spec.column], head.spec, head.info)}
               </strong>
               {lines.length > 0 ? (
                 <span className="flex flex-wrap items-baseline gap-x-1 text-body-sm text-ink-muted">
@@ -295,6 +304,20 @@ export function PhoneRows({
       })}
     </ul>
   );
+  return groups ? (
+    <div className="contents">
+      {groups.map((group) => (
+        <section key={group.id} aria-label={group.name} data-row-group={group.id}>
+          <h3 className="m-0 border-b border-line px-1 pt-3 pb-1.5 text-meta font-semibold text-ink-muted">
+            <GroupHeading group={group} />
+          </h3>
+          {listOf(group.rows)}
+        </section>
+      ))}
+    </div>
+  ) : (
+    listOf(data.rows.map((row, at) => ({ row, id: rowId(row, at) })))
+  );
 }
 
 export function TableView(props: WithSelected<TableConfig>) {
@@ -315,6 +338,7 @@ export function TableView(props: WithSelected<TableConfig>) {
   // Sorting is of the rows read: the rows shown, in the browser.
   const ordered =
     sortable && !remote ? sortedBy(rows.rows, rows, sort.column, sort.descending) : rows.rows;
+  const groups = groupsOf(rows, config.groupRows, ordered);
   const idOf = (row: Record<string, unknown>) => rowId(row, rows.rows.indexOf(row));
   // Only rows that are still there stay chosen (an action ran, or the filters changed).
   const here = new Set(ordered.map(idOf));
@@ -360,6 +384,8 @@ export function TableView(props: WithSelected<TableConfig>) {
           selected={selectedRecord}
           actions={actions}
           view={props}
+          groupRows={config.groupRows}
+          groups={groups}
           {...(selecting ? { ticked, onTick: tick } : {})}
         />
         <ShowMore data={rows} />
@@ -371,6 +397,66 @@ export function TableView(props: WithSelected<TableConfig>) {
   const totals = shown.some(({ spec }) => spec.total);
   const allTicked = ordered.length > 0 && chosen.length === ordered.length;
   const edge = "px-3";
+  const rowOf = (row: Readonly<Record<string, unknown>>, id: string, at: number) => {
+    return (
+      <tr
+        key={id}
+        data-box-row=""
+        className={`group/row border-b border-line/70 last:border-b-0 ${
+          config.stripes && at % 2 === 1 ? "bg-sunken/50" : ""
+        } ${pressable ? PRESSABLE : ""}`}
+        // biome-ignore lint/a11y/useKeyWithClickEvents: only a row something listens to is pressed, and that one takes Enter
+        {...press(pressable, () => emit("rowClick", { record: id }), selectedRecord === id, id)}
+      >
+        {selecting ? (
+          <td className={`${edge} ${pad} align-middle`}>
+            <input
+              type="checkbox"
+              className={CHECKBOX}
+              aria-label={`Choose ${String(row[shown[0]?.spec.column ?? "id"] ?? id)}`}
+              checked={ticked.has(id)}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => tick(id, event.currentTarget.checked)}
+            />
+          </td>
+        ) : null}
+        {shown.map(({ spec, info }) => (
+          <td
+            key={spec.column}
+            style={spec.width === "fixed" ? { width: "10rem", maxWidth: "10rem" } : undefined}
+            className={`${edge} ${pad} align-middle ${isRight(spec, info) ? "text-right" : ""} ${
+              spec.width === "fixed" ? "truncate" : ""
+            } ${
+              // A number, a date or a code is never broken across lines ("INV-" and "9338").
+              typeof row[spec.column] === "number" ||
+              info?.type === "timestamp" ||
+              info?.type === "date" ||
+              (typeof row[spec.column] === "string" && (row[spec.column] as string).length <= 20)
+                ? "whitespace-nowrap"
+                : ""
+            }`}
+          >
+            {clamped(
+              row[spec.column],
+              underItsDay(config.groupRows, rows, spec.column, row[spec.column]) ??
+                cellOf(spec, info, row[spec.column], rows, most.get(spec.column)),
+            )}
+          </td>
+        ))}
+        {actions.length > 0 ? (
+          <td className={`${edge} ${pad} text-right align-middle whitespace-nowrap`}>
+            <RowActionButtons
+              actions={actions}
+              row={row}
+              record={id}
+              props={props}
+              always={false}
+            />
+          </td>
+        ) : null}
+      </tr>
+    );
+  };
   return (
     <>
       <TableButtons buttons={buttons} props={props} />
@@ -485,78 +571,24 @@ export function TableView(props: WithSelected<TableConfig>) {
               ) : null}
             </tr>
           </thead>
-          <tbody>
-            {ordered.map((row, at) => {
-              const id = rowId(row, at);
-              return (
-                <tr
-                  key={id}
-                  data-box-row=""
-                  className={`group/row border-b border-line/70 last:border-b-0 ${
-                    config.stripes && at % 2 === 1 ? "bg-sunken/50" : ""
-                  } ${pressable ? PRESSABLE : ""}`}
-                  // biome-ignore lint/a11y/useKeyWithClickEvents: only a row something listens to is pressed, and that one takes Enter
-                  {...press(
-                    pressable,
-                    () => emit("rowClick", { record: id }),
-                    selectedRecord === id,
-                    id,
-                  )}
-                >
-                  {selecting ? (
-                    <td className={`${edge} ${pad} align-middle`}>
-                      <input
-                        type="checkbox"
-                        className={CHECKBOX}
-                        aria-label={`Choose ${String(row[shown[0]?.spec.column ?? "id"] ?? id)}`}
-                        checked={ticked.has(id)}
-                        onClick={(event) => event.stopPropagation()}
-                        onChange={(event) => tick(id, event.currentTarget.checked)}
-                      />
-                    </td>
-                  ) : null}
-                  {shown.map(({ spec, info }) => (
-                    <td
-                      key={spec.column}
-                      style={
-                        spec.width === "fixed" ? { width: "10rem", maxWidth: "10rem" } : undefined
-                      }
-                      className={`${edge} ${pad} align-middle ${isRight(spec, info) ? "text-right" : ""} ${
-                        spec.width === "fixed" ? "truncate" : ""
-                      } ${
-                        // A number, a date or a code is never broken across lines ("INV-" and "9338").
-                        typeof row[spec.column] === "number" ||
-                        info?.type === "timestamp" ||
-                        info?.type === "date" ||
-                        (
-                          typeof row[spec.column] === "string" &&
-                            (row[spec.column] as string).length <= 20
-                        )
-                          ? "whitespace-nowrap"
-                          : ""
-                      }`}
-                    >
-                      {clamped(
-                        row[spec.column],
-                        cellOf(spec, info, row[spec.column], rows, most.get(spec.column)),
-                      )}
-                    </td>
-                  ))}
-                  {actions.length > 0 ? (
-                    <td className={`${edge} ${pad} text-right align-middle whitespace-nowrap`}>
-                      <RowActionButtons
-                        actions={actions}
-                        row={row}
-                        record={id}
-                        props={props}
-                        always={false}
-                      />
-                    </td>
-                  ) : null}
+          {groups ? (
+            groups.map((group) => (
+              <tbody key={group.id} data-row-group={group.id}>
+                <tr>
+                  <th
+                    scope="rowgroup"
+                    colSpan={shown.length + (selecting ? 1 : 0) + (actions.length > 0 ? 1 : 0)}
+                    className={`border-b border-line ${edge} pt-3 pb-1.5 text-left text-meta font-semibold text-ink-muted`}
+                  >
+                    <GroupHeading group={group} />
+                  </th>
                 </tr>
-              );
-            })}
-          </tbody>
+                {group.rows.map(({ row, id }, at) => rowOf(row, id, at))}
+              </tbody>
+            ))
+          ) : (
+            <tbody>{ordered.map((row, at) => rowOf(row, rowId(row, at), at))}</tbody>
+          )}
           {totals ? (
             <tfoot>
               <tr className="border-t border-line-strong font-medium">

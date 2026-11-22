@@ -77,9 +77,7 @@ export function TextContentSection({ env }: { env: Env }) {
         <DrawerRow
           label="Heading"
           icon={Type}
-          value={
-            env.widget.title || <span className="text-ink-muted">Add a heading</span>
-          }
+          value={env.widget.title || <span className="text-ink-muted">Add a heading</span>}
           editorTitle="Heading"
           editor={
             <TextField

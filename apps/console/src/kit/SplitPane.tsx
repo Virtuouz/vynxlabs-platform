@@ -140,7 +140,7 @@ export function SplitPane({
   const along = vertical ? "flex-col" : "flex-col lg:flex-row";
   const firstSize = vertical
     ? "h-[var(--vx-split)] shrink-0"
-    : "lg:w-[var(--vx-split)] lg:shrink-0";
+    : "lg:w-[var(--vx-split)] lg:max-w-[calc(100%-var(--vx-keep))] lg:shrink-0";
   const bar = vertical
     ? "h-3 w-full cursor-row-resize flex-col"
     : "hidden w-3 shrink-0 cursor-col-resize lg:flex";
@@ -152,7 +152,10 @@ export function SplitPane({
     <div
       ref={box}
       className={`flex min-h-0 ${along} ${vertical ? "" : "gap-3 lg:gap-0"} ${className}`}
-      style={{ "--vx-split": `${size}%` } as React.CSSProperties}
+      // The second pane keeps its least room whatever share was kept (a narrower window than the share was set in).
+      style={
+        { "--vx-split": `${size}%`, "--vx-keep": `${minSecond + 12}px` } as React.CSSProperties
+      }
     >
       {collapsed === "first" ? (
         rail("first")

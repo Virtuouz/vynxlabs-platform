@@ -358,7 +358,11 @@ export function AppBuilder({
         "renaming the app",
         "title",
       ),
-    pill: changes ? <DraftPill count={changes} onOpen={() => void review()} /> : null,
+    // Beside the name whenever something is waiting; with the count once it is known. Nothing waiting is quiet words ("Published.").
+    pill:
+      changes || (changes === undefined && hasChanges) ? (
+        <DraftPill count={changes} onOpen={() => void review()} />
+      ) : null,
     tools: (
       <>
         <DeviceSwitch value={viewport} onChange={setViewport} />

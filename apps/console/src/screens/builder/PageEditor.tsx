@@ -102,13 +102,22 @@ const DESKTOP_MIN = 720;
  * The page grid's columns, faintly, behind the widgets: twelve columns of equal width with `GRID.gap`
  * between them, over the grid's own box (the frame's padding is outside it).
  */
-const GUIDE_LINE = "color-mix(in srgb, var(--color-action) 16%, transparent)";
+const GUIDE_LINE = "color-mix(in srgb, var(--color-action) 34%, transparent)";
+const GUIDE_BAND = "color-mix(in srgb, var(--color-action) 7%, transparent)";
 const GUIDE_PITCH = `calc((100% + ${GRID.gap}px) / ${GRID.columns})`;
-/** Thin lines along each column's two edges, as the boards draw the grid. */
-const GUIDES = {
+/** The gap between two columns, as a faint band (board 1). */
+const GUIDE_BANDS = {
+  backgroundImage: `linear-gradient(to right, transparent calc(100% - ${GRID.gap}px), ${GUIDE_BAND} calc(100% - ${GRID.gap}px))`,
+  backgroundSize: `${GUIDE_PITCH} 100%`,
+  backgroundRepeat: "repeat-x",
+} as const;
+/** Thin lines along each column's two edges, dashed, as the boards draw the grid. */
+const GUIDE_LINES = {
   backgroundImage: `linear-gradient(to right, ${GUIDE_LINE} 0 1px, transparent 1px), linear-gradient(to right, transparent calc(100% - ${GRID.gap + 1}px), ${GUIDE_LINE} calc(100% - ${GRID.gap + 1}px), ${GUIDE_LINE} calc(100% - ${GRID.gap}px), transparent calc(100% - ${GRID.gap}px))`,
   backgroundSize: `${GUIDE_PITCH} 100%`,
   backgroundRepeat: "repeat-x",
+  maskImage: "repeating-linear-gradient(to bottom, #000 0 4px, transparent 4px 8px)",
+  WebkitMaskImage: "repeating-linear-gradient(to bottom, #000 0 4px, transparent 4px 8px)",
 } as const;
 
 /** What a page of an app is, to the editor: its kind and record, the app's other pages, and what is changed about the page itself. */
@@ -556,7 +565,24 @@ export function PageEditor({
             }
           >
             {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
-            <div data-column-guides="" style={device === "phone" ? undefined : GUIDES}>
+            <div
+              data-column-guides=""
+              className={device === "phone" ? undefined : "relative isolate"}
+            >
+              {device === "phone" ? null : (
+                <>
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 -z-10"
+                    style={GUIDE_BANDS}
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="pointer-events-none absolute inset-0 -z-10"
+                    style={GUIDE_LINES}
+                  />
+                </>
+              )}
               {widgets.length === 0 ? (
                 <EmptyState
                   title="Nothing on this page yet"
@@ -632,6 +658,8 @@ export function PageEditor({
       <EditorShell
         {...shell}
         outline={outline}
+        outlineKey={pageInfo?.page.id ?? ""}
+        {...(pageInfo ? { outlineLabel: pageInfo.page.title } : {})}
         canvas={canvas}
         inspectorOpen={widget !== undefined || pageInfo?.settingsOpen === true}
         onCloseInspector={() => {

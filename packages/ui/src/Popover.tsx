@@ -1,5 +1,5 @@
 import { Popover as Base } from "@base-ui/react/popover";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement, ReactNode, RefObject } from "react";
 
 /**
  * A small panel of words or controls that opens from a control and closes on
@@ -16,6 +16,7 @@ export function Popover({
   onOpenChange,
   wide = false,
   titleHidden = false,
+  anchor,
 }: {
   /** One element that takes focus: a button. */
   trigger: ReactElement;
@@ -31,6 +32,8 @@ export function Popover({
   wide?: boolean;
   /** The title names the panel for screen readers only, for one whose contents say what it is. */
   titleHidden?: boolean;
+  /** What the panel is placed against, when that is more than its trigger: a split button's whole width. */
+  anchor?: RefObject<Element | null>;
 }) {
   return (
     <Base.Root
@@ -39,7 +42,13 @@ export function Popover({
     >
       <Base.Trigger render={trigger} />
       <Base.Portal>
-        <Base.Positioner side={side} align={align} sideOffset={6} className="layer-popover">
+        <Base.Positioner
+          side={side}
+          align={align}
+          sideOffset={6}
+          {...(anchor ? { anchor } : {})}
+          className="layer-popover"
+        >
           <Base.Popup
             className={`max-h-(--available-height) overflow-y-auto rounded-panel border border-line-strong text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0 ${
               wide

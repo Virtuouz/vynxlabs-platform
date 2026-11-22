@@ -254,9 +254,12 @@ function Fields({
 }) {
   const columns = askable(info);
   // The chosen fields come first, in their order; the rest follow, unchecked.
+  // Long text is last among them, as a form puts its free text at the end.
+  const left = columns.filter((column) => !plan.fields.includes(column.name));
   const ordered = [
     ...plan.fields.flatMap((name) => columns.filter((column) => column.name === name)),
-    ...columns.filter((column) => !plan.fields.includes(column.name)),
+    ...left.filter((column) => column.type !== "long_text"),
+    ...left.filter((column) => column.type === "long_text"),
   ];
   const automatic = info.columns.filter((column) => isSystem(column.name));
   const [dragging, setDragging] = useState<string>();
@@ -270,7 +273,7 @@ function Fields({
   return (
     <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0">
       <legend className="mb-1.5 p-0 text-body-sm font-medium text-ink">Fields</legend>
-      <ul className="m-0 flex list-none flex-col rounded-control border border-line p-1">
+      <ul className="m-0 flex max-h-[min(19rem,34vh)] list-none flex-col overflow-y-auto rounded-control border border-line p-1">
         {ordered.map((column) => {
           const on = plan.fields.includes(column.name);
           const at = plan.fields.indexOf(column.name);
@@ -313,7 +316,6 @@ function Fields({
               />
               <span className="ml-auto flex shrink-0 items-center gap-2 text-body-sm text-ink-muted">
                 {controlWords(column, plan.mode)}
-                {column.required ? <span className="text-ink-subtle">required</span> : null}
                 {on ? (
                   <span className="flex opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 pointer-coarse:opacity-100">
                     <MoveButtons

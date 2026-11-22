@@ -1,9 +1,16 @@
 import { Button, Panel, SideSheet, useLast } from "@volvel/ui";
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import {
+  ListTree,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+} from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useShortcut } from "../../kit/keys.ts";
 import { useWide, WIDE } from "../../kit/layout.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
+import { SidewaysScroll } from "../../kit/SidewaysScroll.tsx";
 import { SplitPane } from "../../kit/SplitPane.tsx";
 import { UndoRedo } from "../../kit/UndoRedo.tsx";
 import { usePreference } from "../../prefs.ts";
@@ -47,6 +54,8 @@ export function EditorShell({
   after,
   notices,
   outline,
+  outlineKey,
+  outlineLabel,
   canvas,
   inspector,
   inspectorOpen,
@@ -82,6 +91,10 @@ export function EditorShell({
   /** Saves at once, rather than a moment after the last change: ⌘S. */
   saveNow?: () => void;
   outline: ReactNode;
+  /** What the outline's sheet closes on when it changes: the page chosen. */
+  outlineKey?: string;
+  /** On a narrow screen, what the bar that opens the outline says is shown: the page's name. */
+  outlineLabel?: string;
   canvas: ReactNode;
   /** The settings of the chosen widget, or what to do to choose one. */
   inspector: ReactNode;
@@ -103,6 +116,11 @@ export function EditorShell({
   };
   useNavigationGuard(saving !== "saved", "A change is not saved yet.");
   const docked = useWide(WIDE.panel);
+  // Below the width the panes need, the pages and widgets are a sheet a bar opens, as the settings are.
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a page chosen, or a widget chosen, ends what the sheet was for
+  useEffect(() => setOutlineOpen(false), [outlineKey, inspectorOpen]);
+  const sheeted = bleed && !docked;
   // The sheet keeps showing what it showed while it closes.
   const lastInspector = useLast(inspectorOpen ? inspector : undefined);
   const { undo, redo } = history;
@@ -185,11 +203,25 @@ export function EditorShell({
       <div
         className={
           bleed
-            ? "flex min-h-0 flex-1 flex-col max-lg:overflow-y-auto lg:flex-row"
+            ? "flex min-h-0 flex-1 flex-col lg:flex-row"
             : "flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:items-start"
         }
       >
-        {bleed && docked && outlineFolded ? (
+        {sheeted ? (
+          <div className="flex shrink-0 items-center gap-2 border-line border-t bg-structure px-3 py-1.5">
+            <Button
+              variant="secondary"
+              size="small"
+              aria-haspopup="dialog"
+              onClick={() => setOutlineOpen(true)}
+            >
+              <ListTree aria-hidden="true" size={14} /> Pages and widgets
+            </Button>
+            {outlineLabel ? (
+              <span className="min-w-0 truncate text-body-sm text-ink-muted">{outlineLabel}</span>
+            ) : null}
+          </div>
+        ) : bleed && docked && outlineFolded ? (
           <div className="flex w-9 shrink-0 items-start justify-center border-line border-t border-r bg-structure p-1">
             <Button
               variant="quiet"
@@ -227,16 +259,20 @@ export function EditorShell({
               : {})}
             className="min-w-0 flex-1"
             first={
-              <div
-                data-canvas
-                className={
-                  bleed
-                    ? "min-h-0 min-w-0 flex-1 overflow-auto border-line border-t p-4 lg:[container-type:size]"
-                    : "min-w-0 lg:pr-1"
-                }
-              >
-                {canvas}
-              </div>
+              bleed ? (
+                <SidewaysScroll
+                  data-canvas=""
+                  label="The page"
+                  outerClassName="min-h-0 min-w-0 flex-1 border-line border-t"
+                  className="min-w-0 overflow-auto p-4 lg:[container-type:size]"
+                >
+                  {canvas}
+                </SidewaysScroll>
+              ) : (
+                <div data-canvas className="min-w-0 lg:pr-1">
+                  {canvas}
+                </div>
+              )
             }
             second={
               bleed ? (
@@ -257,15 +293,32 @@ export function EditorShell({
               )
             }
           />
-        ) : (
-          <div
-            data-canvas
-            className={bleed ? "min-w-0 max-w-full flex-1 overflow-x-auto p-4" : "min-w-0 flex-1"}
+        ) : bleed ? (
+          <SidewaysScroll
+            data-canvas=""
+            label="The page"
+            outerClassName="min-h-0 min-w-0 max-w-full flex-1 border-line border-t"
+            className="min-w-0 overflow-auto p-4"
           >
+            {canvas}
+          </SidewaysScroll>
+        ) : (
+          <div data-canvas className="min-w-0 flex-1">
             {canvas}
           </div>
         )}
       </div>
+      {sheeted ? (
+        <SideSheet
+          open={outlineOpen}
+          onClose={() => setOutlineOpen(false)}
+          side="left"
+          size="narrow"
+          title="Pages and widgets"
+        >
+          <div className="flex min-h-full flex-col gap-4">{outline}</div>
+        </SideSheet>
+      ) : null}
       {docked ? null : (
         <SideSheet open={inspectorOpen} onClose={onCloseInspector} title="Settings">
           {lastInspector}

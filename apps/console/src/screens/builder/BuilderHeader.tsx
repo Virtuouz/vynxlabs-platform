@@ -71,7 +71,7 @@ export function RenameButton({ onClick }: { onClick: () => void }) {
 }
 
 /** "3 draft changes": what the draft changes against what people see. It opens the review of them. */
-export function DraftPill({ count, onOpen }: { count: number; onOpen: () => void }) {
+export function DraftPill({ count, onOpen }: { count: number | undefined; onOpen: () => void }) {
   if (count === 0) return null;
   return (
     <button
@@ -80,7 +80,9 @@ export function DraftPill({ count, onOpen }: { count: number; onOpen: () => void
       className="inline-flex h-7 items-center gap-1.5 rounded-full border border-attention bg-attention-soft px-3 text-meta text-ink hover:brightness-95"
     >
       <span aria-hidden="true" className="size-1.5 rounded-full bg-attention" />
-      {count} draft {count === 1 ? "change" : "changes"}
+      {count === undefined
+        ? "Draft changes"
+        : `${count} draft ${count === 1 ? "change" : "changes"}`}
     </button>
   );
 }
@@ -219,10 +221,12 @@ export function PublishSplit({
   restore?: (() => void) | undefined;
 }) {
   const [open, setOpen] = useState(false);
+  // Both panels hang from the whole split button, their right edges at its right edge (board 6).
+  const whole = useRef<HTMLSpanElement>(null);
   const item =
     "flex w-full items-center rounded-inner px-3 py-1.5 text-left text-body-sm hover:bg-action-soft focus-visible:bg-action-soft aria-disabled:pointer-events-none aria-disabled:opacity-50";
   return (
-    <span className="inline-flex">
+    <span ref={whole} className="inline-flex">
       {check ? (
         <Popover
           open={check.open}
@@ -230,6 +234,7 @@ export function PublishSplit({
           title="What publishing does"
           titleHidden
           align="end"
+          anchor={whole}
           wide
           trigger={
             <Button variant="primary" disabled={disabled} className="rounded-r-none">
@@ -255,6 +260,7 @@ export function PublishSplit({
         title="More ways to publish"
         titleHidden
         align="end"
+        anchor={whole}
         wide
         trigger={
           <Button

@@ -421,7 +421,11 @@ export function ActionSubView({ env }: { env: Env }) {
       <ActionControl
         env={env}
         id={`${env.widget.id}-${one.id}`}
-        label={!one.label || one.label === "Action" || one.label === "Button" ? "What it does" : `What ${one.label} does`}
+        label={
+          !one.label || one.label === "Action" || one.label === "Button"
+            ? "What it does"
+            : `What ${one.label} does`
+        }
         help={undefined}
         action={one.action}
         onChange={(next, key) =>

@@ -399,7 +399,8 @@ export function DrawerEditor({
               ) ??
               true
             }
-            className="flex max-h-[min(34rem,var(--available-height))] w-[22rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-panel border border-line bg-raised text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:opacity-0">
+            className="flex max-h-[min(34rem,var(--available-height))] w-[22rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-panel border border-line bg-raised text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:opacity-0"
+          >
             <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-3">
               <Popover.Title className="m-0 text-body-sm font-semibold">{title}</Popover.Title>
               <Popover.Close

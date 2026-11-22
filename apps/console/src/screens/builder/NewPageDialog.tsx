@@ -8,9 +8,9 @@ import {
   blankPage,
   listPage,
   recordPage,
+  STARTS,
   type Start,
   type Started,
-  STARTS,
   startTitle,
   startWords,
 } from "./starters.ts";

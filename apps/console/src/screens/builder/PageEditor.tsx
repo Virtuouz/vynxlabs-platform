@@ -71,7 +71,6 @@ import {
   pageTable,
   suggestionsFor,
 } from "./records.ts";
-import { STARTS, startWords } from "./starters.ts";
 import { definitionOf, views } from "./registry.ts";
 import {
   automaticAt,
@@ -86,6 +85,7 @@ import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
 import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
 import { approvalsSuggestion } from "./selectorData.ts";
+import { STARTS, startWords } from "./starters.ts";
 import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
 import { TextOnPage } from "./TextOnPage.tsx";
 
@@ -669,7 +669,11 @@ export function PageEditor({
                           <Plus aria-hidden="true" size={16} /> Add to page
                         </Button>
                         {starts.map((one) => (
-                          <Button key={one.key} variant="secondary" onClick={() => pickNext(one.key)}>
+                          <Button
+                            key={one.key}
+                            variant="secondary"
+                            onClick={() => pickNext(one.key)}
+                          >
                             {one.label}
                           </Button>
                         ))}

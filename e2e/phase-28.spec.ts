@@ -1326,7 +1326,14 @@ test("POLISH-004: Table: a column shown as a badge is offered each of its values
 });
 
 /** The editor of an action (a row action, a button above the table): the dialog named by what it says. */
-const actionEditor = (says: string) => owner.getByRole("dialog", { name: says });
+// A row action is edited in the settings pane now (J2), a button's in a dialog.
+const actionEditor = (says: string) => owner.getByRole("dialog", { name: says }).or(settings());
+/** Leaves an action's editor: Done in its dialog, Back in the settings pane. */
+const doneWith = (says: string) =>
+  owner
+    .getByRole("dialog", { name: says })
+    .getByRole("button", { name: "Done" })
+    .or(settings().getByRole("button", { name: /^Back/ }));
 
 test("POLISH-004: Table: a row action is made in the inspector, run on the rows chosen in the published app, and who may run it is picked from the groups", async () => {
   await openBuilder("tables", /^To pay/);
@@ -1361,7 +1368,7 @@ test("POLISH-004: Table: a row action is made in the inspector, run on the rows 
     .getByText("Practice managers", { exact: true })
     .click();
   await owner.getByRole("dialog", { name: "Groups" }).getByRole("button", { name: "Done" }).click();
-  await actionEditor("Mark paid").getByRole("button", { name: "Done" }).click();
+  await doneWith("Mark paid").click();
   await savedWidget("tables", "bulk", (one) => one.id === "pay");
   const saved = await settle("tables", "bulk", "pay", (one) =>
     (one.config?.rowActions as Wid[] | undefined)?.[0]?.action?.runBy ? one : undefined,
@@ -1405,7 +1412,7 @@ test("POLISH-010: the publish check blocks what cannot work, says why, passes on
   await settings()
     .getByRole("button", { name: /^Row action$/ })
     .click();
-  await actionEditor("Action").getByRole("button", { name: "Done" }).click();
+  await doneWith("Action").click();
   await openCheck();
   await expect(readyToPublish().getByRole("alert")).toContainText("Publish is off until");
   await expect(readyToPublish().getByRole("button", { name: /^Publish/ })).toBeDisabled();
@@ -1420,7 +1427,7 @@ test("POLISH-010: the publish check blocks what cannot work, says why, passes on
     .click();
   await actionEditor("Action").getByRole("button", { name: "Add a step" }).click();
   await owner.getByRole("menuitem", { name: "Show a message" }).click();
-  await actionEditor("Action").getByRole("button", { name: "Done" }).click();
+  await doneWith("Action").click();
   await openCheck();
   await expect(readyToPublish().locator('[data-check="fail"]')).toHaveCount(0);
   await expect(readyToPublish().getByText("All data sources found")).toBeVisible();
@@ -2263,7 +2270,7 @@ test("Acceptance, invoices: a table of invoices, a click that opens the record, 
     .click();
   await owner.getByRole("textbox").last().fill("paid");
   await owner.keyboard.press("Enter");
-  await actionEditor("Mark paid").getByRole("button", { name: "Done" }).click();
+  await doneWith("Mark paid").click();
 
   // A form for a new invoice: its modal, and a button on the table that opens it.
   await owner

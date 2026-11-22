@@ -1,5 +1,6 @@
-import { Button, Panel, SideSheet, useLast } from "@volvel/ui";
+import { Button, Panel, Popover, SideSheet, useLast } from "@volvel/ui";
 import {
+  Ellipsis,
   ListTree,
   PanelLeftClose,
   PanelLeftOpen,
@@ -121,6 +122,8 @@ export function EditorShell({
   // biome-ignore lint/correctness/useExhaustiveDependencies: a page chosen, or a widget chosen, ends what the sheet was for
   useEffect(() => setOutlineOpen(false), [outlineKey, inspectorOpen]);
   const sheeted = bleed && !docked;
+  // From 640 up the screen sizes and View as stay on the row; below it they are behind the ⋯.
+  const roomy = useWide(640);
   // The sheet keeps showing what it showed while it closes.
   const lastInspector = useLast(inspectorOpen ? inspector : undefined);
   const { undo, redo } = history;
@@ -150,7 +153,7 @@ export function EditorShell({
         state={
           <>
             {onRename && !renaming ? <RenameButton onClick={() => setRenaming(true)} /> : null}
-            {pill}
+            {pill ? <span className="max-sm:hidden">{pill}</span> : null}
             <span
               role="status"
               className={`text-body-sm max-xl:sr-only ${typeof saving === "object" ? "text-danger" : "text-ink-muted"}`}
@@ -161,10 +164,29 @@ export function EditorShell({
         }
         actions={
           <>
-            {tools}
-            <UndoRedo history={history} />
+            {/* Narrow: undo and redo, and the screen sizes and View as when there is no room, are behind a ⋯; the name, Preview and Publish stay. */}
+            {sheeted && roomy ? tools : null}
+            {sheeted ? null : tools}
+            {sheeted ? null : <UndoRedo history={history} />}
             {more}
             {primary}
+            {sheeted ? (
+              <Popover
+                title="More"
+                titleHidden
+                align="end"
+                trigger={
+                  <Button variant="quiet" aria-label="More: undo, redo and the screen size">
+                    <Ellipsis aria-hidden="true" size={16} />
+                  </Button>
+                }
+              >
+                <div className="flex flex-col gap-3 p-1">
+                  <UndoRedo history={history} />
+                  {roomy ? null : <div className="flex flex-wrap items-center gap-2">{tools}</div>}
+                </div>
+              </Popover>
+            ) : null}
             {bleed && docked ? (
               <span className="flex items-center gap-0.5">
                 <Button

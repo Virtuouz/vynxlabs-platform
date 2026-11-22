@@ -192,7 +192,7 @@ export function PreviewButton({ onOpen, note }: { onOpen: () => void; note: stri
   return (
     <Tooltip label={note}>
       <Button onClick={onOpen}>
-        <Play aria-hidden="true" size={14} /> Preview
+        <Play aria-hidden="true" size={14} /> <span className="max-sm:sr-only">Preview</span>
       </Button>
     </Tooltip>
   );

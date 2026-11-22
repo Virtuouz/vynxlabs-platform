@@ -97,13 +97,23 @@ export function PageHeader({
   if (compact) {
     return (
       <header className={bar ? "flex shrink-0 flex-col gap-2 px-4 py-3" : "flex flex-col gap-2"}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          className={`flex items-center justify-between gap-3 ${bar ? "flex-nowrap" : "flex-wrap"}`}
+        >
           {/* The name and state give way before the actions do, so the row stays one row. */}
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+          <div
+            className={`flex min-w-0 flex-1 items-center gap-3 ${bar ? "flex-nowrap" : "flex-wrap"}`}
+          >
             {heading}
             {state}
           </div>
-          {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+          {actions ? (
+            <div
+              className={`flex items-center gap-2 ${bar ? "shrink-0 flex-nowrap" : "flex-wrap"}`}
+            >
+              {actions}
+            </div>
+          ) : null}
         </div>
         {after}
       </header>

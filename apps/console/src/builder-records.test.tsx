@@ -181,8 +181,11 @@ const open = async () => {
   show(<InterfaceBuilder root={root} link="/t/t1/workspaces/w1" path="screens/sales" />);
   await screen.findByRole("heading", { name: "Pages" });
 };
-const saved = async (check: (body: InterfaceBody) => boolean) =>
-  waitFor(() => expect(check(stored)).toBe(true), { timeout: 4000 });
+/** The builder saves a moment after the last change (700 ms); ⌘S saves at once, so a test does not wait out the moment. */
+const saved = async (check: (body: InterfaceBody) => boolean) => {
+  fireEvent.keyDown(document.body, { key: "s", ctrlKey: true });
+  return waitFor(() => expect(check(stored)).toBe(true), { timeout: 4000 });
+};
 const pageOf = (id: string) => stored.pages.find((page) => page.id === id);
 
 test("a page's kind is listed beside it, set in its settings, and a page is reordered and removed", async () => {

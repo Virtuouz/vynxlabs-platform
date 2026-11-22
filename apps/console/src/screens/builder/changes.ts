@@ -44,17 +44,26 @@ const settings = (page: Page) => {
  * What publishing changes, in words, one line each: "Added page Invoice detail", "Added button
  * Mark paid", "Changed form New invoice on Money". With nothing deployed yet, everything is new.
  */
-export function draftChanges(deployed: InterfaceBody | undefined, draft: InterfaceBody): string[] {
+export function draftChanges(
+  deployed: InterfaceBody | undefined,
+  draft: InterfaceBody,
+  /** Names are quoted (“Invoice detail”): where the lines stand beside other words, as the history's do. */
+  quoted = false,
+): string[] {
+  const q = (name: string) => (quoted ? `\u201c${name}\u201d` : name);
   const lines: string[] = [];
-  if (deployed && deployed.title !== draft.title) lines.push(`Renamed the app to ${draft.title}`);
+  if (deployed && deployed.title !== draft.title) {
+    lines.push(`Renamed the app to ${q(draft.title)}`);
+  }
   const before = new Map((deployed?.pages ?? []).map((page) => [page.id, page]));
   for (const page of draft.pages) {
     const was = before.get(page.id);
-    if (!was) lines.push(`Added page ${page.title}`);
-    else if (settings(page) !== settings(was)) lines.push(`Changed the settings of ${page.title}`);
+    if (!was) lines.push(`Added page ${q(page.title)}`);
+    else if (settings(page) !== settings(was))
+      lines.push(`Changed the settings of ${q(page.title)}`);
     before.delete(page.id);
   }
-  for (const page of before.values()) lines.push(`Removed page ${page.title}`);
+  for (const page of before.values()) lines.push(`Removed page ${q(page.title)}`);
   // Pages in another order change the app's menu.
   if (deployed) {
     const kept = draft.pages.filter((page) => deployed.pages.some((one) => one.id === page.id));
@@ -65,8 +74,8 @@ export function draftChanges(deployed: InterfaceBody | undefined, draft: Interfa
   const verb = { added: "Added", changed: "Changed", removed: "Removed" } as const;
   for (const one of widgetChanges(deployed, draft)) {
     // A widget named for its kind ("Text", "Button") is not said twice: "Changed text on Money".
-    const named = one.widget.toLowerCase() === one.kind ? one.kind : `${one.kind} ${one.widget}`;
-    lines.push(`${verb[one.change]} ${named}${one.change === "added" ? "" : ` on ${one.page}`}`);
+    const named = one.widget.toLowerCase() === one.kind ? one.kind : `${one.kind} ${q(one.widget)}`;
+    lines.push(`${verb[one.change]} ${named}${one.change === "added" ? "" : ` on ${q(one.page)}`}`);
   }
   return lines;
 }

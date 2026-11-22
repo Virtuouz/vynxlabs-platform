@@ -243,8 +243,11 @@ const open = async () => {
   show(<InterfaceBuilder root={root} link="/t/t1/workspaces/w1" path="screens/sales" />);
   await screen.findByRole("heading", { name: "Pages" });
 };
-const saved = async (check: (body: InterfaceBody) => boolean) =>
-  waitFor(() => expect(check(stored)).toBe(true), { timeout: 4000 });
+/** The builder saves a moment after the last change (700 ms); ⌘S saves at once, so a test does not wait out the moment. */
+const saved = async (check: (body: InterfaceBody) => boolean) => {
+  fireEvent.keyDown(document.body, { key: "s", ctrlKey: true });
+  return waitFor(() => expect(check(stored)).toBe(true), { timeout: 4000 });
+};
 const money0 = () => stored.pages[0]?.widgets ?? [];
 const suggestions = async () => {
   fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
@@ -391,7 +394,10 @@ test("a button offers Group with other buttons, the ones on its row checked firs
     "remind",
     "export",
   ]);
-  expect(await screen.findByText("2 buttons are now one Action group.")).toBeTruthy();
+  // The toast is read from the page's text: a text query over the whole builder is slow to repeat while it settles.
+  await waitFor(() =>
+    expect(document.body.textContent).toContain("2 buttons are now one Action group."),
+  );
 });
 
 // ----- The pure changes -----

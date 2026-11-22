@@ -422,7 +422,9 @@ test("an earlier draft is listed and restored as one step", async () => {
   fireEvent.click(screen.getByRole("button", { name: "More ways to publish" }));
   fireEvent.click(await screen.findByRole("menuitem", { name: "Restore an earlier draft" }));
   const dialog = within(await screen.findByRole("dialog", { name: "Restore an earlier draft" }));
-  expect(await dialog.findByText("Removed text Bravo on Money")).toBeTruthy();
+  expect(
+    await dialog.findByText("Removed text \u201cBravo\u201d on \u201cMoney\u201d"),
+  ).toBeTruthy();
   fireEvent.click(dialog.getByRole("button", { name: "Restore" }));
   await saved(() => stored.pages[0]?.widgets.length === 1);
   expect(order()).toEqual(["a"]);

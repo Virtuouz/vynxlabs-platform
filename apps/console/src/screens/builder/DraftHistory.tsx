@@ -48,7 +48,7 @@ export function DraftHistory({
   const picked = items.find((one) => one.id === chosen) ?? items[0];
   const who = (id: string | null) =>
     id ? (members.data?.items.find((one) => one.id === id)?.name ?? "Someone") : "The system";
-  const changes = picked ? draftChanges(current, picked.body) : [];
+  const changes = picked ? draftChanges(current, picked.body, true) : [];
 
   return (
     <Dialog

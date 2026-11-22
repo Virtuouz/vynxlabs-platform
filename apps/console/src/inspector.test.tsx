@@ -15,6 +15,7 @@ import {
   tabsOf,
   withoutWidget,
 } from "./kit/inspector/model.ts";
+import { EditOnPage } from "./kit/markdown/onThePage.ts";
 import { show } from "./testing.tsx";
 
 const catalog: Catalog = {
@@ -165,16 +166,33 @@ test("a setting that depends on another is shown only while it holds", () => {
   expect((written.at(-1) as PageWidget).config?.mark).toBe("bar");
 });
 
-test("a tab with nothing in it is hidden", () => {
+test("a tab with nothing in it is hidden", async () => {
   const note: PageWidget = { id: "note", type: "core/text", at: { x: 0, y: 0, w: 6, h: 2 } };
   show(<Harness start={note} definition={text} />);
   // A note reads nothing and raises nothing.
   expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Display", "Rules"]);
   expect(tabsOf(text)).toEqual(["display", "rules"]);
   // Its text is a Markdown editor with a preview.
-  fireEvent.change(screen.getByLabelText("Text"), { target: { value: "# Hello" } });
+  fireEvent.change(await screen.findByLabelText("Text"), { target: { value: "# Hello" } });
   expect(written.at(-1)?.config?.text).toBe("# Hello");
   expect(screen.getByLabelText("Preview of the text")).toBeTruthy();
+});
+
+test("a Text widget's drawer offers to write it on the page, where the canvas can", async () => {
+  const note: PageWidget = { id: "note", type: "core/text", at: { x: 0, y: 0, w: 6, h: 2 } };
+  const edit = vi.fn();
+  show(
+    <EditOnPage.Provider value={edit}>
+      <Harness start={note} definition={text} />
+    </EditOnPage.Provider>,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: /Edit on the page/ }));
+  expect(edit).toHaveBeenCalledWith("note");
+  cleanup();
+  // Where there is no canvas to write on, the button is not there.
+  show(<Harness start={note} definition={text} />);
+  await screen.findByLabelText("Text");
+  expect(screen.queryByRole("button", { name: /Edit on the page/ })).toBeNull();
 });
 
 test("a widget from a pack no code here knows is drawn from its definition", () => {

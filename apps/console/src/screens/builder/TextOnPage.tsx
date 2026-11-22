@@ -14,7 +14,7 @@ function placeOver(cell: Element | null): Place {
   const room = window.innerWidth;
   if (room < 640) return { left: 8, top: 56, width: room - 16 };
   const box = cell?.getBoundingClientRect();
-  const width = Math.min(room - 16, Math.max(box?.width ?? 0, 520));
+  const width = Math.min(room - 16, Math.max(box?.width ?? 0, 680));
   const left = Math.max(8, Math.min(box?.left ?? 8, room - width - 8));
   const top = Math.max(8, Math.min(box?.top ?? 8, window.innerHeight - 440));
   return { left, top, width };
@@ -53,6 +53,7 @@ export function TextOnPage({
 
   return createPortal(
     <div
+      // overlay-allowed: not modal. It sits over the widget being written, anchored to it, and Esc leaves it.
       role="dialog"
       aria-label={`Edit ${title} on the page`}
       style={{ left: place.left, top: place.top, width: place.width }}

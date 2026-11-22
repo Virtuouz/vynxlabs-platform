@@ -293,13 +293,14 @@ export function AnchoredColumnEditor({
       window.removeEventListener("scroll", measure, true);
     };
   }, [open, spec.column]);
-  if (!open || !box) return null;
+  // Not drawn until it has been opened and its element found; once it has, it stays while it closes.
+  if (!box) return null;
   return createPortal(
     <ColumnEditor
       spec={spec}
       facts={facts}
       onChange={onChange}
-      open={true}
+      open={open}
       side={side}
       boundary={side === "bottom" ? document.querySelector("[data-canvas]") : undefined}
       onOpenChange={(next) => {

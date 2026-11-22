@@ -257,6 +257,15 @@ describe("section, text and filter looks", () => {
     expect(await screen.findByLabelText("Status")).toBeTruthy();
   });
 
+  test("a search and nothing else, behind a button: the button holds the search, as the page shows it", async () => {
+    const filters = [{ name: "search", type: "search", label: "Search" }];
+    render(<Page widgets={[widget("core/filter", { filters, sit: "button" })]} />);
+    const button = await screen.findByRole("button", { name: /Filters/ });
+    expect(screen.queryByLabelText("Search")).toBeNull();
+    fireEvent.click(button);
+    expect(await screen.findByLabelText("Search")).toBeTruthy();
+  });
+
   test("filters in a row have no button", async () => {
     const filters = [{ name: "search", type: "search", label: "Search" }];
     render(<Page widgets={[widget("core/filter", { filters, sit: "row" })]} />);

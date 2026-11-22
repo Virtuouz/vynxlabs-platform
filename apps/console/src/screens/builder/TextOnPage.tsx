@@ -1,4 +1,4 @@
-import { Button } from "@volvel/ui";
+import { Appear, Button } from "@volvel/ui";
 import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { MarkdownEditor } from "../../kit/markdown/MarkdownEditor.tsx";
@@ -46,9 +46,12 @@ export function TextOnPage({
   widget,
   title,
   text,
+  open = true,
   onDone,
   onCancel,
 }: {
+  /** False while it leaves: it stays on the page for its motion. */
+  open?: boolean;
   widget: string;
   title: string;
   text: string;
@@ -68,12 +71,13 @@ export function TextOnPage({
   }, [widget]);
 
   return createPortal(
-    <div
+    <Appear
+      open={open}
       // overlay-allowed: not modal. It sits over the widget being written, anchored to it, and Esc leaves it.
       role="dialog"
       aria-label={`Edit ${title} on the page`}
       style={{ left: place.left, top: place.top, width: place.width, height: place.height }}
-      className={`layer-popover fixed flex flex-col overflow-hidden border-line-strong bg-raised shadow-drag ${place.full ? "" : "rounded-panel border"}`}
+      className={`layer-popover fixed flex flex-col overflow-hidden border-line-strong bg-raised shadow-drag transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0 ${place.full ? "" : "rounded-panel border"}`}
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented) {
           event.stopPropagation();
@@ -100,7 +104,7 @@ export function TextOnPage({
           Done
         </Button>
       </div>
-    </div>,
+    </Appear>,
     document.body,
   );
 }

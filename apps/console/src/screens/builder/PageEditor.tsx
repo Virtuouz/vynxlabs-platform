@@ -9,7 +9,7 @@ import {
   type PageWidget,
 } from "@volvel/manifest";
 import { GRID } from "@volvel/screens";
-import { Button, EmptyState, Kbd } from "@volvel/ui";
+import { Button, Closing, EmptyState, Kbd } from "@volvel/ui";
 import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
@@ -885,25 +885,29 @@ export function PageEditor({
           onMake={makeForm}
         />
       ) : null}
-      {writingWidget ? (
-        <TextOnPage
-          key={writingWidget.id}
-          widget={writingWidget.id}
-          title={nameOf(writingWidget)}
-          text={typeof writingWidget.config?.text === "string" ? writingWidget.config.text : ""}
-          onCancel={() => setWriting(undefined)}
-          onDone={(text) => {
-            setWriting(undefined);
-            if (text === (writingWidget.config?.text ?? "")) return;
-            put(
-              widgets.map((one) =>
-                one.id === writingWidget.id ? { ...one, config: { ...one.config, text } } : one,
-              ),
-              `writing ${nameOf(writingWidget)}`,
-            );
-          }}
-        />
-      ) : null}
+      {/* Kept on the page while it closes, so it leaves with its motion. */}
+      <Closing subject={writingWidget}>
+        {(shown, isOpen) => (
+          <TextOnPage
+            key={shown.id}
+            open={isOpen}
+            widget={shown.id}
+            title={nameOf(shown)}
+            text={typeof shown.config?.text === "string" ? shown.config.text : ""}
+            onCancel={() => setWriting(undefined)}
+            onDone={(text) => {
+              setWriting(undefined);
+              if (text === (shown.config?.text ?? "")) return;
+              put(
+                widgets.map((one) =>
+                  one.id === shown.id ? { ...one, config: { ...one.config, text } } : one,
+                ),
+                `writing ${nameOf(shown)}`,
+              );
+            }}
+          />
+        )}
+      </Closing>
       <span role="status" className="sr-only">
         {told}
       </span>

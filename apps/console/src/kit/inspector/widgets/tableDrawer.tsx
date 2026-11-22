@@ -6,6 +6,7 @@
  */
 import type { PageWidget } from "@volvel/manifest";
 import {
+  Closing,
   DashedAdd,
   DrawerBlock,
   DrawerEditor,
@@ -156,27 +157,32 @@ export function TableColumnsSection({ env, bare, ...source }: TableSectionProps)
           )}
         </DrawerEditor>
       </div>
-      {spec && open && !open.canvas ? (
-        <AnchoredColumnEditor
-          find={() => rowAt(open.column)}
-          spec={spec}
-          facts={factsOfOpen}
-          onChange={change}
-          open={true}
-          onClose={close}
-          side="left"
-        />
-      ) : null}
-      {spec && open?.canvas ? (
-        <CanvasColumnEditor
-          widget={env.widget.id}
-          spec={spec}
-          facts={factsOfOpen}
-          onChange={change}
-          open={true}
-          onClose={close}
-        />
-      ) : null}
+      {/* Kept on the page while they close, so each leaves with its motion. */}
+      <Closing subject={spec && open && !open.canvas ? { spec } : undefined}>
+        {(shown, isOpen) => (
+          <AnchoredColumnEditor
+            find={() => rowAt(shown.spec.column)}
+            spec={shown.spec}
+            facts={factsOfOpen}
+            onChange={change}
+            open={isOpen}
+            onClose={close}
+            side="left"
+          />
+        )}
+      </Closing>
+      <Closing subject={spec && open?.canvas ? { spec } : undefined}>
+        {(shown, isOpen) => (
+          <CanvasColumnEditor
+            widget={env.widget.id}
+            spec={shown.spec}
+            facts={factsOfOpen}
+            onChange={change}
+            open={isOpen}
+            onClose={close}
+          />
+        )}
+      </Closing>
     </Section>
   );
 }

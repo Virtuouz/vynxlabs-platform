@@ -8,6 +8,7 @@ import {
   useId,
   useRef,
 } from "react";
+import { useOpening } from "../presence.tsx";
 
 /** An icon component from `@volvel/ui/icons`, or any component that takes a class and a size. */
 export type DrawerIcon = ComponentType<{
@@ -351,7 +352,10 @@ export function DrawerEditor({
   /** An element it stays inside (the canvas, so it never covers the settings or the header). */
   boundary?: Element | null | undefined;
 }) {
-  const controlled = open === undefined ? {} : { open };
+  // One put on the page already open (a row added and opened at once, a column's editor beside its heading) is
+  // told it is shut first, so it arrives with the starting style that a click on its trigger gives it.
+  const opening = useOpening(open === true);
+  const controlled = open === undefined ? {} : { open: opening };
   return (
     <Popover.Root
       {...controlled}

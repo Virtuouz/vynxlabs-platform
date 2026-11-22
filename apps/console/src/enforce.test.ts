@@ -317,6 +317,10 @@ test("every sheet and dialog can arrive and leave with motion", () => {
       ) {
         found.push(`${where(path)}:${index + 1} keyed by whether it is open`);
       }
+      // `open={true}` is a sheet put on the page already open: it has no starting style, and goes in one frame.
+      if (/\bopen=\{true\}/.test(line)) {
+        found.push(`${where(path)}:${index + 1} born open: use Closing and pass its open`);
+      }
       if (!inKit && /(?<!\[)role="dialog"/.test(line)) {
         found.push(`${where(path)}:${index + 1} a dialog made by hand`);
       }

@@ -375,14 +375,17 @@ export function FilterView({ config, filters: host }: WidgetViewProps<FilterConf
       </Button>
     ) : null;
   if (config.sit === "button") {
+    const others = config.filters.filter((filter) => filter.type !== "search");
+    // A page with a search and nothing else has nothing to put behind the button but the search: it goes there, so "behind a button" is drawn as the page will show it.
+    const inside = others.length > 0 ? others : config.filters;
     return (
       <FiltersBehindButton
-        search={draw(config.filters.filter((filter) => filter.type === "search"))}
-        others={config.filters.filter((filter) => filter.type !== "search")}
+        search={others.length > 0 ? draw(config.filters.filter((f) => f.type === "search")) : null}
+        others={inside}
         values={values}
         clear={clear}
       >
-        {draw(config.filters.filter((filter) => filter.type !== "search"))}
+        {draw(inside)}
       </FiltersBehindButton>
     );
   }
@@ -415,7 +418,9 @@ function FiltersBehindButton({
   return (
     <search aria-label="Filters" className={BAR}>
       {/* The search and its button share the row, the search taking what the button leaves, wherever it is narrow. */}
-      <div className="flex min-w-0 flex-[1_1_8rem] @md/cell:flex-[1_1_14rem]">{search}</div>
+      {search ? (
+        <div className="flex min-w-0 flex-[1_1_8rem] @md/cell:flex-[1_1_14rem]">{search}</div>
+      ) : null}
       {others.length > 0 ? (
         <Popover
           title="Filters"

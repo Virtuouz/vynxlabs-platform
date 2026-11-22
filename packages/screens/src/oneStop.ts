@@ -4,6 +4,17 @@ const FOCUSABLE =
   'a[href],button,input,select,textarea,summary,iframe,[tabindex],[contenteditable="true"]';
 
 /**
+ * A region that scrolls and is not a control (a table's wrapper): it is focusable only so that the
+ * keyboard can scroll it, which is a rule of its own. It stays in the Tab order, or nothing can reach it.
+ */
+const scrolls = (one: HTMLElement) => {
+  if (/^(A|BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY|IFRAME)$/.test(one.tagName)) return false;
+  if (one.getAttribute("contenteditable") === "true") return false;
+  const style = getComputedStyle(one);
+  return /(auto|scroll)/.test(`${style.overflowX} ${style.overflowY}`);
+};
+
+/**
  * A widget on the builder's canvas is one stop for the keyboard, as a composite widget is: Tab
  * reaches the card, Enter (or a click inside) goes in to what it holds, Esc comes back out to the
  * card, and Tab leaves it again. What is inside keeps its place in the page and is only taken
@@ -20,7 +31,7 @@ export function useOneStop(active: boolean) {
     const card = node.current;
     if (!card || inside.current) return;
     for (const one of card.querySelectorAll<HTMLElement>(FOCUSABLE)) {
-      if (one.dataset.oneStop !== undefined || one.tabIndex < 0) continue;
+      if (one.dataset.oneStop !== undefined || one.tabIndex < 0 || scrolls(one)) continue;
       one.dataset.oneStop = one.getAttribute("tabindex") ?? "";
       one.tabIndex = -1;
     }

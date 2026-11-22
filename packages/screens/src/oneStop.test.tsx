@@ -15,6 +15,10 @@ function Card({ active }: { active: boolean }) {
     <section ref={stop.ref} aria-label="card" tabIndex={0} {...stop.props}>
       <button type="button">One</button>
       <a href="#x">Two</a>
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scroll region, focusable so it can be scrolled */}
+      <div role="region" tabIndex={0} aria-label="scroller" style={{ overflowX: "auto" }}>
+        wide
+      </div>
     </section>
   );
 }
@@ -29,6 +33,11 @@ describe("one stop for a widget", () => {
     fireEvent.keyDown(card, { key: "Enter" });
     expect(screen.getByRole("button", { name: "One" }).tabIndex).toBe(0);
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "One" }));
+  });
+
+  test("a region that scrolls stays reachable, or it cannot be scrolled by key", () => {
+    render(<Card active />);
+    expect(screen.getByLabelText("scroller").tabIndex).toBe(0);
   });
 
   test("Esc comes back out to the card and shuts the inside again", () => {

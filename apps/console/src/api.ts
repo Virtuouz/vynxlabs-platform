@@ -205,7 +205,8 @@ export interface Loaded<T> {
   updatedAt?: number | undefined;
   /** What shows is the answer to an earlier path, kept while the new one loads. */
   stale?: boolean | undefined;
-  reload: () => void;
+  /** Asks again. The promise settles once the answer is in (a failure is in `error`, not thrown). */
+  reload: () => Promise<void>;
 }
 
 /**
@@ -235,8 +236,8 @@ export function useLoad<T>(
   );
   const { refetch } = query;
   // A query with no path is switched off; asking it again would request `/api/v1null`.
-  const reload = useCallback(() => {
-    if (path !== null) void refetch();
+  const reload = useCallback(async () => {
+    if (path !== null) await refetch();
   }, [path, refetch]);
   return {
     data: query.data,

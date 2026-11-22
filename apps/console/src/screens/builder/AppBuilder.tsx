@@ -275,7 +275,8 @@ export function AppBuilder({
       await api.post(`${root}/changes/deploy`, { paths, message: `Publish ${body.title}` });
       revision.current = undefined;
       setReviewing(false);
-      deployed.reload();
+      // One truth: what is deployed is read again, and the drafts waiting, before "Published." is said, so the header never reads both.
+      await Promise.all([deployed.reload(), drafts.reload()]);
       // An app published for the first time is not in the list read when the builder opened: its address is read now.
       const address =
         url ??
@@ -286,9 +287,8 @@ export function AppBuilder({
       notify.success("Published. People who open the app now see this.", {
         ...(address ? { link: { label: "Open the app", href: address } } : {}),
       });
-      list.reload();
-      drafts.reload();
-      apps.reload();
+      void list.reload();
+      void apps.reload();
     } catch (error) {
       // Someone who may edit but not deploy here is told so, in plain words, and the draft stays.
       if (error instanceof ApiError && error.status === 403) {

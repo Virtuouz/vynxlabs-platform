@@ -1388,6 +1388,161 @@ export const actions = defineWidget({
   },
 });
 
+/**
+ * Requests waiting for a decision: the approval steps of the workspace's flows, to approve or
+ * reject from the page. It reads for a member only, by their own standing, and decides through
+ * its own route (decision 0007); who may decide is set on the flow's step, not here.
+ */
+export const approvals = defineWidget({
+  type: "core/approvals",
+  version: "1.0.0",
+  title: "Approvals",
+  description: "Requests waiting for a decision",
+  category: "action",
+  icon: "approvals",
+  surfaces: ["app"],
+  data: { requests: { shape: "approvals", label: "Which requests", sources: ["approvals"] } },
+  initialData: { requests: { source: { approvals: { whose: "mine" } } } },
+  config: {
+    type: "object",
+    properties: {
+      look: {
+        enum: ["rows", "cards", "queue"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Looks like",
+          control: "tiles",
+          label: "Looks like",
+          choices: { rows: "Rows", cards: "Cards", queue: "Queue" },
+          order: 1,
+        }),
+      },
+      fields: {
+        type: "array",
+        maxItems: 12,
+        items: {
+          type: "object",
+          properties: {
+            name: { type: "string", minLength: 1, maxLength: 80 },
+            label: { type: "string", maxLength: 60 },
+            hidden: { type: "boolean" },
+          },
+          required: ["name"],
+          additionalProperties: false,
+        },
+        "x-volvel": hint({
+          tab: "display",
+          group: "What each shows",
+          control: "fields",
+          label: "What each shows",
+          help: "The step's own details, in order. Left alone, the first four.",
+          order: 2,
+        }),
+      },
+      opens: {
+        enum: ["sheet", "modal", "nothing"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Looks like",
+          control: "segmented",
+          label: "A click opens",
+          choices: { sheet: "Sheet", modal: "Modal", nothing: "None" },
+          order: 1.5,
+        }),
+      },
+      decided: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          group: "Decided ones",
+          control: "switch",
+          label: "Show decided ones",
+          help: "A Waiting and Decided switch, with who decided and why.",
+          order: 4,
+        }),
+      },
+      empty: {
+        type: "string",
+        maxLength: 120,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Decided ones",
+          control: "text",
+          label: "When nothing waits",
+          order: 5,
+        }),
+      },
+      approveLabel: {
+        type: "string",
+        minLength: 1,
+        maxLength: 30,
+        "x-volvel": hint({
+          tab: "actions",
+          group: "Deciding",
+          control: "text",
+          label: "Approve says",
+          order: 1,
+        }),
+      },
+      rejectLabel: {
+        type: "string",
+        minLength: 1,
+        maxLength: 30,
+        "x-volvel": hint({
+          tab: "actions",
+          group: "Deciding",
+          control: "text",
+          label: "Reject says",
+          order: 2,
+        }),
+      },
+      askWhy: {
+        enum: ["never", "rejecting", "always"],
+        "x-volvel": hint({
+          tab: "actions",
+          group: "Deciding",
+          control: "segmented",
+          label: "Ask why",
+          choices: { never: "Never", rejecting: "Rejecting", always: "Always" },
+          order: 3,
+        }),
+      },
+      confirm: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "actions",
+          group: "Deciding",
+          control: "switch",
+          label: "Ask before approving",
+          order: 4,
+        }),
+      },
+      advance: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "actions",
+          group: "Deciding",
+          control: "switch",
+          label: "Go to the next one",
+          help: "Open the next request once one is decided.",
+          order: 5,
+        }),
+      },
+    },
+    additionalProperties: false,
+  },
+  defaults: {
+    look: "rows",
+    opens: "sheet",
+    askWhy: "rejecting",
+    approveLabel: "Approve",
+    rejectLabel: "Reject",
+    advance: true,
+  },
+  events: {},
+  layout: { min: { w: 4, h: 5 }, default: { w: 8, h: 12 }, phone: "stack" },
+});
+
 export const CORE_WIDGETS = [
   table,
   list,
@@ -1395,6 +1550,7 @@ export const CORE_WIDGETS = [
   form,
   button,
   actions,
+  approvals,
   stat,
   chart,
   pivot,

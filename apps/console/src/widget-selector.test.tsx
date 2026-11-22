@@ -166,3 +166,38 @@ describe("the widget selector (board 7)", () => {
     expect(dialog.getByText(/Adds to/)).toBeTruthy();
   });
 });
+
+describe("Approvals in the selector", () => {
+  test("is a tile under Take action, found by what people say", () => {
+    const { dialog, search } = open({ suggestions: undefined } as never);
+    const action = within(dialog.getByRole("region", { name: "Take action" }));
+    expect(action.getByRole("button", { name: /^Approvals/ })).toBeTruthy();
+    for (const words of ["sign off", "approve requests", "review"]) {
+      fireEvent.change(search, { target: { value: words } });
+      expect(dialog.getByRole("button", { name: /^Approvals/ }), words).toBeTruthy();
+    }
+  });
+
+  test("its preview says what it is, what it is good for, and draws a picture", () => {
+    const { dialog } = open({ suggestions: undefined } as never);
+    fireEvent.focus(dialog.getByRole("button", { name: /^Approvals/ }));
+    expect(dialog.getAllByText(/Requests waiting for a decision/).length).toBeGreaterThan(0);
+    expect(dialog.getAllByText("Stock orders waiting for a manager").length).toBeGreaterThan(0);
+    expect(document.querySelector('[data-drawing="approvals"]')).not.toBeNull();
+  });
+
+  test("a suggestion card is offered with the next steps, and picking it says so", () => {
+    const onPick = vi.fn();
+    const { dialog } = open({
+      suggestions: {
+        table: "this page",
+        items: [
+          { key: "approvals", label: "Approvals", hint: "Stock orders waits for a decision" },
+        ],
+        onPick,
+      },
+    });
+    fireEvent.click(dialog.getByRole("button", { name: /Approvals.*waits for a decision/ }));
+    expect(onPick).toHaveBeenCalledWith("approvals");
+  });
+});

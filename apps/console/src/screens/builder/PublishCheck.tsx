@@ -62,6 +62,7 @@ export function PublishCheck({
   const { catalog, loading } = useCatalog(root);
   const lists = useActionLists(root);
   const keyed = useGroupKeys(root);
+  const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
 
   const known = useMemo(
     () => ({
@@ -74,8 +75,21 @@ export function PublishCheck({
       flows: new Set(lists.flows.map((flow) => flow.path)),
       scripts: new Set(lists.scripts.map((script) => script.path)),
       groups: keyed.loaded ? keyed.groups.map((group) => group.key) : undefined,
+      approvalFlows: new Map(
+        lists.everyFlow.map((flow) => [flow.path, { title: flow.title, asks: flow.asks }]),
+      ),
+      appsAddress: instance.data?.appsAddress,
     }),
-    [loading, catalog, lists.flows, lists.scripts, keyed.loaded, keyed.groups],
+    [
+      loading,
+      catalog,
+      lists.flows,
+      lists.everyFlow,
+      lists.scripts,
+      keyed.loaded,
+      keyed.groups,
+      instance.data,
+    ],
   );
   const asked = preview.data;
   const checks: CheckItem[] = useMemo(

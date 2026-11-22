@@ -276,6 +276,7 @@ export async function inputQuery(
     };
   }
 
+  if ("approvals" in source) throw badRequest("Approvals are not read as a table.");
   if ("record" in source || "selected" in source || "own" in source)
     throw badRequest("One record is read as a table, before it is asked.");
 

@@ -102,7 +102,13 @@ export type WidgetSource =
   /** The row chosen in a table or list on the same page (its id), followed as it changes. */
   | { selected: string }
   /** The current user's own row of `table`, matched by `by` (the user's email against that column). */
-  | { own: { table: string; by: string } };
+  | { own: { table: string; by: string } }
+  /**
+   * The approval steps of the workspace's flows that wait for a decision (decision 0007):
+   * those of the flows named, or of every flow with an approval step. `whose` is the ones the
+   * viewer may decide ("mine", the default) or every one they may read ("all").
+   */
+  | { approvals: { flows?: string[]; whose?: "mine" | "all" } };
 
 /**
  * What a condition of a query built from menus may compare with, besides a
@@ -456,6 +462,33 @@ const sourceSchema = {
         },
       },
       required: ["own"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        approvals: {
+          type: "object",
+          description:
+            "The approval steps of the workspace's flows that wait for a decision, for a member who may read them.",
+          properties: {
+            flows: {
+              type: "array",
+              maxItems: 20,
+              uniqueItems: true,
+              items: { type: "string", pattern: PATH, maxLength: 255 },
+              description: "The flows, by path. Left out: every flow with an approval step.",
+            },
+            whose: {
+              enum: ["mine", "all"],
+              description:
+                "`mine` lists only those the viewer may decide; `all` every one they may read.",
+            },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ["approvals"],
       additionalProperties: false,
     },
   ],
@@ -884,6 +917,33 @@ export function inputTables(input: DataInput): string[] {
   return "visual" in input.source ? [input.source.visual.table] : [];
 }
 
+/** Every flow a set of widgets asks the approvals of, by path. */
+export function widgetFlows(widgets: readonly PageWidget[]): string[] {
+  return [
+    ...new Set(
+      widgets.flatMap((widget) =>
+        Object.values(widget.data ?? {}).flatMap((input) =>
+          "approvals" in input.source ? (input.source.approvals.flows ?? []) : [],
+        ),
+      ),
+    ),
+  ];
+}
+
+/**
+ * Flows an approvals widget names that have no approval step, so that nothing will ever wait
+ * there. Not an error (the flow may gain a step); for the Publish check to say.
+ */
+export function flowsWithoutApprovals(
+  widgets: readonly PageWidget[],
+  flowOf: (path: string) => { nodes: readonly { type: string }[] } | null | undefined,
+): string[] {
+  return widgetFlows(widgets).filter((path) => {
+    const flow = flowOf(path);
+    return flow ? !flow.nodes.some((node) => node.type === "approval") : false;
+  });
+}
+
 /** Every table the widgets read from menus. */
 export function widgetTables(widgets: readonly PageWidget[]): string[] {
   return [
@@ -959,6 +1019,11 @@ export interface CheckContext {
   /** A table's definition, when it is known. A table made in the console is in no bundle, and is not checked. */
   tableOf?: (path: string) => TableBody | undefined;
   registry?: WidgetRegistry;
+  /**
+   * A flow by its path, when the bundle or workspace knows it: its nodes. `null` when it is
+   * known not to be there. Left out, flows are not checked.
+   */
+  flowOf?: (path: string) => { nodes: readonly { type: string }[] } | null | undefined;
   /**
    * The page is being made, not deployed: a widget still waiting for its source is
    * allowed, and drawn as waiting. A member's own dashboard is kept this way; what is
@@ -1292,6 +1357,23 @@ export function checkWidgets(
         }
         continue;
       }
+      if ("approvals" in source) {
+        if (declared.shape !== "approvals") {
+          say(`${where}/source`, `${definition.title} can't read approvals`);
+        } else if (context.surface !== "app") {
+          say(`${where}/source`, "approvals are decided in an app, not on a dashboard");
+        } else {
+          (source.approvals.flows ?? []).forEach((path, which) => {
+            if (context.flowOf?.(path) === null)
+              say(`${where}/source/approvals/flows/${which}`, `there is no flow "${path}"`);
+          });
+        }
+        continue;
+      }
+      if (declared.shape === "approvals") {
+        say(`${where}/source`, `${definition.title} reads approvals: choose which`);
+        continue;
+      }
       const kind = "visual" in source ? "table" : "query" in source ? "query" : "sql";
       const allowed = declared.sources ?? ["table", "query", "sql"];
       if (!allowed.includes(kind) || (kind === "sql" && context.surface === "app")) {
@@ -1499,6 +1581,7 @@ export function checkInterface(
   body: InterfaceBody,
   tableOf?: (path: string) => TableBody | undefined,
   registry?: WidgetRegistry,
+  flowOf?: CheckContext["flowOf"],
 ): ManifestIssue[] {
   const issues: ManifestIssue[] = [];
   const seen = new Set<string>();
@@ -1528,6 +1611,7 @@ export function checkInterface(
           pages: body.pages,
           ...(tableOf ? { tableOf } : {}),
           ...(registry ? { registry } : {}),
+          ...(flowOf ? { flowOf } : {}),
         },
         `/body/pages/${index}`,
       ),
@@ -1566,6 +1650,9 @@ export function newWidget(
     type: definition.type,
     title: definition.title,
     at: { x: 0, y, w: definition.layout.default.w, h: definition.layout.default.h },
+    ...(definition.initialData
+      ? { data: structuredClone(definition.initialData) as Record<string, DataInput> }
+      : {}),
     ...(definition.defaults ? { config: { ...definition.defaults } } : {}),
   };
 }

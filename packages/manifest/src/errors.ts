@@ -201,6 +201,11 @@ export const ERROR_CODES = {
     "You may not answer this",
     "An approval is answered by one of the people the step names, and a change to access by someone other than whoever asked for it.",
   ),
+  decide_in_console: code(
+    403,
+    "Decide this in the console",
+    "An app that is written as code could press the button for whoever has it open, so an approval is decided where only the console runs. Open the approval in the console.",
+  ),
   own_release: code(
     409,
     "A change to access is approved by someone else",

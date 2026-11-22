@@ -25,6 +25,7 @@ import {
   settleOnGrid,
   unbindDeclared,
 } from "../../kit/inspector/model.ts";
+import { ApprovalFlowsProvider } from "../../kit/inspector/widgets/approvalFlows.tsx";
 import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
 import { useShortcut } from "../../kit/keys.ts";
 import { EditOnPage } from "../../kit/markdown/onThePage.ts";
@@ -79,6 +80,7 @@ import {
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
 import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
+import { approvalsSuggestion } from "./selectorData.ts";
 import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
 import { TextOnPage } from "./TextOnPage.tsx";
 
@@ -261,7 +263,14 @@ export function PageEditor({
     setTold(edit.told);
   };
   const makeForm = (plan: FormPlan) => apply(formEdit(context, plan, selected), "adding a form");
+  // An approval step in the workspace, and none on the page to decide it: offered with the next steps.
+  const approvalsOffered = pageInfo ? approvalsSuggestion(lists.approvals, widgets) : undefined;
   const pickNext = (key: string) => {
+    if (key === "approvals") {
+      const found = definitionOf("core/approvals");
+      if (found) add(found);
+      return;
+    }
     if (key === "form") {
       setAdding(false);
       setForming(true);
@@ -309,7 +318,8 @@ export function PageEditor({
     else added = placedAtBottom(widgets, added, into);
     added = {
       ...added,
-      ...(Object.keys(definition.data).length > 0
+      // A widget that says what it is added with (Approvals reads the workspace's) keeps it.
+      ...(definition.initialData === undefined && Object.keys(definition.data).length > 0
         ? { data: defaultInputs(definition, mainTable(widgets, catalog), catalog) }
         : {}),
     };
@@ -644,71 +654,73 @@ export function PageEditor({
                   }
                 />
               ) : null}
-              <InspectorHost
-                key={widget.id}
-                root={root}
-                client={client}
-                filterValues={filterValues}
-                groupKeys={keyed}
-                tab={inspectorTab}
-                onTab={setInspectorTab}
-                sample={{ table: sample.table, record: sample.record }}
-                onSelect={onSelect}
-                {...(pageInfo && (widget.type === "core/table" || widget.type === "core/list")
-                  ? {
-                      rowClick: (
-                        <RowClickEditor
-                          root={root}
-                          widget={widget}
-                          context={context}
-                          onApply={apply}
-                          {...(pageInfo.onSetPage ? { onSetPage: pageInfo.onSetPage } : {})}
-                          onEditLayout={(opened) =>
-                            pageInfo.onOpen({ page: opened.id, as: "page" })
-                          }
-                        />
-                      ),
-                    }
-                  : {})}
-                widget={widget}
-                definition={definitionOf(widget.type)}
-                surface={surface}
-                filters={filters}
-                neighbours={widgets.filter((one) => one.id !== widget.id)}
-                catalog={catalog}
-                onChange={edit}
-                widgets={widgets}
-                onChangeWidgets={put}
-                onUndo={shell.history.undo}
-                onRemoveTab={(tab, fate) => {
-                  const done = removeTab(
-                    widgets,
-                    widget.id,
-                    tab,
-                    "move" in fate ? fate.move : null,
-                  );
-                  if (done.what === "refused") return setTold(done.words);
-                  put(done.widgets, done.words.replace(/\.$/, "").toLowerCase());
-                  notify.success(done.words, {
-                    action: { label: "Undo", onClick: shell.history.undo },
-                  });
-                }}
-                {...(definitionOf(FILTER_WIDGET)
-                  ? { onAddFilters: () => add(definitionOf(FILTER_WIDGET) as WidgetDefinition) }
-                  : {})}
-                onDuplicate={() => duplicate(widget.id)}
-                onRemove={() => remove(widget.id)}
-                places={placesFor(widgets, widget.id)}
-                onMove={(key) => move(widget.id, key)}
-                holds={holds(widgets, widget)}
-                rowRules={(table) => `${link}/tables/${table}?view=definition`}
-                // What an action may touch and open: this page's kind and record, the app's pages,
-                // and the workspace's flows, scripts and groups.
-                {...(pageInfo ? { page: pageInfo.page, pages: pageInfo.pages } : {})}
-                flows={lists.flows}
-                scripts={lists.scripts}
-                automaticAt={(one, on) => automaticAt(widgets, one, on)}
-              />
+              <ApprovalFlowsProvider root={root} link={link}>
+                <InspectorHost
+                  key={widget.id}
+                  root={root}
+                  client={client}
+                  filterValues={filterValues}
+                  groupKeys={keyed}
+                  tab={inspectorTab}
+                  onTab={setInspectorTab}
+                  sample={{ table: sample.table, record: sample.record }}
+                  onSelect={onSelect}
+                  {...(pageInfo && (widget.type === "core/table" || widget.type === "core/list")
+                    ? {
+                        rowClick: (
+                          <RowClickEditor
+                            root={root}
+                            widget={widget}
+                            context={context}
+                            onApply={apply}
+                            {...(pageInfo.onSetPage ? { onSetPage: pageInfo.onSetPage } : {})}
+                            onEditLayout={(opened) =>
+                              pageInfo.onOpen({ page: opened.id, as: "page" })
+                            }
+                          />
+                        ),
+                      }
+                    : {})}
+                  widget={widget}
+                  definition={definitionOf(widget.type)}
+                  surface={surface}
+                  filters={filters}
+                  neighbours={widgets.filter((one) => one.id !== widget.id)}
+                  catalog={catalog}
+                  onChange={edit}
+                  widgets={widgets}
+                  onChangeWidgets={put}
+                  onUndo={shell.history.undo}
+                  onRemoveTab={(tab, fate) => {
+                    const done = removeTab(
+                      widgets,
+                      widget.id,
+                      tab,
+                      "move" in fate ? fate.move : null,
+                    );
+                    if (done.what === "refused") return setTold(done.words);
+                    put(done.widgets, done.words.replace(/\.$/, "").toLowerCase());
+                    notify.success(done.words, {
+                      action: { label: "Undo", onClick: shell.history.undo },
+                    });
+                  }}
+                  {...(definitionOf(FILTER_WIDGET)
+                    ? { onAddFilters: () => add(definitionOf(FILTER_WIDGET) as WidgetDefinition) }
+                    : {})}
+                  onDuplicate={() => duplicate(widget.id)}
+                  onRemove={() => remove(widget.id)}
+                  places={placesFor(widgets, widget.id)}
+                  onMove={(key) => move(widget.id, key)}
+                  holds={holds(widgets, widget)}
+                  rowRules={(table) => `${link}/tables/${table}?view=definition`}
+                  // What an action may touch and open: this page's kind and record, the app's pages,
+                  // and the workspace's flows, scripts and groups.
+                  {...(pageInfo ? { page: pageInfo.page, pages: pageInfo.pages } : {})}
+                  flows={lists.flows}
+                  scripts={lists.scripts}
+                  automaticAt={(one, on) => automaticAt(widgets, one, on)}
+                />
+              </ApprovalFlowsProvider>
             </>
           ) : pageInfo ? (
             <PageSettings
@@ -744,11 +756,18 @@ export function PageEditor({
           } else add(definition);
         }}
         {...(widgets.length > 0 ? { onCarry: carry } : {})}
-        {...(suggested && nextSteps.length > 0
+        {...((suggested && nextSteps.length > 0) || approvalsOffered
           ? {
               suggestions: {
-                table: manyOf(suggested),
-                items: nextSteps.map(({ key, label, hint }) => ({ key, label, hint })),
+                table: suggested ? manyOf(suggested) : "this page",
+                items: [
+                  ...(suggested ? nextSteps : []).map(({ key, label, hint }) => ({
+                    key,
+                    label,
+                    hint,
+                  })),
+                  ...(approvalsOffered ? [approvalsOffered] : []),
+                ],
                 onPick: pickNext,
               },
             }

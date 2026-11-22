@@ -104,7 +104,8 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx, params, query }) => {
+      async (request) => {
+        const { ctx, params, query } = request;
         if (query.cursor !== undefined && query.input === undefined) {
           throw badRequest("A cursor pages one data input: say which with `input`.");
         }
@@ -170,6 +171,10 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ...(query.record !== undefined ? { record: query.record } : {}),
           ...(behind ? { behind } : {}),
           ...(chosen ? { chosen } : {}),
+          ...(kernel.hosts.runsCodeApps(await kernel.hosts.place(request))
+            ? { elsewhere: true }
+            : {}),
+          ...(query.draft === "1" || query.draft === "true" ? { draft: true } : {}),
           widgets,
         });
         return { inputs: inputs as unknown as Record<string, Record<string, unknown>> };

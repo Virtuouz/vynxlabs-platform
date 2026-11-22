@@ -38,13 +38,16 @@ export const CATEGORY_TITLES: Record<Category, string> = {
  * - `rows`: rows of a table or a query, a page at a time;
  * - `summary`: rows gathered into groups with values worked out for each
  *   (a total, a count, an average), or one line of values with no groups;
- * - `record`: one row.
+ * - `record`: one row;
+ * - `approvals`: the steps of the workspace's flows that wait for someone's decision (a
+ *   widget that reads this is read for a member only, by `approval:read`, and decides by its
+ *   own route: decision 0007).
  */
-export const DATA_SHAPES = ["rows", "summary", "record"] as const;
+export const DATA_SHAPES = ["rows", "summary", "record", "approvals"] as const;
 export type DataShape = (typeof DATA_SHAPES)[number];
 
 /** Where a data input may come from. SQL is never offered on an app's page. */
-export const SOURCE_KINDS = ["table", "query", "sql"] as const;
+export const SOURCE_KINDS = ["table", "query", "sql", "approvals"] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 
 export interface DataInputDeclaration {
@@ -227,6 +230,11 @@ export interface WidgetDefinition {
   config: ConfigSchema;
   /** What the widget is when it is added, before anyone changes it. */
   defaults?: Readonly<Record<string, unknown>>;
+  /**
+   * The data inputs it is added with, by name, as a page stores them (`{ source: … }`), for a
+   * widget whose source needs no choosing: Approvals reads the workspace's approvals.
+   */
+  initialData?: Readonly<Record<string, { source: unknown }>>;
   events: Readonly<Record<string, EventDeclaration>>;
   layout: LayoutDeclaration;
   /**
@@ -385,7 +393,44 @@ export interface RecordData {
   names?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
-export type WidgetData = RowsData | SummaryData | RecordData;
+/**
+ * One step waiting for a decision, or decided. The fields are the step's detail as the server
+ * redacted and limited it; `mayDecide` is the server's answer for this viewer, and the buttons
+ * are drawn from it, but the server decides again.
+ */
+export interface ApprovalItem {
+  /** Names the step to `decide`: the flow run and the step. Nothing to read into. */
+  id: string;
+  title: string;
+  flow: { path: string; title: string };
+  fields: readonly { name: string; label: string; value: unknown }[];
+  /** An ISO time. */
+  waitingSince: string;
+  timesOutAt: string | null;
+  mayDecide: boolean;
+  /** Who may decide, in words ("the practice-managers group"), or null when anyone holding the permission may. */
+  approvers: string | null;
+  /** Set on a decided one. `via` is where: the app, the console, or a link in the mail. */
+  decision?: {
+    approved: boolean;
+    by: string;
+    at: string | null;
+    comment: string | null;
+    via: "app" | "console" | "email";
+  };
+}
+
+export interface ApprovalsData {
+  shape: "approvals";
+  /** Set when the requests are decided in the console and not here: where, and what it is called. */
+  decideIn?: { console: string; name: string };
+  waiting: readonly ApprovalItem[];
+  decided: readonly ApprovalItem[];
+  /** There are more waiting than were sent. */
+  more: boolean;
+}
+
+export type WidgetData = RowsData | SummaryData | RecordData | ApprovalsData;
 
 /**
  * What the frame around every widget draws for it, the same for every widget:
@@ -427,6 +472,15 @@ export type ActOutcome =
   | { ok: false; cancelled: true }
   | { ok: false; message: string; fields?: Readonly<Record<string, string>> };
 
+/**
+ * How deciding went. A refusal says why in the server's words; a `conflict` is someone else
+ * having decided it first, and the words say who and what.
+ */
+export type DecideOutcome =
+  | { ok: true; message: string }
+  | { ok: false; conflict: true; message: string }
+  | { ok: false; conflict?: false; message: string };
+
 /** A value a reference or choice column offers. */
 export interface Choice {
   value: string;
@@ -467,6 +521,14 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
       inputs?: Readonly<Record<string, unknown>>;
     },
   ) => Promise<ActOutcome>;
+  /**
+   * Decides a waiting approval of the widget's data, by the item's `id`. The server checks the
+   * viewer's own standing and records who decided. Absent while building, and on a host that
+   * cannot decide (nothing is then drawn as pressable).
+   */
+  decide?: (id: string, decision: "approve" | "reject", comment?: string) => Promise<DecideOutcome>;
+  /** Reads the widget's data again: when the person comes back from deciding elsewhere. */
+  refresh?: () => void;
   /** Whether an action the widget holds may be pressed now, for a row: its `when`, as the host reads it. */
   can?: (at: string, row?: Readonly<Record<string, unknown>>) => boolean;
   /** Why an action can't be pressed now, in the reader's words ("Status is Unpaid"); nothing when it can. */

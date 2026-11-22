@@ -69,3 +69,57 @@ test("a widget named for its kind is not said twice", () => {
   (now.pages[0]?.widgets[0] as PageWidget).config = { text: "b" };
   expect(draftChanges(was, now)).toEqual(["Changed text on Edit invoice"]);
 });
+
+const approvalsWidget = (flows: string[]): PageWidget => ({
+  id: "queue",
+  type: "core/approvals",
+  at: { x: 0, y: 0, w: 8, h: 12 },
+  data: { requests: { source: { approvals: { flows } } } },
+});
+const runWith = (made: InterfaceBody, extra: Record<string, unknown>) =>
+  checksFor({
+    body: made,
+    known: { ...known, ...extra } as never,
+    definitionOf: () => undefined,
+    problems: [],
+    refusal: [],
+    warnings: [],
+  });
+
+test("Approvals that lists a flow with no approval step says so, in the flow's own name", () => {
+  const items = runWith(body(approvalsWidget(["stock/reorder", "stock/count"])), {
+    approvalFlows: new Map([
+      ["stock/reorder", { title: "Reorder", asks: false }],
+      ["stock/count", { title: "Count", asks: true }],
+    ]),
+  });
+  expect(items.filter((one) => one.id.startsWith("approvals:"))).toEqual([
+    expect.objectContaining({
+      state: "warn",
+      text: "Approvals lists Reorder, which asks for no approval",
+    }),
+  ]);
+});
+
+test("while the flows are being read, nothing is said of them", () => {
+  const items = runWith(body(approvalsWidget(["stock/reorder"])), { approvalFlows: undefined });
+  expect(items.some((one) => one.id.startsWith("approvals:"))).toBe(false);
+});
+
+test("an app served at its own address says approvals are decided in the console; one on the console's own address does not", () => {
+  const widgets = body(approvalsWidget([]));
+  for (const where of ["separate", "console"]) {
+    const said = runWith(widgets, { appsAddress: where }).find(
+      (one) => one.id === "approvals:console",
+    );
+    expect(said).toMatchObject({
+      state: "warn",
+      text: expect.stringContaining("decided in the console"),
+    });
+  }
+  const has = (made: InterfaceBody, where: string) =>
+    runWith(made, { appsAddress: where }).some((one) => one.id === "approvals:console");
+  expect(has(widgets, "none")).toBe(false);
+  // A page with no Approvals widget is not told.
+  expect(has(body(form(undefined)), "separate")).toBe(false);
+});

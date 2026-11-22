@@ -1,5 +1,6 @@
 import {
   ChartLine,
+  ClipboardCheck,
   ClipboardList,
   Filter,
   Grid3x3,
@@ -32,6 +33,7 @@ const ICONS: Record<string, LucideIcon> = {
   tabs: PanelTop,
   filter: Filter,
   actions: Rows3,
+  approvals: ClipboardCheck,
   target: Target,
 };
 

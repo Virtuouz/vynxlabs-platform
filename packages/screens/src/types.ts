@@ -1,5 +1,6 @@
 import type { Step } from "@volvel/manifest";
 import type {
+  ApprovalsData,
   Choice,
   ColumnInfo,
   WidgetPack as SdkWidgetPack,
@@ -13,6 +14,7 @@ export type FilterValues = Record<string, unknown>;
 
 /** What the widget-data endpoint gives for one data input. */
 export type WireData =
+  | (ApprovalsData & { followed?: Followed })
   | {
       shape: "rows";
       columns: ColumnInfo[];
@@ -110,6 +112,22 @@ export interface PageDataClient {
       inputs?: Record<string, unknown>;
     },
   ): Promise<ActResponse>;
+  /**
+   * Decides a waiting approval an Approvals widget shows, by the item's id; the server checks
+   * who may, and records who did. Rejects with an `ActionError` (status 409 when someone
+   * decided it first). Absent on a host that decides nothing.
+   */
+  decide?(
+    widget: string,
+    id: string,
+    decision: "approve" | "reject",
+    comment?: string,
+  ): Promise<{
+    decision: "approve" | "reject";
+    title: string;
+    flow: { path: string; title: string };
+    by: string;
+  }>;
   /** What a reference or choice column of a widget's data input offers. */
   choices?(widget: string, input: string, column: string, search: string): Promise<Choice[]>;
   /**

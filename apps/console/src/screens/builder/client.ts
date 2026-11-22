@@ -92,6 +92,24 @@ export function pageClient(
         throw new ActionError(error.message, error.status, fields);
       }
     },
+    // Preview decisions really are made, in the dev workspace, from the draft, as whoever is building.
+    decide: async (widget, id, decision, comment) => {
+      if (source.of !== "interface") throw new ActionError("Approvals are decided in an app.");
+      try {
+        return await api.post(`${root}/page-approvals`, {
+          path: source.path,
+          page: source.page,
+          widget,
+          id,
+          decision,
+          ...(comment ? { comment } : {}),
+          ...(draft ? { draft: true } : {}),
+        });
+      } catch (error) {
+        if (!(error instanceof ApiError)) throw error;
+        throw new ActionError(error.message, error.status);
+      }
+    },
     choices: async (widget, input, column, search) => {
       const params = page(new URLSearchParams({ widget, input, column, search }));
       const found = await api.get<{ choices: { value: string; label: string }[] }>(

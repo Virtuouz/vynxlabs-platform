@@ -156,6 +156,30 @@ const SHAPES: Record<Drawing, React.ReactNode> = {
       <rect x="164" y="58" width="56" height="32" rx="7" className={CARD} />
     </>
   ),
+  approvals: (
+    <>
+      {[0, 1, 2].map((row) => (
+        <g key={row}>
+          <rect
+            x="14"
+            y={18 + row * 40}
+            width="78"
+            height="32"
+            rx="5"
+            className={row === 0 ? "fill-action opacity-20 stroke-action" : CARD}
+          />
+          <rect x="22" y={26 + row * 40} width="48" height="6" rx="2" className={LINE} />
+          <rect x="22" y={38 + row * 40} width="30" height="5" rx="2" className={FAINT} />
+        </g>
+      ))}
+      <rect x="104" y="18" width="122" height="112" rx="6" className={CARD} />
+      <rect x="116" y="30" width="62" height="9" rx="2" className={LINE} />
+      <rect x="116" y="48" width="42" height="14" rx="4" className={FAINT} />
+      <rect x="164" y="48" width="42" height="14" rx="4" className={FAINT} />
+      <rect x="116" y="100" width="48" height="18" rx="5" className={A} />
+      <rect x="170" y="100" width="48" height="18" rx="5" className="fill-surface stroke-danger" />
+    </>
+  ),
   section: (
     <>
       <rect x="16" y="16" width="90" height="9" rx="3" className={LINE} />

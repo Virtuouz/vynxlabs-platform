@@ -5,3 +5,4 @@
 import "./registerCharts.ts";
 import "./registerRecords.ts";
 import "./registerTables.tsx";
+import "./registerApprovals.ts";

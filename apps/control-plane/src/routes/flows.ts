@@ -15,6 +15,7 @@ import {
 } from "../kernel/execution/state.js";
 import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
 import {
+  approvalStepsOf,
   approversOf,
   approverTitles,
   describeApprovers,
@@ -353,6 +354,18 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   path: Type.String(),
                   description: Type.String(),
                   nodeCount: Type.Integer(),
+                  approvals: Type.Array(
+                    Type.Object({
+                      node: Type.String(),
+                      title: Type.String(),
+                      fields: Type.Array(Type.String()),
+                    }),
+                    {
+                      description:
+                        "Its approval steps, with the names each gives its approvers to read.",
+                    },
+                  ),
+                  title: NullableString,
                   triggers: Type.Array(Type.String()),
                   manualInput: Type.Union([AnyObject, Type.Null()], {
                     description:
@@ -406,7 +419,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ params }) => {
         const flows = await db
           .selectFrom("resource")
-          .select(["path", "body", "ownership"])
+          .select(["path", "body", "ownership", "title"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "flow")
           .orderBy("path")
@@ -461,6 +474,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body: FlowBody,
           version: number | null,
           ownership: string,
+          title: string | null = null,
         ) => {
           const last = byFlow.get(path);
           const count = countOf.get(path);
@@ -469,6 +483,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             path,
             description: body.description ?? "",
             nodeCount: Object.keys(body.nodes ?? {}).length,
+            approvals: approvalStepsOf(body as Parameters<typeof approvalStepsOf>[0]),
+            title,
             triggers: Object.values(body.nodes ?? {})
               .flatMap((node) => (node.type === "trigger" ? [node.trigger.type] : []))
               .sort(),
@@ -507,6 +523,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             flow.body as unknown as FlowBody,
             versions.get(flow.path) ?? null,
             flow.ownership,
+            flow.title,
           ),
         );
         // A flow drawn in the console and not yet deployed is listed too, as a draft.

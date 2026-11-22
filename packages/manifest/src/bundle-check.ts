@@ -15,6 +15,7 @@ import {
   type DashboardBody,
   type InterfaceBody,
   interfaceTables,
+  widgetFlows,
   widgetTables,
 } from "./page.js";
 import { KindRegistry, validateJson } from "./registry.js";
@@ -263,6 +264,18 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       const tables = isInterface
         ? interfaceTables(body as InterfaceBody)
         : widgetTables((body as DashboardBody).widgets);
+      // The flows an approvals widget asks of: where the bundle has the path, it is a flow.
+      const widgetsOf = isInterface
+        ? (body as InterfaceBody).pages.flatMap((page) => page.widgets)
+        : (body as DashboardBody).widgets;
+      for (const path of widgetFlows(widgetsOf)) {
+        const found = byPath.get(path);
+        if (found && found.kind !== "flow") {
+          problems.push(
+            `${manifest.path} (${manifest.kind}): asks the approvals of "${path}", which is ${/^[aeiou]/.test(found.kind) ? "an" : "a"} ${found.kind}, not a flow.`,
+          );
+        }
+      }
       for (const table of tables) {
         const found = byPath.get(table);
         if (found && found.kind !== "table") {
@@ -276,7 +289,12 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
         return found?.kind === "table" ? (found.body as unknown as TableBody) : undefined;
       };
       const issues = isInterface
-        ? checkInterface(body as InterfaceBody, tableOf)
+        ? checkInterface(body as InterfaceBody, tableOf, undefined, (path) => {
+            const found = byPath.get(path);
+            return found?.kind === "flow"
+              ? { nodes: Object.values((found.body as unknown as FlowBody).nodes ?? {}) }
+              : undefined;
+          })
         : checkDashboard(body as DashboardBody, tableOf);
       for (const issue of issues) {
         problems.push(`${manifest.path} (${manifest.kind}): ${issue.path} ${issue.message}`);

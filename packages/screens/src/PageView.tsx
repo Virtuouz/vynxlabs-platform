@@ -3,7 +3,7 @@ import { type ActingUser, type Condition, conditionWords } from "@volvel/manifes
 import { childrenOf, isContainer, type Roles, tabsOf, topLevel } from "@volvel/manifest/parts";
 import { EmptyState, Panel, useFlip } from "@volvel/ui";
 import { EyeOff, GripHorizontal } from "@volvel/ui/icons";
-import type { ActOutcome, Choice, EventPayload, FilterHost } from "@volvel/widgets";
+import type { ActOutcome, Choice, DecideOutcome, EventPayload, FilterHost } from "@volvel/widgets";
 import { calloutEdge } from "@volvel/widgets-core/views";
 import type React from "react";
 import {
@@ -62,7 +62,13 @@ import {
   usePlacement,
 } from "./placement.ts";
 import { recallTab, rememberTab } from "./tabMemory.ts";
-import type { FilterValues, PageDataClient, ViewEntry, ViewRegistry } from "./types.ts";
+import {
+  ActionError,
+  type FilterValues,
+  type PageDataClient,
+  type ViewEntry,
+  type ViewRegistry,
+} from "./types.ts";
 import { useWidgetData } from "./useWidgetData.ts";
 
 export interface PageViewProps {
@@ -191,6 +197,15 @@ interface GridContext {
   editing: Editing | undefined;
   onEvent: PageViewProps["onEvent"];
   run(request: Request): Promise<ActOutcome>;
+  /** Decides an approval an Approvals widget shows; the page reads again after, so what depends on it is true. */
+  decide(
+    widget: string,
+    id: string,
+    decision: "approve" | "reject",
+    comment?: string,
+  ): Promise<DecideOutcome>;
+  /** Makes every widget read again. */
+  refresh(): void;
   /** The page's record id, and its row when a widget has read it. */
   record: string | undefined;
   thisRow: Readonly<Record<string, unknown>> | undefined;
@@ -547,6 +562,13 @@ function Cell({
               {...extras}
               {...(place ? { place } : {})}
               {...tab}
+              {...(building ? {} : { refresh: () => ctx.refresh() })}
+              {...(building || !client.decide
+                ? {}
+                : {
+                    decide: (id: string, decision: "approve" | "reject", comment?: string) =>
+                      ctx.decide(widget.id, id, decision, comment),
+                  })}
               {...(building || !client.act
                 ? {}
                 : {
@@ -1266,6 +1288,27 @@ export function PageView({
     editing,
     onEvent,
     run: actions.run,
+    refresh: host.refresh,
+    decide: async (widget, id, decision, comment) => {
+      if (!client.decide) return { ok: false, message: "Deciding isn't available here." };
+      try {
+        const done = await client.decide(widget, id, decision, comment);
+        host.refresh();
+        return {
+          ok: true,
+          message: `${decision === "approve" ? "Approved" : "Rejected"} “${done.title}” as ${done.by}.`,
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message ? error.message : "It could not be decided.";
+        if (error instanceof ActionError && error.status === 409) {
+          // Someone else decided it: what they did is what is shown, and the page reads again.
+          host.refresh();
+          return { ok: false, conflict: true, message };
+        }
+        return { ok: false, message };
+      }
+    },
     record,
     thisRow,
     user,

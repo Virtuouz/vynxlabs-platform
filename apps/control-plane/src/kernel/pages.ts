@@ -65,8 +65,23 @@ export async function interfaceProblems(
 ): Promise<Problems> {
   const tables = await workspaceTables(kernel, workspace);
   const sources = await sourcePaths(kernel, workspace);
+  const flows = new Set(
+    (
+      await kernel.db
+        .selectFrom("resource")
+        .select("path")
+        .where("workspace_id", "=", workspace.id)
+        .where("kind", "=", "flow")
+        .execute()
+    ).map((row) => row.path),
+  );
   return [
-    ...checkInterface(body, (path) => tables.get(path)),
+    ...checkInterface(
+      body,
+      (path) => tables.get(path),
+      undefined,
+      (path) => (flows.has(path) ? { nodes: [] } : null),
+    ),
     ...missingTables(body, tables, sources),
   ];
 }

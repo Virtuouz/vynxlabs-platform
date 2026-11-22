@@ -14,6 +14,7 @@ test("the registry holds each type with its definition and its view", () => {
     "core/form",
     "core/button",
     "core/actions",
+    "core/approvals",
     "core/stat",
     "core/chart",
     "core/pivot",
@@ -24,6 +25,12 @@ test("the registry holds each type with its definition and its view", () => {
   ]);
   expect(registry.get("core/chart")?.definition.title).toBe("Chart");
   expect(registry.get("labs/orbit")).toBeUndefined();
+});
+
+test("approvals are never an empty read: the widget says 'Nothing waits for you.' itself", () => {
+  const none: WireData = { shape: "approvals", waiting: [], decided: [], more: false };
+  expect(isEmpty({ requests: none })).toBe(false);
+  expect(toWidgetData(none)).toEqual(none);
 });
 
 test("a type in two packs, or a definition with no view, is a mistake", () => {

@@ -11,7 +11,7 @@ import type { Reading } from "./useWidgetData.ts";
 function resultOf(read: Readonly<Record<string, WireData>> | undefined): Result | undefined {
   for (const wire of Object.values(read ?? {})) {
     // Rows are worth keeping; one number, or one record, is read off the page.
-    if (wire.shape === "record" || wire.rows.length === 0) continue;
+    if (wire.shape === "record" || wire.shape === "approvals" || wire.rows.length === 0) continue;
     if (wire.shape === "summary" && wire.breakdowns.length === 0) continue;
     const columns = wire.columns.map((column) => ({ name: column.label || column.name }));
     const names = wire.shape === "rows" ? (wire.names ?? {}) : {};
@@ -150,6 +150,10 @@ export function Frame({
   // A table's buttons sit at the right of its heading row, so it keeps the row for them.
   const controls = !bare && !container && hasHeadingControls(widget.config);
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  // What waits for a decision is counted in the heading, when something does.
+  const asked = Object.values(reading.read ?? {}).find((wire) => wire.shape === "approvals");
+  const waiting = asked?.shape === "approvals" ? asked.waiting.length : 0;
+  const moreWaiting = asked?.shape === "approvals" && asked.more;
   const heading = bare
     ? false
     : widget.title || widget.subtitle || controls || (building && (selected || opens));
@@ -199,6 +203,17 @@ export function Frame({
               renamable={building && selected && onRename !== undefined}
               onRename={(title) => onRename?.(title)}
             />
+            {waiting > 0 && state.status === "ready" ? (
+              <span
+                data-count=""
+                role="img"
+                aria-label={`${waiting}${moreWaiting ? " or more" : ""} waiting`}
+                className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-action-soft px-1.5 text-meta font-medium text-action tabular-nums"
+              >
+                {waiting}
+                {moreWaiting ? "+" : ""}
+              </span>
+            ) : null}
             <div className="ml-auto flex shrink-0 items-center gap-2">
               {building && opens ? (
                 <span

@@ -4,6 +4,7 @@ import {
   flowGrants,
   flowReferences,
   type InterfaceBody,
+  widgetFlows,
   widgetTables,
 } from "@volvel/manifest";
 import type { Db } from "./audit.js";
@@ -144,6 +145,7 @@ export async function workspaceReferences(
           ? ((body as unknown as InterfaceBody).pages ?? []).flatMap((page) => page.widgets ?? [])
           : ((body as unknown as DashboardBody).widgets ?? []);
       for (const table of widgetTables(widgets)) add("table", table, by, "shows it");
+      for (const path of widgetFlows(widgets)) add("flow", path, by, "asks for its approvals");
     }
     if (resource.kind === "app") {
       const app = body as { interface?: string; reads?: string[] };

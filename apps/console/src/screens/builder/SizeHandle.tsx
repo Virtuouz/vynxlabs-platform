@@ -68,9 +68,11 @@ export function SizeHandle({
         onPointerCancel={(event) => end(event, false)}
         onKeyDown={(event) => {
           const by = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
-          if (by === 0) return;
+          const edge =
+            event.key === "Home" ? 0 : event.key === "End" ? PAGE_SIZES.length - 1 : undefined;
+          if (by === 0 && edge === undefined) return;
           event.preventDefault();
-          const next = PAGE_SIZES[Math.min(PAGE_SIZES.length - 1, Math.max(0, index + by))];
+          const next = PAGE_SIZES[edge ?? Math.min(PAGE_SIZES.length - 1, Math.max(0, index + by))];
           if (next && next !== size) onSize(next, "page-size");
         }}
       >

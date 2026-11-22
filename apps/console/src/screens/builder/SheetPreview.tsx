@@ -2,6 +2,7 @@ import type { Page } from "@volvel/manifest";
 import { Button } from "@volvel/ui";
 import { ChevronLeft, ChevronRight, Eye, Pencil, X } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
+import { count } from "../../kit/format.ts";
 import type { Catalog } from "../../kit/inspector/model.ts";
 import { pageClient } from "./client.ts";
 import { views } from "./registry.ts";
@@ -86,8 +87,7 @@ export function SheetPreview({
               <ChevronLeft aria-hidden="true" size={14} /> {before ?? ""}
             </button>
             <span className="tabular-nums">
-              {position.at} of{" "}
-              {position.more ? `${position.of.toLocaleString()}+` : position.of.toLocaleString()}
+              {position.at} of {position.more ? `${count(position.of)}+` : count(position.of)}
             </span>
             <button
               type="button"

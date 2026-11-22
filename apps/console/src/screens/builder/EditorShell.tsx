@@ -91,7 +91,7 @@ export function EditorShell({
 }) {
   const [renaming, setRenaming] = useState(false);
   // The two side panes fold away, and stay as they were left. The inspector's is the split's own setting.
-  const [outlineFolded, foldOutline] = usePreference<boolean>("builder:outline-folded", false);
+  const [outlineFolded, foldOutline] = usePreference<boolean>("split:builder-outline", false);
   const [kept, keep] = usePreference<number | { size: number; collapsed?: "first" | "second" }>(
     "split:page-editor",
     70,

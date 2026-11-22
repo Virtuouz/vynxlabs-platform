@@ -25,6 +25,7 @@ import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { useTitleObject } from "../kit/title.ts";
+import { useBleedWhile } from "../kit/workbench.ts";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { pageClient } from "./builder/client.ts";
@@ -194,6 +195,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   }, [set]);
   const body = loaded?.body;
   const editingNow = loaded?.kind === "member" && loaded.mine && mode === "1";
+  useBleedWhile(editingNow);
   useShortcut("undo", history.undo, { enabled: editingNow });
   useShortcut("redo", history.redo, { enabled: editingNow });
 

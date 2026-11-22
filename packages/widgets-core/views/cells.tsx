@@ -1,7 +1,7 @@
 import { showValue } from "@volvel/ui";
 import { ArrowDownRight, ArrowUpRight, Minus } from "@volvel/ui/icons";
 import type { ColumnInfo, RowsData } from "@volvel/widgets";
-import { choiceWords, formatDay } from "@volvel/widgets";
+import { choiceWords, formatDay, formatOfColumn } from "@volvel/widgets";
 import type { ReactNode } from "react";
 import { formatNumber, labelOf, numberOf, type ValueFormat } from "./format.ts";
 
@@ -75,9 +75,13 @@ export const isRight = (spec: ColumnSpec, info: ColumnInfo | undefined) =>
   spec.align === "right" || isNumeric(info);
 
 /** The sum of a column over the rows shown, written as the column is. */
-export function totalOf(rows: RowsData["rows"], spec: ColumnSpec): string {
+export function totalOf(
+  rows: RowsData["rows"],
+  spec: ColumnSpec,
+  info?: ColumnInfo | undefined,
+): string {
   const sum = rows.reduce((so, row) => so + (numberOf(row[spec.column]) ?? 0), 0);
-  return formatNumber(sum, spec.format);
+  return formatNumber(sum, formatOfColumn(spec.format, info));
 }
 
 /** The rows ordered by a column, as it reads (a reference by the name it points at). Empty values last. */
@@ -204,6 +208,8 @@ export function cellOf(
 ): ReactNode {
   if (value === null || value === undefined || value === "") return nothing;
   const type = info?.type ?? "text";
+  // The widget's format, else what the table says the column holds (money kept in cents).
+  const format = formatOfColumn(spec.format, info);
   if (isJsonValue(type, value)) {
     const { text, full } = jsonWords(value);
     return (
@@ -222,7 +228,7 @@ export function cellOf(
             style={{ width: `${Math.min(100, share)}%` }}
           />
         </span>
-        <span className="tabular-nums">{formatNumber(value, spec.format)}</span>
+        <span className="tabular-nums">{formatNumber(value, format)}</span>
       </span>
     );
   }
@@ -237,7 +243,7 @@ export function cellOf(
       >
         <Way aria-hidden="true" size={14} />
         <span className="sr-only">{size > 0 ? "up" : size < 0 ? "down" : "no change"} </span>
-        {formatNumber(Math.abs(size), spec.format)}
+        {formatNumber(Math.abs(size), format)}
       </span>
     );
   }
@@ -265,12 +271,12 @@ export function cellOf(
   if (spec.as === "badge") {
     return (
       <DotBadge tone={spec.badges?.[String(value)]}>
-        {typeof value === "string" ? choiceWords(info, value) : formatNumber(value, spec.format)}
+        {typeof value === "string" ? choiceWords(info, value) : formatNumber(value, format)}
       </DotBadge>
     );
   }
-  if (isNumeric(info) || spec.format) {
-    return <span className="tabular-nums">{formatNumber(value, spec.format)}</span>;
+  if (isNumeric(info) || format) {
+    return <span className="tabular-nums">{formatNumber(value, format)}</span>;
   }
   if (isCode(value)) return <span className="font-mono text-[12.5px]">{value}</span>;
   if (type === "date" && typeof value === "string") {

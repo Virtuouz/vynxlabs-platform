@@ -22,6 +22,7 @@ import {
   visualOf,
   withPageFilters,
 } from "../../kit/inspector/model.ts";
+import { moneyFormatOf } from "@volvel/widgets";
 import { nextId } from "./containers.ts";
 import type { Action, Condition, Step } from "./contract.ts";
 import { kindOf, uniquePageId } from "./pageKinds.ts";
@@ -89,6 +90,7 @@ export function infoFromCatalog(catalog: Catalog, name: string): TableInfo | und
       type: column.type,
       required: false,
       ...(column.references ? { references: column.references } : {}),
+      ...(column.description ? { description: column.description } : {}),
       values: [],
     })),
   };
@@ -251,7 +253,7 @@ export function detailWidget(
       ...(status ? { status } : {}),
       fields: shown
         .filter((column) => column.name !== heading_ && column.name !== status)
-        .map((column) => ({ column: column.name })),
+        .map((column) => ({ column: column.name, ...startingFormat(column) })),
       ...(rowActions.length > 0
         ? {
             actions: rowActions.map((one) => ({
@@ -290,10 +292,16 @@ export function detailEdit(context: PageContext, widget: PageWidget, table: Tabl
 
 // ----- Forms -----
 
-/** Whether a number is money: its definition says so, in cents or in a currency. */
-const isMoney = (column: InfoColumn) =>
-  (column.type === "integer" || column.type === "number") &&
-  /\b(cents|minor units?|money|currency|dollars|euros|pounds)\b/i.test(column.description ?? "");
+/** Whether a number is money: its definition says so, in cents or in a currency (the one rule widgets share). */
+const isMoney = (column: InfoColumn) => moneyFormatOf(column) !== undefined;
+
+/** `{ format }` for a column whose table says it is money, else nothing: what a new field or column starts with. */
+export const startingFormat = (
+  column: InfoColumn | undefined,
+): { format: NonNullable<ReturnType<typeof moneyFormatOf>> } | Record<string, never> => {
+  const format = moneyFormatOf(column);
+  return format ? { format } : {};
+};
 
 /** A default, as a person reads it: a choice by its words, a date "today". */
 function defaultWords(column: InfoColumn, mode: "create" | "edit"): string | undefined {
@@ -438,6 +446,7 @@ export function formWidget(plan: FormPlan, id: string, at: PageWidget["at"]): Pa
         return {
           column: name,
           ...(column?.required ? { required: true } : {}),
+          ...startingFormat(column),
           // A new record's date starts at today; the person filling it in may change it.
           ...(plan.mode === "create" && column?.type === "date"
             ? { initial: { kind: "today" } }

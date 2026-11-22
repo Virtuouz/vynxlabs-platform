@@ -28,6 +28,7 @@ import {
   type ViewRegistry,
   type WireData,
 } from "./types.ts";
+import { type ConfirmFacts, confirmWords, isDefaultTitle } from "./confirmWords.ts";
 import { toWidgetData } from "./wire.ts";
 
 /** Where a page may be taken to by an action, as the host is asked. */
@@ -210,6 +211,8 @@ export interface Request {
   records?: readonly string[] | undefined;
   /** Its row, when it is among what the widget read: for `{column}` in the text. */
   row?: Row | undefined;
+  /** What the widget read of its columns and the names references point at: for the confirmation's words. */
+  facts?: ConfirmFacts | undefined;
   /** The group a point or cell stands for. */
   group?: Readonly<Record<string, unknown>> | undefined;
   /** The summary input it came from, for the rows behind it. */
@@ -384,6 +387,30 @@ const errorWords = (error: unknown) =>
     ? error.message
     : "That didn't work. Nothing was changed. Try again.";
 
+/** What the button that runs the action at `at` says: a row action's or group action's label, a button's. */
+export function labelAt(widget: PageWidget, at: string): string | undefined {
+  const parts = at.split("/");
+  if (parts[0] === "on" && widget.type === "core/button") {
+    const label = widget.config?.label;
+    return typeof label === "string" ? label : widget.title;
+  }
+  if (parts[0] === "config" && parts.length === 4 && parts[3] === "action") {
+    const list = widget.config?.[parts[1] as string];
+    const item = Array.isArray(list) ? (list[Number(parts[2])] as { label?: unknown }) : undefined;
+    return typeof item?.label === "string" ? item.label : undefined;
+  }
+  return undefined;
+}
+
+/** The table a widget reads its first rows from, to call a record by what it is. */
+export function tableOfWidget(widget: PageWidget): string | undefined {
+  for (const input of Object.values(widget.data ?? {})) {
+    const source = input.source;
+    if ("visual" in source) return source.visual.table;
+  }
+  return undefined;
+}
+
 /**
  * The confirmation: its title, its text with the record's words in it, what it asks for (a
  * form from the kit), and its button. Pending, a refusal and Cancel are all drawn.
@@ -406,7 +433,20 @@ function Confirmation({
   const confirm = asking.action.confirm;
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ActionError | Error>();
-  const text = confirm?.text ? fillText(confirm.text, asking.request.row, label) : undefined;
+  const words = confirmWords({
+    label: labelAt(asking.request.widget, asking.request.at),
+    confirm: confirm
+      ? {
+          title: isDefaultTitle(confirm.title) ? undefined : confirm.title,
+          text: confirm.text,
+          button: confirm.button,
+        }
+      : undefined,
+    table: tableOfWidget(asking.request.widget),
+    row: asking.request.row,
+    facts: asking.request.facts,
+  });
+  const text = words.text ? fillText(words.text, asking.request.row, label) : undefined;
   const ask = confirm?.ask ?? [];
   const go = async (inputs: Record<string, unknown>) => {
     setBusy(true);
@@ -424,12 +464,12 @@ function Confirmation({
   if (failure instanceof ActionError)
     for (const [name, message] of Object.entries(failure.fields ?? {}))
       fields[`/${name}`] = message;
-  const button = confirm?.button ?? "Confirm";
+  const button = words.button;
   return (
     <Dialog
       open={open}
       onClose={() => !busy && onCancel()}
-      title={confirm?.title ?? "Are you sure?"}
+      title={fillText(words.title, asking.request.row, label)}
       {...(text ? { description: text } : {})}
     >
       {failure && Object.keys(fields).length === 0 ? (
@@ -449,7 +489,7 @@ function Confirmation({
       ) : (
         <div className="flex flex-wrap items-center justify-end gap-2">
           <Button variant="secondary" onClick={onCancel} disabled={busy}>
-            Cancel
+            {words.dismiss}
           </Button>
           <Button variant="primary" loading={busy} onClick={() => go({})}>
             {button}

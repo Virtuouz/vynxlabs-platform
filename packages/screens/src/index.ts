@@ -8,6 +8,14 @@ export {
   holds,
   type NavigateTo,
 } from "./actions.tsx";
+export {
+  type ConfirmFacts,
+  type ConfirmInput,
+  confirmWords,
+  DEFAULT_CONFIRM_TITLE,
+  isDefaultTitle,
+  nounOf,
+} from "./confirmWords.ts";
 export { Frame, nameOf } from "./Frame.tsx";
 export {
   type DateRange,

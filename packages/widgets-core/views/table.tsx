@@ -552,7 +552,7 @@ export function TableView(props: WithSelected<TableConfig>) {
                   className={`${edge} ${pad} align-middle ${isRight(spec, info) ? "text-right" : ""}`}
                 >
                   {spec.total ? (
-                    <span className="tabular-nums">{totalOf(rows.rows, spec)}</span>
+                    <span className="tabular-nums">{totalOf(rows.rows, spec, info)}</span>
                   ) : index === 0 ? (
                     <span className="text-ink-muted">Total</span>
                   ) : null}

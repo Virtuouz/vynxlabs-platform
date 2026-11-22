@@ -39,6 +39,8 @@ export {
   FieldFrame,
   FieldHelp,
   FieldMarks,
+  MoneyField,
+  type MoneyFieldProps,
   NumberField,
   SelectField,
   TextAreaField,

@@ -369,6 +369,7 @@ function FormPreview({ info, plan }: { info: TableInfo | undefined; plan: FormPl
           type: column.type,
           ...(column.required ? { required: true } : {}),
           ...(column.references ? { references: column.references } : {}),
+          ...(column.description ? { description: column.description } : {}),
           ...(column.type === "enum" ? { values: column.values.map((value) => ({ value })) } : {}),
         })),
       };

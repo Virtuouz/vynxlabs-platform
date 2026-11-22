@@ -23,6 +23,7 @@ import {
   SelectField,
   TextField,
 } from "@volvel/ui";
+import { DEFAULT_CONFIRM_TITLE, isDefaultTitle } from "@volvel/screens";
 import {
   AlertTriangle,
   Check,
@@ -324,12 +325,15 @@ function ConfirmBody({
   widgetId,
   confirm,
   ctx,
+  named,
   onChange,
 }: {
   id: string;
   widgetId: string;
   confirm: NonNullable<Action["confirm"]>;
   ctx: ActionContext;
+  /** What the action's button says: the confirmation's own words are made from it. */
+  named?: string | undefined;
   onChange: (next: NonNullable<Action["confirm"]>, key?: string) => void;
 }) {
   const ask = confirm.ask ?? [];
@@ -346,11 +350,16 @@ function ConfirmBody({
     <>
       <TokenText
         label="Confirmation title"
-        placeholder="Are you sure?"
+        placeholder={named ? `Made from the action: “${named} the …?”` : DEFAULT_CONFIRM_TITLE}
         maxLength={120}
         fields={fields}
-        value={confirm.title}
-        onChange={(title) => onChange({ ...confirm, title }, `${id}:confirm-title`)}
+        value={isDefaultTitle(confirm.title) ? "" : confirm.title}
+        onChange={(title) =>
+          onChange(
+            { ...confirm, title: title.trim() === "" ? DEFAULT_CONFIRM_TITLE : title },
+            `${id}:confirm-title`,
+          )
+        }
       />
       <TokenText
         label="Confirmation text"
@@ -486,6 +495,8 @@ function ConfirmBody({
       <ConfirmPreview
         widgetId={widgetId}
         confirm={{ title: confirm.title, text: confirm.text, button: confirm.button }}
+        label={named}
+        table={table}
       />
     </>
   );
@@ -1004,9 +1015,12 @@ export function ActionEditor({
   onChange,
   startCollapsed = true,
   trigger,
+  named,
 }: {
   env: Env;
   id: string;
+  /** What the button that runs it says, for the confirmation's words. */
+  named?: string | undefined;
   /** "When clicked": the event, or what presses it. */
   heading: string;
   action: Action | undefined;
@@ -1036,7 +1050,7 @@ export function ActionEditor({
       ? [
           {
             label: "Ask to confirm",
-            onSelect: () => put({ ...current, confirm: { title: "Are you sure?" } }),
+            onSelect: () => put({ ...current, confirm: { title: DEFAULT_CONFIRM_TITLE } }),
           },
         ]
       : []),
@@ -1069,6 +1083,7 @@ export function ActionEditor({
                 widgetId={env.widget.id}
                 confirm={current.confirm}
                 ctx={ctx}
+                named={named}
                 onChange={(confirm, key) => put({ ...current, confirm }, key)}
               />
             ),
@@ -1291,6 +1306,7 @@ export function ActionsControl({
                   env={env}
                   id={`${id}-${one.id}`}
                   heading="When pressed"
+                  named={one.label}
                   action={one.action}
                   onChange={(next) => set(at, { action: next ?? { steps: [] } })}
                 />

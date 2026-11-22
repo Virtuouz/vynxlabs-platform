@@ -87,7 +87,7 @@ export function ColumnEditorBody({
           <div className="overflow-hidden rounded-control border border-line-control">
             <NumberFormatRow
               label="Format"
-              value={asNumberFormat(spec.format)}
+              value={asNumberFormat(spec.format ?? facts?.format)}
               sample={123.45}
               onChange={(next) => onChange({ format: next as ValueFormat })}
             />

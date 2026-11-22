@@ -79,7 +79,7 @@ export function Button({ tooltip, keys, ...props }: ButtonProps) {
   // A disabled button takes no pointer or focus: a wrapper that does says why.
   const disabled = props.href === undefined && (props.disabled || props.loading);
   return (
-    <Tooltip label={tooltip} keys={keys}>
+    <Tooltip label={tooltip} keys={keys} tapToShow={disabled === true}>
       {disabled ? (
         // biome-ignore lint/a11y/noNoninteractiveTabindex: focus is how a keyboard user hears why it is disabled
         <span tabIndex={0} className="inline-flex rounded-control">

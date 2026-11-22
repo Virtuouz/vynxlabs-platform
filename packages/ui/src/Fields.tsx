@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { moneyText, parseMoney } from "@volvel/widgets";
 import { DateInput } from "./DateInput.tsx";
 import { TermText } from "./Term.tsx";
 
@@ -413,6 +414,80 @@ export function NumberField(props: NumberFieldProps) {
           onChange?.(typedNumber(event.currentTarget.value));
         }}
       />
+    </FieldFrame>
+  );
+}
+
+export interface MoneyFieldProps extends Common {
+  name: string;
+  /** The amount as the column keeps it: cents, or whole units when `minorUnits` is false. */
+  value?: number | undefined;
+  /** An ISO 4217 code: shown beside the box, and used in the words of a problem. Default USD. */
+  currency?: string;
+  /** The column keeps cents (default). `false`: whole units. */
+  minorUnits?: boolean;
+  placeholder?: string;
+  required?: boolean;
+  disabled?: boolean;
+  /** Called with the amount as kept (exact, no float error), and the problem in words when what is typed is not an amount. */
+  onChange?: (value: number | undefined, problem?: string) => void;
+}
+
+/** A symbol for a currency: "$", "€". The code itself where there is none. */
+function symbolOf(currency: string): string {
+  try {
+    return (
+      new Intl.NumberFormat(undefined, { style: "currency", currency, currencyDisplay: "narrowSymbol" })
+        .formatToParts(0)
+        .find((part) => part.type === "currency")?.value ?? currency
+    );
+  } catch {
+    return currency;
+  }
+}
+
+/**
+ * An amount of money: typed as the person writes it ("123.45", or "123,45" where a comma is
+ * written), with the currency beside the box. It keeps the amount as the column holds it, exactly
+ * (12345 for 123.45 in cents), and says in words what is wrong with text that is not an amount
+ * or has more than two decimals.
+ */
+export function MoneyField(props: MoneyFieldProps) {
+  const { label, hint, error, value, onChange, currency = "USD", minorUnits = true, ...input } = props;
+  const options = { minorUnits, currency };
+  const [text, setText] = useState(() => (value === undefined ? "" : moneyText(value, options)));
+  const [left, setLeft] = useState(false);
+  const read = parseMoney(text, options);
+  const typed = read.ok ? read.value : undefined;
+  // A value passed in that is not what the box spells replaces it (a reset, another record).
+  const held = "value" in props && read.ok && typed !== value;
+  const shown = held ? (value === undefined ? "" : moneyText(value, options)) : text;
+  const problem = read.ok ? undefined : read.message;
+  const say = error ?? (left || text.length > 0 ? problem : undefined);
+  return (
+    <FieldFrame label={label} {...(hint ? { hint } : {})} error={say} required={input.required}>
+      <div className="flex items-center gap-2">
+        <span aria-hidden="true" className="text-body-sm text-ink-muted">
+          {symbolOf(currency)}
+        </span>
+        <Field.Control
+          {...input}
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          value={shown}
+          className={`${control} min-w-0 flex-1 text-right tabular-nums`}
+          onBlur={() => setLeft(true)}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+            const next = event.currentTarget.value;
+            setText(next);
+            const parsed = parseMoney(next, options);
+            if (parsed.ok) onChange?.(parsed.value);
+            else onChange?.(undefined, parsed.message);
+          }}
+        />
+        <span className="w-9 shrink-0 text-body-sm text-ink-muted">{currency}</span>
+      </div>
     </FieldFrame>
   );
 }

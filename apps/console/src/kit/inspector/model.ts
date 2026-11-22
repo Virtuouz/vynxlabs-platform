@@ -34,6 +34,8 @@ export interface CatalogColumn {
   name: string;
   type: string;
   references: string | null;
+  /** What the column holds, as its table's definition says. */
+  description?: string;
   /** How many different values the column holds, when the schema says. Orders a breakdown's choices. */
   distinct?: number;
   /** The count above is a floor: the column has more values than the server counts. */

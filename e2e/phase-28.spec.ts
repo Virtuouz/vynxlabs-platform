@@ -1445,12 +1445,11 @@ async function signedInAs(
   return person;
 }
 
-test("POLISH-010: someone who may not publish is told why, in words, and what they changed is not published", async ({
+test("POLISH-010: someone who may not publish sees the builder read only, with the reason and no Publish, and the API refuses them", async ({
   browser,
 }) => {
   // Amara Okafor is Fernhill's clinical director, a viewer of the workspace: she may look at the
-  // builder, not publish.
-  // The maker leaves a change unpublished.
+  // builder, not change or publish.
   const body = structuredClone(await drafted("publish")) as { title: string; pages: Wid[] };
   body.pages.push({ id: "extra", title: "Extra", widgets: [] });
   await ok(owner, "PUT", `${W}/drafts/${path("publish")}`, {
@@ -1463,18 +1462,20 @@ test("POLISH-010: someone who may not publish is told why, in words, and what th
   await expect(person.getByRole("heading", { name: `Publish ${stamp}`, level: 1 })).toBeVisible({
     timeout: 30_000,
   });
-  const publish = person.getByRole("button", { name: "Publish", exact: true }).first();
-  await publish.click();
-  const check = person.locator("[data-publish-check]");
-  await expect(check.getByRole("button", { name: "Publish 1 change" })).toBeEnabled();
-  await check.getByRole("button", { name: "Publish 1 change" }).click();
   await expect(
-    person.getByText(
-      /You can change this app but not publish it here\. Ask someone who may deploy/,
-    ),
-    "a person who may not publish is told why",
-  ).toBeVisible();
-  // Nothing was published by it, and the draft is kept.
+    person.locator("[data-read-only]"),
+    "the builder says it is read only, and why",
+  ).toContainText(/Read only: you may look at this but not change it/);
+  await expect(
+    person.getByRole("button", { name: "Publish", exact: true }),
+    "no Publish for someone who may not publish",
+  ).toHaveCount(0);
+  // The API refuses too, and nothing was published.
+  const refused = await call(person, "POST", `${W}/changes/deploy`, {
+    paths: [path("publish")],
+    message: "no",
+  });
+  expect(refused.status).toBe(403);
   const live = (await ok(owner, "GET", `${W}/interfaces/${path("publish")}`)).body;
   expect(live.pages).toHaveLength(1);
   expect((await drafted("publish")).pages).toHaveLength(2);

@@ -262,9 +262,13 @@ test("a side sheet is previewed with a sample record, and another can be chosen"
 test("a table that does nothing on a click can be made to open an Invoice detail, which makes the sheet and the click", async () => {
   await open();
   fireEvent.click(screen.getAllByRole("button", { name: "All invoices" })[0] as HTMLElement);
-  const offer = within(await screen.findByRole("region", { name: "When a row is clicked" }));
+  // The click is the table's Actions tab.
+  fireEvent.click(await screen.findByRole("tab", { name: /^Actions/ }));
+  const offer = within(
+    (await screen.findAllByRole("region", { name: "When a row is clicked" })).at(-1) as HTMLElement,
+  );
   fireEvent.click(await offer.findByRole("radio", { name: /Open record detail/ }));
-  await saved((body) => pageOf("invoice-detail") !== undefined);
+  await saved((_body) => pageOf("invoice-detail") !== undefined);
   const sheet = pageOf("invoice-detail");
   expect(sheet).toMatchObject({
     kind: "sheet",
@@ -292,7 +296,11 @@ test("a table that does nothing on a click can be made to open an Invoice detail
   });
   // With a detail for the table, the offer is to open it.
   fireEvent.click(screen.getAllByRole("button", { name: "All invoices" })[0] as HTMLElement);
-  const again = within(await screen.findByRole("region", { name: "When a row is clicked" }));
+  // The click is the table's Actions tab.
+  fireEvent.click(await screen.findByRole("tab", { name: /^Actions/ }));
+  const again = within(
+    (await screen.findAllByRole("region", { name: "When a row is clicked" })).at(-1) as HTMLElement,
+  );
   expect(
     (again.getByRole("radio", { name: /Open record detail/ }) as HTMLInputElement).checked,
   ).toBe(true);
@@ -319,7 +327,7 @@ test("Add a form writes the form, the modal it opens in and the button that open
   expect(dialog.getByText(/already called “Money”/)).toBeTruthy();
   fireEvent.change(title, { target: { value: "New invoice" } });
   fireEvent.click(dialog.getByRole("button", { name: "Create form" }));
-  await saved((body) => pageOf("new-invoice") !== undefined);
+  await saved((_body) => pageOf("new-invoice") !== undefined);
   const modal = pageOf("new-invoice");
   expect(modal).toMatchObject({ kind: "modal", title: "New invoice" });
   expect(modal?.record).toBeUndefined();
@@ -426,19 +434,26 @@ test("what is written is the same when it is made without the screen", () => {
 test("the row click editor writes each choice, and Opens as changes the detail's kind", async () => {
   await open();
   fireEvent.click(screen.getAllByRole("button", { name: "All invoices" })[0] as HTMLElement);
-  let offer = within(await screen.findByRole("region", { name: "When a row is clicked" }));
+  // The click is the table's Actions tab.
+  fireEvent.click(await screen.findByRole("tab", { name: /^Actions/ }));
+  let offer = within(
+    (await screen.findAllByRole("region", { name: "When a row is clicked" })).at(-1) as HTMLElement,
+  );
   fireEvent.click(await offer.findByRole("radio", { name: /Open record detail/ }));
   await saved(() => pageOf("invoice-detail") !== undefined);
-  offer = within(await screen.findByRole("region", { name: "When a row is clicked" }));
+  offer = within(
+    (await screen.findAllByRole("region", { name: "When a row is clicked" })).at(-1) as HTMLElement,
+  );
   fireEvent.click(await offer.findByRole("radio", { name: "Modal" }));
   await saved(() => pageOf("invoice-detail")?.kind === "modal");
   fireEvent.click(
-    within(await screen.findByRole("region", { name: "When a row is clicked" })).getByRole(
-      "radio",
-      {
-        name: /Do nothing/,
-      },
-    ),
+    within(
+      (await screen.findAllByRole("region", { name: "When a row is clicked" })).at(
+        -1,
+      ) as HTMLElement,
+    ).getByRole("radio", {
+      name: /Do nothing/,
+    }),
   );
   await saved(() => pageOf("money")?.widgets[0]?.on?.rowClick === undefined);
   expect(pageOf("invoice-detail")?.kind).toBe("modal");

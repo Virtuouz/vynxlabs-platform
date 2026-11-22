@@ -5,8 +5,8 @@ import type { Page, PageWidget } from "@volvel/manifest";
 import { button, chart } from "@volvel/widgets-core";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { ActionEditor } from "./kit/inspector/actionControls.tsx";
 import { ActionsTab } from "./kit/inspector/ActionsTab.tsx";
+import { ActionEditor } from "./kit/inspector/actionControls.tsx";
 import { SampleRecordProvider } from "./kit/inspector/confirmPreview.tsx";
 import type { Env } from "./kit/inspector/controls.tsx";
 import { type Catalog, configOf } from "./kit/inspector/model.ts";
@@ -77,7 +77,6 @@ function useEnv(start: PageWidget, definition: typeof button, surface: "app" | "
     pages: [sheet, { id: "money", title: "Money", widgets: [] }],
     flows: [{ path: "send-receipt", manualInput: null }],
     scripts: [],
-    groups: ["Billing", "Managers"],
     widgets: [widget],
     writeAll: () => {},
   };

@@ -7,11 +7,11 @@ import { DrawerBlock, DrawerGroup, SegmentedControl, ToggleRow } from "@volvel/u
 import type { SummaryData } from "@volvel/widgets";
 import { isComparing, StatView, withCompare } from "@volvel/widgets-core/views";
 import type { Env } from "../controls.tsx";
+import { HeadingGroup } from "../heading.tsx";
+import { MeasureRow } from "../measureControls.tsx";
 import {
   type DrawerData,
   dateFilters,
-  HeadingRows,
-  MeasureRow,
   NumbersRow,
   PreviewCard,
   queryOf,
@@ -47,7 +47,7 @@ export function StatData({ env }: SectionProps) {
       label="What it shows"
       note="Count of rows, sum, average, smallest or largest of a column."
     >
-      <MeasureRow env={env} label="Value" />
+      <MeasureRow env={env} input="value" at={0} label="Value" />
     </DrawerGroup>
   );
 }
@@ -87,9 +87,7 @@ export function StatDisplay({ env, data }: SectionProps) {
   return (
     <>
       <StatPreview env={env} data={data} />
-      <DrawerGroup label="Heading">
-        <HeadingRows env={env} caption={{ kind: "config", name: "caption" }} />
-      </DrawerGroup>
+      <HeadingGroup env={env} />
       <DrawerGroup label="Look">
         <NumbersRow env={env} />
       </DrawerGroup>
@@ -119,7 +117,7 @@ export function StatDisplay({ env, data }: SectionProps) {
         {comparing ? (
           <DrawerBlock>
             <div className="grid grid-cols-2 gap-3">
-              <div className="flex min-w-0 flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1.5 [&_fieldset]:w-full [&_fieldset]:flex-nowrap [&_label]:flex-1 [&_label]:justify-center">
                 <p className="m-0 text-body-sm text-ink-muted">Show change as</p>
                 <SegmentedControl
                   label="Show change as"
@@ -139,7 +137,7 @@ export function StatDisplay({ env, data }: SectionProps) {
                   }
                 />
               </div>
-              <div className="flex min-w-0 flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1.5 [&_fieldset]:w-full [&_fieldset]:flex-nowrap [&_label]:flex-1 [&_label]:justify-center">
                 <p className="m-0 text-body-sm text-ink-muted">Going up is</p>
                 <SegmentedControl
                   label="Going up is"

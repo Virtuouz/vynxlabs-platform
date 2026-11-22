@@ -14,13 +14,13 @@ import {
 import { formatNumber, type SummaryData } from "@volvel/widgets";
 import { labsPack } from "@volvel/widgets-labs/views";
 import { Calendar, Target } from "lucide-react";
+import { HeadingGroup } from "../heading.tsx";
+import { MeasureRow } from "../measureControls.tsx";
 import { bindFilter, heading, measureName, unbindFilter } from "../model.ts";
 import {
   ChoiceRow,
   ConfigToggle,
   type DrawerData,
-  HeadingRows,
-  MeasureRow,
   NUMERIC,
   NumbersRow,
   PreviewCard,
@@ -233,17 +233,14 @@ function OverRow({ env }: SectionProps) {
 
 export function GoalData({ env, data }: SectionProps) {
   return (
-    <>
-      <GoalPreview env={env} data={data} />
-      <DrawerGroup
-        label="Progress"
-        note="The goal can be a fixed amount or come from a column, such as a monthly target table."
-      >
-        <MeasureRow env={env} label="Value" />
-        <GoalRow env={env} />
-        <OverRow env={env} />
-      </DrawerGroup>
-    </>
+    <DrawerGroup
+      label="Progress"
+      note="The goal can be a fixed amount or come from a column, such as a monthly target table."
+    >
+      <MeasureRow env={env} input="value" at={0} label="Value" />
+      <GoalRow env={env} />
+      <OverRow env={env} />
+    </DrawerGroup>
   );
 }
 
@@ -252,12 +249,7 @@ export function GoalDisplay({ env, data }: SectionProps) {
   return (
     <>
       <GoalPreview env={env} data={data} />
-      <DrawerGroup label="Heading">
-        <HeadingRows
-          env={env}
-          caption={{ kind: "config", name: "label", label: "A line under it" }}
-        />
-      </DrawerGroup>
+      <HeadingGroup env={env} caption="label" />
       <DrawerGroup label="Look">
         <NumbersRow env={env} />
         <ConfigToggle

@@ -3,7 +3,7 @@
  * them: a step in one line, a confirmation's `{column}` tokens, the groups an action or a widget
  * names, the tests a column offers, and the rules summary.
  */
-import type { PageWidget } from "@volvel/manifest";
+import { type PageWidget, parseGroupPath } from "@volvel/manifest";
 import {
   type Action,
   type ActionContext,
@@ -103,6 +103,11 @@ export interface GroupChoice {
   path: string;
   name: string;
   kind: "member" | "end_user";
+}
+
+/** A group path's key: what a condition "the current user is in" names. */
+export function groupKey(path: string): string {
+  return parseGroupPath(path).key;
 }
 
 /** A group's name for its path, or its key when the tenant no longer has it. */

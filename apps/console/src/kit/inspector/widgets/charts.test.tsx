@@ -9,8 +9,13 @@ import { useState } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { show } from "../../../testing.tsx";
 import type { Env } from "../controls.tsx";
+import { drawersFor } from "../custom.ts";
 import { type Catalog, configOf } from "../model.ts";
-import { type DrawerData, drawerSections } from "./chartSections.ts";
+import { type DrawerData, DrawerDataProvider } from "./chartShared.tsx";
+import "./registerCharts.ts";
+
+const drawerSections = (type: string, tab: string) =>
+  drawersFor(type, tab as "data").flatMap((one) => (one.group === undefined ? [one.section] : []));
 
 const catalog: Catalog = {
   tables: [
@@ -82,7 +87,17 @@ function Harness({
     surface: "app",
     filters,
     neighbours: [],
-    catalog,
+    // The server's counts of how many values a column has, as the host puts them in the catalog.
+    catalog: {
+      ...catalog,
+      tables: catalog.tables.map((one) => ({
+        ...one,
+        columns: one.columns.map((column) => {
+          const distinct = data?.counts?.[column.name];
+          return distinct === undefined ? column : { ...column, distinct };
+        }),
+      })),
+    },
     config: configOf(definition, widget),
     write: (next) => {
       written.push(next);
@@ -91,17 +106,16 @@ function Harness({
     pages: [],
     flows: [],
     scripts: [],
-    groups: [],
     widgets: [widget],
     writeAll: () => {},
   };
   return (
-    <div>
+    <DrawerDataProvider value={data}>
       {drawerSections(definition.type, tab).map((Section, at) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: a fixed list
-        <Section key={at} env={env} {...(data ? { data } : {})} />
+        <Section key={at} env={env} />
       ))}
-    </div>
+    </DrawerDataProvider>
   );
 }
 
@@ -119,7 +133,8 @@ afterEach(cleanup);
 
 test("the registry knows the four widgets and nothing else", () => {
   for (const type of ["core/chart", "core/stat", "core/pivot", "labs/goal"]) {
-    expect(drawerSections(type, "data")).toHaveLength(1);
+    // The goal previews its bar above everything, as a section of its own.
+    expect(drawerSections(type, "data")).toHaveLength(type === "labs/goal" ? 2 : 1);
     expect(drawerSections(type, "display")).toHaveLength(1);
     expect(drawerSections(type, "rules")).toHaveLength(0);
   }
@@ -282,15 +297,6 @@ test("a pie is not for time", () => {
   show(<Harness start={over} definition={chart} tab="display" />);
   expect(screen.getByText("not for time")).toBeTruthy();
   expect((screen.getByRole("radio", { name: /^Line/ }) as HTMLInputElement).checked).toBe(true);
-});
-
-test("heading: the title and the caption, which is the widget's subtitle", () => {
-  show(<Harness start={byClinic()} definition={chart} tab="display" />);
-  fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Invoiced by clinic" } });
-  expect(last().title).toBe("Invoiced by clinic");
-  fireEvent.change(screen.getByLabelText("Caption"), { target: { value: "Last 30 days" } });
-  expect(last().subtitle).toBe("Last 30 days");
-  expect(screen.getByText("Also editable by clicking the title on the page.")).toBeTruthy();
 });
 
 test("look: show values on bars, axis titles with what they say, and a named palette", async () => {
@@ -472,9 +478,8 @@ test("pivot data: Measure, Rows and Columns, and a shaded grid from the data", (
   show(<Harness start={visits()} definition={pivot} tab="data" />);
   expect(screen.getByRole("button", { name: /^Measure/ }).textContent).toContain("Count of rows");
   expect(screen.getByRole("button", { name: /^Rows/ }).textContent).toContain("Clinic");
-  expect(screen.getByRole("button", { name: /^Columns/ }).textContent).toContain(
-    "Issued at · by month",
-  );
+  expect(screen.getByRole("button", { name: /^Columns/ }).textContent).toContain("Issued at");
+  expect(screen.getByRole("button", { name: /^Columns/ }).textContent).toContain("Monthly");
   const grid = screen.getByRole("img", { name: /A grid of 3 rows and 3 columns/ });
   expect(grid.textContent).toContain("Sep");
   expect(grid.querySelectorAll("span.h-4").length).toBe(9);

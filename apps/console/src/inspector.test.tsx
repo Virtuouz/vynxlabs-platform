@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import type { PageFilter, PageWidget } from "@volvel/manifest";
+import { type PageFilter, type PageWidget, parseGroupPath } from "@volvel/manifest";
 import { defineWidget, type WidgetDefinition } from "@volvel/widgets";
-import { chart, stat, text } from "@volvel/widgets-core";
+import { chart, stat, table, text } from "@volvel/widgets-core";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { registerDrawer } from "./kit/inspector/custom.ts";
+import { type GroupKey, GroupsProvided } from "./kit/inspector/groupChoices.tsx";
 import { Inspector } from "./kit/inspector/Inspector.tsx";
 import {
   bindFilter,
@@ -71,6 +72,15 @@ const openRow = (label: string) => {
   return screen.findByRole("dialog");
 };
 
+/**
+ * A definition under another type: the generic drawer, as a pack's widget gets it, with none of
+ * the core widgets' own drawer pieces (`registerAll`) in its place.
+ */
+const plain = (definition: WidgetDefinition): WidgetDefinition => ({
+  ...definition,
+  type: `plain/${definition.type}`,
+});
+
 /** The inspector around a widget that is kept, as the editor keeps one. */
 let written: PageWidget[];
 function Harness({
@@ -78,34 +88,32 @@ function Harness({
   definition,
   surface = "app",
   filters = [],
-  groups = [],
-  endUserGroups = [],
+  groupKeys = [],
 }: {
   start: PageWidget;
   definition: WidgetDefinition | undefined;
   surface?: "app" | "dashboard";
   filters?: PageFilter[];
-  groups?: string[];
-  endUserGroups?: string[];
+  groupKeys?: GroupKey[];
 }) {
   const [widget, setWidget] = useState(start);
   return (
-    <Inspector
-      widget={widget}
-      definition={definition}
-      surface={surface}
-      filters={filters}
-      catalog={catalog}
-      groups={groups}
-      endUserGroups={endUserGroups}
-      onChange={(next) => {
-        written.push(next);
-        setWidget(next);
-      }}
-      onDuplicate={() => {}}
-      onRemove={() => {}}
-      rowRules={(table) => `/t/t/workspaces/w/tables/${table}?view=definition`}
-    />
+    <GroupsProvided groups={groupKeys}>
+      <Inspector
+        widget={widget}
+        definition={definition}
+        surface={surface}
+        filters={filters}
+        catalog={catalog}
+        onChange={(next) => {
+          written.push(next);
+          setWidget(next);
+        }}
+        onDuplicate={() => {}}
+        onRemove={() => {}}
+        rowRules={(table) => `/t/t/workspaces/w/tables/${table}?view=definition`}
+      />
+    </GroupsProvided>
   );
 }
 
@@ -120,15 +128,17 @@ afterEach(() => {
 });
 
 test("every drawer has the same header, the tabs its widget has, and its settings in groups", () => {
-  show(<Harness start={chartWidget()} definition={chart} />);
+  show(<Harness start={chartWidget()} definition={plain(chart)} />);
   // The header: the name, the kind, and a ⋯ menu.
   expect(screen.getByRole("heading", { name: "Invoiced by week" })).toBeTruthy();
-  expect(screen.getByText("Chart")).toBeTruthy();
+  expect(screen.getByText(/^Chart/)).toBeTruthy();
   expect(screen.getByRole("button", { name: "More about Invoiced by week" })).toBeTruthy();
   expect(tabNames()).toEqual(["Data", "Display", "Actions", "Rules"]);
   // The data parts are in the order the definition gives, in a group named for them.
   const panel = within(screen.getByRole("tabpanel"));
-  expect(panel.getByRole("heading", { name: "Data" })).toBeTruthy();
+  // The data parts are groups of their own, with no "Data" group around them.
+  expect(panel.queryByRole("heading", { name: "Data" })).toBeNull();
+  expect(panel.getByRole("heading", { name: "Rows it uses" })).toBeTruthy();
   const text = screen.getByRole("tabpanel").textContent ?? "";
   const at = (name: string) => text.indexOf(name);
   expect(at("Rows it uses")).toBeLessThan(at("What it shows"));
@@ -161,42 +171,56 @@ test("a dot marks a tab that has something set, and none marks one that has noth
 });
 
 test("settings are drawn in the group their hint names, in order, and a row opens its editor", async () => {
-  show(<Harness start={chartWidget()} definition={chart} />);
+  show(<Harness start={chartWidget()} definition={plain(chart)} />);
   fireEvent.click(tabByName("Display"));
   const headings = within(screen.getByRole("tabpanel"))
     .getAllByRole("heading")
     .map((one) => one.textContent);
-  // "Title" is every widget's; the hints' groups follow in the order of their first setting.
-  expect(headings[0]).toBe("Title");
+  // "Heading" (title and caption) is every framed widget's; the hints' groups follow in the order of their first setting.
+  expect(headings[0]).toBe("Heading");
   expect(headings.indexOf("Chart type")).toBeLessThan(headings.indexOf("Look"));
   // The numbers' format is a row with its value; opening it shows the control, and it writes.
   const row = screen.getByRole("button", { name: /^Numbers/ });
-  expect(row.textContent).toContain("As it comes");
+  expect(row.textContent).toContain("Number");
   fireEvent.click(row);
   const editor = await screen.findByRole("dialog");
-  fireEvent.click(within(editor).getByRole("button", { name: /As it comes/ }));
-  fireEvent.change(within(editor).getByLabelText("Written as"), { target: { value: "percent" } });
+  fireEvent.click(within(editor).getByRole("radio", { name: /^Percent/ }));
   expect((written.at(-1) as PageWidget).config?.format).toEqual({ style: "percent" });
 });
 
-test("a Title row writes the title, and says what it is now", async () => {
+test("the Heading group writes the title and the caption: in place on a chart, as rows elsewhere", async () => {
   show(<Harness start={chartWidget()} definition={chart} />);
   fireEvent.click(tabByName("Display"));
-  expect(screen.getByRole("button", { name: /^Title/ }).textContent).toContain("Invoiced by week");
-  await openRow("Title");
+  // The chart's heading is two fields written in place, with the title as it is now.
+  expect((screen.getByRole("textbox", { name: "Title" }) as HTMLInputElement).value).toBe(
+    "Invoiced by week",
+  );
   fireEvent.change(screen.getByRole("textbox", { name: "Title" }), { target: { value: "Weekly" } });
   expect((written.at(-1) as PageWidget).title).toBe("Weekly");
+  fireEvent.change(screen.getByRole("textbox", { name: "Caption" }), {
+    target: { value: "By week" },
+  });
+  expect((written.at(-1) as PageWidget).subtitle).toBe("By week");
+  cleanup();
+  // A table's is two rows that open an editor.
+  const list: PageWidget = { id: "t", type: "core/table", title: "Invoices", at: place };
+  show(<Harness start={list} definition={table} />);
+  fireEvent.click(tabByName("Display"));
+  expect(screen.getByRole("button", { name: /^Title/ }).textContent).toContain("Invoices");
+  await openRow("Caption");
+  fireEvent.change(screen.getByRole("textbox", { name: "Caption" }), { target: { value: "All" } });
+  expect((written.at(-1) as PageWidget).subtitle).toBe("All");
 });
 
 test("a widget type's registered piece is drawn in its group, in order, and hides the setting it replaces", () => {
-  const off = registerDrawer("core/chart", {
+  const off = registerDrawer("plain/core/chart", {
     tab: "display",
     group: "Mine",
     order: -1,
     hides: ["mark"],
     render: () => <p>Custom piece</p>,
   });
-  show(<Harness start={chartWidget()} definition={chart} />);
+  show(<Harness start={chartWidget()} definition={plain(chart)} />);
   fireEvent.click(tabByName("Display"));
   const panel = within(screen.getByRole("tabpanel"));
   expect(panel.getByText("Custom piece")).toBeTruthy();
@@ -250,7 +274,7 @@ test("a condition is added from the dashed chip as column, test and value", asyn
 });
 
 test("a setting that depends on another is shown only while it holds", () => {
-  show(<Harness start={chartWidget()} definition={chart} />);
+  show(<Harness start={chartWidget()} definition={plain(chart)} />);
   fireEvent.click(tabByName("Display"));
   // The chart is bars: they may lie down.
   expect(screen.getByLabelText("Bars lie down")).toBeTruthy();
@@ -263,10 +287,10 @@ test("a setting that depends on another is shown only while it holds", () => {
 
 test("a tab with nothing in it is hidden", async () => {
   const note: PageWidget = { id: "note", type: "core/text", at: { x: 0, y: 0, w: 6, h: 2 } };
-  show(<Harness start={note} definition={text} />);
+  show(<Harness start={note} definition={plain(text)} />);
   // A note reads nothing and raises nothing.
-  // The Text's own words tab is called Content.
-  expect(tabNames()).toEqual(["Content", "Rules"]);
+  // (The core Text's own words tab is called Content, by what registers it.)
+  expect(tabNames()).toEqual(["Display", "Rules"]);
   expect(tabsOf(text)).toEqual(["display", "rules"]);
   // Its text is a Markdown editor with a preview.
   fireEvent.change(await screen.findByLabelText("Text"), { target: { value: "# Hello" } });
@@ -509,8 +533,10 @@ test("a choice with numbers writes numbers, and tiles, a position, an icon and g
     <Harness
       start={{ id: "t", type: "labs/y", at: { x: 0, y: 0, w: 3, h: 3 } }}
       definition={labs}
-      groups={["Billing"]}
-      endUserGroups={["Pet owners"]}
+      groupKeys={[
+        { key: "billing", name: "Billing", kind: "member" },
+        { key: "pet-owners", name: "Pet owners", kind: "end_user" },
+      ]}
     />,
   );
   fireEvent.click(tabByName("Display"));
@@ -526,11 +552,19 @@ test("a choice with numbers writes numbers, and tiles, a position, an icon and g
   expect(written.at(-1)?.config?.icon).toBe("star");
   fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  // Groups: member and end-user groups by their names.
+  // Groups: member and end-user groups are shown by their names and stored by their paths,
+  // which is what the server matches (`parseGroupPath` reads the key back).
   fireEvent.click(screen.getByRole("button", { name: /^Who/ }));
   fireEvent.click(await screen.findByLabelText("Pet owners"));
   fireEvent.click(screen.getByLabelText("Billing"));
-  expect(written.at(-1)?.config?.who).toEqual(["Pet owners", "Billing"]);
+  const stored = written.at(-1)?.config?.who as string[];
+  expect(stored).toEqual(["end-user-groups/pet-owners", "groups/billing"]);
+  expect(stored.map((path) => parseGroupPath(path))).toEqual([
+    { key: "pet-owners", kind: "end_user" },
+    { key: "billing", kind: "member" },
+  ]);
+  // And read back, the row says the names.
+  expect(screen.getByRole("button", { name: /^Who/ }).textContent).toContain("Pet owners");
 });
 
 test("a stat's money format is said in a line and shown with an example", async () => {
@@ -538,15 +572,18 @@ test("a stat's money format is said in a line and shown with an example", async 
     id: "owed",
     type: "core/stat",
     at: { x: 0, y: 0, w: 3, h: 3 },
-    config: { format: { style: "currency", currency: "USD", decimals: 2 } },
+    config: { format: { style: "currency", currency: "USD" } },
   };
   show(<Harness start={figure} definition={stat} />);
   fireEvent.click(tabByName("Display"));
-  // The row says it in a line; its editor shows the example.
+  // The row says it in a line, with an example; its editor shows each choice with a real number.
   const row = screen.getByRole("button", { name: /^Numbers/ });
-  expect(row.textContent).toContain("Money · USD · 2 decimals");
+  expect(row.textContent).toContain("$43,120.00");
+  expect(row.textContent).toContain("Money");
   fireEvent.click(row);
-  expect(await screen.findByText("Shown as $43,120.00")).toBeTruthy();
+  expect(
+    ((await screen.findByRole("radio", { name: "Money $43,120.00" })) as HTMLInputElement).checked,
+  ).toBe(true);
 });
 
 // ----- What the model does with a page -----

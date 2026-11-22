@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import type { Page, PageWidget } from "@volvel/manifest";
 import { defineWidget, type WidgetDefinition } from "@volvel/widgets";
 import { form } from "@volvel/widgets-core";
@@ -43,13 +43,11 @@ function Harness({
   definition,
   surface = "app",
   page = sheetPage as Page | null,
-  groups = [],
 }: {
   start: PageWidget;
   definition: WidgetDefinition;
   surface?: "app" | "dashboard";
   page?: Page | null;
-  groups?: string[];
 }) {
   const [widget, setWidget] = useState(start);
   return (
@@ -62,7 +60,6 @@ function Harness({
       page={page ?? undefined}
       pages={pages}
       flows={[{ path: "send-receipt", manualInput: null }]}
-      groups={groups}
       onChange={(next) => {
         written.push(next);
         setWidget(next);
@@ -103,7 +100,8 @@ test("a form's fields are a list that is put in order, with a label and a must-b
       fields: [{ column: "number" }, { column: "total" }, { column: "status" }],
     },
   };
-  show(<Harness start={made} definition={form} />);
+  // The generic fields control, as a pack widget gets it (the core Form draws its own).
+  show(<Harness start={made} definition={{ ...form, type: "plain/core/form" }} />);
   tab("Display");
   fireEvent.click(screen.getByRole("button", { name: "Move Total up" }));
   expect(fieldsOf().map((one) => one.column)).toEqual(["total", "number", "status"]);

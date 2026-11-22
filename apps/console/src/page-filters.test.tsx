@@ -107,7 +107,12 @@ function Harness({ start, open }: { start: PageWidget[]; open: string }) {
   return (
     <Inspector
       widget={widget}
-      definition={definitions[widget.type]}
+      // The generic controls for a filter list and a tab list (what a pack's widget gets): the
+      // type is another, so none of the core widgets' own drawer pieces replaces them.
+      definition={{
+        ...(definitions[widget.type] as WidgetDefinition),
+        type: `plain/${widget.type}`,
+      }}
       surface="app"
       filters={filtersOf(widgets)}
       neighbours={widgets.filter((one) => one.id !== open)}

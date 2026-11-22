@@ -28,7 +28,9 @@ export function groupability(column: CatalogColumn, tableRows?: number): Groupab
   if (distinct !== undefined) {
     if (tableRows !== undefined && tableRows > 1 && distinct >= tableRows)
       return { rank: 9, hint: "every row differs" };
-    const hint = `${count(distinct)} ${distinct === 1 ? "value" : "values"}`;
+    const hint = column.distinctMore
+      ? `${count(distinct)}+ values`
+      : `${count(distinct)} ${distinct === 1 ? "value" : "values"}`;
     // Two to twelve values make a good set of groups; many more make a crowd.
     return { rank: distinct <= 1 ? 7 : distinct <= 12 ? 1 : distinct <= 40 ? 3 : 5, hint };
   }
@@ -44,10 +46,16 @@ export function columnsByGrouping(
   columns: readonly CatalogColumn[],
   tableRows?: number,
 ): (CatalogColumn & Groupability)[] {
-  return columns
-    .map((column, at) => ({ column, at, ...groupability(column, tableRows) }))
-    .sort((a, b) => a.rank - b.rank || a.at - b.at)
-    .map(({ column, rank, hint }) => ({ ...column, rank, hint }));
+  return (
+    columns
+      .map((column, at) => ({ column, at, ...groupability(column, tableRows) }))
+      // Among those that group equally well, the fewest values first.
+      .sort(
+        (a, b) =>
+          a.rank - b.rank || (a.column.distinct ?? 0) - (b.column.distinct ?? 0) || a.at - b.at,
+      )
+      .map(({ column, rank, hint }) => ({ ...column, rank, hint }))
+  );
 }
 
 /** A number from the widget's own rows, to show a format with: the first the named columns hold. */

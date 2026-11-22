@@ -54,20 +54,21 @@ import {
   X,
   Zap,
 } from "@volvel/ui/icons";
-import type { Surface, WidgetDefinition } from "@volvel/widgets";
+import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Pencil } from "lucide-react";
-import { type ReactNode, useState } from "react";
-import { amount } from "../format.ts";
+import type { ReactNode } from "react";
 import { MarkdownEditor } from "../markdown/MarkdownEditor.tsx";
 import { useEditOnPage } from "../markdown/onThePage.ts";
 import { ActionControl, ActionsControl } from "./actionControls.tsx";
 import { settingControlFor, tilePreviewFor } from "./custom.ts";
-import { DataControl } from "./dataControls.tsx";
+import { DataControl, FormatRow } from "./dataControls.tsx";
 import { FieldsControl, PageControl } from "./fieldsControl.tsx";
 import { FiltersControl } from "./filtersControl.tsx";
+import { useChosenGroups } from "./groupChoices.tsx";
 import type { Catalog, ConfigSetting, FlowChoice, ScriptChoice, TabFate } from "./model.ts";
 import { heading, resultNames, visualOf, withConfig, withSystemColumns } from "./model.ts";
 import { TabsControl } from "./tabsControl.tsx";
+import { type GroupChoice, groupName } from "./timelineModel.ts";
 
 /** What every control is given: the widget, its definition, and how to write it. */
 export interface Env {
@@ -89,10 +90,6 @@ export interface Env {
   /** The workspace's flows (only those with a manual trigger are offered) and scripts. */
   flows: readonly FlowChoice[];
   scripts: readonly ScriptChoice[];
-  /** The names of the groups of members, for "the current user is in …". */
-  groups: readonly string[];
-  /** The names of the end-user groups, for the `groups` control (who may run, who sees). */
-  endUserGroups?: readonly string[] | undefined;
   /** Every widget of the page, this one as it is now (a filter reaches the others). */
   widgets: readonly PageWidget[];
   /** Writes the page's widgets: for a change that reaches other widgets (a filter followed, a tab removed). */
@@ -103,6 +100,12 @@ export interface Env {
   addFilters?: (() => void) | undefined;
   /** Removes a tab of this container, with what it held moved to another tab or removed. */
   onRemoveTab?: ((tab: string, fate: TabFate) => void) | undefined;
+  /** Chooses another widget of the page: a Section's "Holds" rows select what they name. */
+  select?: ((id: string) => void) | undefined;
+  /** Switches the drawer to a tab of this widget. */
+  openTab?: ((tab: Tab) => void) | undefined;
+  /** "When a row is clicked", as the builder draws it (a table's or a list's); the Actions tab places it. */
+  rowClickEditor?: ReactNode;
 }
 
 /** The columns a column control offers for a data input. */
@@ -133,6 +136,7 @@ const labelOf = (setting: ConfigSetting) => setting.hint.label;
 export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetting }) {
   const { hint, name, schema } = setting;
   const { widget } = env;
+  const chosenGroups = useChosenGroups();
   const value = env.config[name];
   const field = `${widget.id}-${name}`;
   const set = (next: unknown, key = true) =>
@@ -227,10 +231,9 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
     }
     case "format":
       return (
-        <FormatControl
-          field={field}
+        <FormatRow
           label={hint.label}
-          format={value as ValueFormat | undefined}
+          value={value as ValueFormat | undefined}
           onChange={(format) => set(format)}
         />
       );
@@ -410,8 +413,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
           field={field}
           label={hint.label}
           help={help}
-          members={env.groups}
-          endUsers={env.endUserGroups ?? []}
+          choices={chosenGroups}
           value={Array.isArray(value) ? (value as string[]) : []}
           onChange={(next) => set(next, false)}
         />
@@ -426,6 +428,12 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
     default:
       return null;
   }
+}
+
+/** The names of groups held by their paths, as a row says them. */
+function GroupNames({ paths }: { paths: readonly string[] }) {
+  const choices = useChosenGroups();
+  return <>{paths.map((path) => groupName(path, choices)).join(", ")}</>;
 }
 
 /** The value a choice writes: the schema's own (1, not "1"), found by its text. */
@@ -480,110 +488,6 @@ export function formatSummary(format: ValueFormat | undefined): string {
   ]
     .filter(Boolean)
     .join(" · ");
-}
-
-/** The sample a format is shown with. */
-const SAMPLE = 43120;
-
-function FormatControl({
-  field,
-  label,
-  format,
-  onChange,
-}: {
-  field: string;
-  label: string;
-  format: ValueFormat | undefined;
-  onChange: (format: ValueFormat | undefined) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const shown = format ? amount(format.minorUnits ? SAMPLE * 100 : SAMPLE, format) : amount(SAMPLE);
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-body-sm font-medium text-ink" id={`${field}-label`}>
-        {label}
-      </span>
-      <Button
-        variant="secondary"
-        className="w-full justify-between"
-        aria-expanded={open}
-        aria-controls={`${field}-panel`}
-        onClick={() => setOpen((now) => !now)}
-      >
-        <span className="min-w-0 truncate">{formatSummary(format)}</span>
-        <span aria-hidden="true" className="text-ink-muted">
-          {open ? "Close" : "Change"}
-        </span>
-      </Button>
-      <span className="text-body-sm text-ink-muted">Shown as {shown}</span>
-      {open ? (
-        <div
-          id={`${field}-panel`}
-          className="flex flex-col gap-2 rounded-control border border-line p-3"
-        >
-          <SelectField
-            name={`${field}-style`}
-            label="Written as"
-            value={format?.style ?? ""}
-            options={[
-              { value: "", label: "As it comes" },
-              { value: "number", label: "A number: 1,234.5" },
-              { value: "currency", label: "Money: $1,234.50" },
-              { value: "percent", label: "A percent: 0.25 as 25%" },
-            ]}
-            onChange={(style) =>
-              onChange(
-                style
-                  ? {
-                      ...(format?.style === style ? format : {}),
-                      style: style as ValueFormat["style"],
-                      ...(style === "currency" ? { currency: format?.currency ?? "USD" } : {}),
-                    }
-                  : undefined,
-              )
-            }
-          />
-          {format?.style === "currency" ? (
-            <>
-              <TextField
-                name={`${field}-currency`}
-                label="Currency"
-                hint="A three-letter code, such as USD or EUR."
-                value={format.currency ?? "USD"}
-                maxLength={3}
-                onChange={(code) => onChange({ ...format, currency: code.toUpperCase() || "USD" })}
-              />
-              <CheckboxField
-                name={`${field}-cents`}
-                label="Kept in cents"
-                hint="The numbers are in hundredths, and shown divided by 100."
-                checked={format.minorUnits === true}
-                onChange={(minorUnits) => {
-                  const { minorUnits: _before, ...rest } = format;
-                  onChange(minorUnits ? { ...rest, minorUnits: true } : rest);
-                }}
-              />
-            </>
-          ) : null}
-          {format ? (
-            <SelectField
-              name={`${field}-decimals`}
-              label="Decimal places"
-              value={format.decimals === undefined ? "" : String(format.decimals)}
-              options={[
-                { value: "", label: "As usual" },
-                ...[0, 1, 2, 3, 4].map((n) => ({ value: String(n), label: String(n) })),
-              ]}
-              onChange={(places) => {
-                const { decimals: _before, ...rest } = format;
-                onChange(places === "" ? rest : { ...rest, decimals: Number(places) });
-              }}
-            />
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -857,36 +761,37 @@ function GroupsControl({
   field,
   label,
   help,
-  members,
-  endUsers,
+  choices,
   value,
   onChange,
 }: {
   field: string;
   label: string;
   help: string | undefined;
-  members: readonly string[];
-  endUsers: readonly string[];
+  choices: readonly GroupChoice[];
+  /** The paths held: `groups/<key>` or `end-user-groups/<key>`. */
   value: string[];
   onChange: (next: string[] | undefined) => void;
 }) {
-  const toggle = (name: string, on: boolean) =>
+  const toggle = (path: string, on: boolean) =>
     onChange(
-      on ? [...value.filter((one) => one !== name), name] : value.filter((one) => one !== name),
+      on ? [...value.filter((one) => one !== path), path] : value.filter((one) => one !== path),
     );
-  // A named group that is gone stays listed, so it can be taken out.
-  const gone = value.filter((one) => !members.includes(one) && !endUsers.includes(one));
-  const section = (title: string, names: readonly string[]) =>
-    names.length === 0 ? null : (
+  const members = choices.filter((one) => one.kind === "member");
+  const endUsers = choices.filter((one) => one.kind === "end_user");
+  // A group that is gone stays listed (by its key), so it can be taken out.
+  const gone = value.filter((one) => !choices.some((choice) => choice.path === one));
+  const section = (title: string, list: readonly { path: string; name: string }[]) =>
+    list.length === 0 ? null : (
       <div className="flex flex-col gap-1">
         <span className="text-meta text-ink-muted">{title}</span>
-        {names.map((name) => (
+        {list.map((one) => (
           <CheckboxField
-            key={`${title}:${name}`}
-            name={`${field}-${title}-${name}`}
-            label={name}
-            checked={value.includes(name)}
-            onChange={(on) => toggle(name, on)}
+            key={one.path}
+            name={`${field}-${one.path}`}
+            label={one.name}
+            checked={value.includes(one.path)}
+            onChange={(on) => toggle(one.path, on)}
           />
         ))}
       </div>
@@ -894,12 +799,17 @@ function GroupsControl({
   return (
     <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
       <legend className="p-0 text-body-sm font-medium text-ink">{label}</legend>
-      {members.length === 0 && endUsers.length === 0 && gone.length === 0 ? (
+      {choices.length === 0 && gone.length === 0 ? (
         <p className="m-0 text-body-sm text-ink-muted">There are no groups yet.</p>
       ) : null}
       {section("Member groups", members)}
       {section("End-user groups", endUsers)}
-      {gone.length > 0 ? section("No longer exist", gone) : null}
+      {gone.length > 0
+        ? section(
+            "No longer exist",
+            gone.map((path) => ({ path, name: groupName(path, choices) })),
+          )
+        : null}
       {help ? <p className="m-0 text-meta text-ink-muted">{help}</p> : null}
     </fieldset>
   );
@@ -911,6 +821,7 @@ function GroupsControl({
 /** The control inline, in the group, not behind a row: its own shape asks for the room. */
 const INLINE = new Set([
   "switch",
+  "format",
   "tiles",
   "segmented",
   "position",
@@ -969,7 +880,9 @@ export function settingSummary(env: Env, setting: ConfigSetting): ReactNode {
       );
     }
     case "groups":
-      return Array.isArray(value) && value.length > 0 ? value.join(", ") : undefined;
+      return Array.isArray(value) && value.length > 0 ? (
+        <GroupNames paths={value as string[]} />
+      ) : undefined;
     default:
       return undefined;
   }

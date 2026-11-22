@@ -29,18 +29,30 @@ export function DataControl({
   control,
   label,
   help,
+  hide,
 }: {
   env: Env;
   input: string;
   control: DataPart["control"];
   label: string;
   help?: string | undefined;
+  /** Parts a section of the widget draws itself: they are left out of the group. */
+  hide?: ReadonlySet<string> | undefined;
 }) {
   const rows = rowsPartsOf(dataParts(env.definition), input);
   switch (control) {
-    case "source":
-      // Source, the filters followed, conditions, sort and limit are one group.
-      return <RowsItUses env={env} input={input} />;
+    case "source": // Source, the filters followed, conditions, sort and limit are one group.
+      {
+        const show = {
+          source: rows.source && !hide?.has("source"),
+          conditions: rows.conditions && !hide?.has("conditions"),
+          sort: rows.sort && !hide?.has("sort"),
+          limit: rows.limit && !hide?.has("limit"),
+        };
+        return Object.values(show).some(Boolean) ? (
+          <RowsItUses env={env} input={input} show={show} />
+        ) : null;
+      }
     case "conditions":
     case "sort":
     case "limit":

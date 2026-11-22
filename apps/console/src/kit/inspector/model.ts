@@ -7,8 +7,6 @@ import { placed, without } from "@volvel/screens";
  */
 
 import {
-  childrenOf,
-  containerHeight,
   type DataInput,
   displayGuess,
   FILTER_WIDGET,
@@ -36,6 +34,8 @@ export interface CatalogColumn {
   references: string | null;
   /** How many different values the column holds, when the schema says. Orders a breakdown's choices. */
   distinct?: number;
+  /** The count above is a floor: the column has more values than the server counts. */
+  distinctMore?: boolean;
   /** A choice column's values, with how many rows each has, when the schema says. */
   values?: { value: string; count?: number }[];
 }
@@ -47,6 +47,8 @@ export interface CatalogTable {
 }
 /** What a widget can ask questions of: the tables, the saved queries, and whether SQL may be written. */
 export interface Catalog {
+  /** The workspace's path, for what an editor asks of a table (a column's values). */
+  root?: string;
   tables: CatalogTable[];
   queries: { path: string; description: string }[];
   maySql: boolean;

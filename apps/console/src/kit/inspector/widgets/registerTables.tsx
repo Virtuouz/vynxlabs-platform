@@ -26,6 +26,7 @@ registerDrawer(TABLE, {
   tab: "display",
   group: "Columns",
   order: 1,
+  headingLast: true,
   hides: ["columns"],
   aside: (env) =>
     shownCount(
@@ -85,9 +86,17 @@ registerDrawer(TABLE, {
 const PLACES = ["title", "subtitle", "right", "badge", "picture"];
 
 registerDrawer(LIST, {
+  tab: "actions",
+  group: "When a row is clicked",
+  order: 1,
+  render: (env) => <TableRowClickSection env={env} bare />,
+});
+
+registerDrawer(LIST, {
   tab: "display",
   group: "Each row looks like",
   order: 1,
+  headingLast: true,
   hides: PLACES,
   render: (env) => <SlotsGroup env={env} bare part="preview" />,
 });

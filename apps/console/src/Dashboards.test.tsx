@@ -227,7 +227,9 @@ test("its maker adds a widget from Add to page, changes it in its settings, remo
   // The new widget is the one being changed: its settings are beside the page.
   const settings = within(screen.getByRole("complementary", { name: "Settings" }));
   fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
-  fireEvent.click(settings.getByRole("button", { name: /^Title/ }));
+  // A heading is two rows that open an editor, or (a chart's) two fields written in place.
+  const row = settings.queryByRole("button", { name: /^Title/ });
+  if (row) fireEvent.click(row);
   fireEvent.change(await screen.findByRole("textbox", { name: "Title" }), {
     target: { value: "How many" },
   });
@@ -271,7 +273,9 @@ test("a dashboard's filters are edited through its Search and filter widget, wit
   // The widget is chosen, and its Data tab holds the list.
   fireEvent.click(await screen.findByRole("button", { name: "Search and filter" }));
   const settings = within(screen.getByRole("complementary", { name: "Settings" }));
-  fireEvent.change(settings.getByLabelText("Called"), { target: { value: "Created" } });
+  fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
+  fireEvent.click((await settings.findAllByRole("button", { name: /^Added/ }))[0] as HTMLElement);
+  fireEvent.change(await settings.findByLabelText(/^Label/), { target: { value: "Created" } });
   await waitFor(() => expect(sent("PUT")).toHaveLength(1));
   const saved = put(0);
   // Kept by the widget, not beside the widgets, and the name is what the widgets follow.
@@ -283,7 +287,9 @@ test("a dashboard's filters are edited through its Search and filter widget, wit
     { filter: "created_at", column: "created_at" },
   ]);
   // A search is added to it, and the table follows it by its text columns.
-  fireEvent.click(settings.getByRole("button", { name: "Add a search" }));
+  fireEvent.click(settings.getByRole("button", { name: "Back" }));
+  fireEvent.click(await settings.findByRole("button", { name: "Filter" }));
+  fireEvent.click(await screen.findByRole("button", { name: "A search box" }));
   await waitFor(() => expect(sent("PUT")).toHaveLength(2));
   const searched = put(1).body.widgets;
   expect(searched.find((one: Any) => one.id === "filters").config.filters.at(-1)).toMatchObject({
@@ -355,7 +361,9 @@ test("a change made right before a share is saved on the revision the change mad
   fireEvent.click(screen.getByLabelText("Held", { selector: "section" }));
   const settings = within(await screen.findByRole("complementary", { name: "Settings" }));
   fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
-  fireEvent.click(settings.getByRole("button", { name: /^Title/ }));
+  // A heading is two rows that open an editor, or (a chart's) two fields written in place.
+  const row = settings.queryByRole("button", { name: /^Title/ });
+  if (row) fireEvent.click(row);
   fireEvent.change(await screen.findByRole("textbox", { name: "Title" }), {
     target: { value: "On the shelf" },
   });

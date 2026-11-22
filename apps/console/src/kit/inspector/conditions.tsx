@@ -30,7 +30,7 @@ import {
   tableOfRef,
 } from "./actionModel.ts";
 import { heading } from "./model.ts";
-import { operatorsFor } from "./timelineModel.ts";
+import { type GroupChoice, groupKey, operatorsFor } from "./timelineModel.ts";
 
 type ChoiceValues = { value: string; label?: string }[] | undefined;
 
@@ -113,14 +113,15 @@ export function ConditionsEditor({
   noun?: string;
   conditions: readonly Condition[] | undefined;
   ctx: ActionContext;
-  /** The names of the groups the current user can be in. */
-  groups: readonly string[];
+  /** The groups the current user can be in: a condition holds the key, the person reads the name. */
+  groups: readonly GroupChoice[];
   /** The list as it should now be, or nothing when none are left. */
   onChange: (next: Condition[] | undefined, key?: string) => void;
   /** The dashed chip's words. "And" after the first. */
   addLabel?: string;
 }) {
   const list = conditions ?? [];
+  const groupKeys = groups.map((group) => groupKey(group.path));
   const [editing, setEditing] = useState<number | undefined>(undefined);
   const columns = columnsOf(ctx);
   const put = (next: Condition[], key?: string) => onChange(next.length ? next : undefined, key);
@@ -149,8 +150,8 @@ export function ConditionsEditor({
           onChange={(next) => {
             if (next === "field") {
               const first = columns[0];
-              if (first) set(at, conditionFromKey(`field:${first.id}`, undefined, groups));
-            } else set(at, conditionFromKey(next, one, groups));
+              if (first) set(at, conditionFromKey(`field:${first.id}`, undefined, groupKeys));
+            } else set(at, conditionFromKey(next, one, groupKeys));
           }}
         />
         {"field" in one ? (
@@ -189,10 +190,10 @@ export function ConditionsEditor({
             label={`Group of ${noun} ${n}`}
             value={one.group}
             options={[
-              ...(groups.includes(one.group)
+              ...(groups.some((group) => groupKey(group.path) === one.group)
                 ? []
                 : [{ value: one.group, label: one.group || "Choose a group" }]),
-              ...groups.map((name) => ({ value: name, label: name })),
+              ...groups.map((group) => ({ value: groupKey(group.path), label: group.name })),
             ]}
             onChange={(group) => set(at, { user: "in", group })}
           />
@@ -246,7 +247,7 @@ export function ConditionsEditor({
         <AddChip
           aria-label={`Add a ${noun}`}
           onClick={() => {
-            put([...list, firstCondition(ctx, groups)]);
+            put([...list, firstCondition(ctx, groupKeys)]);
             setEditing(list.length);
           }}
         >

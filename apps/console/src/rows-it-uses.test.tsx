@@ -4,7 +4,12 @@ import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import type { PageWidget } from "@volvel/manifest";
 import { sampleOf } from "@volvel/ui";
 import { formatValue } from "@volvel/widgets";
-import { chart, list } from "@volvel/widgets-core";
+import { chart as coreChart, list } from "@volvel/widgets-core";
+
+// The generic drawer, as a pack widget gets it: under another type, so the core chart own
+// sections (which draw their own value, breakdown and order) are not in its place.
+const chart = { ...coreChart, type: "plain/core/chart" };
+
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
@@ -220,8 +225,16 @@ test("the breakdown editor orders columns by how well they group, and writes a c
   show(<Harness start={chartWidget()} definition={chart} />);
   fireEvent.click(panel().getByRole("button", { name: /^For each/ }));
   const editor = await dialog();
-  const names = within(editor.getByRole("group", { name: "Column to break down by" }))
+  // The best to group by come first under "Good for grouping", the rest under "Other columns".
+  expect(editor.getByText("Good for grouping")).toBeTruthy();
+  expect(editor.getByText("Other columns")).toBeTruthy();
+  const names = editor
     .getAllByRole("radio")
+    .filter((one) =>
+      (one.closest("fieldset")?.querySelector("legend")?.textContent ?? "").includes(
+        "column to break down by",
+      ),
+    )
     .map((one) => (one.closest("label")?.textContent ?? "").trim());
   // A few values first, then dates; every row different last.
   expect(names[0]).toBe("Status3 values");

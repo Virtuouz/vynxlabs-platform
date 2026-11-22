@@ -90,7 +90,6 @@ function Harness({
     pages,
     flows: [],
     scripts: [],
-    groups: [],
     widgets: [widget],
     writeAll: () => {},
   };

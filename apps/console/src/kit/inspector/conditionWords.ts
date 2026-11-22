@@ -24,6 +24,12 @@ export const TEST_WORDS: Record<VisualOperator, string> = {
   between: "is between",
 };
 
+/** "30 days", "1 week": the value of "is in the last". */
+function lastWords(value: { count?: number; unit?: string }): string {
+  const count = value.count ?? 0;
+  return `${count} ${value.unit ?? "day"}${count === 1 ? "" : "s"}`;
+}
+
 /** What was typed for a value, as a query takes it: a number where it reads as one, a list for "is one of". */
 export function typedValue(op: string, text: string): unknown {
   if (op === "in") {
@@ -41,11 +47,13 @@ export function typedValue(op: string, text: string): unknown {
 
 /** A value as it is read in a sentence or typed in a box. */
 export const shownValue = (value: unknown): string =>
-  Array.isArray(value)
-    ? value.join(", ")
-    : value === undefined || value === null
-      ? ""
-      : String(value);
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? lastWords(value as { count?: number; unit?: string })
+    : Array.isArray(value)
+      ? value.join(", ")
+      : value === undefined || value === null
+        ? ""
+        : String(value);
 
 const NONE = { input: "none" } as const;
 const empties: ConditionOperator[] = [
@@ -64,14 +72,17 @@ export function operatorsFor(type: string): ConditionOperator[] {
         { test: "gte", label: "is at least", input: "number" },
         { test: "lt", label: "is less than", input: "number" },
         { test: "lte", label: "is at most", input: "number" },
+        { test: "between", label: "is between", input: "between" },
         ...empties,
       ];
     case "date":
       return [
+        { test: "last", label: "is in the last", input: "last" },
         { test: "gt", label: "is after", input: "date" },
         { test: "lt", label: "is before", input: "date" },
         { test: "gte", label: "is on or after", input: "date" },
         { test: "lte", label: "is on or before", input: "date" },
+        { test: "between", label: "is between", input: "between" },
         { test: "eq", label: "is on", input: "date" },
         { test: "is_null", label: "is empty", ...NONE },
         { test: "not_null", label: "has a date", ...NONE },
@@ -121,7 +132,11 @@ export function sentenceOf(
   return {
     before: `${heading(condition.column)} ${words?.label ?? TEST_WORDS[condition.op]}`,
     value:
-      condition.op === "is_null" || condition.op === "not_null" ? "" : shownValue(condition.value),
+      condition.op === "is_null" || condition.op === "not_null"
+        ? ""
+        : condition.op === "between" && Array.isArray(condition.value)
+          ? condition.value.join(" and ")
+          : shownValue(condition.value),
   };
 }
 
@@ -135,7 +150,12 @@ export function toEditor(
   return {
     field: condition.column,
     test: choice && condition.op === "in" ? "eq" : condition.op,
-    ...(raw === undefined ? {} : { value: !choice && Array.isArray(raw) ? shownValue(raw) : raw }),
+    ...(raw === undefined
+      ? {}
+      : {
+          value:
+            !choice && Array.isArray(raw) && condition.op !== "between" ? shownValue(raw) : raw,
+        }),
   };
 }
 
@@ -143,6 +163,12 @@ export function toEditor(
 export function isComplete(condition: ConditionValue): boolean {
   if (condition.test === "is_null" || condition.test === "not_null") return true;
   const value = condition.value;
+  if (condition.test === "between") {
+    return Array.isArray(value) && value.length === 2 && value.every((one) => one !== "");
+  }
+  if (condition.test === "last") {
+    return typeof value === "object" && value !== null && "count" in value && "unit" in value;
+  }
   return Array.isArray(value)
     ? value.length > 0
     : value !== undefined && value !== null && value !== "";
@@ -156,6 +182,11 @@ export function fromEditor(value: ConditionValue): VisualCondition[] {
   const op = value.test as VisualOperator;
   if (op === "is_null" || op === "not_null") return [{ column: value.field, op }];
   const raw = value.value;
+  if (op === "last" || op === "between") {
+    return raw === undefined
+      ? [{ column: value.field, op }]
+      : [{ column: value.field, op, value: raw as never }];
+  }
   if (Array.isArray(raw)) {
     if (op === "ne") return raw.map((one) => ({ column: value.field, op, value: one }));
     return raw.length === 1

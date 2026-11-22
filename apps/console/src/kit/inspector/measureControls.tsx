@@ -4,7 +4,7 @@
  * opens an editor; the editors are exported so a widget's own drawer (the chart's three
  * questions) puts them where its words ask for them.
  */
-import { groupName, type VisualFunction } from "@volvel/manifest";
+import { groupName, type PageWidget, type VisualFunction } from "@volvel/manifest";
 import {
   DashedAdd,
   DrawerGroup,
@@ -21,7 +21,8 @@ import {
   MEASURE_FUNCTIONS,
   MEASURE_WORDS,
 } from "@volvel/widgets";
-import { Hash } from "lucide-react";
+import { Hash, Search } from "lucide-react";
+import { useState } from "react";
 import type { Env } from "./controls.tsx";
 import { columnsByGrouping } from "./grouping.ts";
 import { type CatalogColumn, heading, measureName, visualOf } from "./model.ts";
@@ -324,7 +325,10 @@ export function BreakdownEditor({
   onChange,
   fillGaps,
   onRemove,
+  none,
 }: {
+  /** What a breakdown that is taken away reads as ("Nothing"): a first choice in the list, for one that may be left out. */
+  none?: string;
   breakdown: BreakdownValue | undefined;
   columns: readonly CatalogColumn[];
   /** How many rows the table has, when known: a column that differs in every row says so. */
@@ -334,7 +338,13 @@ export function BreakdownEditor({
   fillGaps?: { value: boolean; onChange: (next: boolean) => void; noun?: string };
   onRemove?: () => void;
 }) {
-  const ordered = columnsByGrouping(columns, rows);
+  const [find, setFind] = useState("");
+  const ordered = columnsByGrouping(columns, rows).filter(
+    (one) => find === "" || heading(one.name).toLowerCase().includes(find.trim().toLowerCase()),
+  );
+  // A few values, a choice or a date group well; the rest are listed after.
+  const good = ordered.filter((one) => one.rank <= 3);
+  const other = ordered.filter((one) => one.rank > 3);
   const current = columns.find((one) => one.name === breakdown?.column);
   const temporal = current ? TEMPORAL.has(current.type) : false;
   const cadences = BREAKDOWN_CADENCES.filter(
@@ -342,23 +352,69 @@ export function BreakdownEditor({
   );
   return (
     <div className="flex flex-col gap-3">
-      <ChoiceList
-        label="Column to break down by"
-        value={breakdown?.column}
-        options={ordered.map((one) => ({
-          value: one.name,
-          label: heading(one.name),
-          hint: one.hint,
-          icon: iconOfType(one.type, one.references),
-        }))}
-        onChange={(column) => {
-          const next = columns.find((one) => one.name === column);
-          onChange({
-            column,
-            ...(next && TEMPORAL.has(next.type) ? { bucket: breakdown?.bucket ?? "week" } : {}),
-          });
-        }}
-      />
+      {none !== undefined ? (
+        <ChoiceList
+          label={`${none}: no breakdown here`}
+          value={breakdown ? undefined : "none"}
+          options={[{ value: "none", label: none }]}
+          onChange={() => {
+            if (breakdown) onRemove?.();
+          }}
+        />
+      ) : null}
+      {ordered.length > 6 ? (
+        <div className="relative">
+          <Search
+            size={14}
+            aria-hidden
+            className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-ink-muted"
+          />
+          <input
+            type="search"
+            aria-label="Find a column"
+            placeholder="Find a column"
+            value={find}
+            onChange={(event) => setFind(event.target.value)}
+            className="h-9 w-full min-w-0 rounded-control border border-line-control bg-surface pr-2 pl-8 text-body-sm text-ink placeholder:text-ink-muted focus-visible:outline-2 focus-visible:outline-focus"
+          />
+        </div>
+      ) : null}
+      {[
+        { title: "Good for grouping", list: good },
+        { title: "Other columns", list: other },
+      ].map(({ title, list }) =>
+        list.length === 0 ? null : (
+          <div key={title} className="flex flex-col gap-1">
+            {good.length > 0 && other.length > 0 ? (
+              <p className="m-0 text-body-sm text-ink-muted">{title}</p>
+            ) : null}
+            <ChoiceList
+              label={`${title}: column to break down by`}
+              value={breakdown?.column}
+              options={list.map((one) => ({
+                value: one.name,
+                label: heading(one.name),
+                hint: one.hint,
+                icon: iconOfType(one.type, one.references),
+              }))}
+              onChange={(column) => {
+                const next = columns.find((one) => one.name === column);
+                onChange({
+                  column,
+                  ...(next && TEMPORAL.has(next.type)
+                    ? { bucket: breakdown?.bucket ?? "week" }
+                    : {}),
+                });
+              }}
+            />
+          </div>
+        ),
+      )}
+      {ordered.length > 0 ? (
+        <p className="m-0 text-meta text-ink-muted">
+          Columns with few values come first. A date adds a “by week / month” choice.
+        </p>
+      ) : null}
       {temporal && breakdown ? (
         <div className="flex flex-col gap-2">
           <SegmentedControl
@@ -396,55 +452,74 @@ export function BreakdownEditor({
   );
 }
 
-/** A breakdown of an input as a row: "Break down by  Issued on · Weekly ›". */
+/**
+ * A breakdown of an input as a row: "Break down by  Issued on · Weekly ›". With `none`, a row
+ * for a breakdown there is not yet reads that ("Nothing") and picking a column adds it.
+ */
 export function BreakdownRow({
   env,
   input,
   at,
   label,
+  none,
+  after,
 }: {
   env: Env;
   input: string;
   at: number;
   label: string;
+  /** What the row reads while there is no breakdown at this place: "Nothing". Left out: no row then. */
+  none?: string;
+  /** What else changes with it (the chart type a new answer suggests), given the widget and the breakdowns now. */
+  after?: (
+    widget: PageWidget,
+    groups: { column: string; type: string | undefined }[],
+  ) => PageWidget;
 }) {
   const visual = visualOf(env.widget.data?.[input]);
   if (!visual) return null;
   const limits = env.definition.data[input]?.breakdowns ?? { min: 0, max: 1 };
   const groups = visual.groupBy ?? [];
   const one = groups[at];
-  if (!one) return null;
-  const columns = columnsOf(env, visual);
-  const column = columns.find((c) => c.name === one.column);
+  if (!one && (none === undefined || at > groups.length)) return null;
+  const every = columnsOf(env, visual);
+  // The columns another breakdown already uses are not offered again.
+  const used = groups.filter((_, index) => index !== at).map((g) => g.column);
+  const columns = every.filter((c) => !used.includes(c.name));
+  const column = columns.find((c) => c.name === one?.column);
   const table = env.catalog.tables.find((t) => t.name === visual.table);
   const hasGapSetting = "fillGaps" in env.definition.config.properties;
 
   const change = (next: BreakdownValue) => {
-    const groupBy = groups.map((g, index) =>
-      index === at ? { column: next.column, ...(next.bucket ? { bucket: next.bucket } : {}) } : g,
-    );
-    const renamed = renameIn(
-      env,
-      input,
-      { ...visual, groupBy },
-      groupName(one),
-      groupName(groupBy[at] ?? one),
-    );
+    const entry = { column: next.column, ...(next.bucket ? { bucket: next.bucket } : {}) };
+    const groupBy = one ? groups.map((g, index) => (index === at ? entry : g)) : [...groups, entry];
+    const renamed = one
+      ? renameIn(env, input, { ...visual, groupBy }, groupName(one), groupName(groupBy[at] ?? one))
+      : { visual: { ...visual, groupBy }, widget: env.widget };
+    const widget = after
+      ? after(
+          renamed.widget,
+          groupBy.map((g) => ({
+            column: g.column,
+            type: columns.find((c) => c.name === g.column)?.type,
+          })),
+        )
+      : renamed.widget;
     writeVisual(
       env,
       input,
       renamed.visual,
       "changing what it is broken down by",
       `breakdown:${env.widget.id}:${input}:${at}`,
-      renamed.widget,
+      widget,
     );
   };
   return (
     <DrawerRow
       label={label}
       icon={iconOfType(column?.type ?? "text", column?.references)}
-      value={heading(one.column)}
-      hint={one.bucket ? CADENCE_WORDS[one.bucket] : undefined}
+      value={one ? heading(one.column) : <span className="text-ink-muted">{none}</span>}
+      hint={one?.bucket ? CADENCE_WORDS[one.bucket] : undefined}
       editorTitle={label}
       editor={
         <BreakdownEditor
@@ -452,6 +527,7 @@ export function BreakdownRow({
           columns={columns}
           rows={table?.rows}
           onChange={change}
+          {...(none === undefined ? {} : { none })}
           {...(hasGapSetting && at === 0
             ? {
                 fillGaps: {
@@ -466,15 +542,27 @@ export function BreakdownRow({
                 },
               }
             : {})}
-          {...(groups.length > limits.min
+          {...(one && groups.length > limits.min
             ? {
-                onRemove: () =>
+                onRemove: () => {
+                  const groupBy = groups.filter((_, index) => index !== at);
                   writeVisual(
                     env,
                     input,
-                    { ...visual, groupBy: groups.filter((_, index) => index !== at) },
+                    { ...visual, groupBy },
                     "removing a breakdown",
-                  ),
+                    undefined,
+                    after
+                      ? after(
+                          env.widget,
+                          groupBy.map((g) => ({
+                            column: g.column,
+                            type: columns.find((c) => c.name === g.column)?.type,
+                          })),
+                        )
+                      : undefined,
+                  );
+                },
               }
             : {})}
         />

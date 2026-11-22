@@ -32,9 +32,8 @@ import {
   Palette,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import type { Env } from "../controls.tsx";
-import { heading, withText } from "../model.ts";
-import { BreakdownRow } from "./breakdownRow.tsx";
+import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
+import { heading } from "../model.ts";
 import {
   ChoiceRow,
   ConfigToggle,
@@ -42,7 +41,6 @@ import {
   dateFilters,
   groupsOf,
   lower,
-  MeasureRow,
   NumberEditor,
   NumbersRow,
   patch,
@@ -306,25 +304,16 @@ export function ChartData({ env, data }: SectionProps) {
         label="What to chart"
         note="Three questions in plain words. The chart type is suggested from the answers."
       >
-        <MeasureRow env={env} label="Measure" />
-        <BreakdownRow env={env} query={query} at={0} label="For each" data={data} after={suggest}>
-          {(bucket) => (
-            <ConfigToggle
-              env={env}
-              name="fillGaps"
-              label={`Include ${bucket}s with no ${lower(query.visual.table)}`}
-              help="Draws them as zero instead of skipping them."
-            />
-          )}
-        </BreakdownRow>
+        <MeasureRow env={env} input="rows" at={0} label="Measure" />
+        <BreakdownRow env={env} input="rows" at={0} label="For each" after={suggest} />
         {first ? (
           <BreakdownRow
             env={env}
-            query={query}
+            input="rows"
             at={1}
             label="Split into colors"
-            data={data}
             none="Nothing"
+            after={suggest}
           />
         ) : null}
         <DrawerBlock>
@@ -385,43 +374,6 @@ export function ChartData({ env, data }: SectionProps) {
 // ---------------------------------------------------------------------------
 // Display
 
-/** Title and caption written on the card, as board 11 draws them. */
-function HeadingBlock({ env }: { env: Env }) {
-  const { widget } = env;
-  const field = (
-    label: string,
-    value: string,
-    placeholder: string,
-    onChange: (text: string) => void,
-  ) => (
-    <label className="flex flex-col gap-0.5 px-3 py-2">
-      <span className="text-meta text-ink-muted">{label}</span>
-      <input
-        type="text"
-        value={value}
-        placeholder={placeholder}
-        maxLength={200}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-7 w-full min-w-0 border-0 bg-transparent p-0 text-body-sm font-medium text-ink outline-offset-4 placeholder:font-normal placeholder:text-ink-muted focus-visible:outline-2 focus-visible:outline-focus"
-      />
-    </label>
-  );
-  return (
-    <>
-      {field("Title", widget.title ?? "", "A name for the chart", (text) =>
-        env.write(withText(widget, "title", text), "changing the title", `title:${widget.id}`),
-      )}
-      {field("Caption", widget.subtitle ?? "", "What the numbers are, or what to notice", (text) =>
-        env.write(
-          withText(widget, "subtitle", text),
-          "changing the caption",
-          `subtitle:${widget.id}`,
-        ),
-      )}
-    </>
-  );
-}
-
 const THEME_SWATCHES = ["var(--color-action)", "var(--color-success)", "var(--color-attention)"];
 
 export function ChartDisplay({ env, data }: SectionProps) {
@@ -453,9 +405,6 @@ export function ChartDisplay({ env, data }: SectionProps) {
 
   return (
     <>
-      <DrawerGroup label="Heading" note="Also editable by clicking the title on the page.">
-        <HeadingBlock env={env} />
-      </DrawerGroup>
       <DrawerGroup
         label="Chart type"
         note="Greyed types don't fit this data; the note says what they would need."

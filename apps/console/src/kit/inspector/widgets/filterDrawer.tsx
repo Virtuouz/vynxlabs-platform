@@ -22,6 +22,7 @@ import {
   type SortableItem,
   SortableRows,
   TextField,
+  ToggleRow,
 } from "@volvel/ui";
 import { useState } from "react";
 import { RANGE_WORDS } from "../filtersControl.tsx";
@@ -335,6 +336,12 @@ export function FilterDisplaySection({ env }: { env: Env }) {
             onChange={(next) => setConfig(env, "sit", next, "where the filters sit")}
           />
         </LabelledBlock>
+        <ToggleRow
+          label="Offer \u201cClear\u201d"
+          help="A button that puts every filter here back to how it starts."
+          checked={env.config.reset === true}
+          onChange={(next) => setConfig(env, "reset", next ? true : undefined, "the Clear button")}
+        />
       </Group>
     </>
   );

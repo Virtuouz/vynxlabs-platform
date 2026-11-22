@@ -30,7 +30,7 @@ import { ConditionsEditor } from "./conditions.tsx";
 import type { Env } from "./controls.tsx";
 import { useChosenGroups } from "./groupChoices.tsx";
 import { heading, visualOf } from "./model.ts";
-import { type GroupChoice, groupName } from "./timelineModel.ts";
+import { type GroupChoice, groupKey, groupName } from "./timelineModel.ts";
 
 /** A group chip: its name, and a × that takes it away. */
 function GroupChip({
@@ -68,7 +68,7 @@ function GroupChip({
 /** The chip nobody picked: what is so when no group is named. */
 function EveryoneChip({ children }: { children: string }) {
   return (
-    <span className="inline-flex h-7 items-center rounded-control border border-action bg-action-soft px-3 text-body-sm text-action">
+    <span className="inline-flex min-h-7 items-center rounded-control border border-action bg-action-soft px-3 py-0.5 text-body-sm text-action">
       {children}
     </span>
   );
@@ -183,7 +183,7 @@ export function ActionRules({
   /** Left out: the provider's, else the names the inspector has. */
   groupChoices?: readonly GroupChoice[];
 }) {
-  const given = useChosenGroups(env.groups);
+  const given = useChosenGroups();
   const choices = groupChoices ?? given;
   const ctx = actionContext(env);
   const without = <K extends "when" | "runBy">(key: K): Action => {
@@ -208,7 +208,15 @@ export function ActionRules({
             onChange={(next) => {
               if (next === "always") onChange(without("when"));
               else if (!action.when) {
-                onChange({ ...action, when: [firstCondition(ctx, env.groups)] });
+                onChange({
+                  ...action,
+                  when: [
+                    firstCondition(
+                      ctx,
+                      given.map((one) => groupKey(one.path)),
+                    ),
+                  ],
+                });
               }
             }}
           />
@@ -217,7 +225,7 @@ export function ActionRules({
               id={`${id}-when`}
               conditions={action.when}
               ctx={ctx}
-              groups={env.groups}
+              groups={given}
               addLabel="And"
               onChange={(when, key) => onChange(when ? { ...action, when } : without("when"), key)}
             />
@@ -254,7 +262,7 @@ export function RulesTab({
   rowRules?: ((table: string) => string) | undefined;
   groupChoices?: readonly GroupChoice[];
 }) {
-  const given = useChosenGroups(env.groups);
+  const given = useChosenGroups();
   const choices = groupChoices ?? given;
   const tables = [
     ...new Set(
@@ -310,7 +318,15 @@ export function RulesTab({
             value={showWhen ? "when" : "always"}
             onChange={(next) => {
               if (next === "always") setRules({ showWhen: undefined });
-              else if (!showWhen) setRules({ showWhen: [firstCondition(ctx, env.groups)] });
+              else if (!showWhen)
+                setRules({
+                  showWhen: [
+                    firstCondition(
+                      ctx,
+                      given.map((one) => groupKey(one.path)),
+                    ),
+                  ],
+                });
             }}
           />
           {showWhen ? (
@@ -319,7 +335,7 @@ export function RulesTab({
               noun="rule"
               conditions={showWhen}
               ctx={ctx}
-              groups={env.groups}
+              groups={given}
               addLabel="And"
               onChange={(next, key) => setRules({ showWhen: next }, key)}
             />

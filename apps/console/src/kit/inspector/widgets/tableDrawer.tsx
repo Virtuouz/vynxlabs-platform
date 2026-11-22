@@ -23,6 +23,7 @@ import type { Action } from "../actionModel.ts";
 import { conditionSentence } from "../actionModel.ts";
 import type { Env } from "../controls.tsx";
 import { configSettings, heading, uniqueName, withConfig } from "../model.ts";
+import { ActionRules } from "../RulesTab.tsx";
 import { AnchoredColumnEditor, CanvasColumnEditor } from "./ColumnEditor.tsx";
 import {
   type ColumnSetting,
@@ -362,6 +363,18 @@ function ActionRows({
                   )
                 }
               />
+              <ActionRules
+                env={env}
+                id={`${env.widget.id}-${one.id}-rules`}
+                action={one.action}
+                onChange={(next, key) =>
+                  put(
+                    list.map((was) => (was.id === one.id ? { ...was, action: next } : was)),
+                    `changing who can run ${noun}`,
+                    key === undefined ? undefined : `${name}:${env.widget.id}:${one.id}:${key}`,
+                  )
+                }
+              />
               <button
                 type="button"
                 onClick={() => {
@@ -416,21 +429,22 @@ export function rowClickWords(widget: PageWidget, env: Pick<Env, "pages">) {
  * has today (the action editor, and the offer to make a detail when nothing happens yet); pass
  * `rowClickEditor` to draw another in its place.
  */
-export function TableRowClickSection({
-  env,
-  bare,
-  rowClickEditor,
-  rowClickOffer,
-}: TableSectionProps & {
-  rowClickEditor?: ReactNode;
-  /** The builder's `RowClickOffer`, drawn while a click does nothing yet. */
-  rowClickOffer?: ReactNode;
-}) {
+export function TableRowClickSection({ env, bare }: TableSectionProps) {
+  // The builder's editor (board 3): radio cards, the detail chosen, "Opens as".
+  if (env.rowClickEditor) {
+    return (
+      <Section bare={bare} label="When a row is clicked">
+        <DrawerBlock>
+          {/* The group's own heading says it; the editor's is for where it stands alone. */}
+          <div className="[&_h3]:sr-only">{env.rowClickEditor}</div>
+        </DrawerBlock>
+      </Section>
+    );
+  }
   const click = env.widget.on?.rowClick;
   const { does, opensAs } = rowClickWords(env.widget, env);
-  const editor = rowClickEditor ?? (
+  const editor = (
     <div className="flex flex-col gap-3">
-      {click ? null : rowClickOffer}
       <ActionControl
         env={env}
         id={`${env.widget.id}-rowClick`}

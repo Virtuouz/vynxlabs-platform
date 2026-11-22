@@ -528,6 +528,10 @@ export interface ValueFormat {
   currency?: string;
   minorUnits?: boolean;
   decimals?: number;
+  /** `compact` writes 43,120 as 43.1K. */
+  notation?: "compact";
+  /** `false` writes 43120, not 43,120 (the picker's "Plain"). */
+  grouping?: false;
 }
 
 /** The JSON Schema of a `format` setting. A pack spreads it into its config with an `x-volvel` hint. */
@@ -538,6 +542,8 @@ export const FORMAT_SCHEMA = {
     currency: { type: "string", pattern: "^[A-Z]{3}$" },
     minorUnits: { type: "boolean" },
     decimals: { type: "integer", minimum: 0, maximum: 6 },
+    notation: { enum: ["compact"] },
+    grouping: { const: false },
   },
   required: ["style"],
   additionalProperties: false,
@@ -564,12 +570,20 @@ export function formatValue(value: unknown, format: ValueFormat | undefined): st
       : format?.style === "percent"
         ? { style: "percent", maximumFractionDigits: 1 }
         : { maximumFractionDigits: 2 };
+  if (format?.grouping === false) options.useGrouping = false;
+  if (format?.notation === "compact") {
+    options.notation = "compact";
+    options.maximumFractionDigits = 1;
+  }
   if (format?.decimals !== undefined) {
     options.minimumFractionDigits = format.decimals;
     options.maximumFractionDigits = format.decimals;
   }
   try {
-    return new Intl.NumberFormat("en-US", options).format(scaled);
+    // The boards write a short number in lower case: $43.1k.
+    return new Intl.NumberFormat("en-US", options)
+      .format(scaled)
+      .replace(/(\d)([KMBT])$/, (_, digit: string, unit: string) => digit + unit.toLowerCase());
   } catch {
     // A currency code the runtime does not know: the number, and the code after it.
     return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(scaled)} ${format?.currency ?? ""}`.trim();

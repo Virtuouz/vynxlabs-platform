@@ -48,6 +48,7 @@ import { EnvTag, Mono, STATE_NAMES, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { ColumnsMenu } from "../kit/views.tsx";
+import { KitDrawer } from "./KitDrawer.tsx";
 
 const SWATCHES = [
   "canvas",
@@ -651,6 +652,8 @@ export function KitSheet() {
           </div>
         </div>
       </section>
+
+      <KitDrawer />
 
       <section className="flex flex-col gap-3">
         <SectionLabel>Empty canvas</SectionLabel>

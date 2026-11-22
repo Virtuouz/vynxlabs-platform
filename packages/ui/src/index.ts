@@ -108,3 +108,4 @@ export {
 export { Kbd, Tooltip, TooltipProvider } from "./Tooltip.tsx";
 export { type DropPosition, Tree, type TreeNode } from "./Tree.tsx";
 export { useFlip, useKeys } from "./useFlip.ts";
+export * from "./drawer/index.ts";

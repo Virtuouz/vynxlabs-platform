@@ -12,7 +12,7 @@ import {
   widgetRegistry,
 } from "@volvel/manifest";
 import type { ColumnInfo, DataInputDeclaration } from "@volvel/widgets";
-import { badRequest, forbidden, HttpError, notFound } from "../../errors.js";
+import { badRequest, forbidden, forbiddenBecause, HttpError, notFound } from "../../errors.js";
 import type { RequestContext } from "../../http.js";
 import type { Kernel } from "../../kernel.js";
 import { type ApprovalsWire, readApprovals } from "../../pages/approvals.js";
@@ -494,7 +494,7 @@ export async function readWidget(
       .executeTakeFirst();
     if (!bound) return undefined;
     if (!(await ctx.allowed("data:read", at))) {
-      throw forbidden("the data:read permission");
+      throw forbiddenBecause("This needs the data:read permission.");
     }
     if ((visual.groupBy?.length ?? 0) > 0 || (visual.measures?.length ?? 0) > 0) {
       throw badRequest("Rows of a data source's table can be listed, not totalled.");

@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { enumColor, type InterfaceBody, interfaceTables, type TableBody } from "@volvel/manifest";
 import { type Static, Type } from "typebox";
 import { humanize } from "../kernel/data/query/inputs.js";
-import { forbidden, notFound } from "../kernel/errors.js";
+import { forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { wildPath } from "./data.js";
@@ -225,7 +225,9 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const mayEdit =
             (await ctx.allowed("resource:write", at)) || (await ctx.allowed("interface:write", at));
           if (where.type !== "dev" || !mayEdit) {
-            throw forbidden("to edit this interface, in a dev workspace, which a draft is read by");
+            throw forbiddenBecause(
+              "The draft of this interface is read only by someone who may edit it, in a dev workspace.",
+            );
           }
           const draft = await db
             .selectFrom("resource_draft")

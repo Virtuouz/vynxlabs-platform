@@ -21,7 +21,7 @@ import {
   scopeFor,
   withData,
 } from "../kernel/data/rows.js";
-import { badRequest, forbidden } from "../kernel/errors.js";
+import { badRequest, forbidden, forbiddenBecause } from "../kernel/errors.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -292,7 +292,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       asGroup?: string | undefined,
     ) {
       if (asGroup !== undefined) {
-        if (!scope.all) throw forbidden("the permission to read every row of this table");
+        if (!scope.all)
+          throw forbiddenBecause("This needs the permission to read every row of this table.");
         const group =
           (await db
             .selectFrom("end_user_group")
@@ -316,7 +317,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       }
       if (as === undefined) return scope;
       // Only someone who may see every row may look through another person's eyes.
-      if (!scope.all) throw forbidden("the permission to read every row of this table");
+      if (!scope.all)
+        throw forbiddenBecause("This needs the permission to read every row of this table.");
       const person = await db
         .selectFrom("end_user")
         .select("id")

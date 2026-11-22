@@ -3,7 +3,14 @@ import { newId, sql } from "@volvel/db";
 import { checkDashboard, type DashboardBody, dashboardKind } from "@volvel/manifest";
 import { Type } from "typebox";
 import { checkQuery, QueryRefused } from "../kernel/data/query/parse.js";
-import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/errors.js";
+import {
+  badRequest,
+  conflict,
+  forbidden,
+  forbiddenBecause,
+  HttpError,
+  notFound,
+} from "../kernel/errors.js";
 import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { workspaceTables } from "../kernel/pages.js";
@@ -56,7 +63,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     /** A dashboard is a member's. A key or an end user has none. */
     const member = (ctx: RequestContext): string => {
       if (ctx.principal.type !== "member" || !ctx.principal.id) {
-        throw forbidden("a member's sign-in, which dashboards belong to");
+        throw forbiddenBecause("Dashboards belong to a member, so this needs a member's sign-in.");
       }
       return ctx.principal.id;
     };
@@ -364,7 +371,8 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const me = member(ctx);
         const workspace = ctx.workspace as WorkspaceRef;
         const current = await visible(workspace, params.d, me);
-        if (current.member_id !== me) throw forbidden("to be the member whose dashboard this is");
+        if (current.member_id !== me)
+          throw forbiddenBecause("Only the member whose dashboard this is may change it.");
         if (body.revision !== undefined && body.revision !== current.revision) {
           throw conflict(
             "This dashboard was saved somewhere else since you opened it. Open it again.",
@@ -454,7 +462,8 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const me = member(ctx);
         const workspace = ctx.workspace as WorkspaceRef;
         const current = await visible(workspace, params.d, me);
-        if (current.member_id !== me) throw forbidden("to be the member whose dashboard this is");
+        if (current.member_id !== me)
+          throw forbiddenBecause("Only the member whose dashboard this is may change it.");
         await ctx.mutate(async (trx, audit) => {
           await trx.deleteFrom("member_dashboard").where("id", "=", current.id).execute();
           await audit({

@@ -8,7 +8,7 @@ import {
   type PageFilter,
   type PageWidget,
 } from "@volvel/manifest";
-import { badRequest, forbidden, notFound } from "../errors.js";
+import { badRequest, forbidden, forbiddenBecause, notFound } from "../errors.js";
 import { findWorkspace, type RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 
@@ -75,7 +75,9 @@ export async function locatePage(
       .where("id", "=", workspace.id)
       .executeTakeFirstOrThrow();
     if (where.type !== "dev" || !(await mayEdit())) {
-      throw forbidden("to edit this page, in a dev workspace, which a draft is read or run by");
+      throw forbiddenBecause(
+        "The draft of this page is read or run only by someone who may edit it, in a dev workspace.",
+      );
     }
     const draft = await db
       .selectFrom("resource_draft")
@@ -163,7 +165,7 @@ export async function locatePage(
       .executeTakeFirst();
     if (mine) {
       if (wantsDraft && mine.member_id !== me) {
-        throw forbidden("to be the member whose dashboard this is");
+        throw forbiddenBecause("Only the member whose dashboard this is may change it.");
       }
       body = mine.body as unknown as DashboardBody;
     }

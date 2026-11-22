@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import { displayColumn } from "../kernel/data/query/inputs.js";
 import { workspaceCatalog } from "../kernel/data/query/widget.js";
 import { describeTable, findRows, scopeFor, withData } from "../kernel/data/rows.js";
-import { badRequest, forbidden, notFound } from "../kernel/errors.js";
+import { badRequest, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { locatePage, UUID } from "../kernel/pages/locate.js";
@@ -90,7 +90,10 @@ export function widgetChoicesRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ...at,
             resourceId: table.resourceId ?? undefined,
           });
-          if (!allowed) throw forbidden(`the data:read permission on the table "${table.name}"`);
+          if (!allowed)
+            throw forbiddenBecause(
+              `This needs the data:read permission on the table "${table.name}".`,
+            );
           const found = values
             .map((one) => ({ value: one.value, label: one.label ?? one.value }))
             .filter(
@@ -107,7 +110,9 @@ export function widgetChoicesRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!target) throw notFound("The table the column points to");
         const where = { ...at, resourceId: target.resourceId ?? undefined };
         if (!(await ctx.allowed("data:read", where))) {
-          throw forbidden(`the data:read permission on the table "${target.name}"`);
+          throw forbiddenBecause(
+            `This needs the data:read permission on the table "${target.name}".`,
+          );
         }
         const owner = (await kernel.data.forTenant(at.tenantId)).owner;
         const described = await describeTable(owner, at.workspaceId, target.name);

@@ -384,7 +384,7 @@ Also walked: by keyboard alone from making an app to publishing it; drags on the
 
 ## Left out, and asked
 
-- **Grouping a List or a Table by day** ("a calendar-like list"): no board draws it and no decision asks for it. Asked of the owner on 2026-11-22, who asked for it to be explained before deciding.
+- **Grouping a List or a Table by day** ("a calendar-like list"): no board draws it. Asked of the owner on 2026-11-22, who had it built: see "Rows grouped under headings".
 - **Limiting Fernhill's Edit and Void to a group:** whoever may open the app may run an action that names no group (decision 0004). The owner decided on 2026-11-22 to keep it open.
 - **A widget hidden by a rule leaves its gap** on the served page. The owner decided on 2026-11-22 to keep it so for now, and look again if it becomes an issue.
 
@@ -442,3 +442,17 @@ The suites found one more, older than this phase: "the rows behind a number", op
 **Walked:** served, the six menu pages at 1440 dark, 768 light and 390 dark (measured for overlaps and sideways scroll at all three; looked at: Today and Money at 1440, Visits at 768); in the builder, Today at 1440. Opened at 1440 light: the pet's record page, the Full and Medium modals, the invoice sheet. Not walked: the other sheets and modals on this last build, and the builder at 768 and 390.
 
 **The full suites, again**, on the merged code: 3,078 unit tests pass (one, a worker's lease, failed while the browser suite shared the machine, and passes alone); 209 browser tests pass and 2 are skipped on port 8093, where the single sign-on file failed because its identity provider takes only port 8080 (it passes there, 7 of 7). No reference picture changed.
+
+### Rows grouped under headings
+
+The owner asked on 2026-11-22 for "Group rows by". A Table and a List have `groupRows: { column, by?, descending? }`: a heading over the rows of each day, week or month of a date, or of each value of a choice, text, or yes or no column.
+- **On the server, over every page.** The group leads the order (`compileVisual`), and the rows within it are as "Sorted by" says, or by their time. Each group is counted whole and sent with the first page, so a heading says 81 while 15 of its rows are shown. A list limited to "At most" some rows chooses them in its own order first.
+- **A time's day is the reader's.** The browser sends its time zone, as the cells already say times in it: a visit at 9:30 in the evening in Boise is under that day, not the next one in UTC. Page filters such as "Today" still count days in UTC, as they did, so near midnight the two can differ by a day.
+- **Choices come as their table lists them**; rows with no value come last ("No date", "No status").
+- **Under a day, the time alone.** A heading people click to sort sorts each group.
+- **Not grouped:** rows of a saved query (they are in its SQL's order), totals, and columns that point to another table. A table of an outside data source is put in the column's order and its groups counted as they are read.
+- A column that is gone is a problem on the Display tab.
+
+**Tests:** `group-rows.test.ts` (server: pages, time zones, weeks, limits, refusals), `group-rows.test.tsx` (views), the drawer's in `tables.test.tsx`, `e2e/phase-28-group-rows.spec.ts` (2, with a day's count read back from the table and an accessibility check). Full unit suite: 3,098 pass, 2 skipped. Builder and dashboard browser files: 111 pass. The rest of the browser suite was not run again.
+
+**Walked:** Clinic operations' Today at 1440 dark, 768 light and 390 dark (headings measured at all three; looked at 1440 and 390), a list by species and a record page's table by month at 1440 dark, and the drawer at 1440 dark.

@@ -6,7 +6,7 @@ import { useLoad } from "../../api.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import { draftChanges } from "./changes.ts";
 import { useGroupKeys } from "./groupKeys.ts";
-import { type CheckItem, checksFor, mostAffectedGroup, plainly } from "./publishCheck.ts";
+import { type CheckItem, checksFor, mostAffectedGroup, problemWords } from "./publishCheck.ts";
 import { definitionOf } from "./registry.ts";
 
 interface Preview {
@@ -105,11 +105,11 @@ export function PublishCheck({
         body,
         known,
         definitionOf,
-        problems: problems.map((one) => `${plainly(one.message, body)}.`.replace(/\.\.$/, ".")),
+        problems: problems.map((one) => `${problemWords(one, body)}.`.replace(/\.\.$/, ".")),
         refusal: [
           ...(asked?.refusal
             ? asked.refusal.errors.length > 0
-              ? asked.refusal.errors.map((one) => plainly(one.message, body))
+              ? asked.refusal.errors.map((one) => problemWords(one, body))
               : [asked.refusal.detail]
             : []),
         ],

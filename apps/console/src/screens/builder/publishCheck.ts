@@ -65,9 +65,11 @@ export function actionsOf(widget: PageWidget): { at: string; action: Action }[] 
   return found;
 }
 
+const NO_STEPS = "has no steps yet";
+
 /** What is wrong with an action, in words; nothing when it is complete. */
 function actionProblem(action: Action, body: InterfaceBody, known: Known): string | undefined {
-  if (action.steps.length === 0) return "it has no steps";
+  if (action.steps.length === 0) return NO_STEPS;
   for (const step of action.steps) {
     if (step.do === "open" && !body.pages.some((page) => page.id === step.page))
       return "it opens a page that is gone";
@@ -154,9 +156,15 @@ export function checksFor(input: {
   if (actions.length > 0) {
     const broken = actions.flatMap((one) => {
       const why = actionProblem(one.action, body, known);
-      return why
-        ? [`${nameOf(one.widget, definitionOf(one.widget.type))} on ${one.page.title}: ${why}`]
-        : [];
+      if (!why) return [];
+      // A button of a group, or a row action, is named by what it says: "Do it on Money has no steps yet".
+      const own = nameAlong(one.widget, one.at.split("/").slice(1));
+      const name = own ?? nameOf(one.widget, definitionOf(one.widget.type));
+      return [
+        why === NO_STEPS
+          ? `${name} on ${one.page.title} ${why}`
+          : `${name} on ${one.page.title}: ${why}`,
+      ];
     });
     items.push(
       broken.length === 0
@@ -290,21 +298,80 @@ export function mostAffectedGroup(
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 }
 
+const singularOf = (word: string): string =>
+  word.endsWith("ies") ? `${word.slice(0, -3)}y` : word.endsWith("s") ? word.slice(0, -1) : word;
+
+/** A name in a path as words: `rowActions` as "row actions". */
+const wordsOfKey = (key: string): string =>
+  key
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]/g, " ")
+    .toLowerCase();
+
+/** The things a list of this name holds, for "needs at least 2 buttons". */
+const THINGS: Record<string, string> = { actions: "button", rowActions: "row action" };
+const thing = (key: string, count: number): string => {
+  const one = THINGS[key] ?? singularOf(wordsOfKey(key));
+  return count === 1 ? one : one.endsWith("y") ? `${one.slice(0, -1)}ies` : `${one}s`;
+};
+
 /**
- * What the server refused, said in the page's words: "/body/pages/0/widgets/9/config/... must NOT
- * have fewer than 1 items" becomes "Invoices on Money: needs at least 1".
+ * The nearest thing with a name on the way down a path into a widget: the button or the column
+ * a problem is in, "Do it" in `config/actions/0/action/steps`.
  */
-export function plainly(message: string, body: InterfaceBody): string {
-  const found = /^\/body\/pages\/(\d+)(?:\/widgets\/(\d+))?\S*\s+(.*)$/.exec(message);
-  if (!found) return message;
+function nameAlong(widget: PageWidget, rest: readonly string[]): string | undefined {
+  let at: unknown = widget;
+  let found: string | undefined;
+  for (const key of rest) {
+    if (typeof at !== "object" || at === null) break;
+    at = (at as Record<string, unknown>)[key];
+    const named = (at as { label?: unknown } | null)?.label;
+    if (typeof named === "string" && named.trim()) found = named;
+  }
+  return found;
+}
+
+/**
+ * What the server refused, said in the page's words. The server names a place ("/body/pages/0/
+ * widgets/9/config/actions/1/action/steps") and says it in the schema's ("must NOT have fewer
+ * than 1 items"); the builder says which button of which widget on which page, and what it needs.
+ */
+export function problemWords(problem: { path: string; message: string }, body: InterfaceBody) {
+  const found = /^\/body\/pages\/(\d+)(?:\/widgets\/(\d+)(\/\S*)?)?/.exec(problem.path);
+  if (!found) return plainly(problem.message, body);
   const page = body.pages[Number(found[1])];
   const widget = found[2] !== undefined ? page?.widgets[Number(found[2])] : undefined;
-  const what = (found[3] ?? "").replace(
-    /must NOT have fewer than (\d+) items?/,
-    "needs at least $1",
-  );
-  const where = [widget ? widget.title || widget.id : undefined, page?.title]
+  const rest = (found[3] ?? "").split("/").filter(Boolean);
+  const last = rest.at(-1) ?? "";
+  const place = [widget ? widget.title || widget.id : undefined, page?.title]
     .filter(Boolean)
     .join(" on ");
-  return where ? `${where}: ${what}` : what;
+  const own = widget ? nameAlong(widget, rest) : undefined;
+  const inside = own ? [own, page?.title].filter(Boolean).join(" on ") : place;
+  const fewer = /^must NOT have fewer than (\d+) items?$/.exec(problem.message);
+  const more = /^must NOT have more than (\d+) items?$/.exec(problem.message);
+  const required = /^must have required property '(.+)'$/.exec(problem.message);
+  let what: string;
+  if (fewer) {
+    const count = Number(fewer[1]);
+    what =
+      last === "steps" && count === 1
+        ? "has no steps yet"
+        : `needs at least ${count} ${thing(last || "item", count)}`;
+    return last === "steps" ? `${inside} ${what}` : place ? `${place}: ${what}` : what;
+  }
+  if (more) what = `has more than ${more[1]} ${thing(last || "item", 2)}; ${more[1]} is the most`;
+  else if (required) what = `needs ${wordsOfKey(required[1] ?? "")}`;
+  else if (/^must NOT have additional properties$/.test(problem.message))
+    what = "has a setting it does not take";
+  else if (/^must be equal to one of the allowed values$/.test(problem.message))
+    what = `has ${last ? wordsOfKey(last) : "a value"} that is not one of the choices`;
+  else what = problem.message;
+  return place ? `${place}: ${what}` : what;
+}
+
+/** `problemWords` for a message that carries its place: "/body/pages/0/widgets/9/config/x must NOT …". */
+export function plainly(message: string, body: InterfaceBody): string {
+  const found = /^(\/body\/pages\/\d+\S*)\s+(.*)$/.exec(message);
+  return found ? problemWords({ path: found[1] ?? "", message: found[2] ?? "" }, body) : message;
 }

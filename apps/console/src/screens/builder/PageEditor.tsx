@@ -43,6 +43,7 @@ import {
   placesFor,
   registryRoles,
   removalWords,
+  removeTab,
   removeWidget,
   resolved,
   targetOfSelection,
@@ -532,6 +533,19 @@ export function PageEditor({
                 widgets={widgets}
                 onChangeWidgets={put}
                 onUndo={shell.history.undo}
+                onRemoveTab={(tab, fate) => {
+                  const done = removeTab(
+                    widgets,
+                    widget.id,
+                    tab,
+                    "move" in fate ? fate.move : null,
+                  );
+                  if (done.what === "refused") return setTold(done.words);
+                  put(done.widgets, done.words.replace(/\.$/, "").toLowerCase());
+                  notify.success(done.words, {
+                    action: { label: "Undo", onClick: shell.history.undo },
+                  });
+                }}
                 {...(definitionOf(FILTER_WIDGET)
                   ? { onAddFilters: () => add(definitionOf(FILTER_WIDGET) as WidgetDefinition) }
                   : {})}

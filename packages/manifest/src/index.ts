@@ -125,6 +125,7 @@ export {
 export {
   type CheckContext,
   CONTAINER_HEAD_ROWS,
+  headRows,
   checkDashboard,
   checkInterface,
   checkWidgets,

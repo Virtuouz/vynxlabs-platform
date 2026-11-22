@@ -472,7 +472,7 @@ export const performance = defineInterface({
           id: "views",
           type: "core/tabs",
           title: "Visits",
-          at: { x: 0, y: 6, w: 12, h: 13 },
+          at: { x: 0, y: 6, w: 12, h: 14 },
           config: {
             tabs: [
               { id: "by-status", title: "By status" },

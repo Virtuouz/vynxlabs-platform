@@ -11,9 +11,9 @@ import {
   bindFilter,
   type Catalog,
   insertFilterWidget,
-  removeTabFrom,
   searchColumns,
 } from "./kit/inspector/model.ts";
+import { removeTab } from "./screens/builder/containers.ts";
 import { show } from "./testing.tsx";
 
 const catalog: Catalog = {
@@ -117,6 +117,9 @@ function Harness({ start, open }: { start: PageWidget[]; open: string }) {
       onUndo={() => {
         undone += 1;
       }}
+      onRemoveTab={(tab, fate) =>
+        setWidgets(removeTab(widgets, open, tab, "move" in fate ? fate.move : null).widgets)
+      }
       onDuplicate={() => {}}
       onRemove={() => {}}
       catalog={catalog}
@@ -393,16 +396,22 @@ test("removing a tab that holds nothing removes it; one that holds widgets asks 
   fireEvent.click(dialog.getByRole("button", { name: "Move them and remove the tab" }));
   await waitFor(() => expect(tabsHeld().map((one) => one.id)).toEqual(["second"]));
   expect(byId("a").in).toEqual({ widget: "views", tab: "second" });
-  // Under what was there.
-  expect(byId("a").at.y).toBe(3);
+  // Beside what was there (its columns are free), as the grid settles: never over it.
+  const [one, two] = [byId("a").at, byId("b").at];
+  const apart =
+    one.x + one.w <= two.x ||
+    two.x + two.w <= one.x ||
+    one.y + one.h <= two.y ||
+    two.y + two.h <= one.y;
+  expect(apart).toBe(true);
 });
 
 test("a tab removed with what it held takes the widgets with it", () => {
-  const next = removeTabFrom(withTabs(), "views", "first", { remove: true });
+  const next = removeTab(withTabs(), "views", "first", null).widgets;
   expect(next.map((one) => one.id)).toEqual(["views", "b"]);
   expect(((next[0]?.config?.tabs ?? []) as unknown[]).length).toBe(1);
   // The last tab is never removed.
-  expect(removeTabFrom(next, "views", "second", { remove: true })).toEqual(next);
+  expect(removeTab(next, "views", "second", null).what).toBe("refused");
 });
 
 test("the last tab cannot be removed", () => {

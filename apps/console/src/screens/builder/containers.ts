@@ -19,7 +19,7 @@ import {
 import { isContainer } from "@volvel/manifest/parts";
 import { withoutWidget } from "../../kit/inspector/model.ts";
 import { definitionOf } from "./registry.ts";
-import { placed } from "./renderer.ts";
+import { fitContainers as fitOnCanvas, placed } from "./renderer.ts";
 
 /** Who is a container: the platform's registry says so, as it does for the served page. */
 export interface RoleOf {
@@ -76,16 +76,8 @@ export function fitContainers(
   widgets: readonly PageWidget[],
   roles: RoleOf = registryRoles,
 ): PageWidget[] {
-  let next = widgets.map((one) => ({ ...one, at: { ...one.at } }));
-  for (const container of widgets.filter((one) => isContainer(one, roles))) {
-    const now = next.find((one) => one.id === container.id);
-    if (!now || now.in) continue;
-    const h = containerHeight(now, next);
-    if (h === now.at.h) continue;
-    const top = placed(topLevel(next), now.id, { ...now.at, h });
-    next = merged(next, top);
-  }
-  return next;
+  // The canvas's own rule (`@volvel/screens`), so the builder and the page agree.
+  return [...fitOnCanvas(widgets, roles)];
 }
 
 /** The widgets a container holds, with their count in words: "3 widgets", "1 widget". */

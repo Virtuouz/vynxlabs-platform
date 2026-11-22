@@ -556,7 +556,7 @@ await draftInSandbox("boards/clinic-visits", "dashboard", {
       id: "views",
       type: "core/tabs",
       title: "Visits",
-      at: { x: 0, y: 2, w: 12, h: 12 },
+      at: { x: 0, y: 2, w: 12, h: 13 },
       config: {
         tabs: [
           { id: "visits", title: "Visits" },

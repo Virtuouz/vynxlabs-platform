@@ -9,7 +9,7 @@ import { Button, Dialog, MoveButtons, SelectField, TextField, useFlip } from "@v
 import { Plus, X } from "lucide-react";
 import { useState } from "react";
 import type { Env } from "./controls.tsx";
-import { removeTabFrom, type TabFate, tabsFor, uniqueName, withConfig } from "./model.ts";
+import { type TabFate, tabsFor, uniqueName, withConfig } from "./model.ts";
 
 /** A page's container holds at most this many tabs. */
 const MAX_TABS = 8;
@@ -51,15 +51,8 @@ export function TabsControl({ env, field }: { env: Env; field: string }) {
   };
   const remove = (tab: Tab, fate: TabFate | undefined) => {
     if (fate) {
-      // What a tab held goes where it is told; the container's own writer does it as one step.
-      const run =
-        env.onRemoveTab ??
-        ((id: string, how: TabFate) =>
-          env.writeAll(
-            removeTabFrom(env.widgets, env.widget.id, id, how),
-            `removing the tab ${tab.title}`,
-          ));
-      run(tab.id, fate);
+      // What a tab held goes where it is told: the editor does it (`removeTab`), as one step.
+      env.onRemoveTab?.(tab.id, fate);
     } else
       keep(
         tabs.filter((one) => one.id !== tab.id),

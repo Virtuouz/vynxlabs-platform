@@ -15,6 +15,13 @@ export interface Roles {
 /** The rows a container's heading takes on the page's grid, above the grid of what it holds. */
 export const CONTAINER_HEAD_ROWS = 1;
 
+/**
+ * The rows a container's head takes: one for a Section's title and line, or for a tab
+ * strip; two for Tabs with a title, whose title sits over its strip.
+ */
+export const headRows = (container: PageWidget): number =>
+  tabsOf(container).length > 0 && container.title ? CONTAINER_HEAD_ROWS + 1 : CONTAINER_HEAD_ROWS;
+
 /** The widgets of a page that set its filters: those whose definition's role is `filters`. */
 export function filterWidgets(widgets: readonly PageWidget[], roles: Roles): PageWidget[] {
   return widgets.filter((widget) => roles.get(widget.type)?.role === "filters");
@@ -68,7 +75,7 @@ export function containerHeight(
 ): number {
   const held = childrenOf(widgets, container.id);
   const bottom = held.reduce((low, widget) => Math.max(low, widget.at.y + widget.at.h), 0);
-  return Math.min(40, Math.max(least, CONTAINER_HEAD_ROWS + Math.max(bottom, 1)));
+  return Math.min(40, Math.max(least, headRows(container) + Math.max(bottom, 1)));
 }
 
 /** The type of the platform's Search and filter widget. */

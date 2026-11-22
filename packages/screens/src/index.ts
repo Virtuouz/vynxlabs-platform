@@ -6,7 +6,6 @@ export {
   holds,
   type NavigateTo,
 } from "./actions.tsx";
-export { FilterBar, type FilterBarProps, TYPING_PAUSE } from "./FilterBar.tsx";
 export { Frame, nameOf } from "./Frame.tsx";
 export {
   type DateRange,

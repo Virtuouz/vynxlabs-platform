@@ -382,23 +382,48 @@ const sourceSchema = {
 const dataInputSchema = {
   type: "object",
   properties: {
-    source: sourceSchema,
+    source: {
+      ...sourceSchema,
+      description:
+        "What it reads: a table from menus, a saved query, SQL on a dashboard, or the page's record.",
+    },
     filters: {
+      description:
+        "The page's filters that narrow it, each by the column it narrows or the parameter it fills.",
       type: "array",
       maxItems: 16,
       items: {
         type: "object",
         properties: {
-          filter: { type: "string", pattern: NAME },
-          column: { type: "string", pattern: COLUMN },
+          filter: {
+            type: "string",
+            pattern: NAME,
+            description:
+              "The filter, by its name, as a Search and filter widget on the page declares it.",
+          },
+          column: {
+            type: "string",
+            pattern: COLUMN,
+            description: "For a table read from menus: the column the filter narrows.",
+          },
           columns: {
+            description:
+              "For a search over a table read from menus: the columns it looks in. A row is kept when any holds the words.",
             type: "array",
             minItems: 1,
             maxItems: 10,
             items: { type: "string", pattern: COLUMN },
           },
-          parameter: { type: "string", pattern: "^(\\$[0-9]{1,2}|[a-z][a-z0-9_]{0,54})$" },
-          part: { enum: ["from", "to"] },
+          parameter: {
+            type: "string",
+            pattern: "^(\\$[0-9]{1,2}|[a-z][a-z0-9_]{0,54})$",
+            description: "For a saved query or SQL: the parameter the filter fills.",
+          },
+          part: {
+            enum: ["from", "to"],
+            description:
+              "For a range of dates filling a query: whether this parameter is its first day or its last.",
+          },
         },
         required: ["filter"],
         additionalProperties: false,
@@ -771,6 +796,7 @@ export {
   childrenOf,
   containerHeight,
   FILTER_WIDGET,
+  headRows,
   tabsOf,
   topLevel,
 } from "./parts.js";

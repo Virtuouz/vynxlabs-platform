@@ -533,48 +533,6 @@ export function withPageFilters(
 /** What becomes of the widgets of a tab that is removed: moved to another tab, or removed with it. */
 export type TabFate = { move: string } | { remove: true };
 
-/**
- * The page's widgets with a tab of a container removed, and what it held moved to the end of
- * another tab or removed with it. A local version; the builder's `removeTab` replaces it
- * where the containers are edited.
- */
-export function removeTabFrom(
-  widgets: readonly PageWidget[],
-  container: string,
-  tab: string,
-  fate: TabFate,
-): PageWidget[] {
-  const holder = widgets.find((one) => one.id === container);
-  const tabs = tabsFor(holder);
-  if (!holder || tabs.length <= 1) return [...widgets];
-  const held = childrenOf(widgets, container, tab).map((one) => one.id);
-  let next: PageWidget[];
-  if ("move" in fate) {
-    const target = fate.move;
-    const below = childrenOf(widgets, container, target).reduce(
-      (low, one) => Math.max(low, one.at.y + one.at.h),
-      0,
-    );
-    let y = below;
-    next = widgets.map((one) => {
-      if (!held.includes(one.id)) return one;
-      const at = { ...one.at, y };
-      y += one.at.h;
-      return { ...one, in: { widget: container, tab: target }, at };
-    });
-  } else {
-    next = widgets.filter((one) => !held.includes(one.id));
-  }
-  return next.map((one) => {
-    if (one.id !== container) return one;
-    const kept = {
-      ...one,
-      config: { ...one.config, tabs: tabs.filter((each) => each.id !== tab) },
-    };
-    return { ...kept, at: { ...kept.at, h: Math.max(kept.at.h, containerHeight(kept, next)) } };
-  });
-}
-
 /** The tabs a container holds. */
 export function tabsFor(widget: PageWidget | undefined): { id: string; title: string }[] {
   const tabs = widget?.config?.tabs;

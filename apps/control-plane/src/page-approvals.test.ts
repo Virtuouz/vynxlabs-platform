@@ -787,6 +787,18 @@ describe("where it is decided (decision 0007, rule 8)", () => {
     expect((await decide(bob, step.id, "approve")).status).toBe(200);
   });
 
+  test("the operator's setting is seen at once: with code apps allowed on the console's address a decision is refused there", async () => {
+    const step = await ask("orders/reorder");
+    t.kernel.config.appsOnConsoleAddress = true;
+    try {
+      expect((await read(bob, "queue")).body.inputs.requests.decideIn).toBeDefined();
+      expect((await decide(bob, step.id, "approve")).status).toBe(403);
+    } finally {
+      t.kernel.config.appsOnConsoleAddress = false;
+    }
+    expect((await decide(bob, step.id, "approve")).status).toBe(200);
+  });
+
   for (const kind of ["apps", "domain", "main"] as const) {
     test(`at ${kind}: the requests are shown, decided in the console, and nothing is decided`, async () => {
       const step = await ask("orders/reorder");

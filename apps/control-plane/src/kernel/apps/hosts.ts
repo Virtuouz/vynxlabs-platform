@@ -39,14 +39,15 @@ export class Hosts {
   readonly #db: Db;
   readonly #main: URL;
   readonly #apps: URL | undefined;
-  readonly #codeOnConsole: boolean;
+  /** Read each time, so an operator's change of setting is seen at once. */
+  readonly #config: Pick<Config, "appsOnConsoleAddress">;
   readonly #domains = new Map<string, { domain: AppDomain | null; at: number }>();
 
   constructor(db: Db, config: Pick<Config, "publicUrl" | "appsUrl" | "appsOnConsoleAddress">) {
     this.#db = db;
     this.#main = new URL(config.publicUrl);
     this.#apps = config.appsUrl ? new URL(config.appsUrl) : undefined;
-    this.#codeOnConsole = config.appsOnConsoleAddress;
+    this.#config = config;
   }
 
   /** The address apps are served at by path: the second address when there is one. */
@@ -82,7 +83,7 @@ export class Hosts {
    * Anything it is not sure of is a yes.
    */
   runsCodeApps(place: Place): boolean {
-    if (place.kind === "main") return this.#apps === undefined && this.#codeOnConsole;
+    if (place.kind === "main") return this.#apps === undefined && this.#config.appsOnConsoleAddress;
     return true;
   }
 

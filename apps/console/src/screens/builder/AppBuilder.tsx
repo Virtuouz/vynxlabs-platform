@@ -8,10 +8,12 @@ import { useHistory } from "../../kit/history.ts";
 import { heading } from "../../kit/inspector/model.ts";
 import { Loading } from "../../kit/LoadState.tsx";
 import { type DraftAnswer, type Listed, slug } from "./data.ts";
+import { NewPageDialog } from "./NewPageDialog.tsx";
 import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
 import { PublishDialog } from "./PublishDialog.tsx";
-import { canAddPage, movedPage, uniquePageId } from "./pageKinds.ts";
+import { canAddPage, movedPage } from "./pageKinds.ts";
+import type { Started } from "./starters.ts";
 
 /** The sizes the preview can be drawn at. */
 export const VIEWPORTS = {
@@ -53,6 +55,8 @@ export function AppBuilder({
   const [saving, setSaving] = useState<Saving>("saved");
   const [problems, setProblems] = useState<{ path: string; message: string }[]>([]);
   const [publishing, setPublishing] = useState(false);
+  /** "+ Page" is asking what to start from. */
+  const [addingPage, setAddingPage] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const revision = useRef<number | undefined>(undefined);
   const latest = useRef<InterfaceBody | undefined>(undefined);
@@ -187,19 +191,20 @@ export function AppBuilder({
     setSelected(undefined);
     setSettingsOpen(true);
   };
-  const addPage = async () => {
-    const title = await ask.prompt({
-      title: "Add a page",
-      label: "Name of the page",
-      action: "Add the page",
-    });
-    if (!title) return;
-    const id = uniquePageId(body.pages, title);
+  /** A page made by "+ Page", with the sheet and the modal it needs: one step, which Undo takes back whole. */
+  const addPage = (started: Started) => {
     change((draft) => {
-      draft.pages.push({ id, title, widgets: [] });
+      for (const added of started.pages) {
+        if (draft.pages.length < MAX_PAGES && !draft.pages.some((one) => one.id === added.id)) {
+          draft.pages.push(added);
+        }
+      }
     }, "adding a page");
-    setPageId(id);
+    setAddingPage(false);
+    setPageId(started.open);
     setSelected(undefined);
+    if (started.told)
+      notify.success(started.told, { action: { label: "Undo", onClick: history.undo } });
   };
   const removePage = async () => {
     if (!page) return;
@@ -423,7 +428,7 @@ export function AppBuilder({
               pages={body.pages}
               current={page.id}
               onChoose={choosePage}
-              onAdd={canAddPage(body.pages) ? addPage : undefined}
+              onAdd={canAddPage(body.pages) ? () => setAddingPage(true) : undefined}
               onMove={(id, by) =>
                 change((draft) => {
                   draft.pages = movedPage(draft.pages, id, by);
@@ -453,6 +458,13 @@ export function AppBuilder({
           }
         />
       ) : null}
+      <NewPageDialog
+        open={addingPage}
+        onClose={() => setAddingPage(false)}
+        root={root}
+        pages={body.pages}
+        onMake={addPage}
+      />
       <PublishDialog
         open={reviewing}
         onClose={() => setReviewing(false)}

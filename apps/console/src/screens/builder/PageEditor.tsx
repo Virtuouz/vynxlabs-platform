@@ -27,10 +27,10 @@ import {
   mainTable,
   settleOnGrid,
   unbindDeclared,
-  withPageFilters,
 } from "../../kit/inspector/model.ts";
 import { AddFormDialog } from "./AddFormDialog.tsx";
 import { AddToPage } from "./AddToPage.tsx";
+import { ButtonOffers } from "./ButtonOffers.tsx";
 import { type PageSource, pageClient } from "./client.ts";
 import {
   duplicateWidget,
@@ -50,6 +50,7 @@ import {
   withoutOrphans,
 } from "./containers.ts";
 import { EditorShell } from "./EditorShell.tsx";
+import { GroupButtonsDialog } from "./GroupButtonsDialog.tsx";
 import { PageSettings } from "./PageSettings.tsx";
 import { MODAL_WIDTH, SHEET_WIDTH } from "./pageKinds.ts";
 import { RowClickOffer } from "./RowClickOffer.tsx";
@@ -60,12 +61,12 @@ import {
   manyOf,
   type PageContext,
   pageTable,
-  suggestionEdit,
   suggestionsFor,
 } from "./records.ts";
 import { definitionOf, views } from "./registry.ts";
 import { type Box, type CarryRequest, type FilterValues, PageView, placed } from "./renderer.ts";
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
+import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
 
 /**
  * What the editor changes: a page's widgets. Its filters are those of its Search and filter
@@ -157,6 +158,8 @@ export function PageEditor({
     hostChange({ ...next, widgets: fitContainers(next.widgets) }, label, key);
   const [adding, setAdding] = useState(false);
   const [forming, setForming] = useState(false);
+  /** The button whose "Group with other buttons…" is open. */
+  const [grouping, setGrouping] = useState<{ id: string; open: boolean; asked: number }>();
   const sample = useSampleRecords(root, pageInfo?.page, catalog, pageInfo?.record);
   const lists = useActionLists(root);
   const [filterValues, setFilterValues] = useState<FilterValues>({});
@@ -188,9 +191,7 @@ export function PageEditor({
 
   /** A change that also touches filters and pages (a detail, a form, a next step): one step to Undo. */
   const apply = (edit: Edit, label: string) => {
-    // A suggestion that still speaks of the page's filters as one list: kept by its Search and filter widget.
-    const kept = withPageFilters(edit.widgets, edit.filters, definitionOf(FILTER_WIDGET), catalog);
-    onChange({ widgets: kept, addPages: edit.addPages }, label);
+    onChange({ widgets: edit.widgets, addPages: edit.addPages }, label);
     if (edit.select) onSelect(edit.select);
     setAdding(false);
     setForming(false);
@@ -206,9 +207,15 @@ export function PageEditor({
     const found = nextSteps.find((one) => one.key === key);
     if (!found || found.key === "form" || !suggestedInfo) return;
     apply(
-      suggestionEdit(context, found, suggestedInfo, catalog),
+      suggestedEdit(context, found, suggestedInfo, catalog),
       `adding ${found.label.toLowerCase()}`,
     );
+  };
+
+  /** Buttons made one group, or a detail's moved out to one: said in a toast that can be undone. */
+  const regroup = (edit: Edit, label: string) => {
+    apply(edit, label);
+    notify.success(edit.told, { action: { label: "Undo", onClick: shell.history.undo } });
   };
 
   /** A widget changed in the inspector; if its place changed, what it now lies on moves out of its way. */
@@ -494,6 +501,25 @@ export function PageEditor({
               {pageInfo ? (
                 <RowClickOffer root={root} widget={widget} context={context} onApply={apply} />
               ) : null}
+              {pageInfo ? (
+                <ButtonOffers
+                  widget={widget}
+                  widgets={widgets}
+                  onGroup={() =>
+                    setGrouping((before) => ({
+                      id: widget.id,
+                      open: true,
+                      asked: (before?.asked ?? 0) + 1,
+                    }))
+                  }
+                  onMove={() =>
+                    regroup(
+                      detailActionsEdit(context, widget.id),
+                      "moving buttons to an action group",
+                    )
+                  }
+                />
+              ) : null}
               <Inspector
                 key={widget.id}
                 widget={widget}
@@ -555,9 +581,31 @@ export function PageEditor({
         }}
         {...(widgets.length > 0 ? { onCarry: carry } : {})}
         {...(suggested && nextSteps.length > 0
-          ? { suggestions: { table: manyOf(suggested), items: nextSteps, onPick: pickNext } }
+          ? {
+              suggestions: {
+                table: manyOf(suggested),
+                items: nextSteps.map(({ key, label, hint }) => ({ key, label, hint })),
+                onPick: pickNext,
+              },
+            }
           : {})}
       />
+      {pageInfo && grouping && widgets.some((one) => one.id === grouping.id) ? (
+        <GroupButtonsDialog
+          key={grouping.asked}
+          open={grouping.open}
+          onClose={() => setGrouping({ ...grouping, open: false })}
+          button={widgets.find((one) => one.id === grouping.id) as PageWidget}
+          others={groupCandidates(
+            widgets,
+            widgets.find((one) => one.id === grouping.id) as PageWidget,
+          )}
+          onGroup={(ids) => {
+            setGrouping({ ...grouping, open: false });
+            regroup(groupEdit(context, ids), "grouping buttons");
+          }}
+        />
+      ) : null}
       {pageInfo ? (
         <AddFormDialog
           open={forming}

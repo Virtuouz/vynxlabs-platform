@@ -37,7 +37,6 @@ export function rowClickOffer(
         widgets: context.widgets.map((one) =>
           one.id === widget.id ? withRowClick(one, openRecord(existing.id)) : one,
         ),
-        filters: [...context.filters],
         addPages: [],
         select: widget.id,
         told: `A click on a row of ${widget.title || manyOf(name)} opens ${existing.title}.`,

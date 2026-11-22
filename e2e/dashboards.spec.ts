@@ -96,14 +96,24 @@ test.beforeAll(async ({ browser }) => {
     revision: made.revision,
     body: {
       title: "Lending",
-      filters: [{ name: "lent", label: "Lent", type: "date_range", default: "last_30_days" }],
       widgets: [
+        {
+          // The dashboard's filter is a widget (phase 27): a bar across the top that whoever
+          // reads the dashboard sets, with the same labelled control as before.
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            filters: [{ name: "lent", label: "Lent", type: "date_range", default: "last_30_days" }],
+            reset: true,
+          },
+        },
         {
           id: "fees",
           type: "core/stat",
           title: "Fees",
           subtitle: "Charged on what was lent",
-          at: { x: 0, y: 0, w: 3, h: 4 },
+          at: { x: 0, y: 2, w: 3, h: 4 },
           data: {
             value: {
               source: {
@@ -120,7 +130,7 @@ test.beforeAll(async ({ browser }) => {
           id: "by-device",
           type: "core/table",
           title: "Fees by device",
-          at: { x: 3, y: 0, w: 6, h: 8 },
+          at: { x: 3, y: 2, w: 6, h: 8 },
           data: {
             rows: {
               source: {
@@ -143,7 +153,7 @@ test.beforeAll(async ({ browser }) => {
           id: "chart",
           type: "core/chart",
           title: "Fees by status",
-          at: { x: 0, y: 8, w: 6, h: 8 },
+          at: { x: 0, y: 10, w: 6, h: 8 },
           data: {
             rows: {
               source: {
@@ -248,7 +258,8 @@ test("the date filter changes every widget bound to it, and the address keeps it
   await expect(page).toHaveURL(/[?&]f=/);
   await page.reload();
   await expect(widget("Fees")).toContainText("105");
-  await page.getByRole("button", { name: "Reset" }).click();
+  // The filter widget's own button puts the filters back ("Clear" since phase 27, "Reset" before).
+  await page.getByRole("button", { name: /^(Clear|Reset)$/ }).click();
   await expect(widget("Fees")).toContainText("80");
 });
 

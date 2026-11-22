@@ -230,12 +230,28 @@ export async function setUpPolishTenant(browser: Browser, part: string): Promise
         {
           id: "patients",
           title: "Patients",
-          filters: [{ name: "name", label: "Name", type: "text" }],
           widgets: [
+            {
+              // The page's filter is a Search and filter widget since phase 27.
+              id: "filters",
+              type: "core/filter",
+              at: { x: 0, y: 0, w: 12, h: 2 },
+              config: { filters: [{ name: "name", label: "Name", type: "text" }], reset: true },
+            },
+            {
+              // A Section holding the stat and the note on its own grid (phase 27), so the page
+              // editor is measured with a container drawn, in its outline and on its canvas.
+              id: "totals",
+              type: "core/section",
+              title: "Totals",
+              at: { x: 0, y: 2, w: 12, h: 4 },
+              config: {},
+            },
             {
               id: "visits",
               type: "core/stat",
               title: "Visits",
+              in: { widget: "totals" },
               at: { x: 0, y: 0, w: 3, h: 3 },
               data: {
                 value: {
@@ -254,7 +270,7 @@ export async function setUpPolishTenant(browser: Browser, part: string): Promise
               id: "list",
               type: "core/table",
               title: "Patients",
-              at: { x: 0, y: 3, w: 12, h: 8 },
+              at: { x: 0, y: 6, w: 12, h: 8 },
               data: {
                 rows: {
                   source: { visual: { table: "patients", sort: [{ by: "name" }] } },
@@ -265,6 +281,7 @@ export async function setUpPolishTenant(browser: Browser, part: string): Promise
             {
               id: "note",
               type: "core/text",
+              in: { widget: "totals" },
               at: { x: 3, y: 0, w: 9, h: 3 },
               config: {
                 text: ":::alert[Counts are of visits]{type=info}\nA patient's visits are counted once each.\n:::",

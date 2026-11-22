@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { api, useLoad } from "./api.ts";
+import { api, useLoad, useLoadOf } from "./api.ts";
 import { show } from "./testing.tsx";
 
 let asked: string[];
@@ -90,4 +90,24 @@ test("a person's own settings change only their own reads", async () => {
   await screen.findByText("me 1");
   expect(screen.getByText("tenant 0")).toBeTruthy();
   expect(reads("/tenants/t1/summary")).toHaveLength(1);
+});
+
+// POLISH-003: what is on show is the truth about what is chosen.
+test("a read that follows what is chosen gives nothing of the choice before", async () => {
+  vi.stubGlobal("fetch", async (address: string) =>
+    address.includes("slow") ? new Promise(() => {}) : Response.json({ count: 7 }),
+  );
+  function Chosen({ path }: { path: string | null }) {
+    return <p>values {useLoadOf<{ count: number }>(path).data?.count ?? "none"}</p>;
+  }
+  const { rerender } = show(<Chosen path="/values/clinic" />);
+  await screen.findByText("values 7");
+  // The next one's are still being read.
+  rerender(<Chosen path="/values/slow" />);
+  expect(screen.getByText("values none")).toBeTruthy();
+  // And nothing is asked for a column that has none.
+  rerender(<Chosen path="/values/clinic" />);
+  await screen.findByText("values 7");
+  rerender(<Chosen path={null} />);
+  expect(screen.getByText("values none")).toBeTruthy();
 });

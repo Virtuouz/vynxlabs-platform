@@ -13,7 +13,7 @@ import {
 import { keyOf, readFormAnswer } from "@volvel/manifest";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
-import { ANONYMOUS, type Principal, writeAudit } from "../audit.js";
+import { ANONYMOUS, type Db, type Principal, writeAudit } from "../audit.js";
 import { check } from "../authorize.js";
 import { describeTable, insertRows, withData } from "../data/rows.js";
 import { consoleDirectory, productNames } from "../docs/product.js";
@@ -880,12 +880,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const generated = typeof body.interface === "string" || documents;
     // An app written as code runs only at an address of its own, never where the console's
     // sign-in is, unless the operator knowingly allowed it (decision 0001).
-    if (
-      !generated &&
-      place.kind === "main" &&
-      !kernel.hosts.hasAppsAddress &&
-      !kernel.config.appsOnConsoleAddress
-    ) {
+    if (!generated && place.kind === "main" && !kernel.hosts.runsCodeApps(place)) {
       return html(
         reply,
         503,
@@ -991,6 +986,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const content =
       runtime?.get(asset.path)?.content ?? (await readAsset(kernel, tenant.id, asset.sha256));
     if (isPage || asset.path === entry) {
+      // The names of the app's pages: the page that draws before the app is read says them,
+      // so a slow first load shows where the person is going, not grey shapes.
+      const interfaceBody =
+        generated && typeof body.interface === "string"
+          ? (bundle.manifests.find(
+              (candidate) => candidate.kind === "interface" && candidate.path === body.interface,
+            )?.body as { pages?: { id: string; title: string; kind?: string }[] } | undefined)
+          : undefined;
+      const pageNames = (interfaceBody?.pages ?? [])
+        .filter((one) => one.kind === undefined || one.kind === "page")
+        .map((one) => ({ id: one.id, title: one.title }));
       const page = injectContext(content.toString("utf8"), {
         base,
         themeHref: look.themeHref,
@@ -1008,6 +1014,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
             path: manifest.path,
             title: body.title,
             ...(generated ? { interface: body.interface } : {}),
+            ...(pageNames.length > 0 ? { pages: pageNames } : {}),
           },
           base,
           portal,
@@ -1017,6 +1024,11 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
             name: principal.name ?? null,
             email: principal.email ?? null,
             ...(await endUserIdentity(db, tenant.id, principal)),
+            // A page made in the console shows some widgets only to some groups: a member's
+            // groups come too, named and keyed as an end user's are.
+            ...(generated && principal.type === "member" && principal.id
+              ? await memberGroups(db, tenant.id, principal.id)
+              : {}),
           },
         },
       });
@@ -1033,6 +1045,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       HASHED_NAME.test(asset.path) ? "private, max-age=31536000, immutable" : "private, no-cache",
     );
     if (request.headers["if-none-match"] === etag) return reply.code(304).send();
+    // The platform's own files are kept compressed too: the best one the browser takes is sent.
+    const packed = runtime?.get(asset.path);
+    const accepts = String(request.headers["accept-encoding"] ?? "");
+    if (packed?.br && /\bbr\b/.test(accepts)) {
+      reply.header("content-encoding", "br").header("vary", "accept-encoding");
+      return reply.code(200).header("content-type", asset.contentType).send(packed.br);
+    }
+    if (packed?.gzip && /\bgzip\b/.test(accepts)) {
+      reply.header("content-encoding", "gzip").header("vary", "accept-encoding");
+      return reply.code(200).header("content-type", asset.contentType).send(packed.gzip);
+    }
     return reply.code(200).header("content-type", asset.contentType).send(content);
   }
 
@@ -1458,3 +1481,20 @@ const NO_SIGN_UP = (portal: string) => ({
 });
 
 export type { Notice };
+
+/** A member's groups in a tenant, by name and by key, as an end user's are given to an app. */
+async function memberGroups(
+  db: Db,
+  tenantId: string,
+  memberId: string,
+): Promise<{ groups: string[]; groupKeys: string[] }> {
+  const rows = await db
+    .selectFrom("group_member")
+    .innerJoin("principal_group", "principal_group.id", "group_member.group_id")
+    .select(["principal_group.name", "principal_group.key"])
+    .where("group_member.member_id", "=", memberId)
+    .where("principal_group.tenant_id", "=", tenantId)
+    .orderBy("principal_group.name")
+    .execute();
+  return { groups: rows.map((row) => row.name), groupKeys: rows.map((row) => row.key) };
+}

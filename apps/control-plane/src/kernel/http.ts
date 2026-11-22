@@ -11,7 +11,7 @@ import {
   writeAudit,
 } from "./audit.js";
 import { check, type Target } from "./authorize.js";
-import { forbidden, notFound, unauthenticated } from "./errors.js";
+import { forbidden, forbiddenBecause, notFound, unauthenticated } from "./errors.js";
 import type { WorkerScope } from "./execution/runs.js";
 import { resolveWorker } from "./execution/workers.js";
 import type { Kernel } from "./kernel.js";
@@ -127,7 +127,7 @@ export class RequestContext {
       !this.principal.id ||
       this.principal.appTenantId !== undefined
     ) {
-      throw forbidden("member-only");
+      throw forbiddenBecause("This is only for a member signed in to the workspace.");
     }
     return this.principal.id;
   }
@@ -251,7 +251,7 @@ export function installAccessControl(app: FastifyInstance, kernel: Kernel) {
       // These routes are a member's own account: its tenants, its API keys. A sign-in
       // to one tenant's apps is not a sign-in to that.
       if (principal.type === "end_user" || principal.appTenantId !== undefined) {
-        throw forbidden("member-only");
+        throw forbiddenBecause("This is only for a member signed in to the workspace.");
       }
       return;
     }

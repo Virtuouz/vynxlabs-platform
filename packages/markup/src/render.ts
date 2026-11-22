@@ -359,7 +359,18 @@ function component(node: Component, ctx: Context): Drawn[] {
   const inside = () => drawAll(node.children, ctx);
   // A component that may not be here is not drawn. What it held is, so that
   // nothing an author wrote is lost to a reader.
-  if (!allowed(node, ctx)) return inside();
+  if (!allowed(node, ctx)) {
+    // One on a line of its own holds nothing to draw instead, and drawing nothing hides that
+    // it was meant to show something: say so, in words, as a note a reader can see.
+    if (node.form === "leaf") {
+      return [
+        el("p", { class: "vd-unavailable" }, [
+          `“${node.name}” is not something this text can show.`,
+        ]),
+      ];
+    }
+    return inside();
+  }
   switch (node.name) {
     case "alert": {
       const type = ["info", "success", "warning", "danger"].includes(node.props.type ?? "")

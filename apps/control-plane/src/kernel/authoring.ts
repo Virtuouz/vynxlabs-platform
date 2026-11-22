@@ -5,7 +5,6 @@ import {
   type Bundle,
   type BundleManifest,
   CORE_PREFIX,
-  type DashboardBody,
   entryFor,
   keyOf,
   movedFile,
@@ -13,7 +12,12 @@ import {
 } from "@volvel/manifest";
 import { CORE_RANGE, SDK_VERSION } from "@volvel/sdk";
 import { type Audit, type Db, mutate, type Principal, type Trx } from "./audit.js";
-import { dashboardsNaming, queryPathsOf, renamedQuery } from "./dashboard-queries.js";
+import {
+  dashboardsNaming,
+  type PageBody,
+  queryPathsOf,
+  renamedQuery,
+} from "./dashboard-queries.js";
 import { badRequest, conflict, HttpError, notFound } from "./errors.js";
 import { loadBundle, storeBundle } from "./execution/bundles.js";
 import { deployBundle } from "./execution/deploy.js";
@@ -206,7 +210,19 @@ export async function saveDraft(
       ownership: "ui",
       body,
     });
-    if (!validation.ok) throw badRequest("The manifest is not valid.", validation.issues);
+    // A page is built a step at a time: a draft holds an action that has no steps yet, as it holds
+    // other unfinished things. The checks of the page say it, and publishing refuses it.
+    const unfinished = (issue: { path: string; message: string }) =>
+      /\/steps$/.test(issue.path) && issue.message === "must NOT have fewer than 1 items";
+    if (
+      !validation.ok &&
+      !(
+        (input.kind === "interface" || input.kind === "dashboard") &&
+        validation.issues.every(unfinished)
+      )
+    ) {
+      throw badRequest("The manifest is not valid.", validation.issues);
+    }
   }
 
   if (resource && resource.kind !== input.kind) {
@@ -289,9 +305,12 @@ export async function saveDraft(
       if (dashboard.ownership === "code") continue;
       await saveDraft(kernel, trx, audit, workspace, principal, {
         path: dashboard.path,
-        kind: "dashboard",
+        kind: dashboard.kind,
         schemaVersion: dashboard.schemaVersion,
-        body: renamedQuery(dashboard.body, input.path, path) as unknown as Record<string, unknown>,
+        body: renamedQuery(dashboard.kind, dashboard.body, input.path, path) as unknown as Record<
+          string,
+          unknown
+        >,
       });
     }
   }
@@ -369,12 +388,19 @@ export async function discardDraft(trx: Trx, audit: Audit, workspace: WorkspaceR
       .where("workspace_id", "=", workspace.id)
       .where("key", "=", dashboard.key)
       .executeTakeFirst();
-    const before = deployed ? queryPathsOf(deployed.body as unknown as DashboardBody) : undefined;
+    const before = deployed
+      ? queryPathsOf(dashboard.kind, deployed.body as unknown as PageBody)
+      : undefined;
     if (!deployed || !before || !dashboard.widgets.some((id) => before.get(id) === was.path))
       continue;
     // Only the draft the rename wrote, as it wrote it: one changed since is someone's work, and
     // is kept (it then names a path that is gone, and runs by the key recorded for it).
-    const written = renamedQuery(deployed.body as unknown as DashboardBody, was.path, removed.path);
+    const written = renamedQuery(
+      dashboard.kind,
+      deployed.body as unknown as PageBody,
+      was.path,
+      removed.path,
+    );
     if (JSON.stringify(dashboard.body) !== JSON.stringify(written)) continue;
     await setAside(trx, audit, workspace, dashboard.path);
   }

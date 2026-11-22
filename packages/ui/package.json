@@ -10,7 +10,8 @@
     "./icons": "./src/icons.ts"
   },
   "files": [
-    "dist"
+    "dist",
+    "fonts"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node -e \"fs.copyFileSync('src/tokens.css', 'dist/tokens.css')\"",
@@ -34,6 +35,7 @@
     "@base-ui/react": "^1.9.0",
     "@tanstack/react-virtual": "3.13.12",
     "@volvel/markup": "workspace:*",
+    "@volvel/widgets": "workspace:*",
     "lucide-react": "^1.72.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

@@ -1,4 +1,12 @@
-import { defineApp, defineBinding, defineInterface, defineRole, defineTheme } from "@volvel/sdk";
+import {
+  type DataInput,
+  defineApp,
+  defineBinding,
+  defineInterface,
+  defineRole,
+  defineTheme,
+} from "@volvel/sdk";
+import { REASONS } from "./constants.ts";
 import { reorder } from "./flows.ts";
 import {
   bookAppointment,
@@ -37,6 +45,238 @@ export const petPortal = defineApp({
   reads: ["pets", "appointments", "invoices", "clinics", "clients"],
 });
 
+/** The page filters an input of `table` is narrowed by: the clinic, and a date range on `dateColumn`. */
+const narrowedBy = (dateFilter: string, dateColumn: string, clinic = true) => [
+  ...(clinic ? [{ filter: "clinic", column: "clinic" }] : []),
+  { filter: dateFilter, column: dateColumn },
+];
+
+/** What Money's search looks in, on an invoice. */
+const INVOICE_SEARCH = ["number", "client_code", "payment_ref"];
+
+/**
+ * What Money's bar narrows an invoice by: the words typed, the clinic, the Issued range and
+ * the Status. Every stat, chart and table that reads invoices follows all four.
+ */
+const invoiceFilters = () => [
+  { filter: "q", columns: INVOICE_SEARCH },
+  ...narrowedBy("issued", "issued_on"),
+  { filter: "status", column: "status" },
+];
+
+/** The groups of members who may mark an invoice paid (by their keys). The setup makes both. */
+const BILLING = ["groups/practice-managers", "groups/billing"];
+
+/** An invoice's status, as a chip: paid is done, unpaid wants a look, void is set aside. */
+const INVOICE_BADGES = { paid: "success", unpaid: "attention", void: "neutral" } as const;
+
+/** A visit's status, as a chip. */
+const VISIT_BADGES = {
+  booked: "neutral",
+  checked_in: "attention",
+  in_exam: "action",
+  done: "success",
+  no_show: "danger",
+  cancelled: "neutral",
+} as const;
+
+/** A void invoice is not owed and not invoiced: the totals leave it out. */
+const NOT_VOID = { column: "status", op: "ne" as const, value: "void" };
+
+/** One value of the invoices, over the page's Issued range. */
+const invoiceValue = (
+  as: string,
+  fn: "sum" | "avg",
+  only: { column: string; op: "eq" | "ne"; value: unknown }[] = [NOT_VOID],
+) => ({
+  source: {
+    visual: {
+      table: "invoices",
+      filters: only,
+      measures: [{ fn, column: "total", as }],
+    },
+  },
+  filters: invoiceFilters(),
+});
+
+/** Invoices totalled by one breakdown. */
+const invoicesBy = (group: { column: string; bucket?: "week" }): Record<string, DataInput> => ({
+  rows: {
+    source: {
+      visual: {
+        table: "invoices",
+        filters: [NOT_VOID],
+        groupBy: [group],
+        measures: [{ fn: "sum", column: "total", as: "invoiced" }],
+      },
+    },
+    filters: invoiceFilters(),
+  },
+});
+
+/** What the search of Visits looks in, on a visit: the pet, the owner's code and the reason. */
+const VISIT_SEARCH = ["pet_name", "client_code", "reason"];
+
+/** What Visits' bar narrows a visit by: the words typed, the clinic and the range of dates. */
+const visitFilters = () => [
+  { filter: "q", columns: VISIT_SEARCH },
+  ...narrowedBy("when", "starts_at"),
+];
+
+/** Visits counted by one breakdown. */
+const visitsBy = (column: string): Record<string, DataInput> => ({
+  rows: {
+    source: {
+      visual: {
+        table: "appointments",
+        groupBy: [{ column }],
+        measures: [{ fn: "count", as: "visits" }],
+      },
+    },
+    filters: visitFilters(),
+  },
+});
+
+/** One count of visits, over the page's range, of those with one of these statuses (all, when none). */
+const visitCount = (statuses: string[] = []): Record<string, DataInput> => ({
+  value: {
+    source: {
+      visual: {
+        table: "appointments",
+        ...(statuses.length > 0
+          ? { filters: [{ column: "status", op: "in", value: statuses }] }
+          : {}),
+        measures: [{ fn: "count", as: "visits" }],
+      },
+    },
+    filters: visitFilters(),
+  },
+});
+
+/** What the search of Stock looks in, on a stock line or an order. */
+const STOCK_SEARCH = ["item", "sku"];
+
+/** What Stock's bar narrows a line or an order by: the words typed, and the clinic. */
+const stockFilters = () => [
+  { filter: "q", columns: STOCK_SEARCH },
+  { filter: "clinic", column: "clinic" },
+];
+
+/** When a row is clicked, its record opens in a side sheet. */
+const openSheet = (page: string) => ({
+  rowClick: { steps: [{ do: "open" as const, page, record: "event" as const }] },
+});
+
+/** What an invoice shows, in the order the front desk reads it, in sections two across. */
+const INVOICE_FIELDS = [
+  { column: "clinic", section: "Invoice" },
+  { column: "client_code", label: "Client", section: "Invoice" },
+  { column: "total", label: "Total", format: DOLLARS, section: "Invoice" },
+  { column: "issued_on", label: "Issued", section: "Invoice" },
+  { column: "paid_at", label: "Paid on", section: "Payment" },
+  { column: "payment_ref", label: "Payment reference", section: "Payment" },
+  { column: "chased_at", label: "Last reminded", section: "Notes" },
+];
+
+/** The fields of an invoice a form asks for. A column's own rules say what is required. */
+const INVOICE_FORM_FIELDS = [
+  { column: "client_code", label: "Client" },
+  { column: "clinic" },
+  { column: "total", label: "Total", format: DOLLARS },
+  { column: "status" },
+  { column: "issued_on", label: "Issued" },
+  { column: "payment_ref", label: "Payment reference" },
+];
+
+/** Ordering more of one stock line: a row's action, and what the "Reorder" window offers on each row. */
+const REORDER_LINE = {
+  id: "reorder",
+  label: "Reorder",
+  action: {
+    when: [
+      { field: "reorder_pending", of: "event" as const, test: "is_not" as const, value: true },
+    ],
+    confirm: {
+      title: "Order more?",
+      text: "Order {reorder_qty} more of {item} for {clinic}? An order over the threshold waits for a practice manager.",
+      button: "Order",
+    },
+    steps: [
+      {
+        do: "flow" as const,
+        path: "inventory/reorder",
+        input: {
+          line: { record: "id", of: "event" as const },
+          clinic: { record: "clinic", of: "event" as const },
+          sku: { record: "sku", of: "event" as const },
+          item: { record: "item", of: "event" as const },
+          on_hand: { record: "on_hand", of: "event" as const },
+          quantity: { record: "reorder_qty", of: "event" as const },
+        },
+      },
+      { do: "message" as const, text: "The order is on its way to be priced." },
+    ],
+  },
+};
+
+/** Setting one stock line to what was counted on the shelf: a row's action in the "Count stock" window. */
+const COUNT_LINE = {
+  id: "count",
+  label: "Count",
+  action: {
+    confirm: {
+      title: "Count {item}",
+      text: "How many of {item} are on the shelf at {clinic}?",
+      button: "Save the count",
+      ask: [
+        { name: "counted", label: "Counted on the shelf", type: "number" as const, required: true },
+      ],
+    },
+    steps: [
+      {
+        do: "update" as const,
+        record: "event" as const,
+        set: { on_hand: { asked: "counted" } },
+      },
+      { do: "message" as const, text: "The count is saved.", tone: "success" as const },
+    ],
+  },
+};
+
+/** Marking an invoice paid, on the record the page was opened on (the sheet) or the row (the table). */
+const markPaid = (record: "this" | "event") => ({
+  when: [{ field: "status", of: record, test: "is" as const, value: "unpaid" }],
+  // Only practice managers and Billing run it, on the server too: others see it greyed.
+  runBy: { groups: BILLING },
+  confirm: {
+    title: "Mark as paid?",
+    text: "Mark {number} as paid?",
+    button: "Mark paid",
+  },
+  steps: [
+    {
+      do: "update" as const,
+      record,
+      set: { status: { value: "paid" }, paid_at: { now: true as const } },
+    },
+    { do: "message" as const, text: "Invoice marked paid", tone: "success" as const },
+  ],
+});
+
+/** Voiding an unpaid invoice, as above. */
+const voidInvoice = (record: "this" | "event") => ({
+  when: [{ field: "status", of: record, test: "is" as const, value: "unpaid" }],
+  confirm: {
+    title: "Void this invoice?",
+    text: "Void {number}? It stops counting as owed, and it can't be paid.",
+    button: "Void",
+  },
+  steps: [
+    { do: "update" as const, record, set: { status: { value: "void" } } },
+    { do: "message" as const, text: "Invoice voided", tone: "success" as const },
+  ],
+});
+
 /** For practice managers, with no code: money, visits and stock across the group. */
 export const performance = defineInterface({
   path: "screens/performance",
@@ -46,179 +286,747 @@ export const performance = defineInterface({
     {
       id: "money",
       title: "Money",
-      filters: [
-        { id: "clinic", label: "Clinic", column: "clinic", type: "value" },
-        { id: "issued", label: "Issued", column: "issued_on", type: "date" },
-      ],
+      icon: "wallet",
       widgets: [
         {
+          // The page's bar, set by whoever reads it: every widget bound to one follows it.
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            filters: [
+              { name: "q", label: "Search invoices", type: "search" },
+              {
+                name: "clinic",
+                label: "Clinic",
+                type: "choice",
+                from: { table: "invoices", column: "clinic" },
+              },
+              { name: "issued", label: "Issued", type: "date_range", default: "last_30_days" },
+              {
+                name: "status",
+                label: "Status",
+                type: "choice",
+                from: { table: "invoices", column: "status" },
+              },
+              // The goal is a month's: its own range, so the page's range can be anything.
+              {
+                name: "goal_month",
+                label: "Goal month",
+                type: "date_range",
+                default: "this_month",
+              },
+            ],
+            reset: true,
+          },
+        },
+        {
+          id: "note",
+          type: "core/text",
+          at: { x: 0, y: 2, w: 12, h: 2 },
+          config: {
+            look: "note",
+            text: "**In dollars.** Every amount here is in dollars, as the clinics invoice. Change **Issued** to look at another stretch of time. A void invoice is left out of the totals.",
+          },
+        },
+        {
           id: "invoiced",
-          type: "figure",
+          type: "core/stat",
           title: "Invoiced",
-          table: "invoices",
-          summary: { groupBy: [], aggregates: [{ fn: "sum", column: "total", as: "invoiced" }] },
-          options: { format: DOLLARS },
-          at: { x: 0, y: 0, w: 4, h: 3 },
+          at: { x: 0, y: 4, w: 3, h: 3 },
+          data: { value: invoiceValue("invoiced", "sum") },
+          config: {
+            format: DOLLARS,
+            caption: "Issued in the range chosen",
+            compare: true,
+            compareTo: "issued",
+            delta: "percent",
+            goodWhen: "up",
+          },
+          layout: { priority: 3 },
+          on: { click: { steps: [{ do: "rows" }] } },
         },
         {
           id: "unpaid",
-          type: "figure",
+          type: "core/stat",
           title: "Unpaid",
-          table: "invoices",
-          filter: { column: "status", value: "unpaid" },
-          summary: { groupBy: [], aggregates: [{ fn: "sum", column: "total", as: "unpaid" }] },
-          options: { format: DOLLARS },
-          at: { x: 4, y: 0, w: 4, h: 3 },
+          at: { x: 3, y: 4, w: 3, h: 3 },
+          data: {
+            value: invoiceValue("unpaid", "sum", [{ column: "status", op: "eq", value: "unpaid" }]),
+          },
+          config: {
+            format: DOLLARS,
+            caption: "Not yet paid",
+            compare: true,
+            compareTo: "issued",
+            delta: "percent",
+            goodWhen: "down",
+          },
+          layout: { priority: 2 },
+          on: { click: { steps: [{ do: "rows" }] } },
         },
         {
           id: "average",
-          type: "figure",
+          type: "core/stat",
           title: "Average invoice",
-          table: "invoices",
-          summary: { groupBy: [], aggregates: [{ fn: "avg", column: "total", as: "average" }] },
-          options: { format: DOLLARS },
-          at: { x: 8, y: 0, w: 4, h: 3 },
+          at: { x: 6, y: 4, w: 3, h: 3 },
+          data: { value: invoiceValue("average", "avg") },
+          config: {
+            format: DOLLARS,
+            compare: true,
+            compareTo: "issued",
+            delta: "percent",
+            goodWhen: "up",
+          },
+          layout: { priority: 1 },
+        },
+        {
+          id: "goal",
+          type: "labs/goal",
+          title: "This month",
+          at: { x: 9, y: 4, w: 3, h: 3 },
+          data: {
+            value: {
+              source: {
+                visual: {
+                  table: "invoices",
+                  filters: [NOT_VOID],
+                  measures: [{ fn: "sum", column: "total", as: "invoiced" }],
+                },
+              },
+              filters: [
+                { filter: "q", columns: INVOICE_SEARCH },
+                { filter: "clinic", column: "clinic" },
+                { filter: "goal_month", column: "issued_on" },
+                { filter: "status", column: "status" },
+              ],
+            },
+          },
+          // $200,000, kept in cents like the invoices.
+          config: {
+            target: 20000000,
+            format: DOLLARS,
+            label: "of a $200,000 goal",
+            percent: true,
+            reached: "green",
+          },
         },
         {
           id: "by-week",
-          type: "chart",
+          type: "core/chart",
           title: "Invoiced by week",
-          table: "invoices",
-          summary: {
-            groupBy: [{ column: "issued_on", bucket: "week" }],
-            aggregates: [{ fn: "sum", column: "total", as: "invoiced" }],
+          at: { x: 0, y: 7, w: 8, h: 8 },
+          data: invoicesBy({ column: "issued_on", bucket: "week" }),
+          config: {
+            mark: "line",
+            format: DOLLARS,
+            smooth: true,
+            points: true,
+            fillGaps: true,
+            compare: true,
+            compareTo: "issued",
           },
-          options: { mark: "line", x: "issued_on", y: "invoiced", format: DOLLARS },
-          at: { x: 0, y: 3, w: 8, h: 8 },
+          on: { pointClick: { steps: [{ do: "rows" }] } },
         },
         {
           id: "by-clinic",
-          type: "chart",
+          type: "core/chart",
           title: "By clinic",
-          table: "invoices",
-          summary: {
-            groupBy: [{ column: "clinic" }],
-            aggregates: [{ fn: "sum", column: "total", as: "invoiced" }],
+          at: { x: 8, y: 7, w: 4, h: 8 },
+          data: invoicesBy({ column: "clinic" }),
+          // A phone has no room for a second chart: it is left out there (board 6).
+          layout: { narrow: "hide" },
+          config: { mark: "bar", format: DOLLARS, values: true, order: "biggest" },
+          on: { pointClick: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
+        },
+        {
+          id: "managers",
+          type: "core/text",
+          at: { x: 0, y: 15, w: 12, h: 3 },
+          config: {
+            text: ":::alert[For practice managers]{type=info}\nOwners are texted about invoices unpaid for two weeks every Monday morning. Press an invoice to see it, mark it paid, void it, or change it.\n:::",
           },
-          options: { mark: "bar", x: "clinic", y: "invoiced", format: DOLLARS },
-          at: { x: 8, y: 3, w: 4, h: 8 },
+          rules: { showWhen: [{ user: "in", group: "Practice managers" }] },
         },
         {
           id: "list",
-          type: "table",
+          type: "core/table",
           title: "Invoices",
-          table: "invoices",
-          fields: [
-            { column: "number" },
-            { column: "clinic" },
-            { column: "client_code", label: "Client" },
-            { column: "total", label: "Total", format: DOLLARS },
-            { column: "status" },
-            { column: "issued_on", label: "Issued" },
-          ],
-          sort: [{ column: "issued_on", desc: true }],
-          pageSize: 25,
-          at: { x: 0, y: 11, w: 12, h: 10 },
+          at: { x: 0, y: 18, w: 12, h: 10 },
+          data: {
+            rows: {
+              source: {
+                visual: { table: "invoices", sort: [{ by: "issued_on", descending: true }] },
+              },
+              filters: invoiceFilters(),
+            },
+          },
+          config: {
+            pageSize: 25,
+            select: true,
+            columns: [
+              { column: "number" },
+              { column: "clinic" },
+              { column: "client_code", label: "Client" },
+              {
+                column: "total",
+                label: "Total",
+                format: DOLLARS,
+                align: "right",
+                total: true,
+              },
+              { column: "status", as: "badge", badges: { ...INVOICE_BADGES } },
+              { column: "issued_on", label: "Issued" },
+            ],
+            // Above the table, on its heading line: no separate Action group is needed.
+            buttons: [
+              {
+                id: "new-invoice",
+                label: "New invoice",
+                tone: "primary",
+                action: { steps: [{ do: "open", page: "new-invoice" }] },
+              },
+            ],
+            // Each acts on its row, and with rows selected, on every one of them.
+            rowActions: [
+              { id: "mark-paid", label: "Mark paid", action: markPaid("event") },
+              { id: "void", label: "Void", tone: "danger", action: voidInvoice("event") },
+            ],
+          },
+          on: openSheet("invoice"),
         },
       ],
     },
     {
       id: "visits",
       title: "Visits",
-      filters: [
-        { id: "clinic", label: "Clinic", column: "clinic", type: "value" },
-        { id: "when", label: "When", column: "starts_at", type: "date" },
-      ],
+      icon: "calendar-days",
       widgets: [
         {
+          // The page's bar, set by whoever reads it: every widget bound to one follows it.
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            filters: [
+              { name: "q", label: "Search visits", type: "search" },
+              {
+                name: "clinic",
+                label: "Clinic",
+                type: "choice",
+                from: { table: "appointments", column: "clinic" },
+              },
+              { name: "when", label: "When", type: "date_range", default: "last_30_days" },
+            ],
+            reset: true,
+          },
+        },
+        {
+          id: "today",
+          type: "core/section",
+          title: "At the clinics",
+          at: { x: 0, y: 2, w: 12, h: 4 },
+          subtitle:
+            "How many visits there are, and where they stand, in the range and at the clinics chosen.",
+          config: {
+            folds: true,
+            look: "card",
+          },
+        },
+        {
           id: "count",
-          type: "figure",
+          type: "core/stat",
           title: "Visits",
-          table: "appointments",
-          summary: { groupBy: [], aggregates: [{ fn: "count", as: "visits" }] },
-          at: { x: 0, y: 0, w: 4, h: 3 },
+          in: { widget: "today" },
+          at: { x: 0, y: 0, w: 3, h: 3 },
+          data: visitCount(),
+          config: { caption: "In the range chosen" },
+        },
+        {
+          id: "waiting",
+          type: "core/stat",
+          title: "Booked",
+          in: { widget: "today" },
+          at: { x: 3, y: 0, w: 3, h: 3 },
+          data: visitCount(["booked"]),
+          config: { caption: "Not yet arrived" },
+        },
+        {
+          id: "inside",
+          type: "core/stat",
+          title: "In the clinic",
+          in: { widget: "today" },
+          at: { x: 6, y: 0, w: 3, h: 3 },
+          data: visitCount(["checked_in", "in_exam"]),
+          config: { caption: "Checked in or with the vet" },
+        },
+        {
+          id: "finished",
+          type: "core/stat",
+          title: "Done",
+          in: { widget: "today" },
+          at: { x: 9, y: 0, w: 3, h: 3 },
+          data: visitCount(["done"]),
+          config: { caption: "Seen and finished" },
+        },
+        {
+          id: "views",
+          type: "core/tabs",
+          title: "Visits",
+          at: { x: 0, y: 6, w: 12, h: 14 },
+          config: {
+            tabs: [
+              { id: "by-status", title: "By status" },
+              { id: "by-reason", title: "By reason" },
+              { id: "every", title: "Every visit" },
+            ],
+            look: "pills",
+            opensFirst: "by-status",
+            remember: true,
+          },
         },
         {
           id: "by-status",
-          type: "chart",
+          type: "core/chart",
           title: "How visits ended",
-          table: "appointments",
-          summary: { groupBy: [{ column: "status" }], aggregates: [{ fn: "count", as: "visits" }] },
-          options: { mark: "pie", x: "status", y: "visits" },
-          at: { x: 4, y: 0, w: 4, h: 9 },
+          in: { widget: "views", tab: "by-status" },
+          at: { x: 0, y: 0, w: 12, h: 9 },
+          data: visitsBy("status"),
+          config: { mark: "pie" },
         },
         {
           id: "by-reason",
-          type: "chart",
+          type: "core/chart",
           title: "Why they came",
-          table: "appointments",
-          summary: { groupBy: [{ column: "reason" }], aggregates: [{ fn: "count", as: "visits" }] },
-          options: { mark: "bar", x: "reason", y: "visits" },
-          at: { x: 8, y: 0, w: 4, h: 9 },
+          in: { widget: "views", tab: "by-reason" },
+          at: { x: 0, y: 0, w: 12, h: 9 },
+          data: visitsBy("reason"),
+          config: { mark: "bar", values: true, order: "biggest" },
         },
         {
           id: "list",
-          type: "table",
+          type: "core/table",
           title: "Visits",
-          table: "appointments",
-          fields: [
-            { column: "number" },
-            { column: "starts_at", label: "When" },
-            { column: "clinic" },
-            { column: "pet", label: "Pet", show: "name" },
-            { column: "vet" },
-            { column: "reason" },
-            { column: "status", editable: true },
-          ],
-          sort: [{ column: "starts_at", desc: true }],
-          pageSize: 25,
-          at: { x: 0, y: 9, w: 8, h: 12 },
+          in: { widget: "views", tab: "every" },
+          at: { x: 0, y: 0, w: 8, h: 12 },
+          data: {
+            rows: {
+              source: {
+                visual: { table: "appointments", sort: [{ by: "starts_at", descending: true }] },
+              },
+              filters: visitFilters(),
+            },
+          },
+          config: {
+            pageSize: 25,
+            columns: [
+              { column: "number" },
+              { column: "starts_at", label: "When" },
+              { column: "clinic" },
+              { column: "pet_name", label: "Pet" },
+              { column: "vet" },
+              { column: "reason" },
+              { column: "status", as: "badge", badges: { ...VISIT_BADGES } },
+            ],
+          },
+          on: openSheet("visit"),
         },
         {
-          id: "chosen",
-          type: "card",
-          title: "The visit chosen",
-          table: "appointments",
-          link: { from: "list", type: "same" },
-          at: { x: 8, y: 9, w: 4, h: 12 },
+          id: "latest",
+          type: "core/list",
+          title: "Latest visits",
+          in: { widget: "views", tab: "every" },
+          at: { x: 8, y: 0, w: 4, h: 12 },
+          data: {
+            rows: {
+              source: {
+                visual: {
+                  table: "appointments",
+                  sort: [{ by: "starts_at", descending: true }],
+                  limit: 20,
+                },
+              },
+              filters: visitFilters(),
+            },
+          },
+          config: {
+            title: "pet_name",
+            subtitle: "reason",
+            right: "starts_at",
+            badge: "status",
+          },
+          on: openSheet("visit"),
         },
       ],
     },
     {
       id: "stock",
       title: "Stock",
-      filters: [{ id: "clinic", label: "Clinic", column: "clinic", type: "value" }],
+      icon: "package",
       widgets: [
         {
+          // The page's bar, set by whoever reads it: every widget bound to one follows it.
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            filters: [
+              { name: "q", label: "Search stock", type: "search" },
+              {
+                name: "clinic",
+                label: "Clinic",
+                type: "choice",
+                from: { table: "inventory", column: "clinic" },
+              },
+            ],
+            reset: true,
+          },
+        },
+        {
+          id: "stock-actions",
+          type: "core/actions",
+          at: { x: 0, y: 2, w: 12, h: 1 },
+          config: {
+            actions: [
+              {
+                id: "reorder",
+                label: "Reorder",
+                tone: "primary",
+                action: { steps: [{ do: "open", page: "reorder-stock" }] },
+              },
+              {
+                id: "count",
+                label: "Count stock",
+                tone: "default",
+                action: { steps: [{ do: "open", page: "count-stock" }] },
+              },
+            ],
+          },
+        },
+        {
+          // The reorder flow's approval step, decided here: a manager reads the order, approves or
+          // rejects it, and the next is there. Who may decide is set on the flow's step, not here:
+          // others who may read approvals see the orders, with the buttons greyed and why.
+          id: "waiting",
+          type: "core/approvals",
+          title: "Orders waiting for a manager",
+          at: { x: 0, y: 3, w: 12, h: 9 },
+          data: {
+            requests: { source: { approvals: { flows: ["inventory/reorder"], whose: "all" } } },
+          },
+          config: {
+            look: "queue",
+            fields: [
+              { name: "item" },
+              { name: "clinic" },
+              { name: "quantity" },
+              { name: "total", label: "Order total" },
+              { name: "on_hand", label: "On hand" },
+            ],
+            decided: true,
+            askWhy: "rejecting",
+            approveLabel: "Approve order",
+            rejectLabel: "Reject",
+            empty: "No orders are waiting for a manager.",
+          },
+        },
+        {
           id: "lines",
-          type: "table",
+          type: "core/table",
           title: "Stock",
-          table: "inventory",
-          fields: [
-            { column: "clinic" },
-            { column: "item" },
-            { column: "category" },
-            { column: "on_hand", label: "On hand", editable: true },
-            { column: "reorder_at", label: "Reorder at", editable: true },
-            { column: "reorder_pending", label: "Ordering" },
-          ],
-          sort: [{ column: "on_hand" }],
-          at: { x: 0, y: 0, w: 8, h: 14 },
+          at: { x: 0, y: 12, w: 12, h: 12 },
+          data: {
+            rows: {
+              source: { visual: { table: "inventory", sort: [{ by: "on_hand" }] } },
+              filters: stockFilters(),
+            },
+          },
+          config: {
+            columns: [
+              { column: "item" },
+              { column: "clinic" },
+              { column: "category" },
+              { column: "on_hand", label: "On hand" },
+              { column: "reorder_at", label: "Reorder at" },
+              { column: "reorder_pending", label: "Ordering" },
+            ],
+            rowActions: [REORDER_LINE],
+          },
+        },
+        {
+          id: "orders-section",
+          type: "core/section",
+          title: "Orders to VetSupply",
+          at: { x: 0, y: 24, w: 12, h: 9 },
+          subtitle: "What the clinics have asked the supplier for, newest first.",
+          config: {
+            folds: true,
+          },
         },
         {
           id: "orders",
-          type: "table",
-          title: "Orders to VetSupply",
-          table: "purchase_orders",
-          fields: [
-            { column: "number" },
-            { column: "clinic" },
-            { column: "item" },
-            { column: "total", label: "Total", format: DOLLARS },
-            { column: "status" },
-          ],
-          sort: [{ column: "created_at", desc: true }],
-          at: { x: 8, y: 0, w: 4, h: 14 },
+          type: "core/table",
+          in: { widget: "orders-section" },
+          at: { x: 0, y: 0, w: 12, h: 8 },
+          data: {
+            rows: {
+              source: {
+                visual: {
+                  table: "purchase_orders",
+                  sort: [{ by: "created_at", descending: true }],
+                },
+              },
+              filters: stockFilters(),
+            },
+          },
+          config: {
+            columns: [
+              { column: "number" },
+              { column: "clinic" },
+              { column: "item" },
+              { column: "total", label: "Total", format: DOLLARS },
+              { column: "status" },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      // Opened by "Reorder": the lines with the least on the shelf, each with its own Reorder.
+      id: "reorder-stock",
+      title: "Reorder stock",
+      kind: "modal",
+      widgets: [
+        {
+          id: "low",
+          type: "core/table",
+          title: "Running lowest",
+          at: { x: 0, y: 0, w: 12, h: 12 },
+          data: {
+            rows: {
+              source: { visual: { table: "inventory", sort: [{ by: "on_hand" }], limit: 15 } },
+            },
+          },
+          config: {
+            columns: [
+              { column: "clinic" },
+              { column: "item" },
+              { column: "on_hand", label: "On hand" },
+              { column: "reorder_at", label: "Reorder at" },
+              { column: "reorder_pending", label: "Ordering" },
+            ],
+            rowActions: [REORDER_LINE],
+          },
+        },
+      ],
+    },
+    {
+      // Opened by "Count stock": any line, found by its name, set to what was counted.
+      id: "count-stock",
+      title: "Count stock",
+      kind: "modal",
+      widgets: [
+        {
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: { filters: [{ name: "q", label: "Search stock", type: "search" }], reset: true },
+        },
+        {
+          id: "shelf",
+          type: "core/table",
+          at: { x: 0, y: 2, w: 12, h: 12 },
+          data: {
+            rows: {
+              source: { visual: { table: "inventory", sort: [{ by: "item" }] } },
+              filters: [{ filter: "q", columns: STOCK_SEARCH }],
+            },
+          },
+          config: {
+            pageSize: 25,
+            columns: [
+              { column: "clinic" },
+              { column: "item" },
+              { column: "sku" },
+              { column: "on_hand", label: "On hand" },
+            ],
+            rowActions: [COUNT_LINE],
+          },
+        },
+      ],
+    },
+
+    {
+      id: "invoice",
+      title: "Invoice detail",
+      kind: "sheet",
+      size: "large",
+      record: { table: "invoices" },
+      widgets: [
+        {
+          id: "invoice-actions",
+          type: "core/actions",
+          at: { x: 0, y: 0, w: 12, h: 1 },
+          config: {
+            lineUp: "left",
+            // Mark paid, Send invoice and Edit show; Void is under the ⋯ menu.
+            showUpTo: 3,
+            actions: [
+              {
+                id: "mark-paid",
+                label: "Mark paid",
+                tone: "primary",
+                icon: "check",
+                action: markPaid("this"),
+              },
+              {
+                id: "send",
+                label: "Send invoice",
+                tone: "default",
+                icon: "send",
+                // Fernhill sends no invoice by email yet, and says so rather than pretend.
+                action: {
+                  steps: [
+                    {
+                      do: "message",
+                      text: "Invoices are not sent by email yet. Print it, or tell the owner.",
+                      tone: "info",
+                    },
+                  ],
+                },
+              },
+              {
+                id: "edit",
+                label: "Edit",
+                tone: "default",
+                icon: "pencil",
+                action: { steps: [{ do: "open", page: "edit-invoice", record: "this" }] },
+              },
+              {
+                id: "void",
+                label: "Void",
+                tone: "danger",
+                icon: "ban",
+                action: voidInvoice("this"),
+              },
+            ],
+          },
+        },
+        {
+          id: "detail",
+          type: "core/detail",
+          at: { x: 0, y: 1, w: 12, h: 12 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            heading: "number",
+            status: "status",
+            across: 2,
+            fields: INVOICE_FIELDS,
+          },
+        },
+      ],
+    },
+    {
+      id: "edit-invoice",
+      title: "Edit invoice",
+      kind: "modal",
+      record: { table: "invoices" },
+      widgets: [
+        {
+          id: "form",
+          type: "core/form",
+          at: { x: 0, y: 0, w: 12, h: 12 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            mode: "edit",
+            fields: INVOICE_FORM_FIELDS,
+            submitLabel: "Save",
+            submit: {
+              steps: [
+                // What was typed into each field is saved to this invoice; a field left alone stays.
+                {
+                  do: "update",
+                  record: "this",
+                  set: Object.fromEntries(
+                    INVOICE_FORM_FIELDS.map((field) => [field.column, { asked: field.column }]),
+                  ),
+                },
+                { do: "close" },
+                { do: "message", text: "Invoice saved", tone: "success" },
+              ],
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: "new-invoice",
+      title: "New invoice",
+      kind: "modal",
+      widgets: [
+        {
+          id: "form",
+          type: "core/form",
+          at: { x: 0, y: 0, w: 12, h: 14 },
+          data: { record: { source: { visual: { table: "invoices" } } } },
+          config: {
+            mode: "create",
+            // A new invoice is unpaid: it is not asked ("Unpaid by default", board 5).
+            fields: [
+              { column: "number" },
+              ...INVOICE_FORM_FIELDS.filter((field) => field.column !== "status"),
+            ],
+            submitLabel: "Create invoice",
+            submit: {
+              steps: [
+                // A new invoice, of what was typed into each field.
+                {
+                  do: "create",
+                  table: "invoices",
+                  // A new invoice is unpaid: it is not asked ("Unpaid by default", board 5).
+                  set: {
+                    ...Object.fromEntries(
+                      ["number", ...INVOICE_FORM_FIELDS.map((field) => field.column)]
+                        .filter((column) => column !== "status")
+                        .map((column) => [column, { asked: column }]),
+                    ),
+                    status: { value: "unpaid" },
+                  },
+                },
+                { do: "close" },
+                { do: "message", text: "Invoice created", tone: "success" },
+              ],
+            },
+          },
+        },
+      ],
+    },
+    {
+      id: "visit",
+      title: "The visit chosen",
+      kind: "sheet",
+      record: { table: "appointments" },
+      widgets: [
+        {
+          id: "detail",
+          type: "core/detail",
+          at: { x: 0, y: 0, w: 12, h: 12 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            heading: "pet_name",
+            status: "status",
+            fields: [
+              { column: "number", label: "Visit" },
+              { column: "starts_at", label: "When" },
+              { column: "minutes", label: "Booked for" },
+              { column: "clinic" },
+              { column: "vet" },
+              { column: "reason" },
+              { column: "client_code", label: "Client" },
+              { column: "checked_in_at", label: "Checked in" },
+              { column: "notes" },
+            ],
+          },
         },
       ],
     },
@@ -230,6 +1038,190 @@ export const performanceApp = defineApp({
   title: "Clinic performance",
   description: "Money, visits and stock across the group.",
   interface: "screens/performance",
+});
+
+/**
+ * For pet owners, with no code: their pets, with a way to ask for a visit, and their
+ * invoices. The tables' rules give each owner their own rows. Asking for a visit is
+ * an action: it adds one row to `visit_requests`, with the pet's own details, and
+ * changes nothing else.
+ */
+export const myAccount = defineInterface({
+  path: "screens/my-account",
+  title: "My Fernhill account",
+  description: "Your pets, your invoices, and asking for a visit.",
+  pages: [
+    {
+      // The owner's own row of the clients, found by their email: no one else's.
+      id: "details",
+      title: "My details",
+      icon: "user",
+      widgets: [
+        {
+          id: "me",
+          type: "core/detail",
+          title: "Your details",
+          at: { x: 0, y: 0, w: 12, h: 8 },
+          data: { record: { source: { own: { table: "clients", by: "email" } } } },
+          config: {
+            heading: "name",
+            across: 2,
+            fields: [
+              { column: "code", label: "Client code", section: "You" },
+              { column: "email", section: "You" },
+              { column: "phone", section: "You" },
+              { column: "home_clinic", section: "Your clinic" },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      id: "pets",
+      title: "My pets",
+      icon: "paw-print",
+      widgets: [
+        {
+          id: "pets",
+          type: "core/table",
+          title: "My pets",
+          at: { x: 0, y: 0, w: 12, h: 8 },
+          data: { rows: { source: { visual: { table: "pets", sort: [{ by: "name" }] } } } },
+          config: {
+            columns: [
+              { column: "name" },
+              { column: "species" },
+              { column: "breed" },
+              { column: "clinic" },
+            ],
+            rowActions: [
+              {
+                id: "request",
+                label: "Request an appointment",
+                action: {
+                  confirm: {
+                    title: "Request an appointment",
+                    text: "Your clinic will call you to settle a time for {name}.",
+                    button: "Send request",
+                    ask: [
+                      {
+                        name: "reason",
+                        label: "Why is your pet coming in?",
+                        type: "choice",
+                        required: true,
+                        choices: [...REASONS],
+                      },
+                      { name: "preferred_on", label: "A day that suits you", type: "date" },
+                    ],
+                  },
+                  steps: [
+                    {
+                      do: "create",
+                      table: "visit_requests",
+                      set: {
+                        client_code: { record: "client_code", of: "event" },
+                        pet_name: { record: "name", of: "event" },
+                        clinic: { record: "clinic", of: "event" },
+                        reason: { asked: "reason" },
+                        preferred_on: { asked: "preferred_on" },
+                      },
+                    },
+                    {
+                      do: "message",
+                      text: "Asked for. Your clinic will call you.",
+                      tone: "success",
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        },
+        {
+          id: "asked",
+          type: "core/table",
+          title: "Visits you have asked for",
+          at: { x: 0, y: 8, w: 12, h: 6 },
+          data: {
+            rows: {
+              source: {
+                visual: { table: "visit_requests", sort: [{ by: "created_at", descending: true }] },
+              },
+            },
+          },
+          config: {
+            columns: [
+              { column: "pet_name", label: "Pet" },
+              { column: "reason" },
+              { column: "preferred_on", label: "Day" },
+              { column: "status" },
+            ],
+          },
+        },
+      ],
+    },
+    {
+      id: "invoices",
+      title: "My invoices",
+      icon: "receipt",
+      widgets: [
+        {
+          id: "list",
+          type: "core/table",
+          title: "My invoices",
+          at: { x: 0, y: 0, w: 12, h: 12 },
+          data: {
+            rows: {
+              source: {
+                visual: { table: "invoices", sort: [{ by: "issued_on", descending: true }] },
+              },
+            },
+          },
+          config: {
+            columns: [
+              { column: "number" },
+              { column: "clinic" },
+              { column: "total", label: "Total", format: DOLLARS, align: "right" },
+              { column: "status", as: "badge", badges: { ...INVOICE_BADGES } },
+              { column: "issued_on", label: "Issued" },
+            ],
+          },
+          on: openSheet("invoice"),
+        },
+      ],
+    },
+    {
+      id: "invoice",
+      title: "Invoice",
+      kind: "sheet",
+      record: { table: "invoices" },
+      widgets: [
+        {
+          id: "detail",
+          type: "core/detail",
+          at: { x: 0, y: 0, w: 12, h: 10 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            heading: "number",
+            status: "status",
+            fields: [
+              { column: "clinic" },
+              { column: "total", label: "Total", format: DOLLARS },
+              { column: "issued_on", label: "Issued" },
+              { column: "paid_at", label: "Paid on" },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+});
+
+export const myAccountApp = defineApp({
+  path: "my-account",
+  title: "My Fernhill account",
+  description: "Your pets, your invoices, and asking for a visit.",
+  interface: "screens/my-account",
 });
 
 /** Fernhill's own colors, for its apps and its portal pages. */
@@ -341,6 +1333,13 @@ export const ownersOpen = defineBinding({
   role: opensApp,
   principal: { type: "end_users" },
   resource: petPortal,
+});
+/** The no-code account pages open for every signed-in owner, as the portal does. */
+export const ownersOpenAccount = defineBinding({
+  path: "access/owners-account",
+  role: opensApp,
+  principal: { type: "end_users" },
+  resource: myAccountApp,
 });
 export const ownersRead = defineBinding({
   path: "access/owners-rows",

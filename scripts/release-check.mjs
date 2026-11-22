@@ -12,6 +12,11 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** What is published, and what each pack has to hold. */
 export const PUBLISHED = [
+  {
+    folder: "packages/widget-sdk",
+    name: "@volvel/widgets",
+    holds: ["dist/index.js", "dist/page.d.ts", "dist/action.d.ts"],
+  },
   { folder: "packages/markup", name: "@volvel/markup", holds: ["dist/index.js", "dist/react.js"] },
   { folder: "packages/docs-engine", name: "@volvel/docs-engine", holds: ["dist/index.js"] },
   {
@@ -81,7 +86,9 @@ try {
   // The packed CLI and SDK, installed where there is nothing else.
   const cli = packs.get("@volvel/cli");
   const sdk = packs.get("@volvel/sdk");
-  if (cli && sdk && problems.length === 0) {
+  // What the SDK is made of is not on npm yet at this version, so its pack is installed beside it.
+  const widgets = packs.get("@volvel/widgets");
+  if (cli && sdk && widgets && problems.length === 0) {
     const clean = join(out, "clean");
     mkdirSync(join(clean, "src"), { recursive: true });
     writeFileSync(
@@ -97,7 +104,7 @@ try {
       join(clean, "platform/docs/handbook/index.md"),
       "---\ntitle: Handbook\n---\n\nStart here.\n",
     );
-    run("npm", ["install", "--no-audit", "--no-fund", "--silent", cli, sdk], clean);
+    run("npm", ["install", "--no-audit", "--no-fund", "--silent", cli, sdk, widgets], clean);
     const bin = join(clean, "node_modules/.bin/volvel");
     const help = run(bin, ["--help"], clean);
     if (!help.startsWith("Usage: volvel <command>"))

@@ -243,7 +243,8 @@ describe("a page of documentation", () => {
   test("is drawn with the kit's own alert, tabs, folded section, keys and terms", async () => {
     render(<Doc tree={tree} {...options} />);
     expect(screen.getByRole("heading", { level: 1, name: "Deploying" })).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("Deleting a table drops its data.");
+    // A callout, not a live region: it is part of the page, and says nothing as it changes.
+    expect(screen.getByRole("note").textContent).toContain("Deleting a table drops its data.");
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["CLI", "Console"]);
     expect(screen.getByText("Why?").closest("details")).toBeTruthy();
     expect(screen.getByText("Ctrl+K").tagName).toBe("KBD");

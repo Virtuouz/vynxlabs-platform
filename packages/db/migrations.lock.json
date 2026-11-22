@@ -82,5 +82,6 @@
   "0081_doc_writer.sql": "030f10ca346afde7f158d1de2b884c90b67bf3095becd92cac34d6aec2fb2c21",
   "0082_doc_writer_feedback.sql": "cab23f41f3be6a86869fe8075ab322816bd8b81af2ed62f826d5bec2a67fdbf1",
   "0083_row_file_history.sql": "50fd3393eed9a738dfc4de846fe6efa503b1ea9606ec27f86aae41f02fbce644",
-  "0084_dashboard_widget_query.sql": "39146aa7e47d1e12a00875cd68c88296a618dbcaf2fe97afcbf24a3e4334d52d"
+  "0084_dashboard_widget_query.sql": "39146aa7e47d1e12a00875cd68c88296a618dbcaf2fe97afcbf24a3e4334d52d",
+  "0085_one_page_model.sql": "2b62358d13835d657f88841c93e779b3b479f876a14e4c17a4df9882d52fa356"
 }

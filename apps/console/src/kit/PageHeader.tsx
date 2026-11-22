@@ -33,6 +33,7 @@ export function PageHeader({
   helpKey,
   helpSeen,
   oneRow = false,
+  bar = false,
 }: {
   title: ReactNode;
   description?: ReactNode;
@@ -67,6 +68,8 @@ export function PageHeader({
    * the description, then the filters on a row of their own (phase 23 M5).
    */
   oneRow?: boolean;
+  /** A compact heading that is a toolbar edge to edge (the builder's): one row, the name at the title size. */
+  bar?: boolean;
 }) {
   const [seen] = useSeen(helpKey, Boolean(description));
   const { topic } = useHelp();
@@ -74,11 +77,13 @@ export function PageHeader({
   const heading = (
     <h1
       className={`m-0 min-w-0 ${
-        mono
-          ? `font-mono text-title ${compact ? "truncate" : "break-all"}`
-          : size === "display-lg"
-            ? "text-display-lg"
-            : "text-display"
+        bar
+          ? "truncate text-title"
+          : mono
+            ? `font-mono text-title ${compact ? "truncate" : "break-all"}`
+            : size === "display-lg"
+              ? "text-display-lg"
+              : "text-display"
       }`}
     >
       {title}
@@ -91,14 +96,24 @@ export function PageHeader({
   );
   if (compact) {
     return (
-      <header className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      <header className={bar ? "flex shrink-0 flex-col gap-2 px-4 py-3" : "flex flex-col gap-2"}>
+        <div
+          className={`flex items-center justify-between gap-3 ${bar ? "flex-nowrap" : "flex-wrap"}`}
+        >
           {/* The name and state give way before the actions do, so the row stays one row. */}
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+          <div
+            className={`flex min-w-0 flex-1 items-center gap-3 ${bar ? "flex-nowrap" : "flex-wrap"}`}
+          >
             {heading}
             {state}
           </div>
-          {actions ? <div className="flex flex-wrap items-center gap-2">{actions}</div> : null}
+          {actions ? (
+            <div
+              className={`flex items-center gap-2 ${bar ? "shrink-0 flex-nowrap" : "flex-wrap"}`}
+            >
+              {actions}
+            </div>
+          ) : null}
         </div>
         {after}
       </header>

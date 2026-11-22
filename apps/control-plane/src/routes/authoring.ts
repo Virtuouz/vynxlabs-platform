@@ -1,6 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { frontmatterOf, isFeedbackTable } from "@volvel/docs-engine";
 import {
+  type DashboardBody,
   type FlowBody,
   type InterfaceBody,
   PATH_PATTERN,
@@ -29,7 +30,7 @@ import { downstreamOf, keptNodes, kickFlow, startFlowRun } from "../kernel/flows
 import { draftManifests, markAhead } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
-import { interfaceProblems } from "./interfaces.js";
+import { dashboardProblems, interfaceProblems } from "../kernel/pages.js";
 import { AnyObject, Id, iso, NullableId, Time, WorkspaceParams } from "./shared.js";
 
 const PathParams = Type.Object({ t: Id, w: Id, "*": Type.String() });
@@ -477,7 +478,19 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           throw notFound(`A draft at ${path}`);
         }
         const owned = await ownership(workspace.id, [row.key]);
-        return { ...summarize(row, owned.get(row.key)), body: row.body };
+        // What is wrong with it, as when it was saved: a draft read again after a reload is as
+        // true as it was after the change.
+        const problems =
+          row.kind === "interface" && !row.deleted
+            ? await interfaceProblems(kernel, workspace, row.body as unknown as InterfaceBody)
+            : row.kind === "dashboard" && !row.deleted
+              ? await dashboardProblems(kernel, workspace, row.body as unknown as DashboardBody)
+              : undefined;
+        return {
+          ...summarize(row, owned.get(row.key)),
+          body: row.body,
+          ...(problems ? { problems } : {}),
+        };
       },
     );
 
@@ -488,7 +501,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "What renaming a query would change",
           description:
-            "The dashboards whose widgets name the query's path. Renaming the query in the " +
+            "The interfaces and dashboards whose widgets name the query's path. Renaming the query in the " +
             "console drafts the ones made in the console with the new path, in the same " +
             "request, and sets those drafts aside when the rename's draft is. A dashboard from " +
             "the repository is changed in the repository: until then its widgets reach the " +
@@ -499,6 +512,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             200: Type.Object({
               dashboards: Type.Array(
                 Type.Object({
+                  kind: Type.Union([Type.Literal("interface"), Type.Literal("dashboard")]),
                   path: Type.String(),
                   title: Type.String(),
                   ownership: Type.Union([Type.Literal("ui"), Type.Literal("code")]),
@@ -515,6 +529,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const found = full ? await dashboardsNaming(db, workspace.id, pathOf(params)) : [];
         return {
           dashboards: found.map((one) => ({
+            kind: one.kind,
             path: one.path,
             title: one.title,
             ownership: one.ownership,
@@ -612,6 +627,15 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   kernel,
                   workspace,
                   saved.draft.body as unknown as InterfaceBody,
+                ),
+              }
+            : {}),
+          ...(body.kind === "dashboard" && !body.deleted
+            ? {
+                problems: await dashboardProblems(
+                  kernel,
+                  workspace,
+                  saved.draft.body as unknown as DashboardBody,
                 ),
               }
             : {}),
@@ -796,6 +820,55 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             keptAt: iso(row.kept_at),
             body: row.body as Record<string, unknown>,
           })),
+        };
+      },
+    );
+
+    app.get(
+      `${base}/group-keys`,
+      {
+        config: { access: access.workspace("resource:read") },
+        schema: {
+          summary: "The keys of the tenant's groups, members' and end users'",
+          description:
+            "What an action's `runBy` and a widget's `seenBy` name groups by. The builder's " +
+            'publish check and its "View as" read it: a group named there that is not here ' +
+            "matches nobody.",
+          tags: ["authoring"],
+          params: WorkspaceParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  key: Type.String(),
+                  name: Type.String(),
+                  kind: Type.String({ description: "`member` or `end_user`." }),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        const [members, endUsers] = await Promise.all([
+          db
+            .selectFrom("principal_group")
+            .select(["key", "name"])
+            .where("tenant_id", "=", params.t)
+            .orderBy("name")
+            .execute(),
+          db
+            .selectFrom("end_user_group")
+            .select(["key", "name"])
+            .where("tenant_id", "=", params.t)
+            .orderBy("name")
+            .execute(),
+        ]);
+        return {
+          items: [
+            ...members.map((row) => ({ key: row.key, name: row.name, kind: "member" })),
+            ...endUsers.map((row) => ({ key: row.key, name: row.name, kind: "end_user" })),
+          ],
         };
       },
     );

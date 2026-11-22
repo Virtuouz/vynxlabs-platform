@@ -5,7 +5,7 @@ import { CORE_NODES } from "@volvel/nodes";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import type { Trx } from "../kernel/audit.js";
-import { badRequest, conflict, forbidden, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
@@ -499,10 +499,12 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx }, reply) => {
         if (ctx.principal.type !== "member" || !ctx.principal.id)
-          throw forbidden("a member's own sign-in");
+          throw forbiddenBecause("This needs the member's own sign-in.");
         const memberId = ctx.principal.id;
         if (!(await ownsATenant(kernel.db, memberId)))
-          throw forbidden("tenant_admin over a tenant: recovery codes are for a tenant's owners");
+          throw forbiddenBecause(
+            "This needs the tenant_admin permission over the tenant: recovery codes are for a tenant's owners.",
+          );
         const codes = await ctx.mutate(async (trx, audit) => {
           const made = await makeRecoveryCodes(trx, memberId);
           await audit({

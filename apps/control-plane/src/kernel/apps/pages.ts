@@ -385,9 +385,35 @@ export function injectContext(
     ? ""
     : iconLinks(context.iconsHref);
   const theme = `<link rel="stylesheet" href="${escapeHtml(context.themeHref)}">${icons}`;
-  let page = /<head[^>]*>/i.test(html)
-    ? html.replace(/<head[^>]*>/i, (tag) => `${tag}${head}`)
-    : `${head}${html}`;
+  // The app's own name and its pages, in the markup that draws before its script has run.
+  const app = (context.data as { app?: { title?: unknown; pages?: unknown } } | undefined)?.app;
+  const title = typeof app?.title === "string" ? app.title : undefined;
+  const names = Array.isArray(app?.pages)
+    ? (app.pages as { title?: unknown }[]).flatMap((one) =>
+        typeof one.title === "string" ? [one.title] : [],
+      )
+    : [];
+  let filled = html;
+  // Only the platform's own page has the places for them: an app written as code keeps its markup.
+  // The replacements are functions, so a "$" in a name is a "$".
+  if (title !== undefined && html.includes("<!--vx:title-->")) {
+    filled = filled
+      .replace(/<!--vx:title-->/g, () => escapeHtml(title))
+      .replace(/<title>[^<]*<\/title>/i, () => `<title>${escapeHtml(title)}</title>`);
+  }
+  if (names.length > 0) {
+    filled = filled.replace(/<!--vx:pages-->[\s\S]*?<!--\/vx:pages-->/g, () =>
+      names
+        .map(
+          (name) =>
+            `<span class="inline-flex h-8 items-center px-3 text-body font-medium text-ink-muted">${escapeHtml(name)}</span>`,
+        )
+        .join(""),
+    );
+  }
+  let page = /<head[^>]*>/i.test(filled)
+    ? filled.replace(/<head[^>]*>/i, (tag) => `${tag}${head}`)
+    : `${head}${filled}`;
   page = /<\/head>/i.test(page) ? page.replace(/<\/head>/i, `${theme}</head>`) : `${page}${theme}`;
   return page;
 }

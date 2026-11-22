@@ -846,6 +846,11 @@ export interface SchemaFormProps {
   disabled?: boolean;
   /** Called with the value as it is edited, checked or not. */
   onChange?: (value: unknown) => void;
+  /**
+   * Offer "Fields / JSON" to switch to the value as JSON. For people who build things, the
+   * default; a form shown to the people who use an app (a question an action asks) leaves it off.
+   */
+  json?: boolean;
 }
 
 /** A form drawn from a JSON Schema, with a JSON view of the whole value beside it. */
@@ -858,6 +863,7 @@ export function SchemaForm({
   errors,
   disabled,
   onChange,
+  json = true,
 }: SchemaFormProps) {
   const [held, setHeld] = useState<unknown>(() => startValue(schema, value));
   const [mode, setMode] = useState<"fields" | "json">(() =>
@@ -874,7 +880,7 @@ export function SchemaForm({
   const [busy, setBusy] = useState(false);
   const form = useRef<HTMLFormElement>(null);
   const off = disabled === true || busy;
-  const drawable = shapeOf(withoutNull(schema).schema) !== "json";
+  const drawable = json && shapeOf(withoutNull(schema).schema) !== "json";
 
   const change = (next: unknown) => {
     setHeld(next);

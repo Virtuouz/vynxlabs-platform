@@ -2,6 +2,109 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 28, the builder as the boards draw it, a phone layout, and publishing after a check
+
+The builder looks and works as the owner's nineteen boards draw it, and an app has a phone layout, a readiness check before it is published, "View as" a group, and earlier drafts that can be restored. Nothing made before needs migrating: every new setting is optional, and a page without them is drawn as before, except that a list's places are renamed (see below).
+
+### For operators
+
+- **The console is set in Geist** (and Geist Mono for numbers such as "INV-9338"), with 36 px controls and hairline-separated panels. Instance branding may still change the face.
+- **The builder has one header row:** the app's name (renamed in place), "3 draft changes", Desktop, Tablet and Phone, View as, Undo and Redo, Preview and Publish. Pages and "On this page" are in the left pane; "Add to page" is a panel under a search that matches words ("What do you want people to do here?"), with suggestions, a preview and what each widget is good for. Nothing is sent anywhere.
+- **Every widget's inspector is one pattern:** the same header, four tabs with a dot only where something needs fixing, and grouped rows that open small editors. Page filters are chips, conditions are sentences, and one number-format picker shows the real number.
+- **The canvas moves smoothly.** A dragged widget follows the pointer, the others slide, a chart is never blank while it is drawn again, and moving, sizing or renaming a widget reads no data again. A Section or a tab stays where it is as a widget comes to it, and takes what is dropped on it, from **Add to page** too. Every list with a drag handle slides.
+- **A Text's height** fits its words, or is set by hand (drag its corner) and scrolls. Texts that were made taller by hand now also grow when their words need more, until their height is set.
+- **Rows grouped under headings.** A Table and a List gain **Group rows by**: a heading over each day, week or month of a date (in the reader's own time zone), or each value of a choice, with how many rows it has in all.
+- **A page's help is chosen** from the workspace's documents in a searchable window. A topic no document has any more is said in the publish check.
+- **A tablet's layout is served.** A layout set for a tablet was drawn in the builder only; it is now what a tablet gets.
+- **Fernhill gains Clinic operations**, an app that uses every widget, page kind and action.
+- **A phone layout is made without work.** Each widget on a tablet or a phone is automatic or set by hand; on narrow screens it keeps its place, takes the full width, stacks below the rest or is hidden; a priority decides what stays near the top. A table is drawn as a list on a phone, and the filters collapse to "Filters".
+- **Publish opens "Ready to publish".** It says what is missing (sources not found, actions not complete, forms not valid, a group that no longer exists, widgets hidden on a phone) and what will change, and offers "Try as" a group first.
+- **View as** shows the page, its widgets, rules and actions as a group sees them. **History** restores an earlier draft.
+- **Preview opens the draft**, saved first, in a tab of its own in the console. Actions there change the workspace's rows, and it says so. Where the app is published, it opens from there too.
+- **A date is typed or picked** in the console and in apps: "Nov 21, 2026", "21 nov", "tomorrow" or `2026-11-21`, in the person's own language, with a calendar that works by keyboard. A phone keeps its own picker. A form's field may start with today, the person filling it in, or a fixed value.
+- **Who can run an action.** A button, a row action, an Action group's button, a form's submit or a chart's click may name groups of members or of end users. Anyone else is refused by the server, a call made straight to the API too, and sees it greyed ("Only Billing can do this"). It only narrows. A widget can be shown only to some groups; that decides what is drawn and is not security.
+- **A sheet or a modal is sized by its maker:** drag its edge in the builder to Small, Medium, Large, Extra large or Full. Served, it opens at that size, with its widgets laid out as placed; they stack only on a narrow screen. This replaces phase 26's rule that a served sheet or modal drew its widgets in one column.
+- **A Markdown alert in a widget is drawn as a callout** with a rail and an icon. The Text widget is edited with the documentation's editor, with Source and Preview, a menu of components, and "Edit on the page".
+- **Approvals, on a page.** A new widget, **Approvals**, lists the approval steps of the workflows you choose that wait for a decision, and lets a member approve or reject them where they work: a queue, rows or cards; each request with its details as Record detail draws them, how long it has waited and when it is due; a reason asked when rejecting; the next one open after one is decided. Who may decide is still set on the workflow's step. Only a member decides, as themselves; an end user, a guest and a service account see nothing (decision 0007). Where apps are served at an address of their own, requests are shown there and decided in the console (a button opens them), because an app written as code runs at that address. Fernhill's **Stock** page has it for the reorder flow.
+- **Fernhill shows it:** Clinic performance's invoices are a table with status badges, a total, row actions, "select several" and buttons above it; the invoice sheet is large, with sections and a Mark paid that Practice managers and Billing run; Visits uses a card Section and pill Tabs. The setup makes a **Billing** member group (Rowan Ellis, Devi Shah) and says so at its end; the front desk board follows the selected visit, and the pet owners' account has "My details", the owner's own client row.
+
+### For tenant developers
+
+- `Action.runBy?: { groups }` and `WidgetRules.seenBy?: { groups }` name groups by path (`groups/<key>`, `end-user-groups/<key>`, or a bare key). `runBy` is enforced on the server and checked again at publish.
+- A data input's source may be `{ selected: "<table or list id>" }` (the row chosen in it, on an app page) or `{ own: { table, by } }` (the current user's own row, where `by` holds their email).
+- `POST …/page-actions` answers `started`, how many scripts and workflows it started.
+- `@volvel/widgets` is published with the SDK, which depends on it. The types of pages and of actions are at `@volvel/widgets/page` and `@volvel/widgets/action`; the SDK no longer names a package that is not published.
+- `core/table` and `core/list` gain `groupRows`: `{ column, by?: "day" | "week" | "month", descending? }`. `GET …/widget-data` takes `zone` (the reader's time zone) and answers a grouped rows input's first page with `groups`, each group and how many rows it has; `RowsData.groups` in the widget SDK, and the inspector control `groupRows`.
+- `core/text` gains `height`: `fit` (the default) or `set`. In `@volvel/screens`, `CarryRequest.onDrop` is told the container it landed in, and a carried card says whether it is a `container`.
+- `Page.size` (`small`, `medium`, `large`, `xlarge`, `full`) and `Page.icon` (a name from the kit's icon set). `PageWidget.layout` is `{ tablet?: { at }, phone?: { at }, narrow?: "full" | "stack" | "hide", priority? }`; leaving out tablet or phone means automatic.
+- **Widget options.** `core/chart`: `smooth`, `points`, `values`, `axisTitles`, `colors`, `order`, `fillGaps`, and `compare` (a switch, with the page's date filter in `compareTo`). `core/stat`: `compare`, `delta`, `goodWhen`. `core/table`: a column's `as: "badge"` with `badges`, `align`, `width`, `sortable`, `total`, `phone`; `rowHeight`, `empty`, `stripes`, `buttons`, `select`. `core/list`: places `title`, `subtitle`, `right`, `badge`, `picture` (they replace `primary`, `secondary`, `meta` and `status`) and `look`. `core/detail`: `across`, `edit`, and a field's `section`. `core/button`: `tone: "quiet"`, `icon`, `full`, `place`. `core/actions`: `lineUp`, `showUpTo`, `place`, each button's `icon`. `core/section`: `look`. `core/tabs`: `look`, `opensFirst`, `remember`. `core/filter`: `sit`. `core/text`: `look`. `labs/goal`: `goalFrom`, `reached`.
+- **Conditions** of a visual query gain `last` (`{ count, unit }`, counted back from today, today included) and `between` (`[from, to]`, both included).
+- **Reads for choosing:** `GET …/column-values?table=&column=` and `GET …/column-counts?table=` (both under the table's row policy, with `data:read`), and `GET …/group-keys`. `core/form` fields gain `initial`; `core/detail` gains `figure`.
+- **In the widget SDK:** `formatDay`, `sentenceCase` and `choiceWords` are how a date and a choice are said; a view may be given `viewer`, `viewing` and `refresh`.
+- **A new widget, `core/approvals`,** with a data input whose source is `{ approvals: { flows?: string[]; whose?: "mine" | "all" } }` and the settings `look` (`rows`, `cards`, `queue`), `fields` (`[{ name, label?, hidden? }]`), `opens` (`sheet`, `modal`, `nothing`), `decided`, `askWhy` (`never`, `rejecting`, `always`), `approveLabel`, `rejectLabel`, `confirm`, `advance` and `empty`. Reading is `widget-data`'s, with a new data shape `approvals`; deciding is `POST /tenants/:t/workspaces/:w/page-approvals` (`{ path, page, widget, id, decision, comment?, draft? }`), answered with 409 and words when someone decided first. `GET …/flows` also lists each flow's `approvals` steps and its `title`.
+- **In the widget SDK:** a view may be given `decide(id, decision, comment?)`; `WidgetDefinition.initialData` says what a widget is added with; the data shape `approvals` and the type `ApprovalsData`.
+- **In the widget SDK:** `InspectorHint.group` names the group a setting is drawn in, and the controls `position`, `tiles`, `slots`, `icon` and `groups` are new.
+- The editing core of the documentation's Markdown editor is a kit component, used by the console's docs and by the Text widget.
+
+## Unreleased: phase 27, pages composed of sections, tabs, a search bar and toolbars
+
+A page holds its widgets in Sections and Tabs. Its search box and filters are a widget on the page, Search and filter, and related buttons are one toolbar, an Action group. Suggestions help start a page from a table. **Nothing made before is kept as it was:** a page's or a dashboard's own `filters` are refused. Re-run the examples' setup, or move them into a Search and filter widget.
+
+### For operators
+
+- **A page's filters are a Search and filter widget** placed on it, not a bar above the page. A search box looks for words across the columns each widget shows; a filter by a column is a range of dates, a choice, a number or text. In a published app what was typed and chosen is in the address, so a reload and a link keep it.
+- **A Section** groups widgets under a heading and may fold; a reader's fold is kept across a reload. **Tabs** show one view of a place at a time; the open tab is in the address. Widgets are dragged into them and out, or moved with ⋯ › Move to; one level deep.
+- **An Action group** is a row of buttons; what doesn't fit goes under "More". It is for apps, as Button is.
+- **"Add to page" opens with suggestions** for the page's table; a button offers to be grouped with the ones beside it; "+ Page" starts a list of a table, or a record page for it.
+- **A list of rows sorts by any column of its table**, shown or not (newest first by when each was made).
+
+### For tenant developers
+
+- `Page.filters` and a dashboard body's `filters` are gone. A widget of type `core/filter` declares them in `config.filters`; a data input's `filters` bind to them by name, as before. A `search` filter's binding names `columns` (or a `column`) for a table read from menus, or a `parameter` for a saved query or SQL.
+- A widget in a container says so: `in: { widget, tab? }`, with its `at` on the container's own twelve columns. `core/section` and `core/tabs` (`config.tabs`) hold widgets; a container is never in one.
+- The core pack gains `core/section`, `core/tabs`, `core/filter` and `core/actions`. A definition may have a `role` (`container` or `filters`, the platform's pack only); views are given `title`, and a container's `place` and `tab`, a filter widget's `filters`.
+- `@volvel/manifest/parts` exports the pure helpers for a page's filters and containers (`filtersOf`, `childrenOf`, `containerHeight`, …), for code where nothing may be compiled.
+
+## Unreleased: phase 26, records, actions and forms in apps
+
+An app's pages open on a record, and buttons, row actions and forms change records through actions that run on the server (S9 "Records and actions", decision 0004). Nothing needs migrating; bodies written for phase 25 are still valid, except a form whose submit saves nothing, which is now refused.
+
+### For operators
+
+- **An app's action is its own grant.** Whoever may open a published app may run its deployed actions. Each changes only the fields it names, on rows the person may read, with its conditions checked again on the server, in one transaction; the audit names the app, page, widget and action (`page_action.update`, `.create`, `.delete`). People who can't write a table through the API can still press a button that changes it, and nothing else.
+- **`POST …/page-actions`** runs an action from the stored page (the draft only for someone who may edit it). **`GET …/widget-choices`** offers a reference's rows to a form. `GET …/widget-data` takes `record` and `behind`.
+- **Pages open on a record** as a page, a side sheet or a modal, in the address (`?sheet=invoice&record=…`), so Back closes them and a link opens them. A sheet steps through the rows that opened it ("2 of 100"). A modal opened from a sheet goes over it.
+- **The builder writes actions as steps** (ask to confirm, update, make, remove, open a page, close, say, start a workflow, run a script) and conditions as sentences, with no code. It makes a detail page for "When a row is clicked", a form from a table ("Add a form"), and previews a record page with a sample record.
+- **A number on a dashboard shows the rows behind it**, following the page's filters.
+
+### For tenant developers
+
+- A page has `kind` (`page`, `record`, `sheet`, `modal`) and, for the last three, `record: { table }`. A widget has `on` (its events mapped to actions) and `rules.showWhen`. An input may read `{ record: "this" }`.
+- `Action` is `{ confirm?, steps, when?, done? }`; values are a constant, today, now, the user, a field of a record, or what was asked, never an expression. The model's values are exported from `@volvel/manifest/action` as well, for code that runs where no validator may be compiled.
+- The core pack gains `core/button`, `core/detail` and `core/form`; Table and List take `rowActions`. A form field may take a `format` (money typed in dollars and kept in cents).
+- The widget contract gives views `act`, `can`, `why`, `listens`, `choices`, `close` and `selectedRecord`, and a definition may ask for no card (`layout.frame: "none"`).
+
+## Unreleased: phase 25, apps and dashboards from one set of widgets
+
+Apps made in the console and dashboards are now one system: pages of widgets from packs, configured in one inspector, read on the server (S9, decisions 0004 to 0006). **Nothing made before is kept:** a migration (`0085`) deletes members' dashboards and their shares, and interfaces and dashboards written in the old shapes are refused. Re-run the examples' setup, or write pages in the new shape.
+
+### For operators
+
+- **Members' dashboards are deleted** by migration `0085`. Resource dashboards and interfaces deployed before are refused at the next deploy until they are rewritten.
+- **One endpoint reads every widget**: `GET …/widget-data`, which reads the stored page (the draft only for someone who may edit it) and runs each widget's data under the viewer's row policies. `GET …/dashboards/:d/widgets/:w/data` and `GET …/interface-targets` are gone.
+- **A choice filter over a column** offers its values from `GET …/filter-options`, read as the viewer may.
+- **The builder's inspector is Data, Display, Actions and Rules**, made from each widget's definition; size and place live on the page (drag, the arrow keys, Shift and the arrows, ⌘D, Delete, Esc); "Add to page" lists widgets by what they are for.
+- **Text on a page or a dashboard is Markdown**, with the documentation's alerts, steps, tabs and folds.
+- **A widget is carried from "Add to page" onto the page**, lands where it is let go, and what is in its way moves aside as it travels. A widget is moved the same way.
+- **A widget not yet finished is kept while a page is being made** (no source yet, a pivot broken down one way), and drawn as waiting; a deploy still refuses it.
+- **Not yet back:** forms, buttons, editing in a table, widgets that follow another's chosen row, the rows behind a number on a dashboard, and "See it as" (phase 29). Forms, buttons and the rows behind a number return in phase 26.
+
+### For tenant developers
+
+- `interface` bodies are version 2 and `dashboard` bodies version 3: `{ title, pages: [{ id, title, filters, widgets }] }` and `{ title, filters, widgets }`, where a widget is `{ id, type: "core/chart", title, at, data: { <input>: { source, filters } }, config }`.
+- `@volvel/sdk` exports the widget contract (`defineWidget`, the hints, the data shapes) from `@volvel/widgets`, `defineInterface` and `defineDashboard`. `InterfaceWidget` and the kit's widget registry are gone.
+- The core pack is `core/table`, `core/list`, `core/stat`, `core/chart`, `core/pivot` and `core/text`; `labs/goal` is the platform's trial pack.
+
 ## Unreleased: phase 24, the follow-through on phase 23's open items
 
 Five items phase 23 left, each as the owner chose. A migration (`0084`) adds the record of what each dashboard widget names. Nothing needs migrating by hand.

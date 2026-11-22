@@ -53,6 +53,12 @@ const Dashboards = lazy(() => import("./Dashboards.tsx").then((m) => ({ default:
 const DashboardView = lazy(() =>
   import("./Dashboards.tsx").then((m) => ({ default: m.DashboardView })),
 );
+const AppPreview = lazy(() =>
+  import("./builder/AppPreview.tsx").then((m) => ({ default: m.AppPreview })),
+);
+
+import { BuilderSkeleton } from "./builder/BuilderSkeleton.tsx";
+
 const InterfaceBuilder = lazy(() =>
   import("./builder/AppBuilder.tsx").then((m) => ({ default: m.AppBuilder })),
 );
@@ -535,13 +541,23 @@ function WorkspaceDetail({
         />
       ) : tab === "dashboards" ? (
         <Dashboards root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
-      ) : tab === "screens" && rest ? (
-        <InterfaceBuilder
-          key={rest}
+      ) : tab === "screens" && /^.+?\/preview(\/.*)?$/.test(rest) ? (
+        <AppPreview
+          key={rest.replace(/\/preview(\/.*)?$/, "")}
           root={root}
-          path={rest}
+          path={rest.replace(/\/preview(\/.*)?$/, "")}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          workspaceName={workspace.data.name}
         />
+      ) : tab === "screens" && rest ? (
+        <Suspense fallback={<BuilderSkeleton />}>
+          <InterfaceBuilder
+            key={rest}
+            root={root}
+            path={rest}
+            link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          />
+        </Suspense>
       ) : tab === "screens" ? (
         <Interfaces
           root={root}

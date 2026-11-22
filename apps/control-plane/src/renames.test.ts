@@ -20,7 +20,7 @@ const manifest = (
   key?: string,
 ): BundleManifest => ({
   kind,
-  schemaVersion: 1,
+  schemaVersion: kind === "interface" ? 2 : kind === "dashboard" ? 3 : 1,
   path,
   ownership: "code",
   body,

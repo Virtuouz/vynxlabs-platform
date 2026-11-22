@@ -6,7 +6,32 @@
     <title>App</title>
   </head>
   <body>
-    <div id="app"></div>
+    <!-- Drawn until the script has run and the app is read: the same shapes as AppSkeleton. -->
+    <div id="app">
+      <div class="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 p-4">
+        <header class="flex flex-wrap items-center justify-between gap-3">
+          <!-- biome-ignore lint/a11y/useHeadingContent: the server writes the title in. -->
+          <h1 class="m-0 min-h-8 text-display font-semibold"><!--vx:title--></h1>
+        </header>
+        <div role="status" aria-label="Loading the app" class="flex flex-col gap-4">
+          <span class="sr-only">Loading…</span>
+          <div aria-hidden="true" class="flex gap-2"><!--vx:pages-->
+            <div class="animate-pulse rounded-control bg-sunken motion-reduce:animate-none h-8 w-24"></div>
+            <div class="animate-pulse rounded-control bg-sunken motion-reduce:animate-none h-8 w-20"></div>
+            <div class="animate-pulse rounded-control bg-sunken motion-reduce:animate-none h-8 w-28"></div>
+            <div class="animate-pulse rounded-control bg-sunken motion-reduce:animate-none h-8 w-20"></div>
+          <!--/vx:pages--></div>
+          <div aria-hidden="true" class="animate-pulse rounded-control bg-sunken motion-reduce:animate-none h-12 w-full"></div>
+          <div aria-hidden="true" class="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div class="animate-pulse bg-sunken motion-reduce:animate-none h-24 rounded-panel"></div>
+            <div class="animate-pulse bg-sunken motion-reduce:animate-none h-24 rounded-panel"></div>
+            <div class="animate-pulse bg-sunken motion-reduce:animate-none h-24 rounded-panel"></div>
+            <div class="animate-pulse bg-sunken motion-reduce:animate-none h-24 rounded-panel"></div>
+          </div>
+          <div aria-hidden="true" class="animate-pulse bg-sunken motion-reduce:animate-none h-72 w-full rounded-panel"></div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="./main.tsx"></script>
   </body>
 </html>

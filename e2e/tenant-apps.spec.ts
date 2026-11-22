@@ -72,28 +72,34 @@ test("an app served to a tenant's people looks as reviewed, at each width and in
   const widgets = [
     {
       id: "list",
-      type: "table",
+      type: "core/table",
       title: "Stock",
-      table: "stock",
-      fields: [{ column: "item" }, { column: "held" }, { column: "aisle" }],
       at: { x: 0, y: 0, w: 8, h: 6 },
+      data: { rows: { source: { visual: { table: "stock" } } } },
+      config: { columns: [{ column: "item" }, { column: "held" }, { column: "aisle" }] },
     },
     {
       id: "by_aisle",
-      type: "chart",
+      type: "core/chart",
       title: "Held by aisle",
-      table: "stock",
-      summary: {
-        groupBy: [{ column: "aisle" }],
-        aggregates: [{ fn: "sum", column: "held", as: "held" }],
-      },
-      options: { mark: "bar", x: "aisle", y: "held" },
       at: { x: 8, y: 0, w: 4, h: 6 },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "stock",
+              groupBy: [{ column: "aisle" }],
+              measures: [{ fn: "sum", column: "held", as: "held" }],
+            },
+          },
+        },
+      },
+      config: { mark: "bar" },
     },
   ];
   await call(page, "PUT", `${W}/drafts/screens/stock`, {
     kind: "interface",
-    schemaVersion: 1,
+    schemaVersion: 2,
     body: { title: "Stock", pages: [{ id: "main", title: "Stock", widgets }] },
   });
   await call(page, "PUT", `${W}/drafts/stock-app`, {
@@ -139,23 +145,24 @@ test("an app served to a tenant's people looks as reviewed, at each width and in
     }
     await visitor.context().close();
   }
-  // In the builder, the page has the room: at a laptop's size the canvas takes 60% of the work
-  // area or more. A phone's preview lays the page out as a phone does: one column.
+  // In the builder, the page has the room: at a laptop's size the canvas takes more than half of
+  // the work area beside a 232 px outline and the 403 px settings the boards draw (8 to 19). A phone's preview lays the page out as a phone does: one column.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/t/${tenant.id}/workspaces/${dev.id}/screens/screens/stock`);
   const canvas = page.locator("[data-canvas]");
-  await expect(canvas.getByRole("region", { name: "Stock" }).first()).toBeVisible({
+  // While building, a widget is a group that can be chosen, moved and sized.
+  await expect(canvas.getByRole("group", { name: "Stock" }).first()).toBeVisible({
     timeout: 30_000,
   });
   const share = await page.evaluate(() => {
     const main = document.querySelector("main")?.getBoundingClientRect().width ?? 1;
     return (document.querySelector("[data-canvas]")?.getBoundingClientRect().width ?? 0) / main;
   });
-  expect(share).toBeGreaterThanOrEqual(0.6);
+  expect(share, "the canvas share of the work area at 1440").toBeGreaterThanOrEqual(0.52);
   await page.getByRole("radio", { name: /Phone/ }).click();
   const stacked = async () => {
-    const list = await canvas.getByRole("region", { name: "Stock" }).first().boundingBox();
-    const chart = await canvas.getByRole("region", { name: "Held by aisle" }).boundingBox();
+    const list = await canvas.getByRole("group", { name: "Stock" }).first().boundingBox();
+    const chart = await canvas.getByRole("group", { name: "Held by aisle" }).boundingBox();
     return Boolean(list && chart && chart.y >= list.y + list.height - 1);
   };
   await expect.poll(stacked).toBe(true);

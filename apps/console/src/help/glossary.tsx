@@ -1,8 +1,9 @@
-import { GlossaryProvider, type GlossaryTerm } from "@volvel/ui";
+import { GlossaryProvider, type GlossaryTerm, knowledgeFrom, MarkdownKnows } from "@volvel/ui";
 import { ExternalLink } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useLoad } from "../api.ts";
 import { usePreference } from "../prefs.ts";
+import { loadFields } from "./content.ts";
 
 /** A page of a docs app the reader may open, and where it is served. */
 export interface PageLink {
@@ -139,7 +140,16 @@ export function WorkspaceGlossary({
   children: ReactNode;
 }) {
   const [underline] = useUnderlineTerms();
-  const { terms } = useWorkspaceTerms(underline ? tenantId : undefined, workspaceId);
+  const words = useWorkspaceTerms(tenantId, workspaceId);
+  const terms = underline ? words.terms : NONE;
+  // What the kinds say of their fields, for a page's `::field`. A page does without them.
+  const [fields, setFields] = useState<Record<string, string>>();
+  const inWorkspace = tenantId !== undefined && workspaceId !== undefined;
+  useEffect(() => {
+    if (inWorkspace) loadFields().then(setFields, () => {});
+  }, [inWorkspace]);
+  // What a page's Markdown is told: the workspace's words, wherever a Text is drawn.
+  const knows = useMemo(() => knowledgeFrom({ ...words, fields }), [words, fields]);
   const toPage = useMemo(
     () =>
       more ??
@@ -148,11 +158,8 @@ export function WorkspaceGlossary({
     [more],
   );
   return (
-    <GlossaryProvider
-      terms={underline ? terms : NONE}
-      more={toPage as (term: GlossaryTerm) => ReactNode}
-    >
-      {children}
+    <GlossaryProvider terms={terms} more={toPage as (term: GlossaryTerm) => ReactNode}>
+      <MarkdownKnows value={knows}>{children}</MarkdownKnows>
     </GlossaryProvider>
   );
 }

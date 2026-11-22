@@ -17,6 +17,9 @@ COPY packages/nodes/package.json packages/nodes/
 COPY packages/screens/package.json packages/screens/
 COPY packages/sdk/package.json packages/sdk/
 COPY packages/ui/package.json packages/ui/
+COPY packages/widget-sdk/package.json packages/widget-sdk/
+COPY packages/widgets-core/package.json packages/widgets-core/
+COPY packages/widgets-labs/package.json packages/widgets-labs/
 COPY packages/worker/package.json packages/worker/
 COPY examples/acme/package.json examples/acme/
 RUN pnpm install --frozen-lockfile

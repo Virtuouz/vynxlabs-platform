@@ -11,13 +11,6 @@ let routes: Record<string, (body: unknown, url: string) => [number, unknown]>;
 // biome-ignore lint/suspicious/noExplicitAny: what was sent is inspected freely
 type Any = any;
 
-const result = (names: [string, string][], rows: unknown[][]) => ({
-  columns: names.map(([name, type]) => ({ name, type })),
-  rows,
-  truncated: false,
-  tables: ["stock"],
-  sql: "",
-});
 const mine = {
   id: "d1",
   kind: "member",
@@ -28,42 +21,51 @@ const mine = {
   shared: false,
   revision: 4,
   updatedAt: "2026-11-13T10:00:00.000Z",
-  upgraded: false,
   body: {
-    version: 2,
-    filters: [{ name: "added", label: "Added", type: "date_range", default: "last_30_days" }],
     widgets: [
       {
+        // The dashboard's filter, beside the stat: whoever reads it sets it.
+        id: "filters",
+        type: "core/filter",
+        at: { x: 9, y: 8, w: 3, h: 2 },
+        config: {
+          filters: [
+            { name: "created_at", label: "Added", type: "date_range", default: "last_30_days" },
+          ],
+        },
+      },
+      {
         id: "held",
-        type: "table",
+        type: "core/table",
         title: "Held",
-        source: { visual: { table: "stock", columns: ["item", "held"] } },
-        filters: [{ filter: "added", column: "created_at" }],
+        at: { x: 0, y: 0, w: 12, h: 8 },
+        data: {
+          rows: {
+            source: { visual: { table: "stock", columns: ["item", "held"] } },
+            filters: [{ filter: "created_at", column: "created_at" }],
+          },
+        },
       },
       {
         id: "total",
-        type: "figure",
+        type: "core/stat",
         title: "In stock",
-        source: {
-          visual: { table: "stock", measures: [{ fn: "sum", column: "held", as: "held" }] },
-        },
-        filters: [{ filter: "added", column: "created_at" }],
-        options: { value: "held", compareTo: "added" },
-      },
-      {
-        id: "by-kind",
-        type: "pivot",
-        title: "By kind",
-        source: {
-          visual: {
-            table: "stock",
-            groupBy: [{ column: "kind" }, { column: "shelf" }],
-            measures: [{ fn: "sum", column: "held", as: "held" }],
+        at: { x: 0, y: 8, w: 3, h: 3 },
+        data: {
+          value: {
+            source: {
+              visual: { table: "stock", measures: [{ fn: "sum", column: "held", as: "held" }] },
+            },
+            filters: [{ filter: "created_at", column: "created_at" }],
           },
         },
-        options: { rows: ["kind"], columns: ["shelf"], value: "held" },
       },
-      { id: "note", type: "text", options: { text: "Counted weekly." } },
+      {
+        id: "note",
+        type: "core/text",
+        at: { x: 3, y: 8, w: 6, h: 2 },
+        config: { text: "Counted weekly." },
+      },
     ],
   },
 };
@@ -72,38 +74,8 @@ beforeEach(() => {
   calls = [];
   history.replaceState(null, "", "/");
   routes = {
-    [`GET ${api}/dashboards/d1/widgets/held/data`]: () => [
-      200,
-      result(
-        [
-          ["item", "text"],
-          ["held", "number"],
-        ],
-        [["Bolts", 40]],
-      ),
-    ],
-    // Asked twice: for the range the filter is set to, and for the one before it.
-    [`GET ${api}/dashboards/d1/widgets/total/data`]: (_body, url) => {
-      const filters = JSON.parse(new URL(url, "http://x").searchParams.get("filters") ?? "{}");
-      const before =
-        filters.added && new Date(filters.added.to) < new Date(Date.now() - 20 * 86_400_000);
-      return [200, result([["held", "number"]], [[before ? 50 : 65]])];
-    },
-    [`GET ${api}/dashboards/d1/widgets/by-kind/data`]: () => [
-      200,
-      result(
-        [
-          ["kind", "text"],
-          ["shelf", "text"],
-          ["held", "number"],
-        ],
-        [
-          ["fixings", "A", 40],
-          ["fixings", "B", 25],
-          ["tools", "A", 3],
-        ],
-      ),
-    ],
+    // Every widget asks the one endpoint for what it shows.
+    [`GET ${api}/widget-data`]: () => [200, { inputs: {} }],
     [`GET ${api}/queries/schema`]: () => [
       200,
       {
@@ -114,6 +86,7 @@ beforeEach(() => {
             columns: [
               { name: "item", type: "text", references: null },
               { name: "held", type: "integer", references: null },
+              { name: "kind", type: "enum", references: null },
             ],
           },
         ],
@@ -122,13 +95,6 @@ beforeEach(() => {
       },
     ],
     [`GET ${api}/queries`]: () => [200, { items: [] }],
-    [`GET ${api}/queries/visual`]: () => [
-      200,
-      {
-        ...result([["count", "number"]], [[2]]),
-        written: { sql: "select count(*) from stock", parameters: [] },
-      },
-    ],
   };
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
@@ -187,52 +153,34 @@ test("dashboards are listed with whose they are, and one the workspace keeps say
   expect(sent("POST")[0]?.body).toEqual({ title: "Returns" });
 });
 
-test("each widget asks for what it shows, with the filters as they are set, and draws it", async () => {
+test("each widget asks the one endpoint for what it shows, as the dashboard, with the filters as they are set", async () => {
   routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
+  history.replaceState(
+    null,
+    "",
+    `/?f=${encodeURIComponent(JSON.stringify({ created_at: "last_7_days" }))}`,
+  );
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await within(await screen.findByRole("region", { name: "Held" })).findByText("Bolts");
-  // A figure, and how it stands against the period before the one its filter is set to.
-  const figure = within(screen.getByRole("region", { name: "In stock" }));
-  await figure.findByText("65");
-  await figure.findByText("30% more than the period before");
-  // A pivot: kinds down the side, shelves across the top, and totals.
-  const turned = within(screen.getByRole("region", { name: "By kind" }));
-  await turned.findByRole("columnheader", { name: "A" });
-  expect(turned.getByRole("rowheader", { name: "fixings" })).toBeTruthy();
-  expect(turned.getAllByRole("row").map((row) => row.textContent)).toEqual([
-    "kindABTotal",
-    "fixings402565",
-    "tools33",
-    "Total432568",
-  ]);
-  expect(screen.getByText("Counted weekly.")).toBeTruthy();
-  // The filter's default is what the widgets were asked with: a range of thirty days ending today.
-  const asked = JSON.parse(
-    new URL(
-      calls.find((call) => call.url.includes("/widgets/held/data"))?.url as string,
-      "http://x",
-    ).searchParams.get("filters") as string,
-  );
-  expect(Object.keys(asked)).toEqual(["added"]);
-  expect(asked.added.to).toBe(
-    `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}`,
-  );
-
-  // Set to another range, every widget bound to it asks again, and the address keeps what was set.
-  fireEvent.change(screen.getByLabelText("Added"), { target: { value: "all" } });
+  await screen.findByLabelText("Held", { selector: "section" });
+  // The text widget reads nothing, so it asks nothing.
   await waitFor(() =>
-    expect(calls.filter((call) => call.url.includes("/widgets/held/data")).at(-1)?.url).toContain(
-      `filters=${encodeURIComponent("{}")}`,
-    ),
+    expect(calls.filter((call) => call.url.includes("/widget-data"))).toHaveLength(2),
   );
-  expect(JSON.parse(new URLSearchParams(window.location.search).get("f") as string)).toEqual({
-    added: "all",
-  });
-  // With no range there is no period before to compare with.
-  await waitFor(() => expect(figure.queryByText(/than the period before/)).toBeNull());
+  const asked = calls
+    .filter((call) => call.url.includes("/widget-data"))
+    .map((call) => new URL(call.url, "http://x").searchParams);
+  expect(asked.map((params) => params.get("widget")).sort()).toEqual(["held", "total"]);
+  for (const params of asked) {
+    expect(params.get("of")).toBe("dashboard");
+    expect(params.get("path")).toBe("d1");
+    // A dashboard is read as it is stored, never as a draft.
+    expect(params.get("draft")).toBeNull();
+    expect(JSON.parse(params.get("filters") as string)).toEqual({ created_at: "last_7_days" });
+  }
+  expect(screen.getByText(/Refreshes every 5 minutes/)).toBeTruthy();
 });
 
-test("its maker adds a widget built from menus, moves and removes widgets, and shares it", async () => {
+test("its maker adds a widget from Add to page, changes it in its settings, removes widgets, and shares it", async () => {
   let stored: Any = mine;
   routes[`GET ${api}/dashboards/d1`] = () => [200, stored];
   routes[`PUT ${api}/dashboards/d1`] = (body) => {
@@ -240,71 +188,61 @@ test("its maker adds a widget built from menus, moves and removes widgets, and s
     return [200, stored];
   };
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByRole("region", { name: "Held" });
+  await screen.findByLabelText("Held", { selector: "section" });
   // Looking, there is nothing to change with.
-  expect(screen.queryByRole("button", { name: "Add a widget" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add to page" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
 
-  fireEvent.click(screen.getByRole("button", { name: "Add a widget" }));
-  const sheet = within(await screen.findByRole("dialog"));
-  fireEvent.change(sheet.getByLabelText("Title"), { target: { value: "How many" } });
-  fireEvent.change(sheet.getByLabelText("It is"), { target: { value: "figure" } });
-  fireEvent.change(await sheet.findByLabelText("Table"), { target: { value: "stock" } });
-  // Someone without `sql:read` is not offered SQL, which a save would refuse.
-  expect(sheet.queryByRole("option", { name: "SQL written here" })).toBeNull();
-  fireEvent.change(sheet.getByLabelText("Show"), { target: { value: "totals" } });
-  // The answer is shown as the question is built.
-  await within(sheet.getByRole("region", { name: "What it gives" })).findByText("2", undefined, {
-    timeout: 3000,
-  });
-  // The dashboard's filter is given a column of this widget's table.
-  fireEvent.change(sheet.getByLabelText("Added"), { target: { value: "created_at" } });
-  fireEvent.click(sheet.getByRole("button", { name: "Save the widget" }));
+  // What can be added is what the registry offers a dashboard, by what it is for.
+  fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+  const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
+  expect(dialog.getByText("Work with records")).toBeTruthy();
+  expect(dialog.getByText("A trend or a comparison")).toBeTruthy();
+  expect(
+    dialog.getByText("Click to place at the end of the page, or drag onto the grid."),
+  ).toBeTruthy();
+  fireEvent.change(dialog.getByLabelText(/^Find something to add/), { target: { value: "chart" } });
+  expect(dialog.queryByText("Many records, dense and sortable")).toBeNull();
+  fireEvent.click(dialog.getByRole("button", { name: /Chart/ }));
   await waitFor(() => expect(sent("PUT")).toHaveLength(1));
-  const saved = put(0).body.widgets.at(-1);
-  expect(saved).toMatchObject({
-    type: "figure",
-    title: "How many",
-    source: { visual: { table: "stock", measures: [{ fn: "count", as: "count" }] } },
-    filters: [{ filter: "added", column: "created_at" }],
+  const added = put(0).body.widgets.at(-1);
+  // It goes under the rest, as big as a chart is to begin with, and reads the page's table.
+  expect(added).toMatchObject({
+    id: "chart",
+    type: "core/chart",
+    title: "Chart",
+    at: { x: 0, y: 11, w: 6, h: 6 },
+    config: { mark: "bar", legend: "auto" },
   });
+  expect(added.data.rows.source.visual).toMatchObject({
+    table: "stock",
+    measures: [{ fn: "count", as: "count" }],
+  });
+  // The dashboard's date filter follows it, since the table has the column.
+  expect(added.data.rows.filters).toEqual([{ filter: "created_at", column: "created_at" }]);
   expect(put(0).revision).toBe(4);
 
-  // A new widget goes under the rest, as big as a figure is to begin with, and every widget
-  // is saved with the place it has.
-  const under = Math.max(
-    ...put(0)
-      .body.widgets.slice(0, -1)
-      .map((one: Any) => one.at.y + one.at.h),
-  );
-  expect(saved.at).toEqual({ x: 0, y: under, w: 3, h: 3 });
-
-  // Moved from the keyboard, a cell at a time, and saved as it is done. What it is moved
-  // onto goes down out of its way.
-  const before = put(0).body.widgets.find((one: Any) => one.id === "total").at;
-  const handle = await screen.findByRole("button", { name: /^Move In stock: drag its heading/ });
-  fireEvent.keyDown(handle, { key: "ArrowLeft" });
+  // The new widget is the one being changed: its settings are beside the page.
+  const settings = within(screen.getByRole("complementary", { name: "Settings" }));
+  fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
+  // A heading is two rows that open an editor, or (a chart's) two fields written in place.
+  const row = settings.queryByRole("button", { name: /^Title/ });
+  if (row) fireEvent.click(row);
+  fireEvent.change(await screen.findByRole("textbox", { name: "Title" }), {
+    target: { value: "How many" },
+  });
   await waitFor(() => expect(sent("PUT")).toHaveLength(2));
-  const after = put(1).body.widgets;
-  expect(after.find((one: Any) => one.id === "total").at).toEqual({ ...before, x: before.x - 1 });
-  const boxes = after.map((one: Any) => one.at);
-  for (const a of boxes) {
-    for (const b of boxes) {
-      if (a === b) continue;
-      const overlap = a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-      expect(overlap, JSON.stringify([a, b])).toBe(false);
-    }
-  }
-  expect(
-    screen
-      .getAllByRole("status")
-      .map((one) => one.textContent)
-      .join(" "),
-  ).toContain(`In stock is at column ${before.x}, row ${before.y + 1}.`);
-  fireEvent.click(screen.getByRole("button", { name: "Remove By kind" }));
-  await answer("Remove");
+  expect(put(1).body.widgets.at(-1).title).toBe("How many");
+
+  // Another widget is chosen by clicking it, and removed from its menu; it can be taken back.
+  fireEvent.click(screen.getByLabelText("In stock", { selector: "section" }));
+  fireEvent.click(await screen.findByRole("button", { name: "More about In stock" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Remove" }));
   await waitFor(() => expect(sent("PUT")).toHaveLength(3));
-  expect(put(2).body.widgets.map((one: Any) => one.id)).not.toContain("by-kind");
+  expect(put(2).body.widgets.map((one: Any) => one.id)).not.toContain("total");
+  fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(4));
+  expect(put(3).body.widgets.map((one: Any) => one.id)).toContain("total");
 
   // Sharing is its own step.
   fireEvent.click(screen.getByRole("button", { name: "Share" }));
@@ -313,20 +251,74 @@ test("its maker adds a widget built from menus, moves and removes widgets, and s
       "Show it to everyone in this workspace",
     ),
   );
-  await waitFor(() => expect(sent("PUT")).toHaveLength(4));
-  expect(sent("PUT")[3]?.body).toEqual({ shared: true, revision: 7 });
+  await waitFor(() => expect(sent("PUT")).toHaveLength(5));
+  expect(sent("PUT")[4]?.body).toEqual({ shared: true, revision: 8 });
 });
 
-test("someone who holds sql:read is offered SQL in a widget", async () => {
-  maySql = true;
-  routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
+test("a dashboard's filters are edited through its Search and filter widget, with no section for them under the page", async () => {
+  let stored: Any = mine;
+  routes[`GET ${api}/dashboards/d1`] = () => [200, stored];
+  routes[`PUT ${api}/dashboards/d1`] = (body) => {
+    stored = { ...stored, ...(body as object), revision: stored.revision + 1 };
+    return [200, stored];
+  };
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByRole("region", { name: "Held" });
+  await screen.findByLabelText("Held", { selector: "section" });
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  fireEvent.click(screen.getByRole("button", { name: "Add a widget" }));
-  const sheet = within(await screen.findByRole("dialog"));
-  await sheet.findByRole("option", { name: "SQL written here" });
+  // The old section under the canvas is gone.
+  expect(screen.queryByText("Filters for whoever reads this page")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add a filter" })).toBeNull();
+  // The widget is chosen, and its Data tab holds the list.
+  fireEvent.click(await screen.findByRole("button", { name: "Search and filter" }));
+  const settings = within(screen.getByRole("complementary", { name: "Settings" }));
+  fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
+  fireEvent.click((await settings.findAllByRole("button", { name: /^Added/ }))[0] as HTMLElement);
+  fireEvent.change(await settings.findByLabelText(/^Label/), { target: { value: "Created" } });
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  const saved = put(0);
+  // Kept by the widget, not beside the widgets, and the name is what the widgets follow.
+  expect(saved.body.filters).toBeUndefined();
+  expect(saved.body.widgets.find((one: Any) => one.id === "filters").config.filters).toEqual([
+    { name: "created_at", label: "Created", type: "date_range", default: "last_30_days" },
+  ]);
+  expect(saved.body.widgets.find((one: Any) => one.id === "held").data.rows.filters).toEqual([
+    { filter: "created_at", column: "created_at" },
+  ]);
+  // A search is added to it, and the table follows it by its text columns.
+  fireEvent.click(settings.getByRole("button", { name: "Back" }));
+  fireEvent.click(await settings.findByRole("button", { name: "Filter" }));
+  fireEvent.click(await screen.findByRole("button", { name: "A search box" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(2));
+  const searched = put(1).body.widgets;
+  expect(searched.find((one: Any) => one.id === "filters").config.filters.at(-1)).toMatchObject({
+    name: "search_stock",
+    type: "search",
+  });
+  expect(searched.find((one: Any) => one.id === "held").data.rows.filters).toContainEqual({
+    filter: "search_stock",
+    columns: ["item"],
+  });
+});
+
+test("someone who holds sql:read is offered SQL as a source, and someone who does not is not", async () => {
+  routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
+  maySql = true;
+  const { unmount } = show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByLabelText("Held", { selector: "section" });
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByLabelText("Held", { selector: "section" }));
+  fireEvent.click(await screen.findByRole("button", { name: /^Source/ }));
+  expect(await screen.findByLabelText("SQL written here")).toBeTruthy();
   maySql = false;
+  unmount();
+  history.replaceState(null, "", "/");
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByLabelText("Held", { selector: "section" });
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(screen.getByLabelText("Held", { selector: "section" }));
+  fireEvent.click(await screen.findByRole("button", { name: /^Source/ }));
+  await screen.findByLabelText("Stock");
+  expect(screen.queryByLabelText("SQL written here")).toBeNull();
 });
 
 test("a dashboard someone else shared, or the workspace keeps, is looked at and offers no way to change it", async () => {
@@ -336,8 +328,8 @@ test("a dashboard someone else shared, or the workspace keeps, is looked at and 
   ];
   const { unmount } = show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
   await screen.findByText(/Alice's, shared with you\. You see the rows you may read/);
-  await within(screen.getByRole("region", { name: "Held" })).findByText("Bolts");
-  for (const name of ["Edit", "Share", "Add a widget", "More"]) {
+  await screen.findByLabelText("Held", { selector: "section" });
+  for (const name of ["Edit", "Share", "Add to page", "More"]) {
     expect(screen.queryByRole("button", { name })).toBeNull();
   }
   unmount();
@@ -346,37 +338,11 @@ test("a dashboard someone else shared, or the workspace keeps, is looked at and 
     { ...mine, kind: "resource", path: "boards/stock", mine: false, shared: true },
   ];
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByText(/A dashboard the workspace keeps, at boards\/stock/);
+  await screen.findByText(/Kept by the workspace, at boards\/stock/);
   expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
 });
 
-test("a widget that was changed is not given up without asking, and one that was not is", async () => {
-  routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
-  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByRole("region", { name: "Held" });
-  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  fireEvent.click(screen.getByRole("button", { name: "Add a widget" }));
-  let sheet = within(await screen.findByRole("dialog"));
-  // Nothing changed: Cancel closes at once.
-  fireEvent.click(sheet.getByRole("button", { name: "Cancel" }));
-  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-
-  fireEvent.click(screen.getByRole("button", { name: "Add a widget" }));
-  sheet = within(await screen.findByRole("dialog"));
-  fireEvent.change(sheet.getByLabelText("Title"), { target: { value: "Half done" } });
-  fireEvent.click(sheet.getByRole("button", { name: "Cancel" }));
-  // Asked, and Stay keeps what was typed.
-  const said = await answer("Stay");
-  expect(said).toContain("Your changes to this widget are not saved.");
-  await waitFor(() => expect(screen.queryByText("Leave without saving?")).toBeNull());
-  expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Half done");
-  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  await answer("Leave");
-  await waitFor(() => expect(screen.queryByLabelText("Title")).toBeNull());
-  expect(sent("PUT")).toHaveLength(0);
-});
-
-test("a rename right after a move is saved on the revision the move made", async () => {
+test("a change made right before a share is saved on the revision the change made", async () => {
   let stored: Any = mine;
   routes[`GET ${api}/dashboards/d1`] = () => [200, stored];
   routes[`PUT ${api}/dashboards/d1`] = (body) => {
@@ -388,10 +354,17 @@ test("a rename right after a move is saved on the revision the move made", async
     return [200, stored];
   };
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByRole("region", { name: "Held" });
+  await screen.findByLabelText("Held", { selector: "section" });
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-  const handle = await screen.findByRole("button", { name: /^Move In stock: drag its heading/ });
-  fireEvent.keyDown(handle, { key: "ArrowLeft" });
+  fireEvent.click(screen.getByLabelText("Held", { selector: "section" }));
+  const settings = within(await screen.findByRole("complementary", { name: "Settings" }));
+  fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
+  // A heading is two rows that open an editor, or (a chart's) two fields written in place.
+  const row = settings.queryByRole("button", { name: /^Title/ });
+  if (row) fireEvent.click(row);
+  fireEvent.change(await screen.findByRole("textbox", { name: "Title" }), {
+    target: { value: "On the shelf" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Share" }));
   fireEvent.click(
     within(await screen.findByRole("dialog")).getByLabelText(
@@ -400,33 +373,4 @@ test("a rename right after a move is saved on the revision the move made", async
   );
   await waitFor(() => expect(sent("PUT")).toHaveLength(2));
   expect(sent("PUT").map((call) => (call.body as Any).revision)).toEqual([4, 5]);
-});
-
-test("a repository dashboard whose widget ran through a recorded key says what to change, and where", async () => {
-  routes[`GET ${api}/dashboards/d1`] = () => [
-    200,
-    {
-      ...mine,
-      kind: "resource",
-      path: "boards/stock",
-      ownership: "code",
-      mine: false,
-      shared: true,
-    },
-  ];
-  routes[`GET ${api}/dashboards/d1/widgets/held/data`] = () => [
-    200,
-    {
-      ...result([["item", "text"]], [["Bolts"]]),
-      followed: { names: "reports/held", now: "stock/held" },
-    },
-  ];
-  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  const held = within(await screen.findByRole("region", { name: "Held" }));
-  await held.findByText("Bolts");
-  expect(held.getByText(/Names/).textContent).toBe(
-    "Names reports/held, now stock/held: change it in the repository.",
-  );
-  // A widget that ran through its path says nothing.
-  expect(within(screen.getByRole("region", { name: "In stock" })).queryByText(/Names/)).toBeNull();
 });

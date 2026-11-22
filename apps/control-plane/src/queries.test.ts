@@ -737,6 +737,17 @@ describe("queries built from menus", () => {
       sort: [{ by: "fee" }],
     });
     expect(rowsOf(plain.body)).toEqual([{ device_title: "Camera", status: "late", fee: 30 }]);
+    // Rows sort by any column of their table, shown or not: the newest first.
+    const newest = await visual(alice, {
+      table: "lending/loans",
+      columns: ["fee"],
+      sort: [{ by: "created_at", descending: true }],
+    });
+    expect(newest.status, JSON.stringify(newest.body)).toBe(200);
+    // Totals sort only by what they show.
+    const totals = await visual(alice, { ...feesByDevice, sort: [{ by: "created_at" }] });
+    expect(totals.status).toBe(400);
+    expect(JSON.stringify(totals.body)).toContain('the result has no column \\"created_at\\"');
     // By period, and by a distinct count.
     const monthly = await visual(alice, {
       table: "lending/loans",
@@ -744,6 +755,75 @@ describe("queries built from menus", () => {
       measures: [{ fn: "count_distinct", column: "device", as: "devices" }],
     });
     expect(rowsOf(monthly.body)).toEqual([{ due_quarter: "2026-10-01", devices: 3 }]);
+  });
+
+  test("a date is asked for as the last days, or between two days, the last day included whole", async () => {
+    const fees = async (filters: object[]) => {
+      const answer = await visual(alice, {
+        table: "lending/loans",
+        columns: ["fee"],
+        filters,
+        sort: [{ by: "fee" }],
+      });
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      return rowsOf(answer.body).map((row: { fee: number }) => row.fee);
+    };
+    // A date column: due on 2026-10-20, 11-01, 11-10 and 12-01.
+    expect(
+      await fees([{ column: "due", op: "between", value: ["2026-11-01", "2026-11-10"] }]),
+    ).toEqual([5, 30]);
+    expect(
+      await fees([{ column: "due", op: "between", value: ["2026-11-02", "2026-11-09"] }]),
+    ).toEqual([]);
+    expect(
+      await fees([{ column: "due", op: "between", value: ["2026-10-20", "2026-10-20"] }]),
+    ).toEqual([40]);
+    expect(await fees([{ column: "fee", op: "between", value: [10, 30] }])).toEqual([10, 30]);
+    // A time: every loan was made today, so the whole of today holds them all.
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    expect(await fees([{ column: "created_at", op: "between", value: [today, today] }])).toEqual([
+      5, 10, 30, 40,
+    ]);
+    expect(
+      await fees([{ column: "created_at", op: "between", value: [yesterday, yesterday] }]),
+    ).toEqual([]);
+    expect(
+      await fees([{ column: "created_at", op: "last", value: { count: 1, unit: "day" } }]),
+    ).toEqual([5, 10, 30, 40]);
+    expect(
+      await fees([{ column: "created_at", op: "last", value: { count: 1, unit: "week" } }]),
+    ).toEqual([5, 10, 30, 40]);
+    // Dues are all in 2026-10 to 12, which is not the last day, and the last year may not reach to 12-01.
+    expect(await fees([{ column: "due", op: "last", value: { count: 1, unit: "day" } }])).toEqual(
+      [],
+    );
+    expect(
+      await fees([
+        { column: "due", op: "last", value: { count: 1000, unit: "year" } },
+        { column: "fee", op: "gt", value: 20 },
+      ]),
+    ).toEqual([30, 40]);
+    // Through a joined table.
+    const joined = await visual(alice, {
+      table: "lending/loans",
+      joins: ["device"],
+      columns: ["fee"],
+      filters: [{ column: "device.created_at", op: "last", value: { count: 1, unit: "day" } }],
+    });
+    expect(joined.status, JSON.stringify(joined.body)).toBe(200);
+    expect(joined.body.rows).toHaveLength(4);
+    // What is not a day or a count is refused, and it matches nothing.
+    for (const filter of [
+      { column: "due", op: "last", value: { count: 0, unit: "day" } },
+      { column: "due", op: "last", value: "30 days" },
+      { column: "fee", op: "last", value: { count: 3, unit: "day" } },
+      { column: "due", op: "between", value: ["2026-11-01"] },
+      { column: "due", op: "between", value: ["2026-11-01", "soon' or '1'='1"] },
+      { column: "note", op: "between", value: [1, 2] },
+    ]) {
+      expect((await visual(alice, { table: "lending/loans", filters: [filter] })).status).toBe(400);
+    }
   });
 
   test("it needs no permission to write SQL, and is held to each table and each table's rows like any query", async () => {
@@ -804,37 +884,53 @@ describe("a dashboard the workspace keeps", () => {
   test("is a resource: drafted, deployed, listed for whoever may see dashboards, and asked like any other", async () => {
     const saved = await alice.put(`${ws()}/drafts/boards/lending`, {
       kind: "dashboard",
-      schemaVersion: 1,
+      schemaVersion: 3,
       body: {
-        version: 2,
         title: "Lending",
-        filters: [{ name: "due", type: "date_range" }],
         widgets: [
           {
             id: "fees",
-            type: "figure",
-            source: {
-              visual: {
-                table: "lending/loans",
-                measures: [{ fn: "sum", column: "fee", as: "fees" }],
+            type: "core/stat",
+            at: { x: 0, y: 0, w: 3, h: 3 },
+            data: {
+              value: {
+                source: {
+                  visual: {
+                    table: "lending/loans",
+                    measures: [{ fn: "sum", column: "fee", as: "fees" }],
+                  },
+                },
+                filters: [{ filter: "due", column: "due" }],
               },
             },
-            filters: [{ filter: "due", column: "due" }],
-            options: { value: "fees", compareTo: "due" },
+            config: { compareTo: "due" },
           },
           {
             id: "by-name",
-            type: "table",
-            source: { query: "reports/fees", values: { statuses: "late" } },
-            filters: [],
+            type: "core/table",
+            at: { x: 0, y: 3, w: 12, h: 6 },
+            data: {
+              rows: { source: { query: "reports/fees", values: { statuses: "late" } } },
+            },
           },
           {
             id: "since",
-            type: "table",
-            source: {
-              sql: `select status, count(*) as n from "lending/loans" where ($1::date is null or due >= $1::date) group by status order by status`,
+            type: "core/table",
+            at: { x: 0, y: 9, w: 12, h: 6 },
+            data: {
+              rows: {
+                source: {
+                  sql: `select status, count(*) as n from "lending/loans" where ($1::date is null or due >= $1::date) group by status order by status`,
+                },
+                filters: [{ filter: "due", parameter: "$1", part: "from" }],
+              },
             },
-            filters: [{ filter: "due", parameter: "$1", part: "from" }],
+          },
+          {
+            id: "filters",
+            type: "core/filter",
+            at: { x: 0, y: 30, w: 12, h: 2 },
+            config: { filters: [{ name: "due", type: "date_range" }] },
           },
         ],
       },
@@ -867,7 +963,7 @@ describe("a dashboard the workspace keeps", () => {
     ]);
     const id = listed[0].id as string;
     const whole = (await carol.client.get(`${boards()}/${id}`)).body;
-    expect(whole.body.widgets).toHaveLength(3);
+    expect(whole.body.widgets).toHaveLength(4);
     // It is changed where resources are, not here.
     expect(
       (await carol.client.put(`${boards()}/${id}`, { title: "Mine" })).status,
@@ -875,26 +971,26 @@ describe("a dashboard the workspace keeps", () => {
 
     const shown = (client: Client, widget: string, filters?: object) =>
       client.get(
-        `${boards()}/${id}/widgets/${widget}/data${filters ? `?filters=${encodeURIComponent(JSON.stringify(filters))}` : ""}`,
+        `${ws()}/widget-data?of=dashboard&path=${id}&widget=${widget}${filters ? `&filters=${encodeURIComponent(JSON.stringify(filters))}` : ""}`,
       );
     // Each of the three kinds of source, each as whoever looks.
-    expect((await shown(alice, "fees")).body.rows).toEqual([[85]]);
-    expect((await shown(carol.client, "fees")).body.rows).toEqual([[40]]);
+    expect((await shown(alice, "fees")).body.inputs.value.rows).toEqual([{ fees: 85 }]);
+    expect((await shown(carol.client, "fees")).body.inputs.value.rows).toEqual([{ fees: 40 }]);
     expect(
       (await shown(carol.client, "fees", { due: { from: "2026-11-15", to: "2026-12-31" } })).body
-        .rows,
-    ).toEqual([[10]]);
+        .inputs.value.rows,
+    ).toEqual([{ fees: 10 }]);
     // A saved query, with a value the widget fixes.
-    expect(rowsOf((await shown(carol.client, "by-name")).body)).toEqual([
+    expect((await shown(carol.client, "by-name")).body.inputs.rows.rows).toEqual([
       { title: "Camera", fees: 30 },
     ]);
     // SQL written in the widget, by someone who could; read by someone who cannot write it.
-    expect(rowsOf((await shown(carol.client, "since")).body)).toEqual([
+    expect((await shown(carol.client, "since")).body.inputs.rows.rows).toEqual([
       { status: "late", n: 1 },
       { status: "out", n: 1 },
     ]);
     expect(
-      rowsOf((await shown(carol.client, "since", { due: { from: "2026-11-15" } })).body),
+      (await shown(carol.client, "since", { due: { from: "2026-11-15" } })).body.inputs.rows.rows,
     ).toEqual([{ status: "out", n: 1 }]);
   });
 });

@@ -15,6 +15,9 @@
     "@volvel/app": "workspace:*",
     "@volvel/manifest": "workspace:*",
     "@volvel/ui": "workspace:*",
+    "@volvel/widgets": "workspace:*",
+    "@volvel/widgets-core": "workspace:*",
+    "@volvel/widgets-labs": "workspace:*",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

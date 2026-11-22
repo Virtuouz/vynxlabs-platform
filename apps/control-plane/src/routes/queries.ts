@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import { DASHBOARD_VERSION, enumColor, type QueryBody, type VisualQuery } from "@volvel/manifest";
+import { dashboardKind, enumColor, type QueryBody, type VisualQuery } from "@volvel/manifest";
 import { Type } from "typebox";
 import { loadCatalog } from "../kernel/data/apply.js";
 import { ALLOWED_FUNCTIONS } from "../kernel/data/query/allowed.js";
@@ -60,18 +60,24 @@ export const queryRoutes =
     const validateVisual = (visual: unknown) => {
       const result = kernel.kinds.validateManifest({
         kind: "dashboard",
-        schemaVersion: 1,
+        schemaVersion: dashboardKind.schemaVersion,
         path: "preview",
         ownership: "ui",
         body: {
-          version: DASHBOARD_VERSION,
-          widgets: [{ id: "preview", type: "table", source: { visual } }],
+          widgets: [
+            {
+              id: "preview",
+              type: "core/table",
+              at: { x: 0, y: 0, w: 12, h: 6 },
+              data: { rows: { source: { visual } } },
+            },
+          ],
         },
       });
       return result.ok
         ? []
         : result.issues.map((issue) => ({
-            path: issue.path.replace("/body/widgets/0/source/visual", "/query"),
+            path: issue.path.replace("/body/widgets/0/data/rows/source/visual", "/query"),
             message: issue.message,
           }));
     };
@@ -179,6 +185,23 @@ export const queryRoutes =
                       name: Type.String(),
                       type: Type.String(),
                       references: NullableString,
+                      required: Type.Optional(
+                        Type.Boolean({
+                          description:
+                            "Whether the column is NOT NULL. A row must give it unless it has a default.",
+                        }),
+                      ),
+                      default: Type.Optional(
+                        Type.Unknown({
+                          description: "What a row gets when it gives none, when the table says.",
+                        }),
+                      ),
+                      description: Type.Optional(
+                        Type.String({
+                          description:
+                            "What the column holds, when its definition says (in cents, say).",
+                        }),
+                      ),
                       values: Type.Optional(
                         Type.Array(
                           Type.Object({
@@ -208,6 +231,20 @@ export const queryRoutes =
         const catalog = (await loadCatalog(data, params.w)).filter(
           (table) => table.status === "active",
         );
+        // What a column is for is in its table's definition, not in the catalog.
+        const defined = new Map(
+          (
+            await db
+              .selectFrom("resource")
+              .select(["path", "body"])
+              .where("workspace_id", "=", params.w)
+              .where("kind", "=", "table")
+              .execute()
+          ).map((one) => [
+            one.path,
+            (one.body as { columns?: Record<string, { description?: string }> } | null)?.columns,
+          ]),
+        );
         const tables = [];
         for (const table of catalog) {
           const allowed = await ctx.allowed("data:read", {
@@ -229,6 +266,13 @@ export const queryRoutes =
                   name: column.name,
                   type: column.type,
                   references: column.referenceTable,
+                  ...(column.required ? { required: true } : {}),
+                  ...(column.default !== null && column.default !== undefined
+                    ? { default: column.default }
+                    : {}),
+                  ...(defined.get(table.name)?.[column.name]?.description
+                    ? { description: defined.get(table.name)?.[column.name]?.description as string }
+                    : {}),
                   ...(column.options?.values
                     ? {
                         values: column.options.values.map((one) => {

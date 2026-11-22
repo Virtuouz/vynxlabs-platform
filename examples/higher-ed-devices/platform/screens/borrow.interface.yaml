@@ -1,112 +1,122 @@
-# The students' pages: ask for a device, and see requests and loans.
-schemaVersion: 1
+# The students' pages: what they have asked for and what they have out. Asking
+# for a device is a button that asks, and cancelling is an action on each request.
+schemaVersion: 2
 body:
   title: Borrow a device
-  description: Ask for a laptop, hotspot or calculator, and see what you have out.
+  description: See what you have asked for and what you have out.
   pages:
     - id: mine
       title: My devices
       widgets:
         - id: intro
-          type: text
-          options:
-            text: Ask for a device and the Tech Desk will set one aside for you. Calculators and chargers are approved at once. Bring your student card when you collect it.
-          at:
-            x: 0
-            y: 0
-            w: 8
-            h: 2
+          type: core/text
+          at: { x: 0, y: 0, w: 9, h: 2 }
+          config:
+            text: Ask the Tech Desk for a device and they will set one aside for you. Calculators and chargers are approved at once. Bring your student card when you collect it.
         - id: ask
-          type: action
-          action:
-            label: Ask for a device
-            target:
-              kind: script
-              path: requests/submit
-            result:
-              show: toast
-              refresh:
-                - requests
-          at:
-            x: 8
-            y: 0
-            w: 4
-            h: 2
+          type: core/button
+          at: { x: 9, y: 0, w: 3, h: 1 }
+          config: { label: Ask for a device, tone: primary }
+          on:
+            click:
+              confirm:
+                title: Ask for a device
+                text: The Tech Desk will set one aside for you.
+                button: Send request
+                ask:
+                  - {
+                      name: kind,
+                      label: What would you like to borrow,
+                      type: choice,
+                      required: true,
+                      choices: [laptop, chromebook, hotspot, ipad, calculator, charger],
+                    }
+                  - { name: reason, label: What it is for, type: long_text, required: true }
+                  - {
+                      name: location,
+                      label: Collect it from,
+                      type: choice,
+                      required: true,
+                      choices: [tech-desk, library],
+                    }
+              steps:
+                - do: script
+                  path: requests/submit
+                  input:
+                    kind: { asked: kind }
+                    reason: { asked: reason }
+                    location: { asked: location }
+                - {
+                    do: message,
+                    text: Request sent. The Tech Desk will let you know when it is ready.,
+                    tone: success,
+                  }
         - id: requests
           title: My requests
-          type: table
-          table: requests
-          fields:
-            - column: number
-            - column: kind
-            - column: status
-            - column: device_tag
-              label: Device
-            - column: location
-              label: Collect from
-            - column: decision_note
-              label: Note
-          sort:
-            - column: created_at
-              desc: true
-          pageSize: 10
-          actions:
-            - label: Cancel
-              target:
-                kind: script
-                path: requests/cancel
-              input:
-                request: row.number
-              confirm: Withdraw {{row.number}}?
-              result:
-                refresh:
-                  - requests
-          at:
-            x: 0
-            y: 2
-            w: 12
-            h: 7
+          type: core/table
+          at: { x: 0, y: 2, w: 12, h: 7 }
+          data:
+            rows:
+              source:
+                visual:
+                  table: requests
+                  sort: [{ by: created_at, descending: true }]
+          config:
+            pageSize: 10
+            columns:
+              - { column: number }
+              - { column: kind }
+              - { column: status }
+              - { column: device_tag, label: Device }
+              - { column: location, label: Collect from }
+              - { column: decision_note, label: Note }
+            rowActions:
+              - id: cancel
+                label: Cancel
+                tone: danger
+                action:
+                  when:
+                    - { field: status, of: event, test: is_not, value: fulfilled }
+                    - { field: status, of: event, test: is_not, value: denied }
+                    - { field: status, of: event, test: is_not, value: cancelled }
+                  confirm:
+                    title: Cancel this request?
+                    text: "Withdraw {number}? A device set aside for it goes back on the shelf."
+                    button: Cancel request
+                  steps:
+                    - do: script
+                      path: requests/cancel
+                      input:
+                        request: { record: number, of: event }
+                    - { do: message, text: Request cancelled, tone: success }
         - id: loans
           title: On loan to me
-          type: table
-          table: loans
-          fields:
-            - column: device_tag
-              label: Device
-            - column: kind
-            - column: due_on
-              label: Due back
-            - column: overdue
-          sort:
-            - column: due_on
-          filter:
-            column: status
-            value: out
-          pageSize: 10
-          at:
-            x: 0
-            y: 9
-            w: 12
-            h: 5
+          type: core/table
+          at: { x: 0, y: 9, w: 12, h: 5 }
+          data:
+            rows:
+              source:
+                visual:
+                  table: loans
+                  filters: [{ column: status, op: eq, value: out }]
+                  sort: [{ by: due_on }]
+          config:
+            pageSize: 10
+            columns:
+              - { column: device_tag, label: Device }
+              - { column: kind }
+              - { column: due_on, label: Due back }
+              - { column: overdue }
         - id: free
           title: Free to borrow now
-          type: chart
-          table: devices
-          summary:
-            groupBy:
-              - column: kind
-            aggregates:
-              - fn: count
-                as: free
-          filter:
-            column: status
-            value: available
-          options:
-            mark: bar
-            x: kind
-            y: free
-          at:
-            x: 0
-            y: 14
-            w: 12
-            h: 7
+          type: core/chart
+          at: { x: 0, y: 14, w: 12, h: 7 }
+          data:
+            rows:
+              source:
+                visual:
+                  table: devices
+                  filters: [{ column: status, op: eq, value: available }]
+                  groupBy: [{ column: kind }]
+                  measures: [{ fn: count, as: free }]
+          config: { mark: bar }

@@ -5,6 +5,15 @@
       "path": "packages/db"
     },
     {
+      "path": "packages/widget-sdk"
+    },
+    {
+      "path": "packages/widgets-core"
+    },
+    {
+      "path": "packages/widgets-labs"
+    },
+    {
       "path": "packages/manifest"
     },
     {

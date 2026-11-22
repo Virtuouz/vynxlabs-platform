@@ -8,8 +8,16 @@ import {
 } from "./bundle.js";
 import { checkFlow, type FlowBody, flowExpressions, flowGrants, flowReferences } from "./flow.js";
 import { checkForm, type FormTrigger } from "./form.js";
-import { checkInterface, type InterfaceBody, interfaceTables } from "./interface.js";
 import { BUILTIN_CONNECTORS, isThemeValue, registerPlatformKinds } from "./kinds.js";
+import {
+  checkDashboard,
+  checkInterface,
+  type DashboardBody,
+  type InterfaceBody,
+  interfaceTables,
+  widgetFlows,
+  widgetTables,
+} from "./page.js";
 import { KindRegistry, validateJson } from "./registry.js";
 import { checkTable, type TableBody } from "./table.js";
 
@@ -248,15 +256,31 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
         );
       }
     }
-    if (manifest.kind === "interface") {
-      const body = manifest.body as unknown as InterfaceBody;
+    if (manifest.kind === "interface" || manifest.kind === "dashboard") {
+      const isInterface = manifest.kind === "interface";
+      const body = manifest.body as unknown as InterfaceBody | DashboardBody;
       // A table made in the console is in no bundle, so a table that is not here is not
       // an error. A path that is here and is something else is.
-      for (const table of interfaceTables(body)) {
+      const tables = isInterface
+        ? interfaceTables(body as InterfaceBody)
+        : widgetTables((body as DashboardBody).widgets);
+      // The flows an approvals widget asks of: where the bundle has the path, it is a flow.
+      const widgetsOf = isInterface
+        ? (body as InterfaceBody).pages.flatMap((page) => page.widgets)
+        : (body as DashboardBody).widgets;
+      for (const path of widgetFlows(widgetsOf)) {
+        const found = byPath.get(path);
+        if (found && found.kind !== "flow") {
+          problems.push(
+            `${manifest.path} (${manifest.kind}): asks the approvals of "${path}", which is ${/^[aeiou]/.test(found.kind) ? "an" : "a"} ${found.kind}, not a flow.`,
+          );
+        }
+      }
+      for (const table of tables) {
         const found = byPath.get(table);
         if (found && found.kind !== "table") {
           problems.push(
-            `${manifest.path} (interface): shows "${table}", which is ${/^[aeiou]/.test(found.kind) ? "an" : "a"} ${found.kind}, not a table.`,
+            `${manifest.path} (${manifest.kind}): shows "${table}", which is ${/^[aeiou]/.test(found.kind) ? "an" : "a"} ${found.kind}, not a table.`,
           );
         }
       }
@@ -264,8 +288,16 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
         const found = byPath.get(path);
         return found?.kind === "table" ? (found.body as unknown as TableBody) : undefined;
       };
-      for (const issue of checkInterface(body, tableOf)) {
-        problems.push(`${manifest.path} (interface): ${issue.path} ${issue.message}`);
+      const issues = isInterface
+        ? checkInterface(body as InterfaceBody, tableOf, undefined, (path) => {
+            const found = byPath.get(path);
+            return found?.kind === "flow"
+              ? { nodes: Object.values((found.body as unknown as FlowBody).nodes ?? {}) }
+              : undefined;
+          })
+        : checkDashboard(body as DashboardBody, tableOf);
+      for (const issue of issues) {
+        problems.push(`${manifest.path} (${manifest.kind}): ${issue.path} ${issue.message}`);
       }
     }
     if (manifest.kind === "app") {

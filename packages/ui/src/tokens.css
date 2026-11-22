@@ -2,39 +2,73 @@
  * Theme tokens. Every color, radius and font in the kit comes from one of
  * these variables, so a tenant's branding is a different set of values and
  * nothing else. Tailwind utilities are generated from the same variables.
+ *
+ * The dark values are the ones the design boards (temp/Volvel App Builder
+ * redesign.html) are drawn with; the light values keep the same cyan hue
+ * family on light surfaces.
  */
 @import "tailwindcss";
 @source "./";
 
+/*
+ * Geist and Geist Mono, the faces the boards are set in: variable fonts, Latin
+ * range, downloaded unchanged from Google Fonts (SIL Open Font License 1.1,
+ * ../fonts/OFL.txt). They are served with the page, never fetched from a
+ * network. A brand that sets `--vx-font` replaces them; the system faces after
+ * them cover every other script.
+ */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../fonts/geist-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("../fonts/geist-mono-latin.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304,
+    U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
-  --vx-canvas: #eef1f4;
+  --vx-canvas: #f3f5f8;
   --vx-surface: #ffffff;
-  --vx-sunken: #e3e8ed;
-  --vx-line: #d3dae2;
-  --vx-ink: #16202e;
+  --vx-sunken: #eef1f5;
+  --vx-line: #dde3ea;
+  --vx-ink: #0f1720;
   --vx-ink-muted: #4b5666;
-  --vx-action: #0e5f7a;
+  --vx-action: #0b6b88;
   --vx-action-ink: #ffffff;
-  --vx-action-soft: #dcedf3;
+  --vx-action-soft: #dcf0f7;
   --vx-attention: #9a4707;
   --vx-attention-soft: #fdf0dc;
   --vx-danger: #b3261e;
   --vx-danger-soft: #fbe9e7;
   --vx-success: #1b6e45;
   --vx-success-soft: #e1f3e9;
-  --vx-structure: #e7ebf0;
+  --vx-structure: #eaeef3;
   --vx-raised: #ffffff;
-  --vx-selected: #e3eff4;
-  --vx-line-strong: #b4bfcb;
+  --vx-selected: #e0f0f6;
+  --vx-line-strong: #c6cfd9;
   /* The edge of a control, such as an input: 3:1 or more against what is around it. */
   --vx-line-control: #748090;
   --vx-ink-subtle: #586474;
   --vx-code-bg: #f5f7f9;
-  --vx-focus: #0e5f7a;
-  --vx-radius-control: 6px;
-  --vx-radius-panel: 8px;
-  --vx-font: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --vx-font-code: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --vx-focus: #0b6b88;
+  --vx-radius-control: 8px;
+  --vx-radius-panel: 12px;
+  --vx-font:
+    "Geist", ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --vx-font-code:
+    "Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   color-scheme: light;
 }
 
@@ -44,57 +78,57 @@
  */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --vx-canvas: #10161f;
-    --vx-surface: #18212d;
-    --vx-sunken: #0c1118;
-    --vx-line: #2b3746;
-    --vx-ink: #e6ebf1;
-    --vx-ink-muted: #9aa7b6;
-    --vx-action: #5cb8d6;
-    --vx-action-ink: #06222c;
-    --vx-action-soft: #17323d;
-    --vx-attention: #f0a94b;
-    --vx-attention-soft: #3a2a12;
-    --vx-danger: #f2857d;
-    --vx-danger-soft: #3d1b18;
-    --vx-success: #6fcf9a;
-    --vx-success-soft: #153326;
-    --vx-structure: #0c1118;
-    --vx-raised: #1f2a38;
-    --vx-selected: #172430;
-    --vx-line-strong: #3a4859;
-    --vx-line-control: #6b7b90;
-    --vx-ink-subtle: #8a97a7;
-    --vx-code-bg: #0b1016;
-    --vx-focus: #5cb8d6;
+    --vx-canvas: #0e1218;
+    --vx-surface: #11161d;
+    --vx-sunken: #0f141a;
+    --vx-line: #1f2731;
+    --vx-ink: #e7eaee;
+    --vx-ink-muted: #9aa5b4;
+    --vx-action: #5cc2e6;
+    --vx-action-ink: #071016;
+    --vx-action-soft: #14252e;
+    --vx-attention: #f0a541;
+    --vx-attention-soft: #2a2318;
+    --vx-danger: #ff8a8d;
+    --vx-danger-soft: #2e1a1e;
+    --vx-success: #4fd1a5;
+    --vx-success-soft: #16292a;
+    --vx-structure: #0b0f14;
+    --vx-raised: #192029;
+    --vx-selected: #13212a;
+    --vx-line-strong: #2a3542;
+    --vx-line-control: #5e6d81;
+    --vx-ink-subtle: #8290a1;
+    --vx-code-bg: #0b0f14;
+    --vx-focus: #5cc2e6;
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --vx-canvas: #10161f;
-  --vx-surface: #18212d;
-  --vx-sunken: #0c1118;
-  --vx-line: #2b3746;
-  --vx-ink: #e6ebf1;
-  --vx-ink-muted: #9aa7b6;
-  --vx-action: #5cb8d6;
-  --vx-action-ink: #06222c;
-  --vx-action-soft: #17323d;
-  --vx-attention: #f0a94b;
-  --vx-attention-soft: #3a2a12;
-  --vx-danger: #f2857d;
-  --vx-danger-soft: #3d1b18;
-  --vx-success: #6fcf9a;
-  --vx-success-soft: #153326;
-  --vx-structure: #0c1118;
-  --vx-raised: #1f2a38;
-  --vx-selected: #172430;
-  --vx-line-strong: #3a4859;
-  --vx-line-control: #6b7b90;
-  --vx-ink-subtle: #8a97a7;
-  --vx-code-bg: #0b1016;
-  --vx-focus: #5cb8d6;
+  --vx-canvas: #0e1218;
+  --vx-surface: #11161d;
+  --vx-sunken: #0f141a;
+  --vx-line: #1f2731;
+  --vx-ink: #e7eaee;
+  --vx-ink-muted: #9aa5b4;
+  --vx-action: #5cc2e6;
+  --vx-action-ink: #071016;
+  --vx-action-soft: #14252e;
+  --vx-attention: #f0a541;
+  --vx-attention-soft: #2a2318;
+  --vx-danger: #ff8a8d;
+  --vx-danger-soft: #2e1a1e;
+  --vx-success: #4fd1a5;
+  --vx-success-soft: #16292a;
+  --vx-structure: #0b0f14;
+  --vx-raised: #192029;
+  --vx-selected: #13212a;
+  --vx-line-strong: #2a3542;
+  --vx-line-control: #5e6d81;
+  --vx-ink-subtle: #8290a1;
+  --vx-code-bg: #0b0f14;
+  --vx-focus: #5cc2e6;
   color-scheme: dark;
 }
 
@@ -122,6 +156,11 @@
   --color-ink-subtle: var(--vx-ink-subtle);
   --color-code-bg: var(--vx-code-bg);
   --color-focus: var(--vx-focus);
+  --color-field: var(--vx-field);
+  --color-hover: var(--vx-hover);
+  --color-ring: var(--vx-ring);
+  --color-track: var(--vx-track);
+  --color-scrim: var(--vx-scrim);
   /* Tags, chips, menu items, grid cells, inline code: a step inside a control. */
   --radius-inner: calc(var(--vx-radius-control) - 2px);
   --radius-control: var(--vx-radius-control);
@@ -139,23 +178,40 @@
 
 /*
  * Values a brand does not set. How dark a shadow is: deeper in dark, where a
- * surface barely differs from what is under it. A control's height: tenant
- * apps keep 36 px, and the console sets 32 px for itself.
+ * surface barely differs from what is under it. A control's height: 36 px
+ * everywhere, the boards' control. A text field's fill, the wash a row or a
+ * menu item takes on hover, the ring round something selected and the track a
+ * segmented control or a key chip sits on: worked out from the brand's own
+ * tokens, so changing those changes these.
  */
 html {
   --vx-shadow-overlay: rgb(0 0 0 / 0.1);
   --vx-shadow-modal: rgb(0 0 0 / 0.16);
   --vx-control-height: 36px;
+  --vx-field: var(--vx-surface);
+  --vx-hover: color-mix(in srgb, var(--vx-ink) 6%, transparent);
+  --vx-ring: color-mix(in srgb, var(--vx-action) 55%, transparent);
+  --vx-track: var(--vx-structure);
+  /* What the page turns under a dialog or a sheet. */
+  --vx-scrim: rgb(15 23 32 / 0.4);
 }
 @media (prefers-color-scheme: dark) {
   html:not([data-theme="light"]) {
     --vx-shadow-overlay: rgb(0 0 0 / 0.4);
     --vx-shadow-modal: rgb(0 0 0 / 0.5);
+    --vx-field: var(--vx-sunken);
+    --vx-scrim: rgb(4 7 11 / 0.7);
+    --vx-hover: color-mix(in srgb, #94a3b8 8%, transparent);
+    --vx-ring: color-mix(in srgb, var(--vx-action) 50%, transparent);
   }
 }
 html[data-theme="dark"] {
   --vx-shadow-overlay: rgb(0 0 0 / 0.4);
   --vx-shadow-modal: rgb(0 0 0 / 0.5);
+  --vx-field: var(--vx-sunken);
+  --vx-scrim: rgb(4 7 11 / 0.7);
+  --vx-hover: color-mix(in srgb, #94a3b8 8%, transparent);
+  --vx-ring: color-mix(in srgb, var(--vx-action) 50%, transparent);
 }
 
 /*
@@ -290,5 +346,88 @@ body {
   * {
     transition: none !important;
     animation: none !important;
+  }
+}
+
+/*
+ * Checkboxes and radios, drawn the same in both themes as the boards draw them: an empty box or
+ * ring with the control's border while off (the browser's own dark box is a grey fill), the
+ * action colour with a tick or a dot while on. The ones that carry the control for a styled label
+ * (`sr-only`) are not seen and are left alone.
+ */
+input[type="checkbox"]:not(.sr-only),
+input[type="radio"]:not(.sr-only) {
+  appearance: none;
+  display: inline-grid;
+  flex-shrink: 0;
+  place-content: center;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  border: 1.5px solid var(--vx-line-control);
+  background: transparent;
+  cursor: pointer;
+}
+input[type="checkbox"]:not(.sr-only) {
+  border-radius: 4px;
+}
+input[type="radio"]:not(.sr-only) {
+  border-radius: 999px;
+}
+input[type="checkbox"]:not(.sr-only):checked,
+input[type="radio"]:not(.sr-only):checked {
+  border-color: var(--vx-action);
+}
+input[type="checkbox"]:not(.sr-only):checked {
+  background:
+    var(--vx-action)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 100% no-repeat;
+}
+input[type="radio"]:not(.sr-only):checked {
+  background: radial-gradient(circle, var(--vx-action) 0 40%, transparent 45%);
+}
+input[type="checkbox"]:not(.sr-only):indeterminate {
+  border-color: var(--vx-action);
+  background:
+    var(--vx-action)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 8h8' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E")
+    center / 100% no-repeat;
+}
+input[type="checkbox"]:not(.sr-only):disabled,
+input[type="radio"]:not(.sr-only):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/*
+ * Forced colors (Windows high contrast) removes every background, so what is chosen cannot be told
+ * by its fill. Whatever says it is chosen (a page, a tab, a device, a tile, a chip, the app's page
+ * tabs) is outlined in the system's highlight colour, once, here, for everything in the kit. A
+ * focused one keeps its focus ring.
+ */
+@media (forced-colors: active) {
+  :is(
+    [aria-current="page"],
+    [aria-current="true"],
+    [aria-selected="true"],
+    [aria-pressed="true"],
+    [aria-checked="true"],
+    [data-selected],
+    [data-state="on"],
+    [data-state="active"],
+    [data-state="checked"]
+  ):not(:focus-visible, input, svg) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}
+
+/* A button that cannot be pressed keeps an edge in forced colors, drawn in the system's grey, whatever its fill was. */
+@media (forced-colors: active) {
+  :is(button, a[role="button"])[disabled],
+  :is(button, a, [role="menuitem"])[aria-disabled="true"] {
+    border: 2px solid GrayText;
+    color: GrayText;
   }
 }

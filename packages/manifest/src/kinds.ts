@@ -1,6 +1,5 @@
-import { dashboardKind } from "./dashboard.js";
 import { PATH_PATTERN } from "./envelope.js";
-import { interfaceBodySchema } from "./interface.js";
+import { dashboardKind, interfaceKind } from "./page.js";
 import type { KindDefinition, KindRegistry } from "./registry.js";
 
 export const PERMISSION_PATTERN = "^(\\*|[a-z][a-z0-9_]*):(\\*|read|write)$";
@@ -1076,7 +1075,7 @@ export const tableKind: KindDefinition = {
                       color: {
                         type: "string",
                         pattern: `^(${Object.keys(ENUM_COLORS).join("|")}|#[0-9a-fA-F]{6})$`,
-                        description: "A colour by name, or as #rrggbb.",
+                        description: "A color by name, or as #rrggbb.",
                       },
                       renamedFrom: {
                         ...enumValue,
@@ -1298,12 +1297,6 @@ export const themeKind: KindDefinition = {
     },
     additionalProperties: false,
   },
-};
-
-export const interfaceKind: KindDefinition = {
-  kind: "interface",
-  schemaVersion: 1,
-  body: interfaceBodySchema,
 };
 
 export const appKind: KindDefinition = {

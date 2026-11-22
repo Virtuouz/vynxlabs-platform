@@ -1,285 +1,674 @@
-import type { InterfacePage, WidgetAction } from "@volvel/manifest";
+import type { Page, PageWidget } from "@volvel/manifest";
+// The action model by its own entry: nothing that compiles a validator, which a served app's
+// content security policy (no eval) would refuse.
+import {
+  type ActingUser,
+  type Action,
+  type AskedField,
+  type Condition,
+  conditionsHold,
+  type Step,
+} from "@volvel/manifest/action";
 import {
   Button,
   Closing,
   Dialog,
-  type JsonSchema,
   Notice,
   SchemaForm,
-  useDialogs,
+  SideSheet,
+  Skeleton,
+  useToast,
 } from "@volvel/ui";
-import { type ReactNode, useState } from "react";
-import { type DataClient, failure, type Row, type StartedRun, type TargetInfo } from "./data.ts";
+import type { ActOutcome, EventPayload } from "@volvel/widgets";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type ConfirmFacts, confirmWords, isDefaultTitle } from "./confirmWords.ts";
+import {
+  ActionError,
+  type FilterValues,
+  type PageDataClient,
+  type ViewRegistry,
+  type WireData,
+} from "./types.ts";
+import { toWidgetData } from "./wire.ts";
 
-/** What a path into a page can read: the rows chosen, the row in hand, the filters set. */
-export interface PageScope {
-  selection: Record<string, Row>;
-  row?: Row | undefined;
-  filters: Record<
-    string,
-    { from?: string | undefined; to?: string | undefined; value?: string | undefined }
-  >;
-}
+/** Where a page may be taken to by an action, as the host is asked. */
+export type NavigateTo =
+  | {
+      page: string;
+      record?: string;
+      as: "page" | "sheet" | "modal";
+      /** For a sheet opened from a list of rows: the ids of that list, in order, so the sheet can step through it. */
+      among?: readonly string[];
+      /** How many rows that list has in all, when the server said. */
+      amongTotal?: number;
+      /** Reads the ids that follow the list, once: for stepping past the rows loaded. Absent when there are no more. */
+      amongMore?: () => Promise<readonly string[]>;
+    }
+  | { close: true };
 
-/** The value a path names, or undefined when the page holds nothing there. */
-export function readPath(path: string, scope: PageScope): unknown {
-  const [root, first, second] = path.split(".") as [string, string, string | undefined];
-  if (root === "row") return scope.row?.[first];
-  if (root === "selection") return scope.selection[first]?.[second as string];
-  if (root === "filters") {
-    const set = scope.filters[first];
-    return set?.[second as "from" | "to" | "value"];
+type Row = Readonly<Record<string, unknown>>;
+
+/** What saving a field edited in place is, to the host. */
+const EDIT_IN_PLACE: Action = { steps: [], done: "Saved" };
+
+/** The action a widget holds at a place: `on/<event>`, `config/<property>`, or `config/<property>/<index>/action`. */
+export function actionAt(widget: PageWidget, at: string): Action | undefined {
+  const parts = at.split("/");
+  if (parts[0] === "on" && parts.length === 2) return widget.on?.[parts[1] as string];
+  if (parts[0] !== "config") return undefined;
+  // A record detail that lets people edit in place: the edit is an action of its own, with no
+  // steps to run here. The server checks the fields as it does an action's.
+  if (at === "config/edit") return widget.config?.edit === true ? EDIT_IN_PLACE : undefined;
+  const property = widget.config?.[parts[1] as string];
+  if (parts.length === 2) return isAction(property) ? property : undefined;
+  if (parts.length === 4 && parts[3] === "action" && Array.isArray(property)) {
+    const item = property[Number(parts[2])] as { action?: unknown } | undefined;
+    return isAction(item?.action) ? item.action : undefined;
   }
   return undefined;
 }
 
-const present = (value: unknown) => value !== undefined && value !== null && value !== "";
+const isAction = (value: unknown): value is Action =>
+  typeof value === "object" && value !== null && Array.isArray((value as Action).steps);
 
-/** The input an action maps from the page. What is not there is left out, to be asked for. */
-export function mappedInput(action: WidgetAction, scope: PageScope): Record<string, unknown> {
-  const input: Record<string, unknown> = {};
-  for (const [name, mapped] of Object.entries(action.input ?? {})) {
-    const value = typeof mapped === "string" ? readPath(mapped, scope) : mapped.value;
-    if (present(value)) input[name] = value;
-  }
-  return input;
+/**
+ * Whether conditions hold, as far as the browser can know. A record that has not been
+ * read (`undefined`) is not known: what is asked of it is left to the server, whose
+ * answer is the one that counts. `null` is a record known not to be there.
+ */
+export function holds(
+  conditions: readonly Condition[] | undefined,
+  records: { this?: Row | null | undefined; event?: Row | null | undefined },
+  user: ActingUser | undefined,
+): boolean {
+  const known = (conditions ?? []).filter(
+    (one) => "user" in one || records[one.of ?? "this"] !== undefined,
+  );
+  return conditionsHold(known, { this: records.this ?? null, event: records.event ?? null }, user);
 }
 
-/** Whether an action may be pressed now: what it waits for is there. */
-export function actionReady(action: WidgetAction, scope: PageScope): boolean {
-  return !action.enabledWhen || present(readPath(action.enabledWhen, scope));
+/** A group's title from its path or key: the last segment, hyphens and underscores as spaces, first letter capital. */
+export function groupTitle(path: string, names?: Readonly<Record<string, string>>): string {
+  // What the group is called now: a group renamed keeps its key, so the key is only a fallback.
+  const named = names?.[path];
+  if (named) return named;
+  const last = path.split("/").filter(Boolean).at(-1) ?? path;
+  const words = last.replace(/[-_]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/** A confirmation with the page's values put in. They are text: nothing in them is markup. */
-export function fillText(text: string, scope: PageScope): string {
-  return text.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, path: string) => {
-    const value = readPath(path, scope);
-    return present(value) ? String(value) : "—";
-  });
-}
-
-/** Widgets whose chosen row an action reads: they must let a row be chosen. */
-export function selectedBy(page: InterfacePage): Set<string> {
-  const ids = new Set<string>();
-  const note = (path: string | undefined) => {
-    const [root, widget] = (path ?? "").split(".");
-    if (root === "selection" && widget) ids.add(widget);
-  };
-  for (const widget of page.widgets) {
-    for (const action of [...(widget.action ? [widget.action] : []), ...(widget.actions ?? [])]) {
-      for (const mapped of Object.values(action.input ?? {})) {
-        if (typeof mapped === "string") note(mapped);
-      }
-      note(action.enabledWhen);
-      for (const match of (action.confirm ?? "").matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) {
-        note(match[1]);
-      }
-    }
-  }
-  return ids;
-}
-
-/** How long a page waits on a run before it says the run goes on without it. */
-const WAIT_MS = 30_000;
-const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
-
-/** What pressing an action came to, as the page says it. */
-export interface ActionOutcome {
-  tone: "success" | "danger" | "attention";
-  text: string;
-  output?: unknown;
-  run?: StartedRun;
-}
-
-export interface ActionHost {
-  client: DataClient;
-  targets: Record<string, TargetInfo>;
-  /** Where a run's page is, for someone who may open it. Without it, runs are not linked. */
-  runLink?: ((run: StartedRun) => string) | undefined;
-  /** Called once an action succeeds, so the page reads its rows again. */
-  onDone: () => void;
-  /** Says it does not start anything: the builder's preview outside a dev workspace. */
-  dryRun?: boolean;
-  /** Whether the person is staff, who are told a failure's reason; end users are not. */
-  member?: boolean;
+/** "Practice managers and Billing" / "A, B and C". */
+function listOf(items: readonly string[]): string {
+  return items.length <= 1
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 }
 
 /**
- * Runs actions for a page: asks for what the page does not map, confirms,
- * starts it as the person looking, waits a while for it, and says how it went.
+ * A group path's key: `groups/<key>` (member group), `end-user-groups/<key>` (end-user group) or a
+ * bare key. The same rule as `parseGroupPath` in `@volvel/manifest`, copied because the served
+ * runtime may not import the manifest's main entry.
  */
-export function useActions(host: ActionHost) {
-  const dialogs = useDialogs();
-  const [asking, setAsking] = useState<{
-    action: WidgetAction;
-    schema: JsonSchema;
-    value: Record<string, unknown>;
-    answer: (input: Record<string, unknown> | null) => void;
-  }>();
-  const [outcome, setOutcome] = useState<ActionOutcome & { label: string }>();
-  const [busy, setBusy] = useState<string>();
+export function groupKey(path: string): string {
+  if (path.startsWith("groups/")) return path.slice("groups/".length);
+  if (path.startsWith("end-user-groups/")) return path.slice("end-user-groups/".length);
+  return path;
+}
 
-  const info = (action: WidgetAction) =>
-    host.targets[`${action.target.kind}:${action.target.path}`];
-  const canStart = (action: WidgetAction) => info(action)?.canStart === true;
+/** Whether the person is in one of `groups`: one has a key among the user's group keys. */
+export function inGroups(groups: readonly string[], user: ActingUser | undefined): boolean {
+  const mine = user?.groups ?? [];
+  return groups.some((path) => mine.includes(groupKey(path)));
+}
 
-  const ask = (action: WidgetAction, schema: JsonSchema, value: Record<string, unknown>) =>
-    new Promise<Record<string, unknown> | null>((answer) =>
-      setAsking({ action, schema, value, answer }),
-    );
+/** Whether the person may run the action by its `runBy`; no groups named means anyone. The server decides again. */
+export function mayRun(action: Action | undefined, user: ActingUser | undefined): boolean {
+  const groups = action?.runBy?.groups;
+  return !groups || groups.length === 0 || inGroups(groups, user);
+}
 
-  const run = async (action: WidgetAction, scope: PageScope) => {
-    const target = info(action);
-    if (!target?.canStart) return;
-    let input = mappedInput(action, scope);
-    const schema = target.inputSchema as JsonSchema | null;
-    const required = (schema?.required as string[] | undefined) ?? [];
-    if (schema && required.some((name) => !(name in input))) {
-      const answered = await ask(action, schema, input);
-      if (!answered) return;
-      input = answered;
-    }
-    if (action.confirm) {
-      const sure = await dialogs.confirm({
-        title: action.label,
-        text: fillText(action.confirm, scope),
-        action: action.label,
+/** "Only Practice managers and Billing can do this", when the person is outside the action's groups. */
+export function whyNotRun(
+  action: Action | undefined,
+  user: ActingUser | undefined,
+  names?: Readonly<Record<string, string>>,
+): string | undefined {
+  if (mayRun(action, user)) return undefined;
+  return `Only ${listOf((action?.runBy?.groups ?? []).map((path) => groupTitle(path, names)))} can do this.`;
+}
+
+/** Whether a widget is drawn to this person by `rules.seenBy`; drawing only, never security. */
+export function seenByUser(
+  rules: { seenBy?: { groups: string[] } } | undefined,
+  user: ActingUser | undefined,
+): boolean {
+  const groups = rules?.seenBy?.groups;
+  return !groups || groups.length === 0 || inGroups(groups, user);
+}
+
+/** The small tag a widget carries while building: "Only for Practice managers". */
+export function seenByTag(
+  rules: { seenBy?: { groups: string[] } } | undefined,
+  names?: Readonly<Record<string, string>>,
+): string | undefined {
+  const groups = rules?.seenBy?.groups;
+  return groups && groups.length > 0
+    ? `Only for ${listOf(groups.map((path) => groupTitle(path, names)))}`
+    : undefined;
+}
+
+/** A confirmation's text, with `{column}` filled from the record it is about. */
+export function fillText(text: string, row: Row | undefined, label: (column: string) => string) {
+  return text.replace(/\{([a-z][a-z0-9_]*)\}/g, (_all, column: string) => {
+    const value = row?.[column];
+    if (value === undefined || value === null || value === "") return row ? "" : "this record";
+    return label(String(value));
+  });
+}
+
+/** What asked fields are, as a form's schema: typed, with the ones that must be given listed. */
+export function askedSchema(ask: readonly AskedField[]) {
+  const properties: Record<string, unknown> = {};
+  for (const field of ask) {
+    const base = { title: field.label };
+    properties[field.name] =
+      field.type === "number"
+        ? { ...base, type: "number" }
+        : field.type === "date"
+          ? { ...base, type: "string", format: "date" }
+          : field.type === "long_text"
+            ? { ...base, type: "string", format: "textarea" }
+            : field.type === "choice"
+              ? { ...base, type: "string", enum: field.choices ?? [] }
+              : { ...base, type: "string" };
+  }
+  return {
+    type: "object",
+    properties,
+    required: ask.filter((field) => field.required).map((field) => field.name),
+    additionalProperties: false,
+  };
+}
+
+/** A toast, or where there is no toast to show, nothing: the host that has none shows nothing, and a failure is still returned. */
+function useSay() {
+  let toast: ReturnType<typeof useToast> | undefined;
+  try {
+    // biome-ignore lint/correctness/useHookAtTopLevel: whether a provider is above never changes for a mounted page
+    toast = useToast();
+  } catch {
+    toast = undefined;
+  }
+  return toast;
+}
+
+export interface Request {
+  widget: PageWidget;
+  at: string;
+  /** The record the event gave, by id. */
+  record?: string | undefined;
+  /** Several rows an action runs on (rows chosen in a table), by id; sent as `records.events`. */
+  records?: readonly string[] | undefined;
+  /** Its row, when it is among what the widget read: for `{column}` in the text. */
+  row?: Row | undefined;
+  /** The table of the record, when the widget does not read one of its own (a sheet's detail). */
+  table?: string | undefined;
+  /** What the widget read of its columns and the names references point at: for the confirmation's words. */
+  facts?: ConfirmFacts | undefined;
+  /** The group a point or cell stands for. */
+  group?: Readonly<Record<string, unknown>> | undefined;
+  /** The summary input it came from, for the rows behind it. */
+  input?: string | undefined;
+  inputs?: Readonly<Record<string, unknown>> | undefined;
+  /** The ids of the list a row was clicked in. */
+  among?: readonly string[] | undefined;
+  amongTotal?: number | undefined;
+  amongMore?: (() => Promise<readonly string[]>) | undefined;
+}
+
+interface Asking {
+  request: Request;
+  action: Action;
+  resolve(outcome: ActOutcome): void;
+}
+
+export interface ActionsHost {
+  client: PageDataClient;
+  registry: ViewRegistry;
+  /** The page's record id. */
+  record: string | undefined;
+  pages: readonly Page[] | undefined;
+  filterValues: FilterValues;
+  onFilterValues(values: FilterValues): void;
+  onNavigate: ((to: NavigateTo) => void) | undefined;
+  /** Makes every widget read again. */
+  refresh(): void;
+  /** What a column is called, for the text. */
+  label(column: string): string;
+  /** The question the address names (`widget|at|record`), when it names one: it is asked again on a reload or a link. */
+  asked?: string | undefined;
+  /** The address is told when a question is asked (its reference) and when it is answered (`undefined`). */
+  onAsk?: ((ref: string | undefined) => void) | undefined;
+  /** The request a reference names, read again: its widget and its row. */
+  find?: ((ref: string) => Promise<Request | undefined>) | undefined;
+}
+
+/** The address's name for the question an action asks. */
+const refOf = (request: Request): string =>
+  `${request.widget.id}|${request.at}|${request.record ?? ""}`;
+
+/**
+ * Runs the actions of a page: asks first when the action says to, calls the server, then
+ * does the browser's steps in order and has every widget read again. `node` is what it
+ * draws on top of the page: the confirmation, and the rows behind a number.
+ */
+export function useActions(host: ActionsHost): {
+  run(request: Request): Promise<ActOutcome>;
+  node: ReactNode;
+} {
+  const toast = useSay();
+  const [asking, setAsking] = useState<Asking>();
+  const [rows, setRows] = useState<{ widget: string; input: string; group: Row }>();
+  const latest = useRef(host);
+  latest.current = host;
+  // Whether the address has been told of the question that is open: the address leaving it
+  // (Back) then closes it, as a sheet is closed.
+  const told = useRef<string | undefined>(undefined);
+  const later = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(
+    () => () => {
+      for (const timer of later.current) clearTimeout(timer);
+    },
+    [],
+  );
+  const toasted = useRef(toast);
+  toasted.current = toast;
+
+  const say = useCallback((text: string, tone: "success" | "info" | "danger" = "success") => {
+    toasted.current?.[tone](text);
+  }, []);
+
+  /** The call, and what follows it. Throws an `ActionError` when it did not run. */
+  const call = useCallback(
+    async (request: Request, action: Action, inputs?: Record<string, unknown>) => {
+      const now = latest.current;
+      if (!now.client.act) throw new ActionError("Actions can't be run here.");
+      const response = await now.client.act(request.widget.id, request.at, {
+        records:
+          request.at === "config/edit" && request.record
+            ? // A field edited in place changes the record the detail shows, whichever way the detail
+              // came by it (the page's, a row selected, the user's own, the one a sheet was opened on).
+              { this: request.record }
+            : {
+                ...(now.record ? { this: now.record } : {}),
+                ...(request.record ? { event: request.record } : {}),
+                ...(request.records && request.records.length > 0
+                  ? { events: [...request.records] }
+                  : {}),
+              },
+        ...(inputs && Object.keys(inputs).length > 0 ? { inputs } : {}),
       });
-      if (!sure) return;
-    }
-    if (host.dryRun || !host.client.start) {
-      setOutcome({
-        label: action.label,
-        tone: "attention",
-        text: `Not started here. It would send: ${JSON.stringify(input)}`,
-      });
+      let said = false;
+      let values = now.filterValues;
+      for (const step of response.client as Step[]) {
+        if (step.do === "open") {
+          const kind = now.pages?.find((one) => one.id === step.page)?.kind;
+          const record = step.record as string | undefined;
+          now.onNavigate?.({
+            page: step.page,
+            ...(record ? { record } : {}),
+            as: kind === "sheet" || kind === "modal" ? kind : "page",
+            ...(request.among ? { among: request.among } : {}),
+            ...(request.amongTotal !== undefined ? { amongTotal: request.amongTotal } : {}),
+            ...(request.amongMore ? { amongMore: request.amongMore } : {}),
+          });
+        } else if (step.do === "close") {
+          now.onNavigate?.({ close: true });
+        } else if (step.do === "message") {
+          said = true;
+          say(step.text, step.tone ?? "success");
+        } else if (step.do === "narrow") {
+          const value = request.group?.[step.from];
+          values = { ...values, [step.filter]: value ?? null };
+          now.onFilterValues(values);
+        } else if (step.do === "rows") {
+          // A clicked point gives its group; a number that isn't broken down (a stat) gives
+          // none, and every row behind it is shown.
+          const input = request.input;
+          if (input) setRows({ widget: request.widget.id, input, group: request.group ?? {} });
+        }
+      }
+      const closing = response.message ?? action.done;
+      if (!said && closing) say(closing);
+      now.refresh();
+      // A script or a workflow is started and not waited for: what it changes is read as it lands.
+      if (response.started) {
+        for (const wait of AFTER_A_START)
+          later.current.push(setTimeout(() => latest.current.refresh(), wait));
+      }
+    },
+    [say],
+  );
+
+  const run = useCallback(
+    (request: Request): Promise<ActOutcome> => {
+      const action = actionAt(request.widget, request.at);
+      if (!action) return Promise.resolve({ ok: false, message: "That can't be done here." });
+      if (action.confirm) {
+        // A widget on a sheet or record page has no table of its own: the page's says what its record is.
+        const held = latest.current.pages?.filter(
+          (page) =>
+            page.widgets.includes(request.widget) ||
+            page.widgets.some(
+              (one) => one.id === request.widget.id && one.type === request.widget.type,
+            ),
+        );
+        const table =
+          tableOfWidget(request.widget) ?? held?.find((page) => page.record)?.record?.table;
+        return new Promise((resolve) =>
+          setAsking({ request: { ...request, table }, action, resolve }),
+        );
+      }
+      return call(request, action, request.inputs ? { ...request.inputs } : undefined).then(
+        (): ActOutcome => ({ ok: true }),
+        (error: unknown): ActOutcome => {
+          const message = errorWords(error);
+          // What was typed (a form's) is answered beside it by the view that asked; a press of a
+          // button with nothing typed is answered in a toast.
+          if (!request.inputs) say(message, "danger");
+          const fields = error instanceof ActionError ? error.fields : undefined;
+          return { ok: false, message, ...(fields ? { fields } : {}) };
+        },
+      );
+    },
+    [call, say],
+  );
+
+  // The question that is open is in the address. Asked: the address is told. The address leaving
+  // it (Back): it is answered with no. Answered: the address is told. A page loaded on an address
+  // that names one asks it again (once, as the page opens).
+  const asked = host.asked;
+  useEffect(() => {
+    if (!asking) {
+      if (told.current !== undefined) {
+        told.current = undefined;
+        if (latest.current.asked !== undefined) latest.current.onAsk?.(undefined);
+      }
       return;
     }
-    setBusy(action.label);
-    setOutcome(undefined);
-    try {
-      const started = await host.client.start(action.target, input);
-      let state = { status: "queued" } as Awaited<ReturnType<NonNullable<DataClient["run"]>>>;
-      const until = Date.now() + WAIT_MS;
-      while (host.client.run && !TERMINAL.has(state.status) && Date.now() < until) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        state = await host.client.run(started);
-      }
-      const member = host.member ?? host.runLink !== undefined;
-      if (state.status === "succeeded" || !host.client.run) {
-        setOutcome({
-          label: action.label,
-          tone: "success",
-          text: target.description && !member ? target.description : `${action.label}: done.`,
-          ...(action.result?.show === "output" ? { output: state.output } : {}),
-          run: started,
-        });
-        host.onDone();
-      } else if (TERMINAL.has(state.status)) {
-        setOutcome({
-          label: action.label,
-          tone: "danger",
-          text: member
-            ? `${action.label} failed: ${state.error?.message ?? state.status}`
-            : `Something went wrong. Quote run ${started.id} if you ask for help.`,
-          run: started,
-        });
-      } else {
-        setOutcome({
-          label: action.label,
-          tone: "attention",
-          text: `${action.label} is still running.`,
-          run: started,
-        });
-      }
-    } catch (error) {
-      setOutcome({ label: action.label, tone: "danger", text: failure(error).message });
-    } finally {
-      setBusy(undefined);
+    const ref = refOf(asking.request);
+    if (asked === ref) {
+      told.current = ref;
+    } else if (told.current === ref) {
+      told.current = undefined;
+      asking.resolve({ ok: false, cancelled: true });
+      setAsking(undefined);
+    } else if (latest.current.onAsk) {
+      told.current = ref;
+      latest.current.onAsk(ref);
     }
-  };
+  }, [asking, asked]);
+  const booted = useRef(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: asked again once, as the page opens
+  useEffect(() => {
+    if (booted.current) return;
+    booted.current = true;
+    const ref = latest.current.asked;
+    if (!ref || !latest.current.find) return;
+    void latest.current.find(ref).then((request) => {
+      if (request) void run(request);
+    });
+  }, []);
 
-  const shown: ReactNode = (
+  const node = (
     <>
-      {outcome ? (
-        <div className="mb-3" role="status">
-          <Notice tone={outcome.tone}>
-            <span className="flex flex-col gap-1">
-              <span>
-                {outcome.text}
-                {outcome.run && host.runLink ? (
-                  <>
-                    {" "}
-                    <a href={host.runLink(outcome.run)} className="text-action underline">
-                      Open run
-                    </a>
-                  </>
-                ) : outcome.run && host.member && outcome.tone !== "success" ? (
-                  ` Run ${outcome.run.id}.`
-                ) : null}
-              </span>
-              {outcome.output !== undefined ? (
-                <pre className="m-0 max-h-60 overflow-auto font-mono text-code-sm whitespace-pre-wrap">
-                  {JSON.stringify(outcome.output, null, 2)}
-                </pre>
-              ) : null}
-            </span>
-          </Notice>
-        </div>
-      ) : null}
       <Closing subject={asking}>
-        {(asking, shown) => (
-          <Dialog
-            open={shown}
-            title={asking.action.label}
-            onClose={() => {
-              asking.answer(null);
+        {(held, open) => (
+          <Confirmation
+            asking={held}
+            open={open}
+            label={host.label}
+            onDone={() => {
+              held.resolve({ ok: true });
               setAsking(undefined);
             }}
-          >
-            <SchemaForm
-              schema={asking.schema}
-              value={asking.value}
-              submitLabel={asking.action.label}
-              onCancel={() => {
-                asking.answer(null);
-                setAsking(undefined);
-              }}
-              onSubmit={(value) => {
-                asking.answer((value ?? {}) as Record<string, unknown>);
-                setAsking(undefined);
-              }}
-            />
-          </Dialog>
+            onCancel={() => {
+              held.resolve({ ok: false, cancelled: true });
+              setAsking(undefined);
+            }}
+            submit={(inputs) => call(held.request, held.action, inputs)}
+          />
+        )}
+      </Closing>
+      <Closing subject={rows}>
+        {(held, open) => (
+          <RowsBehind
+            client={host.client}
+            registry={host.registry}
+            filterValues={host.filterValues}
+            held={held}
+            open={open}
+            onClose={() => setRows(undefined)}
+          />
         )}
       </Closing>
     </>
   );
-
-  return { run, canStart, busy, shown };
+  return { run, node };
 }
 
-/** An action widget: one button, pressed when what it waits for is there. */
-export function ActionButton({
-  action,
-  scope,
-  actions,
+const errorWords = (error: unknown) =>
+  error instanceof Error && error.message
+    ? error.message
+    : "That didn't work. Nothing was changed. Try again.";
+
+/** What the button that runs the action at `at` says: a row action's or group action's label, a button's. */
+export function labelAt(widget: PageWidget, at: string): string | undefined {
+  const parts = at.split("/");
+  if (parts[0] === "on" && widget.type === "core/button") {
+    const label = widget.config?.label;
+    return typeof label === "string" ? label : widget.title;
+  }
+  if (parts[0] === "config" && parts.length === 4 && parts[3] === "action") {
+    const list = widget.config?.[parts[1] as string];
+    const item = Array.isArray(list) ? (list[Number(parts[2])] as { label?: unknown }) : undefined;
+    return typeof item?.label === "string" ? item.label : undefined;
+  }
+  return undefined;
+}
+
+/** The table a widget reads its first rows from, to call a record by what it is. */
+export function tableOfWidget(widget: PageWidget): string | undefined {
+  for (const input of Object.values(widget.data ?? {})) {
+    const source = input.source;
+    if ("visual" in source) return source.visual.table;
+  }
+  return undefined;
+}
+
+/**
+ * The confirmation: its title, its text with the record's words in it, what it asks for (a
+ * form from the kit), and its button. Pending, a refusal and Cancel are all drawn.
+ */
+function Confirmation({
+  asking,
+  open,
+  label,
+  submit,
+  onDone,
+  onCancel,
 }: {
-  action: WidgetAction;
-  scope: PageScope;
-  actions: ReturnType<typeof useActions>;
+  asking: Asking;
+  open: boolean;
+  label: (value: string) => string;
+  submit(inputs: Record<string, unknown>): Promise<void>;
+  onDone(): void;
+  onCancel(): void;
 }) {
-  const ready = actionReady(action, scope);
+  const confirm = asking.action.confirm;
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<ActionError | Error>();
+  const words = confirmWords({
+    label: labelAt(asking.request.widget, asking.request.at),
+    confirm: confirm
+      ? {
+          title: isDefaultTitle(confirm.title) ? undefined : confirm.title,
+          text: confirm.text,
+          button: confirm.button,
+        }
+      : undefined,
+    table: tableOfWidget(asking.request.widget) ?? asking.request.table,
+    row: asking.request.row,
+    facts: asking.request.facts,
+  });
+  const text = words.text ? fillText(words.text, asking.request.row, label) : undefined;
+  const ask = confirm?.ask ?? [];
+  const go = async (inputs: Record<string, unknown>) => {
+    setBusy(true);
+    setFailure(undefined);
+    try {
+      await submit(inputs);
+      onDone();
+    } catch (error) {
+      setFailure(error instanceof Error ? error : new Error(errorWords(error)));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const fields: Record<string, string> = {};
+  if (failure instanceof ActionError)
+    for (const [name, message] of Object.entries(failure.fields ?? {}))
+      fields[`/${name}`] = message;
+  const button = words.button;
   return (
-    <div className="flex h-full flex-col items-start justify-center gap-1">
-      <Button
-        variant="primary"
-        disabled={!ready || actions.busy !== undefined}
-        onClick={() => void actions.run(action, scope)}
-      >
-        {actions.busy === action.label ? `${action.label}…` : action.label}
-      </Button>
-      {!ready ? <span className="text-body-sm text-ink-muted">Choose a row first.</span> : null}
-    </div>
+    <Dialog
+      open={open}
+      onClose={() => !busy && onCancel()}
+      title={fillText(words.title, asking.request.row, label)}
+      {...(text ? { description: text } : {})}
+    >
+      {failure && Object.keys(fields).length === 0 ? (
+        <div className="mb-3">
+          <Notice tone="danger">{errorWords(failure)}</Notice>
+        </div>
+      ) : null}
+      {ask.length > 0 ? (
+        <SchemaForm
+          schema={askedSchema(ask)}
+          json={false}
+          submitLabel={button}
+          onCancel={onCancel}
+          errors={fields}
+          disabled={busy}
+          onSubmit={(value) => go((value ?? {}) as Record<string, unknown>)}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+            {words.dismiss}
+          </Button>
+          <Button variant="primary" loading={busy} onClick={() => go({})}>
+            {button}
+          </Button>
+        </div>
+      )}
+    </Dialog>
   );
 }
+
+/** What a group stands for, in words: "Status: Unpaid, Month: Nov 2026". */
+const groupWords = (group: Row) =>
+  Object.entries(group)
+    .map(([, value]) => String(value ?? "none"))
+    .join(", ");
+
+/** When the page reads again after an action started something, in milliseconds. */
+const AFTER_A_START = [1_000, 3_000, 8_000];
+
+/** The rows behind one number or point, in a side sheet, drawn by the registry's table. */
+function RowsBehind({
+  client,
+  registry,
+  filterValues,
+  held,
+  open,
+  onClose,
+}: {
+  client: PageDataClient;
+  registry: ViewRegistry;
+  filterValues: FilterValues;
+  held: { widget: string; input: string; group: Row };
+  open: boolean;
+  onClose(): void;
+}) {
+  const [wire, setWire] = useState<WireData>();
+  const [failure, setFailure] = useState<string>();
+  const [attempt, setAttempt] = useState(0);
+  const filters = useRef(filterValues);
+  filters.current = filterValues;
+  // Opened again it reads again: the page's filters may have changed while it was closing.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: what is read is decided by the group, the filters and the attempt
+  useEffect(() => {
+    if (!open) return;
+    setWire(undefined);
+    setFailure(undefined);
+    let live = true;
+    if (!client.behind) {
+      setFailure("The rows can't be shown here.");
+      return;
+    }
+    client.behind(held.widget, held.input, held.group, filters.current).then(
+      (read) => live && setWire(read),
+      (error: unknown) => live && setFailure(errorWords(error)),
+    );
+    return () => {
+      live = false;
+    };
+  }, [
+    client,
+    open,
+    held.widget,
+    held.input,
+    JSON.stringify(held.group),
+    JSON.stringify(filterValues),
+    attempt,
+  ]);
+  const table = registry.get("core/table");
+  const View = table?.View;
+  return (
+    <SideSheet
+      open={open}
+      onClose={onClose}
+      size="wide"
+      title="The rows behind it"
+      description={groupWords(held.group)}
+    >
+      {failure ? (
+        <div className="flex flex-col items-start gap-3">
+          <Notice tone="danger">{failure}</Notice>
+          <Button size="small" onClick={() => setAttempt((count) => count + 1)}>
+            Try again
+          </Button>
+        </div>
+      ) : !wire || !View || !table ? (
+        <Skeleton lines={4} label="Loading the rows" />
+      ) : (
+        <View
+          config={{ ...table.definition.defaults }}
+          data={{ rows: toWidgetData(wire) }}
+          size={{ w: 12, h: 8, narrow: false }}
+          emit={() => undefined}
+          building={false}
+        />
+      )}
+    </SideSheet>
+  );
+}
+
+/** The record an event gave, from what it carries. */
+export const recordOf = (payload: EventPayload): string | undefined =>
+  "record" in payload && typeof payload.record === "string" ? payload.record : undefined;
+
+/** The group an event gave. */
+export const groupOf = (payload: EventPayload): Row | undefined =>
+  "group" in payload && payload.group ? payload.group : undefined;

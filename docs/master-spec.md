@@ -38,7 +38,7 @@ The smallest case must stay economical. A single script that makes one system ta
 
 ### Current focus
 
-The developer-focused version comes first. A developer authors scripts, flows and apps in code. The end-user-editable version (visual editors, spreadsheet-style app building) is deferred, but nothing in the design may rule it out.
+The developer-focused version came first: a developer authors scripts, flows and apps in code. Since phase 25, apps and dashboards are also built in the console from widgets on a grid (see Apps and user interface), within a deliberate boundary: what needs frontend programming stays in code apps. Spreadsheet-style editing is still deferred, and nothing in the design may rule it out.
 
 ### Ownership promise
 
@@ -55,7 +55,7 @@ Vynxlabs charges for implementation, and for hosting when the client does not ho
 - Running untrusted code from unknown authors.
 - More than one authoring language at launch.
 - A spreadsheet formula engine.
-- A drag-and-drop app builder in the early phases.
+- Turning the console's builder into a programming environment. It has no expressions, variables, custom CSS or code; an app that needs them is a code app.
 
 ## Guiding principles
 
@@ -492,9 +492,21 @@ Custom interfaces are resources built and served by the platform, so identity, p
 | Tier | Built by | How | When |
 | --- | --- | --- | --- |
 | Developer-built apps | A developer | Custom interfaces written locally with the SDK and the shared component kit, managed in git | Current focus |
-| Generated apps | A developer first, end users later | Screens generated from custom tables: table, detail, form and chart views that can be linked | Deferred |
+| Built apps | A member, in a dev workspace | Pages of widgets placed on a grid and configured from menus: records shown, opened, edited and acted on, with no code | Since phase 25 |
 
-The generated tier takes its idea from Grist: typed tables and linked views. Grist itself is not embedded, and there is no spreadsheet formula engine.
+The built tier takes its idea from Grist and from record-centric builders: typed tables, linked views, a record opened in a detail view, forms made from a table's columns, and actions that change a record or start a flow. Grist itself is not embedded, and there is no spreadsheet formula engine.
+
+### Pages and widgets
+
+Apps built in the console and dashboards are one system: pages of widgets on a twelve-column grid, drawn by one renderer, configured in one inspector, and made of widgets from one registry. A dashboard is a page that only offers widgets which read.
+
+- **A widget is a declared capability.** Its definition names its type, version, category, configuration (a JSON Schema the inspector is made from), the data it takes, the events it raises and its layout limits. Definitions are data; the control plane validates bodies against them and never runs widget code.
+- **The platform's own widgets are the core pack**, written against the same contract a developer's widget would be. A widget from another pack is configured exactly as a core one is.
+- **Data is fetched by the host, not by the widget**: the widget declares what it takes, and the platform reads it under the viewer's permissions and row policies, from the page's stored body.
+- **Actions run on the server**: a button or a widget's event runs steps read from the deployed page (change this record, start a flow, open a page), each checked against the person's permissions.
+- **The boundary is part of the design.** No expressions, variables, custom CSS, arbitrary scripts, absolute positioning or breakpoints. Hiding a widget is never security: what a person may read and do is decided by row policies and permissions.
+
+The design is [S9](evolution/specs/S9-pages-and-widgets.md), with decisions [0004](evolution/decisions/0004-page-actions-run-on-the-server.md), [0005](evolution/decisions/0005-the-widget-contract.md) and [0006](evolution/decisions/0006-one-page-model.md).
 
 ### Dashboards
 
@@ -555,7 +567,7 @@ An app's files are listed in the bundle by checksum and stored once per tenant. 
 
 ### Frontend stack
 
-The console and the component kit use React and Vite, with the kit built on Base UI and Tailwind. The app SDK built on that foundation is designed in the apps phase. A drag-and-drop builder is deferred.
+The console and the component kit use React and Vite, with the kit built on Base UI and Tailwind. The app SDK built on that foundation is designed in the apps phase. The console's page builder uses the same kit and the widget contract (see Pages and widgets).
 
 ## Extensibility
 
@@ -567,7 +579,7 @@ The platform is extended through five named extension points, and its built-in f
 | Step (node) | A building block for flows | Branch, loop, wait, run script |
 | Connector | An adapter for a kind of external system | Generic HTTP, Postgres |
 | Data source | A database the platform can read and write | Workspace tables, external Postgres |
-| Interface widget | A component for apps and generated screens | Table, form, chart |
+| Interface widget | A widget for pages built in the console and for dashboards | Table, list, stat, chart, pivot, text: the core pack |
 
 ### Rules
 
@@ -765,7 +777,7 @@ Nothing below is in scope for the early phases, but no design may block the defe
 ### Deferred
 
 - Visual editing of flows. Resources of every kind have been made in the console since phase 7, as drafts that a deploy makes live.
-- Generated apps from custom tables, and any drag-and-drop builder.
+- Widgets written by a tenant's developers and run in a sandbox. The contract allows them; packaging and the sandbox are designed in [decision 0005](evolution/decisions/0005-the-widget-contract.md) and not built.
 - A core automation node pack.
 - Additional authoring languages.
 - Sandboxing for code from authors the operator does not trust.

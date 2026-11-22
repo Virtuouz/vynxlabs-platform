@@ -210,6 +210,7 @@ export const DOC_CSS = `
 .vd-doc .vd-field code { font-weight: 600; }
 .vd-doc .vd-screenshot img { border: 1px solid var(--vd-line, #dcdcdc); }
 .vd-doc .vd-screenshot-missing { color: var(--vd-muted, #5c5c5c); font-style: italic; }
+.vd-doc .vd-unavailable { color: var(--vd-muted, #5c5c5c); font-style: italic; }
 
 .vd-doc .vd-file-tree {
   margin: 0 0 1em;

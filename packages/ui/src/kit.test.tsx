@@ -173,11 +173,11 @@ describe("kit components under React", () => {
       <DateField label="Due" name="due" value="2026-03-09" onChange={onInput} />,
     );
     const input = screen.getByLabelText("Due") as HTMLInputElement;
-    expect(input.type).toBe("date");
+    expect(input.value).toBe("Mar 9, 2026");
     fireEvent.input(input, { target: { value: "2026-03-10" } });
     expect(onInput).toHaveBeenCalledWith("2026-03-10");
     rerender(<DateField label="Due" name="due" withTime error="That is in the past." />);
-    expect((screen.getByLabelText("Due") as HTMLInputElement).type).toBe("datetime-local");
+    expect(screen.getByRole("button", { name: "Open calendar" })).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toBe("That is in the past.");
   });
 

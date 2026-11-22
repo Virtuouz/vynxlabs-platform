@@ -7,6 +7,7 @@ import { type BundleManifest, keyOf } from "./bundle.js";
 const NAMING = new Set([
   "script",
   "flow",
+  "flows",
   "event",
   "source",
   "connector",

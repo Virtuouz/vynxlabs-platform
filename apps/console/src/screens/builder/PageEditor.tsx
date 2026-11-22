@@ -1,332 +1,1143 @@
-import type { InterfacePage, WidgetAction, WidgetType } from "@volvel/manifest";
-import { PageRenderer, settle, type TableInfo, type TargetInfo } from "@volvel/screens";
-import { Button, SelectField } from "@volvel/ui";
-import { Plus } from "lucide-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { useLoad } from "../../api.ts";
+import {
+  FILTER_WIDGET,
+  filtersOf,
+  MAX_PAGE_WIDGETS,
+  MAX_WIDGET_HEIGHT,
+  newWidget,
+  PAGE_COLUMNS,
+  type Page,
+  type PageWidget,
+  type WidgetIn,
+} from "@volvel/manifest";
+import { focusWidget, GRID, neighbourOf, sizedByHand } from "@volvel/screens";
+import { Button, Closing, EmptyState, edgeShadows, Kbd } from "@volvel/ui";
+import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
+import { Plus, X } from "lucide-react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../../ask.tsx";
-import type { TargetFacts } from "../ActionSettings.tsx";
-import { VIEWPORTS } from "./AppBuilder.tsx";
-import { clientFor, keyOf, pageActions, TYPES, tablesOf, useTables } from "./data.ts";
+import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
+import { groupPath } from "../../kit/inspector/groupChoices.tsx";
+import { InspectorHost } from "../../kit/inspector/InspectorHost.tsx";
+import {
+  bindFilter,
+  bindHolderFilters,
+  defaultInputs,
+  insertFilterWidget,
+  mainTable,
+  onThePagesRecord,
+  settleOnGrid,
+  unbindDeclared,
+} from "../../kit/inspector/model.ts";
+import { refusalsFor } from "../../kit/inspector/tabProblems.ts";
+import { ApprovalFlowsProvider } from "../../kit/inspector/widgets/approvalFlows.tsx";
+import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
+import { useShortcut } from "../../kit/keys.ts";
+import { EditOnPage } from "../../kit/markdown/onThePage.ts";
+import { reducedMotion } from "../../kit/motion.ts";
+import { AddFormDialog } from "./AddFormDialog.tsx";
+import { AddToPage } from "./AddToPage.tsx";
+import { ButtonOffers } from "./ButtonOffers.tsx";
+import { type PageSource, pageClient } from "./client.ts";
+import {
+  duplicateWidget,
+  fitContainers,
+  holds,
+  moveInto,
+  nameOf,
+  nextId,
+  placedAtBottom,
+  placesFor,
+  removalWords,
+  removeTab,
+  removeWidget,
+  resolved,
+  targetOfSelection,
+  targetWords,
+  withoutOrphans,
+} from "./containers.ts";
 import { EditorShell } from "./EditorShell.tsx";
-import { PageFilterSettings } from "./PageFilters.tsx";
-import { WidgetSettings } from "./WidgetSettings.tsx";
-
-/** A page as it is, for someone who may look and not change it. */
-export function PageView({ root, page }: { root: string; page: InterfacePage }) {
-  const client = useMemo(() => clientFor(root), [root]);
-  const [known, setKnown] = useState<Record<string, TableInfo>>({});
-  const tables = useTables(root, tablesOf({ title: "", pages: [page] }, known));
-  useEffect(() => setKnown(tables), [tables]);
-  return <PageRenderer page={page} tables={known} client={client} />;
-}
-
-// ----- One page being worked on -----
+import { GroupButtonsDialog } from "./GroupButtonsDialog.tsx";
+import { useGroupKeys } from "./groupKeys.ts";
+import { Outline } from "./Outline.tsx";
+import { PageSettings } from "./PageSettings.tsx";
+import { DeviceBanner, PhoneFrame, ViewAsNote } from "./PhoneFrame.tsx";
+import { kindOf, SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
+import { choiceOf, openedPage, RowClickEditor } from "./RowClickEditor.tsx";
+import {
+  type Edit,
+  type FormPlan,
+  formEdit,
+  manyOf,
+  type PageContext,
+  pageTable,
+  suggestionsFor,
+} from "./records.ts";
+import { definitionOf, views } from "./registry.ts";
+import {
+  allAutomatic,
+  automaticAt,
+  type Box,
+  type CarryRequest,
+  changedByHand,
+  type FilterValues,
+  movedAside,
+  PageView,
+  placed,
+} from "./renderer.ts";
+import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
+import { ScaledFrame } from "./ScaledFrame.tsx";
+import { SheetPreviewHost } from "./SheetPreview.tsx";
+import { SizeHandle } from "./SizeHandle.tsx";
+import { approvalsSuggestion } from "./selectorData.ts";
+import { STARTS, startWords } from "./starters.ts";
+import { startingConfigFor } from "./startingConfig.ts";
+import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
+import { TextOnPage } from "./TextOnPage.tsx";
 
 /**
- * A page drawn from the workspace's rows as the member may read them, beside
- * the settings of the widget that is chosen. The builder of an app uses it
- * for each of the app's pages, and a dashboard is one of these.
+ * What the editor changes: a page's widgets. Its filters are those of its Search and filter
+ * widgets (`filtersOf`). Everything else about a page or a dashboard is its host's.
+ */
+export interface PageValue {
+  widgets: PageWidget[];
+  /** Pages this change also makes: the detail a click opens, the modal a button opens. Added with it, as one step. */
+  addPages?: Page[];
+}
+
+/** The width the desktop layout is drawn at, at least: a narrower canvas scrolls. */
+const DESKTOP_MIN = 700;
+
+/**
+ * The page grid's columns, faintly, behind the widgets: twelve columns of equal width with `GRID.gap`
+ * between them, over the grid's own box (the frame's padding is outside it).
+ */
+const GUIDE_LINE = "color-mix(in srgb, var(--color-action) 18%, transparent)";
+const GUIDE_BAND = "color-mix(in srgb, var(--color-action) 4%, transparent)";
+const GUIDE_PITCH = `calc((100% + ${GRID.gap}px) / ${GRID.columns})`;
+/** Each column as a faint band, the gaps between them left clear (board 1). */
+const GUIDE_BANDS = {
+  backgroundImage: `linear-gradient(to right, ${GUIDE_BAND} calc(100% - ${GRID.gap}px), transparent calc(100% - ${GRID.gap}px))`,
+  backgroundSize: `${GUIDE_PITCH} 100%`,
+  backgroundRepeat: "repeat-x",
+} as const;
+/** Thin lines along each column's two edges, dashed, as the boards draw the grid. */
+const GUIDE_LINES = {
+  backgroundImage: `linear-gradient(to right, ${GUIDE_LINE} 0 1px, transparent 1px), linear-gradient(to right, transparent calc(100% - ${GRID.gap + 1}px), ${GUIDE_LINE} calc(100% - ${GRID.gap + 1}px), ${GUIDE_LINE} calc(100% - ${GRID.gap}px), transparent calc(100% - ${GRID.gap}px))`,
+  backgroundSize: `${GUIDE_PITCH} 100%`,
+  backgroundRepeat: "repeat-x",
+  maskImage: "repeating-linear-gradient(to bottom, #000 0 4px, transparent 4px 8px)",
+  WebkitMaskImage: "repeating-linear-gradient(to bottom, #000 0 4px, transparent 4px 8px)",
+} as const;
+
+/** What a page of an app is, to the editor: its kind and record, the app's other pages, and what is changed about the page itself. */
+export interface PageInfo {
+  page: Page;
+  pages: Page[];
+  /** The record a page opened on one is drawn with, if one was chosen. */
+  record: string | undefined;
+  onRecord: (id: string) => void;
+  /** An `open` or `close` step in the preview: the builder shows that page. */
+  onOpen: (
+    to: { page: string; record?: string; as: "page" | "sheet" | "modal" } | { close: true },
+  ) => void;
+  /** The page's own settings are showing (narrow screens show them as a sheet). */
+  settingsOpen: boolean;
+  onCloseSettings: () => void;
+  onPage: (next: Page, label: string, key?: string) => void;
+  /** Another page of the app is changed, found by its id: the detail a row opens, made another kind. */
+  onSetPage?: (next: Page, label: string) => void;
+  onRemovePage: (() => void) | undefined;
+  /** What the server refused when the draft was saved: the inspector's tabs say which of them is fixed where. */
+  problems?: readonly { path: string; message: string }[] | undefined;
+  /** "A list of Invoices" or "A record page for Invoice" from an empty page: asks the builder to make it (the empty page becomes it). */
+  onStart?: ((start: "list" | "record", table: string) => void) | undefined;
+}
+
+/**
+ * The host's count of saves, held back while nothing that decides what is read has changed: a
+ * widget moved, renamed or given a rule reads the same rows, so a save of that reads nothing again.
+ * A save may be on its way when a change is made, so the two saves after a change both count.
+ */
+function useReads(widgets: readonly PageWidget[], saved: number | undefined): number | undefined {
+  const text = JSON.stringify(
+    widgets
+      .map(({ id, type, data, config }) => ({ id, type, data, config }))
+      .sort((a, b) => (a.id < b.id ? -1 : 1)),
+  );
+  const state = useRef({
+    text,
+    changedAt: Number.NEGATIVE_INFINITY,
+    seen: saved ?? 0,
+    count: saved ?? 0,
+  });
+  const now = state.current;
+  if (saved === undefined) return undefined;
+  if (now.text !== text) {
+    now.text = text;
+    now.changedAt = saved;
+  }
+  if (now.seen !== saved) {
+    now.seen = saved;
+    if (saved - now.changedAt <= 2) now.count = saved;
+  }
+  return now.count;
+}
+
+/**
+ * The one editor of a page of widgets, in an app's builder and in a dashboard
+ * (S9): "On this page" and "Add to page" on the left, the page drawn from the
+ * workspace's rows in the middle, and the chosen
+ * widget's settings on the right, generated from its definition.
+ *
+ * It is controlled: it is given the page and says what it should become. Its
+ * host keeps what is about the host (an app's pages and publishing, a
+ * dashboard's sharing and refresh), saves, and keeps undo (`shell.history`).
  */
 export function PageEditor({
   root,
-  page,
+  link,
+  surface,
+  source,
+  draft = false,
+  value,
+  onChange: hostChange,
   selected,
   onSelect,
-  onChange,
-  interfacePath,
-  kinds,
   shell,
   pages,
+  canvasHead,
+  frame,
+  layout,
+  refreshKey,
+  pageInfo,
+  readOnly = false,
 }: {
   root: string;
-  /** The interface the page is of, so the builder can say who would not see an action. */
-  interfacePath?: string | undefined;
-  page: InterfacePage;
+  /** The workspace's console address, for the links the settings give to other screens. */
+  link: string;
+  surface: Surface;
+  /** What the page's data is read for. */
+  source: PageSource;
+  /** Read the page as it is being built, not as it is published. */
+  draft?: boolean;
+  value: PageValue;
+  /** Every change goes through here, with words for Undo; `key` joins quick changes into one step. */
+  onChange: (next: PageValue, label: string, key?: string) => void;
   selected: string | undefined;
   onSelect: (widget: string | undefined) => void;
-  /** Every change goes through here, named for undo; `key` joins quick changes into one step. */
-  onChange: (apply: (page: InterfacePage) => void, label?: string, key?: string) => void;
-  /** The kinds of widget that can be added. Every kind when left out. */
-  kinds?: WidgetType[];
-  /** The toolbar and its notices, as the editor around the page has them. */
-  shell: Omit<Parameters<typeof EditorShell>[0], "outline" | "canvas" | "inspector">;
-  /** The pages of an app, above what is on this one. */
+  /** The toolbar and its notices, as the host around the page has them. */
+  shell: Omit<
+    Parameters<typeof EditorShell>[0],
+    "outline" | "canvas" | "inspector" | "inspectorOpen" | "onCloseInspector"
+  >;
+  /** An app's pages, above what is on this one. */
   pages?: ReactNode;
-}) {
-  const tableList = useLoad<{ items: { name: string; status: string }[] }>(`${root}/tables`);
-  const [viewport, setViewport] = useState<keyof typeof VIEWPORTS>("desktop");
-  const [asGroup, setAsGroup] = useState("");
-  const tenantBase = root.split("/workspaces/")[0] ?? "";
-  const memberGroups = useLoad<{ items: { id: string; name: string }[] }>(
-    `${tenantBase}/groups?limit=200`,
-  );
-  const endUserGroups = useLoad<{ items: { id: string; name: string }[] }>(
-    `${tenantBase}/end-user-groups?limit=200`,
-  );
-  const client = useMemo(() => clientFor(root, asGroup || undefined), [root, asGroup]);
-  const [known, setKnown] = useState<Record<string, TableInfo>>({});
-  const tables = useTables(root, tablesOf({ title: "", pages: [page] }, known));
-  useEffect(() => setKnown(tables), [tables]);
-  const tableNames = (tableList.data?.items ?? [])
-    .filter((table) => table.status === "active")
-    .map((table) => table.name);
-  const widget = page.widgets.find((candidate) => candidate.id === selected);
-
-  // What the page's actions start, and who would not see them.
-  const keys = [...new Set(pageActions(page).map(keyOf))].sort();
-  const facts = useLoad<{ items: TargetFacts[] }>(
-    keys.length > 0
-      ? `${root}/interface-targets?targets=${encodeURIComponent(keys.join(","))}${
-          interfacePath ? `&interface=${encodeURIComponent(interfacePath)}` : ""
-        }`
-      : null,
-  );
-  const factsOf = (action: WidgetAction) =>
-    facts.data?.items.find((one) => one.key === keyOf(action));
-  const targets: Record<string, TargetInfo> = Object.fromEntries(
-    (facts.data?.items ?? []).map((one) => [
-      one.key,
-      {
-        canStart: one.found && one.startable,
-        description: one.description,
-        inputSchema: one.inputSchema,
-      },
-    ]),
-  );
-  const workspace = useLoad<{ type: string }>(root);
-  const consoleBase = root.replace(/^\/tenants\//, "/t/");
-
-  const addWidget = (type: WidgetType) => {
-    let id: string = type;
-    for (let count = 2; page.widgets.some((one) => one.id === id); count += 1) {
-      id = `${type}_${count}`;
-    }
-    onChange(
-      (target) => {
-        const bottom = Math.max(0, ...target.widgets.map((one) => one.at.y + one.at.h));
-        const wide = type === "table" || type === "cards";
-        target.widgets.push({
-          id,
-          type,
-          title: TYPES.find((one) => one.type === type)?.label ?? type,
-          at: {
-            x: 0,
-            y: bottom,
-            w: wide ? 12 : type === "figure" || type === "action" ? 3 : 6,
-            h: type === "text" || type === "figure" ? 3 : type === "action" ? 2 : 8,
-          },
-          ...(type === "text" ? { options: { text: "Write something here." } } : {}),
-          ...(type === "figure"
-            ? { summary: { groupBy: [], aggregates: [{ fn: "count" as const, as: "count" }] } }
-            : {}),
-        });
-      },
-      `adding ${TYPES.find((one) => one.type === type)?.label.toLowerCase() ?? type}`,
-    );
-    onSelect(id);
+  /** Above the page: for an app, the screen sizes it can be previewed at. */
+  canvasHead?: ReactNode;
+  /** The preview's width, when it is not the whole room. `name` marks which. */
+  frame?: { name: string; width: number | undefined };
+  /** The phone and tablet previews and "View as": who the page is drawn for, and the question asked before a hand-made layout is written. */
+  layout?: {
+    viewAs?: { key: string; name: string } | undefined;
+    askLayout?: (device: "tablet" | "phone") => Promise<boolean>;
   };
-  const offered = TYPES.filter((one) => !kinds || kinds.includes(one.type));
+  /** Bumped by the host after a save, so each widget reads the page as it now is. */
+  refreshKey?: number;
+  /** For an app's page: its kind, its record and the app's pages. Left out for a dashboard. */
+  pageInfo?: PageInfo;
+  /** Someone who may not edit looks at the page: nothing is added, moved or changed, and the drawer is read. */
+  readOnly?: boolean;
+}) {
+  const { catalog } = useCatalog(root);
+  const { groups: keyed } = useGroupKeys(root);
+  // What each group the rules name is called now: a renamed group keeps its key.
+  const groupNames = useMemo(
+    () => Object.fromEntries(keyed.map((one) => [groupPath(one), one.name])),
+    [keyed],
+  );
+  const device = (frame?.name ?? "desktop") as "desktop" | "tablet" | "phone";
+  // Every change leaves each container as tall as what it holds (phase 27).
+  const onChange: typeof hostChange = (next, label, key) => {
+    if (readOnly) return;
+    hostChange({ ...next, widgets: fitContainers(next.widgets) }, label, key);
+  };
+  const [adding, setAdding] = useState(false);
+  /** The widget just placed: the focus goes to it when "Add to page" closes, its settings next. */
+  const justPlaced = useRef<string | undefined>(undefined);
+  // A widget chosen in the outline, or one just added at the end of the page, is brought into view.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the count makes it run again once an added widget is drawn
+  useEffect(() => {
+    if (!selected) return;
+    const cell = document.querySelector<HTMLElement>(
+      `[data-canvas] [data-widget-cell="${CSS.escape(selected)}"]`,
+    );
+    // One chosen where it is, by the pointer on it, is in view: the page does not move under the press.
+    if (cell?.matches(":hover")) return;
+    cell?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
+  }, [selected, value.widgets.length]);
+  // Another page opens at its top, not where the last one was scrolled to.
+  const pageId = pageInfo?.page.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the page changes, and reads nothing of it
+  useEffect(() => {
+    const canvas = document.querySelector<HTMLElement>("[data-canvas]");
+    if (canvas) canvas.scrollTop = 0;
+  }, [pageId]);
+  const [forming, setForming] = useState(false);
+  /** The button whose "Group with other buttons…" is open. */
+  // The button asked about, and what it may be grouped with, as they were when asked: the
+  // grouping removes them, and the dialog still leaves as a dialog does.
+  const [grouping, setGrouping] = useState<{
+    id: string;
+    open: boolean;
+    asked: number;
+    button: PageWidget;
+    others: PageWidget[];
+  }>();
+  const sample = useSampleRecords(root, pageInfo?.page, catalog, pageInfo?.record);
+  const lists = useActionLists(root);
+  const [filterValues, setFilterValues] = useState<FilterValues>({});
+  // A host passes a new `source` object on every render; what it names is what matters.
+  const named = JSON.stringify(source);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `named` is `source` as one value
+  const client = useMemo(
+    () => pageClient(root, source, draft, sample.record),
+    [root, draft, named, sample.record],
+  );
+  const { widgets } = value;
+  const reads = useReads(widgets, refreshKey);
+  const filters = filtersOf(widgets);
+  const context: PageContext = {
+    widgets,
+    filters,
+    pages: pageInfo?.pages ?? [],
+    page: pageInfo?.page ?? { id: "", title: "", widgets },
+  };
+  const suggested = pageInfo ? pageTable(context, mainTable(widgets, catalog)) : undefined;
+  // An empty page of an app offers the starts "Add a page" has, from the table the app reads most or its first.
+  const startTable =
+    pageInfo?.onStart && !readOnly && widgets.length === 0 && kindOf(pageInfo.page) === "page"
+      ? (suggested ?? catalog.tables[0]?.name)
+      : undefined;
+  const starts = startTable
+    ? [
+        { key: "start:list", label: startWords("list", startTable), hint: STARTS.list },
+        { key: "start:record", label: startWords("record", startTable), hint: STARTS.record },
+      ]
+    : [];
+  const suggestedInfo = useTableInfo(root, suggested);
+  const nextSteps = suggestionsFor(context, suggestedInfo);
+  const widget = widgets.find((one) => one.id === selected);
+  const full = widgets.length >= MAX_PAGE_WIDGETS;
+  // "Add to page" adds into the container that is chosen (or that holds the widget that is).
+  const addsTo = resolved(widgets, targetOfSelection(widgets, selected));
+
+  // A opens "Add to page" when focus is not in a field (`useShortcut` leaves single keys to the page).
+  useShortcut("add.widget", () => setAdding(true), { enabled: !full && !adding && !readOnly });
+
+  const put = (next: PageWidget[], label: string, key?: string) =>
+    onChange({ widgets: next }, label, key);
+  // A Text widget being written where it is on the canvas ("Edit on the page").
+  const [writing, setWriting] = useState<string>();
+  const writingWidget = widgets.find((one) => one.id === writing && one.type === "core/text");
+
+  /** A change that also touches filters and pages (a detail, a form, a next step): one step to Undo. */
+  const apply = (edit: Edit, label: string) => {
+    onChange({ widgets: edit.widgets, addPages: edit.addPages }, label);
+    if (edit.select) {
+      justPlaced.current = edit.select;
+      onSelect(edit.select);
+    }
+    setAdding(false);
+    setForming(false);
+    setTold(edit.told);
+  };
+  const makeForm = (plan: FormPlan) => {
+    const edit = formEdit(context, plan, selected);
+    apply(edit, "adding a form");
+    // A modal is not on the outline of this page: the notice says where it is, and goes there.
+    const made = edit.addPages[0];
+    if (made && pageInfo && made.kind === "modal") {
+      notify.success(edit.told, {
+        action: {
+          label: "Open it",
+          onClick: () => pageInfo.onOpen({ page: made.id, as: "modal" }),
+        },
+      });
+    }
+  };
+  // An approval step in the workspace, and none on the page to decide it: offered with the next steps.
+  const approvalsOffered = pageInfo ? approvalsSuggestion(lists.approvals, widgets) : undefined;
+  const pickNext = (key: string) => {
+    if (key.startsWith("start:") && startTable) {
+      setAdding(false);
+      pageInfo?.onStart?.(key === "start:list" ? "list" : "record", startTable);
+      return;
+    }
+    if (key === "approvals") {
+      const found = definitionOf("core/approvals");
+      if (found) add(found);
+      return;
+    }
+    if (key === "form") {
+      setAdding(false);
+      setForming(true);
+      return;
+    }
+    const found = nextSteps.find((one) => one.key === key);
+    if (!found || found.key === "form" || !suggestedInfo) return;
+    apply(
+      suggestedEdit(context, found, suggestedInfo, catalog),
+      `adding ${found.label.toLowerCase()}`,
+    );
+  };
+
+  /** Buttons made one group, or a detail's moved out to one: said in a toast that can be undone. */
+  const regroup = (edit: Edit, label: string) => {
+    apply(edit, label);
+    notify.success(edit.told, { action: { label: "Undo", onClick: shell.history.undo } });
+  };
+
+  /** A widget changed in the inspector; if its place changed, what it now lies on moves out of its way. */
+  const edit = (changedAs: PageWidget, label: string, key?: string) => {
+    const before = widgets.find((one) => one.id === changedAs.id);
+    // A form changed to edit is on the record the page opens with.
+    const changed = onThePagesRecord(changedAs, pageInfo?.page);
+    const next = widgets.map((one) => (one.id === changed.id ? changed : one));
+    const moved = before && JSON.stringify(before.at) !== JSON.stringify(changed.at);
+    put(
+      moved && before
+        ? settleOnGrid(
+            next.map((one) => (one.id === changed.id ? sizedByHand(one, before.at.h) : one)),
+            changed.id,
+          )
+        : next,
+      label,
+      key,
+    );
+  };
+
+  /** Adds a widget: at the end of the page, or where it was carried to (`at`). */
+  const add = (definition: WidgetDefinition, at?: Box, dropped?: WidgetIn) => {
+    // A Search and filter goes at the top, where the reader looks for it, with what follows it bound.
+    if (definition.role === "filters" && !at) {
+      const made = insertFilterWidget(widgets, definition, undefined, catalog);
+      put(made.widgets, `adding ${definition.title.toLowerCase()}`);
+      justPlaced.current = made.id;
+      onSelect(made.id);
+      setAdding(false);
+      setTold(`${definition.title} is added at the top of the page.`);
+      return;
+    }
+    const id = nextId(definition.type, widgets);
+    let added: PageWidget = newWidget(definition, id, widgets);
+    // Into the container that is chosen (or its child's), at the bottom of its grid; else at the end of the page.
+    // A Section or Tabs is never put in one: it goes on the page, whatever is chosen.
+    const into = at ? dropped : definition.role === "container" ? undefined : addsTo;
+    if (at) added = { ...added, at, ...(dropped ? { in: dropped } : {}) };
+    else added = placedAtBottom(widgets, added, into);
+    added = {
+      ...added,
+      // A widget that says what it is added with (Approvals reads the workspace's) keeps it.
+      ...(definition.initialData === undefined && Object.keys(definition.data).length > 0
+        ? { data: defaultInputs(definition, mainTable(widgets, catalog), catalog) }
+        : {}),
+    };
+    // A List, Pivot or Record detail starts with places and fields from the table the page reads,
+    // written in its own configuration: what the drawer shows is what the page draws.
+    const reads = pageInfo?.page.record?.table ?? mainTable(widgets, catalog);
+    added = startingConfigFor(
+      added,
+      catalog.tables.find((one) => one.name === reads),
+      { widgets, ...(pageInfo ? { kind: pageInfo.page.kind, record: pageInfo.page.record } : {}) },
+    );
+    added = onThePagesRecord(added, pageInfo?.page);
+    if (added.data && Object.keys(added.data).length === 0) delete added.data;
+    for (const filter of filters) added = bindFilter(added, filter, catalog, widgets);
+    let next = at ? placed([...widgets, added], id, at) : [...widgets, added];
+    if (definition.role === "filters") {
+      next = bindHolderFilters(next, filtersOf([added]), catalog);
+    }
+    put(next, `adding ${definition.title.toLowerCase()}`);
+    justPlaced.current = id;
+    onSelect(id);
+    setAdding(false);
+    setTold(
+      at && !into
+        ? `${definition.title} is added at column ${at.x + 1}, row ${at.y + 1}.`
+        : into
+          ? `${definition.title} is added to ${targetWords(widgets, into)}.`
+          : `${definition.title} is added at the end of the page.`,
+    );
+  };
+
+  // A widget dragged out of "Add to page" is carried by the canvas until it is let go.
+  const [carrying, setCarrying] = useState<CarryRequest>();
+  const [told, setTold] = useState("");
+  const carry = (definition: WidgetDefinition, from: { x: number; y: number }) => {
+    setAdding(false);
+    setCarrying({
+      card: {
+        title: definition.title,
+        kind: definition.description,
+        container: definition.role === "container",
+        size: definition.layout.default,
+        limits: {
+          min: definition.layout.min,
+          max: definition.layout.max ?? { w: PAGE_COLUMNS, h: MAX_WIDGET_HEIGHT },
+        },
+      },
+      from,
+      onDrop: (at, dropped) => {
+        setCarrying(undefined);
+        if (at) add(definition, at, dropped);
+        else setTold(`${definition.title} was not added.`);
+      },
+    });
+  };
+
+  /** A widget removed, a container with all it holds: one step to Undo, and the toast says what went. */
+  const remove = (id: string) => {
+    const gone = removeWidget(widgets, id);
+    if (gone.removed.length === 0) return;
+    const words = removalWords(gone.removed);
+    // What a removed Search and filter declared is no longer followed by anything.
+    const next = gone.removed.reduce((list, one) => unbindDeclared(list, one), gone.widgets);
+    const after = neighbourOf(widgets, id);
+    put(next, `removing ${words}`);
+    onSelect(undefined);
+    focusWidget(after);
+    notify.success(`Removed ${words}.`, { action: { label: "Undo", onClick: shell.history.undo } });
+  };
+
+  /** A widget copied just under itself; a container with all it holds. */
+  const duplicate = (id: string) => {
+    const copy = duplicateWidget(widgets, id);
+    if (copy.id === undefined) {
+      setTold(copy.reason);
+      return;
+    }
+    put(
+      copy.widgets,
+      copy.count > 1
+        ? `duplicating ${nameOf(widgets.find((one) => one.id === id) as PageWidget)} and the ${copy.count - 1 === 1 ? "widget" : `${copy.count - 1} widgets`} in it`
+        : "duplicating a widget",
+    );
+    onSelect(copy.id);
+  };
+
+  /** ⋯ › Move to: the widget put in a Section, a tab, or back on the page. It stays chosen. */
+  const move = (id: string, key: string) => {
+    const place = placesFor(widgets, id).find((one) => one.key === key);
+    const one = widgets.find((other) => other.id === id);
+    if (!place || !one) return;
+    const result = moveInto(widgets, id, place.target);
+    if (!result.moved) {
+      setTold(result.reason ?? "It could not be moved.");
+      return;
+    }
+    put(result.widgets, `moving ${nameOf(one)} to ${place.label}`);
+    onSelect(id);
+    setTold(`${nameOf(one)} is moved to ${place.label}.`);
+  };
+
+  /**
+   * A change the canvas made (a drag, a resize, a rename, its own Delete key). A container it
+   * removed takes what it held, which is said, and can be undone.
+   */
+  const fromCanvas = (next: PageWidget[], label: string) => {
+    // A Search and filter the canvas removed takes its filters' bindings with it.
+    const kept0 = widgets
+      .filter((one) => !next.some((other) => other.id === one.id))
+      .reduce((list, gone) => unbindDeclared(list, gone), next);
+    const { widgets: kept, orphans } = withoutOrphans(kept0);
+    if (orphans.length === 0) {
+      // Its own Delete key: no question, and Undo is one press away, said and reachable.
+      const gone = widgets.filter((one) => !next.some((other) => other.id === one.id));
+      put(kept0, label);
+      if (gone.length > 0) {
+        notify.success(`Removed ${removalWords(gone)}.`, {
+          action: { label: "Undo", onClick: shell.history.undo },
+        });
+      }
+      return;
+    }
+    const ids = new Set(next.map((one) => one.id));
+    const container = widgets.find((one) => !ids.has(one.id) && one.id === orphans[0]?.in?.widget);
+    const words = removalWords(container ? [container, ...orphans] : orphans);
+    put(kept, `removing ${words}`);
+    onSelect(undefined);
+    notify.success(`Removed ${words}.`, { action: { label: "Undo", onClick: shell.history.undo } });
+  };
+
+  // An app's builder: the pages and what is on this page each take a fair share of the pane and scroll on their own, with an edge that says where there is more; the foot never covers them.
+  const shared = pageInfo !== undefined;
+  const outline = (
+    <>
+      {shared ? (
+        <div
+          data-outline-pages=""
+          className="min-h-20 shrink-0 overflow-y-auto lg:max-h-[38%]"
+          style={edgeShadows()}
+        >
+          {pages}
+        </div>
+      ) : (
+        pages
+      )}
+      <section
+        aria-labelledby="on-the-page"
+        className={`flex flex-col gap-1 ${shared ? "min-h-20 flex-1 overflow-y-auto" : "shrink-0"}`}
+        style={shared ? edgeShadows() : undefined}
+      >
+        <h2 id="on-the-page" className="m-0 px-1 text-label text-ink-muted uppercase">
+          On this page
+        </h2>
+        {widgets.length === 0 ? (
+          <p className="m-0 px-1 text-body-sm text-ink-muted">Nothing yet.</p>
+        ) : (
+          <Outline
+            widgets={widgets}
+            selected={selected}
+            onSelect={onSelect}
+            onReorder={(next, label) => put(next, label)}
+            readOnly={readOnly}
+            onSaid={setTold}
+          />
+        )}
+      </section>
+      {/* At the foot of the pane, outside what scrolls: it never covers the pages or the widgets. */}
+      {readOnly ? null : (
+        <>
+          <div
+            className={`flex shrink-0 flex-col bg-inherit pt-1 pb-1 ${shared ? "" : "sticky bottom-0"}`}
+          >
+            <Button
+              variant="quiet"
+              disabled={full}
+              aria-label="Add to page"
+              aria-keyshortcuts="A"
+              tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
+              className="w-full shrink-0 justify-center border border-action bg-action-soft"
+              onClick={() => setAdding(true)}
+            >
+              <Plus aria-hidden="true" size={14} /> Add to page <Kbd>A</Kbd>
+            </Button>
+          </div>
+          <p className="m-0 mt-auto hidden shrink-0 px-1 pt-2 text-meta text-ink-muted lg:block">
+            Drag in the outline or on the page to reorder. Alt with the arrow keys moves the chosen
+            widget in the outline.
+          </p>
+        </>
+      )}
+    </>
+  );
+
+  // A side sheet is drawn at a sheet's width, a modal at a modal's, never wider than the screen size chosen.
+  const kind = pageInfo?.page.kind;
+  const overlay = pageInfo !== undefined && (kind === "sheet" || kind === "modal");
+  const size = pageInfo ? sizeOf(pageInfo.page) : "medium";
+  // While it is dragged the frame follows the pointer; it is written when it is let go.
+  const [dragged, setDragged] = useState<number>();
+  const kindWidth = overlay ? SIZE_WIDTH[size] : undefined;
+  const width =
+    dragged !== undefined
+      ? dragged
+      : kindWidth !== undefined
+        ? Math.min(kindWidth, frame?.width ?? kindWidth)
+        : frame?.width;
+  // A sheet, a modal or a tablet is drawn at its true width, scaled down to the room there is (and
+  // the scale said), not cut to it: Medium, Large and Extra large can then be told from each other.
+  const trueWidth =
+    overlay || device === "tablet"
+      ? dragged !== undefined
+        ? dragged
+        : kindWidth === undefined && frame?.width === undefined
+          ? // Full is as wide as whatever it opens in: here, the room there is, at its true size.
+            ("room" as const)
+          : Math.min(
+              kindWidth ?? Number.POSITIVE_INFINITY,
+              frame?.width ?? Number.POSITIVE_INFINITY,
+            )
+      : undefined;
+  const scaled = trueWidth !== undefined;
+  // What the renderer is told beyond the data (phase 26): the page's record, and what its steps open.
+  const opens = pageInfo
+    ? {
+        pages: pageInfo.pages,
+        onNavigate: pageInfo.onOpen,
+        ...(sample.record ? { record: sample.record } : {}),
+      }
+    : {};
+  // A table whose click opens a side sheet shows that sheet over the canvas while it is chosen (board 3).
+  const [inspectorTab, setInspectorTab] = useState<Tab>("data");
+  const [picked, setPicked] = useState<{ id: string; n: number }>();
+  const [previewHidden, setPreviewHidden] = useState<ReadonlySet<string>>(new Set());
+  const rowSheetPage =
+    widget && pageInfo && choiceOf(widget, pageInfo.pages) === "detail"
+      ? openedPage(widget, pageInfo.pages)
+      : undefined;
+  const rowSheet =
+    widget && rowSheetPage && rowSheetPage.kind === "sheet" && rowSheetPage.id !== pageInfo?.page.id
+      ? { id: widget.id, page: rowSheetPage }
+      : undefined;
+  const canvas = (
+    <>
+      {canvasHead}
+      {pageInfo ? (
+        <SampleBar page={pageInfo.page} sample={sample} onChoose={pageInfo.onRecord} />
+      ) : null}
+      {device !== "desktop" && !overlay ? (
+        <DeviceBanner
+          device={device}
+          changed={changedByHand(widgets, device)}
+          {...(device === "tablet" ? { aside: movedAside(widgets) } : {})}
+          onAutomatic={
+            readOnly
+              ? undefined
+              : () => put(allAutomatic(widgets, device), `making the ${device} layout automatic`)
+          }
+        />
+      ) : null}
+      {layout?.viewAs ? <ViewAsNote name={layout.viewAs.name} /> : null}
+      {(() => {
+        const sizeHandle = (scale: number) =>
+          overlay && pageInfo ? (
+            <SizeHandle
+              size={size}
+              scale={scale}
+              onDrag={setDragged}
+              onSize={(next, key) =>
+                pageInfo.onPage(
+                  withSize(pageInfo.page, next),
+                  `making ${pageInfo.page.title} ${SIZE_NAMES[next].toLowerCase()}`,
+                  key,
+                )
+              }
+              snap={snapSize}
+            />
+          ) : null;
+        const clicked = (event: React.MouseEvent<HTMLElement>) => {
+          if (!rowSheet) return;
+          const row = (event.target as HTMLElement).closest<HTMLElement>("[data-record]");
+          const cell = row?.closest("[data-widget-cell]");
+          if (row?.dataset.record && cell?.getAttribute("data-widget-cell") === rowSheet.id) {
+            setPicked((before) => ({ id: row.dataset.record as string, n: (before?.n ?? 0) + 1 }));
+          }
+        };
+        const framed = (
+          <>
+            {rowSheet &&
+            pageInfo &&
+            inspectorTab === "actions" &&
+            !previewHidden.has(rowSheet.id) ? (
+              <SheetPreviewHost
+                key={rowSheet.page.id}
+                root={root}
+                source={source}
+                page={rowSheet.page}
+                pages={pageInfo.pages}
+                catalog={catalog}
+                pick={picked}
+                onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
+                onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
+              />
+            ) : null}
+            <PhoneFrame
+              on={device === "phone" && !overlay && width !== undefined}
+              title={pageInfo?.page.title ?? ""}
+              width={width ?? 390}
+            >
+              <div
+                data-preview={frame?.name}
+                data-page-kind={kind ?? "page"}
+                data-page-size={overlay ? size : undefined}
+                className={`mx-auto overflow-x-clip ${overlay ? "rounded-overlay border border-line-strong bg-surface px-5 pt-0 pb-8 shadow-modal" : `bg-canvas ${device === "phone" ? "pb-8" : frame ? "rounded-panel border border-line px-3 pt-3 pb-8" : "rounded-panel px-3 pt-3 pb-8"}`} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
+                style={
+                  width && !overlay && device !== "phone"
+                    ? {
+                        maxWidth: `${width}px`,
+                        ...(device === "tablet" ? { minWidth: `${width}px` } : {}),
+                      }
+                    : device === "desktop" && !overlay
+                      ? // The desktop layout is drawn at a desktop's width, scrolled in a narrow canvas, never as the phone's.
+                        { minWidth: `${DESKTOP_MIN}px` }
+                      : undefined
+                }
+              >
+                {/* A side sheet or a modal is drawn as it opens: its title bar and the size it opens at. */}
+                {overlay && pageInfo ? (
+                  <div
+                    data-overlay-bar=""
+                    className="-mx-5 mb-4 flex items-center justify-between gap-3 border-line border-b px-5 py-3"
+                  >
+                    <span className="min-w-0 truncate text-title font-semibold">
+                      {pageInfo.page.title}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-3 text-meta text-ink-muted">
+                      <span>
+                        {kind === "modal" ? "Modal" : "Side sheet"} · {SIZE_NAMES[size]}
+                        {SIZE_WIDTH[size] ? ` · ${SIZE_WIDTH[size]}px` : ""}
+                      </span>
+                      <X aria-hidden="true" size={16} />
+                    </span>
+                  </div>
+                ) : null}
+                {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
+                <div
+                  data-column-guides=""
+                  className={device === "phone" ? undefined : "relative isolate"}
+                >
+                  {device === "phone" ? null : (
+                    <>
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 -z-10"
+                        style={GUIDE_BANDS}
+                      />
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 -z-10"
+                        style={GUIDE_LINES}
+                      />
+                    </>
+                  )}
+                  {widgets.length === 0 ? (
+                    <EmptyState
+                      title="Nothing on this page yet"
+                      action={
+                        readOnly ? undefined : (
+                          <span className="flex flex-wrap items-center justify-center gap-2">
+                            <Button variant="primary" onClick={() => setAdding(true)}>
+                              <Plus aria-hidden="true" size={16} /> Add to page
+                            </Button>
+                            {starts.map((one) => (
+                              <Button
+                                key={one.key}
+                                variant="secondary"
+                                onClick={() => pickNext(one.key)}
+                              >
+                                {one.label}
+                              </Button>
+                            ))}
+                          </span>
+                        )
+                      }
+                    >
+                      Add a table, a chart or a number. What you see is drawn from this workspace's
+                      rows, as you may read them.
+                    </EmptyState>
+                  ) : (
+                    <PageView
+                      widgets={widgets}
+                      filters={filters}
+                      registry={views}
+                      client={client}
+                      filterValues={filterValues}
+                      onFilterValues={setFilterValues}
+                      {...(reads !== undefined ? { refreshKey: reads } : {})}
+                      {...opens}
+                      device={device}
+                      {...(overlay && kind ? { overlay: kind as "sheet" | "modal" } : {})}
+                      groupNames={groupNames}
+                      {...(layout?.viewAs ? { viewAs: layout.viewAs } : {})}
+                      editing={{
+                        readOnly,
+                        selected,
+                        onSelect,
+                        onChange: fromCanvas,
+                        ...(layout?.askLayout ? { askLayout: layout.askLayout } : {}),
+                        onRename: (id, title) =>
+                          put(
+                            widgets.map((one) => (one.id === id ? { ...one, title } : one)),
+                            "renaming a widget",
+                            `title:${id}`,
+                          ),
+                        onColumn: (id, column) => {
+                          onSelect(id);
+                          // A heading clicked opens its column in the drawer's Display tab.
+                          setInspectorTab("display");
+                          requestColumn(id, column);
+                        },
+                        ...(readOnly
+                          ? {}
+                          : {
+                              onEditText: (id: string) => {
+                                onSelect(id);
+                                setWriting(id);
+                              },
+                            }),
+                        carrying,
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            </PhoneFrame>
+          </>
+        );
+        return scaled && trueWidth !== undefined ? (
+          <ScaledFrame width={trueWidth} held={dragged !== undefined} handle={sizeHandle}>
+            {/* A row of the table clicked on the canvas is the record its sheet is previewed with. */}
+            <div onClickCapture={clicked} className="relative">
+              {framed}
+            </div>
+          </ScaledFrame>
+        ) : (
+          <div
+            onClickCapture={clicked}
+            className={overlay ? "relative mx-auto" : "relative"}
+            style={overlay && width ? { maxWidth: `${width}px` } : undefined}
+          >
+            {framed}
+            {sizeHandle(1)}
+          </div>
+        );
+      })()}
+    </>
+  );
 
   return (
-    <EditorShell
-      {...shell}
-      outline={
-        <>
-          {pages}
-          <section aria-labelledby="on-the-page" className="flex flex-col gap-1">
-            <h2 id="on-the-page" className="m-0 text-label text-ink-subtle uppercase">
-              On this page
-            </h2>
-            {page.widgets.length === 0 ? (
-              <p className="m-0 text-body-sm text-ink-muted">Nothing yet.</p>
-            ) : (
-              <ul className="m-0 flex list-none flex-col p-0">
-                {[...page.widgets]
-                  .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x)
-                  .map((one) => (
-                    <li key={one.id}>
-                      <button
-                        type="button"
-                        aria-current={one.id === selected ? "true" : undefined}
-                        onClick={() => onSelect(one.id)}
-                        className={`w-full truncate rounded-inner px-2 py-1 text-left text-body-sm ${
-                          one.id === selected
-                            ? "bg-selected text-action"
-                            : "text-ink hover:bg-sunken"
-                        }`}
-                      >
-                        {one.title || one.id}
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-            )}
-          </section>
-          {page.widgets.length < 12 ? (
-            <section aria-labelledby="add-a-widget" className="flex flex-col gap-1">
-              <h2 id="add-a-widget" className="m-0 text-label text-ink-subtle uppercase">
-                Add
-              </h2>
-              <div className="flex flex-wrap gap-1 lg:flex-col">
-                {offered.map((one) => (
-                  <Button
-                    key={one.type}
-                    size="small"
-                    variant="quiet"
-                    className="lg:justify-start"
-                    tooltip={one.about}
-                    onClick={() => addWidget(one.type)}
-                  >
-                    <Plus size={14} aria-hidden="true" /> {one.label}
-                  </Button>
-                ))}
-              </div>
-            </section>
-          ) : null}
-        </>
-      }
-      canvas={
-        <>
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-            <div
-              role="radiogroup"
-              aria-label="Screen size"
-              className="flex rounded-control border border-line p-0.5"
-            >
-              {(Object.keys(VIEWPORTS) as (keyof typeof VIEWPORTS)[]).map((one) => {
-                const Icon = VIEWPORTS[one].icon;
-                return (
-                  // biome-ignore lint/a11y/useSemanticElements: a segmented control of toggle buttons
-                  <button
-                    key={one}
-                    type="button"
-                    role="radio"
-                    aria-checked={viewport === one}
-                    onClick={() => setViewport(one)}
-                    className={`flex items-center gap-1.5 rounded-inner px-3 py-1 text-meta ${
-                      viewport === one ? "bg-selected text-ink" : "text-ink-muted hover:text-ink"
-                    }`}
-                  >
-                    <Icon aria-hidden="true" size={14} /> {VIEWPORTS[one].label}
-                    {VIEWPORTS[one].width ? (
-                      <span className="font-mono text-tag text-ink-subtle">
-                        {VIEWPORTS[one].width}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="w-64">
-              <SelectField
-                label="See it as"
-                name="as"
-                value={asGroup}
-                onChange={setAsGroup}
-                options={[
-                  { value: "", label: "You, as you may read it" },
-                  ...(endUserGroups.data?.items ?? []).map((group) => ({
-                    value: group.id,
-                    label: `End users in ${group.name}`,
-                  })),
-                  ...(memberGroups.data?.items ?? []).map((group) => ({
-                    value: group.id,
-                    label: `Members in ${group.name}`,
-                  })),
-                ]}
+    <EditOnPage.Provider value={(id) => setWriting(id)}>
+      <EditorShell
+        {...shell}
+        outline={outline}
+        outlineKey={pageInfo?.page.id ?? ""}
+        {...(pageInfo ? { outlineLabel: pageInfo.page.title } : {})}
+        canvas={canvas}
+        inspectorOpen={widget !== undefined || pageInfo?.settingsOpen === true}
+        onCloseInspector={() => {
+          onSelect(undefined);
+          pageInfo?.onCloseSettings();
+        }}
+        inspector={
+          widget ? (
+            <>
+              {pageInfo && !readOnly ? (
+                <ButtonOffers
+                  widget={widget}
+                  widgets={widgets}
+                  onGroup={() =>
+                    setGrouping((before) => ({
+                      id: widget.id,
+                      open: true,
+                      asked: (before?.asked ?? 0) + 1,
+                      button: widget,
+                      others: groupCandidates(widgets, widget),
+                    }))
+                  }
+                  onMove={() =>
+                    regroup(
+                      detailActionsEdit(context, widget.id),
+                      "moving buttons to an action group",
+                    )
+                  }
+                />
+              ) : null}
+              <ApprovalFlowsProvider root={root} link={link}>
+                <InspectorHost
+                  key={widget.id}
+                  readOnly={readOnly}
+                  root={root}
+                  client={client}
+                  filterValues={filterValues}
+                  groupKeys={keyed}
+                  tab={inspectorTab}
+                  onTab={setInspectorTab}
+                  refused={
+                    pageInfo?.problems
+                      ? refusalsFor(pageInfo.problems, pageInfo.pages, pageInfo.page.id, widget.id)
+                      : undefined
+                  }
+                  sample={{ table: sample.table, record: sample.record }}
+                  onSelect={onSelect}
+                  {...(pageInfo
+                    ? {
+                        onOpenPage: (id: string) => {
+                          const target = pageInfo.pages.find((one) => one.id === id);
+                          pageInfo.onOpen({
+                            page: id,
+                            as:
+                              target?.kind === "sheet" || target?.kind === "modal"
+                                ? target.kind
+                                : "page",
+                          });
+                        },
+                      }
+                    : {})}
+                  {...(pageInfo && (widget.type === "core/table" || widget.type === "core/list")
+                    ? {
+                        rowClick: (
+                          <RowClickEditor
+                            root={root}
+                            widget={widget}
+                            context={context}
+                            onApply={apply}
+                            {...(pageInfo.onSetPage ? { onSetPage: pageInfo.onSetPage } : {})}
+                            onEditLayout={(opened) =>
+                              pageInfo.onOpen({ page: opened.id, as: "page" })
+                            }
+                          />
+                        ),
+                      }
+                    : {})}
+                  widget={widget}
+                  definition={definitionOf(widget.type)}
+                  surface={surface}
+                  filters={filters}
+                  neighbours={widgets.filter((one) => one.id !== widget.id)}
+                  catalog={catalog}
+                  onChange={edit}
+                  widgets={widgets}
+                  onChangeWidgets={put}
+                  onUndo={shell.history.undo}
+                  onRemoveTab={(tab, fate) => {
+                    const done = removeTab(
+                      widgets,
+                      widget.id,
+                      tab,
+                      "move" in fate ? fate.move : null,
+                    );
+                    if (done.what === "refused") return setTold(done.words);
+                    put(done.widgets, done.words.replace(/\.$/, "").toLowerCase());
+                    notify.success(done.words, {
+                      action: { label: "Undo", onClick: shell.history.undo },
+                    });
+                  }}
+                  {...(definitionOf(FILTER_WIDGET)
+                    ? { onAddFilters: () => add(definitionOf(FILTER_WIDGET) as WidgetDefinition) }
+                    : {})}
+                  onDuplicate={() => duplicate(widget.id)}
+                  onRemove={() => remove(widget.id)}
+                  places={placesFor(widgets, widget.id)}
+                  onMove={(key) => move(widget.id, key)}
+                  holds={holds(widgets, widget)}
+                  rowRules={(table) => `${link}/tables/${table}?view=definition`}
+                  // What an action may touch and open: this page's kind and record, the app's pages,
+                  // and the workspace's flows, scripts and groups.
+                  {...(pageInfo ? { page: pageInfo.page, pages: pageInfo.pages } : {})}
+                  flows={lists.flows}
+                  scripts={lists.scripts}
+                  automaticAt={(one, on) => automaticAt(widgets, one, on)}
+                />
+              </ApprovalFlowsProvider>
+            </>
+          ) : pageInfo ? (
+            <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
+              <PageSettings
+                key={pageInfo.page.id}
+                page={pageInfo.page}
+                catalog={catalog}
+                mostReadTable={mainTable(widgets, catalog)}
+                onChange={pageInfo.onPage}
+                onRemove={() => pageInfo.onRemovePage?.()}
+                canRemove={pageInfo.onRemovePage !== undefined && !readOnly}
+                root={root}
+                link={link}
               />
-            </div>
-          </div>
-          {asGroup ? (
-            <p className="mt-0 mb-3 text-meta text-ink-muted">
-              Rows as someone in this group who owns none would see them. Owner rules show nothing
-              here.
+            </fieldset>
+          ) : (
+            <p className="m-0 text-ink-muted">
+              Choose a widget on the page to change it, or add one. What you see is drawn from this
+              workspace's rows, as you may read them.
             </p>
-          ) : null}
-          <div
-            data-preview={viewport}
-            className="mx-auto overflow-x-auto rounded-panel border border-line bg-canvas p-3 transition-[max-width] motion-slow"
-            style={{
-              maxWidth: VIEWPORTS[viewport].width ? `${VIEWPORTS[viewport].width}px` : undefined,
-            }}
-          >
-            <PageRenderer
-              page={page}
-              tables={known}
-              client={client}
-              targets={targets}
-              member
-              runLink={(run) => `${consoleBase}/runs/${run.id}`}
-              // Outside a dev workspace the preview says what an action would send, and starts nothing.
-              dryRun={workspace.data?.type !== "dev"}
-              editing={{
-                selected,
-                onSelect,
-                onMove: (id, to) =>
-                  onChange(
-                    (target) => {
-                      const moved = target.widgets.find((one) => one.id === id);
-                      if (moved) moved.at = to;
-                      // Whatever it was dropped on moves out of its way.
-                      settle(target.widgets, id);
-                    },
-                    "moving a widget",
-                    `move:${id}`,
-                  ),
-              }}
-            />
-          </div>
-          <PageFilterSettings page={page} known={known} onChange={onChange} />
-        </>
-      }
-      inspector={
-        widget ? (
-          <WidgetSettings
-            key={widget.id}
-            root={root}
-            factsOf={factsOf}
-            widget={widget}
-            page={page}
-            tables={known}
-            tableNames={tableNames}
-            onChange={(apply) =>
-              onChange(
-                (target) => {
-                  const changed = target.widgets.find((one) => one.id === widget.id);
-                  if (!changed) return;
-                  const before = JSON.stringify(changed.at);
-                  apply(changed);
-                  if (JSON.stringify(changed.at) !== before) settle(target.widgets, widget.id);
-                },
-                `changing ${widget.title ? `“${widget.title}”` : "the widget"}`,
-                `settings:${widget.id}`,
-              )
+          )
+        }
+      />
+      <AddToPage
+        open={adding}
+        onClose={() => setAdding(false)}
+        surface={surface}
+        target={addsTo ? targetWords(widgets, addsTo) : undefined}
+        catalog={catalog}
+        startTable={suggested}
+        onClosed={() => {
+          const id = justPlaced.current;
+          justPlaced.current = undefined;
+          if (!id) return;
+          // The placed widget is the next stop, its settings after it, not the header the focus fell back to.
+          document
+            .querySelector<HTMLElement>(`[data-canvas] [data-widget-cell="${CSS.escape(id)}"]`)
+            ?.focus();
+        }}
+        measure={widgets.find((one) => one.type === "core/stat" && one.title)?.title}
+        onAdd={(definition) => {
+          // A form is made from a table: it asks what it should do first.
+          if (definition.type === "core/form" && pageInfo) {
+            setAdding(false);
+            setForming(true);
+          } else add(definition);
+        }}
+        {...(widgets.length > 0 ? { onCarry: carry } : {})}
+        {...((suggested && nextSteps.length > 0) || approvalsOffered || starts.length > 0
+          ? {
+              suggestions: {
+                table: suggested ? manyOf(suggested) : "this page",
+                items: [
+                  ...starts,
+                  ...(suggested ? nextSteps : []).map(({ key, label, hint }) => ({
+                    key,
+                    label,
+                    hint,
+                  })),
+                  ...(approvalsOffered ? [approvalsOffered] : []),
+                ],
+                onPick: pickNext,
+              },
             }
-            onRemove={() => {
-              const name = widget.title ? `“${widget.title}”` : "the widget";
-              onChange((target) => {
-                target.widgets = target.widgets.filter((one) => one.id !== widget.id);
-                // Whatever followed it follows nothing now.
-                for (const one of target.widgets) {
-                  if (one.link?.from === widget.id) delete one.link;
-                }
-                // What was under it rises into the room it left.
-                settle(target.widgets, undefined);
-              }, `removing ${name}`);
-              onSelect(undefined);
-              notify.success(`Removed ${name}.`, {
-                action: { label: "Undo", onClick: shell.history.undo },
-              });
+          : {})}
+      />
+      {pageInfo && grouping ? (
+        <GroupButtonsDialog
+          key={grouping.asked}
+          open={grouping.open}
+          onClose={() => setGrouping({ ...grouping, open: false })}
+          button={grouping.button}
+          others={grouping.others}
+          onGroup={(ids) => {
+            setGrouping({ ...grouping, open: false });
+            regroup(groupEdit(context, ids), "grouping buttons");
+          }}
+        />
+      ) : null}
+      {pageInfo ? (
+        <AddFormDialog
+          open={forming}
+          onClose={() => setForming(false)}
+          root={root}
+          catalog={catalog}
+          initialTable={suggested}
+          context={context}
+          from={selected}
+          takenTitles={(pageInfo?.pages ?? []).map((one) => one.title)}
+          onMake={makeForm}
+        />
+      ) : null}
+      {/* Kept on the page while it closes, so it leaves with its motion. */}
+      <Closing subject={writingWidget}>
+        {(shown, isOpen) => (
+          <TextOnPage
+            key={shown.id}
+            open={isOpen}
+            widget={shown.id}
+            title={nameOf(shown)}
+            text={typeof shown.config?.text === "string" ? shown.config.text : ""}
+            onCancel={() => setWriting(undefined)}
+            onDone={(text) => {
+              setWriting(undefined);
+              if (text === (shown.config?.text ?? "")) return;
+              put(
+                widgets.map((one) =>
+                  one.id === shown.id ? { ...one, config: { ...one.config, text } } : one,
+                ),
+                `writing ${nameOf(shown)}`,
+              );
             }}
           />
-        ) : (
-          <p className="m-0 text-ink-muted">
-            Press Edit on a widget to change it, or add one. What you see is drawn from this
-            workspace's rows, as you may read them.
-          </p>
-        )
-      }
-    />
+        )}
+      </Closing>
+      <span role="status" className="sr-only">
+        {told}
+      </span>
+    </EditOnPage.Provider>
   );
 }

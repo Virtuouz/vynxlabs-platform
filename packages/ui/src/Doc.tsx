@@ -1,9 +1,9 @@
 import { DOC_CSS, type Root } from "@volvel/markup";
 import { type Components, type ReactOptions, renderReact } from "@volvel/markup/react";
-import { type ReactNode, useMemo } from "react";
+import { CircleCheck, Info, OctagonAlert, TriangleAlert } from "lucide-react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Details } from "./Details.tsx";
 import { servedComponents } from "./DocServed.tsx";
-import { Notice } from "./Notice.tsx";
 import { Tabs } from "./Tabs.tsx";
 import { Term } from "./Term.tsx";
 import { Kbd } from "./Tooltip.tsx";
@@ -17,8 +17,9 @@ const THEMED = `
   --vd-surface: var(--vx-surface);
   --vd-sunken: var(--vx-sunken);
   --vd-action: var(--vx-action);
-  --vd-info: var(--vx-action);
-  --vd-info-soft: var(--vx-action-soft);
+  /* A note is neutral: the accent of a tenant's theme may be green, which reads as success. */
+  --vd-info: var(--vx-ink-muted);
+  --vd-info-soft: var(--vx-sunken);
   --vd-success: var(--vx-success);
   --vd-success-soft: var(--vx-success-soft);
   --vd-attention: var(--vx-attention);
@@ -28,22 +29,61 @@ const THEMED = `
   --vd-font-code: var(--vx-font-code);
   --vd-radius: var(--vx-radius-control);
 }
+/* Inline code gets an edge, so its padding reads as part of the code, not as a space before the comma after it. */
+.vd-doc :not(pre) > code { box-shadow: inset 0 0 0 1px var(--vx-line); }
 /* As a served site sets its pages: a size of its own, whatever is around it. */
 .vd-doc.vd-served { font-size: 16px; line-height: 1.6; }
 `;
 
-const TONE = { info: "plain", success: "success", warning: "attention", danger: "danger" } as const;
+/** An alert's type, as its rail, icon and words are coloured. */
+const ALERT = {
+  // Neutral, never the theme's accent: a green accent would make a note read as success.
+  info: { rail: "bg-ink-subtle", ink: "text-ink-muted", Icon: Info, label: "Note" },
+  success: { rail: "bg-success", ink: "text-success", Icon: CircleCheck, label: "Done" },
+  warning: { rail: "bg-attention", ink: "text-attention", Icon: TriangleAlert, label: "Warning" },
+  danger: { rail: "bg-danger", ink: "text-danger", Icon: OctagonAlert, label: "Danger" },
+} as const;
+
+/** A picture in the text; where it cannot be loaded, its description in its place. */
+function Picture({ src, alt, title }: { src: string; alt: string; title?: string | undefined }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className="text-ink-muted italic">{alt}</span>;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      {...(title ? { title } : {})}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 /** The kit's own components, for the parts of a page that are more than text. */
 const KIT: Components = {
-  alert: ({ type, title, children }) => (
-    <div className="mb-4">
-      <Notice tone={TONE[type]}>
-        {title ? <p className="m-0 mb-1 font-semibold">{title}</p> : null}
-        <div className="[&>:last-child]:mb-0">{children}</div>
-      </Notice>
-    </div>
-  ),
+  image: ({ src, alt, title }) => <Picture src={src} alt={alt} title={title} />,
+  // A callout, as the documentation site draws one: a coloured rail and an icon for its type,
+  // its border kept wherever it sits (inside a widget's card too, where a notice drops its own).
+  alert: ({ type, title, children }) => {
+    const tone = ALERT[type] ?? ALERT.info;
+    return (
+      <div
+        role="note"
+        aria-label={typeof title === "string" && title ? title : tone.label}
+        className="relative mb-4 rounded-panel border border-line bg-surface py-3 pr-4 pl-10"
+      >
+        <span
+          aria-hidden="true"
+          className={`absolute top-3 bottom-3 left-2 w-0.5 rounded-full ${tone.rail}`}
+        />
+        <tone.Icon aria-hidden="true" size={16} className={`absolute top-3.5 left-4 ${tone.ink}`} />
+        {title ? <p className="m-0! mb-1! font-semibold text-ink">{title}</p> : null}
+        <div className={`[&>:last-child]:mb-0! ${title ? "text-ink-muted" : "text-ink"}`}>
+          {children}
+        </div>
+      </div>
+    );
+  },
   tabs: ({ tabs }) => (
     <div className="mb-4">
       <Tabs
@@ -51,7 +91,7 @@ const KIT: Components = {
         tabs={tabs.map((tab, index) => ({
           id: String(index),
           label: tab.label,
-          content: <div className="[&>:last-child]:mb-0">{tab.children}</div>,
+          content: <div className="[&>:last-child]:mb-0!">{tab.children}</div>,
         }))}
       />
     </div>
@@ -59,11 +99,18 @@ const KIT: Components = {
   details: ({ summary, children }) => (
     <div className="mb-4">
       <Details summary={summary}>
-        <div className="[&>:last-child]:mb-0">{children}</div>
+        <div className="[&>:last-child]:mb-0!">{children}</div>
       </Details>
     </div>
   ),
   kbd: ({ keys }) => <Kbd>{keys}</Kbd>,
+  // What a kind says of a field, as a line; with nothing to say of it, its path alone (never the directive as typed).
+  field: ({ path, info }) => (
+    <p className="vd-field">
+      <code>{path}</code>
+      {info?.description ? <> — {info.description}</> : null}
+    </p>
+  ),
 };
 
 export interface DocProps extends Omit<ReactOptions, "components"> {

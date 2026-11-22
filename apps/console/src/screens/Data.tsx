@@ -3,6 +3,7 @@ import {
   Button,
   Closing,
   ComboboxField,
+  DateField,
   Dialog,
   EmptyState,
   Grid,
@@ -1112,6 +1113,18 @@ function AddRow({
                 }}
               />
             </label>
+          ) : column.type === "date" || column.type === "timestamp" ? (
+            <DateField
+              key={column.name}
+              name={column.name}
+              label={column.name}
+              value={values[column.name] ?? ""}
+              required={false}
+              {...(column.type === "timestamp" ? { withTime: true, timeZone: "UTC" as const } : {})}
+              hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}${column.type === "timestamp" ? "." : ""}`}
+              error={errors[column.name]}
+              onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
+            />
           ) : column.type === "json" ? (
             <TextAreaField
               key={column.name}
@@ -1510,7 +1523,7 @@ function ValuesDialog({
     : new Set(typed).size !== typed.length
       ? "Two values are the same."
       : rows.some((row) => ownColor(row.color) && !/^#[0-9a-fA-F]{6}$/.test(row.color))
-        ? "A colour of your own is written as # and six digits, such as #7c3aed."
+        ? "A color of your own is written as # and six digits, such as #7c3aed."
         : rows.length === 0
           ? "A column needs at least one value."
           : undefined;
@@ -1554,7 +1567,7 @@ function ValuesDialog({
                 <div className="w-40">
                   <SelectField
                     name={`color-${row.key}`}
-                    label="Colour"
+                    label="Color"
                     value={ownColor(row.color) ? "custom" : row.color}
                     options={[
                       { value: "", label: "None" },
@@ -2280,7 +2293,7 @@ function Definition({
               label: "Values",
               required: false,
               placeholder: "new, paid, shipped",
-              hint: "Separated by commas, in the order they are offered. Labels and colours are set afterwards, under Values.",
+              hint: "Separated by commas, in the order they are offered. Labels and colors are set afterwards, under Values.",
               when: (values) => values.type === "enum" || values.type === "enum_list",
             },
             {

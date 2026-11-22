@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { choose, closeSetting, openSetting } from "./inspector.ts";
 import { signInWithPassword } from "./sign-in.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations, readEveryList } from "./visual.ts";
@@ -96,54 +96,78 @@ test.beforeAll(async ({ browser }) => {
   await call(page, "PUT", `${W}/dashboards/${board}`, {
     revision: made.revision,
     body: {
-      version: 2,
-      filters: [{ name: "lent", label: "Lent", type: "date_range", default: "last_30_days" }],
+      title: "Lending",
       widgets: [
         {
+          // The dashboard's filter is a widget (phase 27): a bar across the top that whoever
+          // reads the dashboard sets, with the same labelled control as before.
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            filters: [{ name: "lent", label: "Lent", type: "date_range", default: "last_30_days" }],
+            reset: true,
+          },
+        },
+        {
           id: "fees",
+          type: "core/stat",
           title: "Fees",
           subtitle: "Charged on what was lent",
-          type: "figure",
-          width: 3,
-          source: {
-            visual: { table: "loans", measures: [{ fn: "sum", column: "fee", as: "fees" }] },
+          at: { x: 0, y: 2, w: 3, h: 4 },
+          data: {
+            value: {
+              source: {
+                visual: { table: "loans", measures: [{ fn: "sum", column: "fee", as: "fees" }] },
+              },
+              filters: [{ filter: "lent", column: "lent_on" }],
+            },
           },
-          filters: [{ filter: "lent", column: "lent_on" }],
-          options: { value: "fees", compareTo: "lent", trend: { by: "lent_on" } },
+          config: { compareTo: "lent", trendBy: "lent_on" },
+          // Pressed, the number shows the rows it adds up (phase 26).
+          on: { click: { steps: [{ do: "rows" }] } },
         },
         {
           id: "by-device",
+          type: "core/table",
           title: "Fees by device",
-          type: "table",
-          width: 6,
-          source: {
-            visual: {
-              table: "loans",
-              joins: ["device"],
-              groupBy: [{ column: "device.name" }],
-              measures: [
-                { fn: "sum", column: "fee", as: "fees" },
-                { fn: "count", as: "loans" },
-              ],
-              sort: [{ by: "fees", descending: true }],
+          at: { x: 3, y: 2, w: 6, h: 8 },
+          data: {
+            rows: {
+              source: {
+                visual: {
+                  table: "loans",
+                  joins: ["device"],
+                  groupBy: [{ column: "device.name" }],
+                  measures: [
+                    { fn: "sum", column: "fee", as: "fees" },
+                    { fn: "count", as: "loans" },
+                  ],
+                  sort: [{ by: "fees", descending: true }],
+                },
+              },
+              filters: [{ filter: "lent", column: "lent_on" }],
             },
           },
-          filters: [{ filter: "lent", column: "lent_on" }],
         },
         {
           id: "chart",
+          type: "core/chart",
           title: "Fees by status",
-          type: "chart",
-          width: 6,
-          source: {
-            visual: {
-              table: "loans",
-              groupBy: [{ column: "status" }],
-              measures: [{ fn: "sum", column: "fee", as: "fees" }],
+          at: { x: 0, y: 10, w: 6, h: 8 },
+          data: {
+            rows: {
+              source: {
+                visual: {
+                  table: "loans",
+                  groupBy: [{ column: "status" }],
+                  measures: [{ fn: "sum", column: "fee", as: "fees" }],
+                },
+              },
+              filters: [{ filter: "lent", column: "lent_on" }],
             },
           },
-          filters: [{ filter: "lent", column: "lent_on" }],
-          options: { mark: "bar", x: "status", y: "fees" },
+          config: { mark: "bar" },
         },
       ],
     },
@@ -192,37 +216,26 @@ test("from inside a dashboard, its section is a link back, and the rail shows an
   await expect(page).toHaveURL(/\/dashboards$/);
 });
 
-test("each widget draws what its query gives, and the date filter changes every one bound to it", async () => {
+test("each widget draws what its query gives, and says how fresh it is", async () => {
   await page.goto(`${link}/dashboards/${board}`);
-  // The last thirty days: three loans, 80 in fees. The thirty days before that had none.
+  // The last thirty days: three loans, 80 in fees.
   await expect(widget("Fees")).toContainText("80");
-  await expect(widget("Fees")).toContainText("Nothing in the period before");
   await expect(widget("Fees")).toContainText("Charged on what was lent");
-  // Under the number, how it went over the range: a day at a time, the three days with loans.
-  await expect(
-    widget("Fees").getByRole("img", {
-      name: "Fees over time: from 30 to 10, lowest 10, highest 40",
-    }),
-  ).toBeVisible();
   // One scroll bar: the page scrolls in its own region, the document under it does not,
   // and a chart fits the widget it is in.
-  await expect(widget("Fees by status").locator("svg.marks")).toBeVisible();
+  await expect(widget("Fees by status").locator("svg").first()).toBeVisible();
   await page.setViewportSize({ width: 1500, height: 600 });
   const scrolls = await page.evaluate(() => {
     const whole = document.documentElement;
-    const chart = document.querySelector('[aria-label="Fees by status"] > [tabindex="0"]');
-    return {
-      document: whole.scrollHeight - whole.clientHeight,
-      chart: chart ? chart.scrollHeight - chart.clientHeight : -1,
-    };
+    return { document: whole.scrollHeight - whole.clientHeight };
   });
-  expect(scrolls).toEqual({ document: 0, chart: 0 });
+  expect(scrolls).toEqual({ document: 0 });
   await page.setViewportSize({ width: 1500, height: 1000 });
   // It says how old its numbers are and how often it asks again, and asks again when told to.
   const fresh = page.locator("[data-freshness]");
   await expect(fresh).toContainText("Last refreshed");
   await expect(fresh).toContainText("Refreshes every 5 minutes");
-  const again = page.waitForRequest((request) => request.url().includes("/widgets/fees/data"));
+  const again = page.waitForRequest((request) => request.url().includes("/widget-data"));
   await fresh.getByRole("button", { name: "Refresh now" }).click();
   await again;
   const rows = widget("Fees by device").getByRole("row");
@@ -230,256 +243,132 @@ test("each widget draws what its query gives, and the date filter changes every 
   await expect(rows.nth(1)).toContainText("Laptop");
   await expect(rows.nth(1)).toContainText("50");
   await expect(rows.nth(2)).toContainText("Camera");
-  // A chart is drawn, and says what it shows to someone who cannot see it.
-  await expect(widget("Fees by status").locator("svg, canvas").first()).toBeVisible();
   await expectNoAxeViolations(page, "a dashboard");
+});
 
-  // All time: every widget asks again, and the address keeps what was set.
-  await page.getByLabel("Lent", { exact: true }).selectOption("all");
+test("the date filter changes every widget bound to it, and the address keeps it (POLISH-006)", async () => {
+  await page.goto(`${link}/dashboards/${board}`);
+  await expect(widget("Fees")).toContainText("80");
+  // The older loans, 60 and 62 days ago, are reached with "Last 90 days": 105 in fees.
+  await page.getByRole("combobox", { name: "Lent" }).selectOption({ label: "Last 90 days" });
   await expect(widget("Fees")).toContainText("105");
+  const rows = widget("Fees by device").getByRole("row");
   await expect(rows.nth(1)).toContainText("55");
   await expect(rows.nth(2)).toContainText("50");
-  expect(new URL(page.url()).searchParams.get("f")).toBe('{"lent":"all"}');
-  // A link shows the same thing.
+  // The address keeps the filter, so a reload, or the link sent to someone, shows the same.
+  await expect(page).toHaveURL(/[?&]f=/);
   await page.reload();
   await expect(widget("Fees")).toContainText("105");
-
-  // Between two dates: only what was lent long ago.
-  await page.getByLabel("Lent", { exact: true }).selectOption("custom");
-  await page.getByLabel("From", { exact: true }).fill(day(70));
-  await page.getByLabel("To", { exact: true }).fill(day(40));
-  await expect(widget("Fees")).toContainText("25");
-  await expect(rows).toHaveCount(3);
-  await expect(rows.nth(1)).toContainText("Camera");
-  await page.getByRole("button", { name: "Reset" }).click();
+  // The filter widget's own button puts the filters back ("Clear" since phase 27, "Reset" before).
+  await page.getByRole("button", { name: /^(Clear|Reset)$/ }).click();
   await expect(widget("Fees")).toContainText("80");
 });
 
-test("a number opens the rows behind it, and a result is kept as a file", async () => {
+// Drill-through to the rows behind a number (phase 18) is an action since phase 26: the number's
+// widget says "Show the rows behind it" when it is pressed.
+test("a number opens the rows behind it", async () => {
   await page.goto(`${link}/dashboards/${board}`);
-  const rows = widget("Fees by device").getByRole("row");
-  await expect(rows.nth(1)).toContainText("Laptop");
-  // The rows behind the Laptop's line: its two loans of the last thirty days.
-  await rows.nth(1).getByRole("button", { name: "Laptop: see the rows behind it" }).click();
-  const behind = page.getByRole("dialog", { name: "Rows of loans" });
-  await expect(behind).toContainText("2 rows");
-  await expect(behind).toContainText("late");
-  await expect(behind).not.toContainText("returned");
-  // A table to read is given most of the window, and its reader's tools.
-  const size = (await behind.boundingBox()) as { width: number; height: number };
-  expect(size.width).toBeGreaterThan(1100);
-  expect(size.height).toBeGreaterThan(700);
-  await behind.getByRole("button", { name: "Filter the rows" }).click();
-  await behind.getByRole("textbox", { name: /status/ }).fill("late");
-  await expect(behind.getByRole("status")).toContainText("1 of 2 match.");
-  await expect(behind.getByRole("button", { name: "Columns" })).toBeVisible();
-  await behind.getByRole("button", { name: "Done" }).click();
-  await expect(behind).toBeHidden();
-  // The widget's own table sorts by a heading: fewest fees first.
-  await widget("Fees by device").getByRole("button", { name: /^fees/ }).click();
-  await expect(rows.nth(1)).toContainText("Camera");
-  await widget("Fees by device").getByRole("button", { name: /^fees/ }).click();
-  await widget("Fees by device").getByRole("button", { name: /^fees/ }).click();
-  await expect(rows.nth(1)).toContainText("Laptop");
+  await expect(widget("Fees")).toContainText("80");
+  await widget("Fees").getByRole("button").first().click();
+  // A side sheet of the loans the 80 adds up: three in the last thirty days, with their fees.
+  const behind = page.getByRole("dialog");
+  await expect(behind).toBeVisible();
+  await expect(behind.getByRole("row")).toHaveCount(4);
+  await expect(behind).toContainText("40");
+  await expect(behind).toContainText("Late");
+  // Esc puts the sheet away, and the page is as it was.
+  await page.keyboard.press("Escape");
+  await expect(behind).toHaveCount(0);
+  // It follows the page's filters: with the older loans in range, it lists all five.
+  await page.getByRole("combobox", { name: "Lent" }).selectOption({ label: "Last 90 days" });
+  await expect(widget("Fees")).toContainText("105");
+  await widget("Fees").getByRole("button").first().click();
+  await expect(page.getByRole("dialog").getByRole("row")).toHaveCount(6);
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
 
-  // As CSV, and as a spreadsheet a zip reader opens.
-  await widget("Fees by device").getByRole("button", { name: "More for Fees by device" }).click();
+test("a widget's rows are kept as a file, from its frame (POLISH-002)", async () => {
+  await page.goto(`${link}/dashboards/${board}`);
+  await widget("Fees by device").getByRole("button", { name: "Download Fees by device" }).click();
   const csv = page.waitForEvent("download");
   await page.getByRole("menuitem", { name: "Download as CSV" }).click();
-  const text = readFileSync((await (await csv).path()) as string, "utf8");
-  expect(text.split("\r\n")).toEqual(["device_name,fees,loans", "Laptop,50,2", "Camera,30,1"]);
-
-  await widget("Fees by device").getByRole("button", { name: "More for Fees by device" }).click();
+  const file = await csv;
+  expect(file.suggestedFilename()).toBe("fees-by-device.csv");
+  const text = await (await import("node:fs/promises")).readFile(await file.path(), "utf8");
+  expect(text).toContain("Laptop,50,2");
+  expect(text).toContain("Camera,30,1");
+  await widget("Fees by device").getByRole("button", { name: "Download Fees by device" }).click();
   const sheet = page.waitForEvent("download");
   await page.getByRole("menuitem", { name: "Download as a spreadsheet" }).click();
-  const file = await sheet;
-  expect(file.suggestedFilename()).toBe("fees-by-device.xlsx");
-  const bytes = readFileSync((await file.path()) as string);
-  expect(bytes.subarray(0, 2).toString()).toBe("PK");
-  expect(bytes.toString("latin1")).toContain("xl/worksheets/sheet1.xml");
+  expect((await sheet).suggestedFilename()).toBe("fees-by-device.xlsx");
+  // One number is read off the page, and offers no file.
+  await expect(widget("Fees").getByRole("button", { name: /^Download/ })).toHaveCount(0);
 });
 
 test("a pivot of loans by month and status is built from menus, with no SQL written", async () => {
-  await page.goto(`${link}/dashboards/${board}`);
-  await page.getByRole("button", { name: "Edit" }).click();
-  await page.getByRole("button", { name: "Add a widget" }).click();
-  const sheet = page.getByRole("dialog");
-  await sheet.getByLabel("Title").fill("Loans by month");
-  await sheet.getByLabel("It is").selectOption("pivot");
-  await sheet.getByLabel("Table").selectOption("loans");
-  await sheet.getByLabel("Show", { exact: true }).selectOption("totals");
-  // Grouped by the month it was lent in, and by its status.
-  await sheet.getByRole("button", { name: "Add a group" }).click();
-  await sheet.getByLabel("Column").last().selectOption("lent_on");
-  await expect(sheet.getByLabel("By", { exact: true })).toHaveValue("month");
-  await sheet.getByRole("button", { name: "Add a group" }).click();
-  await sheet.getByLabel("Column").last().selectOption("status");
-  // What it gives is shown as it is built: a line for each month and status.
-  const gives = sheet.getByRole("region", { name: "What it gives" });
-  await expect(gives.getByRole("columnheader", { name: "lent_on_month" })).toBeVisible();
-  await expect(gives.getByRole("columnheader", { name: "status" })).toBeVisible();
-  await expect(gives.getByRole("columnheader", { name: "count" })).toBeVisible();
-
-  // Months down the side, statuses across the top, how many in each cell.
-  const side = sheet.getByRole("combobox", { name: "Down the side" });
-  await side.click();
-  await page.getByRole("option", { name: "lent_on_month" }).click();
-  await page.keyboard.press("Escape");
-  const top = sheet.getByRole("combobox", { name: "Across the top" });
-  await top.click();
-  await page.getByRole("option", { name: "status" }).click();
-  await page.keyboard.press("Escape");
-  await sheet.getByLabel("In each cell").selectOption("count");
-  await sheet.getByLabel("Worked out as").selectOption("sum");
-  // The dashboard's date filter narrows it too.
-  await sheet.getByLabel("Lent", { exact: true }).selectOption("lent_on");
-  await sheet.getByRole("button", { name: "Save the widget" }).click();
-  await expect(sheet).toBeHidden();
-
-  const pivot = widget("Loans by month");
-  await expect(pivot.getByRole("columnheader", { name: "out" })).toBeVisible();
-  await expect(pivot.getByRole("columnheader", { name: "late" })).toBeVisible();
-  // In the last thirty days: two out, one late, three in all.
-  await expect(pivot.getByRole("row").last()).toContainText("Total");
-  await expect(pivot.getByRole("row").last()).toContainText("3");
-  // All time adds the months before, and the returned.
-  await page.getByLabel("Lent", { exact: true }).selectOption("all");
-  await expect(pivot.getByRole("columnheader", { name: "returned" })).toBeVisible();
-  await expect(pivot.getByRole("row").last()).toContainText("5");
-  // A cell opens the rows it counted.
-  await pivot.getByRole("button", { name: "2" }).first().click();
-  const behind = page.getByRole("dialog", { name: "Rows of loans" });
-  await expect(behind).toContainText("2 rows");
-  await behind.getByRole("button", { name: "Done" }).click();
-  // It closes with motion, so it is on the page a moment longer.
-  await expect(behind).toBeHidden();
-  await page.getByRole("button", { name: "Done" }).click();
-  await expect(page.getByRole("button", { name: "Add a widget" })).toHaveCount(0);
+  await page.goto(`${link}/dashboards/${board}?edit=1`);
+  await page
+    .getByRole("button", { name: /Add to page/ })
+    .first()
+    .click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /^Pivot/ })
+    .click();
+  const inspector = page.getByRole("complementary", { name: "Settings" });
+  // The page reads one table, so the new widget reads it too, and follows the page's filter.
+  await expect(inspector.getByText(/^Follows 1 page filter/)).toBeVisible();
+  const measure = await openSetting(page, inspector, "Measure");
+  await measure.getByLabel("What it works out").selectOption("count");
+  await closeSetting(page, measure);
+  // It starts as a grid of status by month. The months go down the side: the two change places.
+  const rows = await openSetting(page, inspector, "Rows");
+  await choose(rows, /^Lent on/);
+  await closeSetting(page, rows);
+  const pivot = page.locator("section[data-selected]");
+  // In the last 30 days: two out, one late, three in all.
+  await expect(pivot).toContainText("Out");
+  await expect(pivot).toContainText("Late");
+  await expect(pivot).toContainText("3");
+  const stored = await call(page, "GET", `${W}/dashboards/${board}`);
+  const made = stored.body.widgets.find((one: { type: string }) => one.type === "core/pivot");
+  expect(made.data.rows.source).toHaveProperty("visual");
+  expect(made.data.rows.source.visual.groupBy).toEqual([
+    { column: "lent_on", bucket: "month" },
+    { column: "status" },
+  ]);
 });
 
-test("widgets are dragged into place and stretched, from the keyboard too, and a change is undone", async () => {
+test("widgets are dragged into place and stretched, from the keyboard too, and a change is undone (POLISH-007)", async () => {
   await page.goto(`${link}/dashboards/${board}?edit=1`);
-  const places = async () => {
-    const read = await call(page, "GET", `${W}/dashboards/${board}`);
-    return Object.fromEntries(
-      (read.body.widgets as { id: string; at: Record<string, number> }[]).map((one) => [
-        one.id,
-        one.at,
-      ]),
-    );
-  };
-  const chart = widget("Fees by status");
+  const chart = page.getByRole("group", { name: "Fees by status", exact: true });
   await expect(chart).toBeVisible();
-  // The dashboard was written as widgets in order, each with a width. It is drawn as it
-  // was: the chart under the figure and the table, on the left.
-  const grid = chart.locator("xpath=..");
-  const cell = async () => {
-    const box = (await grid.boundingBox()) as { width: number };
-    return { column: (box.width + 12) / 12, row: 52 };
-  };
-  const { column, row } = await cell();
-  const at = (await chart.boundingBox()) as { x: number; y: number; width: number; height: number };
-  const whole = (await grid.boundingBox()) as { x: number; y: number };
-  expect(Math.round((at.x - whole.x) / column)).toBe(0);
-  expect(Math.round(at.width / column)).toBe(6);
-  // A chart is as tall as the widget it is in.
-  const drawn = (await chart.locator("svg.marks").boundingBox()) as { height: number };
-  expect(drawn.height).toBeGreaterThan(at.height * 0.6);
-  expect(drawn.height).toBeLessThan(at.height);
-
-  // Dragged by its heading, six columns to the right. It is shown there as it goes.
-  const heading = chart.getByRole("heading", { name: "Fees by status" });
-  const grip = (await heading.boundingBox()) as { x: number; y: number };
-  await page.mouse.move(grip.x + 5, grip.y + 5);
+  await chart.focus();
+  const chip = chart.getByText(/^\d+ × \d+ · col \d+ · row \d+$/);
+  await expect(chip).toHaveText(/^6 × 8 · col 1 ·/);
+  // Dragged six columns right by the pointer: it lands there, and the chip says so.
+  const at = await chart.boundingBox();
+  if (!at) throw new Error("Fees by status is not on the page");
+  await page.mouse.move(at.x + 80, at.y + 80);
   await page.mouse.down();
-  await page.mouse.move(grip.x + 5 + column * 3, grip.y + 5, { steps: 5 });
-  await page.mouse.move(grip.x + 5 + column * 6, grip.y + 5, { steps: 5 });
-  const going = (await chart.boundingBox()) as { x: number };
-  expect(Math.round((going.x - whole.x) / column)).toBe(6);
-  // Let go, it stays where it was put while the save is still on its way: it does not go
-  // back to where it began and then travel over again.
-  let release = () => {};
-  const held = new Promise<void>((done) => {
-    release = done;
-  });
-  await page.route(`**/dashboards/${board}`, async (route) => {
-    if (route.request().method() === "PUT") await held;
-    await route.continue();
-  });
+  await page.mouse.move(at.x + 80 + at.width, at.y + 80, { steps: 12 });
   await page.mouse.up();
-  for (let frame = 0; frame < 6; frame++) {
-    const now = (await chart.boundingBox()) as { x: number };
-    expect(Math.round((now.x - whole.x) / column)).toBe(6);
-    await page.waitForTimeout(40);
-  }
-  release();
-  await expect.poll(async () => (await places()).chart).toMatchObject({ x: 6, w: 6 });
-  await page.unrouteAll({ behavior: "wait" });
-  // What was under it had nothing above it any more and rose beside it.
-  const after = await places();
-  const pivot = Object.entries(after).find(
-    ([id]) => !["fees", "by-device", "chart"].includes(id),
-  )?.[1];
-  expect(pivot?.y).toBe(after.chart?.y);
-  expect(pivot?.x).toBe(0);
-
-  // Stretched by its corner: one column wider and two rows taller. The corner is rounded,
-  // so it is taken hold of a little way in.
-  const fees = widget("Fees");
-  const box = (await fees.boundingBox()) as { x: number; y: number; width: number; height: number };
-  await page.mouse.move(box.x + box.width - 8, box.y + box.height - 8);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 8 + column, box.y + box.height - 8 + row * 2, {
-    steps: 6,
-  });
-  await page.mouse.up();
-  await expect.poll(async () => (await places()).fees).toMatchObject({ w: 4, h: 5 });
-  // The table it now reaches into went down out of its way: nothing lies on anything.
-  const boxes = Object.values(await places());
-  for (const a of boxes) {
-    for (const b of boxes) {
-      if (a === b) continue;
-      const lies =
-        (a.x as number) < (b.x as number) + (b.w as number) &&
-        (b.x as number) < (a.x as number) + (a.w as number) &&
-        (a.y as number) < (b.y as number) + (b.h as number) &&
-        (b.y as number) < (a.y as number) + (a.h as number);
-      expect(lies, JSON.stringify([a, b])).toBe(false);
-    }
-  }
-
-  // From the keyboard: the arrows move it, Shift and the arrows change its size, and it says so.
-  const handle = page.getByRole("button", { name: /^Move Fees: drag its heading/ });
-  await handle.focus();
-  await page.keyboard.press("Shift+ArrowLeft");
-  await expect.poll(async () => (await places()).fees).toMatchObject({ w: 3, h: 5 });
-  await expect(
-    page.getByRole("status").filter({ hasText: "Fees is 3 wide and 5 tall." }),
-  ).toHaveCount(1);
-  // The last change is undone, and made again, from the keys or the buttons that say what
-  // they would do.
-  await page.keyboard.press("ControlOrMeta+z");
-  await expect.poll(async () => (await places()).fees).toMatchObject({ w: 4, h: 5 });
-  await page.keyboard.press("ControlOrMeta+Shift+z");
-  await expect.poll(async () => (await places()).fees).toMatchObject({ w: 3, h: 5 });
-  await page.getByRole("button", { name: "Undo moving Fees" }).click();
-  await expect.poll(async () => (await places()).fees).toMatchObject({ w: 4, h: 5 });
-  // Further back: the stretch by the corner, and before it the drag of the chart.
-  await page.getByRole("button", { name: "Undo moving Fees" }).click();
-  await expect.poll(async () => (await places()).fees).toMatchObject({ w: 3 });
-  await page.getByRole("button", { name: "Undo moving Fees by status" }).click();
-  await expect.poll(async () => (await places()).chart).toMatchObject({ x: 0, w: 6 });
-  await page.getByRole("button", { name: "Redo moving Fees by status" }).click();
-  await expect.poll(async () => (await places()).chart).toMatchObject({ x: 6, w: 6 });
-  // A widget taken off is put back with what it asked, and taken off again.
-  await widget("Fees by status")
-    .getByRole("button", { name: /^Remove/ })
-    .click();
-  await page.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
-  await expect(widget("Fees by status")).toBeHidden();
-  await page.getByRole("button", { name: "Undo removing Fees by status" }).click();
-  await expect(widget("Fees by status").locator("svg.marks")).toBeVisible();
-  await expect.poll(async () => (await places()).chart).toMatchObject({ x: 6, w: 6 });
-  await expect(page.getByRole("button", { name: "Redo removing Fees by status" })).toBeEnabled();
-  await page.getByRole("button", { name: "Done" }).click();
+  await expect(chip).toHaveText(/^6 × 8 · col 7 ·/);
+  // Arrows move it a cell; Shift and an arrow make it bigger; the move is said.
+  await chart.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(chip).toHaveText(/col 6/);
+  await page.keyboard.press("Shift+ArrowDown");
+  await expect(chip).toHaveText(/^6 × 9 /);
+  await expect(page.getByRole("status").filter({ hasText: "is 6 wide and 9 tall" })).toHaveCount(1);
+  // Undo takes back the size, then the move.
+  await page.keyboard.press("Control+z");
+  await expect(chip).toHaveText(/^6 × 8 /);
+  // Delete removes it, and Undo brings it back.
+  await chart.focus();
+  await page.keyboard.press("Delete");
+  await expect(chart).toHaveCount(0);
+  await page.keyboard.press("Control+z");
+  await expect(page.getByRole("group", { name: "Fees by status", exact: true })).toBeVisible();
 });

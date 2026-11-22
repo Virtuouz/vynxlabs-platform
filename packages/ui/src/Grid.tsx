@@ -436,7 +436,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
 
   return (
     <div
-      className={`overflow-auto rounded-panel border border-line bg-surface ${
+      className={`scroll-pt-12 overflow-auto rounded-panel border border-line bg-surface ${
         props.fill ? "min-h-0 flex-1" : "max-h-[70vh]"
       }`}
     >
@@ -458,7 +458,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                   type="checkbox"
                   tabIndex={-1}
                   aria-label="Check every row on this page"
-                  className="size-4 accent-(--vx-action)"
+                  // Centred on the line, not set on its baseline: the heading row is as tall as its words, not as a box standing on their baseline.
+                  className="align-middle size-4 accent-(--vx-action)"
                   checked={all.length > 0 && checked.size === all.length}
                   onChange={() => onCheck(checked.size === all.length ? new Set() : new Set(all))}
                 />

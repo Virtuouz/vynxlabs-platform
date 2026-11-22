@@ -63,6 +63,8 @@ export type Polish = {
    * source page is measured when it is, and left out (and said so) when it is not.
    */
   sourceBound: boolean;
+  /** The dashboard "Clinic visits": the page editor of a dashboard is measured on it. */
+  board: string;
 };
 
 /** Signs in and seeds a tenant; `part` names the spec file, so each file has a tenant of its own. */
@@ -185,31 +187,116 @@ export async function setUpPolishTenant(browser: Browser, part: string): Promise
   await call(page, "PUT", `${W}/dashboards/${board.id}`, {
     revision: board.revision,
     body: {
-      version: 2,
-      filters: [],
+      title: "Clinic visits",
       widgets: [
         {
           id: "visits",
+          type: "core/stat",
           title: "Visits",
-          type: "figure",
-          width: 3,
-          source: {
-            visual: {
-              table: "patients",
-              measures: [{ fn: "sum", column: "visits", as: "visits" }],
+          at: { x: 0, y: 0, w: 3, h: 3 },
+          data: {
+            value: {
+              source: {
+                visual: {
+                  table: "patients",
+                  measures: [{ fn: "sum", column: "visits", as: "visits" }],
+                },
+              },
             },
           },
-          options: { value: "visits" },
         },
         {
           id: "by-patient",
+          type: "core/table",
           title: "Visits by patient",
-          type: "table",
-          width: 6,
-          source: { visual: { table: "patients", groupBy: [{ column: "name" }] } },
+          at: { x: 3, y: 0, w: 6, h: 6 },
+          data: {
+            rows: {
+              source: { visual: { table: "patients", groupBy: [{ column: "name" }] } },
+            },
+          },
         },
       ],
     },
+  });
+  // An app made of pages, for the page editor of an app: a stat and a table under a filter.
+  await call(page, "PUT", `${W}/drafts/screens/front-desk`, {
+    kind: "interface",
+    schemaVersion: 2,
+    create: true,
+    body: {
+      title: "Front desk",
+      pages: [
+        {
+          id: "patients",
+          title: "Patients",
+          widgets: [
+            {
+              // The page's filter is a Search and filter widget since phase 27.
+              id: "filters",
+              type: "core/filter",
+              at: { x: 0, y: 0, w: 12, h: 2 },
+              config: { filters: [{ name: "name", label: "Name", type: "text" }], reset: true },
+            },
+            {
+              // A Section holding the stat and the note on its own grid (phase 27), so the page
+              // editor is measured with a container drawn, in its outline and on its canvas.
+              id: "totals",
+              type: "core/section",
+              title: "Totals",
+              at: { x: 0, y: 2, w: 12, h: 4 },
+              config: {},
+            },
+            {
+              id: "visits",
+              type: "core/stat",
+              title: "Visits",
+              in: { widget: "totals" },
+              at: { x: 0, y: 0, w: 3, h: 3 },
+              data: {
+                value: {
+                  source: {
+                    visual: {
+                      table: "patients",
+                      measures: [{ fn: "sum", column: "visits", as: "visits" }],
+                    },
+                  },
+                  filters: [{ filter: "name", column: "name" }],
+                },
+              },
+              config: { caption: "Across the patients shown" },
+            },
+            {
+              id: "list",
+              type: "core/table",
+              title: "Patients",
+              at: { x: 0, y: 6, w: 12, h: 8 },
+              data: {
+                rows: {
+                  source: { visual: { table: "patients", sort: [{ by: "name" }] } },
+                  filters: [{ filter: "name", column: "name" }],
+                },
+              },
+            },
+            {
+              id: "note",
+              type: "core/text",
+              in: { widget: "totals" },
+              at: { x: 3, y: 0, w: 9, h: 3 },
+              config: {
+                text: ":::alert[Counts are of visits]{type=info}\nA patient's visits are counted once each.\n:::",
+              },
+            },
+          ],
+        },
+      ],
+    },
+  });
+  await call(page, "PUT", `${W}/drafts/front-desk`, {
+    kind: "app",
+    schemaVersion: 1,
+    create: true,
+    body: { title: "Front desk", interface: "screens/front-desk" },
   });
   await call(page, "POST", `${W}/changes/deploy`, {});
   const failedRun = (await call(page, "POST", `${W}/runs`, { script: LONG, input: {} })).id;
@@ -231,7 +318,7 @@ export async function setUpPolishTenant(browser: Browser, part: string): Promise
       { timeout: 90_000 },
     )
     .toBe(true);
-  return { page, tenant, ws, W, prodWs, failedRun, waitingRun, sourceBound };
+  return { page, tenant, ws, W, prodWs, failedRun, waitingRun, sourceBound, board: board.id };
 }
 
 export async function tearDownPolishTenant({ page, tenant }: Polish) {
@@ -286,6 +373,9 @@ export const screens = (ctx: Polish) => [
   ["retention", `/t/${ctx.tenant.id}/retention`],
   // The rest of the navigation, which had no finding against it but was never looked at.
   ["app builder", `${ctx.ws}/screens`],
+  // The page editor (phase 25), of an app and of a dashboard: the same editor, so both are judged.
+  ["the page editor of an app", `${ctx.ws}/screens/screens/front-desk`],
+  ["the page editor of a dashboard", `${ctx.ws}/dashboards/${ctx.board}?edit=1`],
   ["extensions", `${ctx.ws}/extensions`],
   ["documentation", `${ctx.ws}/docs`],
   ["resources", `${ctx.ws}/resources`],

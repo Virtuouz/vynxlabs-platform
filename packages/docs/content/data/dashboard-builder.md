@@ -1,7 +1,44 @@
 ---
 title: Building a dashboard
 topic: data-dashboards-editor
-description: "The builder for one dashboard: its widgets, their queries and the filters that narrow them all."
+description: "The editor for one dashboard: add widgets, place them, and set what each reads, with the filters that narrow them."
 ---
 
-The builder for one dashboard: its widgets, their queries and the filters that narrow them all.
+A dashboard is edited in the same editor as a page of an app, so what is said in [building an interface](../build/app-builder-editor) holds here: **Add to page**, selecting, moving and sizing by mouse and by keys, **Undo**, and the inspector with its **Data**, **Display**, **Actions** and **Rules**. **Edit** opens it, and **Done** closes it.
+
+## What is different on a dashboard
+
+- **Add to page** offers only widgets that read: a table, a list, a stat, a chart, a pivot, text, and **Section**, **Tabs** and **Search and filter** to organize them. An **Action group**, like a Button, is not offered. A widget that changes data is not offered, and on a dashboard **Actions** will only ever show or narrow what is there, never change a row.
+- **Source** can be a table from menus, a **saved query**, or **SQL**. A person who may write SQL writes it in the Data tab, and binds the page's filters to its parameters: a date range fills two, `from` and `to`. A table from menus is bound to a filter by a column.
+- A dashboard has **how often it asks again**, and a title and description of its own, in its settings.
+- It is **shared** from the dashboards screen, and the people it is shared with see only the rows they may read.
+
+## Search and filter
+
+A dashboard's filters are a **Search and filter** widget, placed where you want the bar. **Add a filter** in its Data tab to make a search, a date range, a choice, a word or a number, with the value it starts with. A search looks in the columns you pick of a table, and a row is kept when any of them has the words.
+
+A **Section** groups widgets under a heading, and may fold. **Tabs** shows one view at a time, and the open tab is in the address. Drag a widget into one, or use **⋯ › Move to**, as in an app.
+
+A date range can also be what a stat or a chart is **compared** with: **Compare with the period before** is one switch. It uses the same length of time, ending where the range begins, and a chart draws it as a dashed line. A stat then shows the change as a percent or an amount, and **Going up is** Good or Bad sets its colour. A chart over time can also be smoothed and show a mark at each point, and a bar chart can show its values and be put in order, biggest first.
+
+When a filter is added, every widget whose table has its column is bound to it, and the editor says which. For a saved query or SQL, bind the filter to the parameter by hand.
+
+A Section can be a **Card**, and Tabs can be drawn as **Pills**. A Text widget can be a Note, a Warning or a Tip. **Filters sit** in a row, or behind a "Filters" button, which suits a phone.
+
+The page can be seen as a **Phone** or **Tablet** from the editor's header, and a widget can be hidden or stacked there, with a priority. See [building an interface](../build/app-builder-editor) for the phone layout, **View as** and restoring an earlier draft.
+
+## Changing a widget
+
+Select it, and set it in the inspector in the same words as in an app: **Value** "Sum of Fees", **Break down by** "Lent on · Monthly", **Only include**, and under Display the chart type and how numbers look. A change is on the page at once, and saved as a draft as you go.
+
+## Show the rows behind it
+
+A number, a point on a chart or a cell of a pivot can open the rows it was made from. In the Actions tab, under **When clicked** (or **When someone clicks a point**), add the step **Show the rows behind it**. A person who clicks the number is shown a side sheet of the rows, as a table, with the page's filters already applied: the number says 80, and the sheet lists the three loans it adds up to. For a point or a cell, the sheet lists only that group's rows.
+
+A widget that does this is drawn as one that can be pressed: it has a pointer and can be reached by keys. A widget that doesn't have the step does nothing when it is clicked.
+
+## Narrow the page by a clicked point
+
+**Narrow the page** sets one of the page's filters to what was clicked. On a chart of invoices by clinic, clicking the Northside bar sets the Clinic filter to Northside, and every widget bound to it asks again. The filter shows the choice, and **Reset** puts it back. The step names the filter and the breakdown to take it from.
+
+A dashboard only reads, so these two and **Show a message** are the only steps it offers. It never changes a row.

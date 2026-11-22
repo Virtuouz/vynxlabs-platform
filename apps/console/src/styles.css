@@ -1,15 +1,13 @@
 @import "@volvel/ui/tokens.css";
 @source "./";
 @source "../../../packages/screens/src";
+/* The platform's widget packs draw with the kit's classes too. */
+@source "../../../packages/widgets-core/views";
+@source "../../../packages/widgets-labs/views";
 
 /* A screen of 1920 px and more: room for a third column, and logs beside what a run was given. */
 @theme {
   --breakpoint-3xl: 120rem;
-}
-
-/* The console is dense: its controls are 32 px, where a tenant app's are 36. */
-html {
-  --vx-control-height: 32px;
 }
 
 /* The port: one corner cut, for the instance's mark. */

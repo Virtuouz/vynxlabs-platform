@@ -3,13 +3,23 @@ import type { ScriptContext } from "./context.js";
 import type { ConnectionTest } from "./extensions.js";
 import type { ColumnSpec, InsertOf, RowOf } from "./tables.js";
 
+export * from "@volvel/widgets";
+export type {
+  DashboardBody,
+  DataInput,
+  InterfaceBody,
+  Page,
+  PageFilter,
+  PageWidget,
+} from "@volvel/widgets/page";
+
+import type { DashboardBody, InterfaceBody } from "@volvel/widgets/page";
+
 export type { Logger, RunInfo, ScriptContext } from "./context.js";
 export type {
   ConnectionTest,
   Connector,
-  InterfaceWidget,
   TriggerSource,
-  WidgetContext,
 } from "./extensions.js";
 export {
   type HttpClient,
@@ -109,6 +119,7 @@ function resource(
   kind: string,
   named: string | (ResourceNames & { path: string; mcp?: ToolName | undefined }),
   body: (entry: string) => Record<string, unknown>,
+  schemaVersion = 1,
 ) {
   const { path, key, title, mcp } = typeof named === "string" ? { path: named } : named;
   const defined = (globalThis as Record<symbol, unknown>)[DEFINITIONS];
@@ -119,7 +130,7 @@ function resource(
     path,
     toManifest: (entry: string): AuthoredManifest => ({
       kind,
-      schemaVersion: 1,
+      schemaVersion,
       path,
       // Said only when it is not the path: most resources never say it.
       ...(key !== undefined && key !== path ? { key } : {}),
@@ -1170,26 +1181,47 @@ export function defineApp(options: AppOptions): AppDefinition {
   };
 }
 
-export interface InterfaceOptions extends ResourceNames {
+export interface InterfaceOptions extends Omit<ResourceNames, "title">, InterfaceBody {
   /** Unique within the workspace, for example `screens/invoices`. */
   path: string;
-  title: string;
-  description?: string;
-  /**
-   * The pages, each a set of widgets over the workspace's tables. Most
-   * interfaces are made in the console, which writes this for you: see the
-   * `interface` schema for every field.
-   */
-  pages: Record<string, unknown>[];
 }
 
 /**
- * Declares an interface: pages of tables, cards, charts and forms over the
- * workspace's tables, with no code. Serve it with `defineApp({ interface })`.
+ * Declares an interface: pages of widgets (`core/table`, `core/chart`, and the rest of
+ * the pack) over the workspace's tables, with no code. Each widget names its data
+ * inputs and its `config`; see the `interface` schema. Serve it with
+ * `defineApp({ interface })`.
  */
 export function defineInterface(options: InterfaceOptions): ResourceDefinition {
-  return resource("interface", named(options), () =>
-    compact({ title: options.title, description: options.description, pages: options.pages }),
+  return resource(
+    "interface",
+    named(options),
+    () => compact({ title: options.title, description: options.description, pages: options.pages }),
+    2,
+  );
+}
+
+export interface DashboardOptions extends Omit<ResourceNames, "title">, DashboardBody {
+  /** Unique within the workspace, for example `boards/clinic-visits`. */
+  path: string;
+}
+
+/**
+ * Declares a dashboard: one page of widgets that only read, kept as a resource so it is
+ * versioned, deployed and promoted with the rest of a workspace.
+ */
+export function defineDashboard(options: DashboardOptions): ResourceDefinition {
+  return resource(
+    "dashboard",
+    named(options),
+    () =>
+      compact({
+        title: options.title,
+        description: options.description,
+        refresh: options.refresh,
+        widgets: options.widgets,
+      }),
+    3,
   );
 }
 

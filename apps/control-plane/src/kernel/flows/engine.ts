@@ -1227,6 +1227,8 @@ export async function decideApproval(
     approve: boolean;
     comment?: string | undefined;
     memberId: string | null;
+    /** Where it was decided, kept on the step so a list can say so without searching the audit. */
+    via?: "app" | undefined;
   },
 ) {
   await sql`select pg_advisory_xact_lock(hashtextextended(${request.flowRunId}, 1))`.execute(trx);
@@ -1252,7 +1254,11 @@ export async function decideApproval(
     .updateTable("step_run")
     .set({
       status: request.approve ? "succeeded" : "failed",
-      output: JSON.stringify({ approved: request.approve, comment: request.comment ?? null }),
+      output: JSON.stringify({
+        approved: request.approve,
+        comment: request.comment ?? null,
+        ...(request.via ? { via: request.via } : {}),
+      }),
       error: request.approve
         ? null
         : JSON.stringify({ message: `Rejected${request.comment ? `: ${request.comment}` : "."}` }),

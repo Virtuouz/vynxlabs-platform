@@ -77,12 +77,15 @@ export const ask: Dialogs = {
  * server's request ID, which whoever runs the instance can look up.
  */
 export function failureText(error: unknown): string {
-  const failure = error as Partial<ApiError> & Error;
+  // Whatever was thrown (a string, an object with no message, nothing at all), a person is told something.
+  if (typeof error === "string" && error.trim()) return error.trim();
+  const failure = (error ?? {}) as Partial<ApiError> & Error;
   const fields = (failure.fields ?? []).map((field) =>
     field.path ? `${field.path}: ${field.message}` : field.message,
   );
   const id = failure.requestId ? `Request ID ${failure.requestId}.` : "";
-  return [failure.message, ...fields, id].filter(Boolean).join(" ");
+  const said = [failure.message, ...fields, id].filter(Boolean).join(" ").trim();
+  return said || "Something went wrong, and nothing more is known. Try again.";
 }
 
 /**

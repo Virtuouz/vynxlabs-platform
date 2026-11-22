@@ -485,7 +485,7 @@ test("a page of an app names its help, and the app shows that page of the handbo
   const W = `/tenants/${made.tenant}/workspaces/${made.dev}`;
   await call(page, "PUT", `${W}/drafts/screens/desk`, {
     kind: "interface",
-    schemaVersion: 1,
+    schemaVersion: 2,
     body: {
       title: "Order desk",
       pages: [
@@ -496,10 +496,10 @@ test("a page of an app names its help, and the app shows that page of the handbo
           widgets: [
             {
               id: "list",
-              type: "table",
-              table: "orders",
-              fields: [{ column: "number" }, { column: "status" }],
+              type: "core/table",
               at: { x: 0, y: 0, w: 12, h: 8 },
+              data: { rows: { source: { visual: { table: "orders" } } } },
+              config: { columns: [{ column: "number" }, { column: "status" }] },
             },
           ],
         },
@@ -563,6 +563,9 @@ test("a page is dragged to another folder, its details are a form, and a trigger
   await details.getByLabel("Id", { exact: true }).fill("sla");
   await details.getByLabel("What it means").fill("How fast we answer.");
   // The form wrote the page's own source, and the preview is drawn from that.
+  // The page's top is folded as the editor opens: it is opened to be read.
+  const folded = page.locator(".monaco-editor .codicon-folding-collapsed").first();
+  if (await folded.isVisible()) await folded.click();
   await expect(page.locator(".monaco-editor .view-lines").first()).toContainText(
     "description: What customers ask most.",
   );

@@ -414,33 +414,68 @@ test("she publishes an app over a table, and two groups of end users see it diff
   await ada.getByRole("button", { name: "Make an app" }).first().click();
   await ada.getByRole("dialog").getByLabel("Name").fill("Bills desk");
   await ada.getByRole("dialog").getByRole("button", { name: "Make the app" }).click();
-  await ada.getByText("This page has nothing on it yet.").waitFor();
-  const settings = ada.getByRole("complementary", { name: "Settings" });
-  const pick = async () => {
-    await settings.getByLabel("Table", { exact: true }).click();
-    await ada.keyboard.type("bills");
-    await ada.getByRole("option", { name: "bills" }).first().click();
-  };
-  await ada.getByRole("button", { name: "Table", exact: true }).click();
-  await settings.getByLabel("Title").fill("Bills");
-  await pick();
-  await settings.getByLabel("Height").fill("7");
-  await ada.getByRole("button", { name: "Table", exact: true }).click();
-  await settings.getByLabel("Title").fill("Total owed");
-  await pick();
-  await settings.getByLabel("Show totals in place of rows").check();
-  await settings.getByLabel("Total 1", { exact: true }).selectOption("sum");
-  await settings.getByLabel("Height").fill("4");
-  await ada.waitForTimeout(1500);
-  await ada.getByRole("button", { name: "Publish" }).click();
+  await expect(ada).toHaveURL(/\/screens\/screens\/bills-desk$/);
+  // The page is written through the API: the inspector that places a table and a stat is
+  // walked in phase-25.spec.ts, which is where its steps belong.
+  ok(
+    await asAda("PUT", `${W}/drafts/screens/bills-desk`, {
+      kind: "interface",
+      schemaVersion: 2,
+      body: {
+        title: "Bills desk",
+        pages: [
+          {
+            id: "main",
+            title: "Bills",
+            widgets: [
+              {
+                id: "bills",
+                type: "core/table",
+                title: "Bills",
+                at: { x: 0, y: 0, w: 12, h: 7 },
+                data: { rows: { source: { visual: { table: "bills" } } } },
+                config: {
+                  columns: [{ column: "number" }, { column: "team" }, { column: "total" }],
+                },
+              },
+              {
+                id: "owed",
+                type: "core/stat",
+                title: "Total owed",
+                at: { x: 0, y: 7, w: 4, h: 4 },
+                data: {
+                  value: {
+                    source: {
+                      visual: {
+                        table: "bills",
+                        measures: [{ fn: "sum", column: "total", as: "owed" }],
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+    "write the bills page",
+  );
+  await ada.reload();
+  await ada.getByRole("button", { name: "Publish", exact: true }).click();
   // Publishing says what it would do, and is done from there.
-  await ada.getByRole("dialog").getByRole("button", { name: "Publish" }).click();
+  await ada
+    .getByRole("dialog")
+    .getByRole("button", { name: /^Publish/ })
+    .click();
   await ada.getByText("Published. People who open the app now see this.").waitFor();
   await expectNoAxeViolations(ada, "the App Builder, published");
+  // The published app has an address now: it is under the Publish button's "More ways to publish".
+  await ada.getByRole("button", { name: "More ways to publish" }).click();
   const url = (await ada
-    .getByRole("link", { name: "Open the app" })
-    .first()
+    .getByRole("menuitem", { name: "Open the published app" })
     .getAttribute("href")) as string;
+  await ada.keyboard.press("Escape");
 
   // Shared with every end user, from the apps screen.
   await ada.goto(`${link}/apps`);
@@ -472,12 +507,8 @@ test("she publishes an app over a table, and two groups of end users see it diff
     sees[team] = {
       rows: (await bills.getByRole("row").count()) - 1,
       total: (
-        (await visitor
-          .getByRole("region", { name: "Total owed" })
-          .getByRole("cell")
-          .last()
-          .textContent()) ?? ""
-      ).trim(),
+        (await visitor.getByRole("region", { name: "Total owed" }).textContent()) ?? ""
+      ).replace(/\D/g, ""),
     };
     await visitor.context().close();
   }

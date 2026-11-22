@@ -215,6 +215,16 @@ const managers = await admin.post(`${T}/groups`, {
 for (const email of ["maya.brooks@fernhill.example", "rowan.ellis@fernhill.example"]) {
   await admin.put(`${T}/groups/${managers.id}/members/${members[email]}`);
 }
+// Billing: who may mark an invoice paid besides the practice managers (the Invoice detail's
+// "Mark paid" is limited to both groups, phase 28). Rowan is in both; Devi is only here.
+const billing = await admin.post(`${T}/groups`, {
+  name: "Billing",
+  description: "Mark invoices paid, with the practice managers.",
+});
+const BILLING_MEMBERS = ["rowan.ellis@fernhill.example", "devi.shah@fernhill.example"];
+for (const email of BILLING_MEMBERS) {
+  await admin.put(`${T}/groups/${billing.id}/members/${members[email]}`);
+}
 // Devi deploys to the sandbox and promotes: the developer role writes deployments but not promotions.
 await admin.post(`${T}/bindings`, {
   principalType: "member",
@@ -340,12 +350,12 @@ async function flowRun(base, flow, input = {}, who = admin) {
   return who.get(`${base}/flow-runs/${id}`);
 }
 
-step("Seeding six weeks of history in Clinics, and a little in the sandbox");
+step("Seeding six weeks of history in Clinics, and eight weeks of a small group in the sandbox");
 const seeded = await run(P, "setup/seed-demo", { clientsPerClinic: 24, pastDays: 42 });
 if (seeded.status !== "succeeded")
   throw new Error(`Seeding failed: ${JSON.stringify(seeded.error)}`);
 console.log("  ", JSON.stringify(seeded.output.counts));
-await run(D, "setup/seed-demo", { clientsPerClinic: 6, pastDays: 7 });
+await run(D, "setup/seed-demo", { clientsPerClinic: 6, pastDays: 56 });
 
 step("Giving three clients a portal account");
 const rows = async (base, table, filter) =>
@@ -517,23 +527,145 @@ PEOPLE.push({
 // sandbox removes them.
 step("The sandbox's visits query, a dashboard over it, and two docs sites");
 const shipSandbox = (paths, message) => maya.post(`${D}/changes/deploy`, { paths, message });
+// An interface is at schema version 2 and a dashboard at 3, since pages are made of widgets.
+const SCHEMA_VERSION = { interface: 2, dashboard: 3 };
 const draftInSandbox = (path, kind, body) =>
-  maya.put(`${D}/drafts/${path}`, { kind, schemaVersion: 1, body, create: true });
+  maya.put(`${D}/drafts/${path}`, {
+    kind,
+    schemaVersion: SCHEMA_VERSION[kind] ?? 1,
+    body,
+    create: true,
+  });
 await draftInSandbox("reports/visits-by-clinic", "query", {
   sql: "select clinic, count(*) as visits from appointments group by clinic order by visits desc",
 });
 await draftInSandbox("boards/clinic-visits", "dashboard", {
-  version: 2,
   title: "Visits by clinic",
-  filters: [],
   widgets: [
+    // The bar whoever reads it sets. The saved query below has no parameters, so it is all time;
+    // the visits and the chart follow the bar.
+    {
+      id: "filters",
+      type: "core/filter",
+      at: { x: 0, y: 0, w: 12, h: 2 },
+      config: {
+        filters: [
+          { name: "q", label: "Search visits", type: "search" },
+          {
+            name: "clinic",
+            label: "Clinic",
+            type: "choice",
+            from: { table: "appointments", column: "clinic" },
+          },
+          { name: "when", label: "When", type: "date_range", default: "last_30_days" },
+        ],
+        reset: true,
+      },
+    },
+    {
+      id: "views",
+      type: "core/tabs",
+      title: "Visits",
+      at: { x: 0, y: 2, w: 12, h: 13 },
+      config: {
+        tabs: [
+          { id: "visits", title: "Visits" },
+          { id: "clinics", title: "By clinic" },
+        ],
+        look: "pills",
+      },
+    },
+    {
+      id: "count",
+      type: "core/stat",
+      title: "Visits",
+      in: { widget: "views", tab: "visits" },
+      at: { x: 0, y: 0, w: 4, h: 3 },
+      data: {
+        value: {
+          source: {
+            visual: { table: "appointments", measures: [{ fn: "count", as: "visits" }] },
+          },
+          filters: [
+            { filter: "q", columns: ["pet_name", "client_code", "reason"] },
+            { filter: "clinic", column: "clinic" },
+            { filter: "when", column: "starts_at" },
+          ],
+        },
+      },
+      config: { caption: "In the range chosen", compare: true, compareTo: "when", goodWhen: "up" },
+    },
+    {
+      id: "recent",
+      type: "core/table",
+      title: "Latest visits",
+      in: { widget: "views", tab: "visits" },
+      at: { x: 0, y: 3, w: 12, h: 8 },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "appointments",
+              sort: [{ by: "starts_at", descending: true }],
+              limit: 50,
+            },
+          },
+          filters: [
+            { filter: "q", columns: ["pet_name", "client_code", "reason"] },
+            { filter: "clinic", column: "clinic" },
+            { filter: "when", column: "starts_at" },
+          ],
+        },
+      },
+      config: {
+        columns: [
+          { column: "starts_at", label: "When" },
+          { column: "pet_name", label: "Pet" },
+          { column: "clinic" },
+          { column: "reason" },
+          {
+            column: "status",
+            as: "badge",
+            badges: {
+              done: "success",
+              booked: "neutral",
+              checked_in: "attention",
+              cancelled: "neutral",
+            },
+          },
+        ],
+      },
+    },
     {
       id: "by-clinic",
+      type: "core/table",
       title: "Visits by clinic",
-      type: "table",
-      width: 6,
-      source: { query: "reports/visits-by-clinic" },
-      filters: [],
+      in: { widget: "views", tab: "clinics" },
+      at: { x: 0, y: 0, w: 6, h: 8 },
+      data: { rows: { source: { query: "reports/visits-by-clinic" } } },
+    },
+    {
+      id: "clinic-chart",
+      type: "core/chart",
+      title: "In the range chosen",
+      in: { widget: "views", tab: "clinics" },
+      at: { x: 6, y: 0, w: 6, h: 8 },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "appointments",
+              groupBy: [{ column: "clinic" }],
+              measures: [{ fn: "count", as: "visits" }],
+            },
+          },
+          filters: [
+            { filter: "q", columns: ["pet_name", "client_code", "reason"] },
+            { filter: "when", column: "starts_at" },
+          ],
+        },
+      },
+      config: { mark: "bar", values: true, order: "biggest" },
     },
   ],
 });
@@ -541,6 +673,119 @@ await shipSandbox(
   ["reports/visits-by-clinic", "boards/clinic-visits"],
   "A visits query and the dashboard over it",
 );
+// An app made in the console as Maya would, left as a draft so the builder has something to open
+// (phase 25): a page with a stat and a table over the sandbox's visits. It is not deployed.
+await draftInSandbox("screens/front-desk-board", "interface", {
+  title: "Front desk board",
+  description: "Today's visits at a glance, made in the console.",
+  pages: [
+    {
+      id: "today",
+      title: "Today",
+      icon: "calendar-check",
+      widgets: [
+        {
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            filters: [
+              { name: "q", label: "Search visits", type: "search" },
+              {
+                name: "clinic",
+                label: "Clinic",
+                type: "choice",
+                from: { table: "appointments", column: "clinic" },
+              },
+              { name: "when", label: "When", type: "date_range", default: "today" },
+            ],
+            reset: true,
+          },
+        },
+        {
+          id: "visits",
+          type: "core/stat",
+          title: "Visits",
+          at: { x: 0, y: 2, w: 3, h: 3 },
+          data: {
+            value: {
+              source: {
+                visual: { table: "appointments", measures: [{ fn: "count", as: "visits" }] },
+              },
+              filters: [
+                { filter: "q", columns: ["pet_name", "client_code", "reason"] },
+                { filter: "clinic", column: "clinic" },
+                { filter: "when", column: "starts_at" },
+              ],
+            },
+          },
+          config: { caption: "Today, at the clinic chosen" },
+        },
+        {
+          id: "list",
+          type: "core/table",
+          title: "Visits",
+          at: { x: 0, y: 5, w: 8, h: 9 },
+          data: {
+            rows: {
+              source: { visual: { table: "appointments", sort: [{ by: "starts_at" }] } },
+              filters: [
+                { filter: "q", columns: ["pet_name", "client_code", "reason"] },
+                { filter: "clinic", column: "clinic" },
+                { filter: "when", column: "starts_at" },
+              ],
+            },
+          },
+          config: {
+            columns: [
+              { column: "starts_at", label: "When" },
+              { column: "pet_name", label: "Pet" },
+              { column: "clinic" },
+              { column: "reason" },
+              {
+                column: "status",
+                as: "badge",
+                badges: {
+                  booked: "neutral",
+                  checked_in: "attention",
+                  in_exam: "action",
+                  done: "success",
+                  no_show: "danger",
+                  cancelled: "neutral",
+                },
+              },
+            ],
+          },
+        },
+        {
+          // Follows the row selected in the table beside it ({ selected }): a row click picks it.
+          id: "visit",
+          type: "core/detail",
+          title: "The visit chosen",
+          at: { x: 8, y: 5, w: 4, h: 9 },
+          data: { record: { source: { selected: "list" } } },
+          config: {
+            heading: "pet_name",
+            status: "status",
+            across: 1,
+            fields: [
+              { column: "number", label: "Visit" },
+              { column: "starts_at", label: "When" },
+              { column: "vet" },
+              { column: "reason" },
+              { column: "notes", section: "Notes" },
+            ],
+          },
+        },
+      ],
+    },
+  ],
+});
+await draftInSandbox("front-desk-board", "app", {
+  title: "Front desk board",
+  description: "Today's visits at a glance.",
+  interface: "screens/front-desk-board",
+});
 // Two top-level folders, each published as a site, so that two sites can share one feedback table.
 for (const [folder, title, text] of [
   ["rota", "Fernhill rota guide", "How the rota is made, and who to ask for a swap."],
@@ -575,6 +820,10 @@ const demo = {
   workspaces: { clinics: prod.id, sandbox: dev.id },
   password: PASSWORD,
   members: PEOPLE.map(({ email, name, about, role }) => ({ email, name, about, role })),
+  groups: {
+    "Practice managers": ["maya.brooks@fernhill.example", "rowan.ellis@fernhill.example"],
+    Billing: BILLING_MEMBERS,
+  },
   locums: {
     count: LOCUMS,
     first: "locum.01@fernhill.example",
@@ -586,6 +835,7 @@ const demo = {
     frontDesk: `${URL_}/apps/${SLUG}/clinics/front-desk/`,
     petPortal: `${URL_}/apps/${SLUG}/clinics/pet-portal/`,
     performance: `${URL_}/apps/${SLUG}/clinics/performance/`,
+    operations: `${URL_}/apps/${SLUG}/clinics/operations/`,
     portal: `${URL_}/portal/${SLUG}/`,
     oneHostname: `${URL_.replace("localhost", "fernhill.localhost")}/`,
   },
@@ -599,3 +849,6 @@ const demo = {
 mkdirSync(join(HERE, ".platform"), { recursive: true });
 writeFileSync(join(HERE, ".platform/demo.json"), `${JSON.stringify(demo, null, 2)}\n`);
 console.log(`\nDone. Sign-ins and addresses are in ${join(HERE, ".platform/demo.json")}`);
+console.log(
+  `Who may mark an invoice paid: Practice managers (Maya Brooks, Rowan Ellis) and Billing (Rowan Ellis, Devi Shah). Everyone else sees "Mark paid" greyed.`,
+);

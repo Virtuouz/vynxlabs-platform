@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const PUBLISHED = ["markup", "docs-engine", "docs", "ui", "app", "sdk", "cli"];
+const PUBLISHED = ["widget-sdk", "markup", "docs-engine", "docs", "ui", "app", "sdk", "cli"];
 
 const version = process.argv[2] ?? "";
 if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {

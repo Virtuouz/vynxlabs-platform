@@ -23,7 +23,7 @@ export interface PropsSchema {
   additionalProperties: false;
 }
 
-export type ProfileName = "product" | "docs" | "description" | "short" | "result";
+export type ProfileName = "product" | "docs" | "description" | "short" | "result" | "page";
 
 export interface ComponentSpec {
   name: string;
@@ -61,7 +61,7 @@ const ID = "^[a-z0-9][a-z0-9_-]*$";
 /** What a term can point at other than a glossary entry: a resource, by its kind and path. */
 export const TERM_RESOURCES = ["table", "script", "flow", "app", "connection", "query"] as const;
 
-const EVERYWHERE: readonly ProfileName[] = ["product", "docs"];
+const EVERYWHERE: readonly ProfileName[] = ["product", "docs", "page"];
 
 export const COMPONENTS: readonly ComponentSpec[] = [
   {
@@ -80,7 +80,7 @@ export const COMPONENTS: readonly ComponentSpec[] = [
       },
       additionalProperties: false,
     },
-    profiles: ["product", "docs", "description"],
+    profiles: ["product", "docs", "description", "page"],
   },
   {
     name: "term",
@@ -104,7 +104,7 @@ export const COMPONENTS: readonly ComponentSpec[] = [
       },
       additionalProperties: false,
     },
-    profiles: ["product", "docs", "description"],
+    profiles: ["product", "docs", "description", "page"],
     check(props) {
       const resources = TERM_RESOURCES.filter((kind) => props[kind] !== undefined);
       if (props.id !== undefined && resources.length > 0) {
@@ -295,6 +295,8 @@ export interface Profile {
   nodes: ReadonlySet<NodeType>;
   /** The shallowest heading it may hold: 3 refuses `#` and `##`. */
   minHeading: number;
+  /** The deepest heading it may hold. Left out, any. */
+  maxHeading?: number;
   links: ReadonlySet<LinkKind>;
   /** Where a picture may come from: a file beside the page, or an https address. */
   images: ReadonlySet<"relative" | "https">;
@@ -365,6 +367,15 @@ export const PROFILES: Record<ProfileName, Profile> = {
     links: new Set(),
     images: new Set(),
     maxLength: 500,
+  },
+  page: {
+    name: "page",
+    description: "The text of a widget on an app's page or a dashboard.",
+    nodes: new Set<NodeType>([...BLOCKS, "image", "component"]),
+    minHeading: 2,
+    maxHeading: 4,
+    links: new Set<LinkKind>(["http", "mailto", "relative"]),
+    images: new Set<"relative" | "https">(["relative"]),
   },
   result: {
     name: "result",

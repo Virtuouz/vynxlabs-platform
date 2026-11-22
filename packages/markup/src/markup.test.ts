@@ -158,7 +158,7 @@ describe("reading", () => {
 
 test("a page written to do harm draws no tag of its own, no handler and no address but http", () => {
   const source = readFileSync(join(FIXTURES, "hostile.md"), "utf8");
-  for (const profile of ["product", "docs", "description", "short", "result"] as const) {
+  for (const profile of ["product", "docs", "description", "short", "result", "page"] as const) {
     const html = renderHtml(parse(source), { ...OPTIONS, profile });
     const tags = [...html.matchAll(/<([a-z0-9]+)((?:\s+[a-z-]+="[^"]*")*)\s*\/?>/g)];
     // Every "<" in the output opens or closes one of these, or it is not a tag at all.
@@ -333,7 +333,10 @@ describe("components", () => {
     const source = ":product[] is here.\n\n::screenshot{name=a alt=b}\n";
     expect(codes(source)).toEqual(["component_not_allowed", "component_not_allowed"]);
     expect(codes(source, "product")).toEqual([]);
-    expect(renderHtml(parse(source))).toBe("<p> is here.</p>");
+    // What it held is drawn, and a component on a line of its own that cannot be shown says so.
+    expect(renderHtml(parse(source))).toBe(
+      '<p> is here.</p><p class="vd-unavailable">“screenshot” is not something this text can show.</p>',
+    );
   });
 
   test("a term nobody can explain to this reader is its word alone", () => {
@@ -427,6 +430,75 @@ describe("profiles", () => {
     const tree = parse("# Done\n\n| a |\n|---|\n| 1 |\n\n:::alert\nx\n:::\n");
     expect(validate(tree, "result").map((issue) => issue.code)).toEqual(["markdown_not_allowed"]);
     expect(renderHtml(tree, { profile: "result" })).not.toContain("vd-alert");
+  });
+
+  test("a page's text takes small headings, Markdown and the documentation's components", () => {
+    const source = [
+      "## Heading",
+      "",
+      "Some *text*, `code`, :kbd[Esc] and :term[a]{id=a} with [a link](https://example.com) and [mail](mailto:a@example.com).",
+      "",
+      "- one",
+      "",
+      "> quoted",
+      "",
+      ":::alert[Mind]{type=warning}",
+      "Careful.",
+      ":::",
+      "",
+      ":::steps",
+      "1. First",
+      "2. Second",
+      ":::",
+      "",
+      ":::tabs",
+      "::::tab{label=One}",
+      "In one.",
+      "::::",
+      "::::tab{label=Two}",
+      "In two.",
+      "::::",
+      ":::",
+      "",
+      ':::details{summary="More"}',
+      "Hidden.",
+      ":::",
+      "",
+      "::field{path=table.columns.*.type}",
+      "",
+    ].join("\n");
+    const tree = parse(source);
+    expect(validate(tree, "page", { source })).toEqual([]);
+    const html = renderHtml(tree, { profile: "page", term: () => ({ short: "A." }) });
+    for (const part of ["<h2", "<em>", "<code>", "<kbd", "<blockquote", "<ul", "<a ", "vd-alert"]) {
+      expect(html).toContain(part);
+    }
+    for (const word of ["Careful.", "First", "In one.", "In two.", "Hidden."]) {
+      expect(html).toContain(word);
+    }
+  });
+
+  test("a page's text refuses a big heading, the product's own components, tables and HTML", () => {
+    const codes = (source: string) =>
+      validate(parse(source), "page", { source }).map((issue) => issue.code);
+    expect(codes("# Big\n")).toEqual(["heading_too_shallow"]);
+    expect(codes("##### Deep\n")).toEqual(["heading_too_deep"]);
+    expect(codes("Called :product[].\n")).toEqual(["component_not_allowed"]);
+    expect(codes('::screenshot{name=a/b alt="x"}\n')).toEqual(["component_not_allowed"]);
+    expect(codes("::glossary\n")).toEqual(["component_not_allowed"]);
+    expect(codes("| a |\n|---|\n| 1 |\n")).toEqual(["markdown_not_allowed"]);
+    expect(codes("[x](javascript:alert(1))\n")).toEqual(["link_refused"]);
+    const html = renderHtml(parse('<script>alert(1)</script>\n\n<img src=x onerror="y">\n'), {
+      profile: "page",
+    });
+    expect(html).not.toContain("<script");
+    expect(html).not.toContain("<img");
+    expect(html).toContain("&lt;script&gt;");
+    const product = renderHtml(parse("Called :product[].\n"), {
+      profile: "page",
+      productName: "Volvel",
+    });
+    expect(product).not.toContain("Volvel");
   });
 
   test("every profile is described", () => {

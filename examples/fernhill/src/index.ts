@@ -2,5 +2,6 @@
 export * from "./apps.ts";
 export * from "./flows.ts";
 export * from "./model.ts";
+export * from "./operations.ts";
 export * from "./scripts.ts";
 export * from "./seed.ts";

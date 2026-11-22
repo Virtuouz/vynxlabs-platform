@@ -1,32 +1,22 @@
 import {
-  DASHBOARD_FILTER_TYPES,
   DASHBOARD_REFRESH,
   type DashboardBody,
-  type DashboardFilter,
   type DashboardRefresh,
-  type DashboardWidget,
   DEFAULT_DASHBOARD_REFRESH,
-  placeWidgets,
-  RELATIVE_RANGES,
-  WIDGET_SIZE,
-  type WidgetPlace,
+  filtersOf,
 } from "@volvel/manifest";
-import { settle, usePlacement } from "@volvel/screens";
 import {
   Button,
   CheckboxField,
-  Closing,
   Dialog,
   EmptyState,
   Menu,
   MultiSelectField,
-  Notice,
   SelectField,
-  TextField,
 } from "@volvel/ui";
-import { Ellipsis, Move, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type ApiError, api, invalidatePrefix, useLoad } from "../api.ts";
+import { Ellipsis, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { useHistory } from "../kit/history.ts";
@@ -35,12 +25,13 @@ import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { useTitleObject } from "../kit/title.ts";
-import { UndoRedo } from "../kit/UndoRedo.tsx";
+import { useBleedWhile } from "../kit/workbench.ts";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
-import { type FilterSetting, filterValues, RANGE_LABELS } from "./dashboards/model.ts";
-import { WidgetEditor } from "./dashboards/WidgetEditor.tsx";
-import { FilterBar, WidgetCard } from "./dashboards/Widgets.tsx";
+import { pageClient } from "./builder/client.ts";
+import { PageEditor } from "./builder/PageEditor.tsx";
+import { definitionOf, views } from "./builder/registry.ts";
+import { type FilterValues, PageView } from "./builder/renderer.ts";
 
 const REFRESH_WORDS: Record<Exclude<DashboardRefresh, "off">, string> = {
   1: "minute",
@@ -65,8 +56,6 @@ interface Summary {
 }
 interface Dashboard extends Summary {
   body: DashboardBody;
-  /** It was made before dashboards asked queries, and is shown converted. */
-  upgraded: boolean;
 }
 
 /** Dashboards in a workspace: the reader's own, those shared with them, and those the workspace keeps. */
@@ -150,20 +139,11 @@ export function Dashboards({ root, link }: { root: string; link: string }) {
   );
 }
 
-/** A name a filter or a widget can go by, made from what a person called it. */
-const slug = (text: string, taken: string[], fallback: string, separator: "_" | "-") => {
-  const base =
-    text
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, separator)
-      .replace(new RegExp(`^[^a-z]+|\\${separator}+$`, "g"), "")
-      .slice(0, 30) || fallback;
-  let name = base;
-  for (let n = 2; taken.includes(name); n += 1) name = `${base}${separator}${n}`;
-  return name;
-};
-
-/** One dashboard: looked at by anyone it is open to, and changed by the member whose it is. */
+/**
+ * One dashboard: looked at by anyone it is open to, and changed by the member whose it is.
+ * Changing it is the one page editor (`builder/PageEditor`), the one an app's builder uses.
+ * What is only about dashboards is here: sharing, how often it refreshes, and how old what it shows is.
+ */
 export function DashboardView({ root, link, id }: { root: string; link: string; id: string }) {
   const [loaded, setLoaded] = useState<Dashboard>();
   const [missing, setMissing] = useState<ApiError>();
@@ -171,9 +151,12 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   const [attempt, setAttempt] = useState(0);
   const [mode, setMode] = useUrlParam("edit");
   const [set, setSet] = useUrlParam("f");
-  const [editing, setEditing] = useState<DashboardWidget>();
-  const [filtering, setFiltering] = useState(false);
+  const [selected, setSelected] = useState<string>();
   const [sharing, setSharing] = useState(false);
+  /** Saves that have been asked for and not yet answered. */
+  const [pending, setPending] = useState(0);
+  /** Counted up when a save is kept, when it is time to refresh, and by "Refresh now". */
+  const [refreshKey, setRefreshKey] = useState(0);
   // Its name is the last crumb, which makes "Dashboards" before it the way back to the list.
   useTitleObject(loaded?.title);
   // Every change made to what the dashboard holds, a hundred back: where its widgets are,
@@ -184,6 +167,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     (state) => state && restoring.current(state),
   );
   const forget = history.clear;
+  const queue = useRef({ waiting: 0, revision: 0, last: Promise.resolve() });
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is Try again: it asks once more
   useEffect(() => {
@@ -201,50 +185,56 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   }, [root, id, forget, attempt]);
 
   // What the filters are set to, kept in the address so a link shows the same thing.
-  const settings = useMemo<Record<string, FilterSetting>>(() => {
+  const filterValues = useMemo<FilterValues>(() => {
     try {
-      return set ? (JSON.parse(set) as Record<string, FilterSetting>) : {};
+      const parsed = set ? JSON.parse(set) : {};
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
     } catch {
       return {};
     }
   }, [set]);
   const body = loaded?.body;
-  const values = useMemo(() => filterValues(body?.filters ?? [], settings), [body, settings]);
+  const editingNow = loaded?.kind === "member" && loaded.mine && mode === "1";
+  useBleedWhile(editingNow);
+  useShortcut("undo", history.undo, { enabled: editingNow });
+  useShortcut("redo", history.redo, { enabled: editingNow });
 
   // When each widget's answer was read. The dashboard is as old as the oldest of them.
   const [readAt, setReadAt] = useState<Record<string, number>>({});
-  const noteRead = useCallback(
-    (widgetId: string, at: number) =>
-      setReadAt((before) => (before[widgetId] === at ? before : { ...before, [widgetId]: at })),
-    [],
-  );
-  // What the layout was before each change made here, for ⌘Z.
-  const editingNow = loaded?.kind === "member" && loaded.mine && mode === "1";
-  useShortcut("undo", history.undo, { enabled: editingNow });
-  useShortcut("redo", history.redo, { enabled: editingNow });
-  // Changes that are drawn and not yet saved.
-  const moves = useRef({ waiting: 0, revision: 0, last: Promise.resolve() });
-  const placement = usePlacement({
-    places: JSON.stringify(placeWidgets(body?.widgets ?? []).map((one) => [one.id, one.at])),
-    onMove: editingNow ? (widgetId, at, by) => placing.current(widgetId, at, by) : undefined,
-    least: { w: 2, h: 2 },
-  });
-  const placing = useRef<(id: string, at: WidgetPlace, by: "pointer" | "keys") => void>(() => {});
-  // The grid places widgets where the page is wide enough; narrower, they are one column in order.
-  const [placed, setPlaced] = useState(false);
-  const measured = useRef<ResizeObserver | undefined>(undefined);
-  const gridRef = placement.grid;
-  const grid = useCallback(
-    (node: HTMLDivElement | null) => {
-      gridRef.current = node;
-      measured.current?.disconnect();
-      if (!node || typeof ResizeObserver !== "function") return;
-      // 48rem: where `@3xl` begins.
-      measured.current = new ResizeObserver(() => setPlaced(node.clientWidth >= 768));
-      measured.current.observe(node);
-    },
-    [gridRef],
-  );
+  const client = useMemo(() => {
+    const inner = pageClient(root, { of: "dashboard", id });
+    // Everything the page client does (actions, the rows behind, a filter's values), with
+    // each read noted for how old the dashboard is.
+    return {
+      ...inner,
+      read: async (
+        widget: string,
+        filters: FilterValues,
+        options?: Parameters<typeof inner.read>[2],
+      ) => {
+        const note = (at: number) =>
+          setReadAt((before) => (before[widget] === at ? before : { ...before, [widget]: at }));
+        try {
+          const answer = await inner.read(widget, filters, options);
+          note(Date.now());
+          return answer;
+        } catch (error) {
+          // A widget that could not be read is told as -1: it does not hold the age back, and is counted.
+          note(-1);
+          throw error;
+        }
+      },
+    };
+  }, [root, id]);
+
+  const refresh = body?.refresh ?? DEFAULT_DASHBOARD_REFRESH;
+  // Nothing asks again under someone who is changing it.
+  const every = refresh === "off" || editingNow ? undefined : refresh * 60_000;
+  useEffect(() => {
+    if (!every) return;
+    const timer = setInterval(() => setRefreshKey((n) => n + 1), every);
+    return () => clearInterval(timer);
+  }, [every]);
 
   if (missing) {
     return (
@@ -257,41 +247,46 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
 
   /**
    * Every save goes through one queue, one after another, each on the revision the one before it
-   * made. A rename, a share, the widget editor and a drag made just before it are saved in the
-   * order they were made, and none is refused as saved elsewhere because another of this
-   * screen's own was still in flight. Only the last answer is shown as saved: an earlier one
-   * would draw over a later change.
+   * made. A rename, a share and a change made just before it are saved in the order they were
+   * made, and none is refused as saved elsewhere because another of this screen's own was still
+   * in flight. Only the last answer is shown as saved: an earlier one would draw over a later change.
    */
   const send = (
     change: { body?: DashboardBody; title?: string; shared?: boolean; sharedWith?: string[] },
     onFailure?: () => Promise<void>,
   ): Promise<boolean> => {
-    const queue = moves.current;
-    queue.waiting += 1;
-    const run = queue.last.then(async () => {
+    const line = queue.current;
+    line.waiting += 1;
+    setPending((n) => n + 1);
+    const run = line.last.then(async () => {
       try {
         const saved = await api.put<Dashboard>(`${root}/dashboards/${id}`, {
           ...change,
-          revision: queue.revision,
+          revision: line.revision,
         });
-        queue.revision = saved.revision;
-        queue.waiting -= 1;
-        if (queue.waiting === 0) setLoaded(saved);
+        line.revision = saved.revision;
+        line.waiting -= 1;
+        if (line.waiting === 0) {
+          setLoaded(saved);
+          setRefreshKey((n) => n + 1);
+        }
         return true;
       } catch (error) {
-        queue.waiting -= 1;
+        line.waiting -= 1;
         notify.error(error);
         await onFailure?.();
         return false;
+      } finally {
+        setPending((n) => n - 1);
       }
     });
-    queue.last = run.then(() => undefined);
+    line.last = run.then(() => undefined);
     return run;
   };
   /** After a save that was refused: what was drawn was not kept, so show what the server has. */
   const showWhatIsKept = async () => {
     const kept = await api.get<Dashboard>(`${root}/dashboards/${id}`).catch(() => undefined);
-    if (kept && moves.current.waiting === 0) setLoaded(kept);
+    if (kept && queue.current.waiting === 0) setLoaded(kept);
   };
   /** Saves the dashboard with what changed, and shows it as saved. */
   const save = (change: {
@@ -300,68 +295,195 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
     shared?: boolean;
     sharedWith?: string[];
   }) => send(change, showWhatIsKept);
-  const withWidgets = (widgets: DashboardWidget[]) => save({ body: { ...body, widgets } });
   /**
    * A change to what the dashboard holds, drawn at once and saved after. Waiting for the save
    * would draw a dragged widget back where it began, and then play it to where it was put.
    * Saves go one after another, each on the revision the one before it made, so several
    * changes made quickly (arrow keys held down, undo pressed three times) are all kept.
-   *
-   * A widget the server has not heard of yet cannot be asked for its rows, so a change that
-   * brings one (redoing an added widget) is drawn when it is saved and not before.
    */
-  if (moves.current.waiting === 0) moves.current.revision = loaded.revision;
+  if (queue.current.waiting === 0) queue.current.revision = loaded.revision;
   const keep = (next: DashboardBody) => {
-    const known = new Set(body.widgets.map((one) => one.id));
-    if (next.widgets.every((one) => known.has(one.id))) setLoaded({ ...loaded, body: next });
+    setLoaded({ ...loaded, body: next });
     void send({ body: next }, showWhatIsKept);
   };
   restoring.current = keep;
-  // Every widget with a place: its own, or one given to it in order if it has none yet.
-  const widgets = placeWidgets(body.widgets);
-  const place = (widgetId: string, at: WidgetPlace, by: "pointer" | "keys") => {
-    const next = widgets.map((one) => ({ ...one, at: one.id === widgetId ? at : { ...one.at } }));
-    // It stays where it was put, and whatever it now lies on moves down out of its way.
-    settle(next, widgetId);
-    const name = widgets.find((one) => one.id === widgetId)?.title || widgetId;
-    // Arrow keys pressed one after another on one widget are one step to undo; a drag is its own.
-    history.record(`moving ${name}`, by === "keys" ? `place:${widgetId}` : undefined);
-    keep({ ...body, widgets: next });
-  };
-  placing.current = place;
-  const add = () =>
-    setEditing({
-      id: slug(
-        "widget",
-        body.widgets.map((one) => one.id),
-        "widget",
-        "-",
-      ),
-      type: "table",
-      source: { visual: { table: "" } },
-    });
-  const refresh = body.refresh ?? DEFAULT_DASHBOARD_REFRESH;
-  // Nothing asks again under someone who is changing it.
-  const every = refresh === "off" || edit ? undefined : refresh * 60_000;
-  const asking = widgets.filter((one) => one.type !== "text").map((one) => one.id);
-  // A widget that could not be read is told as -1: it does not hold the age back, and is counted.
-  const answered = asking.filter((one) => readAt[one] !== undefined);
-  const unread = answered.filter((one) => (readAt[one] ?? 0) < 0).length;
-  const times = answered.map((one) => readAt[one] ?? 0).filter((at) => at > 0);
-  const asOf =
-    answered.length === asking.length && times.length > 0 ? Math.min(...times) : undefined;
+
   const audience = loaded.shared
     ? "Everyone in this workspace"
     : (loaded.sharedWith ?? []).length > 0
       ? (loaded.sharedWith ?? []).map((group) => group.name).join(", ")
       : "Only you";
+  const asking = body.widgets
+    .filter((one) => Object.keys(definitionOf(one.type)?.data ?? {}).length > 0)
+    .map((one) => one.id);
+  const answered = asking.filter((one) => readAt[one] !== undefined);
+  const unread = answered.filter((one) => (readAt[one] ?? 0) < 0).length;
+  const times = answered.map((one) => readAt[one] ?? 0).filter((at) => at > 0);
+  // The oldest of what was read; with nothing read yet it says it is reading, never a bare "…".
+  const asOf = times.length > 0 ? Math.min(...times) : undefined;
+  const reading = answered.length < asking.length;
+
+  const menu = (
+    <Menu
+      ariaLabel="More"
+      align="end"
+      triggerClassName="inline-flex size-8 items-center justify-center rounded-control border border-line-control hover:bg-sunken"
+      label={<Ellipsis aria-hidden="true" size={16} />}
+      items={[
+        {
+          label: "Rename…",
+          onSelect: async () => {
+            const title = await ask.prompt({
+              title: "Rename the dashboard",
+              label: "Name",
+              initial: loaded.title,
+              action: "Rename",
+            });
+            if (title) void save({ title });
+          },
+        },
+        {
+          label: "Keep it as a resource of the workspace…",
+          onSelect: async () => {
+            let made = "";
+            const path = await ask.prompt({
+              title: "Keep it as a resource",
+              text: "A copy is saved as a draft of a dashboard resource: versioned, deployed and promoted with the rest of the workspace, and open to everyone who may see dashboards. Yours stays as it is.",
+              label: "Its path, such as boards/lending",
+              action: "Save the draft",
+              submit: async (value) => {
+                try {
+                  await api.put(`${root}/drafts/${value.trim()}`, {
+                    kind: "dashboard",
+                    schemaVersion: 3,
+                    body: { ...body, title: loaded.title },
+                    create: true,
+                  });
+                  made = value.trim();
+                  return undefined;
+                } catch (error) {
+                  return takenText(error) ?? failureText(error);
+                }
+              },
+            });
+            if (!path || !made) return;
+            notify.success(`${made} is saved as a draft. Deploy it to keep it.`, {
+              link: { label: "Review and deploy", href: `${link}/release` },
+            });
+          },
+        },
+        {
+          label: "Delete…",
+          danger: true,
+          separated: true,
+          onSelect: async () => {
+            const sure = await ask.confirm({
+              title: `Delete ${loaded.title}?`,
+              text: "The dashboard is removed for you and for anyone it is shared with. No table and no row is touched.",
+              action: "Delete",
+              danger: true,
+            });
+            if (!sure) return;
+            try {
+              await api.delete(`${root}/dashboards/${id}`);
+              navigate(`${link}/dashboards`);
+            } catch (error) {
+              notify.error(error);
+            }
+          },
+        },
+      ]}
+    />
+  );
+  const sharingDialog = (
+    <Dialog open={sharing} onClose={() => setSharing(false)} title={`Share ${loaded.title}`}>
+      <div className="flex flex-col gap-4">
+        <CheckboxField
+          label="Show it to everyone in this workspace"
+          name="shared"
+          checked={loaded.shared}
+          hint="They can look and not change it. Each person sees only the rows they may read."
+          onChange={(shared) => void save({ shared })}
+        />
+        {loaded.shared ? null : (
+          <SharedWith
+            root={root}
+            chosen={(loaded.sharedWith ?? []).map((group) => group.id)}
+            onChange={(sharedWith) => void save({ sharedWith })}
+          />
+        )}
+        <div className="flex justify-end">
+          <Button onClick={() => setSharing(false)}>Done</Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+  const refreshSelect = (
+    <div className="w-56">
+      <SelectField
+        inline
+        name="refresh"
+        label="Refreshes"
+        value={String(refresh)}
+        options={DASHBOARD_REFRESH.map((one) => ({
+          value: String(one),
+          label: one === "off" ? "Never by itself" : `Every ${REFRESH_WORDS[one]}`,
+        }))}
+        onChange={(next) => {
+          history.record("the change to how often it refreshes");
+          keep({ ...body, refresh: next === "off" ? "off" : (Number(next) as DashboardRefresh) });
+        }}
+      />
+    </div>
+  );
+
+  if (edit) {
+    return (
+      <>
+        <PageEditor
+          root={root}
+          link={link}
+          surface="dashboard"
+          source={{ of: "dashboard", id }}
+          value={{ widgets: body.widgets }}
+          selected={selected}
+          onSelect={setSelected}
+          refreshKey={refreshKey}
+          onChange={(next, label, key) => {
+            history.record(label, key);
+            keep({ ...body, widgets: next.widgets });
+          }}
+          shell={{
+            bleed: true,
+            title: loaded.title,
+            saving: pending > 0 ? "saving" : "saved",
+            savedWords: "Saved.",
+            history,
+            primary: (
+              <Button variant="primary" onClick={() => setMode(undefined)}>
+                Done
+              </Button>
+            ),
+            roomyMore: (
+              <>
+                {refreshSelect}
+                <Button onClick={() => setSharing(true)}>Share</Button>
+                {menu}
+              </>
+            ),
+          }}
+        />
+        {sharingDialog}
+      </>
+    );
+  }
 
   return (
     <Page
       title={loaded.title}
       description={
         loaded.kind === "resource"
-          ? `A dashboard the workspace keeps, at ${loaded.path}. It is changed where resources are, and reaches production by promotion.`
+          ? `Kept by the workspace, at ${loaded.path}. You see the rows you may read.`
           : mine
             ? `Yours. Seen by: ${audience.toLowerCase()}.`
             : `${loaded.owner}'s, shared with you. You see the rows you may read.`
@@ -371,83 +493,10 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           {mine ? (
             <>
               <Button onClick={() => setSharing(true)}>Share</Button>
-              <Button
-                variant={edit ? "primary" : "secondary"}
-                aria-pressed={edit}
-                onClick={() => setMode(edit ? undefined : "1")}
-              >
-                {edit ? "Done" : "Edit"}
+              <Button variant="secondary" onClick={() => setMode("1")}>
+                Edit
               </Button>
-              <Menu
-                ariaLabel="More"
-                align="end"
-                triggerClassName="inline-flex size-8 items-center justify-center rounded-control border border-line-control hover:bg-sunken"
-                label={<Ellipsis aria-hidden="true" size={16} />}
-                items={[
-                  {
-                    label: "Rename…",
-                    onSelect: async () => {
-                      const title = await ask.prompt({
-                        title: "Rename the dashboard",
-                        label: "Name",
-                        initial: loaded.title,
-                        action: "Rename",
-                      });
-                      if (title) void save({ title });
-                    },
-                  },
-                  {
-                    label: "Keep it as a resource of the workspace…",
-                    onSelect: async () => {
-                      let made = "";
-                      const path = await ask.prompt({
-                        title: "Keep it as a resource",
-                        text: "A copy is saved as a draft of a dashboard resource: versioned, deployed and promoted with the rest of the workspace, and open to everyone who may see dashboards. Yours stays as it is.",
-                        label: "Its path, such as boards/lending",
-                        action: "Save the draft",
-                        submit: async (value) => {
-                          try {
-                            await api.put(`${root}/drafts/${value.trim()}`, {
-                              kind: "dashboard",
-                              schemaVersion: 1,
-                              body: { ...body, title: loaded.title },
-                              create: true,
-                            });
-                            made = value.trim();
-                            return undefined;
-                          } catch (error) {
-                            return takenText(error) ?? failureText(error);
-                          }
-                        },
-                      });
-                      if (!path || !made) return;
-                      notify.success(`${made} is saved as a draft. Deploy it to keep it.`, {
-                        link: { label: "Review and deploy", href: `${link}/release` },
-                      });
-                    },
-                  },
-                  {
-                    label: "Delete…",
-                    danger: true,
-                    separated: true,
-                    onSelect: async () => {
-                      const sure = await ask.confirm({
-                        title: `Delete ${loaded.title}?`,
-                        text: "The dashboard is removed for you and for anyone it is shared with. No table and no row is touched.",
-                        action: "Delete",
-                        danger: true,
-                      });
-                      if (!sure) return;
-                      try {
-                        await api.delete(`${root}/dashboards/${id}`);
-                        navigate(`${link}/dashboards`);
-                      } catch (error) {
-                        notify.error(error);
-                      }
-                    },
-                  },
-                ]}
-              />
+              {menu}
             </>
           ) : null}
         </span>
@@ -459,254 +508,63 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           data-freshness=""
         >
           <span>
-            Last refreshed {asOf ? <Time value={new Date(asOf)} mode="clock" /> : "…"}
+            {asOf ? (
+              <>
+                Last refreshed <Time value={new Date(asOf)} mode="clock" />
+              </>
+            ) : reading ? (
+              "Refreshing"
+            ) : (
+              "Nothing could be read"
+            )}
             {unread > 0
               ? ` · ${unread === 1 ? "1 widget" : `${unread} widgets`} could not be read`
               : ""}
             {" · "}
             {refresh === "off"
               ? "Does not refresh by itself"
-              : edit
-                ? "Not refreshing while it is being changed"
-                : `Refreshes every ${REFRESH_WORDS[refresh]}`}
+              : `Refreshes every ${REFRESH_WORDS[refresh]}`}
           </span>
           <button
             type="button"
             className="inline-flex items-center gap-1 rounded-control px-1 text-action hover:underline"
-            onClick={() => invalidatePrefix(`${root}/dashboards/${id}/widgets`)}
+            onClick={() => setRefreshKey((n) => n + 1)}
           >
             <RefreshCw aria-hidden="true" size={14} /> Refresh now
           </button>
         </p>
       ) : null}
-      {loaded.upgraded ? (
-        <Notice tone="plain">
-          This dashboard was made before dashboards asked queries. It is shown as it reads now, and
-          is kept that way the next time it is saved.
-        </Notice>
-      ) : null}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <FilterBar
-          root={root}
-          filters={body.filters ?? []}
-          settings={settings}
-          onChange={(next) =>
-            setSet(Object.keys(next).length > 0 ? JSON.stringify(next) : undefined)
-          }
-        />
-        {edit ? (
-          <span className="flex flex-wrap items-end gap-2">
-            <div className="w-44">
-              <SelectField
-                name="refresh"
-                label="Refreshes"
-                value={String(refresh)}
-                options={DASHBOARD_REFRESH.map((one) => ({
-                  value: String(one),
-                  label: one === "off" ? "Never by itself" : `Every ${REFRESH_WORDS[one]}`,
-                }))}
-                onChange={(next) => {
-                  history.record("the change to how often it refreshes");
-                  void save({
-                    body: {
-                      ...body,
-                      refresh: next === "off" ? "off" : (Number(next) as DashboardRefresh),
-                    },
-                  });
-                }}
-              />
-            </div>
-            <UndoRedo history={history} />
-            <Button onClick={() => setFiltering(true)}>Filters</Button>
-            <Button variant="primary" onClick={add}>
-              <Plus aria-hidden="true" size={16} /> Add a widget
-            </Button>
-          </span>
-        ) : null}
-      </div>
       {body.widgets.length === 0 ? (
         <EmptyState
           title="Nothing on it yet"
           action={
             mine ? (
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setMode("1");
-                  add();
-                }}
-              >
-                Add a widget
+              <Button variant="primary" onClick={() => setMode("1")}>
+                Add to page
               </Button>
             ) : undefined
           }
         >
-          A widget asks a question of the workspace's tables and draws the answer: a figure, a
+          A widget asks a question of the workspace's tables and draws the answer: a number, a
           chart, a table or a pivot.
         </EmptyState>
       ) : (
-        // Laid out by the room it is given: twelve columns of rows 40 px tall where there is
-        // room, and one column, top to bottom and left to right, where there is not.
-        <div className="@container">
-          <div
-            ref={grid}
-            className="grid grid-cols-1 gap-3 @3xl:auto-rows-[2.5rem] @3xl:grid-cols-12"
-          >
-            {[...widgets]
-              .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x)
-              .map((widget) => (
-                <WidgetCard
-                  key={widget.id}
-                  root={root}
-                  dashboard={id}
-                  revision={loaded.revision}
-                  body={body}
-                  widget={widget}
-                  values={values}
-                  at={placement.at(widget.id, widget.at)}
-                  placed={placed}
-                  held={placement.held?.id === widget.id}
-                  every={every}
-                  fromRepository={loaded.kind === "resource" && loaded.ownership === "code"}
-                  onAsOf={noteRead}
-                  onShow={
-                    edit && widget.type === "table"
-                      ? (show) => {
-                          const { show: _before, ...options } = widget.options ?? {};
-                          history.record(`the columns of ${widget.title || widget.id}`);
-                          void withWidgets(
-                            widgets.map((one) =>
-                              one.id === widget.id
-                                ? { ...one, options: { ...options, ...(show ? { show } : {}) } }
-                                : one,
-                            ),
-                          );
-                        }
-                      : undefined
-                  }
-                  onGrab={
-                    edit
-                      ? (event, how) => placement.grab(event, widget.id, widget.at, how)
-                      : undefined
-                  }
-                  tools={
-                    edit ? (
-                      <>
-                        <Button
-                          size="small"
-                          variant="quiet"
-                          aria-label={`Move ${widget.title || widget.id}: drag its heading, or press the arrow keys. Shift and the arrow keys change its size`}
-                          {...placement.keys(widget.id, widget.title || widget.id, widget.at)}
-                        >
-                          <Move aria-hidden="true" size={14} />
-                        </Button>
-                        <Button
-                          size="small"
-                          variant="quiet"
-                          aria-label={`Edit ${widget.title || widget.id}`}
-                          onClick={() => setEditing(widget)}
-                        >
-                          <Pencil aria-hidden="true" size={14} />
-                        </Button>
-                        <Button
-                          size="small"
-                          variant="quiet"
-                          aria-label={`Remove ${widget.title || widget.id}`}
-                          onClick={async () => {
-                            const sure = await ask.confirm({
-                              title: `Remove ${widget.title || "this widget"}?`,
-                              text: "It is taken off the dashboard. No table and no row is touched.",
-                              action: "Remove",
-                              danger: true,
-                            });
-                            if (sure) {
-                              const rest = widgets
-                                .filter((one) => one.id !== widget.id)
-                                .map((one) => ({ ...one, at: { ...one.at } }));
-                              // What was under it rises into the room it leaves.
-                              settle(rest, undefined);
-                              history.record(`removing ${widget.title || widget.id}`);
-                              keep({ ...body, widgets: rest });
-                            }
-                          }}
-                        >
-                          <Trash2 aria-hidden="true" size={14} />
-                        </Button>
-                      </>
-                    ) : undefined
-                  }
-                />
-              ))}
-          </div>
-          <span role="status" className="sr-only">
-            {placement.said}
-          </span>
-        </div>
+        <PageView
+          widgets={body.widgets}
+          filters={filtersOf(body.widgets)}
+          registry={views}
+          client={client}
+          filterValues={filterValues}
+          onFilterValues={(next) => {
+            const kept = Object.fromEntries(
+              Object.entries(next).filter(([, value]) => value !== undefined),
+            );
+            setSet(Object.keys(kept).length > 0 ? JSON.stringify(kept) : undefined);
+          }}
+          refreshKey={refreshKey}
+        />
       )}
-
-      <Closing subject={editing}>
-        {(editing, shown) => (
-          <WidgetEditor
-            open={shown}
-            key={editing.id}
-            root={root}
-            body={body}
-            widget={editing}
-            onClose={() => setEditing(undefined)}
-            onSave={async (widget) => {
-              const there = widgets.some((one) => one.id === widget.id);
-              // A new one goes under the rest, as big as its kind is to begin with.
-              const under = widgets.reduce((low, one) => Math.max(low, one.at.y + one.at.h), 0);
-              const name = widget.title || widget.id;
-              history.record(there ? `the change to ${name}` : `adding ${name}`);
-              const done = await withWidgets(
-                there
-                  ? widgets.map((one) => (one.id === widget.id ? { ...widget, at: one.at } : one))
-                  : [
-                      ...widgets,
-                      { ...widget, at: { x: 0, y: under, ...WIDGET_SIZE[widget.type] } },
-                    ],
-              );
-              if (done) setEditing(undefined);
-            }}
-          />
-        )}
-      </Closing>
-      <Closing subject={filtering}>
-        {(_filtering, shown) => (
-          <FiltersDialog
-            open={shown}
-            root={root}
-            body={body}
-            onClose={() => setFiltering(false)}
-            onSave={async (next) => {
-              history.record("the change to the filters");
-              if (await save({ body: next })) setFiltering(false);
-            }}
-          />
-        )}
-      </Closing>
-      <Dialog open={sharing} onClose={() => setSharing(false)} title={`Share ${loaded.title}`}>
-        <div className="flex flex-col gap-4">
-          <CheckboxField
-            label="Show it to everyone in this workspace"
-            name="shared"
-            checked={loaded.shared}
-            hint="They can look and not change it. Each person sees only the rows they may read."
-            onChange={(shared) => void save({ shared })}
-          />
-          {loaded.shared ? null : (
-            <SharedWith
-              root={root}
-              chosen={(loaded.sharedWith ?? []).map((group) => group.id)}
-              onChange={(sharedWith) => void save({ sharedWith })}
-            />
-          )}
-          <div className="flex justify-end">
-            <Button onClick={() => setSharing(false)}>Done</Button>
-          </div>
-        </div>
-      </Dialog>
+      {sharingDialog}
     </Page>
   );
 }
@@ -732,261 +590,9 @@ function SharedWith({
       options={groups.data.items.map((group) => ({ value: group.id, label: group.name }))}
       value={chosen}
       placeholder="Nobody else"
+      inline
       hint="Members in them can look and not change it. Each sees only the rows they may read."
       onChange={onChange}
     />
-  );
-}
-
-const FILTER_LABELS: Record<DashboardFilter["type"], string> = {
-  date_range: "A range of dates",
-  choice: "One of a list",
-  text: "Text to look for",
-  number: "A number",
-};
-
-/**
- * The dashboard's filters: what each is called and what it is when nobody has
- * set it. A filter narrows the widgets that are told, each in its own
- * settings, which column or parameter it goes to.
- */
-function FiltersDialog({
-  root,
-  body,
-  open,
-  onClose,
-  onSave,
-}: {
-  root: string;
-  body: DashboardBody;
-  open: boolean;
-  onClose: () => void;
-  onSave: (body: DashboardBody) => Promise<void>;
-}) {
-  const [filters, setFilters] = useState<DashboardFilter[]>(body.filters ?? []);
-  const [busy, setBusy] = useState(false);
-  const schema = useLoad<{ tables: { name: string; columns: { name: string }[] }[] }>(
-    `${root}/queries/schema`,
-  );
-  const change = (at: number, next: Partial<DashboardFilter>) =>
-    setFilters((before) =>
-      before.map((one, index) => {
-        if (index !== at) return one;
-        const merged = { ...one, ...next } as Record<string, unknown>;
-        for (const key of Object.keys(merged)) {
-          // The label may be empty while it is typed; the name stands in for it on save.
-          if (merged[key] === undefined || (merged[key] === "" && key !== "label")) {
-            delete merged[key];
-          }
-        }
-        return merged as unknown as DashboardFilter;
-      }),
-    );
-  const removed = (body.filters ?? []).filter(
-    (one) => !filters.some((kept) => kept.name === one.name),
-  );
-  return (
-    <Dialog open={open} onClose={onClose} title="Filters">
-      <div className="flex flex-col gap-4">
-        <p className="m-0 text-ink-muted">
-          Whoever reads the dashboard sets these. Each widget says, in its own settings, which of
-          its columns or parameters a filter goes to.
-        </p>
-        <ul className="m-0 flex list-none flex-col gap-3 p-0">
-          {filters.map((filter, at) => (
-            <li
-              key={filter.name}
-              className="flex flex-col gap-2 rounded-panel border border-line p-3"
-            >
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="min-w-40 flex-1">
-                  <TextField
-                    name={`label-${filter.name}`}
-                    label="Called"
-                    value={filter.label ?? filter.name}
-                    hint="Left empty, it is called by its name."
-                    onChange={(label) => change(at, { label })}
-                  />
-                </div>
-                <div className="w-44">
-                  <SelectField
-                    name={`type-${filter.name}`}
-                    label="It is"
-                    value={filter.type}
-                    options={DASHBOARD_FILTER_TYPES.map((type) => ({
-                      value: type,
-                      label: FILTER_LABELS[type],
-                    }))}
-                    onChange={(type) => {
-                      const { default: _default, choices: _choices, from: _from, ...kept } = filter;
-                      setFilters((before) =>
-                        before.map((one, index) =>
-                          index === at ? { ...kept, type: type as DashboardFilter["type"] } : one,
-                        ),
-                      );
-                    }}
-                  />
-                </div>
-                <Button
-                  size="small"
-                  variant="quiet"
-                  onClick={() => setFilters((before) => before.filter((_, index) => index !== at))}
-                >
-                  Remove
-                </Button>
-              </div>
-              {filter.type === "date_range" ? (
-                <div className="w-56">
-                  <SelectField
-                    name={`default-${filter.name}`}
-                    label="When nobody has set it"
-                    value={typeof filter.default === "string" ? filter.default : ""}
-                    options={[
-                      { value: "", label: "All time" },
-                      ...RELATIVE_RANGES.map((name) => ({
-                        value: name,
-                        label: RANGE_LABELS[name],
-                      })),
-                    ]}
-                    onChange={(value) => change(at, { default: value || undefined })}
-                  />
-                </div>
-              ) : filter.type === "choice" ? (
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="w-56">
-                    <SelectField
-                      name={`from-${filter.name}`}
-                      label="Offers the values of"
-                      value={filter.from ? `${filter.from.table} ${filter.from.column}` : ""}
-                      options={[
-                        { value: "", label: "A list written here" },
-                        ...(schema.data?.tables ?? []).flatMap((table) =>
-                          table.columns.map((column) => ({
-                            value: `${table.name} ${column.name}`,
-                            label: `${table.name}: ${column.name}`,
-                          })),
-                        ),
-                      ]}
-                      onChange={(value) => {
-                        const [table, column] = value.split(" ");
-                        const { from: _from, choices: _choices, ...kept } = filter;
-                        setFilters((before) =>
-                          before.map((one, index) =>
-                            index === at
-                              ? table && column
-                                ? { ...kept, from: { table, column } }
-                                : kept
-                              : one,
-                          ),
-                        );
-                      }}
-                    />
-                  </div>
-                  {filter.from ? null : (
-                    <div className="min-w-48 flex-1">
-                      <TextField
-                        name={`choices-${filter.name}`}
-                        label="The values, with commas"
-                        required={false}
-                        value={(filter.choices ?? []).join(", ")}
-                        onChange={(text) => {
-                          const choices = text
-                            .split(",")
-                            .map((one) => one.trim())
-                            .filter(Boolean);
-                          const { choices: _choices, ...kept } = filter;
-                          setFilters((before) =>
-                            before.map((one, index) =>
-                              index === at
-                                ? choices.length > 0
-                                  ? { ...kept, choices }
-                                  : kept
-                                : one,
-                            ),
-                          );
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-        <div>
-          <Button
-            size="small"
-            disabled={filters.length >= 8}
-            onClick={() =>
-              setFilters((before) => [
-                ...before,
-                {
-                  name: slug(
-                    "filter",
-                    before.map((one) => one.name),
-                    "filter",
-                    "_",
-                  ),
-                  label: "Dates",
-                  type: "date_range",
-                  default: "last_30_days",
-                },
-              ])
-            }
-          >
-            Add a filter
-          </Button>
-        </div>
-        {removed.length > 0 ? (
-          <Notice tone="plain">
-            {removed.map((one) => one.label ?? one.name).join(", ")} will be taken off, and off
-            every widget that used {removed.length === 1 ? "it" : "them"}.
-          </Notice>
-        ) : null}
-        <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>Cancel</Button>
-          <Button
-            variant="primary"
-            loading={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                const kept = new Set(filters.map((one) => one.name));
-                const { filters: _filters, ...rest } = body;
-                await onSave({
-                  ...rest,
-                  ...(filters.length > 0
-                    ? {
-                        filters: filters.map((one) => {
-                          if (one.label?.trim()) return one;
-                          const { label: _label, ...bare } = one;
-                          return bare as DashboardFilter;
-                        }),
-                      }
-                    : {}),
-                  // A widget no longer names a filter that is gone.
-                  widgets: body.widgets.map((widget) => {
-                    const { filters: bound, options, ...bare } = widget;
-                    const still = (bound ?? []).filter((one) => kept.has(one.filter));
-                    const { compareTo, ...others } = options ?? {};
-                    const drawn =
-                      compareTo && kept.has(compareTo) ? { ...others, compareTo } : others;
-                    return {
-                      ...bare,
-                      ...(still.length > 0 ? { filters: still } : {}),
-                      ...(Object.keys(drawn).length > 0 ? { options: drawn } : {}),
-                    };
-                  }),
-                });
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Save the filters
-          </Button>
-        </div>
-      </div>
-    </Dialog>
   );
 }

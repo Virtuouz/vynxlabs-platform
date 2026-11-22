@@ -2,6 +2,7 @@ import { LucideProvider } from "lucide-react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
 import { Providers } from "./ask.tsx";
+import { startEarlyScripts } from "./early.ts";
 import { BrandProvider } from "./kit/brand.tsx";
 import { ErrorBoundary } from "./kit/ErrorBoundary.tsx";
 import { adoptLegacy } from "./prefs.ts";
@@ -10,6 +11,7 @@ import "./styles.css";
 
 // Settings kept the old way move to their new keys before the theme is read.
 adoptLegacy();
+startEarlyScripts(window.location.pathname);
 applyThemeChoice();
 loadInstanceTheme();
 

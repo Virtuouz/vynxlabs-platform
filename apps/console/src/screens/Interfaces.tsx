@@ -8,7 +8,7 @@ import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
-import { type Listed, slug } from "./builder/data.ts";
+import { type Listed, slug, slugTyping } from "./builder/data.ts";
 import { cannotRename } from "./ResourceIdentity.tsx";
 
 /** The apps made in the console: each an interface, and the app that serves it. */
@@ -75,7 +75,7 @@ export function Interfaces({
                 ) : (
                   <span className="font-medium">{row.title}</span>
                 )}
-                <code className="font-mono text-code text-ink-muted">{row.path}</code>
+                <code className="font-mono text-code break-all text-ink-muted">{row.path}</code>
               </span>
             ),
           },
@@ -85,7 +85,9 @@ export function Interfaces({
               <span className="flex flex-col">
                 <Mono>{row.pages ?? "—"}</Mono>
                 {row.tables && row.tables.length > 0 ? (
-                  <span className="text-meta text-ink-subtle">reads {row.tables.join(", ")}</span>
+                  <span className="text-meta break-words text-ink-subtle">
+                    reads {row.tables.join(", ")}
+                  </span>
                 ) : null}
               </span>
             ),
@@ -194,11 +196,11 @@ export function Interfaces({
             setError(undefined);
             setTaken(undefined);
             let screenMade = false;
-            const path = `screens/${where}`;
+            const path = `screens/${slug(where)}`;
             try {
               await api.put(`${root}/drafts/${path}`, {
                 kind: "interface",
-                schemaVersion: 1,
+                schemaVersion: 2,
                 body: {
                   title: title.trim(),
                   pages: [{ id: "main", title: title.trim(), widgets: [] }],
@@ -206,7 +208,7 @@ export function Interfaces({
                 create: true,
               });
               screenMade = true;
-              await api.put(`${root}/drafts/${where}`, {
+              await api.put(`${root}/drafts/${slug(where)}`, {
                 kind: "app",
                 schemaVersion: 1,
                 body: { title: title.trim(), interface: path },
@@ -247,13 +249,13 @@ export function Interfaces({
             {...(taken ? { error: taken } : {})}
             onChange={(value) => {
               setTaken(undefined);
-              setAddress(slug(value));
+              setAddress(slugTyping(value));
             }}
           />
           {error ? <Notice tone="danger">{error}</Notice> : null}
           <div className="mt-1 flex justify-end gap-2">
             <Button onClick={() => setCreating(false)}>Cancel</Button>
-            <Button type="submit" variant="primary" loading={busy} disabled={where === ""}>
+            <Button type="submit" variant="primary" loading={busy} disabled={slug(where) === ""}>
               Make the app
             </Button>
           </div>

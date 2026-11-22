@@ -77,14 +77,36 @@ async function read<T>(response: Response): Promise<T> {
   return parsed as T;
 }
 
+/**
+ * Reads asked for before the screen that needs them was drawn: `index.html` starts the ones that
+ * follow from the address alone while the scripts are still arriving (`window.__vxEarly`, by path).
+ * A screen's own read of the same path takes the answer once; a read that failed is asked again.
+ */
+declare global {
+  interface Window {
+    __vxEarly?: Record<string, Promise<Response> | undefined>;
+  }
+}
+function takeEarly(path: string): Promise<Response> | undefined {
+  const kept = typeof window === "undefined" ? undefined : window.__vxEarly?.[path];
+  if (!kept || !window.__vxEarly) return undefined;
+  delete window.__vxEarly[path];
+  return kept;
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
-    method,
-    credentials: "same-origin",
-    ...(body === undefined
-      ? {}
-      : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-  });
+  const early = method === "GET" ? takeEarly(path) : undefined;
+  const response = await (early?.catch(() => undefined) ?? Promise.resolve(undefined)).then(
+    (kept) =>
+      kept ??
+      fetch(`/api/v1${path}`, {
+        method,
+        credentials: "same-origin",
+        ...(body === undefined
+          ? {}
+          : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+      }),
+  );
   const parsed = await read<T>(response);
   if (method !== "GET") afterWrite(path);
   return parsed;
@@ -183,7 +205,8 @@ export interface Loaded<T> {
   updatedAt?: number | undefined;
   /** What shows is the answer to an earlier path, kept while the new one loads. */
   stale?: boolean | undefined;
-  reload: () => void;
+  /** Asks again. The promise settles once the answer is in (a failure is in `error`, not thrown). */
+  reload: () => Promise<void>;
 }
 
 /**
@@ -213,8 +236,8 @@ export function useLoad<T>(
   );
   const { refetch } = query;
   // A query with no path is switched off; asking it again would request `/api/v1null`.
-  const reload = useCallback(() => {
-    if (path !== null) void refetch();
+  const reload = useCallback(async () => {
+    if (path !== null) await refetch();
   }, [path, refetch]);
   return {
     data: query.data,
@@ -224,6 +247,15 @@ export function useLoad<T>(
     stale: query.isPlaceholderData,
     reload,
   };
+}
+
+/**
+ * `useLoad` for a read that follows what is chosen (a table's columns, a column's values): what
+ * was read for the choice before is never given as this one's, nor anything when nothing is asked.
+ */
+export function useLoadOf<T>(path: string | null): Loaded<T> {
+  const found = useLoad<T>(path);
+  return path === null || found.stale ? { ...found, data: undefined } : found;
 }
 
 /**

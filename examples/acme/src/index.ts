@@ -374,7 +374,7 @@ export const invoices = defineTable({
 /**
  * An app with no code of its own: a screen over the invoices, as it would be
  * made in the console under "Apps made here". It is written here to show the
- * shape. A list of invoices, the one that is chosen beside it, and what is
+ * shape. A list of invoices, the latest beside it, and what is
  * owed by customer. Each person who opens it is given the rows the table's
  * rules give them, so finance and a customer see different invoices in the
  * same app.
@@ -389,36 +389,82 @@ export const invoiceScreen = defineInterface({
       widgets: [
         {
           id: "list",
-          type: "table",
+          type: "core/table",
           title: "Invoices",
-          table: "invoices",
-          fields: [
-            { column: "number" },
-            { column: "customer_id", label: "Customer" },
-            { column: "total" },
-          ],
-          sort: [{ column: "number" }],
           at: { x: 0, y: 0, w: 8, h: 9 },
+          data: {
+            rows: {
+              source: { visual: { table: "invoices", sort: [{ by: "number" }] } },
+            },
+          },
+          config: {
+            columns: [
+              { column: "number" },
+              { column: "customer_id", label: "Customer" },
+              { column: "total" },
+            ],
+          },
+          on: { rowClick: { steps: [{ do: "open", page: "invoice", record: "event" }] } },
         },
         {
-          id: "chosen",
-          type: "card",
-          title: "The invoice chosen",
-          table: "invoices",
-          link: { from: "list", type: "same" },
+          id: "latest",
+          type: "core/list",
+          title: "Latest invoices",
           at: { x: 8, y: 0, w: 4, h: 9 },
+          data: {
+            rows: {
+              source: {
+                visual: {
+                  table: "invoices",
+                  sort: [{ by: "created_at", descending: true }],
+                  limit: 10,
+                },
+              },
+            },
+          },
+          config: { title: "number", subtitle: "customer_id", right: "total" },
+          on: { rowClick: { steps: [{ do: "open", page: "invoice", record: "event" }] } },
         },
         {
           id: "owed",
-          type: "chart",
+          type: "core/chart",
           title: "Owed by customer",
-          table: "invoices",
-          summary: {
-            groupBy: [{ column: "customer_id" }],
-            aggregates: [{ fn: "sum", column: "total", as: "owed" }],
-          },
-          options: { mark: "bar", x: "customer_id", y: "owed" },
           at: { x: 0, y: 9, w: 12, h: 8 },
+          data: {
+            rows: {
+              source: {
+                visual: {
+                  table: "invoices",
+                  groupBy: [{ column: "customer_id" }],
+                  measures: [{ fn: "sum", column: "total", as: "owed" }],
+                },
+              },
+            },
+          },
+          config: { mark: "bar" },
+        },
+      ],
+    },
+    {
+      // The invoice chosen in the table or the list, beside the page.
+      id: "invoice",
+      title: "The invoice chosen",
+      kind: "sheet",
+      record: { table: "invoices" },
+      widgets: [
+        {
+          id: "detail",
+          type: "core/detail",
+          at: { x: 0, y: 0, w: 12, h: 8 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            heading: "number",
+            fields: [
+              { column: "customer_id", label: "Customer" },
+              { column: "total" },
+              { column: "visible_to", label: "Shown to" },
+            ],
+          },
         },
       ],
     },

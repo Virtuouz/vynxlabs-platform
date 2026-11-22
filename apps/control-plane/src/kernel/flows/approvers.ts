@@ -217,6 +217,33 @@ export function describeApprovers(
     : `${parts.slice(0, -1).join(", ")} or ${parts.at(-1)}`;
 }
 
+/**
+ * The names a step's `detail` expression gives its approvers to read: the quoted keys of the
+ * object it writes (`{'clinic': trigger.clinic, 'total': …}`), in the order written. An
+ * expression that is not a literal object names none. The Approvals widget offers these to be
+ * chosen; what the step really holds is what is shown.
+ */
+export function detailFieldNames(expression: string | undefined): string[] {
+  if (!expression) return [];
+  const names: string[] = [];
+  for (const found of expression.matchAll(/(?:^|[{,])\s*['"]([A-Za-z_][\w .-]{0,79})['"]\s*:/g)) {
+    const name = found[1] as string;
+    if (!names.includes(name)) names.push(name);
+  }
+  return names.slice(0, 24);
+}
+
+/** The approval steps of a flow, with what each shows its approvers: for choosing a flow to ask of. */
+export function approvalStepsOf(body: {
+  nodes?: Record<string, { type: string; title?: string; detail?: string }>;
+}): { node: string; title: string; fields: string[] }[] {
+  return Object.entries(body.nodes ?? {}).flatMap(([node, step]) =>
+    step.type === "approval"
+      ? [{ node, title: step.title ?? node, fields: detailFieldNames(step.detail) }]
+      : [],
+  );
+}
+
 /** The most approvers one step's mail goes to. */
 export const MAX_ASKED = 50;
 

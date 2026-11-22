@@ -30,16 +30,18 @@ export function SegmentedControl<Value extends string>({
 }) {
   const name = useId();
   return (
-    <fieldset className="m-0 inline-flex max-w-full min-w-0 flex-wrap gap-0.5 rounded-control border border-line bg-sunken p-0.5">
+    <fieldset
+      className={`m-0 inline-flex max-w-full min-w-0 flex-wrap items-stretch gap-0.5 rounded-control border border-line bg-track ${size === "small" ? "p-0.5" : "p-1"}`}
+    >
       <legend className="sr-only">{label}</legend>
       {options.map((option) => {
         const on = option.value === value;
         return (
           <label
             key={option.value}
-            className={`relative inline-flex cursor-pointer items-center gap-1.5 rounded-inner font-medium whitespace-nowrap has-[:disabled]:cursor-default has-[:disabled]:opacity-50 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
-              size === "small" ? "h-6 px-2 text-body-sm" : "h-8 px-3"
-            } ${on ? "bg-surface text-ink ring-1 ring-line" : "text-ink-muted hover:text-ink"}`}
+            className={`relative inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-inner font-medium whitespace-nowrap has-[:disabled]:cursor-default has-[:disabled]:opacity-50 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
+              size === "small" ? "h-6 px-2 text-body-sm" : "h-7 px-3 text-body-sm"
+            } ${on ? "bg-raised text-ink shadow-[0_0_0_1px_var(--vx-line-strong)]" : "text-ink-muted hover:text-ink"}`}
           >
             <input
               type="radio"

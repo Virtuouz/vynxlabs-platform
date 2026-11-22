@@ -1,56 +1,149 @@
 import "./styles.css";
+import { ApiError, api, appContext, signInUrl, signOut, type Term, terms } from "@volvel/app";
+import type { ActingUser, InterfaceBody } from "@volvel/manifest";
 import {
-  ApiError,
-  type Filter as AppFilter,
-  api,
-  appContext,
-  signInUrl,
-  signOut,
-  type Term,
-  table,
-  terms,
-} from "@volvel/app";
-import { Button, GlossaryProvider, Notice, SideSheet } from "@volvel/ui";
-import { StrictMode, useEffect, useState } from "react";
+  Button,
+  GlossaryProvider,
+  knowledgeFrom,
+  MarkdownKnows,
+  Notice,
+  SideSheet,
+  ToastProvider,
+} from "@volvel/ui";
+import { corePack } from "@volvel/widgets-core/views";
+import { labsPack } from "@volvel/widgets-labs/views";
+import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { type DataClient, InterfaceRenderer, type InterfaceView } from "../src/index.ts";
+import {
+  ActionError,
+  AppSkeleton,
+  AppView,
+  inMenu,
+  type PageDataClient,
+  useAddress,
+  viewRegistry,
+  WidgetReadError,
+  type WireData,
+} from "../src/index.ts";
 
-/** Rows through the app client, so every request is made as whoever is using the app. */
-const client: DataClient = {
-  find: (name, options) =>
-    table(name).page({
-      ...(options.filter ? { filter: options.filter as AppFilter } : {}),
-      ...(options.sort?.length ? { sort: options.sort } : {}),
-      ...(options.limit !== undefined ? { limit: options.limit } : {}),
-      ...(options.cursor ? { cursor: options.cursor } : {}),
-    }),
-  aggregate: (name, options) =>
-    table(name).aggregate({
-      ...(options.group?.length ? { group: options.group } : {}),
-      ...(options.measures?.length ? { measures: options.measures } : {}),
-      ...(options.filter ? { filter: options.filter as AppFilter } : {}),
-      ...(options.sort?.length ? { sort: options.sort } : {}),
-      ...(options.limit !== undefined ? { limit: options.limit } : {}),
-    }),
-  insert: (name, row) => table(name).insert(row),
-  update: (name, id, changes) => table(name).update(id, changes),
-  remove: (name, id) => table(name).delete(id),
-  // Actions start what they start as whoever is using the app.
-  start: async (target, input) => {
-    const at = workspaceApi();
-    const started =
-      target.kind === "script"
-        ? await api.post<{ id: string }>(`${at}/runs`, { script: target.path, input })
-        : await api.post<{ id: string }>(`${at}/flow-runs`, { flow: target.path, input });
-    return { kind: target.kind, id: started.id };
-  },
-  run: (started) =>
-    api.get(`${workspaceApi()}/${started.kind === "script" ? "runs" : "flow-runs"}/${started.id}`),
-};
+/** What the platform gives for an interface: its body, and what each table it reads holds. */
+interface InterfaceView {
+  body: InterfaceBody;
+  /** What each group the page names is called now, by the path it is named by. */
+  groupNames?: Record<string, string>;
+}
+
+/** The platform's packs: what a page made in the console may hold. */
+const registry = viewRegistry(corePack, labsPack);
 
 function workspaceApi() {
   const context = appContext();
   return `/tenants/${context.tenant.id}/workspaces/${context.workspace.id}`;
+}
+
+/** What the server refused, as an error the renderer draws: its words, and what was wrong with what was typed. */
+function refusal(error: unknown): unknown {
+  if (!(error instanceof ApiError)) return error;
+  const fields: Record<string, string> = {};
+  for (const one of error.errors) {
+    const name = one.path.replace(/^\/inputs\//, "");
+    if (name !== one.path) fields[name] = one.message;
+  }
+  return new ActionError(error.message, error.status, fields);
+}
+
+/** What each widget of a page reads, asked of the platform as whoever is using the app. */
+function clientFor(path: string, page: string, record?: string): PageDataClient {
+  const where = (widget: string) => {
+    const query = new URLSearchParams({ of: "interface", path, page, widget });
+    if (record) query.set("record", record);
+    return query;
+  };
+  return {
+    async read(widget, filters, options = {}) {
+      const query = where(widget);
+      query.set("filters", JSON.stringify(filters));
+      if (options.input) query.set("input", options.input);
+      if (options.cursor) query.set("cursor", options.cursor);
+      if (options.sort) query.set("sort", options.sort);
+      if (options.zone) query.set("zone", options.zone);
+      if (options.size) query.set("size", String(options.size));
+      if (options.chosen && Object.keys(options.chosen).length > 0) {
+        query.set("chosen", JSON.stringify(options.chosen));
+      }
+      try {
+        return await api.get<{ inputs: Record<string, WireData> }>(
+          `${workspaceApi()}/widget-data?${query}`,
+        );
+      } catch (error) {
+        throw error instanceof ApiError ? new WidgetReadError(error.message, error.status) : error;
+      }
+    },
+    async options(filter) {
+      const query = new URLSearchParams({ of: "interface", path, page, filter });
+      const found = await api.get<{ values: string[]; labels?: Record<string, string> }>(
+        `${workspaceApi()}/filter-options?${query}`,
+      );
+      return found.values.map((value) => ({ value, label: found.labels?.[value] ?? value }));
+    },
+    async act(widget, at, given) {
+      try {
+        return await api.post(`${workspaceApi()}/page-actions`, {
+          of: "interface",
+          path,
+          page,
+          widget,
+          at,
+          ...(given.records && Object.keys(given.records).length > 0
+            ? { records: given.records }
+            : {}),
+          ...(given.inputs ? { inputs: given.inputs } : {}),
+        });
+      } catch (error) {
+        throw refusal(error);
+      }
+    },
+    async decide(widget, id, decision, comment) {
+      try {
+        return await api.post(`${workspaceApi()}/page-approvals`, {
+          path,
+          page,
+          widget,
+          id,
+          decision,
+          ...(comment ? { comment } : {}),
+        });
+      } catch (error) {
+        throw refusal(error);
+      }
+    },
+    async choices(widget, input, column, search) {
+      const query = where(widget);
+      query.set("input", input);
+      query.set("column", column);
+      query.set("search", search);
+      const found = await api.get<{ choices: { value: string; label: string }[] }>(
+        `${workspaceApi()}/widget-choices?${query}`,
+      );
+      return found.choices;
+    },
+    async behind(widget, input, group, filters) {
+      const query = where(widget);
+      query.set("input", input);
+      query.set("behind", JSON.stringify(group));
+      query.set("filters", JSON.stringify(filters ?? {}));
+      try {
+        const read = await api.get<{ inputs: Record<string, WireData> }>(
+          `${workspaceApi()}/widget-data?${query}`,
+        );
+        const found = read.inputs[input];
+        if (!found) throw new WidgetReadError("The rows could not be read.", 404);
+        return found;
+      } catch (error) {
+        throw error instanceof ApiError ? new WidgetReadError(error.message, error.status) : error;
+      }
+    },
+  };
 }
 
 function App() {
@@ -59,6 +152,9 @@ function App() {
   const [problem, setProblem] = useState<string>();
   // What the workspace's words mean, as far as this person may know. An app works without it.
   const [glossary, setGlossary] = useState<Term[]>([]);
+  const [described, setDescribed] = useState<Awaited<ReturnType<typeof terms>>["resources"]>([]);
+  // What the kinds say of their fields, for a page's `::field`. A page does without them.
+  const [fields, setFields] = useState<Record<string, string>>();
   // Where each topic of the workspace's documentation is served, of those this person may open.
   const [topics, setTopics] = useState<Record<string, { title: string; url: string }>>({});
   const [helping, setHelping] = useState(false);
@@ -66,24 +162,34 @@ function App() {
     terms().then(
       (found) => {
         setGlossary(found.terms);
+        setDescribed(found.resources);
         setTopics(Object.fromEntries(found.topics.map((one) => [one.topic, one.page])));
       },
       () => {},
     );
   }, []);
-  // The page that is open is in the address, so that it can be linked to and reloaded.
-  const [pageId, setPageId] = useState(() => window.location.hash.slice(1) || undefined);
+  useEffect(() => {
+    fetch("/help/fields.json").then(
+      (response) => (response.ok ? response.json().then(setFields, () => {}) : undefined),
+      () => {},
+    );
+  }, []);
+  const knows = useMemo(
+    () => knowledgeFrom({ terms: glossary, resources: described, fields }),
+    [glossary, described, fields],
+  );
+  // What is open is in the address, so that it can be linked to, reloaded and closed with Back.
+  const nav = useAddress(context.base);
+  const { address } = nav;
+  const path = context.app.interface;
 
   useEffect(() => {
-    const path = context.app.interface;
     if (!path) {
       setProblem("This app was not set up to show anything.");
       return;
     }
     api
-      .get<InterfaceView>(
-        `/tenants/${context.tenant.id}/workspaces/${context.workspace.id}/interfaces/${path}`,
-      )
+      .get<InterfaceView>(`${workspaceApi()}/interfaces/${path}`)
       .then(setView, (error: unknown) =>
         setProblem(
           error instanceof ApiError && error.status === 404
@@ -91,21 +197,36 @@ function App() {
             : (error as Error).message,
         ),
       );
-  }, [context]);
+  }, [path]);
   useEffect(() => {
-    if (view) document.title = `${view.interface.title} · ${context.tenant.name}`;
+    if (view) document.title = `${view.body.title} · ${context.tenant.name}`;
   }, [view, context]);
 
   const who = context.principal;
+  const pages = view?.body.pages ?? [];
+  const menu = pages.filter(inMenu);
   // The page that is open, and its help: a page of documentation, when it names one this person may read.
-  const open = view?.interface.pages.find((one) => one.id === pageId) ?? view?.interface.pages[0];
+  const open = pages.find((one) => one.id === address.page) ?? menu[0];
   const help = open?.help ? topics[open.help] : undefined;
+  // Who is acting, for what a page draws by who it is. A condition names a group by its name or
+  // its key, as the server reads it.
+  const user: ActingUser | undefined = who.id
+    ? {
+        id: who.id,
+        ...(who.email ? { email: who.email } : {}),
+        ...(who.name ? { name: who.name } : {}),
+        groups: [...(who.groups ?? []), ...(who.groupKeys ?? [])],
+        ...(view?.groupNames ? { groupNames: view.groupNames } : {}),
+      }
+    : undefined;
+  const clientForPage = useCallback(
+    (page: string, record?: string) => clientFor(path ?? "", page, record),
+    [path],
+  );
   return (
-    <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 p-4">
+    <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 overflow-x-clip p-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="m-0 text-xl font-semibold tracking-tight">
-          {view?.interface.title ?? context.app.title}
-        </h1>
+        <h1 className="m-0 text-display font-semibold">{view?.body.title ?? context.app.title}</h1>
         <span className="flex flex-wrap items-center gap-3 text-body text-ink-muted">
           {help ? (
             <Button size="small" variant="quiet" onClick={() => setHelping(true)}>
@@ -158,21 +279,19 @@ function App() {
       </SideSheet>
       {view ? (
         <GlossaryProvider terms={glossary}>
-          <InterfaceRenderer
-            body={view.interface}
-            tables={view.tables}
-            client={client}
-            targets={view.targets}
-            member={who.type === "member"}
-            pageId={pageId}
-            onPage={(id) => {
-              setPageId(id);
-              window.history.replaceState(null, "", `#${id}`);
-            }}
-          />
+          <MarkdownKnows value={knows}>
+            <AppView
+              nav={nav}
+              pages={pages}
+              user={user}
+              registry={registry}
+              clientFor={clientForPage}
+              appKey={path ?? ""}
+            />
+          </MarkdownKnows>
         </GlossaryProvider>
       ) : problem ? null : (
-        <p className="m-0 text-ink-muted">Loading…</p>
+        <AppSkeleton {...(context.app.pages ? { pages: context.app.pages } : {})} />
       )}
     </div>
   );
@@ -180,6 +299,8 @@ function App() {
 
 createRoot(document.getElementById("app") as HTMLElement).render(
   <StrictMode>
-    <App />
+    <ToastProvider>
+      <App />
+    </ToastProvider>
   </StrictMode>,
 );

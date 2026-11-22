@@ -163,6 +163,23 @@ describe("drafts", () => {
     );
   });
 
+  test("the keys of the tenant's groups, members' and end users', are listed for the publish check", async () => {
+    const managers = await alice.post(`/tenants/${tenant}/groups`, { name: "Billing team" });
+    expect(managers.status, JSON.stringify(managers.body)).toBe(201);
+    const owners = await alice.post(`/tenants/${tenant}/end-user-groups`, { name: "Pet owners" });
+    expect(owners.status, JSON.stringify(owners.body)).toBe(201);
+    const listed = await alice.get(`${ws()}/group-keys`);
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    const items = listed.body.items as { key: string; name: string; kind: string }[];
+    expect(items.filter((one) => one.name === "Billing team").map((one) => one.kind)).toEqual([
+      "member",
+    ]);
+    expect(items.filter((one) => one.name === "Pet owners").map((one) => one.kind)).toEqual([
+      "end_user",
+    ]);
+    expect(items.every((one) => one.key !== "")).toBe(true);
+  });
+
   test("a draft that is not valid is refused, naming what is wrong", async () => {
     const noSource = await draft("orders/empty", { ...scriptBody(""), source: undefined });
     expect(noSource.status).toBe(400);

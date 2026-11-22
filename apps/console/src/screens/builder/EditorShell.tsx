@@ -1,10 +1,22 @@
-import { Panel } from "@volvel/ui";
-import type { ReactNode } from "react";
+import { Button, Panel, Popover, SideSheet, useLast } from "@volvel/ui";
+import {
+  Ellipsis,
+  ListTree,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+} from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useShortcut } from "../../kit/keys.ts";
+import { useWide, WIDE } from "../../kit/layout.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
+import { SidewaysScroll } from "../../kit/SidewaysScroll.tsx";
 import { SplitPane } from "../../kit/SplitPane.tsx";
 import { UndoRedo } from "../../kit/UndoRedo.tsx";
+import { usePreference } from "../../prefs.ts";
 import { useNavigationGuard } from "../../router.tsx";
+import { RenameButton, RenameField } from "./BuilderHeader.tsx";
 
 /** How a change stands: saved, about to be, being saved, or not saved and why. */
 export type Saving = "saved" | "waiting" | "saving" | { failed: string };
@@ -17,31 +29,51 @@ export function savingWords(saving: Saving, saved: string): string {
 }
 
 /**
- * The one shell around both page editors, an app's and a dashboard's (08
- * §3.20): one toolbar with the name, how it is saved, undo and redo and the
+ * The one shell around the one page editor, in an app's builder and in a
+ * dashboard (08 §3.20, S9): one toolbar with the name, how it is saved, undo and redo and the
  * step that makes it reach people (Publish for an app, Share for a
  * dashboard); then the page in the middle, what is on it and what can be
  * added on the left, and the chosen widget's settings on the right, in a pane
  * whose width can be dragged.
+ *
+ * On a screen narrower than the panel needs, the chosen widget's settings
+ * are a sheet over the page instead, which opens when a widget is chosen.
  *
  * Changes save by themselves. ⌘Z and ⇧⌘Z undo and redo them, outside a field
  * being typed in. Leaving while a change is not yet saved asks first.
  */
 export function EditorShell({
   title,
+  onRename,
+  pill,
+  tools,
   saving,
   savedWords,
   history,
   primary,
   more,
+  roomyMore,
   after,
   notices,
   outline,
+  outlineKey,
+  outlineLabel,
   canvas,
   inspector,
+  inspectorOpen,
+  onCloseInspector,
   saveNow,
+  bleed = false,
 }: {
+  /** The panes run edge to edge under the toolbar, separated by hairlines, each scrolling on its own (the app builder's workbench). */
+  bleed?: boolean;
   title: string;
+  /** Renames in place, with a pencil beside the name. Left out where the name is not changed here. */
+  onRename?: ((title: string) => void) | undefined;
+  /** Beside the name: "3 draft changes". */
+  pill?: ReactNode;
+  /** In the row's right-hand group, before undo: the screen sizes, who it is viewed as. */
+  tools?: ReactNode;
   saving: Saving;
   /** What "saved" means here: "Saved. Not published yet." */
   savedWords: string;
@@ -55,72 +87,276 @@ export function EditorShell({
   primary: ReactNode;
   /** Anything else the toolbar holds, such as a link to the app or a menu. */
   more?: ReactNode;
+  /**
+   * More of the toolbar that is on the row where there is room, and in the ⋯ sheet where there is
+   * not (a dashboard's "Refreshes" and Share): the row stays one row, with the primary step on it.
+   */
+  roomyMore?: ReactNode;
   /** Under the toolbar: the field that names it. */
   after?: ReactNode;
   notices?: ReactNode;
   /** Saves at once, rather than a moment after the last change: ⌘S. */
   saveNow?: () => void;
   outline: ReactNode;
+  /** What the outline's sheet closes on when it changes: the page chosen. */
+  outlineKey?: string;
+  /** On a narrow screen, what the bar that opens the outline says is shown: the page's name. */
+  outlineLabel?: string;
   canvas: ReactNode;
+  /** The settings of the chosen widget, or what to do to choose one. */
   inspector: ReactNode;
+  /** Whether a widget is chosen: on a narrow screen, whether the sheet of its settings is open. */
+  inspectorOpen: boolean;
+  onCloseInspector: () => void;
 }) {
+  const [renaming, setRenaming] = useState(false);
+  // The two side panes fold away, and stay as they were left. The inspector's is the split's own setting.
+  const [outlineFolded, foldOutline] = usePreference<boolean>("split:builder-outline", false);
+  const [kept, keep] = usePreference<number | { size: number; collapsed?: "first" | "second" }>(
+    "split:page-editor",
+    70,
+  );
+  const settingsFolded = typeof kept === "object" && kept?.collapsed === "second";
+  const foldSettings = () => {
+    const size = typeof kept === "number" ? kept : (kept?.size ?? 70);
+    keep(settingsFolded ? size : { size, collapsed: "second" });
+  };
   useNavigationGuard(saving !== "saved", "A change is not saved yet.");
+  const docked = useWide(WIDE.panel);
+  // Below the width the panes need, the pages and widgets are a sheet a bar opens, as the settings are.
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a page chosen, or a widget chosen, ends what the sheet was for
+  useEffect(() => setOutlineOpen(false), [outlineKey, inspectorOpen]);
+  const sheeted = bleed && !docked;
+  // From 640 up the screen sizes and View as stay on the row; below it they are behind the ⋯.
+  const roomy = useWide(640);
+  // The sheet keeps showing what it showed while it closes.
+  const lastInspector = useLast(inspectorOpen ? inspector : undefined);
   const { undo, redo } = history;
   useShortcut("undo", undo);
   useShortcut("redo", redo);
   useShortcut("save", () => saveNow?.(), { enabled: saveNow !== undefined });
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-3">
+    <section className={`flex min-h-0 flex-1 flex-col ${bleed ? "" : "gap-3"}`}>
+      {/* One row under the breadcrumbs (board 1): the name and what is waiting on the left; the size, who it is seen as, undo, preview and publish on the right. */}
       <PageHeader
         compact
-        title={title}
+        bar={bleed}
+        title={
+          renaming && onRename ? (
+            <RenameField
+              title={title}
+              onDone={(next) => {
+                setRenaming(false);
+                if (next) onRename(next);
+              }}
+            />
+          ) : (
+            title
+          )
+        }
         state={
-          <span
-            role="status"
-            className={`text-body-sm ${typeof saving === "object" ? "text-danger" : "text-ink-muted"}`}
-          >
-            {savingWords(saving, savedWords)}
-          </span>
+          <>
+            {onRename && !renaming ? <RenameButton onClick={() => setRenaming(true)} /> : null}
+            {pill ? <span className="shrink-0 whitespace-nowrap">{pill}</span> : null}
+            <span
+              role="status"
+              title={typeof saving === "object" ? savingWords(saving, savedWords) : undefined}
+              className={`min-w-0 max-w-[26rem] truncate text-body-sm max-xl:sr-only ${typeof saving === "object" ? "text-danger" : "text-ink-muted"}`}
+            >
+              {savingWords(saving, savedWords)}
+            </span>
+          </>
         }
         actions={
-          <span className="flex flex-wrap items-center gap-2">
-            <UndoRedo history={history} />
+          <>
+            {/* Narrow: undo and redo, and the screen sizes and View as when there is no room, are behind a ⋯; the name, Preview and Publish stay. */}
+            {sheeted && roomy ? tools : null}
+            {sheeted ? null : tools}
+            {sheeted ? null : <UndoRedo history={history} />}
+            {sheeted && !roomy ? null : roomyMore}
             {more}
             {primary}
-          </span>
+            {sheeted ? (
+              <Popover
+                title="More"
+                titleHidden
+                align="end"
+                trigger={
+                  <Button variant="quiet" aria-label="More: undo, redo and the screen size">
+                    <Ellipsis aria-hidden="true" size={16} />
+                  </Button>
+                }
+              >
+                <div className="flex flex-col gap-3 p-1">
+                  <UndoRedo history={history} />
+                  {roomy ? null : <div className="flex flex-wrap items-center gap-2">{tools}</div>}
+                  {roomy || !roomyMore ? null : (
+                    <div className="flex flex-col items-start gap-3">{roomyMore}</div>
+                  )}
+                </div>
+              </Popover>
+            ) : null}
+            {bleed && docked ? (
+              <span className="flex items-center gap-0.5">
+                <Button
+                  variant="quiet"
+                  aria-label={outlineFolded ? "Show pages and widgets" : "Hide pages and widgets"}
+                  aria-pressed={outlineFolded}
+                  tooltip={outlineFolded ? "Show pages and widgets" : "Hide pages and widgets"}
+                  onClick={() => foldOutline(!outlineFolded)}
+                >
+                  {outlineFolded ? (
+                    <PanelLeftOpen aria-hidden="true" size={16} />
+                  ) : (
+                    <PanelLeftClose aria-hidden="true" size={16} />
+                  )}
+                </Button>
+                <Button
+                  variant="quiet"
+                  aria-label={settingsFolded ? "Show the settings" : "Hide the settings"}
+                  aria-pressed={settingsFolded}
+                  tooltip={settingsFolded ? "Show the settings" : "Hide the settings"}
+                  onClick={foldSettings}
+                >
+                  {settingsFolded ? (
+                    <PanelRightOpen aria-hidden="true" size={16} />
+                  ) : (
+                    <PanelRightClose aria-hidden="true" size={16} />
+                  )}
+                </Button>
+              </span>
+            ) : null}
+          </>
         }
         after={after}
       />
       {notices}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:items-start">
-        <nav
-          aria-label="On this page"
-          className="flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-44 lg:overflow-y-auto"
-        >
-          {outline}
-        </nav>
-        <SplitPane
-          id="page-editor"
-          label="Resize the page and its settings"
-          initial={74}
-          className="min-w-0 flex-1"
-          first={
-            <div data-canvas className="min-w-0 lg:pr-1">
-              {canvas}
-            </div>
-          }
-          second={
-            <Panel
-              as="aside"
-              aria-label="Settings"
-              className="p-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto"
+      <div
+        className={
+          bleed
+            ? "flex min-h-0 flex-1 flex-col lg:flex-row"
+            : "flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:items-start"
+        }
+      >
+        {sheeted ? (
+          <div className="flex shrink-0 items-center gap-2 border-line border-t bg-structure px-3 py-1.5">
+            <Button
+              variant="secondary"
+              size="small"
+              aria-haspopup="dialog"
+              onClick={() => setOutlineOpen(true)}
             >
-              {inspector}
-            </Panel>
-          }
-        />
+              <ListTree aria-hidden="true" size={14} /> Pages and widgets
+            </Button>
+            {outlineLabel ? (
+              <span className="min-w-0 truncate text-body-sm text-ink-muted">{outlineLabel}</span>
+            ) : null}
+          </div>
+        ) : bleed && docked && outlineFolded ? (
+          <div className="flex w-9 shrink-0 items-start justify-center border-line border-t border-r bg-structure p-1">
+            <Button
+              variant="quiet"
+              aria-label="Show pages and widgets"
+              tooltip="Show pages and widgets"
+              onClick={() => foldOutline(false)}
+            >
+              <PanelLeftOpen aria-hidden="true" size={16} />
+            </Button>
+          </div>
+        ) : (
+          <nav
+            aria-label="On this page"
+            className={
+              bleed
+                ? "flex shrink-0 flex-col gap-4 border-line border-t bg-structure px-2 py-4 max-lg:max-h-[45vh] max-lg:overflow-y-auto lg:min-h-0 lg:w-58 lg:overflow-hidden lg:border-r"
+                : "flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-60 lg:overflow-y-auto lg:border-r lg:border-line lg:pr-3"
+            }
+          >
+            {outline}
+          </nav>
+        )}
+        {docked ? (
+          <SplitPane
+            id="page-editor"
+            label="Resize the page and its settings"
+            // The settings take about 400 px at 1440, as boards 8 to 19 draw them (36%).
+            initial={bleed ? 63.7 : 74}
+            {...(bleed ? { minSecond: 300 } : {})}
+            {...(bleed
+              ? {
+                  collapsible: "second" as const,
+                  paneLabels: { first: "the page", second: "the settings" },
+                }
+              : {})}
+            className="min-w-0 flex-1"
+            first={
+              bleed ? (
+                <SidewaysScroll
+                  data-canvas=""
+                  label="The page"
+                  outerClassName="min-h-0 min-w-0 flex-1 border-line border-t"
+                  className="min-w-0 overflow-auto p-4 [scrollbar-gutter:stable] lg:[container-type:size]"
+                >
+                  {canvas}
+                </SidewaysScroll>
+              ) : (
+                <div data-canvas className="min-w-0 lg:pr-1">
+                  {canvas}
+                </div>
+              )
+            }
+            second={
+              bleed ? (
+                <aside
+                  aria-label="Settings"
+                  className="min-h-0 flex-1 overflow-auto border-line border-t border-l bg-structure p-4"
+                >
+                  {inspector}
+                </aside>
+              ) : (
+                <Panel
+                  as="aside"
+                  aria-label="Settings"
+                  className="p-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto"
+                >
+                  {inspector}
+                </Panel>
+              )
+            }
+          />
+        ) : bleed ? (
+          <SidewaysScroll
+            data-canvas=""
+            label="The page"
+            outerClassName="min-h-0 min-w-0 max-w-full flex-1 border-line border-t"
+            className="min-w-0 overflow-auto p-4 [scrollbar-gutter:stable]"
+          >
+            {canvas}
+          </SidewaysScroll>
+        ) : (
+          <div data-canvas className="min-w-0 flex-1">
+            {canvas}
+          </div>
+        )}
       </div>
+      {sheeted ? (
+        <SideSheet
+          open={outlineOpen}
+          onClose={() => setOutlineOpen(false)}
+          side="left"
+          size="narrow"
+          title="Pages and widgets"
+        >
+          <div className="flex min-h-full flex-col gap-4">{outline}</div>
+        </SideSheet>
+      ) : null}
+      {docked ? null : (
+        <SideSheet open={inspectorOpen} onClose={onCloseInspector} title="Settings">
+          {lastInspector}
+        </SideSheet>
+      )}
     </section>
   );
 }

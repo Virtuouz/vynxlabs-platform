@@ -1,5 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { join, resolve, sep } from "node:path";
 import { expect, test } from "vitest";
 
 /**
@@ -317,6 +317,10 @@ test("every sheet and dialog can arrive and leave with motion", () => {
       ) {
         found.push(`${where(path)}:${index + 1} keyed by whether it is open`);
       }
+      // `open={true}` is a sheet put on the page already open: it has no starting style, and goes in one frame.
+      if (/\bopen=\{true\}/.test(line)) {
+        found.push(`${where(path)}:${index + 1} born open: use Closing and pass its open`);
+      }
       if (!inKit && /(?<!\[)role="dialog"/.test(line)) {
         found.push(`${where(path)}:${index + 1} a dialog made by hand`);
       }
@@ -329,11 +333,33 @@ test("every sheet and dialog can arrive and leave with motion", () => {
 });
 
 /**
+ * A list that is put in order by dragging its handle is moved by `useSortable` (packages/ui): the
+ * row follows the pointer, the others slide, it settles, Esc puts it back, and nothing moves under
+ * reduced motion. No screen makes a drag of its own with the browser's `draggable` and drop events
+ * (the row pops into place), except a tree that moves things between folders (`Tree`, which the
+ * docs and the data screens use), and the Columns menu, which is dnd-kit's and slides.
+ */
+test("a list reordered by a handle uses the shared sortable", () => {
+  const found: string[] = [];
+  for (const path of new Set(drawn())) {
+    if (/packages\/ui\/src\/(Tree|drawer\/useSortable)\.tsx?$/.test(path)) continue;
+    if (/apps\/console\/src\/(kit\/views|screens\/docs\/Docs)\.tsx$/.test(path)) continue;
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (/\bonDragStart=|\bdraggable(=|\s*$)/.test(line) && !/draggable=\{false\}/.test(line)) {
+        found.push(`${where(path)}:${index + 1} a drag of its own: use useSortable`);
+      }
+    });
+  }
+  expect(found).toEqual([]);
+});
+
+/**
  * Whatever is moved a place by a button or a key is seen to move (phase 19,
  * M2). The buttons are the kit's `MoveButtons`, and what they move is held by
  * `useFlip`, which plays each thing from where it was. So no screen draws
  * move buttons of its own, and a file that moves things from the arrow keys
- * uses `useFlip` or the shared placement. An arrow that moves nothing, such
+ * uses `useFlip`, `useSortable` or the shared placement. An arrow that moves nothing, such
  * as the next match in a log, says so with `move-allowed:` on the line before.
  */
 test("every move by a button or a key is animated by the shared pieces", () => {
@@ -342,7 +368,7 @@ test("every move by a button or a key is animated by the shared pieces", () => {
     if (/packages\/ui\/src\/(MoveButtons|useFlip)\.tsx?$/.test(path)) continue;
     const text = readFileSync(path, "utf8");
     const lines = text.split("\n");
-    const flips = /\buseFlip\b|\busePlacement\b/.test(text);
+    const flips = /\buseFlip\b|\busePlacement\b|\buseSortable\b/.test(text);
     lines.forEach((line, index) => {
       if (/move-allowed:/.test(`${lines[index - 1]}${lines[index - 2]}`)) return;
       if (/aria-label=\{?[`"']Move [^`"']*\b(up|down|earlier|later|left|right)[`"']/.test(line)) {
@@ -519,6 +545,87 @@ test("no key handler on a field stops every key", () => {
         found.push(`${where(path)}:${next + 1} stops every key`);
       }
     });
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * A widget's view is written against the contract and nothing else (decision 0005): a
+ * pack's views import `react`, `@volvel/widgets`, `@volvel/ui` (and their subpaths) and
+ * their own relative files. A view that reaches for the console, the renderer, the
+ * manifest or a library of its own would work in one host and not in another, and could
+ * not be shipped as a pack. Tests may import what they test with.
+ */
+test("a pack's views import only react, the widget contract, the kit and their own files", () => {
+  // A pack is its package: its views may import its own definitions in `src/`.
+  const roots = ["packages/widgets-core", "packages/widgets-labs"].map((path) =>
+    resolve(here, "../../..", path),
+  );
+  const allowed = /^(react|react\/jsx-runtime|@volvel\/widgets|@volvel\/ui)(\/.*)?$/;
+  const found: string[] = [];
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        if (entry.name === "node_modules" || entry.name === "dist") return [];
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) return walk(path);
+        return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+      });
+    for (const path of walk(root)) {
+      const text = readFileSync(path, "utf8");
+      for (const [, from] of text.matchAll(
+        /(?:\bfrom\s+|\bimport\s+|\bimport\(\s*|\brequire\(\s*)["']([^"']+)["']/g,
+      )) {
+        const name = from as string;
+        const own = name.startsWith(".")
+          ? resolve(join(path, ".."), name).startsWith(root + sep) ||
+            resolve(join(path, ".."), name) === root
+          : false;
+        if (!own && !allowed.test(name)) found.push(`${where(path)} imports "${name}"`);
+      }
+    }
+  }
+  expect(found).toEqual([]);
+});
+
+/**
+ * A served app runs under a content security policy with no `eval`. The manifest's main
+ * entry compiles validators, which `eval` code, so what draws pages takes only types from it,
+ * and the action model's values from `@volvel/manifest/action`, which compiles nothing.
+ * (Phase 26: a served page went blank when the renderer took `conditionsHold` from the main entry.)
+ */
+test("what draws a served page takes only types from the manifest's main entry", () => {
+  const roots = [
+    "packages/screens/src",
+    "packages/screens/runtime",
+    "packages/widgets-core",
+    "packages/widgets-labs",
+  ].map((path) => resolve(here, "../../..", path));
+  const found: string[] = [];
+  for (const root of roots) {
+    if (!existsSync(root)) continue;
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        if (entry.name === "node_modules" || entry.name === "dist") return [];
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) return walk(path);
+        return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : [];
+      });
+    for (const path of walk(root)) {
+      const text = readFileSync(path, "utf8");
+      for (const [statement] of text.matchAll(
+        /import\s+(?!type\b)[^;]*?from\s+["']@volvel\/manifest["']/g,
+      )) {
+        // `import { type A, type B } from` is types only too.
+        const names = statement.match(/\{([^}]*)\}/)?.[1] ?? "x";
+        const values = names
+          .split(",")
+          .map((one) => one.trim())
+          .filter((one) => one !== "" && !one.startsWith("type "));
+        if (values.length > 0) found.push(`${where(path)} imports ${values.join(", ")}`);
+      }
+    }
   }
   expect(found).toEqual([]);
 });

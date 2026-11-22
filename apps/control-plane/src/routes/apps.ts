@@ -4,6 +4,7 @@ import type {
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
 import { newId } from "@volvel/db";
+import { type InterfaceBody, interfaceTables } from "@volvel/manifest";
 import { Type } from "typebox";
 import { appUrl, domainUrl } from "../kernel/apps/address.js";
 import { MAX_ASSET_BYTES, storeAsset } from "../kernel/apps/assets.js";
@@ -337,13 +338,9 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .execute();
         const tablesOf = (path: string) => {
           const body = interfaces.find((one) => one.path === path)?.body as
-            | { pages?: { widgets?: { table?: unknown }[] }[] }
+            | InterfaceBody
             | undefined;
-          const tables = new Set<string>();
-          for (const page of body?.pages ?? [])
-            for (const widget of page.widgets ?? [])
-              if (typeof widget.table === "string") tables.add(widget.table);
-          return [...tables].sort();
+          return body?.pages ? interfaceTables(body).sort() : [];
         };
         return {
           items: resources.map((resource) => {

@@ -93,7 +93,7 @@
                     "color": {
                       "type": "string",
                       "pattern": "^(gray|red|orange|amber|green|teal|blue|violet|pink|#[0-9a-fA-F]{6})$",
-                      "description": "A colour by name, or as #rrggbb."
+                      "description": "A color by name, or as #rrggbb."
                     },
                     "renamedFrom": {
                       "type": "string",

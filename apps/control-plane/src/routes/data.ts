@@ -4,6 +4,7 @@ import { sql } from "@volvel/db";
 import { displayGuess, PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { loadCatalog, purgeRetired, workspaceSchema } from "../kernel/data/apply.js";
+import { columnCounts, columnValues, refuseColumn } from "../kernel/data/column-values.js";
 import { updateRowKeepingFiles } from "../kernel/data/files.js";
 import {
   aggregateQueryFrom,
@@ -20,7 +21,7 @@ import {
   scopeFor,
   withData,
 } from "../kernel/data/rows.js";
-import { badRequest, forbidden } from "../kernel/errors.js";
+import { badRequest, forbidden, forbiddenBecause } from "../kernel/errors.js";
 import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { access, findWorkspace, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -291,7 +292,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       asGroup?: string | undefined,
     ) {
       if (asGroup !== undefined) {
-        if (!scope.all) throw forbidden("the permission to read every row of this table");
+        if (!scope.all)
+          throw forbiddenBecause("This needs the permission to read every row of this table.");
         const group =
           (await db
             .selectFrom("end_user_group")
@@ -315,7 +317,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       }
       if (as === undefined) return scope;
       // Only someone who may see every row may look through another person's eyes.
-      if (!scope.all) throw forbidden("the permission to read every row of this table");
+      if (!scope.all)
+        throw forbiddenBecause("This needs the permission to read every row of this table.");
       const person = await db
         .selectFrom("end_user")
         .select("id")
@@ -619,6 +622,74 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
         }
         return { ...page, expanded };
+      },
+    );
+
+    app.get(
+      `${base}/column-values`,
+      {
+        config: { access: access.custom, rateLimit: guestLimit },
+        schema: {
+          summary: "The values a column holds, with how many rows have each",
+          description:
+            "For an editor that offers a choice of a column's values. Read as the caller reads the " +
+            "table (needs `data:read` there; its row policy applies, so two people may be given " +
+            "different counts). At most 50 values, the most common first; an enum column lists all " +
+            "its values, in its own order, the ones no row has too. `distinct` counts the different " +
+            "values up to 1000, and `more` says there are more. At most 50,000 rows are looked at, " +
+            "and `sampled` says the table had more. A json, files or list-of-choices column is refused.",
+          tags: ["data"],
+          params: WorkspaceParams,
+          querystring: Type.Object({
+            table: Type.String({ minLength: 1, maxLength: 255 }),
+            column: Type.String({ minLength: 1, maxLength: 100 }),
+          }),
+          response: {
+            200: Type.Object({
+              values: Type.Array(Type.Object({ value: Type.String(), count: Type.Integer() })),
+              distinct: Type.Integer(),
+              more: Type.Optional(Type.Literal(true)),
+              rows: Type.Integer(),
+              empty: Type.Integer(),
+              sampled: Type.Optional(Type.Literal(true)),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, query }) => {
+        const entered = await enter(ctx, params, wildPath({ "*": query.table }), "read");
+        const column = refuseColumn(entered.target, query.column);
+        return columnValues(kernel, params.t, entered.scope, entered.target, column);
+      },
+    );
+
+    app.get(
+      `${base}/column-counts`,
+      {
+        config: { access: access.custom, rateLimit: guestLimit },
+        schema: {
+          summary: "How many different values each column of a table has",
+          description:
+            'For the chart\'s "For each" hints: in one statement, the number of different values of ' +
+            "every column, up to 1000 (`more` names the columns with more), `null` for a json, " +
+            "files or list-of-choices column. Read as the caller reads the table, over at most " +
+            "50,000 rows (`sampled` says the table had more).",
+          tags: ["data"],
+          params: WorkspaceParams,
+          querystring: Type.Object({ table: Type.String({ minLength: 1, maxLength: 255 }) }),
+          response: {
+            200: Type.Object({
+              rows: Type.Integer(),
+              columns: Type.Record(Type.String(), Type.Union([Type.Integer(), Type.Null()])),
+              more: Type.Optional(Type.Array(Type.String())),
+              sampled: Type.Optional(Type.Literal(true)),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params, query }) => {
+        const entered = await enter(ctx, params, wildPath({ "*": query.table }), "read");
+        return columnCounts(kernel, params.t, entered.scope, entered.target);
       },
     );
 

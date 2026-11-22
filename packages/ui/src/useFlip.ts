@@ -24,14 +24,21 @@ const still = () =>
  */
 export function useFlip<E extends HTMLElement>(
   order: string,
-  options: { paused?: boolean } = {},
+  options: {
+    paused?: boolean;
+    /** The holder, when the caller already has a ref for it: a canvas that measures it too. */
+    ref?: RefObject<E | null>;
+  } = {},
 ): RefObject<E | null> {
-  const holder = useRef<E>(null);
+  const own = useRef<E>(null);
+  const holder = options.ref ?? own;
   const before = useRef<{ order: string; places: Map<string, { x: number; y: number }> }>({
     order,
     places: new Map(),
   });
   const paused = options.paused === true;
+
+  const playing = useRef(new Map<string, Animation>());
 
   // After every draw, not only a reordering: where things were is as of the last draw.
   useLayoutEffect(() => {
@@ -39,31 +46,55 @@ export function useFlip<E extends HTMLElement>(
     if (!node) return;
     node.setAttribute("data-flip-holder", "");
     const origin = node.getBoundingClientRect();
+    // A holder drawn scaled down (a sheet in the builder's canvas) is moved in its own pixels.
+    const scale = node.offsetWidth > 0 && origin.width > 0 ? origin.width / node.offsetWidth : 1;
     const places = new Map<string, { x: number; y: number }>();
-    const moved: [HTMLElement, number, number][] = [];
+    const moved: [HTMLElement, string, number, number][] = [];
     const reordered = before.current.order !== order;
     for (const child of node.querySelectorAll<HTMLElement>("[data-flip-key]")) {
       // Only its own: a list inside a list moves its own things.
       if (child.closest("[data-flip-holder]") !== node) continue;
       const key = child.dataset.flipKey as string;
+      // One still on its way is seen where its motion has got to, and is laid out where it goes:
+      // the two are kept apart, so that a move that interrupts a move starts from what is seen.
+      const running = playing.current.get(key);
+      const shift =
+        running && typeof DOMMatrixReadOnly === "function"
+          ? new DOMMatrixReadOnly(getComputedStyle(child).transform)
+          : undefined;
+      const carried = { x: (shift?.e ?? 0) * scale, y: (shift?.f ?? 0) * scale };
       const box = child.getBoundingClientRect();
       // From the holder's corner, so that scrolling the page between draws moves nothing.
-      const place = { x: box.left - origin.left, y: box.top - origin.top };
+      const place = { x: box.left - origin.left - carried.x, y: box.top - origin.top - carried.y };
       places.set(key, place);
       const was = before.current.places.get(key);
-      if (reordered && was && (was.x !== place.x || was.y !== place.y)) {
-        moved.push([child, was.x - place.x, was.y - place.y]);
+      // Less than a pixel is rounding, not a move.
+      if (reordered && was && (Math.abs(was.x - place.x) >= 1 || Math.abs(was.y - place.y) >= 1)) {
+        moved.push([
+          child,
+          key,
+          (was.x - place.x + carried.x) / scale,
+          (was.y - place.y + carried.y) / scale,
+        ]);
       }
     }
     before.current = { order, places };
     if (paused || still()) return;
-    for (const [child, dx, dy] of moved) {
+    for (const [child, key, dx, dy] of moved) {
       child.dataset.flipMoving = "";
       const played = child.animate?.(
         [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "translate(0, 0)" }],
         { duration: MOVE_MS, easing: EASE },
       );
-      const done = () => delete child.dataset.flipMoving;
+      const last = playing.current.get(key);
+      if (played) playing.current.set(key, played);
+      // The one it takes over from ends now; the new one starts where that one was.
+      last?.cancel();
+      const done = () => {
+        if (played && playing.current.get(key) !== played) return;
+        playing.current.delete(key);
+        delete child.dataset.flipMoving;
+      };
       if (played) played.finished.then(done, done);
       else done();
     }

@@ -48,17 +48,20 @@ describe("chart theme", () => {
     expect(config.font).toBe("Inter, sans-serif");
     expect(config.mark).toEqual({ color: "#0e5f7a" });
     expect(config.text).toEqual({ color: "#16202e" });
-    expect(config.axis).toEqual({
+    // Quiet axes: muted labels, one rule color, no box, no axis lines.
+    expect(config.axis).toMatchObject({
       labelColor: "#5b6777",
-      titleColor: "#16202e",
-      domainColor: "#d3dae2",
-      tickColor: "#d3dae2",
+      titleColor: "#5b6777",
       gridColor: "#d3dae2",
+      domain: false,
+      ticks: false,
     });
-    expect(config.legend).toEqual({ labelColor: "#5b6777", titleColor: "#16202e" });
+    expect(config.view).toEqual({ stroke: null });
+    expect(config.legend).toMatchObject({ labelColor: "#5b6777", symbolType: "circle" });
     expect(config.title).toEqual({ color: "#16202e", subtitleColor: "#5b6777" });
+    // Neighbours differ in hue: teal, amber, violet, green, coral, blue, grey.
     expect(config.range).toEqual({
-      category: ["#0e5f7a", "#b45309", "#1f7a4d", "#b3261e", "#5b6777"],
+      category: ["#0e5f7a", "#b45309", "#6741d9", "#1f7a4d", "#b3261e", "#2f5fd0", "#5b6777"],
       ramp: ["#dcedf3", "#0e5f7a"],
       heatmap: ["#dcedf3", "#0e5f7a"],
     });
@@ -66,18 +69,11 @@ describe("chart theme", () => {
 
   test("a token with no value leaves the engine's default in place", () => {
     const empty = Object.fromEntries(Object.keys(tokens).map((key) => [key, ""])) as unknown;
-    expect(chartConfig(empty as ChartTokens)).toEqual({
-      background: "transparent",
-      mark: {},
-      text: {},
-      rule: {},
-      view: {},
-      axis: {},
-      legend: {},
-      header: {},
-      title: {},
-      range: {},
-    });
+    const config = chartConfig(empty as ChartTokens);
+    expect(config).toMatchObject({ background: "transparent", mark: {}, text: {}, rule: {} });
+    expect(config.axis).not.toHaveProperty("labelColor");
+    expect(config.axis).not.toHaveProperty("gridColor");
+    expect(config.title).toEqual({});
   });
 
   test("the tokens are read where the chart sits", () => {

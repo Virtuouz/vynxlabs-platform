@@ -1,4 +1,6 @@
 import { Field } from "@base-ui/react/field";
+import { moneyText, parseMoney } from "@volvel/widgets";
+import { ChevronDown } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
   createContext,
@@ -9,11 +11,63 @@ import {
   useRef,
   useState,
 } from "react";
+import { DateInput } from "./DateInput.tsx";
 import { TermText } from "./Term.tsx";
 
 /** A control's own box. An invalid one has a danger edge, beside the words that say why. */
 export const control =
-  "h-control w-full rounded-control border border-line-control bg-surface px-3 text-ink placeholder:text-ink-muted/70 disabled:opacity-60 data-[invalid]:border-danger aria-[invalid=true]:border-danger";
+  "h-control w-full rounded-control border border-line-control bg-field px-3 text-ink placeholder:text-ink-muted/70 disabled:opacity-60 data-[invalid]:border-danger aria-[invalid=true]:border-danger";
+
+/** A select's own box: the native control, drawn flat so the chevron beside it is the kit's. */
+const selectControl = `${control} appearance-none pr-8`;
+
+/** The chevron a select shows at its end. It takes no pointer: the select under it does. */
+function Chevron() {
+  return (
+    <ChevronDown
+      aria-hidden="true"
+      size={14}
+      className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-ink-muted"
+    />
+  );
+}
+
+/**
+ * A field whose label sits inside its box, before the value: "Clinic  All".
+ * For a filter bar and other rows of small controls. The label is a real
+ * label, so the control keeps its name; the box takes the focus ring.
+ */
+function InlineFrame({
+  label,
+  hint,
+  error,
+  children,
+  chevron = false,
+}: Omit<Common, "hint"> & { hint: string | undefined; children: ReactNode; chevron?: boolean }) {
+  return (
+    <Field.Root invalid={error !== undefined} className="flex flex-col gap-1">
+      <div className="relative flex h-control items-center gap-2 rounded-control border border-line-control bg-field px-3 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus has-[[data-invalid]]:border-danger">
+        <Field.Label className="shrink-0 font-normal text-ink-muted">{label}</Field.Label>
+        {children}
+        {chevron ? <Chevron /> : null}
+      </div>
+      {hint ? (
+        <Field.Description className="m-0 text-body-sm text-ink-muted">
+          <TermText>{hint}</TermText>
+        </Field.Description>
+      ) : null}
+      {error ? (
+        <Field.Error match role="alert" className="m-0 text-body-sm text-danger">
+          {error}
+        </Field.Error>
+      ) : null}
+    </Field.Root>
+  );
+}
+
+/** What a control inside an `InlineFrame` is drawn with: no box of its own. */
+const bare =
+  "h-full min-w-0 flex-1 appearance-none bg-transparent text-ink outline-none! placeholder:text-ink-muted/70 focus-visible:outline-none! disabled:opacity-60";
 
 interface Common {
   label: string;
@@ -25,9 +79,22 @@ interface Common {
    * value makes plain: the label is read, not shown (P4-1).
    */
   labelHidden?: boolean;
+  /**
+   * The label sits inside the box, before the value, as in a filter bar:
+   * "Clinic  All". The hint and the error stay under it.
+   */
+  inline?: boolean;
 }
 
 const Beside = createContext<ReactNode>(null);
+
+/**
+ * Which marks a field's label carries. The console marks both ("optional" on what may be left
+ * out, as the pattern library has it). A form made for the people who use an app marks only what
+ * is required, with an asterisk, as board 5 draws it.
+ */
+const Marks = createContext<"both" | "required">("both");
+export const FieldMarks = Marks.Provider;
 
 /**
  * Puts something beside the label of the field inside it: the ⓘ that says
@@ -55,6 +122,7 @@ export function FieldFrame({
   children,
 }: Common & { required?: boolean | undefined; children: ReactNode }) {
   const beside = useContext(Beside);
+  const marks = useContext(Marks);
   return (
     <Field.Root invalid={error !== undefined} className="flex flex-col gap-1">
       <div className={labelHidden ? "sr-only" : "flex items-baseline gap-1 text-body-sm"}>
@@ -70,7 +138,7 @@ export function FieldFrame({
           <span aria-hidden="true" className="text-danger">
             *
           </span>
-        ) : required === false ? (
+        ) : required === false && marks === "both" ? (
           <span aria-hidden="true" className="text-ink-subtle">
             optional
           </span>
@@ -110,9 +178,21 @@ export function TextField({
   error,
   onChange,
   labelHidden = false,
+  inline = false,
   ...input
 }: TextFieldProps) {
   if (labelHidden && input.placeholder === undefined) input.placeholder = label;
+  if (inline) {
+    return (
+      <InlineFrame label={label} hint={hint} error={error}>
+        <Field.Control
+          {...input}
+          className={bare}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.currentTarget.value)}
+        />
+      </InlineFrame>
+    );
+  }
   return (
     <FieldFrame
       label={label}
@@ -137,6 +217,8 @@ export interface SelectFieldProps extends Common {
   disabled?: boolean;
   options: { value: string; label: string }[];
   onChange?: (value: string) => void;
+  /** Drawn inside the box before the value: the table's icon, as the boards' selects have it. */
+  icon?: ReactNode;
 }
 
 /** A native select: it works with every keyboard, screen reader and phone as it is. */
@@ -147,8 +229,32 @@ export function SelectField({
   options,
   onChange,
   labelHidden = false,
+  inline = false,
+  icon,
   ...select
 }: SelectFieldProps) {
+  const choices = options.map((option) => (
+    <option key={option.value} value={option.value}>
+      {option.label}
+    </option>
+  ));
+  if (inline) {
+    return (
+      <InlineFrame label={label} hint={hint} error={error} chevron>
+        <Field.Control
+          render={
+            <select
+              {...select}
+              className={`${bare} pr-6`}
+              onChange={(event) => onChange?.(event.currentTarget.value)}
+            >
+              {choices}
+            </select>
+          }
+        />
+      </InlineFrame>
+    );
+  }
   return (
     <FieldFrame
       label={label}
@@ -157,21 +263,28 @@ export function SelectField({
       required={select.required}
       labelHidden={labelHidden}
     >
-      <Field.Control
-        render={
-          <select
-            {...select}
-            className={control}
-            onChange={(event) => onChange?.(event.currentTarget.value)}
+      <div className="relative">
+        {icon ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-3 flex -translate-y-1/2 text-ink-muted"
           >
-            {options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        }
-      />
+            {icon}
+          </span>
+        ) : null}
+        <Field.Control
+          render={
+            <select
+              {...select}
+              className={icon ? `${selectControl} pl-10` : selectControl}
+              onChange={(event) => onChange?.(event.currentTarget.value)}
+            >
+              {choices}
+            </select>
+          }
+        />
+        <Chevron />
+      </div>
     </FieldFrame>
   );
 }
@@ -305,6 +418,93 @@ export function NumberField(props: NumberFieldProps) {
   );
 }
 
+export interface MoneyFieldProps extends Common {
+  name: string;
+  /** The amount as the column keeps it: cents, or whole units when `minorUnits` is false. */
+  value?: number | undefined;
+  /** An ISO 4217 code: shown beside the box, and used in the words of a problem. Default USD. */
+  currency?: string;
+  /** The column keeps cents (default). `false`: whole units. */
+  minorUnits?: boolean;
+  placeholder?: string;
+  required?: boolean;
+  disabled?: boolean;
+  /** Called with the amount as kept (exact, no float error), and the problem in words when what is typed is not an amount. */
+  onChange?: (value: number | undefined, problem?: string) => void;
+}
+
+/** A symbol for a currency: "$", "€". The code itself where there is none. */
+function symbolOf(currency: string): string {
+  try {
+    return (
+      new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency,
+        currencyDisplay: "narrowSymbol",
+      })
+        .formatToParts(0)
+        .find((part) => part.type === "currency")?.value ?? currency
+    );
+  } catch {
+    return currency;
+  }
+}
+
+/**
+ * An amount of money: typed as the person writes it ("123.45", or "123,45" where a comma is
+ * written), with the currency beside the box. It keeps the amount as the column holds it, exactly
+ * (12345 for 123.45 in cents), and says in words what is wrong with text that is not an amount
+ * or has more than two decimals.
+ */
+export function MoneyField(props: MoneyFieldProps) {
+  const {
+    label,
+    hint,
+    error,
+    value,
+    onChange,
+    currency = "USD",
+    minorUnits = true,
+    ...input
+  } = props;
+  const options = { minorUnits, currency };
+  const [text, setText] = useState(() => (value === undefined ? "" : moneyText(value, options)));
+  const [left, setLeft] = useState(false);
+  const read = parseMoney(text, options);
+  const typed = read.ok ? read.value : undefined;
+  // A value passed in that is not what the box spells replaces it (a reset, another record).
+  const held = "value" in props && read.ok && typed !== value;
+  const shown = held ? (value === undefined ? "" : moneyText(value, options)) : text;
+  const problem = read.ok ? undefined : read.message;
+  const say = error ?? (left || text.length > 0 ? problem : undefined);
+  return (
+    <FieldFrame label={label} {...(hint ? { hint } : {})} error={say} required={input.required}>
+      <div className="flex items-center gap-2">
+        <span aria-hidden="true" className="text-body-sm text-ink-muted">
+          {symbolOf(currency)}
+        </span>
+        <Field.Control
+          {...input}
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          value={shown}
+          className={`${control} min-w-0 flex-1 text-right tabular-nums`}
+          onBlur={() => setLeft(true)}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => {
+            const next = event.currentTarget.value;
+            setText(next);
+            const parsed = parseMoney(next, options);
+            if (parsed.ok) onChange?.(parsed.value);
+            else onChange?.(undefined, parsed.message);
+          }}
+        />
+        <span className="w-9 shrink-0 text-body-sm text-ink-muted">{currency}</span>
+      </div>
+    </FieldFrame>
+  );
+}
+
 export interface DateFieldProps extends Common {
   name: string;
   /**
@@ -344,7 +544,11 @@ export function utcInstant(wallClock: string): string {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
-/** The browser's own date picker: it follows the person's locale and works on a phone. */
+/**
+ * A date, or a date and a time, in the kit's own box: the person's date as words ("Nov 21, 2026"),
+ * typed or picked from a calendar (`DateInput`). On a touch screen the button opens the phone's
+ * own picker. The value in and out is the string described on `DateFieldProps`.
+ */
 export function DateField({
   label,
   hint,
@@ -352,33 +556,45 @@ export function DateField({
   withTime,
   timeZone = "local",
   onChange,
+  labelHidden = false,
   ...input
 }: DateFieldProps) {
   const utc = withTime && timeZone === "UTC";
-  const shown = utc
-    ? {
-        ...input,
-        value: utcInputValue(input.value),
-        min: utcInputValue(input.min),
-        max: utcInputValue(input.max),
-      }
-    : input;
+  const [problem, setProblem] = useState<string | undefined>();
+  const [own, setOwn] = useState("");
+  const controlled = input.value !== undefined;
+  const given = controlled ? (input.value ?? "") : own;
+  const wall = utc ? (utcInputValue(given) ?? "") : given;
+  const range = (edge: string | undefined) => (utc ? utcInputValue(edge) : edge);
   const note = utc ? (hint ? `${hint} Times are in UTC.` : "Times are in UTC.") : hint;
   return (
     <FieldFrame
       label={label}
       {...(note ? { hint: note } : {})}
-      error={error}
+      error={error ?? problem}
       required={input.required}
+      labelHidden={labelHidden}
     >
       <Field.Control
-        {...Object.fromEntries(Object.entries(shown).filter(([, value]) => value !== undefined))}
-        type={withTime ? "datetime-local" : "date"}
-        className={control}
-        onChange={(event: ChangeEvent<HTMLInputElement>) => {
-          const value = event.currentTarget.value;
-          onChange?.(utc ? utcInstant(value) : value);
-        }}
+        render={(props) => (
+          <DateInput
+            boxProps={props as Record<string, unknown>}
+            name={input.name}
+            value={wall}
+            formValue={utc ? utcInstant(wall) : wall}
+            {...(withTime ? { withTime } : {})}
+            min={range(input.min)}
+            max={range(input.max)}
+            required={input.required}
+            disabled={input.disabled}
+            onProblem={setProblem}
+            onChange={(next) => {
+              const value = utc ? utcInstant(next) : next;
+              if (!controlled) setOwn(value);
+              onChange?.(value);
+            }}
+          />
+        )}
       />
     </FieldFrame>
   );

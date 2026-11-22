@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { chartSpec, createChartView, loadChartEngine } from "./chartEngine.ts";
-import { chartConfig, readChartTokens } from "./chartTheme.ts";
+import { chartConfig, readChartTokens, SURFACE } from "./chartTheme.ts";
 import { Notice } from "./Notice.tsx";
 
 export interface ChartProps {
@@ -31,11 +31,15 @@ export function Chart({ spec, data, title, description, height = 240, onPick }: 
   picking.current = onPick;
   const picks = onPick !== undefined;
   const container = useRef<HTMLDivElement>(null);
+  /** How to take down the drawing that is shown. */
+  const shown = useRef<(() => void)[]>([]);
   const [drawn, setDrawn] = useState(false);
   const [failure, setFailure] = useState<string>();
   const [scheme, setScheme] = useState(0);
   // A spec written inline is a new object on every render. Its text says whether it changed.
   const specText = JSON.stringify(spec);
+  // Its rows too: the same rows read again draw nothing again.
+  const dataText = data === undefined ? undefined : JSON.stringify(data);
 
   // The tokens change with the color scheme, and the chart holds their values, not the variables.
   useEffect(() => {
@@ -53,15 +57,34 @@ export function Chart({ spec, data, title, description, height = 240, onPick }: 
     if (!element) return;
     let left = false;
     let view: ReturnType<typeof createChartView> | undefined;
+    // It is drawn out of sight over the one that is shown, and takes its place once it is drawn:
+    // a chart that changes is never blank in between.
+    const layer = document.createElement("div");
+    layer.className = "w-full";
+    const waiting = element.childElementCount > 0;
+    if (waiting) {
+      layer.style.cssText = "position:absolute;inset:0;visibility:hidden;pointer-events:none";
+    }
+    element.append(layer);
     loadChartEngine()
       .then((engine) => {
         if (left) return;
-        const config = chartConfig(readChartTokens(element));
+        const tokens = readChartTokens(element);
+        const config = chartConfig(tokens);
+        // Where the spec names the color of what the chart sits on, the theme's value goes.
+        const painted = specText.replaceAll(
+          JSON.stringify(SURFACE),
+          JSON.stringify(tokens.surface || "transparent"),
+        );
         view = createChartView(
           engine,
-          chartSpec(JSON.parse(specText), data, height),
+          chartSpec(
+            JSON.parse(painted),
+            dataText === undefined ? undefined : JSON.parse(dataText),
+            height,
+          ),
           config,
-          element,
+          layer,
         );
         if (picks) {
           view.addEventListener("click", (_event, item) => {
@@ -74,6 +97,9 @@ export function Chart({ spec, data, title, description, height = 240, onPick }: 
       .then(
         () => {
           if (left) return;
+          layer.removeAttribute("style");
+          for (const old of shown.current) old();
+          shown.current = [remove];
           setFailure(undefined);
           setDrawn(true);
         },
@@ -81,12 +107,23 @@ export function Chart({ spec, data, title, description, height = 240, onPick }: 
           if (!left) setFailure(caught instanceof Error ? caught.message : String(caught));
         },
       );
+    const remove = () => {
+      view?.finalize();
+      layer.remove();
+    };
     return () => {
       left = true;
-      view?.finalize();
-      element.replaceChildren();
+      // One that is shown stays until the next is drawn; one that never was goes now.
+      if (!shown.current.includes(remove)) remove();
     };
-  }, [specText, data, height, scheme, picks]);
+  }, [specText, dataText, height, scheme, picks]);
+  useEffect(
+    () => () => {
+      for (const old of shown.current) old();
+      shown.current = [];
+    },
+    [],
+  );
 
   return (
     <div className="relative w-full">
@@ -99,7 +136,7 @@ export function Chart({ spec, data, title, description, height = 240, onPick }: 
       >
         <div
           ref={container}
-          className={`w-full ${picks ? "[&_path]:cursor-pointer" : ""}`}
+          className={`relative w-full ${picks ? "[&_path]:cursor-pointer" : ""}`}
           style={{ minHeight: `${height}px` }}
         />
       </div>

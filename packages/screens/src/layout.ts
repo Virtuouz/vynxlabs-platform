@@ -166,7 +166,10 @@ export function fitContainers<T extends PageWidget>(
       continue;
     }
     if (widget.in || !isContainer(widget, roles)) continue;
-    const fits = containerHeight(widget, widgets);
+    // A container is always as tall as what it draws: what its widgets need at the width they are drawn
+    // (their stats wrap on a narrow page) holds it open past what their places say.
+    const drawn = Math.min(40, needs ?? 0);
+    const fits = Math.max(containerHeight(widget, widgets), drawn);
     const h = how.folded?.(widget.id) ? FOLDED_ROWS : how.grow ? Math.max(widget.at.h, fits) : fits;
     if (h === widget.at.h) continue;
     next ??= copied(widgets);

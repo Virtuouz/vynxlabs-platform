@@ -577,7 +577,7 @@ function Cell({
           </p>
         ) : View ? (
           <Measured
-            on={entry?.definition.role === "filters"}
+            on={entry?.definition.role === "filters" || entry?.definition.role === "container"}
             onSize={(pixels) => ctx.measured(widget.id, pixels)}
           >
             <View

@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { fit, type Limits } from "./layout.ts";
+import { besideContainers, fit, type Limits } from "./layout.ts";
 
 /** Where something is on a grid of twelve columns, and how big: all in cells. */
 export interface Box {
@@ -26,6 +26,9 @@ export const DRAG_FROM = 4;
 /** How near the edge of what scrolls a held pointer starts scrolling it, and how fast at the very edge. */
 const EDGE = 56;
 const FASTEST = 18;
+
+/** How far into a container, in rows, a pointer is before it is in it: its edges are for what goes above and below. */
+const INSIDE = 0.35;
 
 /** The key a widget being carried onto the page is drawn under, before it is a widget. */
 export const CARRIED = "__carried";
@@ -52,6 +55,8 @@ export interface Card {
   /** How big it lands. */
   size: { w: number; h: number };
   limits: Limits;
+  /** A Section or Tabs, which is never put in another. */
+  container?: boolean;
 }
 
 export interface Carrying {
@@ -60,6 +65,8 @@ export interface Carrying {
   pointer: { x: number; y: number };
   /** Where it would land; absent while it is not over the page. */
   at: Box | undefined;
+  /** The container's grid it would land on; absent for the page's own. */
+  in?: WidgetIn | undefined;
 }
 
 /** A grid inside a container, which something can be dropped on. */
@@ -72,8 +79,10 @@ export interface Target {
    * (`onOpen`), and a thing let go there lands at the bottom of that tab.
    */
   header?: HTMLElement;
-  /** For a tab's name: the first free row of that tab, where what is let go there lands. */
-  bottom?: number;
+  /** The first free row under what is on it: nothing lands lower than that. */
+  bottom: number;
+  /** Where its container is on the page's grid when nothing is held. */
+  rest: Box;
 }
 
 const sameIn = (a: WidgetIn | undefined, b: WidgetIn | undefined) =>
@@ -83,7 +92,20 @@ export interface Placement {
   /** For the element that is the grid. Each thing on it carries `data-flip-key`. */
   grid: RefObject<HTMLDivElement | null>;
   /** What is being dragged or stretched, and where it would land. */
-  held: { id: string; at: Box; how: HowMoved; in: WidgetIn | undefined } | undefined;
+  held:
+    | {
+        id: string;
+        at: Box;
+        how: HowMoved;
+        in: WidgetIn | undefined;
+        /** A dragged thing's own size, in pixels: it keeps it while it follows the pointer. */
+        size?: { width: number; height: number };
+      }
+    | undefined;
+  /** Where a dragged thing was seen as it was let go, for it to be played from there. Read once. */
+  letGo: RefObject<{ id: string; from: DOMRect } | undefined>;
+  /** Puts what is dragged under the pointer again: for after each draw, before it is seen. */
+  follow: () => void;
   /** What is being carried onto the page, and where it would land. */
   carrying: Carrying | undefined;
   /** Where to draw a thing: where it would land while it is held, its own place otherwise. */
@@ -108,7 +130,7 @@ export interface Placement {
   carry: (
     card: Card,
     from: { x: number; y: number },
-    onDrop: (at: Box | undefined) => void,
+    onDrop: (at: Box | undefined, into?: WidgetIn) => void,
     how: { narrow: () => boolean; endRow: () => number },
   ) => void;
   /** For the thing that has focus when it is chosen: the arrows move it a cell, and with Shift change its size. */
@@ -140,12 +162,14 @@ function scrollerOf(node: HTMLElement): HTMLElement {
 /**
  * While a pointer is held, scrolls what holds the grid when the pointer is
  * near its top or bottom, faster the nearer, and says so after each step so
- * that what is held keeps up. Returns how to stop.
+ * that what is held keeps up. `each` is told every frame, for what follows the
+ * pointer over a page that is moving under it. Returns how to stop.
  */
 function scrollAtEdges(
   grid: HTMLElement,
   pointer: () => { x: number; y: number },
   scrolled: () => void,
+  each?: () => void,
 ): () => void {
   const scroller = scrollerOf(grid);
   const page = scroller === document.scrollingElement || scroller === document.documentElement;
@@ -165,6 +189,7 @@ function scrollAtEdges(
       scroller.scrollTop += by;
       if (scroller.scrollTop !== before) scrolled();
     }
+    each?.();
     frame = requestAnimationFrame(step);
   };
   frame = requestAnimationFrame(step);
@@ -191,6 +216,7 @@ export function usePlacement({
   onGrabbed,
   targets,
   onOpen,
+  isContainer: isHeldContainer = () => false,
 }: {
   grid: RefObject<HTMLDivElement | null>;
   /**
@@ -208,6 +234,8 @@ export function usePlacement({
     | undefined;
   /** The grids inside containers that a thing may be dropped on; a container itself has none. */
   targets?: (id: string) => Target[];
+  /** Whether a thing is itself a container, which is moved among the others and never into one. */
+  isContainer?: (id: string) => boolean;
   /** A tab's name was held over while dragging: its tab is opened, so what it holds is seen. */
   onOpen?: (into: WidgetIn) => void;
   /** How small and how large each thing may be made. */
@@ -222,6 +250,8 @@ export function usePlacement({
   grabbed.current = onGrabbed;
   // A gesture still going when the page goes away is ended with it.
   const ending = useRef<(() => void) | undefined>(undefined);
+  const trailing = useRef<(() => void) | undefined>(undefined);
+  const letGo = useRef<{ id: string; from: DOMRect } | undefined>(undefined);
   useEffect(() => () => ending.current?.(), []);
 
   /** Where a point of the window is on the grid, in cells, as fractions. */
@@ -246,40 +276,93 @@ export function usePlacement({
     };
   };
 
-  /** Where each container that may be dropped on is, measured when a drag starts. */
-  const areasOf = (id: string): [Target, DOMRect][] =>
-    (targets?.(id) ?? []).map((target) => [
-      target,
-      // A tab's name is its own place; anywhere else over the container counts, its heading
-      // too, so that it can be dragged down inside it.
-      (
-        target.header ??
-        target.node.closest("[data-widget-cell]") ??
-        target.node
-      ).getBoundingClientRect(),
-    ]);
-
   /**
-   * The grid under a point: that of the container it is over, if any. The containers are where
-   * they were when the drag began: the page makes room live as a thing is dragged over it, and
-   * a container pushed down by that would never be reached.
+   * The grid under a point: that of the container it is over, if any. Containers are counted
+   * where they are when nothing is held, and not where they have been pushed to: one that moved
+   * aside as it was reached could never be reached. The one it is already in counts as it is
+   * drawn, which is taller while it makes room.
    */
   const gridUnder = (
-    areas: readonly [Target, DOMRect][],
+    over: readonly Target[],
     point: { x: number; y: number },
-    scrolledBy: number,
+    cell: { x: number; y: number },
+    now: WidgetIn | undefined,
   ): Target | undefined => {
-    // A tab's name first: it lies over its container's area.
-    const ordered = [...areas].sort(
-      ([a], [b]) => Number(b.header !== undefined) - Number(a.header !== undefined),
-    );
-    for (const [target, area] of ordered) {
-      const top = area.top - scrolledBy;
-      const bottom = area.bottom - scrolledBy;
-      if (point.x >= area.left && point.x <= area.right && point.y >= top && point.y <= bottom)
+    for (const target of over) {
+      const box = target.header?.getBoundingClientRect();
+      if (
+        box &&
+        point.x >= box.left &&
+        point.x <= box.right &&
+        point.y >= box.top &&
+        point.y <= box.bottom
+      )
         return target;
     }
-    return undefined;
+    return over.find((target) => {
+      if (target.header) return false;
+      const { rest } = target;
+      let bottom = rest.y + rest.h;
+      if (now?.widget === target.into.widget) {
+        const drawn = target.node.closest("[data-widget-cell]")?.getBoundingClientRect();
+        const low = drawn ? cellOf({ x: point.x, y: drawn.bottom })?.y : undefined;
+        if (low !== undefined) bottom = Math.max(bottom, low);
+      }
+      return (
+        cell.x >= rest.x &&
+        cell.x < rest.x + rest.w &&
+        cell.y >= rest.y + INSIDE &&
+        cell.y < bottom - INSIDE
+      );
+    });
+  };
+
+  /** Where something `w` by `h`, held `holdX` and `holdY` cells in from its corner, would land. */
+  const landingFor = (
+    over: readonly Target[],
+    point: { x: number; y: number },
+    hold: { x: number; y: number },
+    size: { w: number; h: number },
+    least: Limits,
+    now: WidgetIn | undefined,
+    container: boolean,
+  ): { at: Box; into: WidgetIn | undefined; header: boolean } | undefined => {
+    const cell = cellOf(point);
+    if (!cell) return undefined;
+    const under = gridUnder(over, point, cell, now);
+    if (under?.header) {
+      // Over a tab's name: the thing goes to the bottom of that tab.
+      return { at: fit({ x: 0, y: under.bottom, ...size }, least), into: under.into, header: true };
+    }
+    if (under) {
+      const inner = cellOf(point, under.node);
+      if (!inner) return undefined;
+      const at = fit(
+        {
+          x: Math.round(inner.x - hold.x),
+          // No lower than right under what is there: a Section does not grow with the pointer.
+          y: Math.min(under.bottom, Math.max(0, Math.round(inner.y - hold.y))),
+          ...size,
+        },
+        least,
+      );
+      return { at, into: under.into, header: false };
+    }
+    const at = fit(
+      { x: Math.round(cell.x - hold.x), y: Math.round(cell.y - hold.y), ...size },
+      least,
+    );
+    return {
+      at: container
+        ? at
+        : besideContainers(
+            at,
+            cell,
+            over.filter((one) => !one.header).map((one) => one.rest),
+          ),
+      into: undefined,
+      header: false,
+    };
   };
 
   const grab: Placement["grab"] = (event, id, own, how, origin, name = "The widget") => {
@@ -298,56 +381,75 @@ export function usePlacement({
     const holdX = start.x - own.x;
     const holdY = start.y - own.y;
     let latestIn = origin;
-    // The containers' places, and how far the page has scrolled since they were measured.
-    let areas: [Target, DOMRect][] = [];
-    const scroller = scrollerOf(node);
-    let scrolledFrom = scroller.scrollTop;
+    // The thing itself, which follows the pointer while what would become of the page is drawn under it.
+    const card = node.querySelector<HTMLElement>(`[data-widget-cell="${CSS.escape(id)}"]`);
+    const was = card?.getBoundingClientRect();
+    const homeScale = () => {
+      const box = home.getBoundingClientRect();
+      return { box, k: home.offsetWidth > 0 ? box.width / home.offsetWidth : 1 };
+    };
+    const { k: startScale } = homeScale();
+    const taken = was
+      ? { x: (from.x - was.left) / startScale, y: (from.y - was.top) / startScale }
+      : undefined;
+    const size =
+      was && how === "move"
+        ? { width: was.width / startScale, height: was.height / startScale }
+        : undefined;
+    const trail = () => {
+      // Until it is drawn lifted out of the grid, moving it would move it from its place.
+      if (!card?.hasAttribute("data-lifted") || !taken || !dragging) return;
+      const { box, k } = homeScale();
+      card.style.translate = `${(pointer.x - box.left) / k - taken.x}px ${(pointer.y - box.top) / k - taken.y}px`;
+    };
     const least = limits(id);
     let pointer = from;
     let latest = own;
     let dragging = how === "stretch";
     let stopScrolling: (() => void) | undefined;
     if (how === "stretch") event.preventDefault();
+    trailing.current = trail;
+    /** Told only when where it would land changes: the page is drawn again for that, not for every pixel. */
+    const tell = (at: Box, into: WidgetIn | undefined) =>
+      setHeld((before) =>
+        before?.id === id && same(before.at, at) && sameIn(before.in, into)
+          ? before
+          : { id, at, how, in: into, ...(size ? { size } : {}) },
+      );
     const place = () => {
       if (how === "stretch") {
         const now = cellOf(pointer, home);
         if (!now) return;
         latest = stretched(own, Math.round(now.x - start.x), Math.round(now.y - start.y), least);
-        setHeld({ id, at: latest, how, in: origin });
+        tell(latest, origin);
         return;
       }
-      const under = gridUnder(areas, pointer, scroller.scrollTop - scrolledFrom);
-      if (under?.header) {
-        // Over a tab's name: that tab opens, and the thing goes to the bottom of it.
-        if (!sameIn(latestIn, under.into)) onOpen?.(under.into);
-        latestIn = under.into;
-        latest = fit(
-          { x: Math.min(own.x, 12 - own.w), y: under.bottom ?? 0, w: own.w, h: own.h },
-          least,
-        );
-        setHeld({ id, at: latest, how, in: latestIn });
-        return;
-      }
-      const now = cellOf(pointer, under ? under.node : node);
-      if (!now) return;
-      latestIn = under?.into;
-      latest = fit(
-        { x: Math.round(now.x - holdX), y: Math.round(now.y - holdY), w: own.w, h: own.h },
+      const over = targets?.(id) ?? [];
+      const found = landingFor(
+        over,
+        pointer,
+        { x: holdX, y: holdY },
+        { w: own.w, h: own.h },
         least,
+        latestIn,
+        isHeldContainer(id),
       );
-      setHeld({ id, at: latest, how, in: latestIn });
+      if (!found) return;
+      if (found.header && found.into && !sameIn(latestIn, found.into)) onOpen?.(found.into);
+      latestIn = found.into;
+      latest = found.at;
+      tell(latest, latestIn);
     };
     const follow = (moving: PointerEvent) => {
       pointer = { x: moving.clientX, y: moving.clientY };
       if (!dragging) {
         if (Math.hypot(pointer.x - from.x, pointer.y - from.y) < DRAG_FROM) return;
         dragging = true;
-        areas = areasOf(id);
-        scrolledFrom = scroller.scrollTop;
         grabbed.current?.(id);
-        stopScrolling = scrollAtEdges(node, () => pointer, place);
+        stopScrolling = scrollAtEdges(node, () => pointer, place, trail);
       }
       place();
+      trail();
     };
     const end = () => {
       window.removeEventListener("pointermove", follow);
@@ -357,6 +459,11 @@ export function usePlacement({
       window.removeEventListener("keydown", onEscape, true);
       stopScrolling?.();
       ending.current = undefined;
+      if (card && dragging && how === "move") {
+        letGo.current = { id, from: card.getBoundingClientRect() };
+        card.style.translate = "";
+      }
+      trailing.current = undefined;
       setHeld(undefined);
     };
     const drop = () => {
@@ -402,25 +509,39 @@ export function usePlacement({
     }
     let pointer = from;
     let landing: Box | undefined;
+    let into: WidgetIn | undefined;
+    let intoBefore: WidgetIn | undefined;
+    const tell = () =>
+      setCarrying((before) =>
+        // Over the page it is drawn where it would land, and only that changes what is drawn.
+        before?.at && landing && same(before.at, landing) && sameIn(before.in, into)
+          ? before
+          : { card, pointer, at: landing, in: into },
+      );
     const place = () => {
       const now = cellOf(pointer);
+      into = undefined;
       if (!now?.over) {
         landing = undefined;
       } else if (how.narrow()) {
         landing = { x: 0, y: how.endRow(), w: card.size.w, h: card.size.h };
       } else {
         // The pointer holds the card by the middle of its top edge.
-        landing = fit(
-          {
-            x: Math.round(now.x - card.size.w / 2),
-            y: Math.floor(now.y),
-            w: card.size.w,
-            h: card.size.h,
-          },
+        const found = landingFor(
+          card.container ? [] : (targets?.(CARRIED) ?? []),
+          pointer,
+          { x: card.size.w / 2, y: 0.5 },
+          card.size,
           card.limits,
+          intoBefore,
+          card.container === true,
         );
+        landing = found?.at;
+        into = found?.into;
+        if (found?.header && into && !sameIn(intoBefore, into)) onOpen?.(into);
+        intoBefore = into;
       }
-      setCarrying({ card, pointer, at: landing });
+      tell();
     };
     const follow = (moving: PointerEvent) => {
       pointer = { x: moving.clientX, y: moving.clientY };
@@ -437,7 +558,8 @@ export function usePlacement({
     };
     const drop = () => {
       end();
-      onDrop(landing);
+      if (into) onDrop(landing, into);
+      else onDrop(landing);
     };
     const cancel = () => {
       end();
@@ -489,6 +611,8 @@ export function usePlacement({
   return {
     grid,
     held,
+    letGo,
+    follow: () => trailing.current?.(),
     carrying,
     at: (id, own) => (held?.id === id ? held.at : own),
     grab,

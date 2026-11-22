@@ -37,6 +37,7 @@ export {
   placed,
   putAt,
   settle,
+  sizedByHand,
   sizeWords,
   without,
 } from "./layout.ts";

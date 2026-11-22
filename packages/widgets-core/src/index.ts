@@ -766,10 +766,22 @@ export const text = defineWidget({
           order: 0,
         }),
       },
+      height: {
+        enum: ["fit", "set"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Size",
+          control: "segmented",
+          label: "Height",
+          help: "Set by hand keeps the height it is dragged to, and longer text scrolls inside it.",
+          choices: { fit: "Fits the text", set: "Set by hand" },
+          order: 2,
+        }),
+      },
     },
     additionalProperties: false,
   },
-  defaults: { text: "", look: "plain" },
+  defaults: { text: "", look: "plain", height: "fit" },
   events: {},
   layout: { min: { w: 2, h: 1 }, default: { w: 6, h: 2 }, phone: "stack" },
 });

@@ -43,8 +43,10 @@ import {
   duplicated,
   fitContainers,
   gridOf,
+  hasSetHeight,
   limitsOf,
   putAt,
+  sizedByHand,
   sizeWords,
   without,
 } from "./layout.ts";
@@ -175,7 +177,7 @@ export interface PageViewProps {
 export interface CarryRequest {
   card: PlaceCard;
   from: { x: number; y: number };
-  onDrop(at: Box | undefined): void;
+  onDrop(at: Box | undefined, into?: WidgetIn): void;
 }
 
 type Editing = NonNullable<PageViewProps["editing"]>;
@@ -244,6 +246,8 @@ interface GridContext {
   ): Promise<DecideOutcome>;
   /** Makes every widget read again. */
   refresh(): void;
+  /** What each widget last read, for one that is drawn again somewhere else. */
+  kept: Map<string, { of: string; inputs: Record<string, WireData> }>;
   /** The page's record id, and its row when a widget has read it. */
   record: string | undefined;
   thisRow: Readonly<Record<string, unknown>> | undefined;
@@ -328,7 +332,8 @@ function Cell({
   entry,
   at,
   held,
-  away,
+  lifted,
+  over,
   arriving,
   narrow,
   selected,
@@ -349,8 +354,10 @@ function Cell({
   entry: ViewEntry | undefined;
   at: Box;
   held: boolean;
-  /** Being dragged to another grid: it stays where it was, faded, until it is let go. */
-  away: boolean;
+  /** Being dragged: it keeps this size and follows the pointer, over the place it would land. */
+  lifted: { width: number; height: number } | undefined;
+  /** It holds what is being dragged, which is drawn over its neighbours too. */
+  over: boolean;
   /** It is new on the page since the page was opened: it fades in where it lands. */
   arriving: boolean;
   narrow: boolean;
@@ -382,12 +389,8 @@ function Cell({
   const container = place !== undefined;
   // A widget drawn on the page as it is, with no card: a button.
   const bare = definition?.layout.frame === "none" || container;
-  // A Text is as tall as its words unless it was sized by hand: one still at the height it was
-  // added with grows to show all of its text, and says nothing is cut. Taller than that, it was
-  // sized by someone, and is the height they gave it.
-  const growsWithText =
-    widget.type === "core/text" &&
-    (ctx.stored.get(widget.id)?.at.h ?? at.h) <= (definition?.layout.default.h ?? at.h);
+  // A Text is as tall as its words, and no shorter than its place, unless its height was set by hand.
+  const growsWithText = widget.type === "core/text" && !hasSetHeight(widget);
   // A form in a published modal or sheet is the overlay's own content: the overlay is its card
   // and its only scroller, so it has no frame, no padding and no scroll box of its own.
   const flat = onClose !== undefined && editing === undefined && widget.type === "core/form";
@@ -436,6 +439,7 @@ function Cell({
         ? widget.config.empty
         : emptyMessage,
     chosen: Object.keys(chosenAsked).length > 0 ? chosenAsked : undefined,
+    kept: ctx.kept,
   });
   const building = editing !== undefined;
   // On the canvas a widget is one stop for the keyboard: Enter goes in, Esc comes out.
@@ -567,10 +571,12 @@ function Cell({
     building && definition && "rowClick" in definition.events && opened?.do === "open"
       ? (ctx.pages?.find((one) => one.id === opened.page)?.title ?? opened.page)
       : undefined;
-  const style = {
-    "--col": `${at.x + 1} / span ${at.w}`,
-    "--row": `${at.y + 1} / span ${at.h}`,
-  } as CSSProperties;
+  const style = (lifted
+    ? { "--col": "auto", "--row": "auto", ...lifted }
+    : {
+        "--col": `${at.x + 1} / span ${at.w}`,
+        "--row": `${at.y + 1} / span ${at.h}`,
+      }) as unknown as CSSProperties;
   const tab = container
     ? {
         tab: {
@@ -587,13 +593,14 @@ function Cell({
       aria-label={name}
       // What is held follows the pointer, and is not played from where it was.
       data-flip-key={held ? undefined : widget.id}
+      data-lifted={lifted ? "" : undefined}
       data-widget-cell={widget.id}
       data-selected={selected ? "" : undefined}
       style={style}
       // A view may size what it draws by its cell's width: the container named `cell`.
-      className={`@container/cell relative flex min-h-0 min-w-0 flex-col ${calloutEdge(widget.type, widget.config)} ${span === 2 ? "col-span-2" : ""} @2xl/page:@md/grid:[grid-column:var(--col)] @2xl/page:@md/grid:[grid-row:var(--row)] ${
+      className={`@container/cell ${lifted ? "absolute top-0 left-0" : "relative"} flex min-h-0 min-w-0 flex-col ${calloutEdge(widget.type, widget.config)} ${span === 2 ? "col-span-2" : ""} @2xl/page:@md/grid:[grid-column:var(--col)] @2xl/page:@md/grid:[grid-row:var(--row)] ${
         selected ? "ring-2 ring-action" : building ? "hover:ring-1 hover:ring-action/40" : ""
-      } ${fade || away ? "opacity-60" : ""} ${hiddenFor ? "opacity-40" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
+      } ${fade ? "opacity-60" : ""} ${hiddenFor ? "opacity-40" : ""} ${held ? "layer-sticky shadow-drag" : over ? "layer-sticky" : ""} ${arrived ? "animate-arrive" : ""} ${
         building
           ? editing?.readOnly
             ? "cursor-default select-none"
@@ -809,13 +816,15 @@ function Cell({
               }}
             />
           ) : null}
-          <span
-            aria-hidden="true"
-            data-chrome="size"
-            className="pointer-events-none absolute top-[calc(100%+4px)] right-2 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta leading-4 whitespace-nowrap text-ink @max-[11rem]/cell:px-1 @max-[11rem]/cell:text-tag"
-          >
-            {narrow ? (span === 2 ? "Full width" : "Half width") : sizeWords(at)}
-          </span>
+          {lifted ? null : (
+            <span
+              aria-hidden="true"
+              data-chrome="size"
+              className="pointer-events-none absolute top-[calc(100%+4px)] right-2 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta leading-4 whitespace-nowrap text-ink @max-[11rem]/cell:px-1 @max-[11rem]/cell:text-tag"
+            >
+              {narrow ? (span === 2 ? "Full width" : "Half width") : sizeWords(at)}
+            </span>
+          )}
         </>
       ) : null}
     </Card>
@@ -954,7 +963,7 @@ function WidgetGrid({
             ...(inner.tab !== undefined ? { "data-grid-tab": inner.tab } : {}),
           }
         : {})}
-      className={`grid grid-cols-2 gap-3 ${
+      className={`relative grid grid-cols-2 gap-3 ${
         // In a published modal or sheet the overlay is the one scroller: rows are as tall as what is in them.
         ctx.onClose && !editing ? "" : "@2xl/page:@md/grid:auto-rows-[2.5rem]"
       } @2xl/page:@md/grid:grid-cols-12 ${inner && editing ? "min-h-10 rounded-inner" : ""} ${
@@ -1016,7 +1025,6 @@ function WidgetGrid({
         const selected = editing?.selected === widget.id;
         const stored = ctx.stored.get(widget.id) ?? widget;
         const holding = placement.held?.id === widget.id ? placement.held : undefined;
-        const sameGrid = holding ? gridKey(holding.in) === gridKey(widget.in) : false;
         const container = entry?.definition.role === "container";
         return (
           <Cell
@@ -1025,8 +1033,12 @@ function WidgetGrid({
             widget={widget}
             entry={entry}
             at={widget.at}
-            held={holding !== undefined && sameGrid}
-            away={holding !== undefined && !sameGrid}
+            held={holding !== undefined}
+            lifted={holding?.size}
+            over={
+              placement.held !== undefined &&
+              ctx.stored.get(placement.held.id)?.in?.widget === widget.id
+            }
             arriving={editing !== undefined && !ctx.known.has(widget.id)}
             narrow={narrow}
             selected={selected}
@@ -1051,7 +1063,8 @@ function WidgetGrid({
                 placement.grab(
                   event,
                   widget.id,
-                  stored.at,
+                  // What is stretched starts at the size it is drawn at: a Text's words may hold it open.
+                  how === "stretch" ? { ...stored.at, h: widget.at.h } : stored.at,
                   how,
                   widget.in,
                   nameOf(widget, entry?.definition),
@@ -1079,7 +1092,12 @@ function WidgetGrid({
                   ctx.duplicate(widget.id);
                 } else if (!event.metaKey && !event.ctrlKey) {
                   placement
-                    .keys(widget.id, nameOf(widget, entry?.definition), stored.at, stored.in)
+                    .keys(
+                      widget.id,
+                      nameOf(widget, entry?.definition),
+                      event.shiftKey ? { ...stored.at, h: widget.at.h } : stored.at,
+                      stored.in,
+                    )
                     .onKeyDown(event);
                 }
               },
@@ -1320,6 +1338,14 @@ export function PageView({
     if (foldKey) foldKept(`volvel.fold.${foldKey}.${container}`, folded);
   };
 
+  // Another page's client is another page's rows.
+  const kept = useRef(new Map<string, { of: string; inputs: Record<string, WireData> }>());
+  const keptFor = useRef(client);
+  if (keptFor.current !== client) {
+    keptFor.current = client;
+    kept.current = new Map();
+  }
+
   const gridRef = useRef<HTMLDivElement>(null);
   // Every change the page makes to its widgets: containers kept as tall as what they hold.
   const change = (next: PageWidget[], label: string, pin?: string) => {
@@ -1345,6 +1371,10 @@ export function PageView({
     if (!editing.askLayout) return apply();
     void editing.askLayout("phone").then((yes) => yes && apply());
   };
+  // Where everything is when nothing is held: what a drag is measured against.
+  const resting = useRef<readonly PageWidget[]>(widgets);
+  const drawnTall = (id: string) =>
+    resting.current.find((one) => one.id === id)?.at.h ?? byId.get(id)?.at.h ?? 0;
   const placement = usePlacement({
     grid: gridRef,
     limits: (id) => limitsOf(registry.get(byId.get(id)?.type ?? "")?.definition),
@@ -1354,13 +1384,25 @@ export function PageView({
       const held = byId.get(id);
       const node = gridRef.current;
       if (!node || (held && isContainer(held, roles))) return [];
-      const grids = [...node.querySelectorAll<HTMLElement>("[data-grid-in]")].map((grid) => ({
-        into: {
-          widget: grid.dataset.gridIn as string,
-          ...(grid.dataset.gridTab !== undefined ? { tab: grid.dataset.gridTab } : {}),
-        },
-        node: grid,
-      }));
+      const bottomOf = (container: string, tab: string | undefined) =>
+        childrenOf(widgets, container, tab)
+          .filter((one) => one.id !== id)
+          .reduce((low, one) => Math.max(low, one.at.y + one.at.h), 0);
+      const grids = [...node.querySelectorAll<HTMLElement>("[data-grid-in]")].flatMap((grid) => {
+        const widget = grid.dataset.gridIn as string;
+        const tab = grid.dataset.gridTab;
+        const rest = resting.current.find((one) => one.id === widget)?.at;
+        return rest
+          ? [
+              {
+                into: { widget, ...(tab !== undefined ? { tab } : {}) },
+                node: grid,
+                bottom: bottomOf(widget, tab),
+                rest,
+              },
+            ]
+          : [];
+      });
       // Each tab of a Tabs that is not open, by its name in the strip: held over, it opens.
       const headers = grids.flatMap((grid) => {
         const container = byId.get(grid.into.widget);
@@ -1375,15 +1417,18 @@ export function PageView({
                   into: { widget: container.id, tab: tab.id },
                   node: grid.node,
                   header,
-                  bottom: childrenOf(widgets, container.id, tab.id)
-                    .filter((one) => one.id !== id)
-                    .reduce((low, one) => Math.max(low, one.at.y + one.at.h), 0),
+                  bottom: bottomOf(container.id, tab.id),
+                  rest: grid.rest,
                 },
               ]
             : [];
         });
       });
       return [...grids, ...headers];
+    },
+    isContainer: (id) => {
+      const one = byId.get(id);
+      return one !== undefined && isContainer(one, roles);
     },
     onOpen: (into) => {
       if (into.tab) chooseTab(into.widget, into.tab);
@@ -1392,7 +1437,19 @@ export function PageView({
       editing && !editing.readOnly
         ? (id, at, _by, how, into) => {
             const was = byId.get(id)?.in;
-            const next = putAt(widgets, id, at, into, roles);
+            const next = putAt(
+              how === "stretch"
+                ? widgets.map((one) =>
+                    one.id === id
+                      ? { ...sizedByHand({ ...one, at }, drawnTall(id)), at: one.at }
+                      : one,
+                  )
+                : widgets,
+              id,
+              at,
+              into,
+              roles,
+            );
             const where =
               gridKey(was) === gridKey(into)
                 ? ""
@@ -1444,29 +1501,79 @@ export function PageView({
     let list: readonly PageWidget[] = widgets;
     const ghost = (at: Box, into: WidgetIn | undefined): PageWidget =>
       ({ id: CARRIED, type: "", at, ...(into ? { in: into } : {}) }) as PageWidget;
-    if (held && heldWas) {
-      list = leaving
-        ? putAt([...widgets, ghost(held.at, held.in)], CARRIED, held.at, held.in, roles)
-        : putAt(widgets, held.id, held.at, held.in, roles);
+    const lifted = held?.how === "move" ? heldWas : undefined;
+    if (held && lifted) {
+      // What is dragged follows the pointer; where it would land is drawn in its place.
+      const tall = needs[held.id];
+      const at =
+        tall !== undefined &&
+        tall > held.at.h &&
+        !hasSetHeight(lifted) &&
+        !isContainer(lifted, roles)
+          ? { ...held.at, h: Math.min(tall, 40) }
+          : held.at;
+      // Dragged to another grid it keeps its own place until it is let go, or what it left would shut on it.
+      const kept = leaving ? widgets : widgets.filter((one) => one.id !== held.id);
+      list = putAt([...kept, ghost(at, held.in)], CARRIED, at, held.in, roles);
+    } else if (held && heldWas) {
+      list = putAt(widgets, held.id, held.at, held.in, roles);
     } else if (carrying?.at) {
       list = putAt(
-        [...widgets, ghost(carrying.at, undefined)],
+        [...widgets, ghost(carrying.at, carrying.in)],
         CARRIED,
         carrying.at,
-        undefined,
+        carrying.in,
         roles,
       );
     }
     // A container is as tall as what it holds: exactly so while building, and at least so when
     // served; a folded one is short.
-    return fitContainers(list, roles, {
+    const fitted = fitContainers(list, roles, {
       ...(editing ? {} : { grow: true }),
-      least: (id) => needs[id],
+      least: (id) => (held?.how === "stretch" && held.id === id ? undefined : needs[id]),
       folded: (id) => foldedKey.split(",").includes(id),
       // What is held, or what is carried, stays where it is put: the landing is drawn where it lands.
-      ...(held ? { pin: held.id } : carrying?.at ? { pin: CARRIED } : {}),
+      ...(held && !lifted ? { pin: held.id } : lifted || carrying?.at ? { pin: CARRIED } : {}),
     });
-  }, [widgets, held, heldWas, leaving, carrying?.at, roles, editing, foldedKey, needs]);
+    if (held && lifted && !leaving) return [...fitted, { ...lifted, at: held.at }];
+    return fitted;
+  }, [
+    widgets,
+    held,
+    heldWas,
+    leaving,
+    carrying?.at,
+    carrying?.in,
+    roles,
+    editing,
+    foldedKey,
+    needs,
+  ]);
+  if (!held && !carrying?.at) resting.current = drawn;
+  // It is lifted and under the pointer in the same frame, and stays there as the page is drawn again.
+  useLayoutEffect(() => placement.follow());
+  // What was let go goes from where it was held to where it landed, or back.
+  useLayoutEffect(() => {
+    if (held) return;
+    const dropped = placement.letGo.current;
+    placement.letGo.current = undefined;
+    if (!dropped || globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    const card = gridRef.current?.querySelector<HTMLElement>(
+      `[data-widget-cell="${CSS.escape(dropped.id)}"]`,
+    );
+    if (!card) return;
+    const to = card.getBoundingClientRect();
+    const k = card.offsetWidth > 0 && to.width > 0 ? to.width / card.offsetWidth : 1;
+    card.animate?.(
+      [
+        {
+          transform: `translate(${(dropped.from.left - to.left) / k}px, ${(dropped.from.top - to.top) / k}px)`,
+        },
+        { transform: "translate(0, 0)" },
+      ],
+      { duration: 180, easing: "cubic-bezier(0.2, 0, 0, 1)" },
+    );
+  }, [held, placement.letGo]);
 
   // A widget that was not on the page when it was opened has arrived: added, copied or carried in.
   const known = useRef<Set<string> | undefined>(undefined);
@@ -1545,8 +1652,8 @@ export function PageView({
     .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x)[0]?.id;
 
   const landing = carrying?.at
-    ? { card: carrying.card, in: undefined }
-    : leaving && held && heldWas
+    ? { card: carrying.card, in: carrying.in }
+    : held?.how === "move" && heldWas
       ? {
           card: {
             title: name(held.id),
@@ -1585,6 +1692,7 @@ export function PageView({
     onEvent,
     run: actions.run,
     refresh: host.refresh,
+    kept: kept.current,
     decide: async (widget, id, decision, comment) => {
       if (!client.decide) return { ok: false, message: "Deciding isn't available here." };
       try {

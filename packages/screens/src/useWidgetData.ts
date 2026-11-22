@@ -50,6 +50,7 @@ export function useWidgetData({
   refreshKey,
   emptyMessage,
   chosen,
+  kept,
 }: {
   client: PageDataClient;
   widget: PageWidget;
@@ -61,9 +62,19 @@ export function useWidgetData({
   emptyMessage: string;
   /** The rows chosen in the tables and lists this widget follows (`{ selected }`), by their widget id. */
   chosen?: Readonly<Record<string, string>> | undefined;
+  /**
+   * What each widget of the page last read, by its id. One drawn again somewhere else (moved into
+   * a Section, its tab opened again) starts from what it had, and reads again under it.
+   */
+  kept?: Map<string, { of: string; inputs: Record<string, WireData> }> | undefined;
 }): Reading {
   const [attempt, setAttempt] = useState(0);
-  const [inputs, setInputs] = useState<Record<string, WireData>>();
+  // What the widget is and reads, without what only asks again.
+  const of = JSON.stringify([widget.type, widget.data, filterValues, chosen]);
+  const [inputs, setInputs] = useState<Record<string, WireData> | undefined>(() => {
+    const had = kept?.get(widget.id);
+    return reads && had?.of === of ? had.inputs : undefined;
+  });
   const [failure, setFailure] = useState<{ forbidden: boolean; message: string }>();
   const [loading, setLoading] = useState(reads);
   const [more, setMore] = useState<{ loading: boolean; error?: string; input?: string }>({
@@ -104,7 +115,11 @@ export function useWidgetData({
       .then(
         (read) => {
           if (controller.signal.aborted) return;
-          setInputs(read.inputs);
+          // The same rows read again are the ones that are drawn: nothing on the page changes for them.
+          setInputs((before) =>
+            before && JSON.stringify(before) === JSON.stringify(read.inputs) ? before : read.inputs,
+          );
+          kept?.set(widget.id, { of, inputs: read.inputs });
           setLoading(false);
         },
         (error: unknown) => {

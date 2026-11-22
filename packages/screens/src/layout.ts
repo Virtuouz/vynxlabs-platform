@@ -92,6 +92,45 @@ export function fit(at: Box, limits: Limits, columns = 12): Box {
   };
 }
 
+/**
+ * Where something dragged over the page's own grid lands when that would lie on a container: a
+ * container is not pushed away by what comes near it, or it could not be dragged into. Above it
+ * the thing lands above it, below it below, beside it beside; and on its top edge it takes its
+ * place. `pointer` is in cells.
+ */
+export function besideContainers(
+  at: Box,
+  pointer: { x: number; y: number },
+  containers: readonly Box[],
+): Box {
+  let next = at;
+  for (const one of containers) {
+    if (!overlap(next, one)) continue;
+    if (pointer.y >= one.y + one.h - 0.5) {
+      next = { ...next, y: Math.max(next.y, one.y + one.h) };
+    } else if (pointer.x < one.x && one.x - next.w >= 0) {
+      next = { ...next, x: one.x - next.w };
+    } else if (pointer.x >= one.x + one.w && one.x + one.w + next.w <= 12) {
+      next = { ...next, x: one.x + one.w };
+    } else if (pointer.y < one.y) {
+      next = { ...next, y: Math.max(0, one.y - next.h) };
+    } else if (pointer.x >= one.x && pointer.x < one.x + one.w) {
+      next = { ...next, y: one.y };
+    }
+  }
+  return next;
+}
+
+/** A Text whose height is the one it was given; any other is as tall as its words, and no less than its place. */
+export const hasSetHeight = (widget: PageWidget) =>
+  widget.type === "core/text" && widget.config?.height === "set";
+
+/** A widget whose height was changed by hand: a Text keeps that height from then on. */
+export const sizedByHand = <T extends PageWidget>(widget: T, wasTall: number): T =>
+  widget.type === "core/text" && widget.at.h !== wasTall
+    ? { ...widget, config: { ...widget.config, height: "set" } }
+    : widget;
+
 /** The widgets copied, with their places copied too, so that settling them changes nothing of the originals. */
 export const copied = <T extends Placed>(widgets: readonly T[]): T[] =>
   widgets.map((widget) => ({ ...widget, at: { ...widget.at } }));
@@ -160,7 +199,12 @@ export function fitContainers<T extends PageWidget>(
   let next: T[] | undefined;
   for (const [index, widget] of widgets.entries()) {
     const needs = how.least?.(widget.id);
-    if (needs !== undefined && needs > widget.at.h && !isContainer(widget, roles)) {
+    if (
+      needs !== undefined &&
+      needs > widget.at.h &&
+      !isContainer(widget, roles) &&
+      !hasSetHeight(widget)
+    ) {
       next ??= copied(widgets);
       (next[index] as T).at.h = Math.min(needs, 40);
       continue;

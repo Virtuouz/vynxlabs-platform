@@ -7,8 +7,9 @@ import {
   PAGE_COLUMNS,
   type Page,
   type PageWidget,
+  type WidgetIn,
 } from "@volvel/manifest";
-import { focusWidget, GRID, neighbourOf } from "@volvel/screens";
+import { focusWidget, GRID, neighbourOf, sizedByHand } from "@volvel/screens";
 import { Button, Closing, EmptyState, edgeShadows, Kbd } from "@volvel/ui";
 import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Plus, X } from "lucide-react";
@@ -150,6 +151,31 @@ export interface PageInfo {
 }
 
 /**
+ * The host's count of saves, held back while nothing that decides what is read has changed: a
+ * widget moved, renamed or given a rule reads the same rows, so a save of that reads nothing again.
+ * A save may be on its way when a change is made, so the two saves after a change both count.
+ */
+function useReads(widgets: readonly PageWidget[], saved: number | undefined): number | undefined {
+  const text = JSON.stringify(
+    widgets
+      .map(({ id, type, data, config }) => ({ id, type, data, config }))
+      .sort((a, b) => (a.id < b.id ? -1 : 1)),
+  );
+  const state = useRef({ text, changedAt: saved ?? 0, seen: saved ?? 0, count: saved ?? 0 });
+  const now = state.current;
+  if (saved === undefined) return undefined;
+  if (now.text !== text) {
+    now.text = text;
+    now.changedAt = saved;
+  }
+  if (now.seen !== saved) {
+    now.seen = saved;
+    if (saved - now.changedAt <= 2) now.count = saved;
+  }
+  return now.count;
+}
+
+/**
  * The one editor of a page of widgets, in an app's builder and in a dashboard
  * (S9): "On this page" and "Add to page" on the left, the page drawn from the
  * workspace's rows in the middle, and the chosen
@@ -237,6 +263,8 @@ export function PageEditor({
     const cell = document.querySelector<HTMLElement>(
       `[data-canvas] [data-widget-cell="${CSS.escape(selected)}"]`,
     );
+    // One chosen where it is, by the pointer on it, is in view: the page does not move under the press.
+    if (cell?.matches(":hover")) return;
     cell?.scrollIntoView({ block: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
   }, [selected, value.widgets.length]);
   // Another page opens at its top, not where the last one was scrolled to.
@@ -268,6 +296,7 @@ export function PageEditor({
     [root, draft, named, sample.record],
   );
   const { widgets } = value;
+  const reads = useReads(widgets, refreshKey);
   const filters = filtersOf(widgets);
   const context: PageContext = {
     widgets,
@@ -367,11 +396,20 @@ export function PageEditor({
     const changed = onThePagesRecord(changedAs, pageInfo?.page);
     const next = widgets.map((one) => (one.id === changed.id ? changed : one));
     const moved = before && JSON.stringify(before.at) !== JSON.stringify(changed.at);
-    put(moved ? settleOnGrid(next, changed.id) : next, label, key);
+    put(
+      moved && before
+        ? settleOnGrid(
+            next.map((one) => (one.id === changed.id ? sizedByHand(one, before.at.h) : one)),
+            changed.id,
+          )
+        : next,
+      label,
+      key,
+    );
   };
 
   /** Adds a widget: at the end of the page, or where it was carried to (`at`). */
-  const add = (definition: WidgetDefinition, at?: Box) => {
+  const add = (definition: WidgetDefinition, at?: Box, dropped?: WidgetIn) => {
     // A Search and filter goes at the top, where the reader looks for it, with what follows it bound.
     if (definition.role === "filters" && !at) {
       const made = insertFilterWidget(widgets, definition, undefined, catalog);
@@ -386,8 +424,8 @@ export function PageEditor({
     let added: PageWidget = newWidget(definition, id, widgets);
     // Into the container that is chosen (or its child's), at the bottom of its grid; else at the end of the page.
     // A Section or Tabs is never put in one: it goes on the page, whatever is chosen.
-    const into = at || definition.role === "container" ? undefined : addsTo;
-    if (at) added = { ...added, at };
+    const into = at ? dropped : definition.role === "container" ? undefined : addsTo;
+    if (at) added = { ...added, at, ...(dropped ? { in: dropped } : {}) };
     else added = placedAtBottom(widgets, added, into);
     added = {
       ...added,
@@ -416,7 +454,7 @@ export function PageEditor({
     onSelect(id);
     setAdding(false);
     setTold(
-      at
+      at && !into
         ? `${definition.title} is added at column ${at.x + 1}, row ${at.y + 1}.`
         : into
           ? `${definition.title} is added to ${targetWords(widgets, into)}.`
@@ -433,6 +471,7 @@ export function PageEditor({
       card: {
         title: definition.title,
         kind: definition.description,
+        container: definition.role === "container",
         size: definition.layout.default,
         limits: {
           min: definition.layout.min,
@@ -440,9 +479,9 @@ export function PageEditor({
         },
       },
       from,
-      onDrop: (at) => {
+      onDrop: (at, dropped) => {
         setCarrying(undefined);
-        if (at) add(definition, at);
+        if (at) add(definition, at, dropped);
         else setTold(`${definition.title} was not added.`);
       },
     });
@@ -599,14 +638,20 @@ export function PageEditor({
         ? Math.min(kindWidth, frame?.width ?? kindWidth)
         : frame?.width;
   // A sheet, a modal or a tablet is drawn at its true width, scaled down to the room there is (and
-  // the scale said), not cut to it: Large, Extra large and Full can then be told from each other.
+  // the scale said), not cut to it: Medium, Large and Extra large can then be told from each other.
   const trueWidth =
     overlay || device === "tablet"
       ? dragged !== undefined
         ? dragged
-        : Math.min(kindWidth ?? window.innerWidth, frame?.width ?? Number.POSITIVE_INFINITY)
+        : kindWidth === undefined && frame?.width === undefined
+          ? // Full is as wide as whatever it opens in: here, the room there is, at its true size.
+            ("room" as const)
+          : Math.min(
+              kindWidth ?? Number.POSITIVE_INFINITY,
+              frame?.width ?? Number.POSITIVE_INFINITY,
+            )
       : undefined;
-  const scaled = trueWidth !== undefined && Number.isFinite(trueWidth);
+  const scaled = trueWidth !== undefined;
   // What the renderer is told beyond the data (phase 26): the page's record, and what its steps open.
   const opens = pageInfo
     ? {
@@ -698,7 +743,7 @@ export function PageEditor({
                 data-preview={frame?.name}
                 data-page-kind={kind ?? "page"}
                 data-page-size={overlay ? size : undefined}
-                className={`mx-auto overflow-x-auto ${overlay ? "rounded-overlay border border-line-strong bg-surface px-5 pt-0 pb-8 shadow-modal" : `bg-canvas ${device === "phone" ? "pb-8" : frame ? "rounded-panel border border-line px-3 pt-3 pb-8" : "rounded-panel px-3 pt-3 pb-8"}`} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
+                className={`mx-auto overflow-x-clip ${overlay ? "rounded-overlay border border-line-strong bg-surface px-5 pt-0 pb-8 shadow-modal" : `bg-canvas ${device === "phone" ? "pb-8" : frame ? "rounded-panel border border-line px-3 pt-3 pb-8" : "rounded-panel px-3 pt-3 pb-8"}`} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
                 style={
                   width && !overlay && device !== "phone"
                     ? {
@@ -781,7 +826,7 @@ export function PageEditor({
                       client={client}
                       filterValues={filterValues}
                       onFilterValues={setFilterValues}
-                      {...(refreshKey !== undefined ? { refreshKey } : {})}
+                      {...(reads !== undefined ? { refreshKey: reads } : {})}
                       {...opens}
                       device={device}
                       {...(overlay && kind ? { overlay: kind as "sheet" | "modal" } : {})}

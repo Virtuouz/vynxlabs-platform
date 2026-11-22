@@ -106,7 +106,8 @@ function Title({
         type="button"
         title="Rename"
         data-chrome="title"
-        className="-ml-1.5 min-w-0 truncate rounded-inner border border-line-strong bg-surface px-1.5 py-0.5 text-left text-body font-semibold"
+        // Its edge lies outside the words, so that choosing a widget moves nothing in it.
+        className="-my-[3px] -ml-[7px] min-w-0 truncate rounded-inner border border-line-strong bg-surface px-1.5 py-0.5 text-left text-body font-semibold"
         onClick={(event) => {
           event.stopPropagation();
           setRenaming(true);
@@ -223,7 +224,12 @@ export function Frame({
   };
   const heading = bare
     ? false
-    : widget.title || widget.subtitle || controls || (building && (selected || opens));
+    : widget.title ||
+      widget.subtitle ||
+      controls ||
+      (building && (opens || (container && selected)));
+  // One with no heading is named on its edge: a heading that came with being chosen would push down what it draws.
+  const named = building && selected && !bare && !heading && onRename !== undefined;
   const body = (() => {
     if (!definition) {
       return <Notice tone="danger">There is no widget called "{widget.type}".</Notice>;
@@ -274,6 +280,11 @@ export function Frame({
   })();
   return (
     <>
+      {named ? (
+        <div className="absolute -top-3 right-2 layer-sticky flex max-w-[45%] py-[3px] pl-[7px]">
+          <Title widget={widget} renamable onRename={(title) => onRename(title)} />
+        </div>
+      ) : null}
       {heading ? (
         <header
           className={`flex min-w-0 flex-col gap-0.5 ${container ? "min-h-7 justify-center" : "px-[14px] pt-3"}`}
@@ -352,10 +363,13 @@ export function Frame({
           aria-busy={reading.stale ? true : undefined}
           className={`flex min-h-0 flex-1 flex-col ${container ? "" : flat ? "gap-2" : "gap-2 overflow-auto"} ${bare ? "justify-center" : container || flat ? "" : "px-[14px] pb-[14px]"} outline-none! focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
             bare || container || flat ? "" : heading ? "pt-[10px]" : "pt-[14px]"
-          } ${reading.stale ? "opacity-50" : ""}`}
+          } transition-opacity motion-base ${
+            // A read that answers at once changes nothing but its rows: only one that takes a while is faded.
+            reading.stale && !building ? "opacity-60 delay-500" : ""
+          }`}
         >
-          {reading.stale ? (
-            <span role="status" className="text-body-sm text-ink-muted">
+          {reading.stale && !building ? (
+            <span role="status" className="sr-only">
               Updating…
             </span>
           ) : null}

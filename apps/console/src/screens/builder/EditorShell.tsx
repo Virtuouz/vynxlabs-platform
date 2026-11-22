@@ -297,7 +297,7 @@ export function EditorShell({
                   data-canvas=""
                   label="The page"
                   outerClassName="min-h-0 min-w-0 flex-1 border-line border-t"
-                  className="min-w-0 overflow-auto p-4 lg:[container-type:size]"
+                  className="min-w-0 overflow-auto p-4 [scrollbar-gutter:stable] lg:[container-type:size]"
                 >
                   {canvas}
                 </SidewaysScroll>
@@ -331,7 +331,7 @@ export function EditorShell({
             data-canvas=""
             label="The page"
             outerClassName="min-h-0 min-w-0 max-w-full flex-1 border-line border-t"
-            className="min-w-0 overflow-auto p-4"
+            className="min-w-0 overflow-auto p-4 [scrollbar-gutter:stable]"
           >
             {canvas}
           </SidewaysScroll>

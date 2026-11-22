@@ -404,11 +404,12 @@ describe("moving widgets into, within and out of containers", () => {
     );
     await screen.findByText("Stat words");
     press(group("stat"), 100, 8 * 52 + 10);
-    move(400, 100);
+    move(400, 80);
     drop();
     const list = lastOf(onChange);
     expect(byId(list, "stat").in).toEqual({ widget: "sec" });
-    expect(byId(list, "stat").at).toEqual(box(3, 1, 4, 2));
+    // No lower than right under what the Section holds, which is nothing.
+    expect(byId(list, "stat").at).toEqual(box(3, 0, 4, 2));
     expect(byId(list, "sec").at.h).toBe(containerHeight(byId(list, "sec"), list));
     expect(onChange.mock.lastCall?.[1]).toBe("Moved stat into Today");
   });

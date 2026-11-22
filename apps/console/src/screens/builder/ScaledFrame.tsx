@@ -14,8 +14,8 @@ export function ScaledFrame({
   children,
   handle,
 }: {
-  /** The frame's own width, in pixels. */
-  width: number;
+  /** The frame's own width, in pixels; or `room`, all there is (Full), drawn at its true size. */
+  width: number | "room";
   /** It is being sized by its edge: the scale stays as it was when it was taken hold of. */
   held?: boolean;
   children: ReactNode;
@@ -47,7 +47,8 @@ export function ScaledFrame({
     watch.observe(frame);
     return () => watch.disconnect();
   }, []);
-  const fits = room !== undefined && room > 0 ? Math.min(1, room / width) : 1;
+  const own = width === "room" ? room : width;
+  const fits = room !== undefined && room > 0 && own ? Math.min(1, room / own) : 1;
   const last = useRef(fits);
   if (!held) last.current = fits;
   const scale = last.current;
@@ -57,14 +58,17 @@ export function ScaledFrame({
       ref={outer}
       data-scaled-frame={percent}
       className={`relative mx-auto ${scale < 1 ? "mt-6" : ""}`}
-      style={{ width: width * scale, height: tall ? tall * scale : undefined }}
+      style={{
+        width: own === undefined ? undefined : own * scale,
+        height: tall ? tall * scale : undefined,
+      }}
     >
       <div
         ref={inner}
         // Out of the flow, so that its own width does not widen what holds the frame.
         className="absolute top-0 left-0"
         style={{
-          width,
+          width: own ?? "100%",
           transform: scale < 1 ? `scale(${scale})` : undefined,
           transformOrigin: "top left",
         }}

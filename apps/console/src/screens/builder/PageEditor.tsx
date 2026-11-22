@@ -412,17 +412,20 @@ export function PageEditor({
           />
         )}
       </section>
-      <Button
-        variant="quiet"
-        disabled={full}
-        aria-label="Add to page"
-        aria-keyshortcuts="A"
-        tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
-        className="w-full shrink-0 justify-center border border-action bg-action-soft"
-        onClick={() => setAdding(true)}
-      >
-        <Plus aria-hidden="true" size={14} /> Add to page <Kbd>A</Kbd>
-      </Button>
+      {/* Stays in view at the foot of the pane as the outline scrolls behind it. */}
+      <div className="sticky bottom-0 flex shrink-0 flex-col bg-inherit pt-1 pb-1">
+        <Button
+          variant="quiet"
+          disabled={full}
+          aria-label="Add to page"
+          aria-keyshortcuts="A"
+          tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
+          className="w-full shrink-0 justify-center border border-action bg-action-soft"
+          onClick={() => setAdding(true)}
+        >
+          <Plus aria-hidden="true" size={14} /> Add to page <Kbd>A</Kbd>
+        </Button>
+      </div>
       <p className="m-0 mt-auto hidden shrink-0 px-1 pt-2 text-meta text-ink-muted lg:block">
         Drag in the outline or on the page to reorder. Alt with the arrow keys moves the chosen
         widget in the outline.

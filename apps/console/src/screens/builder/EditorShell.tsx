@@ -150,7 +150,7 @@ export function EditorShell({
           aria-label="On this page"
           className={
             bleed
-              ? "flex shrink-0 flex-col gap-3.5 border-line border-t bg-structure px-2.5 py-3.5 lg:w-58 lg:overflow-y-auto lg:border-r"
+              ? "flex shrink-0 flex-col gap-4 border-line border-t bg-structure px-2 py-4 max-lg:max-h-[45vh] max-lg:overflow-y-auto lg:w-58 lg:overflow-y-auto lg:border-r"
               : "flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-60 lg:overflow-y-auto lg:border-r lg:border-line lg:pr-3"
           }
         >
@@ -161,6 +161,12 @@ export function EditorShell({
             id="page-editor"
             label="Resize the page and its settings"
             initial={bleed ? 70 : 74}
+            {...(bleed
+              ? {
+                  collapsible: "second" as const,
+                  paneLabels: { first: "the page", second: "the settings" },
+                }
+              : {})}
             className="min-w-0 flex-1"
             first={
               <div
@@ -178,7 +184,7 @@ export function EditorShell({
               bleed ? (
                 <aside
                   aria-label="Settings"
-                  className="min-h-0 flex-1 overflow-auto border-line border-t border-l bg-structure p-3.5"
+                  className="min-h-0 flex-1 overflow-auto border-line border-t border-l bg-structure p-4"
                 >
                   {inspector}
                 </aside>

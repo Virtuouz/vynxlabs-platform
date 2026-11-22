@@ -265,7 +265,7 @@ export function SelectField({
           render={
             <select
               {...select}
-              className={icon ? `${selectControl} pl-9` : selectControl}
+              className={icon ? `${selectControl} pl-10` : selectControl}
               onChange={(event) => onChange?.(event.currentTarget.value)}
             >
               {choices}

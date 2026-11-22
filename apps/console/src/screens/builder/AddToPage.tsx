@@ -197,7 +197,7 @@ export function AddToPage({
         onFocus={() => setLit(definition.type)}
         onPointerEnter={() => setLit(definition.type)}
         draggable={false}
-        className={`flex h-full w-full items-start gap-2.5 rounded-panel border p-2.5 text-left select-none hover:border-action/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${
+        className={`flex h-full w-full items-start gap-3 rounded-panel border p-3 text-left select-none hover:border-action/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${
           shown?.type === definition.type
             ? "border-action bg-action-soft"
             : "border-line bg-surface"
@@ -285,7 +285,7 @@ export function AddToPage({
             placeholder="Find something to add, or describe what people should do"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="h-10 min-w-0 flex-1 border-0 bg-transparent text-emphasis text-ink outline-none focus-visible:outline-none placeholder:text-ink-muted"
+            className="h-10 min-w-0 flex-1 border-0 bg-transparent text-emphasis text-ink outline-none focus-visible:outline-none! placeholder:text-ink-muted"
           />
           <Kbd>esc</Kbd>
         </form>
@@ -309,7 +309,7 @@ export function AddToPage({
                           type="button"
                           data-add-item={`suggest:${item.key}`}
                           onClick={() => pick(item.key)}
-                          className="flex h-full w-full items-center gap-2.5 rounded-panel border border-action/40 bg-surface px-3 py-2.5 text-left hover:border-action focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+                          className="flex h-full w-full items-center gap-3 rounded-panel border border-action/40 bg-surface px-3 py-3 text-left hover:border-action focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
                         >
                           <Icon aria-hidden="true" size={16} className="shrink-0 text-action" />
                           <span className="flex min-w-0 flex-col gap-0.5">

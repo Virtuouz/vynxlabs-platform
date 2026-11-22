@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Catalog } from "./kit/inspector/model.ts";
 import { AddToPage } from "./screens/builder/AddToPage.tsx";
@@ -118,10 +118,15 @@ describe("the widget selector (board 7)", () => {
     expect(dialog.queryByRole("button", { name: /Invoice detail/ })).toBeNull();
   });
 
+  test("it opens with the focus in the search, so typing finds at once", async () => {
+    const { search } = open();
+    await waitFor(() => expect(document.activeElement).toBe(search));
+  });
+
   test("a search that finds nothing says so", () => {
     const { dialog, search } = open();
     fireEvent.change(search, { target: { value: "xylophone" } });
-    expect(dialog.getByText(/Nothing here matches that/)).toBeTruthy();
+    expect(dialog.getByText(/Nothing matches/)).toBeTruthy();
   });
 
   test("the arrow keys walk the tiles across and down, and back to the search", () => {

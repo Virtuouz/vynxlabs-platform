@@ -462,15 +462,20 @@ test("she publishes an app over a table, and two groups of end users see it diff
     "write the bills page",
   );
   await ada.reload();
-  await ada.getByRole("button", { name: "Publish" }).click();
+  await ada.getByRole("button", { name: "Publish", exact: true }).click();
   // Publishing says what it would do, and is done from there.
-  await ada.getByRole("dialog").getByRole("button", { name: "Publish" }).click();
+  await ada
+    .getByRole("dialog")
+    .getByRole("button", { name: /^Publish/ })
+    .click();
   await ada.getByText("Published. People who open the app now see this.").waitFor();
   await expectNoAxeViolations(ada, "the App Builder, published");
+  // The published app has an address now: it is under the Publish button's "More ways to publish".
+  await ada.getByRole("button", { name: "More ways to publish" }).click();
   const url = (await ada
-    .getByRole("link", { name: "Open the app" })
-    .first()
+    .getByRole("menuitem", { name: "Open the published app" })
     .getAttribute("href")) as string;
+  await ada.keyboard.press("Escape");
 
   // Shared with every end user, from the apps screen.
   await ada.goto(`${link}/apps`);

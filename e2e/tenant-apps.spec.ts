@@ -158,7 +158,8 @@ test("an app served to a tenant's people looks as reviewed, at each width and in
     const main = document.querySelector("main")?.getBoundingClientRect().width ?? 1;
     return (document.querySelector("[data-canvas]")?.getBoundingClientRect().width ?? 0) / main;
   });
-  expect(share).toBeGreaterThanOrEqual(0.6);
+  // Soft: the rest of the builder is still walked when the canvas is short of its room.
+  expect.soft(share, "the canvas share of the work area at 1440").toBeGreaterThanOrEqual(0.6);
   await page.getByRole("radio", { name: /Phone/ }).click();
   const stacked = async () => {
     const list = await canvas.getByRole("group", { name: "Stock" }).first().boundingBox();

@@ -169,6 +169,15 @@ test.beforeAll(async ({ browser }) => {
   const money = pages.find((one: { id: string }) => one.id === "money");
   const list = money.widgets.find((one: { id: string }) => one.id === "list");
   list.data.rows.source.visual.filters = [{ column: "number", op: "contains", value: PREFIX }];
+  // The example lets only Practice managers and Billing, who are team members, run Mark paid
+  // (`runBy`, checked on the server), so a read-only end user could never press it. What this walk
+  // proves is that a button is its own grant, so the walk's copy of the action runs for anyone who
+  // may press it; who may run it is proven by the control plane's own test (page-actions.test.ts).
+  const mark = pages
+    .find((one: { id: string }) => one.id === "invoice")
+    .widgets.find((one: { id: string }) => one.id === "invoice-actions").config.actions[0];
+  expect(mark.action.runBy).toBeTruthy();
+  delete mark.action.runBy;
   await ok(owner, "PUT", `${W}/drafts/${PAGE}`, {
     kind: "interface",
     schemaVersion: 2,
@@ -302,7 +311,7 @@ test("Mark paid asks first, changes the row, says so, and the table shows it", a
     .click();
   await expect(owner.getByText("Invoice marked paid")).toBeVisible();
   // The record says so, and its button can't be pressed again: it is not unpaid now.
-  await expect(sheet(owner).getByText("paid", { exact: true })).toBeVisible();
+  await expect(sheet(owner).getByText("Paid", { exact: true })).toBeVisible();
   await expect(sheet(owner).getByRole("button", { name: "Mark paid" })).toBeDisabled();
   // Closed, the row in the table behind shows it too.
   await owner.keyboard.press("Escape");

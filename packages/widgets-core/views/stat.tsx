@@ -32,7 +32,7 @@ export function changeTone(
 
 /** One number, how it stands against the period before, and its line over time. */
 export function StatView(props: WidgetViewProps<StatConfig>) {
-  const { config, data, emit } = props;
+  const { config, data, emit, size } = props;
   const summary = data.value;
   if (summary?.shape !== "summary") return null;
   const name = summary.values[0] ?? "";
@@ -75,7 +75,7 @@ export function StatView(props: WidgetViewProps<StatConfig>) {
         // room; with none, the period is named there. The whole sentence is the tooltip.
         <span
           title={against?.text}
-          className="mt-1 flex min-w-0 items-center gap-x-1.5 text-[12.5px] text-ink-muted"
+          className="mt-1 flex min-w-0 items-start gap-x-1.5 text-[12.5px] text-ink-muted"
         >
           {against && !nothingBefore ? (
             <span
@@ -89,7 +89,7 @@ export function StatView(props: WidgetViewProps<StatConfig>) {
           ) : null}
           <span
             aria-hidden={against ? "true" : undefined}
-            className="min-w-0 truncate"
+            className={`min-w-0 ${size.narrow ? "" : "truncate"}`}
             title={caption ?? undefined}
           >
             {caption ||

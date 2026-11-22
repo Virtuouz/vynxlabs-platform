@@ -215,6 +215,19 @@ export function cellOf(
     const day = formatDay(value);
     if (day) return <span className="text-ink-muted">{day}</span>;
   }
+  if (type === "timestamp" && typeof value === "string") {
+    const at = new Date(value);
+    if (!Number.isNaN(at.getTime())) {
+      // "Nov 21, 1:10 PM": the year only when it is not this one, as a day is written.
+      return at.toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        ...(at.getFullYear() === new Date().getFullYear() ? {} : { year: "numeric" }),
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+  }
   return showValue(type, value);
 }
 

@@ -6,7 +6,7 @@ import { useLoad } from "../../api.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import { draftChanges } from "./changes.ts";
 import { useGroupKeys } from "./groupKeys.ts";
-import { type CheckItem, checksFor, mostAffectedGroup } from "./publishCheck.ts";
+import { type CheckItem, checksFor, mostAffectedGroup, plainly } from "./publishCheck.ts";
 import { definitionOf } from "./registry.ts";
 
 interface Preview {
@@ -84,11 +84,11 @@ export function PublishCheck({
         body,
         known,
         definitionOf,
-        problems: problems.map((one) => `${one.message}.`.replace(/\.\.$/, ".")),
+        problems: problems.map((one) => `${plainly(one.message, body)}.`.replace(/\.\.$/, ".")),
         refusal: [
           ...(asked?.refusal
             ? asked.refusal.errors.length > 0
-              ? asked.refusal.errors.map((one) => one.message)
+              ? asked.refusal.errors.map((one) => plainly(one.message, body))
               : [asked.refusal.detail]
             : []),
         ],
@@ -119,12 +119,12 @@ export function PublishCheck({
         </p>
       ) : (
         <>
-          <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {checks.map((one) => {
               const mark = MARK[one.state];
               const Icon = mark.icon;
               return (
-                <li key={one.id} data-check={one.state} className="flex items-start gap-3">
+                <li key={one.id} data-check={one.state} className="flex items-start gap-3 py-1">
                   <Icon aria-hidden="true" size={16} className={`mt-0.5 shrink-0 ${mark.tone}`} />
                   <span className="flex min-w-0 flex-col">
                     <span>

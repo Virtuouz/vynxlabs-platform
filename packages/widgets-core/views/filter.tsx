@@ -405,7 +405,10 @@ function FiltersBehindButton({
 }) {
   const set = others.filter((filter) => norm(valueFor(filter, values)) !== norm(null)).length;
   return (
-    <search aria-label="Filters" className="flex items-end gap-x-2 @md/cell:flex-wrap @md/cell:gap-x-3 @md/cell:gap-y-3">
+    <search
+      aria-label="Filters"
+      className="flex items-end gap-x-2 @md/cell:flex-wrap @md/cell:gap-x-3 @md/cell:gap-y-3"
+    >
       {/* The search and its button share the row, the search taking what the button leaves, wherever it is narrow. */}
       <div className="min-w-0 flex-1 @md/cell:flex-none">{search}</div>
       {others.length > 0 ? (

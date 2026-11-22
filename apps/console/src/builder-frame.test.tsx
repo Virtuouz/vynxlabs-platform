@@ -344,7 +344,8 @@ test("the phone preview is drawn in a device, says what was changed by hand, and
   expect(document.querySelector("[data-phone-frame]")).toBeTruthy();
   const banner = document.querySelector("[data-device-banner]") as HTMLElement;
   expect(banner.textContent).toContain("Phone layout is made from the desktop one.");
-  expect(banner.textContent).toContain("1 widget changed by hand");
+  // The one placed by hand, and the one told to hide on narrow screens.
+  expect(banner.textContent).toContain("2 widgets changed by hand");
   expect(await screen.findByText("By clinic is hidden on phones")).toBeTruthy();
 });
 

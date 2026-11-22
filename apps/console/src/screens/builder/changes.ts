@@ -64,9 +64,9 @@ export function draftChanges(deployed: InterfaceBody | undefined, draft: Interfa
   }
   const verb = { added: "Added", changed: "Changed", removed: "Removed" } as const;
   for (const one of widgetChanges(deployed, draft)) {
-    lines.push(
-      `${verb[one.change]} ${one.kind} ${one.widget}${one.change === "added" ? "" : ` on ${one.page}`}`,
-    );
+    // A widget named for its kind ("Text", "Button") is not said twice: "Changed text on Money".
+    const named = one.widget.toLowerCase() === one.kind ? one.kind : `${one.kind} ${one.widget}`;
+    lines.push(`${verb[one.change]} ${named}${one.change === "added" ? "" : ` on ${one.page}`}`);
   }
   return lines;
 }

@@ -718,9 +718,7 @@ function WidgetGrid({
   const spans = useMemo(
     () =>
       narrow
-        ? phoneSpans(ordered, (one) =>
-            hiddenOnPhone(one, ctx.registry.get(one.type)?.definition),
-          )
+        ? phoneSpans(ordered, (one) => hiddenOnPhone(one, ctx.registry.get(one.type)?.definition))
         : new Map<string, 1 | 2>(),
     [narrow, ordered, ctx.registry],
   );

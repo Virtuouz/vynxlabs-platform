@@ -9,7 +9,7 @@ export function DeviceBanner({ device, changed }: { device: "tablet" | "phone"; 
   return (
     <p
       data-device-banner={device}
-      className="mx-auto mb-3.5 flex w-fit max-w-full items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2 text-[12.5px] text-ink-muted"
+      className="mx-auto mb-3 flex w-fit max-w-full items-center gap-2 rounded-control border border-line bg-surface px-3 py-2 text-meta text-ink-muted"
     >
       <Sparkles aria-hidden="true" size={14} className="shrink-0 text-action" />
       <span>
@@ -48,11 +48,12 @@ export function PhoneFrame({
   return (
     <div
       data-phone-frame=""
-      className="mx-auto flex min-w-0 flex-col gap-2.5 rounded-[28px] border border-line-strong bg-canvas px-3 py-3.5 shadow-modal"
-      style={{ maxWidth: `${width}px` }}
+      // The device's corner, as board 6 draws it: 28 px, rounder than any panel.
+      style={{ maxWidth: `${width}px`, borderRadius: 28 }}
+      className="mx-auto flex min-w-0 flex-col gap-2 border border-line-strong bg-canvas px-3 py-3 shadow-modal"
     >
       <div className="flex items-center justify-between gap-2 px-1 pt-0.5 pb-1.5">
-        <span className="min-w-0 truncate text-[17px] font-semibold text-ink">{title}</span>
+        <span className="min-w-0 truncate text-title font-semibold text-ink">{title}</span>
         <Ellipsis aria-hidden="true" size={16} className="text-ink-muted" />
       </div>
       <div className="min-w-0 overflow-x-hidden">{children}</div>

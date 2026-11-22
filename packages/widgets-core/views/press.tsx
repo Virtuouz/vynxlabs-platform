@@ -111,9 +111,7 @@ export function RowActionButtons({
             variant={item.tone === "danger" ? "danger" : "quiet"}
             disabled={!allowed || running !== undefined}
             loading={running === item.id}
-            tooltip={
-              !allowed && decides ? (props.why?.(where, row) ?? CANNOT_NOW) : undefined
-            }
+            tooltip={!allowed && decides ? (props.why?.(where, row) ?? CANNOT_NOW) : undefined}
             onClick={(event) => {
               // Not the row's own press.
               event.stopPropagation();

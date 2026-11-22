@@ -13,6 +13,7 @@ import {
   phoneMoved,
   phoneOrder,
   phoneSpan,
+  phoneSpans,
 } from "./narrow.ts";
 import { PageView, type PageViewProps } from "./PageView.tsx";
 import { type PageDataClient, viewRegistry } from "./types.ts";
@@ -227,5 +228,48 @@ describe("View as a group, while building", () => {
       />,
     );
     expect(document.querySelector("[data-hidden-for]")).toBeNull();
+  });
+});
+
+describe("what narrow screens do with a widget", () => {
+  const a = note("a", box(0, 0, 3, 2));
+  const b = note("b", box(3, 0, 3, 2));
+  const c = note("c", box(6, 0, 3, 2));
+  const wide = note("w", box(0, 2, 12, 2));
+
+  test("a small widget alone in its row takes the whole row", () => {
+    const spans = phoneSpans(phoneOrder([a, b, c, wide]));
+    expect([a, b, c, wide].map((one) => spans.get(one.id))).toEqual([1, 1, 2, 2]);
+  });
+
+  test("Keep keeps half a row, Full width and Stack below take the row", () => {
+    const half = note("h", box(0, 0, 6, 2));
+    expect(phoneSpan(half)).toBe(2);
+    expect(phoneSpan({ ...half, layout: { narrow: "keep" } })).toBe(1);
+    expect(phoneSpan({ ...a, layout: { narrow: "full" } })).toBe(2);
+    expect(phoneSpan({ ...a, layout: { narrow: "stack" } })).toBe(2);
+  });
+
+  test("Stack below is read after what is not stacked, Full width stays in its place", () => {
+    const stacked = { ...a, layout: { narrow: "stack" as const } };
+    const full = { ...a, layout: { narrow: "full" as const } };
+    expect(phoneOrder([stacked, b, c]).map((one) => one.id)).toEqual(["b", "c", "a"]);
+    expect(phoneOrder([full, b, c]).map((one) => one.id)).toEqual(["a", "b", "c"]);
+  });
+
+  test("a move into another priority band joins it, so it lands where it was dropped", () => {
+    const high = { ...a, id: "hi", layout: { priority: 3 } };
+    const moved = phoneMoved([high, b, c], "c", "hi");
+    expect(phoneOrder(moved).map((one) => one.id)).toEqual(["c", "hi", "b"]);
+    expect(moved.find((one) => one.id === "c")?.layout?.priority).toBe(3);
+  });
+
+  test("the phone counts what was set by hand: a place, what narrow screens do, a priority", () => {
+    expect(
+      changedByHand(
+        [a, { ...b, layout: { narrow: "hide" } }, { ...c, layout: { priority: 1 } }],
+        "phone",
+      ),
+    ).toBe(2);
   });
 });

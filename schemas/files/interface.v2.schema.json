@@ -1452,11 +1452,12 @@
                         },
                         "narrow": {
                           "enum": [
+                            "keep",
                             "full",
                             "stack",
                             "hide"
                           ],
-                          "description": "On narrow screens: full width, stacked below, or hidden."
+                          "description": "On narrow screens: keep its share of the row, take the full width, be stacked below the rest, or be hidden. Left out, it is automatic."
                         },
                         "priority": {
                           "type": "integer",

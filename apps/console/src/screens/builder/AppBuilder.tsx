@@ -1,7 +1,7 @@
 import { type InterfaceBody, MAX_PAGES } from "@volvel/manifest";
 import { Button, Notice } from "@volvel/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { type ApiError, api, useLoad } from "../../api.ts";
+import { ApiError, api, useLoad } from "../../api.ts";
 import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { ago } from "../../kit/format.ts";
 import { useHistory } from "../../kit/history.ts";
@@ -246,7 +246,12 @@ export function AppBuilder({
       drafts.reload();
       apps.reload();
     } catch (error) {
-      notify.error(error);
+      // Someone who may edit but not deploy here is told so, in plain words, and the draft stays.
+      if (error instanceof ApiError && error.status === 403) {
+        notify.error(
+          "You can change this app but not publish it here. Ask someone who may deploy to this workspace: your draft is kept.",
+        );
+      } else notify.error(error);
     } finally {
       setPublishing(false);
     }

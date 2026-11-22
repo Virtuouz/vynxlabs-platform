@@ -466,6 +466,15 @@ export function TableView(props: WithSelected<TableConfig>) {
                     }
                     className={`${edge} ${pad} align-middle ${isRight(spec, info) ? "text-right" : ""} ${
                       spec.width === "fixed" ? "truncate" : ""
+                    } ${
+                      // A number, a date or a code is never broken across lines ("INV-" and "9338").
+                      typeof row[spec.column] === "number" ||
+                      (
+                        typeof row[spec.column] === "string" &&
+                          (row[spec.column] as string).length <= 20
+                      )
+                        ? "whitespace-nowrap"
+                        : ""
                     }`}
                   >
                     {cellOf(spec, info, row[spec.column], rows, most.get(spec.column))}

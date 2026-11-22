@@ -1,8 +1,8 @@
 import {
   type Action,
   type InterfaceBody,
-  type Page,
   missingGroups,
+  type Page,
   type PageWidget,
   parseGroupPath,
   type WidgetSource,
@@ -80,10 +80,7 @@ function actionProblem(action: Action, body: InterfaceBody, known: Known): strin
  * The table a form writes to: the one it reads, or the one of the record its page is opened on
  * (an edit form on a record page, a side sheet or a modal), or the table of the row it follows.
  */
-function tableOfSource(
-  source: WidgetSource | undefined,
-  page: Page,
-): string | undefined {
+function tableOfSource(source: WidgetSource | undefined, page: Page): string | undefined {
   if (!source) return undefined;
   if ("visual" in source) return source.visual.table;
   if ("record" in source) return page.record?.table;
@@ -91,7 +88,8 @@ function tableOfSource(
   if ("selected" in source) {
     for (const one of page.widgets) {
       for (const input of Object.values(one.data ?? {})) {
-        if (one.id === source.selected && "visual" in input.source) return input.source.visual.table;
+        if (one.id === source.selected && "visual" in input.source)
+          return input.source.visual.table;
       }
     }
   }
@@ -253,4 +251,23 @@ export function mostAffectedGroup(
     }
   }
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+}
+
+/**
+ * What the server refused, said in the page's words: "/body/pages/0/widgets/9/config/... must NOT
+ * have fewer than 1 items" becomes "Invoices on Money: needs at least 1".
+ */
+export function plainly(message: string, body: InterfaceBody): string {
+  const found = /^\/body\/pages\/(\d+)(?:\/widgets\/(\d+))?\S*\s+(.*)$/.exec(message);
+  if (!found) return message;
+  const page = body.pages[Number(found[1])];
+  const widget = found[2] !== undefined ? page?.widgets[Number(found[2])] : undefined;
+  const what = (found[3] ?? "").replace(
+    /must NOT have fewer than (\d+) items?/,
+    "needs at least $1",
+  );
+  const where = [widget ? widget.title || widget.id : undefined, page?.title]
+    .filter(Boolean)
+    .join(" on ");
+  return where ? `${where}: ${what}` : what;
 }

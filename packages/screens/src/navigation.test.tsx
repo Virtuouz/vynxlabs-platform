@@ -218,4 +218,8 @@ test("a modal opened from a sheet is over it: both are in the address, each with
     page: "new",
     record: "r2",
   });
+  // A link with only `modalRecord` (no sheet under it) works too: it is the modal's record.
+  expect(
+    parseAddress("/apps/a/w/perf/", "/apps/a/w/perf/money", "?modal=new&modalRecord=r3").modal,
+  ).toEqual({ page: "new", record: "r3" });
 });

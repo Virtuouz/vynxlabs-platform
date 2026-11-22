@@ -308,7 +308,7 @@ export function Frame({
                 <Menu
                   ariaLabel={`Download ${name}`}
                   align="end"
-                  triggerClassName="flex items-center rounded-control p-1 text-ink-muted hover:bg-sunken hover:text-ink"
+                  triggerClassName="flex items-center justify-center rounded-control p-1 text-ink-muted hover:bg-sunken hover:text-ink pointer-coarse:min-h-8 pointer-coarse:min-w-8"
                   label={<Download aria-hidden="true" size={16} />}
                   items={[
                     {

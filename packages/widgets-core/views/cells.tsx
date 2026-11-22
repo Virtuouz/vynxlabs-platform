@@ -70,6 +70,29 @@ const CODE = /^[A-Z][A-Z0-9]{0,5}-[A-Z0-9][A-Z0-9-]*$/;
 export const isCode = (value: unknown): value is string =>
   typeof value === "string" && CODE.test(value) && /\d/.test(value);
 
+/**
+ * Text that may break where a person would: after an @ and after dots, slashes and hyphens inside
+ * a long word (an email address, a web address), with `overflow-wrap` as the last resort, so a
+ * narrow column does not cut "george.lewis@exampl / e.net" in the middle of a word. Short text and
+ * text with spaces is left as it is.
+ */
+export function breakable(text: string): ReactNode {
+  const long = text.split(/\s+/).some((word) => word.length > 14);
+  if (!long || !/[@./_-]/.test(text)) return text;
+  const pieces = text.split(/(?<=[@./_-])/);
+  return (
+    <span className="[overflow-wrap:anywhere]">
+      {pieces.map((piece, at) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: pieces of one string, in order
+        <span key={at}>
+          {at > 0 ? <wbr /> : null}
+          {piece}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** Whether a column's values line up at the right. */
 export const isRight = (spec: ColumnSpec, info: ColumnInfo | undefined) =>
   spec.align === "right" || isNumeric(info);
@@ -310,7 +333,8 @@ export function cellOf(
       });
     }
   }
-  return showValue(type, value);
+  const written = showValue(type, value);
+  return typeof written === "string" ? breakable(written) : written;
 }
 
 /** What a column is headed. */

@@ -494,6 +494,7 @@ function Confirmation({
       {ask.length > 0 ? (
         <SchemaForm
           schema={askedSchema(ask)}
+          json={false}
           submitLabel={button}
           onCancel={onCancel}
           errors={fields}

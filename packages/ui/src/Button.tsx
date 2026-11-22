@@ -26,7 +26,7 @@ const ALIASES = { main: "primary", normal: "secondary" } as const;
 interface Shared {
   variant?: keyof typeof styles | keyof typeof ALIASES;
   /**
-   * `regular` is the page's own control height, 36 px. `small` is 28 px, for
+   * `regular` is the page's own control height, 36 px. `small` is 28 px (32 on a touch screen), for
    * toolbars inside a pane; `large` is 40 px, for sign-in.
    */
   size?: "regular" | "small" | "large";
@@ -58,7 +58,7 @@ export type ButtonProps = Shared &
   );
 
 const SIZES = {
-  small: "h-7 gap-1.5 px-2",
+  small: "h-7 gap-1.5 px-2 pointer-coarse:h-8",
   regular: "h-control gap-2 px-3",
   large: "h-10 gap-2 px-4",
 };

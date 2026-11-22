@@ -43,3 +43,4 @@ export {
   sampleOf,
 } from "./NumberFormat.tsx";
 export { type SortableItem, SortableRows } from "./SortableRows.tsx";
+export { LIFTED, moved, type UseSortable, useSortable } from "./useSortable.ts";

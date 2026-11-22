@@ -1,13 +1,6 @@
 import { ChevronRight, Eye, EyeOff, GripVertical } from "lucide-react";
-import {
-  type ComponentType,
-  type KeyboardEvent,
-  type PointerEvent,
-  type ReactNode,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import type { ComponentType, ReactNode, RefObject } from "react";
+import { LIFTED, useSortable } from "./useSortable.ts";
 
 export interface SortableItem {
   id: string;
@@ -24,16 +17,10 @@ export interface SortableItem {
 
 const focus = "outline-offset-[-2px] focus-visible:outline-2 focus-visible:outline-focus";
 
-const moved = (ids: readonly string[], from: number, to: number) => {
-  const next = [...ids];
-  const [one] = next.splice(from, 1);
-  if (one !== undefined) next.splice(to, 0, one);
-  return next;
-};
-
 /**
  * Rows with a drag handle, an optional eye, a value and a chevron. Reorder by dragging the
- * handle, or with the keyboard: Alt+Up and Alt+Down on a row or its handle (Up and Down alone
+ * handle (see `useSortable`: the row follows the pointer, the others slide, it settles into
+ * place), or with the keyboard: Alt+Up and Alt+Down on a row or its handle (Up and Down alone
  * on the handle). Each move is said to screen readers.
  */
 export function SortableRows({
@@ -55,102 +42,35 @@ export function SortableRows({
   /** Names the list. */
   label: string;
 }) {
-  const [said, setSaid] = useState("");
-  const [drag, setDrag] = useState<{ id: string; order: string[] } | undefined>();
-  const rows = useRef(new Map<string, HTMLElement>());
-  const refocus = useRef<{ id: string; part: string } | undefined>(undefined);
   const byId = new Map(items.map((item) => [item.id, item]));
-  const order = drag?.order ?? items.map((item) => item.id);
-
-  // A reorder may remake the row's element: put the focus back where it was.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: runs after every reorder
-  useEffect(() => {
-    const again = refocus.current;
-    if (!again) return;
-    refocus.current = undefined;
-    rows.current.get(again.id)?.querySelector<HTMLElement>(`[data-${again.part}]`)?.focus();
-  }, [items]);
-
-  const keyboardMove = (event: KeyboardEvent, id: string, plain: boolean) => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-    if (!event.altKey && !plain) return;
-    event.preventDefault();
-    const ids = items.map((item) => item.id);
-    const from = ids.indexOf(id);
-    const to = Math.min(ids.length - 1, Math.max(0, from + (event.key === "ArrowUp" ? -1 : 1)));
-    if (to === from) return;
-    refocus.current = {
-      id,
-      part: (event.target as HTMLElement).closest("[data-handle]") ? "handle" : "main",
-    };
-    setSaid(`Moved ${byId.get(id)?.label ?? ""} to position ${to + 1} of ${ids.length}`);
-    onReorder(moved(ids, from, to));
-  };
-
-  const start = (event: PointerEvent<HTMLButtonElement>, id: string) => {
-    if (event.button !== 0) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setDrag({ id, order: items.map((item) => item.id) });
-  };
-  const over = (event: PointerEvent) => {
-    if (!drag) return;
-    // Where the pointer is among the other rows' middles decides the place.
-    const others = drag.order.filter((id) => id !== drag.id);
-    let to = 0;
-    for (const id of others) {
-      const box = rows.current.get(id)?.getBoundingClientRect();
-      if (box && event.clientY > box.top + box.height / 2) to += 1;
-    }
-    const next = [...others];
-    next.splice(to, 0, drag.id);
-    if (next.join() !== drag.order.join()) setDrag({ id: drag.id, order: next });
-  };
-  const end = () => {
-    if (!drag) return;
-    const next = drag.order;
-    setDrag(undefined);
-    if (next.join() !== items.map((item) => item.id).join()) {
-      setSaid(
-        `Moved ${byId.get(drag.id)?.label ?? ""} to position ${next.indexOf(drag.id) + 1} of ${next.length}`,
-      );
-      onReorder(next);
-    }
-  };
+  const sort = useSortable({
+    ids: items.map((item) => item.id),
+    onReorder: (ids) => onReorder(ids),
+    nameOf: (id) => byId.get(id)?.label ?? "",
+  });
 
   return (
     <>
-      <ul aria-label={label} className="m-0 list-none divide-y divide-line p-0">
-        {order.map((id) => {
-          const item = byId.get(id);
-          if (!item) return null;
+      <ul
+        ref={sort.list as RefObject<HTMLUListElement>}
+        aria-label={label}
+        className="m-0 list-none divide-y divide-line p-0"
+      >
+        {items.map((item) => {
+          const id = item.id;
           const active = id === activeId;
-          const dragging = drag?.id === id;
           return (
             <li
               key={id}
-              ref={(node) => {
-                if (node) rows.current.set(id, node);
-                else rows.current.delete(id);
-              }}
+              {...sort.row(id)}
               data-active={active ? "" : undefined}
-              onKeyDown={(event) => {
-                if (!(event.target as HTMLElement).closest("[data-handle]")) {
-                  keyboardMove(event, id, false);
-                }
-              }}
-              className={`relative flex min-h-10 items-center before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-action before:opacity-0 data-[active]:bg-selected data-[active]:before:opacity-100 ${
-                dragging ? "bg-raised shadow-drag" : ""
-              }`}
+              onKeyDown={(event) => sort.rowKeyDown(event, id)}
+              className={`relative flex min-h-10 items-center before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-action before:opacity-0 data-[active]:bg-selected data-[active]:before:opacity-100 ${LIFTED}`}
             >
               <button
                 type="button"
-                data-handle=""
+                {...sort.handle(id)}
                 aria-label={`Reorder ${item.label}. Alt and the up or down arrow move it.`}
-                onPointerDown={(event) => start(event, id)}
-                onPointerMove={over}
-                onPointerUp={end}
-                onPointerCancel={end}
-                onKeyDown={(event) => keyboardMove(event, id, true)}
                 className={`grid h-10 w-7 shrink-0 cursor-grab touch-none place-items-center text-ink-subtle hover:text-ink ${focus}`}
               >
                 <GripVertical aria-hidden="true" size={14} />
@@ -200,7 +120,7 @@ export function SortableRows({
         })}
       </ul>
       <div role="status" aria-live="polite" className="sr-only">
-        {said}
+        {sort.said}
       </div>
     </>
   );

@@ -89,11 +89,16 @@ export function ApprovalsDataSection({ env }: { env: Env }) {
   const paths = (known ?? []).map((flow) => flow.path);
   // A workflow the widget names that is no longer there is still shown, so it can be taken off.
   const missing = listed.filter((path) => known !== undefined && !paths.includes(path));
-  const chips: { path: string; title: string; missing: boolean }[] = [
-    ...(known ?? []).map((flow) => ({ path: flow.path, title: flow.title, missing: false })),
+  const chips: { path: string; title: string; missing: boolean; titled: boolean }[] = [
+    ...(known ?? []).map((flow) => ({
+      path: flow.path,
+      title: flow.title,
+      missing: false,
+      titled: flow.titled !== false,
+    })),
     ...(known === undefined
-      ? listed.map((path) => ({ path, title: flowTitle(path), missing: false }))
-      : missing.map((path) => ({ path, title: flowTitle(path), missing: true }))),
+      ? listed.map((path) => ({ path, title: flowTitle(path), missing: false, titled: false }))
+      : missing.map((path) => ({ path, title: flowTitle(path), missing: true, titled: false }))),
   ];
   const write = (next: { flows?: string[] | undefined; whose?: "mine" | "all" }, label: string) => {
     const flows = next.flows && next.flows.length > 0 ? next.flows : undefined;
@@ -146,6 +151,10 @@ export function ApprovalsDataSection({ env }: { env: Env }) {
               >
                 {chip.title}
                 {chip.missing ? " (not found)" : ""}
+                {/* A workflow with no title of its own, or one of the same name as another, has its path beside it. */}
+                {!chip.titled || chips.filter((one) => one.title === chip.title).length > 1 ? (
+                  <span className="text-meta opacity-70">{chip.path}</span>
+                ) : null}
               </CheckChip>
             ))}
           </ChipSet>
@@ -164,7 +173,7 @@ export function ApprovalsDataSection({ env }: { env: Env }) {
       </DrawerBlock>
       <DrawerBlock label="Whose">
         <RadioCards<"mine" | "all">
-          label="Whose"
+          label="Which requests are shown"
           value={source.whose === "all" ? "all" : "mine"}
           options={[
             {

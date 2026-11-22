@@ -14,8 +14,10 @@ import {
   formModal,
   formPlacement,
   formWidget,
+  type InfoColumn,
   onThisRecord,
   type PageContext,
+  startingFields,
   submitAction,
   type TableInfo,
 } from "./screens/builder/records.ts";
@@ -113,7 +115,14 @@ beforeEach(() => {
         columns: [
           { name: "number", type: "text", required: true, status: "active" },
           { name: "total", type: "number", required: true, status: "active" },
-          { name: "status", type: "enum", values: ["unpaid", "paid"], status: "active" },
+          {
+            name: "status",
+            type: "enum",
+            values: ["unpaid", "paid"],
+            required: true,
+            default: "unpaid",
+            status: "active",
+          },
           { name: "customer", type: "reference", references: "customers", status: "active" },
         ],
       },
@@ -364,7 +373,6 @@ test("Add a form writes the form, the modal it opens in and the button that open
               number: { asked: "number" },
               total: { asked: "total" },
               status: { asked: "status" },
-              customer: { asked: "customer" },
             },
           },
           { do: "close" },
@@ -496,6 +504,10 @@ test("Add a form draws the form live from the checked fields, and makes the same
   );
   const dialog = within(await screen.findByRole("dialog", { name: "Add a form" }));
   const preview = within(dialog.getByLabelText("Preview"));
+  // A new form starts with what the table requires: the optional reference is not ticked.
+  await waitFor(() => expect(preview.getAllByText(/Total/).length).toBeGreaterThan(0));
+  expect(preview.queryAllByText(/Customer/).length).toBe(0);
+  fireEvent.click(dialog.getByRole("checkbox", { name: "Customer" }));
   await waitFor(() => expect(preview.getAllByText(/Customer/).length).toBeGreaterThan(0));
   fireEvent.click(dialog.getByRole("checkbox", { name: "Customer" }));
   await waitFor(() => expect(preview.queryAllByText(/Customer/).length).toBe(0));
@@ -514,7 +526,7 @@ test("a new form starts a date today, and the Add a form row says so", () => {
     name: "invoices",
     columns: [
       { name: "number", type: "text", required: true, values: [] },
-      { name: "issued_on", type: "date", required: false, values: [] },
+      { name: "issued_on", type: "date", required: true, values: [] },
     ],
   };
   const make = (mode: "create" | "edit") =>
@@ -524,14 +536,14 @@ test("a new form starts a date today, and the Add a form row says so", () => {
     ).widgets.at(-1) as unknown as { config: { fields: unknown[] } };
   expect(make("create").config.fields).toEqual([
     { column: "number", required: true },
-    { column: "issued_on", initial: { kind: "today" } },
+    { column: "issued_on", required: true, initial: { kind: "today" } },
   ]);
   expect(make("edit").config.fields).toEqual([
     { column: "number", required: true },
-    { column: "issued_on" },
+    { column: "issued_on", required: true },
   ]);
   expect(controlWords(dated.columns[1] as never, "create")).toBe("Date · today by default");
-  expect(controlWords(dated.columns[1] as never, "edit")).toBe("Date");
+  expect(controlWords(dated.columns[1] as never, "edit")).toBe("Date · required");
 });
 
 test("the button of a form goes on the table, and the line under Add a form says where", () => {
@@ -630,4 +642,55 @@ test("a form in a modal leaves the title to the modal, and one on the page keeps
     h: 10,
   });
   expect(onPage.title).toBe("New invoice");
+});
+
+test("a new form starts with what a person fills in, by a rule from the table's definition", () => {
+  const column = (name: string, type: string, more: Partial<InfoColumn> = {}): InfoColumn => ({
+    name,
+    type,
+    required: false,
+    values: [],
+    ...more,
+  });
+  const table: TableInfo = {
+    name: "invoices",
+    columns: [
+      column("id", "uuid", { required: true }),
+      column("clinic", "reference", { required: true, references: "clinics" }),
+      column("appointment", "reference", { references: "appointments" }),
+      column("total", "integer", { required: true, description: "What is owed, in cents." }),
+      column("status", "enum", { required: true, default: "unpaid", values: ["unpaid", "paid"] }),
+      column("issued_on", "date", { required: true }),
+      column("paid_at", "timestamp"),
+      column("received_at", "timestamp", { required: true, default: "now" }),
+      column("chased_at", "timestamp"),
+      column("notes", "long_text"),
+      column("lines", "json", { required: true }),
+      column("reference", "text", { required: true }),
+    ],
+  };
+  // Required columns, in the table's order; never the platform's, json, optional references,
+  // timestamps the platform or a flow sets, or free text.
+  expect(startingFields(table)).toEqual(["clinic", "total", "status", "issued_on", "reference"]);
+  const words = (name: string, mode: "create" | "edit" = "create") =>
+    controlWords(table.columns.find((one) => one.name === name) as InfoColumn, mode);
+  expect(words("clinic")).toBe("Picker · clinics");
+  expect(words("total")).toBe("Money");
+  expect(words("status")).toBe("Choice · Unpaid by default");
+  expect(words("status", "edit")).toBe("Choice · required");
+  expect(words("issued_on")).toBe("Date · today by default");
+  expect(words("reference")).toBe("Text · required");
+  expect(words("notes")).toBe("Long text");
+  // A table that requires nothing starts with its first few short columns.
+  const loose: TableInfo = {
+    name: "notes",
+    columns: [
+      column("title", "text"),
+      column("owner", "reference", { references: "people" }),
+      column("body", "long_text"),
+      column("when", "timestamp"),
+      column("kind", "text"),
+    ],
+  };
+  expect(startingFields(loose)).toEqual(["title", "kind"]);
 });

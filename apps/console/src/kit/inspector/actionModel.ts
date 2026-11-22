@@ -8,7 +8,13 @@
  * export them by name yet.
  */
 import { listWords, type PageWidget } from "@volvel/manifest";
-import { type CatalogColumn, heading, withSystemColumns } from "./model.ts";
+import {
+  type CatalogColumn,
+  choiceWords,
+  heading,
+  isChoiceLike,
+  withSystemColumns,
+} from "./model.ts";
 
 export type Action = NonNullable<PageWidget["on"]>[string];
 export type Step = Action["steps"][number];
@@ -318,18 +324,41 @@ export function conditionFromKey(
   };
 }
 
+/** The column a condition is about, where the action's context knows the table. */
+export function conditionColumn(
+  one: Extract<Condition, { field: string }>,
+  ctx: ActionContext | undefined,
+): CatalogColumn | undefined {
+  if (!ctx) return undefined;
+  const order: RecordRef[] = one.of === "event" ? ["event", "this"] : ["this", "event"];
+  for (const ref of order) {
+    const found = ctx.columnsOf(tableOfRef(ctx, ref)).find((column) => column.name === one.field);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** What a condition compares with, as people say it: a choice by its words ("Unpaid"), the rest as written. */
+export function conditionValueWords(
+  one: Extract<Condition, { field: string }>,
+  ctx?: ActionContext,
+): string {
+  const column = conditionColumn(one, ctx);
+  const say = (value: unknown) =>
+    isChoiceLike(column) ? choiceWords(column, String(value)) : String(value ?? "");
+  return Array.isArray(one.value) ? listWords(one.value.map(say)) : say(one.value);
+}
+
 /** "Status is Unpaid" and the other sentences, in the reader's words. */
 export function conditionSentence(one: Condition, ctx?: ActionContext): string {
   if ("user" in one) return `the current user is in ${one.group || "a group"}`;
   if ("record" in one)
     return one.record === "exists" ? "a record is chosen" : "no record is chosen";
-  const said = `${heading(one.field)} ${TEST_LABELS[one.test] ?? one.test}`;
-  const of = ctx && one.of === "event" ? " of the clicked record" : "";
-  if (NO_VALUE_TESTS.has(one.test)) return `${said}${of}`;
-  const value = Array.isArray(one.value)
-    ? listWords(one.value.map(String))
-    : String(one.value ?? "");
-  return `${said}${of} ${value}`.trim();
+  // "of the clicked record" only where the action can reach two records and it matters which.
+  const of = ctx && one.of === "event" && refsOf(ctx).length > 1 ? " of the clicked record" : "";
+  const said = `${heading(one.field)}${of} ${TEST_LABELS[one.test] ?? one.test}`;
+  if (NO_VALUE_TESTS.has(one.test)) return said;
+  return `${said} ${conditionValueWords(one, ctx)}`.trim();
 }
 
 // ---------------------------------------------------------------------------

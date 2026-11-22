@@ -19,7 +19,8 @@ import {
 } from "@volvel/ui";
 import { Ellipsis } from "lucide-react";
 import { useState } from "react";
-import { ActionEditor } from "../actionControls.tsx";
+import { ActionEditor, actionContext } from "../actionControls.tsx";
+import { type ActionContext, conditionValueWords } from "../actionModel.ts";
 import { uniqueName } from "../model.ts";
 import { ActionRules } from "../RulesTab.tsx";
 import { ButtonLabelGroup, ToneTiles } from "./buttonDrawer.tsx";
@@ -51,21 +52,26 @@ export const showUpToOf = (env: Env): number =>
   typeof env.config.showUpTo === "number" ? env.config.showUpTo : 3;
 
 /** "only when Unpaid": what the first condition of a button says, in a few words. */
-export function onlyWhen(action: Action): string | undefined {
+export function onlyWhen(action: Action, ctx?: ActionContext): string | undefined {
   const [first] = action.when ?? [];
   if (!first) return undefined;
   const one: Condition = first;
   if ("field" in one && one.test === "is" && one.value !== undefined) {
-    return `only when ${String(one.value)}`;
+    return `only when ${conditionValueWords(one, ctx)}`;
   }
   return "only when it applies";
 }
 
 /** The line under a button's name: "Main · only when Unpaid", "Danger · in the ⋯ menu". */
-export function buttonLine(button: GroupButton, at: number, showUpTo: number): string {
+export function buttonLine(
+  button: GroupButton,
+  at: number,
+  showUpTo: number,
+  ctx?: ActionContext,
+): string {
   return [
     TONE_WORDS[button.tone ?? "default"] ?? "Normal",
-    onlyWhen(button.action),
+    onlyWhen(button.action, ctx),
     at >= showUpTo ? "in the ⋯ menu" : undefined,
   ]
     .filter(Boolean)
@@ -193,7 +199,7 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
   const items: SortableItem[] = buttons.map((one, at) => ({
     id: one.id,
     label: one.label,
-    sub: buttonLine(one, at, showUpTo),
+    sub: buttonLine(one, at, showUpTo, actionContext(env)),
   }));
   const add = () => {
     const id = uniqueName(

@@ -40,8 +40,9 @@ const SECTION = "section:";
 const FIELD = "field:";
 
 /** What a column is, in a word: "Picker", "Date", "Long text". */
-export function kindOfColumn(env: Env, column: string): string {
-  const table = visualOf(env.widget.data?.record)?.table;
+export function kindOfColumn(env: Env, column: string, row?: FieldRow): string {
+  // A detail on a record page has no table of its own: the page's record is its table.
+  const table = visualOf(env.widget.data?.record)?.table ?? env.page?.record?.table;
   const found = env.catalog.tables
     .find((one) => one.name === table)
     ?.columns.find((one) => one.name === column);
@@ -53,8 +54,11 @@ export function kindOfColumn(env: Env, column: string): string {
     case "timestamp":
       return "Date and time";
     case "number":
-    case "integer":
-      return "Number";
+    case "integer": {
+      // A number written as a currency is money, in a detail and in a form alike.
+      const format = row?.format as { style?: string } | undefined;
+      return format?.style === "currency" ? "Money" : "Number";
+    }
     case "enum":
       return "Choice";
     case "boolean":
@@ -87,15 +91,22 @@ export function itemsOf(env: Env, rows: readonly FieldRow[], kind: FieldsKind): 
       });
     }
     current = row.section;
+    const today =
+      kind === "form" &&
+      typeof row.initial === "object" &&
+      row.initial !== null &&
+      (row.initial as { kind?: unknown }).kind === "today";
     const flags = [
       kind === "form" && row.required ? "Required" : undefined,
       row.hidden ? "Hidden" : undefined,
+      today ? "Today by default" : undefined,
     ].filter(Boolean);
-    const what = kindOfColumn(env, row.column);
+    const what = kindOfColumn(env, row.column, row);
     items.push({
       id: `${FIELD}${row.column}`,
       label: row.label || heading(row.column),
-      sub: [...flags, flags.length > 0 ? what.toLowerCase() : what].join(" · "),
+      // "Required · picker", "Today by default" (a date says what it is by that), else the control alone.
+      sub: [...flags, ...(today ? [] : [flags.length > 0 ? what.toLowerCase() : what])].join(" · "),
       ...(row.hidden ? { hidden: true } : {}),
     });
   }
@@ -159,7 +170,7 @@ export function FieldsList({
           return merged;
         }),
       );
-    const type = kindOfColumn(env, open.column);
+    const type = kindOfColumn(env, open.column, open);
     return (
       <div className="flex flex-col gap-4">
         <BackHead

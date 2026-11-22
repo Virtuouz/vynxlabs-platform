@@ -24,6 +24,7 @@ import {
   type Condition,
   conditionFromKey,
   conditionKey,
+  conditionValueWords,
   firstCondition,
   refsOf,
   refWords,
@@ -82,9 +83,7 @@ function Face({ one, ctx }: { one: Condition; ctx: ActionContext }): ReactNode {
     heading(one.field) + (refs.length > 1 && one.of === "event" ? " of the clicked record" : "");
   const test = WORDS[one.test] ?? one.test;
   if (one.test === "is_empty" || one.test === "is_not_empty") return `${name} ${test}`;
-  const value = Array.isArray(one.value)
-    ? listWords(one.value.map(String))
-    : String(one.value ?? "");
+  const value = conditionValueWords(one, ctx);
   return (
     <>
       {name} {test} {value ? <strong className="font-semibold">{value}</strong> : null}

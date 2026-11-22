@@ -12,6 +12,8 @@ export interface ApprovalFlow {
   path: string;
   /** What it is called: its own title, or its path read as words. */
   title: string;
+  /** Whether the title is the workflow's own, not its path read as words. */
+  titled?: boolean;
   steps: { node: string; title: string; fields: string[] }[];
 }
 
@@ -56,6 +58,7 @@ export function ApprovalFlowsProvider({
         .map((one) => ({
           path: one.path,
           title: flowTitle(one.path, one.title),
+          titled: Boolean(one.title),
           steps: one.approvals ?? [],
         })),
     [listed.data],

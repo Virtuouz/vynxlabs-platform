@@ -17,6 +17,7 @@ import {
 import {
   bindHolderFilters,
   type Catalog,
+  choiceWords,
   heading,
   visualOf,
   withPageFilters,
@@ -34,6 +35,10 @@ export interface InfoColumn {
   references?: string;
   /** For an enum: its values. */
   values: string[];
+  /** What a row gets when it gives none. */
+  default?: unknown;
+  /** What the table says the column holds. */
+  description?: string;
 }
 export interface TableInfo {
   name: string;
@@ -48,6 +53,8 @@ interface RawTable {
     required?: boolean;
     status?: string;
     references?: string | null;
+    default?: unknown;
+    description?: string;
     values?: (string | { value: string })[];
   }[];
 }
@@ -62,6 +69,10 @@ export function tableInfo(name: string, raw: RawTable): TableInfo {
         type: column.type,
         required: column.required === true,
         ...(column.references ? { references: column.references } : {}),
+        ...(column.default !== undefined && column.default !== null
+          ? { default: column.default }
+          : {}),
+        ...(column.description ? { description: column.description } : {}),
         values: (column.values ?? []).map((one) => (typeof one === "string" ? one : one.value)),
       })),
   };
@@ -279,34 +290,94 @@ export function detailEdit(context: PageContext, widget: PageWidget, table: Tabl
 
 // ----- Forms -----
 
-/** How a column is drawn as a field, in words. */
-export function controlWords(column: InfoColumn, mode: "create" | "edit" = "create"): string {
-  switch (column.type) {
-    case "reference":
-      return `Picker · ${column.references ? manyOf(column.references).toLowerCase() : "records"}`;
-    case "enum":
-      return column.values.length > 0 ? `Choice · ${column.values.length} to pick from` : "Choice";
-    case "enum_list":
-      return "Several choices";
-    case "boolean":
-      return "Yes or no";
-    case "date":
-      return mode === "create" ? "Date · today by default" : "Date";
-    case "timestamp":
-      return "Date and time";
-    case "integer":
-    case "number":
-      return "Number";
-    case "long_text":
-      return "Long text";
-    default:
-      return "Text";
+/** Whether a number is money: its definition says so, in cents or in a currency. */
+const isMoney = (column: InfoColumn) =>
+  (column.type === "integer" || column.type === "number") &&
+  /\b(cents|minor units?|money|currency|dollars|euros|pounds)\b/i.test(column.description ?? "");
+
+/** A default, as a person reads it: a choice by its words, a date "today". */
+function defaultWords(column: InfoColumn, mode: "create" | "edit"): string | undefined {
+  if (mode === "edit") return undefined;
+  if (column.type === "date") return "today";
+  if (column.default === undefined || column.default === null || column.default === "") {
+    return undefined;
   }
+  if (typeof column.default === "boolean") return column.default ? "yes" : "no";
+  if (typeof column.default === "object") return undefined;
+  return column.type === "enum" || column.type === "text"
+    ? choiceWords({ values: column.values.map((value) => ({ value })) }, column.default)
+    : String(column.default);
+}
+
+/**
+ * How a column is drawn as a field, in words: the control, then what a person should know of
+ * it: what it starts as, else that it must be filled in ("Picker · clinics", "Money",
+ * "Choice · Unpaid by default", "Date · today by default", "Text · required").
+ */
+export function controlWords(column: InfoColumn, mode: "create" | "edit" = "create"): string {
+  const control = (() => {
+    switch (column.type) {
+      case "reference":
+        return `Picker · ${column.references ? manyOf(column.references).toLowerCase() : "records"}`;
+      case "enum":
+        return "Choice";
+      case "enum_list":
+        return "Several choices";
+      case "boolean":
+        return "Yes or no";
+      case "date":
+        return "Date";
+      case "timestamp":
+        return "Date and time";
+      case "integer":
+      case "number":
+        return isMoney(column) ? "Money" : "Number";
+      case "long_text":
+        return "Long text";
+      default:
+        return "Text";
+    }
+  })();
+  const initial = defaultWords(column, mode);
+  if (initial) return `${control} · ${initial} by default`;
+  if (column.required) {
+    return control === "Money" || column.type === "reference" ? control : `${control} · required`;
+  }
+  if (column.type === "enum" && column.values.length > 0) {
+    return `${control} · ${column.values.length} to pick from`;
+  }
+  return control;
 }
 
 /** The columns a person fills in: not the ones the platform sets, and not json. */
 export const askable = (table: TableInfo): InfoColumn[] =>
   table.columns.filter((column) => !isSystem(column.name) && column.type !== "json");
+
+/**
+ * Whether a new form starts with this column ticked. A person fills in what the table
+ * requires. Left unticked: a reference that is optional (a flow keeps it), a date and time
+ * that is optional or starts as now (when something happened, not what a person says), and
+ * long free text. A table that requires nothing starts with its first few short columns.
+ */
+export function startsTicked(column: InfoColumn): boolean {
+  if (isSystem(column.name) || column.type === "json") return false;
+  if (column.type === "timestamp") return column.required && column.default === undefined;
+  return column.required;
+}
+
+/** The columns a new form starts with, in the table's order. */
+export function startingFields(table: TableInfo): string[] {
+  const columns = askable(table);
+  const ticked = columns.filter(startsTicked);
+  if (ticked.length > 0) return ticked.map((column) => column.name);
+  return columns
+    .filter(
+      (column) =>
+        column.type !== "reference" && column.type !== "timestamp" && column.type !== "long_text",
+    )
+    .slice(0, 5)
+    .map((column) => column.name);
+}
 
 export interface FormPlan {
   mode: "create" | "edit";
@@ -325,7 +396,7 @@ export function defaultPlan(table: TableInfo, mode: "create" | "edit" = "create"
   return {
     mode,
     table,
-    fields: askable(table).map((column) => column.name),
+    fields: startingFields(table),
     where: "modal",
     title: mode === "create" ? `New ${noun}` : `Edit ${noun}`,
     message: mode === "create" ? `${oneOf(table.name)} created` : `${oneOf(table.name)} saved`,

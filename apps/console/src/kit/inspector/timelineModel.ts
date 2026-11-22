@@ -14,7 +14,7 @@ import {
   type Step,
   singular,
 } from "./actionModel.ts";
-import { heading } from "./model.ts";
+import { type CatalogColumn, choiceWords, heading, isChoiceLike, named } from "./model.ts";
 
 const article = (word: string) => (/^[aeiou]/i.test(word) ? "an" : "a");
 
@@ -41,7 +41,7 @@ export function stepSummary(
       return step.path ? `Run the script ${step.path}` : "Run a script";
     case "open": {
       const page = pages.find((one) => one.id === step.page);
-      return `Open ${page?.title ?? (step.page || "a page")}`;
+      return `Open ${named(page?.title ?? (step.page || "a page"))}`;
     }
     case "close":
       return "Close";
@@ -86,12 +86,19 @@ export function fillTokens(
 }
 
 /** A value as a chip says it: "Paid", "Today", "Current user", "Status of this invoice". */
-export function valueChipWords(value: ActionValue, ctx: ActionContext): string {
-  if ("value" in value) return String(value.value ?? "") || "(empty)";
+export function valueChipWords(
+  value: ActionValue,
+  _ctx: ActionContext,
+  column?: CatalogColumn,
+): string {
+  if ("value" in value) {
+    const text = String(value.value ?? "");
+    return (isChoiceLike(column) ? choiceWords(column, text) : text) || "(empty)";
+  }
   if ("today" in value) return "Today";
   if ("now" in value) return "Now";
   if ("user" in value) return value.user === "id" ? "Current user" : `User ${value.user}`;
-  if ("record" in value) return `${heading(value.record)} of ${refWords(ctx, value.of ?? "this")}`;
+  if ("record" in value) return `${heading(value.record)} of ${refWords(_ctx, value.of ?? "this")}`;
   return heading(value.asked);
 }
 
@@ -176,8 +183,13 @@ export function andWords(list: readonly string[]): string {
 }
 
 /** "Status is Unpaid and Total is more than 50": sentences joined with "and". */
-export function conditionsWords(list: readonly Condition[] | undefined): string {
-  return (list ?? []).map((one) => conditionSentence(one)).join(" and ");
+export function conditionsWords(
+  list: readonly Condition[] | undefined,
+  ctx?: ActionContext,
+): string {
+  // One rule said twice is said once.
+  const said = (list ?? []).map((one) => conditionSentence(one, ctx));
+  return [...new Set(said)].join(" and ");
 }
 
 /**
@@ -188,14 +200,36 @@ export function rulesSummary(input: {
   showWhen?: readonly Condition[] | undefined;
   seenBy?: readonly string[] | undefined;
   pressedWhen?: readonly Condition[] | undefined;
+  /** Each action's own rule, named: one rule shared is said once; rules that differ say whose they are. */
+  pressedBy?: readonly { label: string; when: readonly Condition[] }[] | undefined;
   runBy?: readonly string[] | undefined;
   noun: string;
+  /** Where the widget's records are known: values are said in their words. */
+  ctx?: ActionContext | undefined;
 }): string {
   const out: string[] = [];
-  if (input.showWhen?.length) out.push(`Shown when ${conditionsWords(input.showWhen)}.`);
+  if (input.showWhen?.length) {
+    out.push(`Shown when ${conditionsWords(input.showWhen, input.ctx)}.`);
+  }
   if (input.seenBy?.length) out.push(`Seen by ${andWords(input.seenBy)}.`);
   if (input.pressedWhen?.length) {
-    out.push(`Can be pressed when ${conditionsWords(input.pressedWhen)}.`);
+    out.push(`Can be pressed when ${conditionsWords(input.pressedWhen, input.ctx)}.`);
+  }
+  const named = (input.pressedBy ?? []).filter((one) => one.when.length > 0);
+  if (named.length > 0) {
+    const bySentence = new Map<string, string[]>();
+    for (const one of named) {
+      const said = conditionsWords(one.when, input.ctx);
+      bySentence.set(said, [...(bySentence.get(said) ?? []), one.label]);
+    }
+    const everyone = named.length === (input.pressedBy ?? []).length;
+    if (bySentence.size === 1 && everyone) {
+      out.push(`Can be pressed when ${[...bySentence.keys()][0]}.`);
+    } else {
+      for (const [said, labels] of bySentence) {
+        out.push(`${andWords(labels)} can be pressed when ${said}.`);
+      }
+    }
   }
   if (input.runBy?.length) {
     out.push(`${andWords(input.runBy)} can run it.`);

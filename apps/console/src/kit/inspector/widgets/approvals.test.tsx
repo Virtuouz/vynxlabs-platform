@@ -143,7 +143,7 @@ describe("Data: which requests", () => {
     const start = fresh();
     start.data = { requests: { source: { approvals: { flows: ["stock/reorder", "gone/flow"] } } } };
     mount(ApprovalsDataSection, start);
-    expect(screen.getByRole("button", { name: "Flow (not found)" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Flow \(not found\)/ })).toBeTruthy();
   });
 
   test("says who may decide is set on the workflow's step, with a way to it", () => {

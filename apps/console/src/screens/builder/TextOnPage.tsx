@@ -7,17 +7,33 @@ interface Place {
   left: number;
   top: number;
   width: number;
+  height: number;
+  /** A phone's whole screen: a sheet, not a panel at the widget. */
+  full: boolean;
 }
 
-/** Where the panel goes: over the widget's cell, as wide as the editor needs, kept on the screen. */
+/** The least height the editor is worked in. */
+const LEAST_HEIGHT = 380;
+
+/**
+ * Where the panel goes: at the widget's cell, inside the canvas (never over the builder's bar or
+ * header), as wide as the editor needs and as tall as the canvas allows; on a phone, the whole screen.
+ */
 function placeOver(cell: Element | null): Place {
   const room = window.innerWidth;
-  if (room < 640) return { left: 8, top: 56, width: room - 16 };
+  if (room < 640) return { left: 0, top: 0, width: room, height: window.innerHeight, full: true };
+  const canvas = document.querySelector("[data-canvas]")?.getBoundingClientRect();
+  const bounds = canvas ?? new DOMRect(8, 8, room - 16, window.innerHeight - 16);
   const box = cell?.getBoundingClientRect();
-  const width = Math.min(room - 16, Math.max(box?.width ?? 0, 680));
-  const left = Math.max(8, Math.min(box?.left ?? 8, room - width - 8));
-  const top = Math.max(8, Math.min(box?.top ?? 8, window.innerHeight - 440));
-  return { left, top, width };
+  const width = Math.min(bounds.width - 16, Math.max(box?.width ?? 0, 680));
+  const left = Math.max(bounds.left + 8, Math.min(box?.left ?? 0, bounds.right - width - 8));
+  const available = bounds.height - 16;
+  const height = Math.min(available, Math.max(LEAST_HEIGHT, Math.min(560, available)));
+  const top = Math.max(
+    bounds.top + 8,
+    Math.min(box?.top ?? bounds.top, bounds.bottom - height - 8),
+  );
+  return { left, top, width, height, full: false };
 }
 
 /**
@@ -56,8 +72,8 @@ export function TextOnPage({
       // overlay-allowed: not modal. It sits over the widget being written, anchored to it, and Esc leaves it.
       role="dialog"
       aria-label={`Edit ${title} on the page`}
-      style={{ left: place.left, top: place.top, width: place.width }}
-      className="layer-popover fixed flex max-h-[calc(100dvh-1rem)] flex-col overflow-hidden rounded-panel border border-line-strong bg-raised shadow-drag"
+      style={{ left: place.left, top: place.top, width: place.width, height: place.height }}
+      className={`layer-popover fixed flex flex-col overflow-hidden border-line-strong bg-raised shadow-drag ${place.full ? "" : "rounded-panel border"}`}
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented) {
           event.stopPropagation();
@@ -70,12 +86,12 @@ export function TextOnPage({
         label={`Text of ${title}`}
         value={written}
         onChange={setWritten}
-        height="min(46vh, 22rem)"
+        height={`${place.height - (place.full ? 112 : 52)}px`}
         autoFocus
         modes={["source", "split", "preview"]}
         path={`widget/${widget}.md`}
       />
-      <div className="flex items-center justify-end gap-2 border-line border-t px-3 py-2">
+      <div className="flex shrink-0 items-center justify-end gap-2 border-line border-t px-3 py-2">
         <span className="mr-auto text-meta text-ink-muted">Esc leaves the text as it was.</span>
         <Button size="small" onClick={onCancel}>
           Cancel

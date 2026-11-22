@@ -37,10 +37,13 @@ export function PivotPreview({
   query,
   data,
   format,
+  shade = false,
 }: {
   query: Query;
   data: DrawerData | undefined;
   format?: Parameters<typeof formatNumber>[1];
+  /** Whether the cells are shaded by size: it follows the "Shade cells by size" switch. */
+  shade?: boolean;
 }) {
   const groups = groupsOf(query);
   const summary = data?.summary ?? sampleSummary(query, data?.counts);
@@ -69,7 +72,7 @@ export function PivotPreview({
   return (
     <div
       role="img"
-      aria-label={`A grid of ${rows.length} rows and ${columns.length} columns, shaded by size`}
+      aria-label={`A grid of ${rows.length} rows and ${columns.length} columns${shade ? ", shaded by size" : ""}`}
       className="grid items-center gap-1 text-meta text-ink-muted"
       style={{ gridTemplateColumns: `minmax(3rem,auto) repeat(${columns.length}, minmax(0,1fr))` }}
     >
@@ -86,9 +89,13 @@ export function PivotPreview({
             <span
               key={c}
               className="h-5 truncate rounded-inner px-1 text-right text-tag leading-5 text-ink"
-              style={{
-                background: `color-mix(in srgb, var(--color-action) ${Math.round(shadeOf(cell(r, c), low, high) * 100)}%, transparent)`,
-              }}
+              style={
+                shade
+                  ? {
+                      background: `color-mix(in srgb, var(--color-action) ${Math.round(shadeOf(cell(r, c), low, high) * 100)}%, transparent)`,
+                    }
+                  : undefined
+              }
             >
               {cellWords(cell(r, c), format)}
             </span>
@@ -122,6 +129,7 @@ export function PivotData({ env, data }: SectionProps) {
         <PivotPreview
           query={query}
           data={data}
+          shade={env.config.shade === true}
           format={env.config.format as Parameters<typeof formatNumber>[1]}
         />
       </DrawerBlock>

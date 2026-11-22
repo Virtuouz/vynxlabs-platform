@@ -258,8 +258,16 @@ function FieldSetter({
           <span className="text-body-sm text-ink-muted">{verb}</span>
           <ChipEditor
             title={`${heading(name)} ${verb}`}
-            chip={valueChipWords(value, ctx)}
-            label={`${heading(name)} ${verb} ${valueChipWords(value, ctx)}`}
+            chip={valueChipWords(
+              value,
+              ctx,
+              columns.find((one) => one.name === name),
+            )}
+            label={`${heading(name)} ${verb} ${valueChipWords(
+              value,
+              ctx,
+              columns.find((one) => one.name === name),
+            )}`}
           >
             <ValuePicker
               id={`${id}-${name}`}
@@ -599,8 +607,8 @@ function stepParts({
   ctx: ActionContext;
   asked: readonly AskedField[];
   onChange: (next: Step, key?: string) => void;
-}): { title: string; body: ReactNode } {
-  const card = (title: string, body: ReactNode) => ({ title, body });
+}): { title: string; body: ReactNode; pieces?: ReactNode } {
+  const card = (title: string, body: ReactNode, pieces?: ReactNode) => ({ title, body, pieces });
   switch (step.do) {
     case "update":
       return card(
@@ -714,44 +722,69 @@ function stepParts({
       const target = env.pages.find((one) => one.id === step.page);
       const needsRecord = target ? target.kind !== undefined && target.kind !== "page" : false;
       const refs = refsOf(ctx);
+      const pageField = (
+        <SelectField
+          name={`${id}-page`}
+          label="Page"
+          value={step.page}
+          options={[
+            ...(step.page === "" ? [{ value: "", label: "Choose a page" }] : []),
+            ...(step.page && !target ? [{ value: step.page, label: step.page }] : []),
+            ...env.pages.map((page) => ({
+              value: page.id,
+              label: `${page.title}${page.kind && page.kind !== "page" ? ` (${KIND_WORDS[page.kind]})` : ""}`,
+            })),
+          ]}
+          onChange={(page) => {
+            const next = env.pages.find((one) => one.id === page);
+            const { record: _before, ...rest } = step;
+            onChange(
+              next?.kind !== "page" && refs.length > 0
+                ? { ...rest, page, record: step.record ?? ctx.defaultRef }
+                : { ...rest, page },
+            );
+          }}
+        />
+      );
+      const recordField =
+        needsRecord && refs.length > 0 ? (
+          <SelectField
+            name={`${id}-record`}
+            label="Opens on"
+            value={step.record ?? ""}
+            options={refs.map((ref) => ({
+              value: ref,
+              label: ref === "event" ? "On the clicked record" : "On this record",
+            }))}
+            onChange={(record) => onChange({ ...step, record: record as RecordRef })}
+          />
+        ) : null;
+      const pageName = target?.title ?? (step.page || "a page");
       return card(
         "Open a page",
         <>
-          <SelectField
-            name={`${id}-page`}
-            label="Page"
-            value={step.page}
-            options={[
-              ...(step.page === "" ? [{ value: "", label: "Choose a page" }] : []),
-              ...(step.page && !target ? [{ value: step.page, label: step.page }] : []),
-              ...env.pages.map((page) => ({
-                value: page.id,
-                label: `${page.title}${page.kind && page.kind !== "page" ? ` (${KIND_WORDS[page.kind]})` : ""}`,
-              })),
-            ]}
-            onChange={(page) => {
-              const next = env.pages.find((one) => one.id === page);
-              const { record: _before, ...rest } = step;
-              onChange(
-                next?.kind !== "page" && refs.length > 0
-                  ? { ...rest, page, record: step.record ?? ctx.defaultRef }
-                  : { ...rest, page },
-              );
-            }}
-          />
-          {needsRecord && refs.length > 0 ? (
-            <SelectField
-              name={`${id}-record`}
-              label="Opens on"
-              value={step.record ?? ""}
-              options={refs.map((ref) => ({
-                value: ref,
-                label: ref === "event" ? "On the clicked record" : "On this record",
-              }))}
-              onChange={(record) => onChange({ ...step, record: record as RecordRef })}
-            />
-          ) : null}
+          {pageField}
+          {recordField}
         </>,
+        // "Open [Clinic detail] for [the clicked record]": each chip is its own small editor (board 9).
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <span>Open</span>
+          <ChipEditor title="Page" chip={pageName} label={`Change the page ${pageName}`}>
+            {pageField}
+          </ChipEditor>
+          {recordField && step.record ? (
+            <>
+              <span>for</span>
+              <ChipEditor
+                title="Opens on"
+                chip={step.record === "event" ? "the clicked record" : "this record"}
+                label="Change which record it opens on"
+              >
+                {recordField}
+              </ChipEditor>
+            </>
+          ) : null}
+        </span>,
       );
     }
     case "close":
@@ -788,41 +821,66 @@ function stepParts({
       const groups = [
         ...new Set(Object.values(env.widget.data ?? {}).flatMap((input) => resultNames(input))),
       ];
+      const filterField = (
+        <SelectField
+          name={`${id}-filter`}
+          label="Filter"
+          hint={
+            env.filters.length === 0
+              ? "The page has no filters yet. Add Search and filter to it."
+              : ""
+          }
+          value={step.filter}
+          options={[
+            { value: "", label: "Choose a filter" },
+            ...env.filters.map((one) => ({
+              value: one.name,
+              label: one.label ?? heading(one.name),
+            })),
+          ]}
+          onChange={(filter) => onChange({ ...step, filter })}
+        />
+      );
+      const fromField = (
+        <SelectField
+          name={`${id}-from`}
+          label="To the value of"
+          value={step.from}
+          options={[
+            { value: "", label: "Choose what was clicked" },
+            ...(step.from && !groups.includes(step.from)
+              ? [{ value: step.from, label: heading(step.from) }]
+              : []),
+            ...groups.map((name) => ({ value: name, label: heading(name) })),
+          ]}
+          onChange={(from) => onChange({ ...step, from })}
+        />
+      );
+      const filterName = step.filter
+        ? (env.filters.find((one) => one.name === step.filter)?.label ?? heading(step.filter))
+        : "a filter";
+      const fromName = step.from ? heading(step.from).toLowerCase() : "what was clicked";
       return card(
         "Filter the page",
         <>
-          <SelectField
-            name={`${id}-filter`}
-            label="Filter"
-            hint={
-              env.filters.length === 0
-                ? "The page has no filters yet. Add Search and filter to it."
-                : ""
-            }
-            value={step.filter}
-            options={[
-              { value: "", label: "Choose a filter" },
-              ...env.filters.map((one) => ({
-                value: one.name,
-                label: one.label ?? heading(one.name),
-              })),
-            ]}
-            onChange={(filter) => onChange({ ...step, filter })}
-          />
-          <SelectField
-            name={`${id}-from`}
-            label="To the value of"
-            value={step.from}
-            options={[
-              { value: "", label: "Choose what was clicked" },
-              ...(step.from && !groups.includes(step.from)
-                ? [{ value: step.from, label: heading(step.from) }]
-                : []),
-              ...groups.map((name) => ({ value: name, label: heading(name) })),
-            ]}
-            onChange={(from) => onChange({ ...step, from })}
-          />
+          {filterField}
+          {fromField}
         </>,
+        // "Set [Clinic] to the clicked [clinic]": the field chip opens the filters, the value chip what was clicked.
+        <span className="inline-flex flex-wrap items-center gap-1.5">
+          <span>Set</span>
+          <ChipEditor title="Filter" chip={filterName} label={`Change the filter ${filterName}`}>
+            {filterField}
+          </ChipEditor>
+          <span>to the clicked</span>
+          <ChipEditor
+            title="Clicked value"
+            chip={fromName}
+            label={`Change what was clicked: ${fromName}`}
+          >
+            {fromField}
+          </ChipEditor>
+        </span>,
       );
     }
     case "rows":
@@ -892,16 +950,17 @@ function confirmFields(ctx: ActionContext) {
  */
 function sentenceOf(
   step: Step,
-  parts: { title: string; body: ReactNode },
+  parts: { title: string; body: ReactNode; pieces?: ReactNode },
   summary: string,
   n: number,
 ): { sentence: ReactNode; more: boolean } {
+  // A step written as chips, each opening its own small editor, is its pieces and has no card to open.
+  if (parts.pieces) return { sentence: parts.pieces, more: false };
   switch (step.do) {
     case "update":
       return { sentence: parts.body, more: false };
     case "flow":
     case "script":
-    case "open":
     case "delete":
       return {
         sentence: (
@@ -909,6 +968,17 @@ function sentenceOf(
             {parts.body}
           </ChipEditor>
         ),
+        more: false,
+      };
+    // A step whose title already says it gets a line that says something else, not the title again.
+    case "close":
+      return {
+        sentence: <span>Closes the sheet or dialog this page is open in</span>,
+        more: false,
+      };
+    case "rows":
+      return {
+        sentence: <span>Opens them in a side sheet. It only reads.</span>,
         more: false,
       };
     default:

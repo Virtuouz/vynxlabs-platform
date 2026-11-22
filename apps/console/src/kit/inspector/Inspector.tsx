@@ -31,6 +31,7 @@ import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from "re
 import { outlineIcon } from "../../screens/builder/widgetIcons.ts";
 import { formatCombo } from "../keys.ts";
 import { ActionsTab, RulesSummary } from "./ActionsTab.tsx";
+import { useOpenAction } from "./widgets/subView.ts";
 import "./widgets/registerAll.ts";
 import { type Env, SettingRow } from "./controls.tsx";
 import {
@@ -58,6 +59,7 @@ import {
   type ScriptChoice,
   type TabFate,
   tabsOf,
+  widgetName,
 } from "./model.ts";
 import { RulesTab } from "./RulesTab.tsx";
 
@@ -134,7 +136,7 @@ export function Inspector(props: InspectorProps) {
   const prefix = useId();
   const menu = useRef<HTMLSpanElement>(null);
   const cameBack = useRef(false);
-  const name = widget.title || definition?.title || widget.id;
+  const name = widgetName(widget, definition);
 
   // Coming back from Layout, focus goes back to the ⋯ it was opened from.
   useEffect(() => {
@@ -359,6 +361,8 @@ function TabBody({
   rowRules: InspectorProps["rowRules"];
   onOpenRules: () => void;
 }) {
+  // A row action or button open in the drawer is the whole Actions tab: nothing else of it shows.
+  const subViewOpen = useOpenAction(env.widget.id) !== undefined;
   if (tab === "rules") return <RulesTab env={env} rowRules={rowRules} />;
   const { definition } = env;
   if (tab === "actions" && drawersFor(definition.type, "actions").length === 0) {
@@ -478,7 +482,9 @@ function TabBody({
       {blocks.map((block) => (
         <Fragment key={block.key}>{block.node}</Fragment>
       ))}
-      {tab === "actions" ? <RulesSummary env={env} onOpenRules={onOpenRules} /> : null}
+      {tab === "actions" && !subViewOpen ? (
+        <RulesSummary env={env} onOpenRules={onOpenRules} />
+      ) : null}
       {more.length > 0 ? (
         <Details
           summary={

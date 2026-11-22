@@ -3,14 +3,12 @@
  * words. They are written where they appear (the on-page editor, with a small toolbar); the
  * Markdown row opens the documentation's editor in a large dialog, for steps, tabs and folds.
  */
-import { Button, Dialog, DrawerGroup, DrawerRow, Markdown, TilePicker } from "@volvel/ui";
+import { Button, Dialog, DrawerRow, Markdown, TilePicker } from "@volvel/ui";
 import { Hash, Pencil } from "lucide-react";
 import { useState } from "react";
 import { MarkdownEditor } from "../../markdown/MarkdownEditor.tsx";
 import { useEditOnPage } from "../../markdown/onThePage.ts";
-import { withText } from "../model.ts";
-import { TextRow } from "./sectionDrawer.tsx";
-import { type Env, setConfig } from "./shared.tsx";
+import { type Env, Group, setConfig } from "./recordShared.tsx";
 
 export type TextLook = "plain" | "note" | "warning" | "tip";
 
@@ -20,6 +18,12 @@ const LOOKS: { value: TextLook; label: string; face: string }[] = [
   { value: "warning", label: "Warning", face: "border border-line border-l-4 border-l-attention" },
   { value: "tip", label: "Tip", face: "border border-line border-l-4 border-l-success" },
 ];
+
+/** One callout style drawn as the callout: for a tile. */
+export function CalloutPreview({ look }: { look: string }) {
+  const face = LOOKS.find((one) => one.value === look)?.face ?? LOOKS[0]?.face;
+  return <span aria-hidden="true" className={`block h-8 w-full rounded-inner ${face}`} />;
+}
 
 /** The callout styles, each drawn as the callout. */
 export function LookTiles({
@@ -55,7 +59,7 @@ export function TextContentSection({ env }: { env: Env }) {
   ) as TextLook;
   return (
     <>
-      <DrawerGroup label="Style">
+      <Group label="Style">
         <div className="px-3 py-3">
           <LookTiles
             value={look}
@@ -64,23 +68,11 @@ export function TextContentSection({ env }: { env: Env }) {
             }
           />
         </div>
-      </DrawerGroup>
-      <DrawerGroup
+      </Group>
+      <Group
         label="Text"
         note="Text is written where it appears, with a small toolbar. The style replaces typing :::alert by hand."
       >
-        <TextRow
-          env={env}
-          label="Heading"
-          value={env.widget.title ?? ""}
-          onChange={(next) =>
-            env.write(
-              withText(env.widget, "title", next),
-              "changing the heading",
-              `text:${env.widget.id}:title`,
-            )
-          }
-        />
         <div className="flex flex-col gap-3 px-3 py-3">
           {text.trim() ? (
             <div className="max-h-40 overflow-hidden text-body-sm text-ink">
@@ -109,7 +101,7 @@ export function TextContentSection({ env }: { env: Env }) {
           value="For steps, tabs and folds"
           onClick={() => setLarge(true)}
         />
-      </DrawerGroup>
+      </Group>
       <Dialog
         open={large}
         onClose={() => setLarge(false)}

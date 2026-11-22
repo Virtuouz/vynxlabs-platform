@@ -9,7 +9,6 @@
 import type { Action } from "@volvel/manifest";
 import {
   DrawerBlock,
-  DrawerGroup,
   DrawerRow,
   type Position,
   PositionPicker,
@@ -19,7 +18,15 @@ import {
 } from "@volvel/ui";
 import { Type } from "lucide-react";
 import { ActionEditor } from "../actionControls.tsx";
-import { ButtonPreview, type Env, IconRow, iconOf, setConfig, TONE_WORDS } from "./shared.tsx";
+import {
+  ButtonPreview,
+  type Env,
+  Group,
+  IconRow,
+  iconOf,
+  setConfig,
+  TONE_WORDS,
+} from "./recordShared.tsx";
 
 const TONES = ["primary", "default", "quiet", "danger"] as const;
 type Tone = (typeof TONES)[number];
@@ -39,7 +46,7 @@ export function ButtonLabelGroup({
   onIcon: (next: string | undefined) => void;
 }) {
   return (
-    <DrawerGroup label="Label">
+    <Group label="Label">
       <DrawerRow
         label="Says"
         icon={Type}
@@ -58,7 +65,7 @@ export function ButtonLabelGroup({
         }
       />
       <IconRow value={icon} onChange={onIcon} />
-    </DrawerGroup>
+    </Group>
   );
 }
 
@@ -103,7 +110,7 @@ export function ButtonDisplaySection({ env }: { env: Env }) {
         onLabel={(next) => setConfig(env, "label", next, "what it says", true)}
         onIcon={(next) => setConfig(env, "icon", next, "its icon")}
       />
-      <DrawerGroup label="Style" note="Actions and Rules: the shared tabs.">
+      <Group label="Style" note="Actions and Rules: the shared tabs.">
         <DrawerBlock>
           <ToneTiles
             tone={typeof env.config.tone === "string" ? env.config.tone : undefined}
@@ -117,8 +124,8 @@ export function ButtonDisplaySection({ env }: { env: Env }) {
           checked={env.config.full === true}
           onChange={(next) => setConfig(env, "full", next ? true : undefined, "full width")}
         />
-      </DrawerGroup>
-      <DrawerGroup label="Position" note="Where the button sits when its cell is bigger than it.">
+      </Group>
+      <Group label="Position" note="Where the button sits when its cell is bigger than it.">
         <DrawerBlock label="Where it sits in its place">
           <PositionPicker
             label="Where it sits in its place"
@@ -126,7 +133,7 @@ export function ButtonDisplaySection({ env }: { env: Env }) {
             onChange={(next) => setConfig(env, "place", next, "its position")}
           />
         </DrawerBlock>
-      </DrawerGroup>
+      </Group>
     </>
   );
 }

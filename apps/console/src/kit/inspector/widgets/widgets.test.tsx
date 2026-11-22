@@ -345,11 +345,6 @@ test("a section lists what it holds, selects on a click, and writes its look", (
   expect(mine(seen).config.look).toBe("card");
   fireEvent.click(screen.getByRole("switch", { name: "Can be collapsed" }));
   expect(mine(seen).config.folds).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: /Caption/ }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Caption" }), {
-    target: { value: "For the range" },
-  });
-  expect(mine(seen).subtitle).toBe("For the range");
 });
 
 test("tabs say what each holds; its chip sets which opens first; new tabs are added", () => {

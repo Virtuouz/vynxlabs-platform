@@ -6,7 +6,6 @@
 import { childrenOf, type PageWidget } from "@volvel/manifest";
 import {
   DrawerBlock,
-  DrawerGroup,
   DrawerRow,
   SegmentedControl,
   type SortableItem,
@@ -16,7 +15,7 @@ import {
 } from "@volvel/ui";
 import { Type } from "lucide-react";
 import { heading, withText } from "../model.ts";
-import { type Env, LabelledBlock, reorderBy, setConfig } from "./shared.tsx";
+import { type Env, Group, LabelledBlock, reorderBy, setConfig } from "./recordShared.tsx";
 
 /** "core/stat" is a "Stat". */
 export const kindWords = (type: string): string => heading(type.split("/")[1] ?? type);
@@ -69,29 +68,9 @@ export function SectionDisplaySection({
     label: one.title || kindWords(one.type),
     sub: kindWords(one.type),
   }));
-  const set = (field: "title" | "subtitle", value: string) =>
-    env.write(
-      withText(env.widget, field, value),
-      `changing the ${field}`,
-      `text:${env.widget.id}:${field}`,
-    );
   return (
     <>
-      <DrawerGroup label="Heading">
-        <TextRow
-          env={env}
-          label="Title"
-          value={env.widget.title ?? ""}
-          onChange={(next) => set("title", next)}
-        />
-        <TextRow
-          env={env}
-          label="Caption"
-          value={env.widget.subtitle ?? ""}
-          onChange={(next) => set("subtitle", next)}
-        />
-      </DrawerGroup>
-      <DrawerGroup
+      <Group
         label="Holds"
         note="Drag widgets on the page into the section, or out of it. Sections hold widgets, not other sections."
       >
@@ -112,8 +91,8 @@ export function SectionDisplaySection({
             <p className="m-0 text-body-sm text-ink-muted">Nothing in it yet.</p>
           </DrawerBlock>
         )}
-      </DrawerGroup>
-      <DrawerGroup label="Look">
+      </Group>
+      <Group label="Look">
         <LabelledBlock label="Style">
           <SegmentedControl<"plain" | "card">
             label="Style"
@@ -130,40 +109,7 @@ export function SectionDisplaySection({
           checked={env.config.folds === true}
           onChange={(next) => setConfig(env, "folds", next ? true : undefined, "folding")}
         />
-      </DrawerGroup>
+      </Group>
     </>
-  );
-}
-
-/** A row that reads its text and edits it in a small editor. */
-export function TextRow({
-  env,
-  label,
-  value,
-  onChange,
-}: {
-  env: Env;
-  label: string;
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <DrawerRow
-      label={label}
-      icon={Type}
-      value={value || undefined}
-      editorTitle={label}
-      editorFooter={false}
-      editor={
-        <TextField
-          name={`${env.widget.id}-${label.toLowerCase()}`}
-          label={label}
-          required={false}
-          value={value}
-          maxLength={120}
-          onChange={onChange}
-        />
-      }
-    />
   );
 }

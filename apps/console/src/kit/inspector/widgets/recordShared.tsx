@@ -3,7 +3,7 @@
  * the "‹ Back" head of a sub-view, a labelled block, the tones a button is drawn in, and the
  * icons a button may carry.
  */
-import { type DrawerIcon, DrawerRow } from "@volvel/ui";
+import { DrawerGroup, type DrawerIcon, DrawerRow } from "@volvel/ui";
 import {
   Archive,
   ArrowRight,
@@ -24,7 +24,7 @@ import {
   Trash2,
   Zap,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { createContext, type ReactNode, useContext } from "react";
 import type { Env } from "../controls.tsx";
 import { withConfig } from "../model.ts";
 
@@ -107,7 +107,7 @@ export function ButtonPreview({
       aria-hidden="true"
       className={`inline-flex min-h-7 max-w-full items-center justify-center gap-1 rounded-control px-2 py-0.5 text-center text-meta leading-tight font-medium ${face}`}
     >
-      {Icon ? <Icon size={12} /> : null}
+      {Icon ? <Icon size={14} /> : null}
       <span className="line-clamp-2 break-words">{label}</span>
     </span>
   );
@@ -217,4 +217,50 @@ export function reorderBy<T extends { id: string }>(
   const next = ids.map((id) => byId.get(id)).filter((one): one is T => one !== undefined);
   for (const one of list) if (!ids.includes(one.id)) next.push(one);
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// Inside the shell's own group
+
+const Flat = createContext<{ n: number } | undefined>(undefined);
+
+/**
+ * The drawer shell draws each registered piece inside a group of its own. A section is written
+ * with `Group`s; under `FlatSection` a `Group` draws only its rows (with a quiet heading for
+ * every group after the first, whose heading is the shell's), so a section is not boxed twice.
+ */
+export function FlatSection({ children }: { children: ReactNode }) {
+  return <Flat.Provider value={{ n: 0 }}>{children}</Flat.Provider>;
+}
+
+export function Group({
+  label,
+  note,
+  aside,
+  children,
+}: {
+  label: string;
+  note?: ReactNode;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
+  const flat = useContext(Flat);
+  if (!flat) {
+    return (
+      <DrawerGroup label={label} {...(note ? { note } : {})} {...(aside ? { aside } : {})}>
+        {children}
+      </DrawerGroup>
+    );
+  }
+  const first = flat.n === 0;
+  flat.n += 1;
+  return (
+    <>
+      {first ? null : (
+        <p className="m-0 px-3 pt-3 text-label font-semibold text-ink-muted uppercase">{label}</p>
+      )}
+      {children}
+      {note ? <p className="m-0 px-3 py-2 text-meta text-ink-muted">{note}</p> : null}
+    </>
+  );
 }

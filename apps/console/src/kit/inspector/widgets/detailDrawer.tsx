@@ -3,17 +3,10 @@
  * is the fields in sections and how they are laid out. Actions and Rules are the shared tabs.
  */
 import type { DataInput, WidgetSource } from "@volvel/manifest";
-import {
-  DrawerBlock,
-  DrawerGroup,
-  RadioCards,
-  SegmentedControl,
-  SelectField,
-  ToggleRow,
-} from "@volvel/ui";
+import { DrawerBlock, RadioCards, SegmentedControl, SelectField, ToggleRow } from "@volvel/ui";
 import { heading, withInput } from "../model.ts";
 import { FieldsList } from "./fieldsList.tsx";
-import { type Env, LabelledBlock, setConfig } from "./shared.tsx";
+import { type Env, Group, LabelledBlock, setConfig } from "./recordShared.tsx";
 
 type Where = "this" | "selected" | "own";
 
@@ -63,7 +56,7 @@ export function DetailDataSection({ env }: { env: Env }) {
 
   const ownTable = own ? env.catalog.tables.find((one) => one.name === own.table) : undefined;
   return (
-    <DrawerGroup label="Shows" note="No record IDs to wire up: pick where the record comes from.">
+    <Group label="Shows" note="No record IDs to wire up: pick where the record comes from.">
       <DrawerBlock>
         <RadioCards<Where>
           label="Where the record comes from"
@@ -136,7 +129,7 @@ export function DetailDataSection({ env }: { env: Env }) {
           </div>
         ) : null}
       </DrawerBlock>
-    </DrawerGroup>
+    </Group>
   );
 }
 
@@ -145,7 +138,7 @@ export function DetailDisplaySection({ env }: { env: Env }) {
   return (
     <>
       <FieldsList env={env} kind="detail" />
-      <DrawerGroup label="Look">
+      <Group label="Look">
         <LabelledBlock label="Fields across">
           <SegmentedControl<"1" | "2" | "3">
             label="Fields across"
@@ -164,7 +157,7 @@ export function DetailDisplaySection({ env }: { env: Env }) {
           checked={env.config.edit === true}
           onChange={(next) => setConfig(env, "edit", next ? true : undefined, "editing in place")}
         />
-      </DrawerGroup>
+      </Group>
     </>
   );
 }

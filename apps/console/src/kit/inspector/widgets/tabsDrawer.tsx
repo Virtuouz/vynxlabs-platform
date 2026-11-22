@@ -7,7 +7,6 @@ import { childrenOf } from "@volvel/manifest";
 import {
   Button,
   DrawerBlock,
-  DrawerGroup,
   SegmentedControl,
   SelectField,
   type SortableItem,
@@ -17,7 +16,15 @@ import {
 } from "@volvel/ui";
 import { useState } from "react";
 import { type TabFate, tabsFor, uniqueName } from "../model.ts";
-import { BackHead, dashedFace, type Env, LabelledBlock, reorderBy, setConfig } from "./shared.tsx";
+import {
+  BackHead,
+  dashedFace,
+  type Env,
+  Group,
+  LabelledBlock,
+  reorderBy,
+  setConfig,
+} from "./recordShared.tsx";
 
 const MAX_TABS = 8;
 
@@ -98,7 +105,7 @@ export function TabsDisplaySection({ env }: { env: Env }) {
   }));
   return (
     <>
-      <DrawerGroup
+      <Group
         label="Tabs"
         note="Click a tab on the page to fill it. Rename here or by double-clicking it."
       >
@@ -116,8 +123,8 @@ export function TabsDisplaySection({ env }: { env: Env }) {
             </button>
           </div>
         ) : null}
-      </DrawerGroup>
-      <DrawerGroup label="Look">
+      </Group>
+      <Group label="Look">
         <LabelledBlock label="Style">
           <SegmentedControl<"underline" | "pills">
             label="Style"
@@ -135,7 +142,7 @@ export function TabsDisplaySection({ env }: { env: Env }) {
           checked={env.config.remember === true}
           onChange={(next) => setConfig(env, "remember", next ? true : undefined, "remembering")}
         />
-      </DrawerGroup>
+      </Group>
     </>
   );
 }
@@ -200,7 +207,7 @@ function TabView({
   return (
     <div className="flex flex-col gap-4">
       <BackHead onBack={onBack} title={tab.title} kind={`Tab · ${heldWords(count)}`} />
-      <DrawerGroup label="Tab">
+      <Group label="Tab">
         <DrawerBlock>
           <TextField
             name={`${env.widget.id}-${tab.id}-title`}
@@ -217,7 +224,7 @@ function TabView({
           checked={isFirst}
           onChange={(next) => next && onFirst()}
         />
-      </DrawerGroup>
+      </Group>
       {last ? (
         <p className="m-0 text-meta text-ink-muted">Tabs keeps at least one tab.</p>
       ) : count === 0 ? (
@@ -227,7 +234,7 @@ function TabView({
           </Button>
         </div>
       ) : (
-        <DrawerGroup
+        <Group
           label="Remove"
           note={`${tab.title} holds ${heldWords(count).toLowerCase()}. Say where they go.`}
         >
@@ -248,7 +255,7 @@ function TabView({
               </Button>
             </div>
           </DrawerBlock>
-        </DrawerGroup>
+        </Group>
       )}
     </div>
   );

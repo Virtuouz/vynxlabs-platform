@@ -4,10 +4,10 @@
  * Actions tab's; "After saving" edits only the closing and the notice at the end of them.
  */
 import type { Action, Step } from "@volvel/manifest";
-import { DrawerGroup, DrawerRow, TextField, ToggleRow } from "@volvel/ui";
+import { DrawerRow, TextField, ToggleRow } from "@volvel/ui";
 import { Check, MousePointerClick } from "lucide-react";
 import { FieldsList } from "./fieldsList.tsx";
-import { type Env, setConfig } from "./shared.tsx";
+import { type Env, Group, setConfig } from "./recordShared.tsx";
 
 const NOTE =
   "Required and checks come from the table. Click a field for its label, help text and when to show it.";
@@ -50,7 +50,7 @@ export function FormDisplaySection({ env }: { env: Env }) {
   return (
     <>
       <FieldsList env={env} kind="form" note={() => NOTE} />
-      <DrawerGroup label="Buttons">
+      <Group label="Buttons">
         <DrawerRow
           label="Submit says"
           icon={MousePointerClick}
@@ -93,7 +93,7 @@ export function FormDisplaySection({ env }: { env: Env }) {
             </div>
           }
         />
-      </DrawerGroup>
+      </Group>
     </>
   );
 }

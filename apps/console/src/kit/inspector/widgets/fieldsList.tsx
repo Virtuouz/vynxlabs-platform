@@ -12,7 +12,6 @@ import {
   CheckboxField,
   DrawerBlock,
   DrawerEditor,
-  DrawerGroup,
   NumberFormatRow,
   type SortableItem,
   SortableRows,
@@ -22,7 +21,7 @@ import { Layers } from "lucide-react";
 import { useState } from "react";
 import { columnOptions } from "../controls.tsx";
 import { heading, visualOf } from "../model.ts";
-import { BackHead, dashedFace, type Env, setConfig } from "./shared.tsx";
+import { BackHead, dashedFace, type Env, Group, setConfig } from "./recordShared.tsx";
 
 export interface FieldRow {
   column: string;
@@ -168,7 +167,7 @@ export function FieldsList({
           title={open.label || heading(open.column)}
           kind={`${kind === "form" ? "Form field" : "Field"} · ${type}`}
         />
-        <DrawerGroup label="Field">
+        <Group label="Field">
           <DrawerBlock>
             <TextField
               name={`${env.widget.id}-field-label`}
@@ -214,7 +213,7 @@ export function FieldsList({
               />
             )}
           </DrawerBlock>
-        </DrawerGroup>
+        </Group>
         <div>
           <Button
             size="small"
@@ -237,7 +236,7 @@ export function FieldsList({
     return (
       <div className="flex flex-col gap-4">
         <BackHead onBack={() => setEditing(undefined)} title={sectionOpen} kind="Section" />
-        <DrawerGroup label="Section">
+        <Group label="Section">
           <DrawerBlock>
             <TextField
               name={`${env.widget.id}-section-name`}
@@ -252,7 +251,7 @@ export function FieldsList({
               }}
             />
           </DrawerBlock>
-        </DrawerGroup>
+        </Group>
         <div>
           <Button
             size="small"
@@ -286,7 +285,7 @@ export function FieldsList({
   };
 
   return (
-    <DrawerGroup
+    <Group
       label="Fields"
       note={
         note
@@ -362,7 +361,7 @@ export function FieldsList({
           </div>
         </DrawerEditor>
       </div>
-    </DrawerGroup>
+    </Group>
   );
 }
 

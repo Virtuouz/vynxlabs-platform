@@ -7,7 +7,6 @@ import type { Action, Condition } from "@volvel/manifest";
 import {
   Button,
   DrawerBlock,
-  DrawerGroup,
   DrawerPanel,
   DrawerRow,
   DrawerTabs,
@@ -28,11 +27,12 @@ import {
   BackHead,
   dashedFace,
   type Env,
+  Group,
   LabelledBlock,
   reorderBy,
   setConfig,
   TONE_WORDS,
-} from "./shared.tsx";
+} from "./recordShared.tsx";
 
 export interface GroupButton {
   id: string;
@@ -127,7 +127,7 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
                   replace(icon ? { ...rest, icon } : rest, "a button\u2019s icon");
                 }}
               />
-              <DrawerGroup label="Style">
+              <Group label="Style">
                 <DrawerBlock>
                   <ToneTiles
                     tone={current.tone}
@@ -136,7 +136,7 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
                     onChange={(tone) => patch({ tone })}
                   />
                 </DrawerBlock>
-              </DrawerGroup>
+              </Group>
             </>
           ) : null}
           {tab === "actions" ? (
@@ -157,7 +157,7 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
           ) : null}
           {tab === "rules" ? (
             // STAND-IN: the shared Rules tab (B2) replaces this.
-            <DrawerGroup label="Can be pressed when">
+            <Group label="Can be pressed when">
               <DrawerBlock>
                 <ConditionsEditor
                   id={`${prefix}-when`}
@@ -170,7 +170,7 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
                   }}
                 />
               </DrawerBlock>
-            </DrawerGroup>
+            </Group>
           ) : null}
         </DrawerPanel>
         {buttons.length > 1 ? (
@@ -214,7 +214,7 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
   const place = (env.config.place as Position | undefined) ?? "middle-left";
   return (
     <>
-      <DrawerGroup
+      <Group
         label="Buttons"
         note="Each button opens its own Display, Actions and Rules. Drag to reorder."
       >
@@ -235,8 +235,8 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
             </button>
           </div>
         ) : null}
-      </DrawerGroup>
-      <DrawerGroup label="Look">
+      </Group>
+      <Group label="Look">
         <LabelledBlock label="Line up">
           <SegmentedControl<"left" | "right" | "spread">
             label="Line up"
@@ -275,7 +275,7 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
             onChange={(next) => setConfig(env, "place", next, "its position")}
           />
         </DrawerBlock>
-      </DrawerGroup>
+      </Group>
     </>
   );
 }

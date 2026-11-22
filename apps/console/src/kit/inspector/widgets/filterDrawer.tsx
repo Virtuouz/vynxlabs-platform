@@ -17,7 +17,6 @@ import {
   CheckboxField,
   DrawerBlock,
   DrawerEditor,
-  DrawerGroup,
   SegmentedControl,
   SelectField,
   type SortableItem,
@@ -40,8 +39,16 @@ import {
   withConfig,
   withSystemColumns,
 } from "../model.ts";
+import {
+  BackHead,
+  dashedFace,
+  type Env,
+  Group,
+  LabelledBlock,
+  reorderBy,
+  setConfig,
+} from "./recordShared.tsx";
 import { kindWords } from "./sectionDrawer.tsx";
-import { BackHead, dashedFace, type Env, LabelledBlock, reorderBy, setConfig } from "./shared.tsx";
 
 const KIND_WORDS: Record<PageFilterType, string> = {
   search: "Search",
@@ -245,7 +252,7 @@ export function FilterDisplaySection({ env }: { env: Env }) {
   }));
   return (
     <>
-      <DrawerGroup
+      <Group
         label="Filters"
         note="Widgets choose which of these they follow, on their own Data tab."
       >
@@ -315,8 +322,8 @@ export function FilterDisplaySection({ env }: { env: Env }) {
             </ul>
           </DrawerEditor>
         </div>
-      </DrawerGroup>
-      <DrawerGroup label="Look">
+      </Group>
+      <Group label="Look">
         <LabelledBlock label="Filters sit">
           <SegmentedControl<"row" | "button">
             label="Filters sit"
@@ -328,7 +335,7 @@ export function FilterDisplaySection({ env }: { env: Env }) {
             onChange={(next) => setConfig(env, "sit", next, "where the filters sit")}
           />
         </LabelledBlock>
-      </DrawerGroup>
+      </Group>
     </>
   );
 }
@@ -360,7 +367,7 @@ function FilterEditor({
   return (
     <div className="flex flex-col gap-4">
       <BackHead onBack={onBack} title={`Filter · ${name}`} kind={KIND_WORDS[filter.type]} />
-      <DrawerGroup label="Filter">
+      <Group label="Filter">
         <DrawerBlock>
           <TextField
             name={`${id}-label`}
@@ -455,8 +462,8 @@ function FilterEditor({
             </>
           )}
         </DrawerBlock>
-      </DrawerGroup>
-      <DrawerGroup
+      </Group>
+      <Group
         label="Narrows"
         note="One place to see every widget a filter affects, instead of checking each widget."
       >
@@ -483,7 +490,7 @@ function FilterEditor({
             </ul>
           )}
         </DrawerBlock>
-      </DrawerGroup>
+      </Group>
       <div>
         <Button size="small" variant="quiet" disabled={last} onClick={remove}>
           Remove the filter

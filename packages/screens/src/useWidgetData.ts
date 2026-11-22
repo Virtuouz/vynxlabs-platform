@@ -36,6 +36,7 @@ export function useWidgetData({
   filterValues,
   refreshKey,
   emptyMessage,
+  chosen,
 }: {
   client: PageDataClient;
   widget: PageWidget;
@@ -45,6 +46,8 @@ export function useWidgetData({
   refreshKey: number;
   /** What a read that found nothing says. */
   emptyMessage: string;
+  /** The rows chosen in the tables and lists this widget follows (`{ selected }`), by their widget id. */
+  chosen?: Readonly<Record<string, string>> | undefined;
 }): Reading {
   const [attempt, setAttempt] = useState(0);
   const [inputs, setInputs] = useState<Record<string, WireData>>();
@@ -64,6 +67,7 @@ export function useWidgetData({
     config?.trendBy,
     filterValues,
     refreshKey,
+    chosen,
     attempt,
   ]);
 
@@ -74,18 +78,23 @@ export function useWidgetData({
     setLoading(true);
     setFailure(undefined);
     setMore({ loading: false });
-    client.read(widget.id, filterValues, { signal: controller.signal }).then(
-      (read) => {
-        if (controller.signal.aborted) return;
-        setInputs(read.inputs);
-        setLoading(false);
-      },
-      (error: unknown) => {
-        if (controller.signal.aborted) return;
-        setFailure(sentence(error));
-        setLoading(false);
-      },
-    );
+    client
+      .read(widget.id, filterValues, {
+        signal: controller.signal,
+        ...(chosen ? { chosen } : {}),
+      })
+      .then(
+        (read) => {
+          if (controller.signal.aborted) return;
+          setInputs(read.inputs);
+          setLoading(false);
+        },
+        (error: unknown) => {
+          if (controller.signal.aborted) return;
+          setFailure(sentence(error));
+          setLoading(false);
+        },
+      );
     return () => {
       controller.abort();
       paging.current?.abort();
@@ -99,42 +108,49 @@ export function useWidgetData({
       const controller = new AbortController();
       paging.current = controller;
       setMore({ loading: true, input });
-      client.read(widget.id, filterValues, { input, cursor, signal: controller.signal }).then(
-        (read) => {
-          if (controller.signal.aborted) return;
-          const next = read.inputs[input];
-          setMore({ loading: false });
-          if (next?.shape !== "rows") return;
-          setInputs((before) => {
-            const held = before?.[input];
-            if (held?.shape !== "rows") return before;
-            const { next: after, ...fresh } = next;
-            const names = { ...held.names };
-            for (const [column, found] of Object.entries(next.names ?? {})) {
-              names[column] = { ...names[column], ...found };
-            }
-            const { next: _before, ...kept } = held;
-            return {
-              ...before,
-              [input]: {
-                ...kept,
-                ...fresh,
-                rows: [...held.rows, ...next.rows],
-                names,
-                ...(after !== undefined ? { next: after } : {}),
-              },
-            };
-          });
-        },
-        (error: unknown) => {
-          if (controller.signal.aborted) return;
-          setMore({
-            loading: false,
-            input,
-            error: `More could not be loaded. ${sentence(error).message}`,
-          });
-        },
-      );
+      client
+        .read(widget.id, filterValues, {
+          input,
+          cursor,
+          signal: controller.signal,
+          ...(chosen ? { chosen } : {}),
+        })
+        .then(
+          (read) => {
+            if (controller.signal.aborted) return;
+            const next = read.inputs[input];
+            setMore({ loading: false });
+            if (next?.shape !== "rows") return;
+            setInputs((before) => {
+              const held = before?.[input];
+              if (held?.shape !== "rows") return before;
+              const { next: after, ...fresh } = next;
+              const names = { ...held.names };
+              for (const [column, found] of Object.entries(next.names ?? {})) {
+                names[column] = { ...names[column], ...found };
+              }
+              const { next: _before, ...kept } = held;
+              return {
+                ...before,
+                [input]: {
+                  ...kept,
+                  ...fresh,
+                  rows: [...held.rows, ...next.rows],
+                  names,
+                  ...(after !== undefined ? { next: after } : {}),
+                },
+              };
+            });
+          },
+          (error: unknown) => {
+            if (controller.signal.aborted) return;
+            setMore({
+              loading: false,
+              input,
+              error: `More could not be loaded. ${sentence(error).message}`,
+            });
+          },
+        );
     },
     [client, widget.id, asked],
   );

@@ -70,6 +70,9 @@ function clientFor(path: string, page: string, record?: string): PageDataClient 
       query.set("filters", JSON.stringify(filters));
       if (options.input) query.set("input", options.input);
       if (options.cursor) query.set("cursor", options.cursor);
+      if (options.chosen && Object.keys(options.chosen).length > 0) {
+        query.set("chosen", JSON.stringify(options.chosen));
+      }
       try {
         return await api.get<{ inputs: Record<string, WireData> }>(
           `${workspaceApi()}/widget-data?${query}`,

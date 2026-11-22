@@ -46,6 +46,9 @@ export function pageClient(
       if (Object.keys(filters).length > 0) params.set("filters", JSON.stringify(filters));
       if (options.input) params.set("input", options.input);
       if (options.cursor) params.set("cursor", options.cursor);
+      if (options.chosen && Object.keys(options.chosen).length > 0) {
+        params.set("chosen", JSON.stringify(options.chosen));
+      }
       // A widget just added or copied is on the page before the draft that holds it is
       // saved (the editor saves 700 ms after the last change), so its first read may find
       // no such widget. While building, that is waited out, not shown as a failure.

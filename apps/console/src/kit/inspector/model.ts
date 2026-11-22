@@ -296,11 +296,7 @@ export function searchColumns(widget: PageWidget, table: string, catalog: Catalo
     ? (config.columns as { column?: unknown; hidden?: boolean }[])
         .filter((one) => one.hidden !== true)
         .map((one) => one.column)
-    : [
-        config.primary,
-        config.secondary,
-        ...(Array.isArray(config.meta) ? (config.meta as unknown[]) : []),
-      ];
+    : [config.title, config.subtitle, config.right];
   const picked = [
     ...new Set(shown.filter((one): one is string => typeof one === "string" && text.has(one))),
   ].slice(0, MAX_SEARCH_COLUMNS);

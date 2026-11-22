@@ -148,6 +148,11 @@ interface GridContext {
   filterValues: FilterValues;
   refreshKey: number;
   emptyMessage: string;
+  /** The row last chosen in each table or list that something on the page follows, by widget id. */
+  chosen: Readonly<Record<string, string>>;
+  /** The tables and lists some widget follows (`{ selected: id }`): a click on a row chooses it. */
+  followed: ReadonlySet<string>;
+  choose(widget: string, record: string): void;
   editing: Editing | undefined;
   onEvent: PageViewProps["onEvent"];
   run(request: Request): Promise<ActOutcome>;
@@ -289,13 +294,27 @@ function Cell({
         groupBy.length < (declared.breakdowns?.min ?? 0)
       );
     });
+  // The rows chosen in the tables and lists this widget's sources follow (`{ selected }`).
+  const follows = Object.values(widget.data ?? {}).flatMap((given) =>
+    "selected" in given.source ? [given.source.selected] : [],
+  );
+  const chosenAsked = Object.fromEntries(
+    follows.flatMap((id) => (ctx.chosen[id] !== undefined ? [[id, ctx.chosen[id]]] : [])),
+  ) as Record<string, string>;
   const reading = useWidgetData({
     client,
     widget,
     reads: definition !== undefined && Object.keys(definition.data).length > 0 && !waiting,
     filterValues,
     refreshKey,
-    emptyMessage,
+    // A table says what it says when empty, in the words its maker chose.
+    emptyMessage:
+      widget.type === "core/table" &&
+      typeof widget.config?.empty === "string" &&
+      widget.config.empty
+        ? widget.config.empty
+        : emptyMessage,
+    chosen: Object.keys(chosenAsked).length > 0 ? chosenAsked : undefined,
   });
   const building = editing !== undefined;
   // A Section the reader folded is folded as they left it, whatever the page says it starts as.
@@ -321,6 +340,11 @@ function Cell({
     }
     // Events are for a page that is read, and only those the definition declares.
     if (building || !definition || !(event in definition.events)) return;
+    // The row clicked in a table or list that another widget follows is the one chosen in it.
+    if (event === "rowClick" && ctx.followed.has(widget.id)) {
+      const chosenId = recordOf(payload);
+      if (chosenId) ctx.choose(widget.id, chosenId);
+    }
     if (widget.on?.[event]) {
       const id = recordOf(payload);
       void run({
@@ -363,7 +387,13 @@ function Cell({
     }
   }, [seen, record]);
   // What views read beyond the contract's props: how to close the sheet they are in, and which row is open.
-  const selectedRecord = overRecord && lookup(overRecord) ? overRecord : undefined;
+  const chosenHere = ctx.followed.has(widget.id) ? ctx.chosen[widget.id] : undefined;
+  const selectedRecord =
+    overRecord && lookup(overRecord)
+      ? overRecord
+      : chosenHere && lookup(chosenHere)
+        ? chosenHere
+        : undefined;
   const extras = {
     ...(onClose ? { close: onClose } : {}),
     ...(selectedRecord ? { selectedRecord } : {}),
@@ -462,13 +492,24 @@ function Cell({
                 : {
                     act: (
                       at: string,
-                      given?: { record?: string; inputs?: Readonly<Record<string, unknown>> },
+                      given?: {
+                        record?: string;
+                        records?: readonly string[];
+                        inputs?: Readonly<Record<string, unknown>>;
+                      },
                     ) =>
                       run({
                         widget,
                         at,
                         record: given?.record,
-                        row: given?.record ? lookup(given.record) : record ? thisRow : undefined,
+                        // Several rows chosen: the first stands for them in the confirmation.
+                        ...(given?.records ? { records: given.records } : {}),
+                        row:
+                          (given?.record ?? given?.records?.[0])
+                            ? lookup((given.record ?? given.records?.[0]) as string)
+                            : record
+                              ? thisRow
+                              : undefined,
                         input: groupInput,
                         inputs: given?.inputs,
                         among: amongIds(),
@@ -489,7 +530,11 @@ function Cell({
                   ? `Only when ${failing.map((one) => conditionWords(one)).join(" and ")}.`
                   : undefined;
               }}
-              listens={(event) => !building && widget.on?.[event] !== undefined}
+              listens={(event) =>
+                !building &&
+                (widget.on?.[event] !== undefined ||
+                  (event === "rowClick" && ctx.followed.has(widget.id)))
+              }
               {...(client.choices
                 ? {
                     choices: (
@@ -742,6 +787,19 @@ export function PageView({
   // Each action that ran makes every widget read again, on top of the host's own refresh.
   const [ran, setRan] = useState(0);
   const [thisRow, setThisRow] = useState<Readonly<Record<string, unknown>>>();
+  // The row last chosen in each table or list another widget follows, by widget id.
+  const [chosen, setChosen] = useState<Readonly<Record<string, string>>>({});
+  const followed = useMemo(
+    () =>
+      new Set(
+        widgets.flatMap((one) =>
+          Object.values(one.data ?? {}).flatMap((given) =>
+            "selected" in given.source ? [given.source.selected] : [],
+          ),
+        ),
+      ),
+    [widgets],
+  );
   const host: ActionsHost = {
     client,
     registry,
@@ -993,6 +1051,10 @@ export function PageView({
     filterValues,
     refreshKey: refreshKey + ran,
     emptyMessage,
+    chosen,
+    followed,
+    choose: (widget, row) =>
+      setChosen((now) => (now[widget] === row ? now : { ...now, [widget]: row })),
     editing,
     onEvent,
     run: actions.run,

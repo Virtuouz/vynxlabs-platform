@@ -12,6 +12,26 @@ const FORMAT = FORMAT_SCHEMA;
 
 const RESULT_COLUMN = { type: "string", minLength: 1, maxLength: 130 } as const;
 
+/** The tones a badge is drawn in. */
+const TONES = ["success", "attention", "danger", "neutral", "action"];
+
+/** An action drawn as a labelled button or row action, with when it may be pressed. */
+const LABELLED_ACTIONS = {
+  type: "array",
+  maxItems: 5,
+  items: {
+    type: "object",
+    properties: {
+      id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,39}$" },
+      label: { type: "string", minLength: 1, maxLength: 40 },
+      tone: { enum: ["default", "danger"] },
+      action: { type: "object" },
+    },
+    required: ["id", "label", "action"],
+    additionalProperties: false,
+  },
+} as const;
+
 /** Many rows, dense and sortable. */
 export const table = defineWidget({
   type: "core/table",
@@ -49,7 +69,24 @@ export const table = defineWidget({
             column: RESULT_COLUMN,
             label: { type: "string", maxLength: 60 },
             format: FORMAT,
-            as: { enum: ["text", "bar", "delta", "chip"] },
+            // `badge` draws a choice as a chip with a dot, in the tone `badges` gives its value.
+            as: { enum: ["text", "bar", "delta", "badge"] },
+            // Each value's tone, for `as: "badge"`. A value left out takes its colour from the column, or is neutral.
+            badges: {
+              type: "object",
+              maxProperties: 50,
+              additionalProperties: { enum: TONES },
+            },
+            // `right` lines the column up at the right; `auto` does so for numbers.
+            align: { enum: ["auto", "right"] },
+            // `fixed` gives the column one width, with long values cut short.
+            width: { enum: ["auto", "fixed"] },
+            // Clicking its heading sorts the rows shown (the rows read, in the browser).
+            sortable: { type: "boolean" },
+            // A total row at the bottom: the sum of the rows shown.
+            total: { type: "boolean" },
+            // `false` leaves it out of the list a table becomes on a phone.
+            phone: { type: "boolean" },
             hidden: { type: "boolean" },
           },
           required: ["column"],
@@ -57,6 +94,7 @@ export const table = defineWidget({
         },
         "x-volvel": hint({
           tab: "display",
+          group: "Columns",
           control: "columns",
           of: "rows",
           label: "Columns",
@@ -64,25 +102,14 @@ export const table = defineWidget({
           order: 1,
         }),
       },
-      rowActions: {
-        type: "array",
-        maxItems: 5,
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,39}$" },
-            label: { type: "string", minLength: 1, maxLength: 40 },
-            tone: { enum: ["default", "danger"] },
-            action: { type: "object" },
-          },
-          required: ["id", "label", "action"],
-          additionalProperties: false,
-        },
+      rowHeight: {
+        enum: ["comfortable", "compact"],
         "x-volvel": hint({
-          tab: "actions",
-          control: "actions",
-          label: "Row actions",
-          help: "At the end of each row, and in its detail. Each says when it may be pressed.",
+          tab: "display",
+          group: "Look",
+          control: "segmented",
+          label: "Row height",
+          choices: { comfortable: "Comfortable", compact: "Compact" },
           order: 2,
         }),
       },
@@ -92,26 +119,108 @@ export const table = defineWidget({
         maximum: 200,
         "x-volvel": hint({
           tab: "display",
-          level: "more",
+          group: "Look",
           control: "number",
           label: "Rows at a time",
+          order: 3,
+        }),
+      },
+      empty: {
+        type: "string",
+        maxLength: 200,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "text",
+          label: "When empty",
+          help: "What the table says when there are no rows.",
+          order: 4,
+        }),
+      },
+      stripes: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "switch",
+          label: "Stripe rows",
+          order: 5,
+        }),
+      },
+      rowActions: {
+        ...LABELLED_ACTIONS,
+        "x-volvel": hint({
+          tab: "actions",
+          group: "Row actions",
+          control: "actions",
+          label: "Row actions",
+          help: "At the end of each row, and in its detail. Each says when it may be pressed.",
           order: 2,
+        }),
+      },
+      buttons: {
+        type: "array",
+        maxItems: 5,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,39}$" },
+            label: { type: "string", minLength: 1, maxLength: 40 },
+            tone: { enum: ["primary", "default", "danger"] },
+            action: { type: "object" },
+          },
+          required: ["id", "label", "action"],
+          additionalProperties: false,
+        },
+        "x-volvel": hint({
+          tab: "actions",
+          group: "Buttons above the table",
+          control: "actions",
+          label: "Buttons",
+          help: "On the table's heading line. Each says when it may be pressed.",
+          order: 3,
+        }),
+      },
+      select: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "actions",
+          group: "Selecting rows",
+          control: "switch",
+          label: "Let people select several rows",
+          help: "Adds checkboxes and lets a row action run on all of them.",
+          order: 4,
         }),
       },
     },
     additionalProperties: false,
   },
-  defaults: { pageSize: 25 },
+  defaults: { pageSize: 25, rowHeight: "comfortable" },
   events: { rowClick: { gives: "record", label: "When a row is clicked" } },
   layout: { min: { w: 4, h: 4 }, default: { w: 12, h: 8 }, phone: "list" },
 });
 
-/** Records as rows of cards: a lighter way to browse than a table. */
+/** A place of a list's row, filled with a column. */
+const slot = (label: string, order: number, help?: string, types?: readonly string[]) => ({
+  ...RESULT_COLUMN,
+  "x-volvel": hint({
+    tab: "display",
+    group: "Each row looks like",
+    control: "slots",
+    of: "rows",
+    label,
+    ...(help ? { help } : {}),
+    ...(types ? { types } : {}),
+    order,
+  }),
+});
+
+/** Records as rows or cards: a lighter way to browse than a table. */
 export const list = defineWidget({
   type: "core/list",
   version: "1.0.0",
   title: "List",
-  description: "Records as rows of cards",
+  description: "Records as rows or cards",
   category: "records",
   icon: "list",
   surfaces: ["app", "dashboard"],
@@ -130,67 +239,27 @@ export const list = defineWidget({
   config: {
     type: "object",
     properties: {
-      primary: {
-        ...RESULT_COLUMN,
+      title: slot("Title", 1),
+      subtitle: slot("Under the title", 2),
+      right: slot("Right", 3, "A figure at the right of the row."),
+      badge: slot("Badge", 4, "Drawn as a chip with a dot, in its colour.", ["enum"]),
+      picture: slot("Picture", 5, "A column holding a picture's address.", ["text", "url"]),
+      look: {
+        enum: ["list", "cards"],
         "x-volvel": hint({
           tab: "display",
-          control: "column",
-          of: "rows",
-          label: "Heading",
-          order: 1,
-        }),
-      },
-      secondary: {
-        ...RESULT_COLUMN,
-        "x-volvel": hint({
-          tab: "display",
-          control: "column",
-          of: "rows",
-          label: "Under it",
-          order: 2,
-        }),
-      },
-      meta: {
-        type: "array",
-        maxItems: 3,
-        items: RESULT_COLUMN,
-        "x-volvel": hint({
-          tab: "display",
-          control: "columns",
-          of: "rows",
-          label: "Also shows",
-          level: "more",
-          order: 3,
-        }),
-      },
-      status: {
-        ...RESULT_COLUMN,
-        "x-volvel": hint({
-          tab: "display",
-          control: "column",
-          of: "rows",
-          types: ["enum"],
-          label: "Status",
-          help: "Drawn as a chip in its colour.",
-          order: 4,
+          group: "Look",
+          control: "segmented",
+          label: "Rows",
+          choices: { list: "List", cards: "Cards" },
+          order: 6,
         }),
       },
       rowActions: {
-        type: "array",
-        maxItems: 5,
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,39}$" },
-            label: { type: "string", minLength: 1, maxLength: 40 },
-            tone: { enum: ["default", "danger"] },
-            action: { type: "object" },
-          },
-          required: ["id", "label", "action"],
-          additionalProperties: false,
-        },
+        ...LABELLED_ACTIONS,
         "x-volvel": hint({
           tab: "actions",
+          group: "Row actions",
           control: "actions",
           label: "Row actions",
           help: "On each record, and in its detail. Each says when it may be pressed.",
@@ -200,6 +269,7 @@ export const list = defineWidget({
     },
     additionalProperties: false,
   },
+  defaults: { look: "list" },
   events: { rowClick: { gives: "record", label: "When a record is clicked" } },
   layout: { min: { w: 3, h: 4 }, default: { w: 4, h: 8 }, phone: "stack" },
 });

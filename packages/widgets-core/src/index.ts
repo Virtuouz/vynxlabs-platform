@@ -636,7 +636,7 @@ export const chart = defineWidget({
     },
     additionalProperties: false,
   },
-  defaults: { mark: "bar", legend: "auto", colors: "theme", axisTitles: true, points: true },
+  defaults: { mark: "bar", legend: "auto", colors: "theme", axisTitles: false, points: true },
   events: { pointClick: { gives: "group", label: "When someone clicks a point" } },
   layout: { min: { w: 3, h: 4 }, default: { w: 6, h: 6 }, phone: "stack" },
 });

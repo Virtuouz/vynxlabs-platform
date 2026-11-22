@@ -9,7 +9,13 @@ export {
   type Option,
 } from "./Combobox.tsx";
 export { ContextMenu } from "./ContextMenu.tsx";
-export { type ChartTokens, chartConfig, readChartTokens } from "./chartTheme.ts";
+export {
+  type ChartTokens,
+  chartConfig,
+  readChartTokens,
+  SURFACE,
+  seriesColors,
+} from "./chartTheme.ts";
 export { CONTRAST_NEEDED, contrastRatio, luminance } from "./contrast.ts";
 export { Details } from "./Details.tsx";
 export { Dialog } from "./Dialog.tsx";
@@ -23,6 +29,7 @@ export {
 } from "./Dialogs.tsx";
 export { Doc, type DocProps } from "./Doc.tsx";
 export { reveal, servedComponents } from "./DocServed.tsx";
+export * from "./drawer/index.ts";
 export { type Fact, Facts } from "./Facts.tsx";
 export {
   CheckboxField,
@@ -40,6 +47,7 @@ export {
 export { checkForm, Form, type FormProperty, type FormProps, type FormSchema } from "./Form.tsx";
 export { duration } from "./format.ts";
 export { Grid, type GridColumn, type GridSort, parseValue, showValue } from "./Grid.tsx";
+export { HeadingSlot, hasHeadingControls, OnHeading } from "./HeadingSlot.tsx";
 export { JsonView, type JsonViewProps } from "./JsonView.tsx";
 export {
   type LogLine,
@@ -62,6 +70,7 @@ export {
   type SegmentOption,
 } from "./Pickers.tsx";
 export { Popover } from "./Popover.tsx";
+export { PAGE_ICONS, pageIconOf } from "./pageIcons.ts";
 export { Appear, Closing, useLast, useOpening } from "./presence.tsx";
 export {
   columnsOf,
@@ -85,7 +94,6 @@ export { Avatar, initialsOf, Skeleton } from "./Surfaces.tsx";
 export { Switch } from "./Switch.tsx";
 export { type Column, Table } from "./Table.tsx";
 export { type TabItem, Tabs, type TabsProps } from "./Tabs.tsx";
-export { PAGE_ICONS, pageIconOf } from "./pageIcons.ts";
 export {
   GlossaryProvider,
   type GlossaryTerm,
@@ -110,4 +118,3 @@ export {
 export { Kbd, Tooltip, TooltipProvider } from "./Tooltip.tsx";
 export { type DropPosition, Tree, type TreeNode } from "./Tree.tsx";
 export { useFlip, useKeys } from "./useFlip.ts";
-export * from "./drawer/index.ts";

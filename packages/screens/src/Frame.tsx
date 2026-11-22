@@ -1,5 +1,5 @@
 import type { PageWidget } from "@volvel/manifest";
-import { Button, Menu, Notice, Skeleton } from "@volvel/ui";
+import { Button, HeadingSlot, hasHeadingControls, Menu, Notice, Skeleton } from "@volvel/ui";
 import { Download, PanelRight } from "@volvel/ui/icons";
 import type { WidgetDefinition, WidgetState } from "@volvel/widgets";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -76,7 +76,7 @@ function Title({
         aria-label="Widget title"
         defaultValue={title}
         maxLength={100}
-        className="min-w-0 flex-1 rounded-inner border border-action bg-surface px-1.5 py-0.5 text-title font-semibold text-ink"
+        className="min-w-0 flex-1 rounded-inner border border-action bg-surface px-1.5 py-0.5 text-body font-semibold text-ink"
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           if (event.key === "Enter") finish(true);
@@ -92,7 +92,7 @@ function Title({
         type="button"
         title="Rename"
         data-chrome="title"
-        className="-ml-1.5 min-w-0 truncate rounded-inner border border-line-strong bg-surface px-1.5 py-0.5 text-left text-title font-semibold"
+        className="-ml-1.5 min-w-0 truncate rounded-inner border border-line-strong bg-surface px-1.5 py-0.5 text-left text-body font-semibold"
         onClick={(event) => {
           event.stopPropagation();
           setRenaming(true);
@@ -102,7 +102,7 @@ function Title({
       </button>
     );
   }
-  return <h2 className="m-0 min-w-0 truncate text-title font-semibold">{title}</h2>;
+  return <h2 className="m-0 min-w-0 truncate text-body font-semibold">{title}</h2>;
 }
 
 /**
@@ -147,9 +147,12 @@ export function Frame({
   // A widget drawn with no card (a button, a filter bar) has no title on the page: it is named in
   // the inspector, for the outline. A heading there would sit over what it draws.
   const bare = definition?.layout.frame === "none" && !container;
+  // A table's buttons sit at the right of its heading row, so it keeps the row for them.
+  const controls = !bare && !container && hasHeadingControls(widget.config);
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
   const heading = bare
     ? false
-    : widget.title || widget.subtitle || (building && (selected || opens));
+    : widget.title || widget.subtitle || controls || (building && (selected || opens));
   const body = (() => {
     if (!definition) {
       return <Notice tone="danger">There is no widget called "{widget.type}".</Notice>;
@@ -173,7 +176,13 @@ export function Frame({
       case "forbidden":
         return <Notice tone="attention">You may not see this. {state.message}</Notice>;
       case "empty":
-        return <p className="m-0 text-ink-muted">{state.message}</p>;
+        // What the widget keeps even with nothing to read (a table's buttons) is still drawn.
+        return (
+          <>
+            <p className="m-0 text-body-sm text-ink-muted">{state.message}</p>
+            {controls ? children : null}
+          </>
+        );
       case "ready":
         return children;
     }
@@ -182,25 +191,30 @@ export function Frame({
     <>
       {heading ? (
         <header
-          className={`flex min-w-0 flex-col gap-0.5 ${container ? "min-h-7 justify-center" : "px-4 pt-3 pb-2"}`}
+          className={`flex min-w-0 flex-col gap-0.5 ${container ? "min-h-7 justify-center" : "px-3.5 pt-3"}`}
         >
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0">
             <Title
               widget={widget}
               renamable={building && selected && onRename !== undefined}
               onRename={(title) => onRename?.(title)}
             />
-            {building && opens ? (
-              <span
-                data-chrome="opens"
-                className="ml-auto flex shrink-0 items-center gap-1.5 text-body-sm text-ink-muted"
-              >
-                <PanelRight aria-hidden="true" size={14} />
-                Click opens <span className="text-ink">{opens}</span>
-              </span>
-            ) : null}
-            {kept ? (
-              <span className="ml-auto shrink-0">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              {building && opens ? (
+                <span
+                  data-chrome="opens"
+                  className="flex shrink-0 items-center gap-1.5 text-meta text-ink-muted"
+                >
+                  <PanelRight aria-hidden="true" size={13} />
+                  Click opens <span className="text-ink">{opens}</span>
+                </span>
+              ) : null}
+              <div
+                ref={setSlot}
+                data-heading-controls=""
+                className="flex items-center gap-2 empty:hidden"
+              />
+              {kept ? (
                 <Menu
                   ariaLabel={`Download ${name}`}
                   align="end"
@@ -223,51 +237,53 @@ export function Frame({
                     },
                   ]}
                 />
-              </span>
-            ) : null}
+              ) : null}
+            </div>
           </div>
           {widget.subtitle ? (
-            <p className="m-0 text-body-sm text-ink-muted">{widget.subtitle}</p>
+            <p className="m-0 text-meta text-ink-muted">{widget.subtitle}</p>
           ) : null}
         </header>
       ) : null}
-      <div
-        tabIndex={tabbable && !container ? 0 : undefined}
-        aria-busy={reading.stale ? true : undefined}
-        className={`flex min-h-0 flex-1 flex-col ${container ? "" : "gap-2 @2xl:overflow-auto"} ${bare ? "justify-center" : container ? "" : "px-4 pb-4"} outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
-          heading || bare || container ? "" : "pt-4"
-        } ${reading.stale ? "opacity-50" : ""}`}
-      >
-        {reading.stale ? (
-          <span role="status" className="text-body-sm text-ink-muted">
-            Updating…
-          </span>
-        ) : null}
-        {followed ? (
-          <Notice tone="attention">
-            Names <code>{followed.names}</code>, now <code>{followed.now}</code>: change it in the
-            repository.
-          </Notice>
-        ) : null}
-        {body}
-        {reading.more?.loading ? (
-          <span role="status" className="text-body-sm text-ink-muted">
-            Loading more…
-          </span>
-        ) : null}
-        {reading.more?.error ? (
-          <Notice
-            tone="danger"
-            action={
-              <Button size="small" onClick={reading.more.retry}>
-                Try again
-              </Button>
-            }
-          >
-            {reading.more.error}
-          </Notice>
-        ) : null}
-      </div>
+      <HeadingSlot.Provider value={slot}>
+        <div
+          tabIndex={tabbable && !container ? 0 : undefined}
+          aria-busy={reading.stale ? true : undefined}
+          className={`flex min-h-0 flex-1 flex-col ${container ? "" : "gap-2 overflow-auto"} ${bare ? "justify-center" : container ? "" : "px-3.5 pb-3.5"} outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
+            bare || container ? "" : heading ? "pt-2.5" : "pt-3.5"
+          } ${reading.stale ? "opacity-50" : ""}`}
+        >
+          {reading.stale ? (
+            <span role="status" className="text-body-sm text-ink-muted">
+              Updating…
+            </span>
+          ) : null}
+          {followed ? (
+            <Notice tone="attention">
+              Names <code>{followed.names}</code>, now <code>{followed.now}</code>: change it in the
+              repository.
+            </Notice>
+          ) : null}
+          {body}
+          {reading.more?.loading ? (
+            <span role="status" className="text-body-sm text-ink-muted">
+              Loading more…
+            </span>
+          ) : null}
+          {reading.more?.error ? (
+            <Notice
+              tone="danger"
+              action={
+                <Button size="small" onClick={reading.more.retry}>
+                  Try again
+                </Button>
+              }
+            >
+              {reading.more.error}
+            </Notice>
+          ) : null}
+        </div>
+      </HeadingSlot.Provider>
     </>
   );
 }

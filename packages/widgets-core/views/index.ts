@@ -18,7 +18,7 @@ import { SectionView } from "./section.tsx";
 import { StatView } from "./stat.tsx";
 import { TableView } from "./table.tsx";
 import { TabsView } from "./tabs.tsx";
-import { TextView } from "./text.tsx";
+import { calloutEdge, TextView } from "./text.tsx";
 
 /** What a pack is to whatever draws pages: its definitions, and a view for each type. */
 export interface CorePack {
@@ -75,6 +75,7 @@ export {
   ActionsView,
   ButtonView,
   ChartView,
+  calloutEdge,
   DetailView,
   FilterView,
   FormView,

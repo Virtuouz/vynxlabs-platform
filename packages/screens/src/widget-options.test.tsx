@@ -216,13 +216,16 @@ describe("section, text and filter looks", () => {
       <Page widgets={[widget("core/section", { look: "card" }, { title: "Numbers" })]} />,
     );
     await waitFor(() => expect(container.querySelector("[data-look=card]")).toBeTruthy());
-    expect(container.querySelector("[data-look=card]")?.className).toContain("border");
+    expect(container.querySelector("[data-look=card]")?.className).toContain("bg-sunken");
   });
 
   test.each(["note", "warning", "tip"])("a %s text has a coloured left edge", async (look) => {
     const { container } = render(<Page widgets={[widget("core/text", { text: "Words", look })]} />);
     await screen.findByText("Words");
-    expect(container.querySelector(`[data-look=${look}]`)?.className).toContain("border-l-4");
+    // The callout is its card: the card takes the colored edge, with no box inside it.
+    expect(container.querySelector(`[data-look=${look}]`)?.closest("section")?.className).toContain(
+      "inset-shadow",
+    );
   });
 
   test("a plain text has no callout", async () => {
@@ -230,7 +233,9 @@ describe("section, text and filter looks", () => {
       <Page widgets={[widget("core/text", { text: "Words", look: "plain" })]} />,
     );
     await screen.findByText("Words");
-    expect(container.querySelector("[data-look]")).toBeNull();
+    expect(container.querySelector("[data-look]")?.closest("section")?.className).not.toContain(
+      "inset-shadow",
+    );
   });
 
   test("filters behind a button: the search stays, the rest wait under Filters · n", async () => {

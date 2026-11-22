@@ -166,7 +166,7 @@ describe("a table's look", () => {
     expect(screen.getAllByRole("cell")[0]?.className).toContain("py-1");
     unmount();
     draw("core/table", { columns: [{ column: "number" }] });
-    expect(screen.getAllByRole("cell")[0]?.className).toContain("py-2.5");
+    expect(screen.getAllByRole("cell")[0]?.className).toContain("py-[9px]");
   });
 
   test("stripes shade every other row", () => {

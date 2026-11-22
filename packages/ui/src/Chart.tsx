@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { chartSpec, createChartView, loadChartEngine } from "./chartEngine.ts";
-import { chartConfig, readChartTokens } from "./chartTheme.ts";
+import { chartConfig, readChartTokens, SURFACE } from "./chartTheme.ts";
 import { Notice } from "./Notice.tsx";
 
 export interface ChartProps {
@@ -56,10 +56,16 @@ export function Chart({ spec, data, title, description, height = 240, onPick }: 
     loadChartEngine()
       .then((engine) => {
         if (left) return;
-        const config = chartConfig(readChartTokens(element));
+        const tokens = readChartTokens(element);
+        const config = chartConfig(tokens);
+        // Where the spec names the color of what the chart sits on, the theme's value goes.
+        const painted = specText.replaceAll(
+          JSON.stringify(SURFACE),
+          JSON.stringify(tokens.surface || "transparent"),
+        );
         view = createChartView(
           engine,
-          chartSpec(JSON.parse(specText), data, height),
+          chartSpec(JSON.parse(painted), data, height),
           config,
           element,
         );

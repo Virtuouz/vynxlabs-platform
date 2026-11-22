@@ -1,4 +1,4 @@
-import { Button, Toggletip } from "@volvel/ui";
+import { Button, OnHeading, Toggletip } from "@volvel/ui";
 import { ChevronDown, ChevronUp } from "@volvel/ui/icons";
 import type { ColumnInfo, RowsData, WidgetViewProps } from "@volvel/widgets";
 import { useState } from "react";
@@ -73,30 +73,36 @@ function TableButtons({
   const { running, run } = useRunning();
   if (buttons.length === 0) return null;
   return (
-    <div data-table-buttons="" className="mb-2 flex flex-wrap items-center justify-end gap-2">
-      {buttons.map((one, at) => {
-        const where = `config/buttons/${at}/action`;
-        const inert = !props.viewing && (props.building || !props.act);
-        const allowed = inert ? false : (props.can?.(where) ?? true);
-        return (
-          <Button
-            key={one.id}
-            size="small"
-            variant={VARIANT[one.tone ?? (at === 0 ? "primary" : "default")]}
-            disabled={!allowed || running !== undefined}
-            loading={running === one.id}
-            tooltip={
-              !allowed && (!props.building || props.viewing)
-                ? (props.why?.(where) ?? CANNOT_NOW)
-                : undefined
-            }
-            onClick={() => void run(one.id, () => props.act?.(where))}
-          >
-            {one.label}
-          </Button>
-        );
-      })}
-    </div>
+    <OnHeading>
+      {/* On the widget's heading row, beside its title; with no such row, above the table. */}
+      <div
+        data-table-buttons=""
+        className="flex flex-wrap items-center justify-end gap-2 [:not([data-heading-controls])>&]:mb-2 [[data-heading-controls]>&]:my-0.5"
+      >
+        {buttons.map((one, at) => {
+          const where = `config/buttons/${at}/action`;
+          const inert = !props.viewing && (props.building || !props.act);
+          const allowed = inert ? false : (props.can?.(where) ?? true);
+          return (
+            <Button
+              key={one.id}
+              size="small"
+              variant={VARIANT[one.tone ?? (at === 0 ? "primary" : "default")]}
+              disabled={!allowed || running !== undefined}
+              loading={running === one.id}
+              tooltip={
+                !allowed && (!props.building || props.viewing)
+                  ? (props.why?.(where) ?? CANNOT_NOW)
+                  : undefined
+              }
+              onClick={() => void run(one.id, () => props.act?.(where))}
+            >
+              {one.label}
+            </Button>
+          );
+        })}
+      </div>
+    </OnHeading>
   );
 }
 
@@ -290,6 +296,8 @@ export function TableView(props: WithSelected<TableConfig>) {
       return next;
     });
   const selecting = config.select === true;
+  // Nothing to list: the frame says so, and the buttons stay on the heading row, still pressable.
+  if (rows.rows.length === 0) return <TableButtons buttons={buttons} props={props} />;
   const bar =
     selecting && chosen.length > 0 ? (
       <ChosenBar
@@ -322,7 +330,7 @@ export function TableView(props: WithSelected<TableConfig>) {
     );
   }
   const most = new Map(shown.map(({ spec }) => [spec.column, largest(rows.rows, spec.column)]));
-  const pad = config.rowHeight === "compact" ? "py-1" : "py-2.5";
+  const pad = config.rowHeight === "compact" ? "py-1" : "py-[9px]";
   const totals = shown.some(({ spec }) => spec.total);
   const allTicked = ordered.length > 0 && chosen.length === ordered.length;
   const edge = "px-3";
@@ -331,7 +339,7 @@ export function TableView(props: WithSelected<TableConfig>) {
       <TableButtons buttons={buttons} props={props} />
       {bar}
       {/* table-allowed: a widget's rows are drawn by its view, which the page owns; the kit's grid is for editing data */}
-      <table className="w-full border-collapse text-left text-body">
+      <table className="w-full border-collapse text-left text-[13.5px]">
         <thead>
           <tr>
             {selecting ? (
@@ -362,7 +370,7 @@ export function TableView(props: WithSelected<TableConfig>) {
                     on ? (on.descending ? "descending" : "ascending") : sorting ? "none" : undefined
                   }
                   style={spec.width === "fixed" ? { width: "10rem", maxWidth: "10rem" } : undefined}
-                  className={`sticky top-0 border-b border-line bg-surface ${edge} py-2 text-body-sm font-medium whitespace-nowrap text-ink-muted ${
+                  className={`sticky top-0 border-b border-line bg-surface ${edge} py-2 text-meta font-medium whitespace-nowrap text-ink-muted ${
                     isRight(spec, info) ? "text-right" : ""
                   }`}
                 >
@@ -435,7 +443,7 @@ export function TableView(props: WithSelected<TableConfig>) {
             return (
               <tr
                 key={id}
-                className={`group/row border-b border-line last:border-b-0 ${
+                className={`group/row border-b border-line/70 last:border-b-0 ${
                   config.stripes && at % 2 === 1 ? "bg-sunken/50" : ""
                 } ${pressable ? PRESSABLE : ""}`}
                 // biome-ignore lint/a11y/useKeyWithClickEvents: only a row something listens to is pressed, and that one takes Enter

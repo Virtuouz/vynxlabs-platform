@@ -173,7 +173,7 @@ describe("the core pack draws from wire data", () => {
     expect(within(grid).getByText("Ada Lovelace")).toBeTruthy();
     // An enum value is a chip with its label, and one with no label shows its value.
     expect(within(grid).getByText("Paid")).toBeTruthy();
-    expect(within(grid).getByText("open")).toBeTruthy();
+    expect(within(grid).getByText("Open")).toBeTruthy();
     expect(within(grid).getAllByText("$120.00")).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Invoices" })).toBeTruthy();
   });
@@ -264,7 +264,7 @@ describe("the core pack draws from wire data", () => {
     };
     const down: WireData = patched(statInput, { rows: [{ total: 5 }], previous: [{ total: 9 }] });
     render(<Page client={clientOf({ overdue: { value: down } })} widgets={[stat]} />);
-    const mark = (await screen.findByText("4")).closest("span.bg-success-soft");
+    const mark = (await screen.findByText("4")).closest("span.text-success");
     expect(mark).not.toBeNull();
   });
 
@@ -300,7 +300,8 @@ describe("the core pack draws from wire data", () => {
     expect(spec.mark.type).toBe("bar");
     expect(spec.encoding.x.field).toBe("clinic");
     expect(spec.encoding.y.field).toBe("total");
-    expect(spec.encoding.y.axis.format).toBe("$,~f");
+    // Big figures up the side are written short ("$40k"), as the boards draw them.
+    expect(spec.encoding.y.axis.format).toBe("$.3~s");
     // Nothing listens to its points (no `on.pointClick`), so a click is nothing: a point is
     // pressable only when the page does something with it (phase 26).
     fireEvent.click(drawn);
@@ -330,8 +331,9 @@ describe("the core pack draws from wire data", () => {
       <Page client={clientOf({ trend: { rows: compared } })} widgets={[chart]} />,
     );
     const spec = JSON.parse((await screen.findByTestId("chart")).dataset.spec as string);
-    expect(spec.layer).toHaveLength(2);
-    expect(spec.layer[1].mark.strokeDash).toEqual([4, 4]);
+    // The soft area under a single line, the line, and the period before.
+    expect(spec.layer).toHaveLength(3);
+    expect(spec.layer[2].mark.strokeDash).toEqual([4, 4]);
     unmount();
     const series: WireData = patched(pivotInput, {
       columns: pivotInput.shape === "summary" ? pivotInput.columns : [],

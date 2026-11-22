@@ -61,11 +61,11 @@ export function GoalView({ config, data, emit }: WidgetViewProps<GoalConfig>) {
     <button
       type="button"
       onClick={() => emit("click", {})}
-      className="my-auto flex w-full cursor-pointer flex-col gap-1.5 border-0 bg-transparent p-0 text-left text-ink"
+      className="flex w-full cursor-pointer flex-col gap-1.5 border-0 bg-transparent p-0 text-left text-ink"
     >
       <span
         // Money to the cent fits a narrow cell only at the smaller size: by the cell's width, not its columns.
-        className="text-display font-semibold tabular-nums @[14rem]/cell:text-display-lg"
+        className="text-display font-semibold tracking-[-0.02em] whitespace-nowrap tabular-nums @[14rem]/cell:text-display-lg @[17rem]/cell:text-[28px]/[34px]"
       >
         {formatNumber(value, config.format)}
       </span>
@@ -76,11 +76,11 @@ export function GoalView({ config, data, emit }: WidgetViewProps<GoalConfig>) {
         aria-valuemax={100}
         aria-valuenow={Math.round(fill)}
         aria-valuetext={`${shown}% of ${formatNumber(target, config.format)}`}
-        className="block h-2 w-full overflow-hidden rounded-control bg-sunken"
+        className="block h-2 w-full overflow-hidden rounded-full bg-line"
       >
         <span className={`block h-full ${FILL[band]}`} style={{ width: `${fill}%` }} />
       </span>
-      <span className="flex flex-wrap items-baseline justify-between gap-x-3 text-body-sm text-ink-muted">
+      <span className="flex flex-wrap items-baseline justify-between gap-x-3 text-[12.5px] text-ink-muted">
         <span>{config.label ?? ""}</span>
         {config.percent === false ? null : <span className="tabular-nums">{shown}%</span>}
       </span>

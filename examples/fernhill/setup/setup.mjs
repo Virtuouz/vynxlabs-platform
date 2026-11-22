@@ -350,12 +350,12 @@ async function flowRun(base, flow, input = {}, who = admin) {
   return who.get(`${base}/flow-runs/${id}`);
 }
 
-step("Seeding six weeks of history in Clinics, and a little in the sandbox");
+step("Seeding six weeks of history in Clinics, and eight weeks of a small group in the sandbox");
 const seeded = await run(P, "setup/seed-demo", { clientsPerClinic: 24, pastDays: 42 });
 if (seeded.status !== "succeeded")
   throw new Error(`Seeding failed: ${JSON.stringify(seeded.error)}`);
 console.log("  ", JSON.stringify(seeded.output.counts));
-await run(D, "setup/seed-demo", { clientsPerClinic: 6, pastDays: 7 });
+await run(D, "setup/seed-demo", { clientsPerClinic: 6, pastDays: 56 });
 
 step("Giving three clients a portal account");
 const rows = async (base, table, filter) =>

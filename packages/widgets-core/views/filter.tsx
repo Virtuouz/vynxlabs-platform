@@ -37,12 +37,14 @@ const isRange = (value: unknown): value is DateRange =>
   typeof value === "object" && value !== null && "from" in value && "to" in value;
 
 // A control is the width of its cell on a phone, and its own width where there is room.
-const FIELD = "w-full @md/cell:w-auto";
-const SEARCH_FIELD = "w-full @md/cell:w-64";
+const FIELD = "min-w-0 flex-[1_1_9rem] @md/cell:flex-none";
+/** The one bordered bar the search and the filters sit in, side by side, wrapping where there is no room. */
+const BAR = "flex flex-wrap items-center gap-2 rounded-panel border border-line bg-surface p-2.5";
+const SEARCH_FIELD = "min-w-0 flex-[1_1_100%] @md/cell:flex-[1_1_14rem]";
 
 /** The one box a compact control is drawn in: its label, or a magnifier, inside the edge. */
 const BOX =
-  "relative flex h-control w-full min-w-0 items-center gap-2 rounded-control border border-line-control bg-surface px-3 text-body-sm focus-within:outline-2 focus-within:outline-action @md/cell:w-auto";
+  "relative flex h-[34px] w-full min-w-0 items-center gap-2 rounded-control border border-line-control bg-sunken px-2.5 text-body-sm focus-within:outline-2 focus-within:outline-action";
 
 /**
  * A select with its label inside the box ("Clinic  All"), as the filter bar draws every choice. The
@@ -112,8 +114,8 @@ function DateRangeControl({ filter, label, value, onChange }: Control) {
     }
   };
   return (
-    <div className="flex w-full flex-wrap items-end gap-2 @md/cell:w-auto">
-      <div className="w-full @md/cell:w-auto">
+    <div className="flex min-w-0 flex-[1_1_9rem] flex-wrap items-center gap-2 @md/cell:flex-none">
+      <div className="min-w-0 flex-1 @md/cell:flex-none">
         <CompactSelect
           name={`filter-${filter.name}`}
           label={label}
@@ -379,7 +381,7 @@ export function FilterView({ config, filters: host }: WidgetViewProps<FilterConf
     );
   }
   return (
-    <search aria-label="Filters" className="flex flex-wrap items-end gap-x-3 gap-y-3">
+    <search aria-label="Filters" className={BAR}>
       {draw(config.filters)}
       {clear}
     </search>
@@ -405,12 +407,9 @@ function FiltersBehindButton({
 }) {
   const set = others.filter((filter) => norm(valueFor(filter, values)) !== norm(null)).length;
   return (
-    <search
-      aria-label="Filters"
-      className="flex items-end gap-x-2 @md/cell:flex-wrap @md/cell:gap-x-3 @md/cell:gap-y-3"
-    >
+    <search aria-label="Filters" className={BAR}>
       {/* The search and its button share the row, the search taking what the button leaves, wherever it is narrow. */}
-      <div className="min-w-0 flex-1 @md/cell:flex-none">{search}</div>
+      <div className="flex min-w-0 flex-[1_1_8rem] @md/cell:flex-[1_1_14rem]">{search}</div>
       {others.length > 0 ? (
         <Popover
           title="Filters"

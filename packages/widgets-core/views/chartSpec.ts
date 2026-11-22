@@ -1,3 +1,4 @@
+import { SURFACE } from "@volvel/ui";
 import type { SummaryData } from "@volvel/widgets";
 import { axisFormat, labelOf, numberOf, type ValueFormat } from "./format.ts";
 
@@ -16,7 +17,7 @@ export interface ChartConfig {
   points?: boolean;
   /** Values written on the bars. */
   values?: boolean;
-  /** The axes are titled. Left out: they are. */
+  /** The axes are titled. Left out: they are not (the boards draw none until it is asked for). */
   axisTitles?: boolean;
   /** `theme`, or a named palette. Left out: the theme's. */
   colors?: "theme" | "cool" | "warm" | "mono";
@@ -33,10 +34,13 @@ export const BEFORE = "period_before";
 
 const TEMPORAL = new Set(["date", "timestamp"]);
 
-/** The named palettes, as colors both themes can carry. `theme` takes the tokens, which a spec cannot hold. */
+/**
+ * The named palettes, as colors both themes can carry. `theme` takes the tokens, which a spec cannot hold.
+ * In each, neighbours differ in hue, not only in lightness.
+ */
 export const PALETTES: Record<"cool" | "warm" | "mono", string[]> = {
-  cool: ["#38bdf8", "#818cf8", "#2dd4bf", "#a78bfa", "#60a5fa", "#22d3ee"],
-  warm: ["#f59e0b", "#f97316", "#ef4444", "#ec4899", "#eab308", "#fb7185"],
+  cool: ["#38bdf8", "#a78bfa", "#2dd4bf", "#818cf8", "#34d399", "#60a5fa"],
+  warm: ["#f59e0b", "#ef4444", "#eab308", "#ec4899", "#f97316", "#a16207"],
   mono: ["#64748b", "#94a3b8", "#475569", "#cbd5e1", "#334155", "#7c8ba1"],
 };
 
@@ -107,6 +111,19 @@ export function suggestedMark(shape: ChartShape): NonNullable<ChartConfig["mark"
 }
 
 const DAY = 86_400_000;
+
+/** A point marked on a line: a ring in the line's color, filled with what the chart is on. */
+const RING = { filled: false, fill: SURFACE, strokeWidth: 2 } as const;
+
+/**
+ * How the values up the side are written once they are big: short, as the boards draw them
+ * ("$40k", not "$40,000"). A percentage, and a figure under a thousand, are written as they are.
+ */
+export function shortAxisFormat(format: string | undefined, biggest: number): string | undefined {
+  if (format?.endsWith("%")) return format;
+  if (biggest < 1000) return format;
+  return (format?.startsWith("$") ? "$" : "") + ".3~s";
+}
 
 /**
  * Periods the data skips, put back as zero: found from the dates it has (days, weeks,
@@ -194,6 +211,8 @@ export function orderRows(
 export function chartFor(
   config: ChartConfig,
   data: SummaryData,
+  /** How wide the chart is drawn, when it is known: bars and labels are sized by it. */
+  room: { width?: number } = {},
 ): { spec: object; rows: Record<string, unknown>[]; description: string } {
   const mark = config.mark ?? "bar";
   const typeOf = (name: string) => data.columns.find((column) => column.name === name)?.type;
@@ -236,13 +255,45 @@ export function chartFor(
 
   const palette = config.colors && config.colors !== "theme" ? PALETTES[config.colors] : undefined;
   const scale = palette ? { scale: { range: palette } } : {};
-  const named = config.axisTitles !== false;
+  const named = config.axisTitles === true;
   const yTitle = axis?.note ? `${title(y)} (${axis.note})` : title(y);
-  const valueAxis = axis ? { format: axis.format } : {};
+  // The values up the side are written short ("$40k"), as the boards draw them.
+  const biggest = Math.max(
+    0,
+    ...rows.flatMap((row) => measured.map((name) => Math.abs(numberOf(row[name]) ?? 0))),
+  );
+  const shortFormat = shortAxisFormat(axis?.format, biggest);
+  const valueAxis = {
+    ...(shortFormat ? { format: shortFormat } : {}),
+    grid: true,
+    tickCount: config.horizontal === true ? 3 : 4,
+  };
+  // What is along the bottom, as it fits: tilted or cut short, never one name over the next.
+  const count = new Set(rows.map((row) => String(row[x]))).size;
+  const plot = Math.max(120, (room.width ?? 560) - 56);
+  const band = plot / Math.max(1, count);
+  const longest = Math.max(0, ...rows.map((row) => String(row[x] ?? "").replace(/_/g, " ").length));
+  const tilted = !temporal && typeOf(x) !== "number" && count > 1 && longest * 5.2 > band * 0.96;
+  const words = "replace(datum.label, regexp('_', 'g'), ' ')";
+  const categoryAxis = {
+    labelAngle: tilted ? -45 : 0,
+    ...(tilted ? { labelAlign: "right", labelBaseline: "top" } : {}),
+    labelOverlap: tilted ? false : "greedy",
+    labelLimit: tilted
+      ? Math.min(110, Math.max(54, Math.floor(band * 2.4)))
+      : Math.max(48, Math.floor(band * 0.95)),
+    labelExpr: words,
+    grid: false,
+  };
+  // Where a bar is, and how much room there is round it: not fatter than a bar of the boards.
+  const spacing = config.horizontal === true ? 0.45 : Math.min(0.75, Math.max(0.3, 1 - 56 / band));
   // A few periods are each named, by the day they begin: not ticked on hours the data does not have.
   const few = temporal && rows.length <= 12 && mark !== "scatter";
-  const dayAxis = { labelOverlap: true, format: "%b %-d" };
-  const legend = config.legend === "hidden" ? { legend: null } : {};
+  const dayAxis = { labelOverlap: true, format: "%b %-d", grid: false };
+  const legend =
+    config.legend === "hidden"
+      ? { legend: null }
+      : { legend: { title: null, labelExpr: "replace(datum.label, regexp('_', 'g'), ' ')" } };
   const description = `${mark} chart of ${measured.map(title).join(", ")} by ${[x, ...others].map(title).join(" and ")}`;
   const xEncoding = {
     field: x,
@@ -259,20 +310,24 @@ export function chartFor(
             ? "temporal"
             : "nominal",
     title: named ? title(x) : null,
+    ...(mark === "bar" && (few || !temporal)
+      ? { scale: { paddingInner: spacing, paddingOuter: spacing / 2 } }
+      : {}),
     ...(few
       ? {
           sort: null,
           axis: {
             labelAngle: 0,
-            labelOverlap: true,
+            labelOverlap: "greedy",
+            grid: false,
             labelExpr: "utcFormat(toDate(datum.value), '%b %-d')",
           },
         }
       : temporal
         ? { axis: dayAxis }
         : typeOf(x) === "number"
-          ? {}
-          : { sort: null, axis: { labelAngle: 0, labelOverlap: true } }),
+          ? { axis: { grid: false } }
+          : { sort: null, axis: categoryAxis }),
   };
 
   if (mark === "heatmap") {
@@ -288,9 +343,15 @@ export function chartFor(
             type: "ordinal",
             title: named ? title(x) : null,
             sort: null,
-            axis: { labelAngle: 0 },
+            axis: { labelAngle: 0, grid: false },
           },
-          y: { field: down, type: "ordinal", title: named ? title(down) : null, sort: null },
+          y: {
+            field: down,
+            type: "ordinal",
+            title: named ? title(down) : null,
+            sort: null,
+            axis: { grid: false },
+          },
           color: {
             field: y,
             type: "quantitative",
@@ -318,7 +379,15 @@ export function chartFor(
             stack: true,
             ...(axis ? { format: axis.format } : {}),
           },
-          color: { field: x, type: "nominal", title: title(x), ...scale, ...legend },
+          color: {
+            field: x,
+            type: "nominal",
+            title: title(x),
+            ...scale,
+            ...(config.legend === "hidden"
+              ? legend
+              : { legend: { ...legend.legend, orient: "right", direction: "vertical" } }),
+          },
         },
       },
     };
@@ -363,8 +432,12 @@ export function chartFor(
       tooltip: true,
       ...(drawing ? { interpolate: config.smooth ? "monotone" : "linear" } : {}),
       // A line has always marked its points; an area does when it is asked to, and is filled under its line.
-      ...(mark === "line" ? { point: config.points !== false } : {}),
-      ...(mark === "area" ? { line: true, opacity: 0.3, point: config.points === true } : {}),
+      ...(mark === "line"
+        ? { point: config.points === false ? false : { ...RING, size: 44 } }
+        : {}),
+      ...(mark === "area"
+        ? { line: true, point: config.points === true ? { ...RING, size: 44 } : false }
+        : {}),
       ...(palette && !colour ? { color: palette[0] } : {}),
     },
     encoding: {
@@ -399,7 +472,10 @@ export function chartFor(
           ...base,
           encoding: {
             ...rest,
-            y: { ...(across as object), axis: { labelOverlap: true } },
+            y: {
+              ...(across as object),
+              axis: { labelOverlap: "greedy", grid: false, labelLimit: 130, labelExpr: words },
+            },
             x: up,
             ...(xOffset ? { yOffset: xOffset } : {}),
           },
@@ -407,7 +483,24 @@ export function chartFor(
       })()
     : base;
 
-  const layers: object[] = [drawn];
+  const layers: object[] = [];
+  if (mark === "line" && !colour && !lying) {
+    // A soft area under a single line, as the boards draw it.
+    const { color: _own, ...place } = drawn.encoding as Record<string, unknown>;
+    layers.push({
+      mark: {
+        type: "area",
+        interactive: false,
+        fillOpacity: 0.08,
+        line: false,
+        interpolate: config.smooth ? "monotone" : "linear",
+        ...(palette ? { color: palette[0] } : {}),
+      },
+      encoding: place,
+      ...(several ? { transform: [{ fold: measured, as: ["series", "value"] }] } : {}),
+    });
+  }
+  layers.push(drawn);
   if (compared && !lying) {
     // The period before, point for point, on the same scale.
     layers.push({
@@ -431,7 +524,7 @@ export function chartFor(
     layers.push({
       mark: {
         type: "text",
-        fontSize: 11,
+        fontSize: 10,
         ...(colour
           ? { baseline: "middle" }
           : lying

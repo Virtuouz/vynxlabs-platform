@@ -11,6 +11,8 @@ export interface ChartTokens {
   success: string;
   danger: string;
   font: string;
+  /** What the chart sits on: the fill of a ring that marks a point, and the edge between slices. */
+  surface?: string;
 }
 
 const variables: Record<keyof ChartTokens, string> = {
@@ -23,7 +25,14 @@ const variables: Record<keyof ChartTokens, string> = {
   success: "--vx-success",
   danger: "--vx-danger",
   font: "--vx-font",
+  surface: "--vx-surface",
 };
+
+/**
+ * Stands in a spec for the color of what the chart sits on. A spec is JSON and a chart's SVG cannot
+ * hold `var()`, so the chart puts the theme's value where this is written when it draws.
+ */
+export const SURFACE = "chart-surface";
 
 /**
  * Reads the tokens as they apply to one element, so that a chart inside a
@@ -39,22 +48,64 @@ export function readChartTokens(element: Element): ChartTokens {
   return tokens;
 }
 
+/** Whether a color is a light one: the ink of a dark theme is. */
+function isLight(color: string): boolean {
+  const found = /^#([0-9a-f]{6})$/i.exec(color.trim());
+  if (!found) return false;
+  const rgb = Number.parseInt(found[1] as string, 16);
+  const [r, g, b] = [(rgb >> 16) & 255, (rgb >> 8) & 255, rgb & 255];
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 140;
+}
+
+/**
+ * The colors of a chart's series, in the order they are given out. Neighbours differ in hue as
+ * well as in lightness (teal, amber, violet, green, coral, blue, grey), so that two series drawn
+ * side by side are never two greens, in either theme. The first is the theme's action color.
+ */
+export function seriesColors(tokens: ChartTokens): string[] {
+  const dark = isLight(tokens.ink);
+  const fixed = dark
+    ? { violet: "#a78bfa", blue: "#7aa7ff" }
+    : { violet: "#6741d9", blue: "#2f5fd0" };
+  return [
+    tokens.action,
+    tokens.attention,
+    fixed.violet,
+    tokens.success,
+    tokens.danger,
+    fixed.blue,
+    tokens.inkMuted,
+  ].filter((color) => color !== "");
+}
+
 /**
  * The Vega-Lite configuration that makes a chart look like the rest of the
- * kit. A token with no value is left out, so the engine's default applies.
+ * kit, and as the boards draw one: a few quiet rules and short labels, no box, no
+ * axis lines, rounded bars with room between them, a line with rings on its points.
+ * A token with no value is left out, so the engine's default applies.
  */
 export function chartConfig(tokens: ChartTokens): Config {
   const set = <Key extends string>(key: Key, value: string) =>
     (value === "" ? {} : { [key]: value }) as { [K in Key]?: string };
   const labels = { ...set("labelColor", tokens.inkMuted), ...set("titleColor", tokens.ink) };
-  const category = [
-    tokens.action,
-    tokens.attention,
-    tokens.success,
-    tokens.danger,
-    tokens.inkMuted,
-  ].filter((color) => color !== "");
+  const category = seriesColors(tokens);
   const ramp = [tokens.actionSoft, tokens.action].filter((color) => color !== "");
+  const ground = tokens.surface ?? "";
+  const quiet = {
+    ...set("labelColor", tokens.inkMuted),
+    ...set("titleColor", tokens.inkMuted),
+    labelFontSize: 10,
+    labelPadding: 6,
+    labelOverlap: "greedy" as const,
+    labelSeparation: 8,
+    titleFontSize: 11,
+    titleFontWeight: "normal" as const,
+    titlePadding: 10,
+    domain: false,
+    ticks: false,
+    ...set("gridColor", tokens.line),
+    gridWidth: 1,
+  };
 
   return {
     background: "transparent",
@@ -62,14 +113,29 @@ export function chartConfig(tokens: ChartTokens): Config {
     mark: set("color", tokens.action),
     text: set("color", tokens.ink),
     rule: set("color", tokens.inkMuted),
-    view: set("stroke", tokens.line),
-    axis: {
+    view: { stroke: null },
+    axis: quiet,
+    axisY: { tickCount: 4, grid: true },
+    axisX: { grid: false, labelPadding: 8 },
+    bar: { cornerRadiusTopLeft: 4, cornerRadiusTopRight: 4, fillOpacity: 0.9 },
+    line: { strokeWidth: 2.2, strokeJoin: "round", strokeCap: "round" },
+    area: { fillOpacity: 0.08, line: { strokeWidth: 2.2 } },
+    rect: { cornerRadius: 3, ...(ground === "" ? {} : { stroke: ground }), strokeWidth: 2 },
+    arc: { ...(ground === "" ? {} : { stroke: ground }), strokeWidth: 2 },
+    scale: { bandPaddingInner: 0.35, bandPaddingOuter: 0.15 },
+    legend: {
       ...labels,
-      ...set("domainColor", tokens.line),
-      ...set("tickColor", tokens.line),
-      ...set("gridColor", tokens.line),
+      ...set("titleColor", tokens.inkMuted),
+      labelFontSize: 11,
+      titleFontSize: 11,
+      titleFontWeight: "normal" as const,
+      symbolType: "circle",
+      symbolSize: 70,
+      orient: "top",
+      direction: "horizontal",
+      offset: 8,
+      padding: 4,
     },
-    legend: labels,
     header: labels,
     title: { ...set("color", tokens.ink), ...set("subtitleColor", tokens.inkMuted) },
     range: {

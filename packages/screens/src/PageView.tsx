@@ -4,6 +4,7 @@ import { childrenOf, isContainer, type Roles, tabsOf, topLevel } from "@volvel/m
 import { EmptyState, Panel, useFlip } from "@volvel/ui";
 import { EyeOff, GripHorizontal } from "@volvel/ui/icons";
 import type { ActOutcome, Choice, EventPayload, FilterHost } from "@volvel/widgets";
+import { calloutEdge } from "@volvel/widgets-core/views";
 import type React from "react";
 import {
   type CSSProperties,
@@ -482,7 +483,7 @@ function Cell({
       data-selected={selected ? "" : undefined}
       style={style}
       // A view may size what it draws by its cell's width: the container named `cell`.
-      className={`@container/cell relative flex min-h-0 min-w-0 flex-col ${span === 2 ? "col-span-2" : ""} @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
+      className={`@container/cell relative flex min-h-0 min-w-0 flex-col ${calloutEdge(widget.type, widget.config)} ${span === 2 ? "col-span-2" : ""} @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
         selected ? "ring-2 ring-action" : building ? "hover:ring-1 hover:ring-action/40" : ""
       } ${fade || away ? "opacity-60" : ""} ${hiddenFor ? "opacity-40" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
         building ? "cursor-grab touch-pan-y select-none active:cursor-grabbing" : ""

@@ -91,7 +91,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
   const high = Math.max(...present);
   const write = (value: number | null) =>
     value === null ? "" : formatNumber(value, config.format);
-  const cell = "border-b border-line px-3 py-2 text-right tabular-nums";
+  const cell = "rounded-[5px] px-2.5 py-1.5 text-right whitespace-nowrap tabular-nums";
   const heading = labelOf(summary.columns, summary.values[0] ?? "");
   const across = summary.breakdowns.at(-1) ?? "";
   const say = (headers: string[], column?: string) => {
@@ -105,7 +105,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
   return (
     <div className="overflow-auto">
       {/* table-allowed: a pivot heads its rows and its columns alike, which a list of rows does not */}
-      <table className="w-full border-separate border-spacing-0 text-body-sm">
+      <table className="w-full border-separate border-spacing-1 text-body-sm">
         <caption className="sr-only">
           {heading} by{" "}
           {summary.breakdowns.map((name) => labelOf(summary.columns, name)).join(" and ")}
@@ -116,13 +116,13 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
               <th
                 key={name}
                 scope="col"
-                className="border-b border-line px-3 py-2 text-left font-medium text-ink-muted"
+                className="px-2.5 py-1.5 text-left text-meta font-medium whitespace-nowrap text-ink-muted"
               >
                 {labelOf(summary.columns, name)}
               </th>
             ))}
             {turned.columns.map((name) => (
-              <th key={name} scope="col" className={`${cell} font-medium text-ink-muted`}>
+              <th key={name} scope="col" className={`${cell} text-meta font-medium text-ink-muted`}>
                 {name}
               </th>
             ))}
@@ -140,7 +140,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
                 <th
                   key={turned.rowNames[at]}
                   scope="row"
-                  className="border-b border-line px-3 py-2 text-left font-normal"
+                  className="px-2.5 py-1.5 text-left font-normal whitespace-nowrap"
                 >
                   {header}
                 </th>
@@ -184,20 +184,20 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
               <th
                 scope="row"
                 colSpan={Math.max(1, turned.rowNames.length)}
-                className="px-3 py-2 text-left font-semibold"
+                className="px-2.5 py-1.5 text-left font-semibold"
               >
                 Total
               </th>
               {turned.totals.cells.map((value, at) => (
                 <td
                   key={turned.columns[at]}
-                  className="px-3 py-2 text-right font-semibold tabular-nums"
+                  className="px-2.5 py-1.5 text-right font-semibold tabular-nums"
                 >
                   {write(value)}
                 </td>
               ))}
               {rowTotals && turned.columns.length > 1 ? (
-                <td className="px-3 py-2 text-right font-semibold tabular-nums">
+                <td className="px-2.5 py-1.5 text-right font-semibold tabular-nums">
                   {write(turned.totals.total)}
                 </td>
               ) : null}

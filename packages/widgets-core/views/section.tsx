@@ -39,7 +39,7 @@ export function SectionView({
   return (
     <div
       data-look={config.look === "card" ? "card" : "plain"}
-      className={`flex flex-col ${config.look === "card" ? "rounded-control border border-line bg-surface p-3" : ""}`}
+      className={`flex flex-col ${config.look === "card" ? "rounded-panel bg-sunken p-3" : ""}`}
     >
       {folds ? (
         // On the heading's row, at its end: the cell is what it is placed against.

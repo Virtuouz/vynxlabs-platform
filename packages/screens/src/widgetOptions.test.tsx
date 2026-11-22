@@ -50,7 +50,7 @@ describe("the definitions", () => {
       "smallest",
       "label",
     ]);
-    expect(chart.defaults).toMatchObject({ points: true, axisTitles: true, colors: "theme" });
+    expect(chart.defaults).toMatchObject({ points: true, axisTitles: false, colors: "theme" });
   });
 
   test("the stat's change is hinted under Compare", () => {
@@ -102,11 +102,13 @@ const spec = (config: object, data: SummaryData): any => chartFor(config, data).
 
 describe("the chart draws each option", () => {
   test("a line marks its points unless told not to, and smooths on request", () => {
-    expect(spec({ mark: "line" }, dated).mark).toMatchObject({
-      point: true,
+    // The points are rings; the soft area under the single line is the layer before it.
+    const line = (config: object) => spec(config, dated).layer.at(-1);
+    expect(line({ mark: "line" }).mark).toMatchObject({
+      point: { filled: false },
       interpolate: "linear",
     });
-    expect(spec({ mark: "line", points: false, smooth: true }, dated).mark).toMatchObject({
+    expect(line({ mark: "line", points: false, smooth: true }).mark).toMatchObject({
       point: false,
       interpolate: "monotone",
     });
@@ -116,10 +118,9 @@ describe("the chart draws each option", () => {
     expect(spec({ mark: "area" }, dated).mark).toMatchObject({
       type: "area",
       line: true,
-      opacity: 0.3,
       point: false,
     });
-    expect(spec({ mark: "area", points: true }, dated).mark.point).toBe(true);
+    expect(spec({ mark: "area", points: true }, dated).mark.point).toMatchObject({ filled: false });
   });
 
   test("values on bars add a text layer, beside the bar when it lies down", () => {
@@ -133,7 +134,9 @@ describe("the chart draws each option", () => {
   });
 
   test("axis titles can be left off", () => {
-    const named = spec({ mark: "bar" }, grouped).encoding;
+    // None until asked for, as the boards draw none.
+    expect(spec({ mark: "bar" }, grouped).encoding.x.title).toBeNull();
+    const named = spec({ mark: "bar", axisTitles: true }, grouped).encoding;
     expect(named.x.title).toBe("Clinic");
     expect(named.y.title).toBe("Total");
     const bare = spec({ mark: "bar", axisTitles: false }, grouped).encoding;
@@ -226,8 +229,12 @@ describe("the chart draws each option", () => {
   test("the period before is a dashed line, and off when compare is false", () => {
     const withBefore: SummaryData = { ...dated, previous: [{ total: 5 }, { total: 15 }] };
     const drawn = spec({ mark: "line", compare: true, compareTo: "range" }, withBefore);
-    expect(drawn.layer[1].mark.strokeDash).toEqual([4, 4]);
-    expect(spec({ mark: "line", compare: false }, withBefore).layer).toBeUndefined();
+    expect(drawn.layer.at(-1).mark.strokeDash).toEqual([4, 4]);
+    expect(
+      spec({ mark: "line", compare: false }, withBefore).layer.some(
+        (one: { mark: { strokeDash?: number[] } }) => one.mark.strokeDash,
+      ),
+    ).toBe(false);
   });
 
   test("compare is kept with the filter the server reads", () => {

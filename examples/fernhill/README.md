@@ -34,7 +34,7 @@ VOLVEL_URL=http://localhost:8080 node setup/setup.mjs          # --reset to star
 2. Four members and sixty locums (`locum.01` to `locum.60`, no role, so the members list has a second page), "Practice managers" and "Billing" groups (Billing: Rowan Ellis and Devi Shah; with the practice managers they may mark an invoice paid), two workspaces (`clinics` in production, `sandbox` in dev), end-user groups and front-desk accounts.
 3. Connects TextLine and VetSupply in both workspaces and stores PayFern's signing secret.
 4. Devi deploys the repository with the CLI, and Maya promotes it.
-5. Seeds six weeks of history: about 2,900 visits and 2,100 invoices.
+5. Seeds six weeks of history in Clinics: about 2,900 visits and 2,100 invoices. The sandbox gets a smaller group (six clients a clinic) over eight weeks, so the builder's charts have a few weeks of lines and bars to draw.
 6. Plays out a morning:
    - a stock check starts reorders, four of which wait for a manager
    - TextLine has an outage that fails a run, then the reminders go out

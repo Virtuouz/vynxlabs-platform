@@ -422,3 +422,12 @@ input[type="radio"]:not(.sr-only):disabled {
     outline-offset: -2px;
   }
 }
+
+/* A button that cannot be pressed keeps an edge in forced colors, drawn in the system's grey, whatever its fill was. */
+@media (forced-colors: active) {
+  :is(button, a[role="button"])[disabled],
+  :is(button, a, [role="menuitem"])[aria-disabled="true"] {
+    border: 2px solid GrayText;
+    color: GrayText;
+  }
+}

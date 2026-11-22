@@ -2,7 +2,7 @@ import type { InterfaceBody } from "@volvel/manifest";
 import { Button, Dialog } from "@volvel/ui";
 import { useRef, useState } from "react";
 import { useLoad } from "../../api.ts";
-import { ago } from "../../kit/format.ts";
+import { ago, day, hm } from "../../kit/format.ts";
 import { draftChanges, savedWords } from "./changes.ts";
 
 interface Kept {
@@ -18,10 +18,8 @@ interface Kept {
 
 /** When a save was made: the clock time when it is under a day ago, else the date and the time. */
 function when(value: string): string {
-  const date = new Date(value);
-  const clock = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  if (Date.now() - date.getTime() < 86_400_000) return `${clock} (${ago(value)})`;
-  return `${date.toLocaleDateString([], { day: "numeric", month: "short" })}, ${clock}`;
+  if (Date.now() - new Date(value).getTime() < 86_400_000) return `${hm(value)} (${ago(value)})`;
+  return `${day(value)} ${hm(value)}`;
 }
 
 /**

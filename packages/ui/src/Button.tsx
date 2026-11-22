@@ -73,7 +73,7 @@ const classesOf = (
 ) => {
   const variant =
     named in ALIASES ? ALIASES[named as keyof typeof ALIASES] : (named as keyof typeof styles);
-  return `inline-flex items-center justify-center rounded-control text-body-sm font-medium whitespace-nowrap no-underline transition-[background-color,filter] motion-fast active:brightness-95 disabled:opacity-50 disabled:pointer-events-none aria-disabled:opacity-50 aria-disabled:pointer-events-none forced-colors:disabled:border-2 forced-colors:disabled:border-[GrayText] forced-colors:disabled:text-[GrayText] forced-colors:aria-disabled:border-2 forced-colors:aria-disabled:border-[GrayText] forced-colors:aria-disabled:text-[GrayText] ${SIZES[size]} ${styles[variant]} ${extra}`;
+  return `inline-flex items-center justify-center rounded-control text-body-sm font-medium whitespace-nowrap no-underline transition-[background-color,filter] motion-fast active:brightness-95 disabled:opacity-50 disabled:pointer-events-none aria-disabled:opacity-50 aria-disabled:pointer-events-none ${SIZES[size]} ${styles[variant]} ${extra}`;
 };
 
 export function Button({ tooltip, keys, ...props }: ButtonProps) {

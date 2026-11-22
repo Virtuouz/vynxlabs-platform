@@ -1,5 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
+const HANDLE_ROOM = 24;
+
 /**
  * A frame drawn at its true width (a Large sheet is 960 wide, a tablet 768) and scaled down to
  * fit the room it has, with the scale said ("62 %") so that what is seen is known to be smaller.
@@ -30,7 +32,9 @@ export function ScaledFrame({
       setRoom(
         box.clientWidth -
           Number.parseFloat(style.paddingLeft) -
-          Number.parseFloat(style.paddingRight),
+          Number.parseFloat(style.paddingRight) -
+          // The handle on the frame's edge, and what a finger can hit around it, stay inside the room.
+          HANDLE_ROOM,
       );
       setTall(frame.offsetHeight);
     };

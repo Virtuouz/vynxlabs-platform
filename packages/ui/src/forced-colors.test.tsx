@@ -56,5 +56,7 @@ test("a solid button keeps an edge in forced colors, and a disabled one says so 
     </>,
   );
   expect(screen.getByText("Go").className).toContain("forced-colors:border-[ButtonText]");
-  expect(screen.getByText("Off").className).toContain("forced-colors:disabled:border-[GrayText]");
+  // A disabled one is drawn by the stylesheet, once, for every button.
+  expect(css).toContain("border: 2px solid GrayText");
+  expect(screen.getByText("Off").hasAttribute("disabled")).toBe(true);
 });

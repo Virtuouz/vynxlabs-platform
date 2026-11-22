@@ -97,15 +97,20 @@ function listOf(items: readonly string[]): string {
 }
 
 /**
- * Whether the person is in one of `groups` (paths). `ActingUser.groups` holds the names and keys
- * the runtime knows (and paths when the served app gives them): a path matches itself, or its
- * last segment (the key).
+ * A group path's key: `groups/<key>` (member group), `end-user-groups/<key>` (end-user group) or a
+ * bare key. The same rule as `parseGroupPath` in `@volvel/manifest`, copied because the served
+ * runtime may not import the manifest's main entry.
  */
+export function groupKey(path: string): string {
+  if (path.startsWith("groups/")) return path.slice("groups/".length);
+  if (path.startsWith("end-user-groups/")) return path.slice("end-user-groups/".length);
+  return path;
+}
+
+/** Whether the person is in one of `groups`: one has a key among the user's group keys. */
 export function inGroups(groups: readonly string[], user: ActingUser | undefined): boolean {
   const mine = user?.groups ?? [];
-  return groups.some(
-    (path) => mine.includes(path) || mine.includes(path.split("/").at(-1) ?? path),
-  );
+  return groups.some((path) => mine.includes(groupKey(path)));
 }
 
 /** Whether the person may run the action by its `runBy`; no groups named means anyone. The server decides again. */
@@ -120,7 +125,7 @@ export function whyNotRun(
   user: ActingUser | undefined,
 ): string | undefined {
   if (mayRun(action, user)) return undefined;
-  return `Only ${listOf((action?.runBy?.groups ?? []).map(groupTitle))} can do this`;
+  return `Only ${listOf((action?.runBy?.groups ?? []).map(groupTitle))} can do this.`;
 }
 
 /** Whether a widget is drawn to this person by `rules.seenBy`; drawing only, never security. */

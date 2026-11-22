@@ -484,7 +484,7 @@ function Cell({
                       }),
                   })}
               can={(at, row) =>
-                mayRun(actionAt(widget, at), user) &&
+                (building || mayRun(actionAt(widget, at), user)) &&
                 holds(
                   actionAt(widget, at)?.when,
                   { this: record ? thisRow : null, event: row },
@@ -492,7 +492,7 @@ function Cell({
                 )
               }
               why={(at, row) => {
-                const denied = whyNotRun(actionAt(widget, at), user);
+                const denied = building ? undefined : whyNotRun(actionAt(widget, at), user);
                 if (denied) return denied;
                 const when = actionAt(widget, at)?.when;
                 const records = { this: record ? thisRow : null, event: row };

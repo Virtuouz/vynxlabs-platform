@@ -50,16 +50,16 @@ const widget = (type: string, config: Record<string, unknown>, extra = {}): Page
 describe("who can run it, and who is shown it", () => {
   test("group titles come from the last path segment", () => {
     expect(groupTitle("practice-managers")).toBe("Practice managers");
-    expect(groupTitle("end-users/billing")).toBe("Billing");
+    expect(groupTitle("end-user-groups/billing")).toBe("Billing");
   });
 
   test("mayRun and whyNotRun read runBy against the user's groups, by path or key", () => {
     const action = { steps, runBy: { groups: ["practice-managers", "billing"] } };
     expect(mayRun(action, { id: "u", groups: ["billing"] })).toBe(true);
-    expect(mayRun(action, { id: "u", groups: ["end-users/practice-managers"] })).toBe(false);
+    expect(mayRun(action, { id: "u", groups: ["billing-x"] })).toBe(false);
     expect(mayRun(action, { id: "u", groups: ["practice-managers"] })).toBe(true);
     expect(whyNotRun(action, { id: "u", groups: [] })).toBe(
-      "Only Practice managers and Billing can do this",
+      "Only Practice managers and Billing can do this.",
     );
     expect(mayRun({ steps }, undefined)).toBe(true);
     expect(mayRun({ steps, runBy: { groups: [] } }, undefined)).toBe(true);

@@ -329,8 +329,10 @@ test("a Search and filter is added at the top with the page moved down and what 
 
 test("a Search and filter's Display tab offers Clear", () => {
   show(<Harness start={page()} open="bar" />);
-  fireEvent.click(screen.getByRole("tab", { name: "Display" }));
-  expect((screen.getByLabelText("Offer “Clear”") as HTMLInputElement).checked).toBe(true);
+  fireEvent.click(screen.getByRole("tab", { name: /^Display/ }));
+  expect(screen.getByRole("switch", { name: "Offer “Clear”" }).getAttribute("aria-checked")).toBe(
+    "true",
+  );
 });
 
 // ----- Tabs -----
@@ -364,7 +366,7 @@ const tabsHeld = () => (byId("views").config?.tabs ?? []) as { id: string; title
 
 test("tabs are added with an id made from the title, renamed without changing it, and moved", () => {
   show(<Harness start={withTabs()} open="views" />);
-  fireEvent.click(screen.getByRole("tab", { name: "Display" }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Display/ }));
   fireEvent.click(screen.getByRole("button", { name: "Add a tab" }));
   expect(tabsHeld().at(-1)).toEqual({ id: "tab-3", title: "Tab 3" });
   fireEvent.change(screen.getByLabelText("Tab name", { selector: "[name$=first-title]" }), {
@@ -383,7 +385,7 @@ test("tabs are added with an id made from the title, renamed without changing it
 
 test("removing a tab that holds nothing removes it; one that holds widgets asks what to do with them", async () => {
   show(<Harness start={withTabs()} open="views" />);
-  fireEvent.click(screen.getByRole("tab", { name: "Display" }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Display/ }));
   fireEvent.click(screen.getByRole("button", { name: "Add a tab" }));
   fireEvent.click(screen.getByRole("button", { name: "Remove the tab Tab 3" }));
   expect(tabsHeld().map((one) => one.id)).toEqual(["first", "second"]);
@@ -423,7 +425,7 @@ test("the last tab cannot be removed", () => {
       open="views"
     />,
   );
-  fireEvent.click(screen.getByRole("tab", { name: "Display" }));
+  fireEvent.click(screen.getByRole("tab", { name: /^Display/ }));
   expect(
     (screen.getByRole("button", { name: "Remove the tab Only" }) as HTMLButtonElement).disabled,
   ).toBe(true);

@@ -226,8 +226,11 @@ test("its maker adds a widget from Add to page, changes it in its settings, remo
 
   // The new widget is the one being changed: its settings are beside the page.
   const settings = within(screen.getByRole("complementary", { name: "Settings" }));
-  fireEvent.click(settings.getByRole("tab", { name: "Display" }));
-  fireEvent.change(settings.getByLabelText("Title"), { target: { value: "How many" } });
+  fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
+  fireEvent.click(settings.getByRole("button", { name: /^Title/ }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Title" }), {
+    target: { value: "How many" },
+  });
   await waitFor(() => expect(sent("PUT")).toHaveLength(2));
   expect(put(1).body.widgets.at(-1).title).toBe("How many");
 
@@ -355,8 +358,11 @@ test("a change made right before a share is saved on the revision the change mad
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.click(screen.getByLabelText("Held", { selector: "section" }));
   const settings = within(await screen.findByRole("complementary", { name: "Settings" }));
-  fireEvent.click(settings.getByRole("tab", { name: "Display" }));
-  fireEvent.change(settings.getByLabelText("Title"), { target: { value: "On the shelf" } });
+  fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
+  fireEvent.click(settings.getByRole("button", { name: /^Title/ }));
+  fireEvent.change(await screen.findByRole("textbox", { name: "Title" }), {
+    target: { value: "On the shelf" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Share" }));
   fireEvent.click(
     within(await screen.findByRole("dialog")).getByLabelText(

@@ -8,22 +8,60 @@ import type { Page, PageFilter, PageWidget, ValueFormat } from "@volvel/manifest
 import {
   Button,
   CheckboxField,
+  DrawerBlock,
+  DrawerRow,
   MoveButtons,
   MultiSelectField,
   NumberField,
   type Option,
+  type Position,
+  PositionPicker,
   SegmentedControl,
   SelectField,
   TextField,
+  TilePicker,
+  ToggleRow,
   useFlip,
 } from "@volvel/ui";
+import {
+  Archive,
+  ArrowRight,
+  Ban,
+  Bell,
+  Calendar,
+  Check,
+  CircleCheck,
+  Copy,
+  Download,
+  ExternalLink,
+  Eye,
+  FileText,
+  Link as LinkIcon,
+  Lock,
+  Mail,
+  Pencil as PencilIcon,
+  Phone,
+  Play,
+  Plus,
+  Printer,
+  RefreshCw,
+  Send,
+  Settings,
+  Star,
+  Trash2,
+  Undo2,
+  Upload,
+  X,
+  Zap,
+} from "@volvel/ui/icons";
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
 import { Pencil } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { amount } from "../format.ts";
 import { MarkdownEditor } from "../markdown/MarkdownEditor.tsx";
 import { useEditOnPage } from "../markdown/onThePage.ts";
 import { ActionControl, ActionsControl } from "./actionControls.tsx";
+import { settingControlFor, tilePreviewFor } from "./custom.ts";
 import { DataControl } from "./dataControls.tsx";
 import { FieldsControl, PageControl } from "./fieldsControl.tsx";
 import { FiltersControl } from "./filtersControl.tsx";
@@ -53,6 +91,8 @@ export interface Env {
   scripts: readonly ScriptChoice[];
   /** The names of the groups of members, for "the current user is in …". */
   groups: readonly string[];
+  /** The names of the end-user groups, for the `groups` control (who may run, who sees). */
+  endUserGroups?: readonly string[] | undefined;
   /** Every widget of the page, this one as it is now (a filter reaches the others). */
   widgets: readonly PageWidget[];
   /** Writes the page's widgets: for a change that reaches other widgets (a filter followed, a tab removed). */
@@ -102,6 +142,8 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
       key ? `config:${widget.id}:${name}` : undefined,
     );
   const help = hint.help;
+  const own = settingControlFor(env.definition.type, name);
+  if (own) return <>{own(env)}</>;
 
   switch (hint.control) {
     case "text":
@@ -147,7 +189,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
           label={hint.label}
           {...(help ? { hint: help } : {})}
           checked={value === true}
-          onChange={(on) => set(on ? true : undefined)}
+          onChange={(on) => set(switchValue(env, name, on))}
         />
       );
     case "choice":
@@ -162,7 +204,9 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
             {...(help ? { hint: help } : {})}
             value={value === undefined ? "" : String(value)}
             options={[...(fixed ? [] : [{ value: "", label: "Not chosen" }]), ...choices]}
-            onChange={(next) => set(choices.find((one) => one.value === next) ? next : undefined)}
+            onChange={(next) =>
+              set(choices.find((one) => one.value === next) ? enumValue(setting, next) : undefined)
+            }
           />
         );
       }
@@ -174,7 +218,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
               label={hint.label}
               options={choices}
               value={value === undefined ? "" : String(value)}
-              onChange={(next) => set(next)}
+              onChange={(next) => set(enumValue(setting, next))}
             />
           </div>
           {help ? <p className="m-0 text-body-sm text-ink-muted">{help}</p> : null}
@@ -318,9 +362,89 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
           help={help}
         />
       ) : null;
+    case "position":
+      return (
+        <div className="flex flex-col gap-1">
+          <span className="text-body-sm font-medium text-ink">{hint.label}</span>
+          <PositionPicker
+            label={hint.label}
+            value={(typeof value === "string" ? value : "middle-center") as Position}
+            onChange={(next) => set(next)}
+          />
+          {help ? <p className="m-0 text-body-sm text-ink-muted">{help}</p> : null}
+        </div>
+      );
+    case "tiles": {
+      const preview = tilePreviewFor(env.definition.type, name);
+      return (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-body-sm font-medium text-ink">{hint.label}</span>
+          <TilePicker
+            label={hint.label}
+            columns={choicesOf(setting).length === 2 ? 2 : choicesOf(setting).length === 4 ? 4 : 3}
+            options={choicesOf(setting).map((one) => ({
+              value: one.value,
+              label: one.label,
+              ...(preview ? { preview: preview(one.value, env) } : {}),
+            }))}
+            value={value === undefined ? undefined : String(value)}
+            onChange={(next) => set(enumValue(setting, next))}
+          />
+          {help ? <p className="m-0 text-meta text-ink-muted">{help}</p> : null}
+        </div>
+      );
+    }
+    case "icon":
+      return (
+        <IconControl
+          field={field}
+          label={hint.label}
+          help={help}
+          value={typeof value === "string" ? value : undefined}
+          onChange={(next) => set(next, false)}
+        />
+      );
+    case "groups":
+      return (
+        <GroupsControl
+          field={field}
+          label={hint.label}
+          help={help}
+          members={env.groups}
+          endUsers={env.endUserGroups ?? []}
+          value={Array.isArray(value) ? (value as string[]) : []}
+          onChange={(next) => set(next, false)}
+        />
+      );
+    case "slots":
+      // The List's sample row is drawn by what registers it (`registerSettingControl`).
+      return (
+        <p className="m-0 text-body-sm text-ink-muted">
+          {hint.label}: its places are drawn by the widget.
+        </p>
+      );
     default:
       return null;
   }
+}
+
+/** The value a choice writes: the schema's own (1, not "1"), found by its text. */
+export function enumValue(setting: ConfigSetting, text: string): unknown {
+  const declared = (setting.schema.enum as readonly unknown[] | undefined)?.find(
+    (one) => String(one) === text,
+  );
+  if (declared !== undefined) return declared;
+  const type = setting.schema.type;
+  if ((type === "integer" || type === "number") && text !== "" && Number.isFinite(Number(text))) {
+    return Number(text);
+  }
+  return text;
+}
+
+/** What a switch writes: on is `true`; off takes the property out, or says `false` where the default is on. */
+function switchValue(env: Env, name: string, on: boolean): boolean | undefined {
+  if (on) return true;
+  return env.definition.defaults?.[name] === true ? false : undefined;
 }
 
 /** What each value of a choice is called: the hint's words, else the value made readable. */
@@ -622,5 +746,274 @@ function ColumnsControl({
         </div>
       ) : null}
     </fieldset>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Icons
+
+type IconComponent = (props: {
+  size?: number;
+  className?: string;
+  "aria-hidden"?: "true";
+}) => ReactNode;
+
+/**
+ * The curated icons a button or a page may carry, by kit name. The same names the widgets' views
+ * draw (`packages/widgets-core/views/look.tsx`): a name written here is one they know.
+ */
+export const ICON_CHOICES: readonly { name: string; label: string; icon: IconComponent }[] = [
+  { name: "archive", label: "Archive", icon: Archive },
+  { name: "arrow-right", label: "Arrow", icon: ArrowRight },
+  { name: "ban", label: "Ban", icon: Ban },
+  { name: "bell", label: "Bell", icon: Bell },
+  { name: "calendar", label: "Calendar", icon: Calendar },
+  { name: "check", label: "Check", icon: Check },
+  { name: "circle-check", label: "Done", icon: CircleCheck },
+  { name: "copy", label: "Copy", icon: Copy },
+  { name: "download", label: "Download", icon: Download },
+  { name: "external-link", label: "Open elsewhere", icon: ExternalLink },
+  { name: "eye", label: "View", icon: Eye },
+  { name: "file-text", label: "Document", icon: FileText },
+  { name: "link", label: "Link", icon: LinkIcon },
+  { name: "lock", label: "Lock", icon: Lock },
+  { name: "mail", label: "Mail", icon: Mail },
+  { name: "pencil", label: "Edit", icon: PencilIcon },
+  { name: "phone", label: "Phone", icon: Phone },
+  { name: "play", label: "Run", icon: Play },
+  { name: "plus", label: "Add", icon: Plus },
+  { name: "printer", label: "Print", icon: Printer },
+  { name: "refresh-cw", label: "Refresh", icon: RefreshCw },
+  { name: "send", label: "Send", icon: Send },
+  { name: "settings", label: "Settings", icon: Settings },
+  { name: "star", label: "Star", icon: Star },
+  { name: "trash-2", label: "Delete", icon: Trash2 },
+  { name: "undo-2", label: "Undo", icon: Undo2 },
+  { name: "upload", label: "Upload", icon: Upload },
+  { name: "x", label: "Close", icon: X },
+  { name: "zap", label: "Zap", icon: Zap },
+];
+
+const iconOf = (name: string | undefined) => ICON_CHOICES.find((one) => one.name === name);
+
+function IconControl({
+  field,
+  label,
+  help,
+  value,
+  onChange,
+}: {
+  field: string;
+  label: string;
+  help: string | undefined;
+  value: string | undefined;
+  onChange: (next: string | undefined) => void;
+}) {
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-1.5 border-0 p-0">
+      <legend className="p-0 text-body-sm font-medium text-ink">{label}</legend>
+      <div className="grid grid-cols-6 gap-1">
+        <button
+          type="button"
+          aria-pressed={value === undefined}
+          aria-label="No icon"
+          onClick={() => onChange(undefined)}
+          className={`grid size-9 cursor-pointer place-items-center rounded-control border text-meta outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus ${
+            value === undefined
+              ? "border-action bg-action-soft text-action"
+              : "border-line text-ink-muted hover:border-line-strong"
+          }`}
+        >
+          None
+        </button>
+        {ICON_CHOICES.map(({ name, label: words, icon: Icon }) => (
+          <button
+            key={name}
+            id={`${field}-${name}`}
+            type="button"
+            aria-pressed={value === name}
+            aria-label={words}
+            title={words}
+            onClick={() => onChange(name)}
+            className={`grid size-9 cursor-pointer place-items-center rounded-control border outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus ${
+              value === name
+                ? "border-action bg-action-soft text-action"
+                : "border-line text-ink hover:border-line-strong"
+            }`}
+          >
+            <Icon size={16} aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+      {help ? <p className="m-0 text-meta text-ink-muted">{help}</p> : null}
+    </fieldset>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Groups
+
+function GroupsControl({
+  field,
+  label,
+  help,
+  members,
+  endUsers,
+  value,
+  onChange,
+}: {
+  field: string;
+  label: string;
+  help: string | undefined;
+  members: readonly string[];
+  endUsers: readonly string[];
+  value: string[];
+  onChange: (next: string[] | undefined) => void;
+}) {
+  const toggle = (name: string, on: boolean) =>
+    onChange(
+      on ? [...value.filter((one) => one !== name), name] : value.filter((one) => one !== name),
+    );
+  // A named group that is gone stays listed, so it can be taken out.
+  const gone = value.filter((one) => !members.includes(one) && !endUsers.includes(one));
+  const section = (title: string, names: readonly string[]) =>
+    names.length === 0 ? null : (
+      <div className="flex flex-col gap-1">
+        <span className="text-meta text-ink-muted">{title}</span>
+        {names.map((name) => (
+          <CheckboxField
+            key={`${title}:${name}`}
+            name={`${field}-${title}-${name}`}
+            label={name}
+            checked={value.includes(name)}
+            onChange={(on) => toggle(name, on)}
+          />
+        ))}
+      </div>
+    );
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+      <legend className="p-0 text-body-sm font-medium text-ink">{label}</legend>
+      {members.length === 0 && endUsers.length === 0 && gone.length === 0 ? (
+        <p className="m-0 text-body-sm text-ink-muted">There are no groups yet.</p>
+      ) : null}
+      {section("Member groups", members)}
+      {section("End-user groups", endUsers)}
+      {gone.length > 0 ? section("No longer exist", gone) : null}
+      {help ? <p className="m-0 text-meta text-ink-muted">{help}</p> : null}
+    </fieldset>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// A setting as a row of the drawer
+
+/** The control inline, in the group, not behind a row: its own shape asks for the room. */
+const INLINE = new Set([
+  "switch",
+  "tiles",
+  "segmented",
+  "position",
+  "markdown",
+  "columns",
+  "action",
+  "actions",
+  "fields",
+  "tabs",
+  "pageFilters",
+  "slots",
+  "source",
+  "measure",
+  "breakdown",
+  "conditions",
+  "sort",
+  "limit",
+]);
+
+/** What a row says its setting is now: "Money · USD", "Done", "Practice managers". Left out: "Not set". */
+export function settingSummary(env: Env, setting: ConfigSetting): ReactNode {
+  const value = env.config[setting.name];
+  switch (setting.hint.control) {
+    case "text":
+      return typeof value === "string" && value !== "" ? value : undefined;
+    case "number":
+      return typeof value === "number" ? String(value) : undefined;
+    case "choice":
+      return value === undefined
+        ? undefined
+        : choicesOf(setting).find((one) => one.value === String(value))?.label;
+    case "format":
+      return formatSummary(value as ValueFormat | undefined);
+    case "filter":
+      return typeof value === "string" && value !== ""
+        ? (env.filters.find((one) => one.name === value)?.label ?? heading(value))
+        : undefined;
+    case "column":
+      return typeof value === "string" && value !== "" ? heading(value) : undefined;
+    case "columns":
+      return Array.isArray(value) && value.length > 0
+        ? value.map((one) => heading(String(one))).join(", ")
+        : undefined;
+    case "page":
+      return typeof value === "string" && value !== ""
+        ? (env.pages.find((one) => one.id === value)?.title ?? value)
+        : undefined;
+    case "icon": {
+      const icon = iconOf(typeof value === "string" ? value : undefined);
+      if (!icon) return undefined;
+      return (
+        <span className="inline-flex items-center gap-2">
+          <icon.icon size={14} aria-hidden="true" />
+          {icon.label}
+        </span>
+      );
+    }
+    case "groups":
+      return Array.isArray(value) && value.length > 0 ? value.join(", ") : undefined;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * One setting as the drawer draws it: a row showing its value that opens an editor with the
+ * control in it, or, for a switch, tiles, a segmented choice, a position or a list, the control
+ * itself in the group. The same control either way.
+ */
+export function SettingRow({ env, setting }: { env: Env; setting: ConfigSetting }) {
+  const { hint, name } = setting;
+  const own = settingControlFor(env.definition.type, name);
+  if (own) return <DrawerBlock>{own(env)}</DrawerBlock>;
+  if (hint.control === "switch") {
+    const value = env.config[name];
+    return (
+      <ToggleRow
+        label={hint.label}
+        {...(hint.help ? { help: hint.help } : {})}
+        checked={value === true}
+        onChange={(on) =>
+          env.write(
+            withConfig(env.widget, name, switchValue(env, name, on)),
+            `changing ${hint.label.toLowerCase()}`,
+            `config:${env.widget.id}:${name}`,
+          )
+        }
+      />
+    );
+  }
+  if (INLINE.has(hint.control)) {
+    return (
+      <DrawerBlock>
+        <ConfigControl env={env} setting={setting} />
+      </DrawerBlock>
+    );
+  }
+  return (
+    <DrawerRow
+      label={hint.label}
+      value={settingSummary(env, setting)}
+      editorTitle={hint.label}
+      editor={<ConfigControl env={env} setting={setting} />}
+    />
   );
 }

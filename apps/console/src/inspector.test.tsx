@@ -6,6 +6,7 @@ import { defineWidget, type WidgetDefinition } from "@volvel/widgets";
 import { chart, stat, text } from "@volvel/widgets-core";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { registerDrawer } from "./kit/inspector/custom.ts";
 import { Inspector } from "./kit/inspector/Inspector.tsx";
 import {
   bindFilter,
@@ -60,6 +61,16 @@ const chartWidget = (): PageWidget => ({
   },
 });
 
+/** A tab by its name: a tab with something set says so after its name. */
+const tabByName = (name: string) => screen.getByRole("tab", { name: new RegExp(`^${name}`) });
+const tabNames = () =>
+  screen.getAllByRole("tab").map((one) => (one.textContent ?? "").replace(/, has settings$/, ""));
+/** Opens the row of a setting in the drawer, and returns its editor. */
+const openRow = (label: string) => {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}`) }));
+  return screen.findByRole("dialog");
+};
+
 /** The inspector around a widget that is kept, as the editor keeps one. */
 let written: PageWidget[];
 function Harness({
@@ -67,11 +78,15 @@ function Harness({
   definition,
   surface = "app",
   filters = [],
+  groups = [],
+  endUserGroups = [],
 }: {
   start: PageWidget;
   definition: WidgetDefinition | undefined;
   surface?: "app" | "dashboard";
   filters?: PageFilter[];
+  groups?: string[];
+  endUserGroups?: string[];
 }) {
   const [widget, setWidget] = useState(start);
   return (
@@ -81,6 +96,8 @@ function Harness({
       surface={surface}
       filters={filters}
       catalog={catalog}
+      groups={groups}
+      endUserGroups={endUserGroups}
       onChange={(next) => {
         written.push(next);
         setWidget(next);
@@ -102,29 +119,95 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("the chart's Data tab is drawn as Source, Value, Break down by, Only include and More data options", () => {
+test("every drawer has the same header, the tabs its widget has, and its settings in groups", () => {
   show(<Harness start={chartWidget()} definition={chart} />);
-  const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
-  expect(tabs).toEqual(["Data", "Display", "Actions", "Rules"]);
+  // The header: the name, the kind, and a ⋯ menu.
+  expect(screen.getByRole("heading", { name: "Invoiced by week" })).toBeTruthy();
+  expect(screen.getByText("Chart")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "More about Invoiced by week" })).toBeTruthy();
+  expect(tabNames()).toEqual(["Data", "Display", "Actions", "Rules"]);
+  // The data parts are in the order the definition gives, in a group named for them.
   const panel = within(screen.getByRole("tabpanel"));
-  // In the order the definition gives.
-  const order = ["Source", "Value", "Break down by", "Only include"].map(
-    (name) => panel.getAllByText(name, { exact: false })[0],
-  );
-  expect(order.every(Boolean)).toBe(true);
+  expect(panel.getByRole("heading", { name: "Data" })).toBeTruthy();
   const text = screen.getByRole("tabpanel").textContent ?? "";
   const at = (name: string) => text.indexOf(name);
-  expect(at("Source")).toBeLessThan(at("Value"));
-  expect(at("Value")).toBeLessThan(at("Break down by"));
-  expect(at("Break down by")).toBeLessThan(at("Only include"));
+  expect(at("Source")).toBeLessThan(at("Measure"));
+  expect(at("Measure")).toBeLessThan(at("For each"));
+  expect(at("For each")).toBeLessThan(at("Only include"));
   expect(at("Only include")).toBeLessThan(at("More data options"));
   // The disclosure says what is in it, and goes no deeper.
-  expect(panel.getByText(/More data options/)).toBeTruthy();
-  expect(panel.getByText(/Sorted by, at most/)).toBeTruthy();
-  // The source is the table the widget reads, and says it follows no page filter yet.
+  expect(panel.getByText(/Sorted by, show at most/)).toBeTruthy();
+  // The source is the table the widget reads.
   expect((panel.getByRole("combobox", { name: "Source" }) as HTMLInputElement).value).toBe(
     "Invoices",
   );
+  // The repeated note about size and position is gone: Layout is in the ⋯ menu.
+  expect(screen.queryByText(/Size and position live on the page/)).toBeNull();
+});
+
+test("a dot marks a tab that has something set, and none marks one that has nothing", () => {
+  const empty: PageWidget = { id: "by-week", type: "core/chart", at: place };
+  show(<Harness start={empty} definition={chart} />);
+  expect(screen.queryAllByText(/has settings/)).toHaveLength(0);
+  cleanup();
+  // Data bound, a setting off its default, an action and a rule each light their tab.
+  const set: PageWidget = {
+    ...chartWidget(),
+    title: "Weekly",
+    config: { mark: "line" },
+    on: { click: { do: [{ do: "say", message: "Hi" }] } as never },
+    rules: { showWhen: [{ left: "this.status", op: "eq", value: "paid" }] as never },
+  };
+  show(<Harness start={set} definition={chart} />);
+  for (const name of ["Data", "Display", "Actions", "Rules"]) {
+    expect(tabByName(name).textContent).toContain("has settings");
+  }
+});
+
+test("settings are drawn in the group their hint names, in order, and a row opens its editor", async () => {
+  show(<Harness start={chartWidget()} definition={chart} />);
+  fireEvent.click(tabByName("Display"));
+  const headings = within(screen.getByRole("tabpanel"))
+    .getAllByRole("heading")
+    .map((one) => one.textContent);
+  // "Title" is every widget's; the hints' groups follow in the order of their first setting.
+  expect(headings[0]).toBe("Title");
+  expect(headings.indexOf("Chart type")).toBeLessThan(headings.indexOf("Look"));
+  // The numbers' format is a row with its value; opening it shows the control, and it writes.
+  const row = screen.getByRole("button", { name: /^Numbers/ });
+  expect(row.textContent).toContain("As it comes");
+  fireEvent.click(row);
+  const editor = await screen.findByRole("dialog");
+  fireEvent.click(within(editor).getByRole("button", { name: /As it comes/ }));
+  fireEvent.change(within(editor).getByLabelText("Written as"), { target: { value: "percent" } });
+  expect((written.at(-1) as PageWidget).config?.format).toEqual({ style: "percent" });
+});
+
+test("a Title row writes the title, and says what it is now", async () => {
+  show(<Harness start={chartWidget()} definition={chart} />);
+  fireEvent.click(tabByName("Display"));
+  expect(screen.getByRole("button", { name: /^Title/ }).textContent).toContain("Invoiced by week");
+  await openRow("Title");
+  fireEvent.change(screen.getByRole("textbox", { name: "Title" }), { target: { value: "Weekly" } });
+  expect((written.at(-1) as PageWidget).title).toBe("Weekly");
+});
+
+test("a widget type's registered piece is drawn in its group, in order, and hides the setting it replaces", () => {
+  const off = registerDrawer("core/chart", {
+    tab: "display",
+    group: "Mine",
+    order: -1,
+    hides: ["mark"],
+    render: () => <p>Custom piece</p>,
+  });
+  show(<Harness start={chartWidget()} definition={chart} />);
+  fireEvent.click(tabByName("Display"));
+  const panel = within(screen.getByRole("tabpanel"));
+  expect(panel.getByText("Custom piece")).toBeTruthy();
+  expect(panel.queryByLabelText("Bar")).toBeNull();
+  const headings = panel.getAllByRole("heading").map((one) => one.textContent);
+  expect(headings.indexOf("Mine")).toBeLessThan(headings.indexOf("Look"));
+  off();
 });
 
 test("choosing Sum of Total as the value writes the first measure", () => {
@@ -156,7 +239,7 @@ test("a condition is added as a sentence of column, test and value", () => {
 
 test("a setting that depends on another is shown only while it holds", () => {
   show(<Harness start={chartWidget()} definition={chart} />);
-  fireEvent.click(screen.getByRole("tab", { name: "Display" }));
+  fireEvent.click(tabByName("Display"));
   // The chart is bars: they may lie down.
   expect(screen.getByLabelText("Bars lie down")).toBeTruthy();
   fireEvent.click(screen.getByLabelText("Line"));
@@ -170,7 +253,8 @@ test("a tab with nothing in it is hidden", async () => {
   const note: PageWidget = { id: "note", type: "core/text", at: { x: 0, y: 0, w: 6, h: 2 } };
   show(<Harness start={note} definition={text} />);
   // A note reads nothing and raises nothing.
-  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Display", "Rules"]);
+  // The Text's own words tab is called Content.
+  expect(tabNames()).toEqual(["Content", "Rules"]);
   expect(tabsOf(text)).toEqual(["display", "rules"]);
   // Its text is a Markdown editor with a preview.
   fireEvent.change(await screen.findByLabelText("Text"), { target: { value: "# Hello" } });
@@ -242,14 +326,15 @@ test("a widget from a pack no code here knows is drawn from its definition", () 
   );
   // The pack is named beside its kind.
   expect(screen.getByText("Gauge · Labs pack")).toBeTruthy();
-  fireEvent.change(screen.getByLabelText("Size"), { target: { value: "5" } });
+  fireEvent.click(screen.getByRole("button", { name: /^Size/ }));
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Size" }), { target: { value: "5" } });
   expect(written.at(-1)?.config?.size).toBe(5);
   expect(screen.queryByLabelText("Warm")).toBeNull();
   fireEvent.click(screen.getByLabelText("Loud"));
   expect(written.at(-1)?.config?.loud).toBe(true);
   expect(screen.getByLabelText("Warm")).toBeTruthy();
   // Its event is listed in Actions, read only.
-  fireEvent.click(screen.getByRole("tab", { name: "Actions" }));
+  fireEvent.click(tabByName("Actions"));
   expect(screen.getByText("When it is tapped")).toBeTruthy();
 });
 
@@ -266,7 +351,7 @@ test("a widget no pack declares is said so, and can be removed", () => {
 
 test("Rules says who sees it and where the row rules are, and that hiding is not security", () => {
   show(<Harness start={chartWidget()} definition={chart} />);
-  fireEvent.click(screen.getByRole("tab", { name: "Rules" }));
+  fireEvent.click(tabByName("Rules"));
   expect(screen.getByText("Always")).toBeTruthy();
   expect(screen.getByText("Everyone who can open the app")).toBeTruthy();
   expect(screen.getByText(/Hiding a widget isn’t security/)).toBeTruthy();
@@ -285,10 +370,158 @@ test("Layout gives the exact column, row, width and height, held to what the wid
   fireEvent.change(screen.getByLabelText("Column"), { target: { value: "12" } });
   expect(written.at(-1)?.at).toMatchObject({ x: 9, w: 3 });
   fireEvent.click(screen.getByRole("button", { name: /Back to settings/ }));
-  await waitFor(() => expect(screen.getByRole("tab", { name: "Data" })).toBeTruthy());
+  await waitFor(() => expect(tabByName("Data")).toBeTruthy());
 });
 
-test("a stat's money format is said in a line and shown with an example", () => {
+const openLayout = async () => {
+  fireEvent.click(screen.getByRole("button", { name: "More about Invoiced by week" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: /Layout/ }));
+};
+
+test("Layout writes a tablet and a phone as Automatic or Custom, what narrow screens do, and a priority", async () => {
+  show(<Harness start={chartWidget()} definition={chart} />);
+  await openLayout();
+  expect(screen.getByRole("heading", { name: "Invoiced by week" })).toBeTruthy();
+  expect(screen.getByText("Chart · Layout")).toBeTruthy();
+  // Both start Automatic: nothing is stored.
+  expect(written.length).toBe(0);
+  // Custom stores the place the automatic one was; the phone's is one full-width row.
+  fireEvent.click(within(screen.getByRole("group", { name: "Phone" })).getByText("Custom"));
+  expect(written.at(-1)?.layout?.phone?.at).toEqual({ x: 0, y: 0, w: 12, h: 6 });
+  fireEvent.click(within(screen.getByRole("group", { name: "Tablet" })).getByText("Custom"));
+  expect(written.at(-1)?.layout?.tablet?.at).toEqual({ x: 0, y: 0, w: 6, h: 6 });
+  // A custom place has numbers of its own, held to what the widget allows.
+  fireEvent.change(screen.getByLabelText("Phone width"), { target: { value: "1" } });
+  expect(written.at(-1)?.layout?.phone?.at.w).toBe(3);
+  // Automatic takes it away again, and leaves the other alone.
+  fireEvent.click(within(screen.getByRole("group", { name: "Phone" })).getByText("Automatic"));
+  expect(written.at(-1)?.layout?.phone).toBeUndefined();
+  expect(written.at(-1)?.layout?.tablet).toBeDefined();
+  fireEvent.click(within(screen.getByRole("group", { name: "Tablet" })).getByText("Automatic"));
+  expect(written.at(-1)?.layout).toBeUndefined();
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "On narrow screens" })).getByText("Stack"),
+  );
+  expect(written.at(-1)?.layout?.narrow).toBe("stack");
+  fireEvent.change(screen.getByRole("spinbutton", { name: "Priority" }), {
+    target: { value: "2" },
+  });
+  expect(written.at(-1)?.layout).toEqual({ narrow: "stack", priority: 2 });
+});
+
+test("a place typed in Layout is settled as the canvas settles it", async () => {
+  const other: PageWidget = { id: "other", type: "core/text", at: { x: 0, y: 6, w: 6, h: 2 } };
+  const all = [chartWidget(), other];
+  const settled: PageWidget[][] = [];
+  show(
+    <Inspector
+      widget={all[0] as PageWidget}
+      definition={chart}
+      surface="app"
+      filters={[]}
+      catalog={catalog}
+      widgets={all}
+      onChange={() => {}}
+      onChangeWidgets={(next) => settled.push(next)}
+      onDuplicate={() => {}}
+      onRemove={() => {}}
+    />,
+  );
+  await openLayout();
+  // Moved down onto the other widget: that one is pushed out of the way, and rises above.
+  fireEvent.change(screen.getByLabelText("Row"), { target: { value: "7" } });
+  const next = settled.at(-1) as PageWidget[];
+  expect(next.find((one) => one.id === "by-week")?.at.y).toBe(6);
+  // What was under it rises into the room it leaves.
+  expect(next.find((one) => one.id === "other")?.at.y).toBe(0);
+});
+
+test("a choice with numbers writes numbers, and tiles, a position, an icon and groups write what they show", async () => {
+  const labs = defineWidget({
+    type: "labs/y",
+    version: "0.1.0",
+    title: "Thing",
+    description: "A thing",
+    category: "understand",
+    icon: "gauge",
+    surfaces: ["app", "dashboard"],
+    data: {},
+    defaults: { across: 1, place: "middle-center" },
+    config: {
+      type: "object",
+      properties: {
+        across: {
+          enum: [1, 2, 3],
+          "x-volvel": {
+            tab: "display",
+            group: "Look",
+            control: "segmented",
+            label: "Fields across",
+            choices: { "1": "1", "2": "2", "3": "3" },
+          },
+        },
+        look: {
+          enum: ["plain", "note"],
+          "x-volvel": {
+            tab: "display",
+            group: "Look",
+            control: "tiles",
+            label: "Style",
+            choices: { plain: "Plain", note: "Note" },
+          },
+        },
+        place: {
+          enum: ["top-left", "middle-center", "bottom-right"],
+          "x-volvel": {
+            tab: "display",
+            group: "Look",
+            control: "position",
+            label: "Position in its cell",
+          },
+        },
+        icon: {
+          type: "string",
+          "x-volvel": { tab: "display", group: "Look", control: "icon", label: "Icon" },
+        },
+        who: {
+          type: "array",
+          items: { type: "string" },
+          "x-volvel": { tab: "display", group: "Who", control: "groups", label: "Who" },
+        },
+      },
+    },
+    events: {},
+    layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 } },
+  });
+  show(
+    <Harness
+      start={{ id: "t", type: "labs/y", at: { x: 0, y: 0, w: 3, h: 3 } }}
+      definition={labs}
+      groups={["Billing"]}
+      endUserGroups={["Pet owners"]}
+    />,
+  );
+  fireEvent.click(tabByName("Display"));
+  fireEvent.click(screen.getByLabelText("2"));
+  expect(written.at(-1)?.config?.across).toBe(2);
+  fireEvent.click(screen.getByLabelText("Note"));
+  expect(written.at(-1)?.config?.look).toBe("note");
+  fireEvent.click(screen.getByRole("radio", { name: "Bottom right" }));
+  expect(written.at(-1)?.config?.place).toBe("bottom-right");
+  // The icon is a row that opens a picker of the curated icons, shown by name.
+  fireEvent.click(screen.getByRole("button", { name: /^Icon/ }));
+  fireEvent.click(await screen.findByRole("button", { name: "Star" }));
+  expect(written.at(-1)?.config?.icon).toBe("star");
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  // Groups: member and end-user groups by their names.
+  fireEvent.click(screen.getByRole("button", { name: /^Who/ }));
+  fireEvent.click(await screen.findByLabelText("Pet owners"));
+  fireEvent.click(screen.getByLabelText("Billing"));
+  expect(written.at(-1)?.config?.who).toEqual(["Pet owners", "Billing"]);
+});
+
+test("a stat's money format is said in a line and shown with an example", async () => {
   const figure: PageWidget = {
     id: "owed",
     type: "core/stat",
@@ -296,9 +529,12 @@ test("a stat's money format is said in a line and shown with an example", () => 
     config: { format: { style: "currency", currency: "USD", decimals: 2 } },
   };
   show(<Harness start={figure} definition={stat} />);
-  fireEvent.click(screen.getByRole("tab", { name: "Display" }));
-  expect(screen.getByText("Money · USD · 2 decimals")).toBeTruthy();
-  expect(screen.getByText("Shown as $43,120.00")).toBeTruthy();
+  fireEvent.click(tabByName("Display"));
+  // The row says it in a line; its editor shows the example.
+  const row = screen.getByRole("button", { name: /^Numbers/ });
+  expect(row.textContent).toContain("Money · USD · 2 decimals");
+  fireEvent.click(row);
+  expect(await screen.findByText("Shown as $43,120.00")).toBeTruthy();
 });
 
 // ----- What the model does with a page -----

@@ -399,6 +399,38 @@ describe("the core pack draws from wire data", () => {
     expect(await screen.findByText("Start here.")).toBeTruthy();
     expect(client.read).not.toHaveBeenCalled();
   });
+
+  test("while building, a double-click on a Text widget asks to write it where it is", async () => {
+    const text: PageWidget = {
+      id: "note",
+      type: "core/text",
+      at: place(0, 0, 6, 2),
+      config: { text: "Start here." },
+    };
+    const onEditText = vi.fn();
+    render(
+      <PageView
+        widgets={[text, table]}
+        filters={[]}
+        registry={registry}
+        client={clientOf({})}
+        filterValues={{}}
+        onFilterValues={() => undefined}
+        editing={{
+          selected: undefined,
+          onSelect: () => undefined,
+          onChange: () => undefined,
+          onRename: () => undefined,
+          onEditText,
+        }}
+      />,
+    );
+    fireEvent.doubleClick(await screen.findByText("Start here."));
+    expect(onEditText).toHaveBeenCalledWith("note");
+    // Another widget's double-click is not for it.
+    fireEvent.doubleClick(document.querySelector(`[data-widget-cell="${table.id}"]`) as Element);
+    expect(onEditText).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("the frame", () => {

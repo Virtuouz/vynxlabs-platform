@@ -57,8 +57,8 @@ const KIT: Components = {
           className={`absolute top-3 bottom-3 left-2 w-0.5 rounded-full ${tone.rail}`}
         />
         <tone.Icon aria-hidden="true" size={16} className={`absolute top-3.5 left-4 ${tone.ink}`} />
-        {title ? <p className="m-0 mb-1 font-semibold text-ink">{title}</p> : null}
-        <div className={`[&>:last-child]:mb-0 ${title ? "text-ink-muted" : "text-ink"}`}>
+        {title ? <p className="m-0! mb-1! font-semibold text-ink">{title}</p> : null}
+        <div className={`[&>:last-child]:mb-0! ${title ? "text-ink-muted" : "text-ink"}`}>
           {children}
         </div>
       </div>
@@ -71,7 +71,7 @@ const KIT: Components = {
         tabs={tabs.map((tab, index) => ({
           id: String(index),
           label: tab.label,
-          content: <div className="[&>:last-child]:mb-0">{tab.children}</div>,
+          content: <div className="[&>:last-child]:mb-0!">{tab.children}</div>,
         }))}
       />
     </div>
@@ -79,11 +79,18 @@ const KIT: Components = {
   details: ({ summary, children }) => (
     <div className="mb-4">
       <Details summary={summary}>
-        <div className="[&>:last-child]:mb-0">{children}</div>
+        <div className="[&>:last-child]:mb-0!">{children}</div>
       </Details>
     </div>
   ),
   kbd: ({ keys }) => <Kbd>{keys}</Kbd>,
+  // What a kind says of a field, as a line; with nothing to say of it, its path alone (never the directive as typed).
+  field: ({ path, info }) => (
+    <p className="vd-field">
+      <code>{path}</code>
+      {info?.description ? <> — {info.description}</> : null}
+    </p>
+  ),
 };
 
 export interface DocProps extends Omit<ReactOptions, "components"> {

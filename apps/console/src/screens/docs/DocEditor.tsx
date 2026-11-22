@@ -8,32 +8,9 @@ import {
   planRename,
   setFrontmatter,
 } from "@volvel/docs-engine";
-import { Button, Doc, Notice, Panel, Popover, reveal as revealIn, TextField } from "@volvel/ui";
-import {
-  Bold,
-  CircleAlert,
-  CircleCheck,
-  Code as CodeIcon,
-  ExternalLink,
-  FilePen,
-  Heading,
-  Italic,
-  Link as LinkIcon,
-  List,
-  Pencil,
-  Plus,
-  Search,
-} from "lucide-react";
-import {
-  type KeyboardEvent,
-  lazy,
-  Suspense,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Button, Doc, Notice, Panel, TextField } from "@volvel/ui";
+import { CircleAlert, CircleCheck, ExternalLink, FilePen, Pencil } from "lucide-react";
+import { type KeyboardEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api, useLoad } from "../../api.ts";
 import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { Diagram } from "../../diagrams/Diagram.tsx";
@@ -45,20 +22,11 @@ import { DiffView } from "../../kit/DiffView.tsx";
 import { useDraftSave } from "../../kit/draftSave.ts";
 import { useShortcut } from "../../kit/keys.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
+import { MarkdownEditor } from "../../kit/markdown/MarkdownEditor.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { useTitleObject } from "../../kit/title.ts";
-import { UndoRedo } from "../../kit/UndoRedo.tsx";
 import { navigate, useNavigationGuard, useQueryValue } from "../../router.tsx";
 import { deletePage, folderItems, MoveDialog, PATH, useProduct } from "./Docs.tsx";
-import {
-  where as containersWhere,
-  type Insertable,
-  insertables,
-  insertInto,
-  nameOf,
-  surround,
-  togglePrefix,
-} from "./insert.ts";
 import {
   appFor,
   type DocPage,
@@ -75,10 +43,6 @@ import {
 } from "./model.ts";
 import { PageDetails } from "./PageDetails.tsx";
 
-const CodeEditor = lazy(() =>
-  import("../../editor/CodeEditor.tsx").then((module) => ({ default: module.CodeEditor })),
-);
-
 interface Opened {
   page: DocPage;
   source: string;
@@ -88,8 +52,6 @@ interface Opened {
 
 const starter = (title: string) =>
   `---\ntitle: ${JSON.stringify(title)}\ndescription: \n---\n\nWrite here.\n`;
-
-type Mode = "source" | "split" | "preview";
 
 /** What the top of a page holds, in a few words, for beside it when it is folded. */
 function topSays(source: string): string {
@@ -184,15 +146,7 @@ export function DocEditor({
   const [taken, setTaken] = useState<string>();
   const [reveal, setReveal] = useState<{ line: number; at: number }>();
   const [comparing, setComparing] = useState(compareAsked === "1");
-  const [side, setSide] = useState<"preview" | "details">("preview");
-  const [mode, setMode] = useState<Mode>(() =>
-    typeof matchMedia === "function" && matchMedia("(min-width: 1024px)").matches
-      ? "split"
-      : "source",
-  );
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
-  const [can, setCan] = useState({ undo: false, redo: false });
-  const [inserting, setInserting] = useState(false);
   const [moving, setMoving] = useState(false);
   const [retitling, setRetitling] = useState(false);
   const handle = useRef<CodeEditorHandle | null>(null);
@@ -259,43 +213,11 @@ export function DocEditor({
     [list.data, where, link, product, resources],
   );
   const rows = useMemo(() => (list.data ? rowsOf(list.data) : []), [list.data]);
-  const within = useMemo(
-    () => containersWhere(checked?.entry.tree, cursor.line),
-    [checked, cursor.line],
-  );
-  const offered = useMemo(() => insertables(within), [within]);
   const dirty = source !== undefined && source !== saved;
   useNavigationGuard(
     dirty,
     `Your changes to the page ${where || "you are writing"} are not saved.`,
   );
-
-  // The preview follows the cursor: the block it is in is marked, and kept in view.
-  const preview = useRef<HTMLElement>(null);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the preview is drawn anew from `checked`, and the mark goes on what is drawn.
-  useEffect(() => {
-    const shown = preview.current;
-    if (!shown) return;
-    for (const old of shown.querySelectorAll(".vx-following")) old.classList.remove("vx-following");
-    let best: Element | undefined;
-    let bestLine = 0;
-    for (const one of shown.querySelectorAll("[data-line]")) {
-      const from = Number(one.getAttribute("data-line"));
-      const to = Number(one.getAttribute("data-end-line") ?? from);
-      const holds =
-        from <= cursor.line && (one.hasAttribute("data-end-line") ? to >= cursor.line : true);
-      if (holds && from >= bestLine) {
-        best = one;
-        bestLine = from;
-      }
-    }
-    if (best) {
-      // A tab or a fold the cursor is in shows itself, as the cursor goes in.
-      revealIn(best);
-      best.classList.add("vx-following");
-      if (typeof best.scrollIntoView === "function") best.scrollIntoView({ block: "nearest" });
-    }
-  }, [cursor.line, checked]);
 
   const save = async () => {
     if (placed || source === undefined) return;
@@ -366,16 +288,6 @@ export function DocEditor({
     if (handle.current) handle.current.apply(next, select);
     else typeSource(next);
   };
-  const selection = () =>
-    handle.current?.selection() ?? { start: source.length, end: source.length };
-  const insert = (item: Insertable) => {
-    const made = insertInto(source, selection(), item, within);
-    change(made.text, made.select);
-    setInserting(false);
-  };
-  const format = (made: { text: string; select: { start: number; end: number } }) =>
-    change(made.text, made.select);
-
   /** The pages as they would be with this one as it is typed: what a rename or a move is planned over. */
   const withThis = () =>
     sourcesOf(data).map((one) => (one.path === where ? { path: where, source } : one));
@@ -584,220 +496,66 @@ export function DocEditor({
       ) : null}
 
       <Panel className="flex min-h-0 flex-col overflow-hidden p-0">
-        <div
-          role="toolbar"
-          aria-label="Write"
-          className="flex flex-wrap items-center gap-1 border-line border-b px-2 py-1.5"
-        >
-          <UndoRedo
-            history={{
-              undo: () => handle.current?.undo(),
-              redo: () => handle.current?.redo(),
-              undoLabel: can.undo ? "the last change" : undefined,
-              redoLabel: can.redo ? "the change undone" : undefined,
-            }}
-          />
-          <span aria-hidden className="mx-1 h-5 w-px bg-line" />
-          <Popover
-            title="Insert a component"
-            titleHidden
-            wide
-            open={inserting}
-            onOpenChange={(next) => {
-              setInserting(next);
-              if (!next) handle.current?.focus();
-            }}
-            trigger={
-              <Button size="small" variant="quiet">
-                <Plus aria-hidden="true" size={14} />
-                Insert
-                <kbd className="ml-1 rounded-inner border border-line px-1 font-mono text-code-sm text-ink-subtle">
-                  /
-                </kbd>
-              </Button>
-            }
-          >
-            <InsertMenu
-              items={offered}
-              within={within}
-              onPick={insert}
-              onClose={() => {
-                setInserting(false);
-                handle.current?.focus();
-              }}
-            />
-          </Popover>
-          <span aria-hidden className="mx-1 h-5 w-px bg-line" />
-          <ToolButton
-            label="Heading"
-            onClick={() => format(togglePrefix(source, selection(), "## "))}
-          >
-            <Heading aria-hidden size={16} />
-          </ToolButton>
-          <ToolButton
-            label="Bold"
-            onClick={() => format(surround(source, selection(), "**", "**", "bold"))}
-          >
-            <Bold aria-hidden size={16} />
-          </ToolButton>
-          <ToolButton
-            label="Italic"
-            onClick={() => format(surround(source, selection(), "_", "_", "italic"))}
-          >
-            <Italic aria-hidden size={16} />
-          </ToolButton>
-          <ToolButton
-            label="Link"
-            onClick={() => format(surround(source, selection(), "[", "](address)", "words"))}
-          >
-            <LinkIcon aria-hidden size={16} />
-          </ToolButton>
-          <ToolButton label="List" onClick={() => format(togglePrefix(source, selection(), "- "))}>
-            <List aria-hidden size={16} />
-          </ToolButton>
-          <ToolButton
-            label="Code"
-            onClick={() => format(surround(source, selection(), "`", "`", "code"))}
-          >
-            <CodeIcon aria-hidden size={16} />
-          </ToolButton>
-          <p
-            className="m-0 ml-2 hidden min-w-0 truncate text-meta text-ink-muted md:block"
-            aria-live="polite"
-          >
-            {within.length > 0 ? (
-              <>
-                Cursor in{" "}
-                <span className="font-mono text-code-sm text-ink">
-                  {within.map(nameOf).join(" › ")}
-                </span>
-              </>
-            ) : null}
-          </p>
-          <fieldset
-            aria-label="What is shown"
-            className="m-0 ml-auto flex min-w-0 items-center rounded-control border border-line p-0.5"
-          >
-            {(["source", "split", "preview"] as const).map((one) => (
-              <button
-                key={one}
-                type="button"
-                aria-pressed={mode === one}
-                onClick={() => setMode(one)}
-                className={`rounded-inner px-2 py-1 text-meta ${one === "split" ? "hidden lg:inline-block" : ""} ${
-                  mode === one
-                    ? "bg-selected font-medium text-ink"
-                    : "text-ink-muted hover:text-ink"
-                }`}
-              >
-                {one === "source" ? "Source" : one === "split" ? "Split" : "Preview"}
-              </button>
-            ))}
-          </fieldset>
-        </div>
-
-        <div className={`grid min-h-0 ${mode === "split" ? "lg:grid-cols-2" : "grid-cols-1"}`}>
-          <div
-            className={mode === "preview" ? "hidden" : mode === "split" ? "hidden lg:block" : ""}
-          >
-            <Suspense fallback={<p className="p-3 text-ink-muted">Loading the editor…</p>}>
-              <CodeEditor
-                label={`Source of ${where || "the new page"}`}
-                language="markdown"
-                path={`docs/${where || "new"}.md`}
-                value={source}
-                onChange={typeSource}
-                onSave={save}
-                problems={problems}
-                wrap
-                height="68vh"
-                reveal={reveal}
-                handle={handle}
-                onCursor={setCursor}
-                onHistory={setCan}
-                onSlash={() => setInserting(true)}
-                frontmatter={{ hint: topSays(source) }}
-              />
-            </Suspense>
-          </div>
-          <div
-            className={`flex min-h-0 flex-col border-line lg:border-l ${
-              mode === "source" ? "hidden" : mode === "split" ? "hidden lg:flex" : ""
-            }`}
-          >
-            <div
-              role="tablist"
-              aria-label="Beside the source"
-              className="flex gap-1 border-line border-b px-3"
-            >
-              {(["preview", "details"] as const).map((one) => (
-                <button
-                  key={one}
-                  type="button"
-                  role="tab"
-                  aria-selected={side === one}
-                  onClick={() => setSide(one)}
-                  className={`-mb-px border-b-2 px-2 py-2 text-meta ${
-                    side === one
-                      ? "border-action font-medium text-ink"
-                      : "border-transparent text-ink-muted hover:text-ink"
-                  }`}
-                >
-                  {one === "preview" ? "Preview" : "Page details"}
-                </button>
-              ))}
-            </div>
-            {side === "preview" ? (
-              <section
-                ref={preview}
-                className="h-[64vh] overflow-y-auto p-6"
-                aria-label="The page as it will be served"
-              >
-                {/* The served page's own title. Here it is a part of this screen, which has its heading already. */}
-                <h2 className="m-0 mb-1 text-display-lg">{title}</h2>
-                {checked?.entry.frontmatter.description ? (
-                  <p className="m-0 mb-5 text-ink-muted">{checked.entry.frontmatter.description}</p>
-                ) : (
-                  <div className="mb-5" />
-                )}
-                {checked ? (
-                  <Doc
-                    tree={asDirectory(inApp(app, where), checked.entry.tree)}
-                    profile="docs"
-                    headingShift={1}
-                    productName={brand.productName}
-                    asServed
-                    lines
-                    idPrefix="preview"
-                    folder={() => folderItems(rows, { path: where }, link)}
-                    glossary={(scope) =>
-                      glossaryFor(data, { path: where }, scope, (to) => `${link}/docs/${to}`)
-                    }
-                    {...drawn}
-                    components={{
-                      code: ({ value, lang }) =>
-                        lang === "mermaid" ? <Diagram source={value} /> : undefined,
-                    }}
-                  />
-                ) : null}
-                {within.length > 0 ? (
-                  <p className="m-0 mt-3 text-meta text-action">
-                    Following the cursor · {nameOf(within.at(-1) as (typeof within)[number])}
-                  </p>
-                ) : null}
-              </section>
-            ) : (
-              <section aria-label="Page details" className="h-[64vh] overflow-y-auto p-4">
+        <MarkdownEditor
+          profile="docs"
+          label={`Source of ${where || "the new page"}`}
+          path={`docs/${where || "new"}.md`}
+          value={source}
+          onChange={typeSource}
+          onSave={save}
+          problems={problems}
+          reveal={reveal}
+          handle={handle}
+          onCursor={setCursor}
+          frontmatter={{ hint: topSays(source) }}
+          {...(checked ? { tree: checked.entry.tree } : {})}
+          previewLabel="The page as it will be served"
+          preview={
+            <>
+              {/* The served page's own title. Here it is a part of this screen, which has its heading already. */}
+              <h2 className="m-0 mb-1 text-display-lg">{title}</h2>
+              {checked?.entry.frontmatter.description ? (
+                <p className="m-0 mb-5 text-ink-muted">{checked.entry.frontmatter.description}</p>
+              ) : (
+                <div className="mb-5" />
+              )}
+              {checked ? (
+                <Doc
+                  tree={asDirectory(inApp(app, where), checked.entry.tree)}
+                  profile="docs"
+                  headingShift={1}
+                  productName={brand.productName}
+                  asServed
+                  lines
+                  idPrefix="preview"
+                  folder={() => folderItems(rows, { path: where }, link)}
+                  glossary={(scope) =>
+                    glossaryFor(data, { path: where }, scope, (to) => `${link}/docs/${to}`)
+                  }
+                  {...drawn}
+                  components={{
+                    code: ({ value, lang }) =>
+                      lang === "mermaid" ? <Diagram source={value} /> : undefined,
+                  }}
+                />
+              ) : null}
+            </>
+          }
+          sideTabs={[
+            {
+              id: "details",
+              label: "Page details",
+              content: (
                 <PageDetails
                   source={source}
                   onChange={change}
                   index={where === "index" || where.endsWith("/index")}
                   product={product}
                 />
-              </section>
-            )}
-          </div>
-        </div>
+              ),
+            },
+          ]}
+        />
       </Panel>
 
       {comparing && deployed !== null ? (
@@ -920,22 +678,6 @@ export function DocEditor({
   );
 }
 
-function ToolButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Button size="small" variant="quiet" aria-label={label} tooltip={label} onClick={onClick}>
-      {children}
-    </Button>
-  );
-}
-
 /** The page's folder, and its file's name, which can be changed in place. */
 function FileName({
   folder,
@@ -994,115 +736,6 @@ function FileName({
         </button>
       </p>
       {problem ? <p className="m-0 text-meta text-danger">{problem}</p> : null}
-    </div>
-  );
-}
-
-/** What can be inserted where the cursor is, found by typing. */
-function InsertMenu({
-  items,
-  within,
-  onPick,
-  onClose,
-}: {
-  items: readonly Insertable[];
-  within: readonly ReturnType<typeof insertables>[number]["spec"][] | readonly unknown[];
-  onPick: (item: Insertable) => void;
-  onClose: () => void;
-}) {
-  const [typed, setTyped] = useState("");
-  const [active, setActive] = useState(0);
-  const found = items.filter((one) =>
-    `${one.name} ${one.spec.summary} ${one.spec.name}`
-      .toLowerCase()
-      .includes(typed.trim().toLowerCase()),
-  );
-  const groups = [
-    { label: "Blocks", list: found.filter((one) => one.block) },
-    { label: "Inline", list: found.filter((one) => !one.block) },
-  ].filter((group) => group.list.length > 0);
-  const ordered = groups.flatMap((group) => group.list);
-  const holder = within.at(-1) as
-    | { name: string; props: Record<string, string>; label?: string }
-    | undefined;
-  return (
-    <div className="flex flex-col">
-      <label className="flex items-center gap-2 border-line border-b px-3 py-2 text-ink-muted">
-        <Search aria-hidden size={14} />
-        <input
-          // biome-ignore lint/a11y/noAutofocus: the menu is opened to be typed in.
-          autoFocus
-          aria-label="Find a component"
-          placeholder="Find a component"
-          value={typed}
-          onChange={(event) => {
-            setTyped(event.currentTarget.value);
-            setActive(0);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setActive((now) => Math.min(ordered.length - 1, now + 1));
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setActive((now) => Math.max(0, now - 1));
-            } else if (event.key === "Enter") {
-              event.preventDefault();
-              const chosen = ordered[active];
-              if (chosen) onPick(chosen);
-            } else if (event.key === "Escape") {
-              event.preventDefault();
-              onClose();
-            }
-          }}
-          className="min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-subtle"
-        />
-      </label>
-      <div className="max-h-[22rem] overflow-y-auto p-1.5">
-        {groups.length === 0 ? (
-          <p className="m-0 p-3 text-meta text-ink-muted">Nothing is called that.</p>
-        ) : null}
-        {groups.map((group) => (
-          <section key={group.label} aria-label={group.label}>
-            <p className="m-0 px-2 pt-2 pb-1 text-label text-ink-subtle uppercase">{group.label}</p>
-            {group.list.map((one) => {
-              const index = ordered.indexOf(one);
-              return (
-                <button
-                  key={one.spec.name}
-                  type="button"
-                  onMouseEnter={() => setActive(index)}
-                  onClick={() => onPick(one)}
-                  className={`flex w-full items-center gap-3 rounded-control px-2 py-1.5 text-left ${
-                    index === active ? "bg-sunken" : ""
-                  }`}
-                >
-                  <span
-                    aria-hidden
-                    className="inline-flex size-8 shrink-0 items-center justify-center rounded-control border border-line font-mono text-code-sm text-ink-muted"
-                  >
-                    {one.glyph}
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="font-medium text-ink">{one.name}</span>
-                    <span className="truncate text-meta text-ink-muted">{one.spec.summary}</span>
-                  </span>
-                  <span className="shrink-0 font-mono text-code-sm text-ink-subtle">
-                    {one.syntax}
-                  </span>
-                </button>
-              );
-            })}
-          </section>
-        ))}
-      </div>
-      <p className="m-0 border-line border-t px-3 py-2 text-meta text-ink-muted">
-        Inserts at the cursor
-        {holder
-          ? `, inside ${holder.props.label ? `${holder.name} “${holder.props.label}”` : holder.name}`
-          : ""}
-        .
-      </p>
     </div>
   );
 }

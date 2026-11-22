@@ -8,20 +8,21 @@ import type { Page, PageFilter, PageWidget, ValueFormat } from "@volvel/manifest
 import {
   Button,
   CheckboxField,
-  Markdown,
   MoveButtons,
   MultiSelectField,
   NumberField,
   type Option,
   SegmentedControl,
   SelectField,
-  TextAreaField,
   TextField,
   useFlip,
 } from "@volvel/ui";
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
+import { Pencil } from "lucide-react";
 import { useState } from "react";
 import { amount } from "../format.ts";
+import { MarkdownEditor } from "../markdown/MarkdownEditor.tsx";
+import { useEditOnPage } from "../markdown/onThePage.ts";
 import { ActionControl, ActionsControl } from "./actionControls.tsx";
 import { DataControl } from "./dataControls.tsx";
 import { FieldsControl, PageControl } from "./fieldsControl.tsx";
@@ -121,6 +122,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
           field={field}
           label={hint.label}
           help={help}
+          widget={env.widget.id}
           value={typeof value === "string" ? value : ""}
           onChange={(text) => set(text)}
         />
@@ -471,38 +473,44 @@ function MarkdownControl({
   label,
   help,
   value,
+  widget,
   onChange,
 }: {
   field: string;
   label: string;
   help: string | undefined;
   value: string;
+  widget: string;
   onChange: (text: string) => void;
 }) {
+  const edit = useEditOnPage();
   return (
     <div className="flex flex-col gap-2">
-      <TextAreaField
-        name={field}
-        label={label}
-        required={false}
-        rows={6}
-        value={value}
-        hint={[help, MARKDOWN_NOTE].filter(Boolean).join(" ")}
-        onChange={onChange}
-      />
-      <div className="flex flex-col gap-1">
-        <span className="text-label text-ink-subtle uppercase">Preview</span>
-        <section
-          aria-label="Preview of the text"
-          className="max-h-60 overflow-auto rounded-control border border-line p-3"
-        >
-          {value.trim() === "" ? (
-            <p className="m-0 text-body-sm text-ink-muted">Nothing written yet.</p>
-          ) : (
-            <Markdown text={value} />
-          )}
-        </section>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span id={`${field}-label`} className="text-label text-ink-subtle uppercase">
+          {label}
+        </span>
+        {edit ? (
+          <Button size="small" variant="primary" onClick={() => edit(widget)}>
+            <Pencil aria-hidden="true" size={14} /> Edit on the page
+          </Button>
+        ) : null}
       </div>
+      <div className="overflow-hidden rounded-control border border-line">
+        <MarkdownEditor
+          profile="page"
+          label={label}
+          value={value}
+          onChange={onChange}
+          height="14rem"
+          modes={["source", "preview"]}
+          initialMode="source"
+          path={`widget/${widget}/${field}.md`}
+        />
+      </div>
+      <p className="m-0 text-meta text-ink-muted">
+        {[help, MARKDOWN_NOTE].filter(Boolean).join(" ")}
+      </p>
     </div>
   );
 }

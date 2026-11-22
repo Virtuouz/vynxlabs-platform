@@ -3,6 +3,7 @@ import {
   type Component,
   type ComponentSpec,
   containersAt,
+  type ProfileName,
   type Root,
 } from "@volvel/markup";
 
@@ -41,11 +42,14 @@ const syntaxOf = (spec: ComponentSpec) =>
       : `:::${spec.name}`;
 
 /** What can go where the cursor is: inside tabs, only a tab; anywhere else, anything but a tab. */
-export function insertables(within: readonly Component[]): Insertable[] {
+export function insertables(
+  within: readonly Component[],
+  profile: ProfileName = "docs",
+): Insertable[] {
   const holder = within.at(-1);
   return Object.keys(MENU)
     .map((name) => COMPONENTS.find((spec) => spec.name === name))
-    .filter((spec): spec is ComponentSpec => spec?.profiles.includes("docs") === true)
+    .filter((spec): spec is ComponentSpec => spec?.profiles.includes(profile) === true)
     .filter((spec) => {
       if (holder?.name === "tabs") return spec.name === "tab";
       if (holder?.name === "code-tabs") return false;

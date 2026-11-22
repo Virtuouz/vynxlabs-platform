@@ -35,13 +35,13 @@ export function CheckChip({
       type="button"
       aria-pressed={checked}
       onClick={() => onChange(!checked)}
-      className={`inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-control border px-2.5 text-body-sm ${focus} ${
+      className={`inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-control border px-3 text-body-sm ${focus} ${
         checked
           ? "border-action bg-action-soft text-action"
           : "border-dashed border-line-strong text-ink-muted hover:text-ink"
       }`}
     >
-      {checked ? <Check aria-hidden="true" size={13} /> : null}
+      {checked ? <Check aria-hidden="true" size={14} /> : null}
       {children}
     </button>
   );
@@ -70,12 +70,12 @@ export function SentenceChip({
         <button
           type="button"
           onClick={onEdit}
-          className={`h-full cursor-pointer rounded-l-control pr-1 pl-2.5 ${focus}`}
+          className={`h-full cursor-pointer rounded-l-control pr-1 pl-3 ${focus}`}
         >
           {children}
         </button>
       ) : (
-        <span className="pr-1 pl-2.5">{children}</span>
+        <span className="pr-1 pl-3">{children}</span>
       )}
       {onRemove ? (
         <button
@@ -84,7 +84,7 @@ export function SentenceChip({
           aria-label={removeLabel}
           className={`grid h-full w-6 cursor-pointer place-items-center rounded-r-control text-ink-muted hover:text-ink ${focus}`}
         >
-          <X aria-hidden="true" size={12} />
+          <X aria-hidden="true" size={14} />
         </button>
       ) : (
         <span className="w-1.5" />
@@ -105,9 +105,9 @@ export function AddChip({
     <button
       type="button"
       {...rest}
-      className={`inline-flex h-7 cursor-pointer items-center gap-1 rounded-control border border-dashed border-line-strong px-2.5 text-body-sm text-ink-muted hover:border-action hover:text-ink ${focus}`}
+      className={`inline-flex h-7 cursor-pointer items-center gap-1 rounded-control border border-dashed border-line-strong px-3 text-body-sm text-ink-muted hover:border-action hover:text-ink ${focus}`}
     >
-      <Plus aria-hidden="true" size={13} />
+      <Plus aria-hidden="true" size={14} />
       {children}
     </button>
   );

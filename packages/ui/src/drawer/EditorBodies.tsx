@@ -128,7 +128,7 @@ export function ConditionEditor({
             id={`${id}-field`}
             value={column.id}
             onChange={(event) => chooseField(event.target.value)}
-            className={`${control} w-full ${Icon ? "pl-7" : ""}`}
+            className={`${control} w-full ${Icon ? "pl-8" : ""}`}
           >
             {columns.map((one) => (
               <option key={one.id} value={one.id}>
@@ -165,7 +165,7 @@ export function ConditionEditor({
             {options.map((choice) => (
               <label
                 key={choice.value}
-                className="flex min-h-9 cursor-pointer items-center gap-2.5 px-2.5 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus"
+                className="flex min-h-9 cursor-pointer items-center gap-3 px-3 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus"
               >
                 <input
                   type="checkbox"
@@ -194,7 +194,7 @@ export function ConditionEditor({
               return (
                 <label
                   key={one.test}
-                  className={`flex h-8 cursor-pointer items-center rounded-inner px-2.5 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
+                  className={`flex h-8 cursor-pointer items-center rounded-inner px-3 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
                     on ? "bg-selected text-ink" : "text-ink-muted hover:bg-selected"
                   }`}
                 >
@@ -282,7 +282,7 @@ export function SortEditor({
   const put = (at: number, next: SortKey) =>
     onChange(sorts.map((one, i) => (i === at ? next : one)));
   return (
-    <div className="flex flex-col gap-2.5">
+    <div className="flex flex-col gap-3">
       <ol className="m-0 flex list-none flex-col gap-2 p-0">
         {sorts.map((sort, at) => {
           const field = fields.find((one) => one.id === sort.field);
@@ -305,7 +305,7 @@ export function SortEditor({
                   id={`${id}-${at}`}
                   value={sort.field}
                   onChange={(event) => put(at, { ...sort, field: event.target.value })}
-                  className={`${control} w-full ${Icon ? "pl-7" : ""}`}
+                  className={`${control} w-full ${Icon ? "pl-8" : ""}`}
                 >
                   {fields
                     .filter((one) => one.id === sort.field || unused.includes(one))
@@ -333,7 +333,7 @@ export function SortEditor({
                   onClick={() => onChange(sorts.filter((_, i) => i !== at))}
                   className="grid size-6 shrink-0 cursor-pointer place-items-center rounded-inner text-ink-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
                 >
-                  <X aria-hidden="true" size={12} />
+                  <X aria-hidden="true" size={14} />
                 </button>
               ) : null}
             </li>

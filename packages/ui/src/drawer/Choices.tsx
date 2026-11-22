@@ -65,7 +65,7 @@ export function TilePicker<Value extends string>({
                 {...(option.reason ? { "aria-describedby": reasonId } : {})}
                 className="sr-only"
               />
-              {option.preview ?? (Icon ? <Icon size={18} aria-hidden /> : null)}
+              {option.preview ?? (Icon ? <Icon size={16} aria-hidden /> : null)}
               <span>{option.label}</span>
               {option.reason ? (
                 <span id={reasonId} className="text-tag text-ink-muted">
@@ -102,7 +102,7 @@ export function RadioCards<Value extends string>({
         return (
           <label
             key={option.value}
-            className={`flex cursor-pointer items-start gap-2.5 rounded-control border px-3 py-2.5 has-[:disabled]:cursor-default has-[:disabled]:opacity-60 ${ring} ${
+            className={`flex cursor-pointer items-start gap-3 rounded-control border px-3 py-3 has-[:disabled]:cursor-default has-[:disabled]:opacity-60 ${ring} ${
               on ? "border-action bg-action-soft" : "border-line hover:border-line-strong"
             }`}
           >

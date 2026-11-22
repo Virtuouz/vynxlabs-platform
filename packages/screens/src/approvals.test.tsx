@@ -271,6 +271,38 @@ describe("who may decide", () => {
   });
 });
 
+describe("where decisions are taken in the console", () => {
+  const away = { console: "http://localhost:8080/t/t/workspaces/w/approvals", name: "Volvel" };
+
+  test("the request is shown, and one button opens it in the console in a new tab, in the instance's own name", () => {
+    draw({ opens: "nothing" }, { ...data([item(1)]), decideIn: { ...away, name: "Acme Ops" } });
+    const link = screen.getByRole("link", { name: /Decide in Acme Ops/ });
+    expect(link.getAttribute("href")).toBe(away.console);
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reject" })).toBeNull();
+    expect(screen.getByText("Approve order 1")).toBeTruthy();
+  });
+
+  test("the list reads again when the person comes back to the window", () => {
+    const refresh = vi.fn();
+    draw({ opens: "nothing" }, { ...data([item(1)]), decideIn: away }, { refresh });
+    fireEvent.click(screen.getByRole("link", { name: /Decide in Volvel/ }));
+    expect(refresh).not.toHaveBeenCalled();
+    fireEvent.focus(window);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    fireEvent.focus(window);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("someone who may not decide still sees why, not a button to the console", () => {
+    draw({ opens: "nothing" }, { ...data([item(1, { mayDecide: false })]), decideIn: away });
+    expect(screen.queryByRole("link", { name: /Decide in/ })).toBeNull();
+    expect(screen.getByText(/can decide this/)).toBeTruthy();
+  });
+});
+
 describe("deciding", () => {
   test("approving calls the host once, says who and what, and the request leaves", async () => {
     const decide = vi.fn<Decide>(async () => ok("Approved “Approve order 1” as Rowan Ellis."));

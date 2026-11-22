@@ -203,6 +203,8 @@ interface GridContext {
     decision: "approve" | "reject",
     comment?: string,
   ): Promise<DecideOutcome>;
+  /** Makes every widget read again. */
+  refresh(): void;
   /** The page's record id, and its row when a widget has read it. */
   record: string | undefined;
   thisRow: Readonly<Record<string, unknown>> | undefined;
@@ -559,6 +561,7 @@ function Cell({
               {...extras}
               {...(place ? { place } : {})}
               {...tab}
+              {...(building ? {} : { refresh: () => ctx.refresh() })}
               {...(building || !client.decide
                 ? {}
                 : {
@@ -1284,6 +1287,7 @@ export function PageView({
     editing,
     onEvent,
     run: actions.run,
+    refresh: host.refresh,
     decide: async (widget, id, decision, comment) => {
       if (!client.decide) return { ok: false, message: "Deciding isn't available here." };
       try {

@@ -1,5 +1,6 @@
 import {
   type Action,
+  flowsWithoutApprovals,
   type InterfaceBody,
   missingGroups,
   type Page,
@@ -32,6 +33,10 @@ export interface Known {
   scripts: ReadonlySet<string>;
   /** The keys of the tenant's groups, members' and end users'. */
   groups: readonly string[] | undefined;
+  /** Each flow, with whether it asks for an approval: `undefined` while it is read. */
+  approvalFlows?: ReadonlyMap<string, { title: string | null; asks: boolean }> | undefined;
+  /** Where apps are served: at their own address (decisions are made in the console), or on the console's. */
+  appsAddress?: "separate" | "console" | "none" | undefined;
 }
 
 const nameOf = (widget: PageWidget, definition: WidgetDefinition | undefined) =>
@@ -192,6 +197,38 @@ export function checksFor(input: {
         ? { id: `form:${widget.id}`, state: "fail", text: `${name} form can't save`, detail: why }
         : { id: `form:${widget.id}`, state: "ok", text: `${name} form is valid` },
     );
+  }
+
+  // Approvals: the flows it lists ask for an approval, and where it is decided.
+  const asking = every.filter((one) => one.widget.type === "core/approvals");
+  if (asking.length > 0) {
+    const flows = known.approvalFlows;
+    if (flows) {
+      for (const path of flowsWithoutApprovals(
+        asking.map((one) => one.widget),
+        (name) => {
+          const found = flows.get(name);
+          return found ? { nodes: found.asks ? [{ type: "approval" }] : [] } : undefined;
+        },
+      )) {
+        const title = flows.get(path)?.title || (path.split("/").at(-1) ?? path);
+        items.push({
+          id: `approvals:${path}`,
+          state: "warn",
+          text: `Approvals lists ${title}, which asks for no approval`,
+          detail: "Nothing will wait there until the workflow has an approval step.",
+        });
+      }
+    }
+    if (known.appsAddress && known.appsAddress !== "none") {
+      items.push({
+        id: "approvals:console",
+        state: "warn",
+        text: "Approvals are decided in the console, not in this app",
+        detail:
+          "Apps written as code run at the address this app is served at, so the app shows the requests and sends people to the console to decide them.",
+      });
+    }
   }
 
   // The phone: widgets it hides.

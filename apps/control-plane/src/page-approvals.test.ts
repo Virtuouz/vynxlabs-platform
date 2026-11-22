@@ -9,8 +9,9 @@ import {
   resolveKeyReferences,
 } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { Hosts } from "./kernel/apps/hosts.js";
 import { detailFieldNames } from "./kernel/flows/approvers.js";
-import { approvalStanding, fieldsOf, readApprovals } from "./kernel/pages/approvals.js";
+import { approvalStanding, fieldsOf, limits, readApprovals } from "./kernel/pages/approvals.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 /**
@@ -117,6 +118,8 @@ const screen = {
         ),
         // Lists a flow that has no waiting steps at all.
         approvalsWidget("nothing", { flows: ["orders/other"] }),
+        // Every flow, the viewer's own: found behind others' however many wait ahead.
+        approvalsWidget("mineall", {}),
       ],
     },
   ],
@@ -131,6 +134,7 @@ function bundle(withScreen: boolean): Bundle {
       manifest("flow", "orders/reorder", flowOf("Approve a stock order", { groups: ["managers"] })),
       manifest("flow", "orders/other", flowOf("Approve something else")),
       manifest("flow", "orders/open", flowOf("Anyone may decide this")),
+      manifest("flow", "orders/hr", flowOf("Someone else decides this", { groups: ["nobody"] })),
       ...(withScreen
         ? [
             manifest("interface", "screens/approvals", screen),
@@ -262,7 +266,7 @@ beforeAll(async () => {
   runtime = mkdtempSync(join(tmpdir(), "vx-approvals-"));
   mkdirSync(join(runtime, "assets"));
   writeFileSync(join(runtime, "index.html"), "<!doctype html><html><body></body></html>");
-  t = await startTestApp({ config: { screensDir: runtime } });
+  t = await startTestApp({ config: { screensDir: runtime, appsOnConsoleAddress: false } });
   const roles = Object.fromEntries(
     (
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
@@ -738,6 +742,114 @@ describe("what the builder is offered", () => {
     // Not a literal object: nothing to offer.
     expect(detailFieldNames("steps.quote.output")).toEqual([]);
     expect(detailFieldNames(undefined)).toEqual([]);
+  });
+});
+
+describe("where it is decided (decision 0007, rule 8)", () => {
+  const place = (kind: "main" | "apps" | "domain") =>
+    kind === "domain"
+      ? ({
+          kind,
+          domain: { id: "d", tenantId: "t", workspaceId: "w", appPath: "", hostname: "x.test" },
+        } as const)
+      : ({ kind } as const);
+  const hosts = (apps: string | undefined, onConsole: boolean) =>
+    new Hosts(t.db, {
+      publicUrl: "http://localhost:8080",
+      appsUrl: apps,
+      appsOnConsoleAddress: onConsole,
+    });
+
+  test("one answer for every address kind: only where no app written as code can run", () => {
+    expect(hosts(undefined, false).runsCodeApps(place("main"))).toBe(false);
+    // The operator knowingly let code apps run on the console's address.
+    expect(hosts(undefined, true).runsCodeApps(place("main"))).toBe(true);
+    // A second address for apps exists: the main one serves none.
+    expect(hosts("http://apps.test", true).runsCodeApps(place("main"))).toBe(false);
+    // The shared apps address and a tenant's own hostname serve code apps, deployed or not.
+    for (const config of [hosts("http://apps.test", false), hosts(undefined, false)]) {
+      expect(config.runsCodeApps(place("apps"))).toBe(true);
+      expect(config.runsCodeApps(place("domain"))).toBe(true);
+    }
+  });
+
+  test("it reads no database: a code app deployed later changes nothing, and nothing is asked", () => {
+    const spy = vi.spyOn(t.db, "selectFrom");
+    hosts(undefined, false).runsCodeApps(place("domain"));
+    hosts(undefined, false).runsCodeApps(place("main"));
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  test("on the console's own address a decision is taken, and the read says nothing of the console", async () => {
+    const step = await ask("orders/reorder");
+    expect((await read(bob, "queue")).body.inputs.requests.decideIn).toBeUndefined();
+    expect((await decide(bob, step.id, "approve")).status).toBe(200);
+  });
+
+  for (const kind of ["apps", "domain", "main"] as const) {
+    test(`at ${kind}: the requests are shown, decided in the console, and nothing is decided`, async () => {
+      const step = await ask("orders/reorder");
+      // The address kinds are told apart by `runsCodeApps` (above); here, what the answer and the
+      // route do when it says an app written as code may run where the request arrived.
+      const spy = vi.spyOn(t.kernel.hosts, "runsCodeApps").mockReturnValue(true);
+      const undo = () => spy.mockRestore();
+      try {
+        const answer = (await read(bob, "queue")).body.inputs.requests;
+        expect(answer.decideIn).toEqual({
+          console: `http://localhost:8080/t/${tenant}/workspaces/${dev}/approvals`,
+          name: "Volvel",
+        });
+        expect(answer.waiting.map((one: Any) => one.id)).toContain(step.id);
+        const refused = await decide(bob, step.id, "approve");
+        expect(refused.status).toBe(403);
+        expect(JSON.stringify(refused.body)).toMatch(/decide_in_console|Decide this in Volvel/);
+        expect(JSON.stringify(refused.body)).toContain("Decide this in Volvel");
+        expect(await currentState(step.run)).toBe("waiting_approval");
+        expect(spy).toHaveBeenCalled();
+        // Someone who may read nothing is still told nothing.
+        expect((await read(dora, "queue")).body.inputs.requests.waiting).toEqual([]);
+      } finally {
+        undo();
+      }
+      expect((await decide(bob, step.id, "approve")).status).toBe(200);
+    });
+  }
+});
+
+describe("a long queue", () => {
+  test("a manager's own requests are found behind more than a batch of others', and `more` says when rows were not looked at", async () => {
+    const before = { ...limits };
+    for (let i = 0; i < 3; i += 1) await ask("orders/hr");
+    const mine = await ask("orders/reorder");
+    try {
+      limits.batch = 2;
+      limits.batches = 1;
+      // One batch of two others': nothing of theirs was reached, and it is said.
+      const short = (await read(bob, "mineall")).body.inputs.requests;
+      expect(short.waiting.map((one: Any) => one.id)).not.toContain(mine.id);
+      expect(short.more).toBe(true);
+      limits.batches = 50;
+      const found = (await read(bob, "mineall")).body.inputs.requests;
+      expect(found.waiting.map((one: Any) => one.id)).toContain(mine.id);
+      expect(found.waiting.every((one: Any) => one.mayDecide)).toBe(true);
+      expect(found.more).toBe(false);
+    } finally {
+      Object.assign(limits, before);
+    }
+    expect((await decide(bob, mine.id, "approve")).status).toBe(200);
+  });
+
+  test("a decision made in an app is known as one without searching the audit", async () => {
+    const step = await ask("orders/reorder");
+    expect((await decide(bob, step.id, "approve")).status).toBe(200);
+    const row = await t.db
+      .selectFrom("step_run")
+      .select("output")
+      .where("flow_run_id", "=", step.run)
+      .where("node_id", "=", "ask")
+      .executeTakeFirstOrThrow();
+    expect(row.output).toMatchObject({ approved: true, via: "app" });
   });
 });
 

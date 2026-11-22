@@ -40,6 +40,8 @@ export function useActionLists(root: string): {
   flows: FlowChoice[];
   /** The workflows with an approval step, which an Approvals widget may ask of. */
   approvals: { path: string; title: string | null }[];
+  /** Every flow, with whether it has an approval step: for checking what an Approvals widget names. */
+  everyFlow: { path: string; title: string | null; asks: boolean }[];
   scripts: ScriptChoice[];
   groups: string[];
 } {
@@ -59,6 +61,11 @@ export function useActionLists(root: string): {
     approvals: (flows.data?.items ?? [])
       .filter((one) => (one.approvals ?? []).length > 0)
       .map((one) => ({ path: one.path, title: one.title ?? null })),
+    everyFlow: (flows.data?.items ?? []).map((one) => ({
+      path: one.path,
+      title: one.title ?? null,
+      asks: (one.approvals ?? []).length > 0,
+    })),
     scripts: scripts.data?.items ?? [],
     groups: (groups.data?.items ?? []).map((one) => one.name),
   };

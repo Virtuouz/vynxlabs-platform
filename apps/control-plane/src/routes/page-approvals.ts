@@ -28,7 +28,8 @@ export function pageApprovalRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "guest and a service account are refused. The step must wait, in this workspace, in a " +
             "flow the widget lists; someone having decided it first is a 409 that says who and " +
             "what. The comment is trimmed, at most 2000 characters, and needed as the widget's " +
-            "`askWhy` says. Recorded in the audit as `approval.approved` or `approval.rejected`, " +
+            "`askWhy` says. At an address where an app written as code can run, a decision is " +
+            "refused with 403 `decide_in_console`: it is made in the console. Recorded in the audit as `approval.approved` or `approval.rejected`, " +
             'with `via: "app"` and the app, page and widget named.',
           tags: ["apps", "flows"],
           params: Type.Object({ t: Id, w: Id }),
@@ -54,8 +55,14 @@ export function pageApprovalRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx, params, body }) =>
-        decideFromPage(kernel, ctx as RequestContext, params, { of: "interface", ...body }),
+      async (request) => {
+        const { ctx, params, body } = request;
+        return decideFromPage(kernel, ctx as RequestContext, params, {
+          of: "interface",
+          ...body,
+          elsewhere: kernel.hosts.runsCodeApps(await kernel.hosts.place(request)),
+        });
+      },
     );
   };
 }

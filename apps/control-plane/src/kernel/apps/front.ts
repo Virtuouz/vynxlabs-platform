@@ -883,8 +883,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     if (
       !generated &&
       place.kind === "main" &&
-      !kernel.hosts.hasAppsAddress &&
-      !kernel.config.appsOnConsoleAddress
+      !kernel.hosts.runsCodeApps(place)
     ) {
       return html(
         reply,

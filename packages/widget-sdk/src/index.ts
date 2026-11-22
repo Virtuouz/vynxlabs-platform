@@ -422,6 +422,8 @@ export interface ApprovalItem {
 
 export interface ApprovalsData {
   shape: "approvals";
+  /** Set when the requests are decided in the console and not here: where, and what it is called. */
+  decideIn?: { console: string; name: string };
   waiting: readonly ApprovalItem[];
   decided: readonly ApprovalItem[];
   /** There are more waiting than were sent. */
@@ -525,6 +527,8 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
    * cannot decide (nothing is then drawn as pressable).
    */
   decide?: (id: string, decision: "approve" | "reject", comment?: string) => Promise<DecideOutcome>;
+  /** Reads the widget's data again: when the person comes back from deciding elsewhere. */
+  refresh?: () => void;
   /** Whether an action the widget holds may be pressed now, for a row: its `when`, as the host reads it. */
   can?: (at: string, row?: Readonly<Record<string, unknown>>) => boolean;
   /** Why an action can't be pressed now, in the reader's words ("Status is Unpaid"); nothing when it can. */

@@ -1,5 +1,5 @@
 import { Button, Dialog, SegmentedControl, SideSheet, TextAreaField } from "@volvel/ui";
-import { ChevronLeft, ChevronRight, CircleCheck } from "@volvel/ui/icons";
+import { ChevronLeft, ChevronRight, CircleCheck, ExternalLink } from "@volvel/ui/icons";
 import type { ApprovalItem, ApprovalsData, WidgetViewProps } from "@volvel/widgets";
 import { formatNumber } from "@volvel/widgets";
 import {
@@ -206,6 +206,10 @@ interface DeciderProps {
   config: ApprovalsConfig;
   disabledReason: string;
   pending: boolean;
+  /** Set when decisions are not taken here: the console's address, and what it is called. */
+  decideIn?: { console: string; name: string } | undefined;
+  /** Reads the requests again, when the person is back from deciding in the console. */
+  refresh?: (() => void) | undefined;
   /** Decides, and says how it went: an error is drawn under the buttons. */
   onDecide: (
     item: ApprovalItem,
@@ -215,7 +219,15 @@ interface DeciderProps {
 }
 
 /** Approve and Reject, and what each asks first. Keyed by the request, so it starts afresh for each. */
-function Decider({ item, config, disabledReason, pending, onDecide }: DeciderProps) {
+function Decider({
+  item,
+  config,
+  disabledReason,
+  pending,
+  onDecide,
+  decideIn,
+  refresh,
+}: DeciderProps) {
   const approve = config.approveLabel || "Approve";
   const reject = config.rejectLabel || "Reject";
   const askWhy = config.askWhy ?? "rejecting";
@@ -256,12 +268,48 @@ function Decider({ item, config, disabledReason, pending, onDecide }: DeciderPro
     setComment("");
     setProblem(undefined);
   };
+  // Decisions are made in the console here: one button opens the request there, and the list
+  // reads again when the person comes back to this window.
+  const [away, setAway] = useState(false);
+  useEffect(() => {
+    if (!away) return;
+    const back = () => {
+      setAway(false);
+      refresh?.();
+    };
+    window.addEventListener("focus", back);
+    return () => window.removeEventListener("focus", back);
+  }, [away, refresh]);
   const keys = (event: KeyboardEvent) => {
     if (event.key === "Escape" && asking) {
       event.stopPropagation();
       cancel();
     }
   };
+
+  if (decideIn && !blocked) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div>
+          <Button
+            variant="primary"
+            href={decideIn.console}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full @[28rem]/cell:w-auto"
+            onClick={() => setAway(true)}
+          >
+            Decide in {decideIn.name}
+            <ExternalLink aria-hidden="true" size={14} />
+          </Button>
+        </div>
+        <p className="m-0 text-body-sm text-ink-muted">
+          Approvals are decided in {decideIn.name}, which opens in a new tab. This list reads again
+          when you come back.
+        </p>
+      </div>
+    );
+  }
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: Escape leaves the box that opened under it
@@ -416,6 +464,8 @@ function Detail(props: DetailProps) {
           disabledReason={disabledReason}
           pending={pending}
           onDecide={onDecide}
+          decideIn={props.decideIn}
+          refresh={props.refresh}
         />
       )}
     </article>
@@ -723,6 +773,8 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
       config={config}
       disabledReason={reasonFor(item)}
       pending={pending.has(item.id)}
+      decideIn={real?.decideIn}
+      refresh={props.refresh}
       settled={settled.get(item.id)?.message}
       onDismiss={() => {
         setSettled((now) => {

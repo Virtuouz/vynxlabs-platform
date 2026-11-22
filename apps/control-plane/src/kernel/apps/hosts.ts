@@ -39,12 +39,14 @@ export class Hosts {
   readonly #db: Db;
   readonly #main: URL;
   readonly #apps: URL | undefined;
+  readonly #codeOnConsole: boolean;
   readonly #domains = new Map<string, { domain: AppDomain | null; at: number }>();
 
-  constructor(db: Db, config: Pick<Config, "publicUrl" | "appsUrl">) {
+  constructor(db: Db, config: Pick<Config, "publicUrl" | "appsUrl" | "appsOnConsoleAddress">) {
     this.#db = db;
     this.#main = new URL(config.publicUrl);
     this.#apps = config.appsUrl ? new URL(config.appsUrl) : undefined;
+    this.#codeOnConsole = config.appsOnConsoleAddress;
   }
 
   /** The address apps are served at by path: the second address when there is one. */
@@ -63,6 +65,25 @@ export class Hosts {
   /** Whether a hostname is one of the instance's own, which no tenant may register. */
   isOwn(hostname: string): boolean {
     return hostname === this.#main.hostname || hostname === this.#apps?.hostname;
+  }
+
+  /**
+   * Whether an app written as code can run, now or once one is deployed, at the address a
+   * request arrived at. ONE answer, used both to decide serving and to decide what an app's
+   * sign-in may do, so that the two cannot drift:
+   *
+   * - `apps`, the shared apps address: every tenant's code apps. Yes.
+   * - `domain`, a tenant's hostname: that tenant's code apps. Yes, whether or not one is
+   *   deployed yet (a deploy later changes nothing, and nothing has to be asked of the database).
+   * - `main`, the instance's own address (and any name it is reached by that is not registered):
+   *   none, except when the operator knowingly set `APPS_ON_CONSOLE_ADDRESS` and there is no
+   *   second address.
+   *
+   * Anything it is not sure of is a yes.
+   */
+  runsCodeApps(place: Place): boolean {
+    if (place.kind === "main") return this.#apps === undefined && this.#codeOnConsole;
+    return true;
   }
 
   async place(request: FastifyRequest): Promise<Place> {

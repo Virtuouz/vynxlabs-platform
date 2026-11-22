@@ -1,5 +1,6 @@
 import { sql } from "@volvel/db";
 import type { PageWidget } from "@volvel/manifest";
+import { DEFAULT_PRODUCT_NAME } from "../../routes/branding.js";
 import type { Db, Principal } from "../audit.js";
 import { check } from "../authorize.js";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "../errors.js";
@@ -55,6 +56,11 @@ export interface ApprovalItem {
 
 export interface ApprovalsWire {
   shape: "approvals";
+  /**
+   * Set when this address cannot take a decision (an app written as code can run here): the
+   * requests are shown, and are decided in the console, at `console`, which `name` calls itself.
+   */
+  decideIn?: { console: string; name: string };
   waiting: ApprovalItem[];
   decided: ApprovalItem[];
   more: boolean;
@@ -218,34 +224,17 @@ export function splitItemId(id: string): { flowRunId: string; node: string } | u
   return { flowRunId: id.slice(0, at), node: id.slice(at + 1) };
 }
 
-/** Where a decision was made, from what the step and its mailed links say. */
-type Via = "app" | "console" | "email";
+/** How many steps are looked at in one batch, and the most batches one read looks through. */
+export const limits = { batch: 200, batches: 10 };
 
-/**
- * What an approvals widget shows to whoever is looking: the steps of its flows that wait, those
- * of them that the viewer may decide when `whose` is `mine`, and, when the widget shows them, the
- * last ones decided. A viewer who is not a member, or has no `approval:read` of their own here,
- * is given nothing: no titles and no counts.
- */
-export async function readApprovals(
-  kernel: Kernel,
-  ctx: RequestContext,
-  request: {
-    at: { tenantId: string; workspaceId: string };
-    widget: PageWidget;
-    draft: boolean;
-  },
-): Promise<ApprovalsWire> {
-  const { db } = kernel;
-  const { at, widget } = request;
-  const source = approvalsSourceOf(widget);
-  if (!source) return EMPTY;
-  const standing = await approvalStanding(db, ctx.principal, at);
-  if (!standing?.read) return EMPTY;
-  if (!(await seenBy(kernel, widget, at.tenantId, standing.memberId, request.draft))) return EMPTY;
-
-  const flows = source.flows && source.flows.length > 0 ? source.flows : undefined;
-  const rows = await db
+/** One batch of waiting steps of the workspace, oldest first, after a place in that order. */
+function waitingBatch(
+  db: Db,
+  at: { tenantId: string; workspaceId: string },
+  flows: string[] | undefined,
+  after: { at: Date; run: string } | undefined,
+) {
+  return db
     .selectFrom("step_run")
     .innerJoin("flow_run", "flow_run.id", "step_run.flow_run_id")
     .select([
@@ -263,25 +252,80 @@ export async function readApprovals(
     .where("step_run.item_key", "=", "")
     .where(sql<boolean>`step_run.detail ? 'title'`)
     .$if(flows !== undefined, (query) => query.where("flow_run.flow_path", "in", flows as string[]))
+    .$if(after !== undefined, (query) =>
+      query.where(
+        sql<boolean>`(step_run.started_at, step_run.flow_run_id) > (${after?.at}, ${after?.run})`,
+      ),
+    )
     .orderBy("step_run.started_at")
-    .limit(WAITING_LIMIT * 4)
+    .orderBy("step_run.flow_run_id")
+    .limit(limits.batch)
     .execute();
+}
 
+/** Where a decision was made, from what the step and its mailed links say. */
+type Via = "app" | "console" | "email";
+
+/**
+ * What an approvals widget shows to whoever is looking: the steps of its flows that wait, those
+ * of them that the viewer may decide when `whose` is `mine`, and, when the widget shows them, the
+ * last ones decided. A viewer who is not a member, or has no `approval:read` of their own here,
+ * is given nothing: no titles and no counts.
+ */
+export async function readApprovals(
+  kernel: Kernel,
+  ctx: RequestContext,
+  request: {
+    at: { tenantId: string; workspaceId: string };
+    widget: PageWidget;
+    draft: boolean;
+    /** The request arrived at an address where decisions are not taken (`Hosts.runsCodeApps`). */
+    elsewhere?: boolean;
+  },
+): Promise<ApprovalsWire> {
+  const { db } = kernel;
+  const { at, widget } = request;
+  const source = approvalsSourceOf(widget);
+  if (!source) return EMPTY;
+  const standing = await approvalStanding(db, ctx.principal, at);
+  if (!standing?.read) return EMPTY;
+  if (!(await seenBy(kernel, widget, at.tenantId, standing.memberId, request.draft))) return EMPTY;
+
+  const flows = source.flows && source.flows.length > 0 ? source.flows : undefined;
+  // The steps that wait, oldest first, a batch at a time: what is theirs to decide may be far
+  // down the list. Looked at until the viewer has all they are shown, or the bound is reached.
   const mine = source.whose !== "all";
-  const waiting: ApprovalItem[] = [];
+  type Waiting = Awaited<ReturnType<typeof waitingBatch>>[number];
+  const mayList: { row: Waiting; named: ReturnType<typeof approversOf>; may: boolean }[] = [];
   let more = false;
+  let after: { at: Date; run: string } | undefined;
+  for (let batch = 0; batch < limits.batches; batch += 1) {
+    const rows = await waitingBatch(db, at, flows, after);
+    for (const row of rows) {
+      const named = approversOf(row.detail);
+      const may = standing.write && (await isApprover(db, at, standing.memberId, named));
+      if (mine && !may) continue;
+      if (mayList.length >= WAITING_LIMIT) {
+        more = true;
+        break;
+      }
+      mayList.push({ row, named, may });
+    }
+    const last = rows.at(-1);
+    if (more || rows.length < limits.batch || !last) break;
+    after = { at: last.started_at, run: last.flow_run_id };
+    // Out of batches with rows not looked at: there may be more.
+    if (batch === limits.batches - 1) more = true;
+  }
+  const waiting: ApprovalItem[] = [];
   const decidedRows = widget.config?.decided === true ? await decidedSteps(db, at, flows) : [];
   const titles = await flowTitles(db, at.workspaceId, [
-    ...new Set([...rows.map((row) => row.flow_path), ...decidedRows.map((row) => row.flow_path)]),
+    ...new Set([
+      ...mayList.map((one) => one.row.flow_path),
+      ...decidedRows.map((row) => row.flow_path),
+    ]),
   ]);
-  for (const row of rows) {
-    const named = approversOf(row.detail);
-    const may = standing.write && (await isApprover(db, at, standing.memberId, named));
-    if (mine && !may) continue;
-    if (waiting.length >= WAITING_LIMIT) {
-      more = true;
-      break;
-    }
+  for (const { row, named, may } of mayList) {
     waiting.push({
       id: itemId(row.flow_run_id, row.node_id),
       title: String(row.detail.title),
@@ -311,7 +355,28 @@ export async function readApprovals(
       via: row.via,
     },
   }));
-  return { shape: "approvals", waiting, decided, more };
+  return {
+    shape: "approvals",
+    ...(request.elsewhere ? { decideIn: await consoleOf(kernel, at) } : {}),
+    waiting,
+    decided,
+    more,
+  };
+}
+
+/** The console's page of this workspace's approvals, and what the instance calls itself. */
+async function consoleOf(
+  kernel: Kernel,
+  at: { tenantId: string; workspaceId: string },
+): Promise<{ console: string; name: string }> {
+  const branding = await kernel.db
+    .selectFrom("instance_branding")
+    .select("product_name")
+    .executeTakeFirst();
+  return {
+    console: `${kernel.hosts.mainOrigin}/t/${at.tenantId}/workspaces/${at.workspaceId}/approvals`,
+    name: branding?.product_name || DEFAULT_PRODUCT_NAME,
+  };
 }
 
 /** The last steps decided in the workspace, for the widget that shows them. */
@@ -340,13 +405,7 @@ async function decidedSteps(
         where l.flow_run_id = step_run.flow_run_id and l.node_id = step_run.node_id
           and l.decided_at is not null
       )`.as("by_link"),
-      sql<boolean>`exists (
-        select 1 from audit_entry a
-        where a.target_type = 'flow_run' and a.target_id = step_run.flow_run_id::text
-          and a.action in ('approval.approved', 'approval.rejected')
-          and a.details ->> 'node' = step_run.node_id
-          and a.details ->> 'via' = 'app'
-      )`.as("by_app"),
+      sql<boolean>`step_run.output ->> 'via' = 'app'`.as("by_app"),
     ])
     .where("flow_run.tenant_id", "=", at.tenantId)
     .where("flow_run.workspace_id", "=", at.workspaceId)
@@ -376,6 +435,8 @@ export function agoWords(then: Date | null, now = new Date()): string {
 }
 
 export interface DecideRequest extends PageRequest {
+  /** The request arrived at an address where decisions are not taken (`Hosts.runsCodeApps`). */
+  elsewhere?: boolean;
   widget: string;
   /** The step, as the widget's data named it. */
   id: string;
@@ -425,6 +486,17 @@ export async function decideFromPage(
   }
   if (!(await seenBy(kernel, widget, at.tenantId, standing.memberId, draft))) {
     throw notFound("The widget");
+  }
+
+  // An app written as code runs its own script here, with the member's sign-in: it could press
+  // the button for them. Nothing in the request can tell that apart (decision 0007, rule 8).
+  if (request.elsewhere) {
+    const where = await consoleOf(kernel, at);
+    throw new HttpError(
+      403,
+      "decide_in_console",
+      `Decide this in ${where.name}, not in an app: open it at ${where.console}.`,
+    );
   }
 
   const wanted = splitItemId(request.id);
@@ -510,6 +582,7 @@ export async function decideFromPage(
       approve: request.decision === "approve",
       comment,
       memberId: standing.memberId,
+      via: "app",
     });
     await audit({
       action: request.decision === "approve" ? "approval.approved" : "approval.rejected",

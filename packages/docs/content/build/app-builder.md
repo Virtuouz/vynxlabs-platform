@@ -53,6 +53,8 @@ Who may decide is **not** set here. It is set on the workflow's approval step, a
 - Someone who may read but not decide sees the requests with the buttons greyed and the reason ("Only the practice-managers group can decide this."), never hidden.
 - The widget reads only the workflows it lists, in this workspace. The comment is trimmed and at most 2,000 characters, and the audit records who decided, with `via: "app"` and the app, page and widget.
 
+Where the instance serves apps at an address of their own, an app written as code could press the button for whoever has it open, so there the widget shows the requests and a button, **Decide in** the console's name, which opens the request in the console in a new tab; the list reads again when you come back. Only where no app written as code can run is a decision taken in the app itself. The Publish check says which applies.
+
 Where the Approvals widget is shown to some groups only, the server shows it to them only, too.
 
 ## What happens when something is pressed

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { COLUMN_LIMITS, refuseColumn } from "./kernel/data/column-values.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
 /**
@@ -908,6 +909,169 @@ describe("the values a choice filter offers", () => {
     // A draft is only for those who may edit it.
     expect((await options(ivy.browser, "team", "/api/v1", "&draft=1")).status).toBe(403);
     expect((await options(alice, "team", "", "&draft=1")).status).toBe(200);
+  });
+});
+
+describe("what a column holds, counted", () => {
+  const values = (
+    who: { get: (url: string) => Promise<{ status: number; body: Any }> },
+    table: string,
+    column: string,
+    prefix = "",
+  ) =>
+    who.get(`${prefix}${ws()}/column-values?table=${encodeURIComponent(table)}&column=${column}`);
+  const counts = (
+    who: { get: (url: string) => Promise<{ status: number; body: Any }> },
+    table: string,
+    prefix = "",
+  ) => who.get(`${prefix}${ws()}/column-counts?table=${encodeURIComponent(table)}`);
+
+  test("the values come with their rows, the most first, as the caller may read the table", async () => {
+    const all = (await values(alice, "invoices", "team")).body;
+    expect(all).toEqual({
+      values: [
+        { value: "finance", count: 2 },
+        { value: "sales", count: 1 },
+      ],
+      distinct: 2,
+      rows: 3,
+      empty: 0,
+    });
+    // Two groups of end users are counted what their rows hold, and nothing else.
+    expect((await values(ivy.browser, "invoices", "team", "/api/v1")).body).toEqual({
+      values: [{ value: "finance", count: 2 }],
+      distinct: 1,
+      rows: 2,
+      empty: 0,
+    });
+    expect((await values(jon.browser, "invoices", "team", "/api/v1")).body.values).toEqual([
+      { value: "sales", count: 1 },
+    ]);
+    // Every row differs: as many different values as rows.
+    expect((await values(alice, "invoices", "number")).body).toMatchObject({
+      distinct: 3,
+      rows: 3,
+    });
+  });
+
+  test("an enum lists all its values in its own order, the ones no row has with a zero", async () => {
+    expect((await values(alice, "invoices", "status")).body.values).toEqual([
+      { value: "open", count: 2 },
+      { value: "paid", count: 1 },
+    ]);
+    // Jon sees one open invoice, and none paid.
+    const jons = (await values(jon.browser, "invoices", "status", "/api/v1")).body;
+    expect(jons.values).toEqual([
+      { value: "open", count: 1 },
+      { value: "paid", count: 0 },
+    ]);
+    expect(jons.distinct).toBe(2);
+    // A column with no value in a row counts those apart.
+    expect((await values(alice, "payments", "method")).body).toMatchObject({
+      values: [
+        { value: "card", count: 0 },
+        { value: "wire", count: 0 },
+      ],
+      empty: expect.any(Number),
+    });
+  });
+
+  test("a column that is not there, or holds no single value, is refused, and so is a table", async () => {
+    expect((await values(alice, "invoices", "nope")).status).toBe(400);
+    expect((await values(alice, "nothing", "team")).status).toBe(404);
+    expect((await values(alice, "invoices", "team", "")).status).toBe(200);
+    for (const type of ["json", "file", "enum_list"]) {
+      expect(() =>
+        refuseColumn(
+          {
+            name: "t",
+            schema: "s",
+            table: "t",
+            key: "id",
+            columns: [
+              {
+                name: "c",
+                physicalName: "c",
+                type,
+                required: false,
+                hasDefault: false,
+                writable: true,
+              },
+            ],
+            managed: true,
+            policy: { type: "open" } as never,
+            resourceId: null,
+          },
+          "c",
+        ),
+      ).toThrow(/not listed/);
+    }
+  });
+
+  test("whoever may not read the table is refused", async () => {
+    // Pat, made above, may open dashboards and read no table.
+    const pat = await t.signIn("pat@acme.example", PASSWORD);
+    expect((await values(pat, "invoices", "team")).status).toBe(403);
+    expect((await counts(pat, "invoices")).status).toBe(403);
+    expect((await values(browser(), "invoices", "team", "/api/v1")).status).toBeGreaterThanOrEqual(
+      401,
+    );
+  });
+
+  test("the number of different values of every column comes in one answer, as each caller reads the table", async () => {
+    expect((await counts(alice, "invoices")).body).toEqual({
+      rows: 3,
+      columns: {
+        id: 3,
+        created_at: 1,
+        updated_at: 1,
+        number: 3,
+        team: 2,
+        total: 3,
+        status: 2,
+      },
+    });
+    const ivys = (await counts(ivy.browser, "invoices", "/api/v1")).body;
+    expect(ivys.rows).toBe(2);
+    expect(ivys.columns).toMatchObject({ team: 1, number: 2, status: 2 });
+    expect((await counts(jon.browser, "invoices", "/api/v1")).body.rows).toBe(1);
+    expect((await counts(alice, "nothing")).status).toBe(404);
+  });
+
+  test("only so many rows are looked at, so many values listed, and so many different counted, and it says so", async () => {
+    const was = { ...COLUMN_LIMITS };
+    try {
+      COLUMN_LIMITS.sampleRows = 2;
+      const sampled = (await values(alice, "invoices", "team")).body;
+      expect(sampled).toMatchObject({ rows: 2, sampled: true });
+      expect(sampled.values.reduce((sum: number, one: Any) => sum + one.count, 0)).toBe(2);
+      const sampledCounts = (await counts(alice, "invoices")).body;
+      expect(sampledCounts).toMatchObject({ rows: 2, sampled: true });
+      COLUMN_LIMITS.sampleRows = was.sampleRows;
+
+      COLUMN_LIMITS.listed = 1;
+      expect((await values(alice, "invoices", "number")).body).toMatchObject({
+        values: [{ count: 1 }],
+        distinct: 3,
+      });
+      COLUMN_LIMITS.listed = was.listed;
+
+      COLUMN_LIMITS.distinct = 2;
+      expect((await values(alice, "invoices", "number")).body).toMatchObject({
+        distinct: 2,
+        more: true,
+      });
+      expect((await counts(alice, "invoices")).body).toMatchObject({
+        columns: { number: 2, team: 2 },
+        more: expect.arrayContaining(["number", "id"]),
+      });
+    } finally {
+      Object.assign(COLUMN_LIMITS, was);
+    }
+    // Back at the real limits, nothing is said to be cut short.
+    const whole = (await values(alice, "invoices", "number")).body;
+    expect(whole.more).toBeUndefined();
+    expect(whole.sampled).toBeUndefined();
   });
 });
 

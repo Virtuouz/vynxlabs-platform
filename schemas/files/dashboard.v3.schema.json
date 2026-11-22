@@ -162,7 +162,9 @@
                                           "in",
                                           "contains",
                                           "is_null",
-                                          "not_null"
+                                          "not_null",
+                                          "last",
+                                          "between"
                                         ]
                                       },
                                       "value": {}

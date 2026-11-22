@@ -49,7 +49,16 @@ export const VISUAL_OPERATORS = [
   "contains",
   "is_null",
   "not_null",
+  "last",
+  "between",
 ] as const;
+export const LAST_UNITS = ["day", "week", "month", "quarter", "year"] as const;
+export type LastUnit = (typeof LAST_UNITS)[number];
+/** The value of `last`: "in the last 30 days", counted back from today, today included. */
+export interface LastValue {
+  count: number;
+  unit: LastUnit;
+}
 export type VisualOperator = (typeof VISUAL_OPERATORS)[number];
 
 /** A column of the query's table, or of a table it joins: `fee`, or `device.name`. */
@@ -58,7 +67,10 @@ export type VisualColumn = string;
 export interface VisualCondition {
   column: VisualColumn;
   op: VisualOperator;
-  /** What it is compared with. Left out for `is_null` and `not_null`. */
+  /**
+   * What it is compared with. Left out for `is_null` and `not_null`. For `last`, a `{ count, unit }`;
+   * for `between`, `[from, to]`: two days (date or timestamp column; both days whole) or two numbers.
+   */
   value?: unknown;
 }
 
@@ -954,6 +966,57 @@ export interface CheckContext {
   incomplete?: boolean;
 }
 
+const DAY_TEXT = /^\d{4}-\d{2}-\d{2}$/;
+const isDayText = (value: unknown) =>
+  typeof value === "string" &&
+  DAY_TEXT.test(value) &&
+  new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+
+/** What is wrong with a `last` or `between` condition's value or column, or nothing. `type` is null or undefined when not known. */
+export function conditionProblem(
+  condition: VisualCondition,
+  type: string | null | undefined,
+): string | undefined {
+  const { op, value } = condition;
+  if (op === "last") {
+    const v = value as Partial<LastValue> | null | undefined;
+    if (
+      typeof v !== "object" ||
+      v === null ||
+      !Number.isInteger(v.count) ||
+      (v.count as number) < 1 ||
+      (v.count as number) > 1000 ||
+      !(LAST_UNITS as readonly unknown[]).includes(v.unit)
+    ) {
+      return '"last" needs { count: 1 to 1000, unit: day, week, month, quarter or year }';
+    }
+    if (type && type !== "date" && type !== "timestamp") {
+      return `"last" is for a date or a time, and "${condition.column}" is of type ${type}`;
+    }
+  } else if (op === "between") {
+    if (!Array.isArray(value) || value.length !== 2) {
+      return '"between" needs [from, to]';
+    }
+    const [from, to] = value as unknown[];
+    const days = isDayText(from) && isDayText(to);
+    const numbers =
+      typeof from === "number" && typeof to === "number" && Number.isFinite(from + to);
+    if (!days && !numbers) return '"between" needs two days (YYYY-MM-DD) or two numbers';
+    if ((from as string | number) > (to as string | number))
+      return '"between" ends before it begins';
+    if (type) {
+      const temporal = type === "date" || type === "timestamp";
+      const numeric = type === "integer" || type === "number";
+      if ((days && !temporal) || (numbers && !numeric)) {
+        return `${days ? "days" : "numbers"} do not fit a column of type ${type}`;
+      }
+      if (!temporal && !numeric)
+        return `"between" is for a date, a time or a number, not a column of type ${type}`;
+    }
+  }
+  return undefined;
+}
+
 /**
  * What is wrong with a page's widgets and filters that their shape alone does
  * not show: a type no pack declares, a widget offered elsewhere, a
@@ -1282,6 +1345,8 @@ export function checkWidgets(
         }
         for (const [which, condition] of (visual.filters ?? []).entries()) {
           known(`${where}/source/visual/filters/${which}/column`, condition.column);
+          const problem = conditionProblem(condition, columnType(table, condition.column));
+          if (problem) say(`${where}/source/visual/filters/${which}`, problem);
         }
         for (const [which, column] of (visual.columns ?? []).entries()) {
           known(`${where}/source/visual/columns/${which}`, column);

@@ -350,14 +350,14 @@ export const operations = defineInterface({
                 type: "choice",
                 from: { table: "appointments", column: "clinic" },
               },
-              { name: "when", label: "When", type: "date_range", default: "today" },
+              { name: "when", label: "When", type: "date_range", default: "last_7_days" },
             ],
           },
         },
         {
           id: "welcome",
           type: "core/text",
-          at: at(0, 2, 12, 4),
+          at: at(0, 2, 12, 5),
           config: {
             look: "tip",
             text: "**A morning at Fernhill.** Start here, then follow the menu.\n\n:::steps\n1. Look at **Right now**: who is booked, who is waiting, who is done.\n2. Check in a visit from the table, or select several and check them in together.\n3. Open **Stock** if a clinic is running low, and **Money** for what is unpaid.\n:::\n\nPress :kbd[Esc] to close any window this app opens.",
@@ -438,7 +438,7 @@ export const operations = defineInterface({
             actions: [
               {
                 id: "day-sheet",
-                label: "Day sheet",
+                label: "Visit sheet",
                 tone: "primary",
                 icon: "file-text",
                 action: { steps: [{ do: "open", page: "day-sheet" }] },
@@ -852,7 +852,7 @@ export const operations = defineInterface({
             buttons: [
               {
                 id: "day-sheet",
-                label: "Day sheet",
+                label: "Visit sheet",
                 tone: "default",
                 action: { steps: [{ do: "open", page: "day-sheet" }] },
               },
@@ -960,7 +960,7 @@ export const operations = defineInterface({
             format: DOLLARS,
             compare: true,
             compareTo: "issued",
-            delta: "points",
+            delta: "absolute",
             goodWhen: "up",
           },
           layout: { priority: 1 },
@@ -1084,7 +1084,7 @@ export const operations = defineInterface({
           id: "periods",
           type: "core/tabs",
           title: "Over longer periods",
-          at: at(0, 18, 12, 12),
+          at: at(0, 18, 12, 8),
           config: {
             look: "underline",
             tabs: [
@@ -1101,7 +1101,7 @@ export const operations = defineInterface({
           type: "core/pivot",
           title: "Month by clinic",
           in: { widget: "periods", tab: "month" },
-          at: at(0, 0, 12, 8),
+          at: at(0, 0, 12, 6),
           data: {
             rows: {
               source: {
@@ -1125,7 +1125,7 @@ export const operations = defineInterface({
           type: "core/chart",
           title: "Each quarter",
           in: { widget: "periods", tab: "quarter" },
-          at: at(0, 0, 12, 8),
+          at: at(0, 0, 12, 6),
           data: invoicesBy([{ column: "issued_on", bucket: "quarter" }]),
           config: { mark: "bar", format: SHORT, values: true },
         },
@@ -1134,7 +1134,7 @@ export const operations = defineInterface({
           type: "core/table",
           title: "Each year",
           in: { widget: "periods", tab: "year" },
-          at: at(0, 0, 12, 8),
+          at: at(0, 0, 12, 6),
           data: {
             rows: {
               source: {
@@ -1175,7 +1175,7 @@ export const operations = defineInterface({
           title: "Invoiced for each vet's visits",
           subtitle: "An invoice follows its visit (a join), so the vet is the visit's.",
           in: { widget: "periods", tab: "vet" },
-          at: at(0, 0, 12, 8),
+          at: at(0, 0, 12, 6),
           data: {
             rows: {
               source: {
@@ -1197,7 +1197,7 @@ export const operations = defineInterface({
         {
           id: "managers",
           type: "core/text",
-          at: at(0, 30, 12, 3),
+          at: at(0, 26, 12, 3),
           config: {
             text: ":::alert[For practice managers]{type=info}\nOwners are texted about invoices unpaid for two weeks every Monday morning. Press an invoice to open it. **Mark paid** is for managers and Billing; **Void** is for managers.\n:::",
           },
@@ -1207,7 +1207,7 @@ export const operations = defineInterface({
           id: "list",
           type: "core/table",
           title: "Invoices",
-          at: at(0, 33, 12, 12),
+          at: at(0, 29, 12, 12),
           data: {
             rows: {
               source: {
@@ -1508,7 +1508,7 @@ export const operations = defineInterface({
           id: "queues",
           type: "core/tabs",
           title: "Orders waiting for a manager",
-          at: at(0, 6, 12, 17),
+          at: at(0, 6, 12, 12),
           config: {
             look: "pills",
             remember: true,
@@ -1525,7 +1525,7 @@ export const operations = defineInterface({
           id: "approve-queue",
           type: "core/approvals",
           in: { widget: "queues", tab: "queue" },
-          at: at(0, 0, 12, 15),
+          at: at(0, 0, 12, 10),
           data: {
             requests: { source: { approvals: { flows: ["inventory/reorder"], whose: "all" } } },
           },
@@ -1551,7 +1551,7 @@ export const operations = defineInterface({
           id: "approve-rows",
           type: "core/approvals",
           in: { widget: "queues", tab: "rows" },
-          at: at(0, 0, 12, 15),
+          at: at(0, 0, 12, 10),
           data: {
             requests: { source: { approvals: { flows: ["inventory/reorder"], whose: "mine" } } },
           },
@@ -1576,7 +1576,7 @@ export const operations = defineInterface({
           id: "approve-cards",
           type: "core/approvals",
           in: { widget: "queues", tab: "cards" },
-          at: at(0, 0, 12, 15),
+          at: at(0, 0, 12, 10),
           data: { requests: { source: { approvals: { whose: "all" } } } },
           config: { look: "cards", opens: "sheet", askWhy: "never", decided: true },
         },
@@ -1584,7 +1584,7 @@ export const operations = defineInterface({
           id: "lines",
           type: "core/table",
           title: "Stock",
-          at: at(0, 23, 12, 12),
+          at: at(0, 18, 12, 12),
           data: {
             rows: {
               source: { visual: { table: "inventory", sort: [{ by: "on_hand" }] } },
@@ -1616,7 +1616,7 @@ export const operations = defineInterface({
           id: "by-category",
           type: "core/chart",
           title: "On hand by category",
-          at: at(0, 35, 6, 9),
+          at: at(0, 30, 6, 8),
           data: {
             rows: {
               source: {
@@ -1636,7 +1636,7 @@ export const operations = defineInterface({
           id: "category-grid",
           type: "core/pivot",
           title: "Category by clinic",
-          at: at(6, 35, 6, 9),
+          at: at(6, 30, 6, 8),
           data: {
             rows: {
               source: {
@@ -1656,8 +1656,8 @@ export const operations = defineInterface({
           id: "orders-section",
           type: "core/section",
           title: "Orders to VetSupply",
-          subtitle: "What the clinics have asked the supplier for, newest first. Starts folded.",
-          at: at(0, 44, 12, 10),
+          subtitle: "What the clinics have asked the supplier for, newest first.",
+          at: at(0, 38, 12, 10),
           config: { folds: true, folded: true, look: "plain" },
         },
         {
@@ -1723,7 +1723,7 @@ export const operations = defineInterface({
           id: "queue",
           type: "core/table",
           title: "To call back",
-          at: at(0, 2, 7, 12),
+          at: at(0, 2, 7, 8),
           data: {
             rows: {
               source: {
@@ -1741,7 +1741,7 @@ export const operations = defineInterface({
               {
                 column: "status",
                 as: "badge",
-                badges: { new: "attention", called: "success", declined: "neutral" },
+                badges: { new: "attention", "called back": "success", declined: "neutral" },
               },
             ],
             rowActions: [
@@ -1749,9 +1749,9 @@ export const operations = defineInterface({
                 id: "called",
                 label: "Mark called",
                 action: {
-                  when: [{ field: "status", of: "event", test: "is_not", value: "called" }],
+                  when: [{ field: "status", of: "event", test: "is_not", value: "called back" }],
                   steps: [
-                    { do: "update", record: "event", set: { status: { value: "called" } } },
+                    { do: "update", record: "event", set: { status: { value: "called back" } } },
                     { do: "message", text: "Marked as called", tone: "success" },
                   ],
                 },
@@ -1781,7 +1781,7 @@ export const operations = defineInterface({
           id: "chosen",
           type: "core/detail",
           title: "The one chosen",
-          at: at(7, 2, 5, 12),
+          at: at(7, 2, 5, 8),
           data: { record: { source: { selected: "queue" } } },
           config: {
             heading: "name",
@@ -1802,8 +1802,10 @@ export const operations = defineInterface({
                 tone: "primary",
                 icon: "check",
                 action: {
-                  when: [{ field: "status", of: "event", test: "is_not", value: "called" }],
-                  steps: [{ do: "update", record: "event", set: { status: { value: "called" } } }],
+                  when: [{ field: "status", of: "event", test: "is_not", value: "called back" }],
+                  steps: [
+                    { do: "update", record: "event", set: { status: { value: "called back" } } },
+                  ],
                   done: "Marked as called",
                 },
               },
@@ -2215,9 +2217,9 @@ export const operations = defineInterface({
       ],
     },
     {
-      // A modal that fills the window: the day's whole list.
+      // A modal that fills the window: the whole list of visits.
       id: "day-sheet",
-      title: "Day sheet",
+      title: "Visit sheet",
       kind: "modal",
       size: "full",
       widgets: [
@@ -2234,7 +2236,7 @@ export const operations = defineInterface({
                 type: "choice",
                 from: { table: "appointments", column: "clinic" },
               },
-              { name: "day", label: "Day", type: "date_range", default: "today" },
+              { name: "day", label: "When", type: "date_range", default: "last_7_days" },
             ],
           },
         },
@@ -2254,7 +2256,7 @@ export const operations = defineInterface({
           config: {
             pageSize: 50,
             rowHeight: "compact",
-            empty: "No visits on this day.",
+            empty: "No visits in this range.",
             columns: [
               { column: "starts_at", label: "When" },
               { column: "clinic" },

@@ -189,7 +189,7 @@ test("the fields are rows with their kind, a section header, and a field editor"
   );
   expect(screen.getByText("SECTION · NOTES")).toBeTruthy();
   expect(screen.getByText("Picker")).toBeTruthy();
-  expect(screen.getByText(/more columns are hidden/)).toBeTruthy();
+  expect(screen.getByText(/more columns? (is|are) hidden/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /^Total/ }));
   fireEvent.change(screen.getByLabelText("Label"), { target: { value: "Amount" } });
   expect((mine(seen).config.fields as { label?: string }[])[1]?.label).toBe("Amount");

@@ -313,7 +313,7 @@ export function FieldsList({
         note
           ? note(hidden)
           : hidden > 0
-            ? `${hidden} more columns are hidden. Drag fields between sections.`
+            ? `${hidden} more ${hidden === 1 ? "column is" : "columns are"} hidden. Drag fields between sections.`
             : "Drag fields between sections."
       }
     >

@@ -54,8 +54,6 @@ const ok = async (page: Page, method: string, path: string, body?: unknown) => {
   return answer.body;
 };
 
-test.describe.configure({ mode: "serial" });
-
 let owner: Page;
 /** The workspace's address in the API, and in the console. */
 let W: string;
@@ -604,7 +602,7 @@ const choose = (inside: Locator, name: string | RegExp) =>
   inside
     .getByRole("radio", { name })
     .first()
-    .locator("xpath=ancestor::label[1]");
+    .locator("xpath=(ancestor::label[1] | self::*)[1]");
 /** A switch of the inspector, by its name. */
 const flip = (name: string) => settings().getByRole("switch", { name });
 /** Adds a widget to the open page by the selector, and waits until the builder has saved it. */
@@ -696,6 +694,412 @@ test("POLISH-004: Chart: Measure, For each, the chart type and its colours are w
   await tabOf("Data").click();
   await expect(rowOf("Measure")).toContainText("Sum");
   await expect(rowOf("For each")).toContainText("Clinic");
+});
+
+/** Gives a measure its function and column, in the editor a row ("Measure", "Value") opens. */
+async function setMeasure(row: string, fn: string, column?: string) {
+  const open = await openRow(row);
+  await open.getByLabel("What it works out").selectOption({ label: fn });
+  if (column) {
+    await open.getByLabel("Of").or(open.getByLabel("Column")).first().selectOption({ label: column });
+  }
+  await owner.keyboard.press("Escape");
+}
+
+/** "Only include": a sentence, from the editor the dashed "+ Condition" opens. */
+async function addCondition(
+  field: string,
+  test: string,
+  fill: (editor: Locator) => Promise<void>,
+) {
+  await settings().getByRole("button", { name: /^Condition/ }).click();
+  const open = owner.getByRole("dialog", { name: "Only include rows where" });
+  await open.getByLabel("Field").selectOption({ label: field });
+  await choose(open, new RegExp(`^${test}$`)).click();
+  await fill(open);
+  await open.getByRole("button", { name: "Add" }).click();
+}
+/** The sentence a condition is, as the inspector's chips write it. */
+const chip = (words: string | RegExp) =>
+  settings().getByRole("group", { name: "Conditions rows must meet" }).getByText(words);
+
+test("POLISH-004: Stat: a value, a condition, a title and a money format are written, shown on the canvas as the number, and kept after a reload", async () => {
+  await openBuilder("charts", /^Blank/);
+  const added = await addAndSave("charts", "blank", "Stat", "core/stat");
+  await chooseSource("Invoices");
+  await addCondition("Number", "contains", (open) => open.getByRole("textbox", { name: "Value" }).fill(PREFIX));
+  await setMeasure("Value", "Sum", "Total");
+  await tabOf("Display").click();
+  const open = await openRow("Numbers");
+  await choose(open, /^Money\b(?!,)/).click();
+  await open.getByRole("switch", { name: "Stored in cents" }).check();
+  await owner.keyboard.press("Escape");
+  await rowOf("Title").click();
+  await editor().getByRole("textbox").first().fill("Invoiced by the walk");
+  await owner.keyboard.press("Enter");
+  // The six invoices of the walk add up to $562.45, and the stat on the canvas says so.
+  const total = INVOICES.reduce((sum, one) => sum + one.total, 0) / 100;
+  await expect(widget("Invoiced by the walk")).toContainText(`$${total.toFixed(2)}`);
+  const stat = (await settle("charts", "blank", added.id, (one) =>
+    one.title === "Invoiced by the walk" ? one : undefined,
+  )) as Wid;
+  const visual = stat.data.value.source.visual;
+  expect(visual.measures[0]).toMatchObject({ fn: "sum", column: "total" });
+  expect(visual.filters[0]).toMatchObject({ column: "number", op: "contains", value: PREFIX });
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await expect(widget("Invoiced by the walk")).toContainText(`$${total.toFixed(2)}`);
+});
+
+/** Narrows the open widget to the walk's own invoices, so what it counts is known. */
+const onlyTheWalks = () =>
+  addCondition("Number", "contains", (open) => open.getByRole("textbox", { name: "Value" }).fill(PREFIX));
+
+test("POLISH-004: Goal: a value, a goal and when it is reached are written, drawn as progress, and kept after a reload", async () => {
+  await openBuilder("charts", /^Blank/);
+  const added = await addAndSave("charts", "blank", "Goal", "labs/goal");
+  await chooseSource("Invoices");
+  await onlyTheWalks();
+  // The value is the count of the walk's invoices: six. The goal is ten: sixty per cent.
+  const open = await openRow("Goal");
+  await open.getByRole("spinbutton").first().fill("10");
+  await owner.keyboard.press("Escape");
+  const goal = widget(/^Goal/);
+  await expect(goal).toContainText("6");
+  await expect(goal).toContainText("60%");
+  await expect(goal.getByRole("progressbar")).toBeVisible();
+  // "Show the percentage" off takes the figure away.
+  await tabOf("Display").click();
+  await flip("Show the percentage").uncheck();
+  await expect(goal).not.toContainText("60%");
+  const saved = (await settle("charts", "blank", added.id, (one) =>
+    one.config?.percent === false ? one : undefined,
+  )) as Wid;
+  expect(saved.config.target).toBe(10);
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await expect(widget(/^Goal/)).toContainText("6");
+  await expect(widget(/^Goal/)).not.toContainText("60%");
+});
+
+test("POLISH-004: Pivot: a measure, rows and columns are written, drawn as a grid with the right counts, and kept after a reload", async () => {
+  await openBuilder("charts", /^Blank/);
+  const added = await addAndSave("charts", "blank", "Pivot", "core/pivot");
+  await chooseSource("Invoices");
+  await onlyTheWalks();
+  let open = await openRow("Rows");
+  await choose(open, /^Clinic\b/).click();
+  await owner.keyboard.press("Escape");
+  open = await openRow("Columns");
+  await choose(open, /^Status\b/).click();
+  await owner.keyboard.press("Escape");
+  const grid = widget(/^Pivot/);
+  // The walk's invoices: northside has one unpaid and one paid; hilltop one unpaid and one void.
+  const northside = grid.getByRole("row", { name: /northside/ });
+  await expect(northside).toBeVisible();
+  const cells = async (clinic: string) =>
+    (await grid.getByRole("row", { name: new RegExp(clinic) }).getByRole("cell").allTextContents()).map(
+      (one) => one.trim(),
+    );
+  expect(await cells("northside")).toEqual(expect.arrayContaining(["1"]));
+  await tabOf("Display").click();
+  await flip("Shade cells by size").check();
+  const saved = (await settle("charts", "blank", added.id, (one) =>
+    one.config?.shade === true ? one : undefined,
+  )) as Wid;
+  expect(saved.data.rows.source.visual.groupBy.map((one: Wid) => one.column)).toEqual(["clinic", "status"]);
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await expect(widget(/^Pivot/).getByRole("row", { name: /northside/ })).toBeVisible();
+});
+
+test("POLISH-004: List: a column is put in each named place, drawn in the rows, and Cards changes the look; kept after a reload", async () => {
+  await openBuilder("records", /^Blank/);
+  const added = await addAndSave("records", "blank", "List", "core/list");
+  await chooseSource("Invoices");
+  await onlyTheWalks();
+  await tabOf("Display").click();
+  const place = (name: string) =>
+    settings()
+      .getByRole("region", { name: "What goes where" })
+      .getByRole("button", { name: new RegExp(`^${name}( |$)`) });
+  await place("Title").click();
+  await editor().getByRole("button", { name: "Number", exact: true }).click();
+  await owner.keyboard.press("Escape");
+  await place("Under the title").click();
+  await editor().getByRole("button", { name: "Clinic", exact: true }).click();
+  await owner.keyboard.press("Escape");
+  const list = widget(/^List/);
+  await expect(list).toContainText(made.a?.number ?? "");
+  await expect(list).toContainText("northside");
+  await choose(settings().getByRole("group", { name: "Rows" }), "Cards").click();
+  const saved = (await settle("records", "blank", added.id, (one) =>
+    one.config?.look === "cards" ? one : undefined,
+  )) as Wid;
+  expect(saved.config.title).toBe("number");
+  expect(saved.config.subtitle).toBe("clinic");
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await expect(widget(/^List/)).toContainText(made.a?.number ?? "");
+});
+
+test("POLISH-004: List: the Badge place offers the Status column, as Conditions offers its values", async () => {
+  await openBuilder("layout", /^Blank/);
+  await addAndSave("layout", "blank", "List", "core/list");
+  await chooseSource("Invoices");
+  await tabOf("Display").click();
+  await settings()
+    .getByRole("region", { name: "What goes where" })
+    .getByRole("button", { name: /^Badge( |$)/ })
+    .click();
+  await expect(editor().getByRole("button", { name: "Status", exact: true })).toBeVisible();
+  await owner.keyboard.press("Escape");
+});
+
+test("POLISH-004: Record detail: the record, its fields in sections and edit in place are written, drawn on the sheet, and kept after a reload", async () => {
+  await openBuilder("records", /^Invoice sheet/);
+  const added = await addAndSave("records", "invoice", "Record detail", "core/detail");
+  // On a sheet the record to show is the one the sheet was opened with.
+  await choose(
+    settings().getByRole("group", { name: "Where the record comes from" }),
+    /^The record this page was opened with/,
+  ).click();
+  await expect(owner.getByText(/Record detail needs Record to show/)).toHaveCount(0);
+  await tabOf("Display").click();
+  const fields = settings().getByRole("region", { name: "Fields" });
+  // Every column is shown, so each is in the list, to hide, reorder and group into sections.
+  await expect
+    .soft(fields.getByRole("list", { name: "Fields" }), "the Fields list holds the columns shown")
+    .toContainText("Number");
+  // A column is not drawn as the words "[object Object]".
+  await expect.soft(widget(/^Record detail/)).not.toContainText("[object Object]");
+  await choose(settings().getByRole("group", { name: "Fields across" }), "3").click();
+  await flip("Let people edit fields in place").check();
+  const saved = (await settle("records", "invoice", added.id, (one) =>
+    one.config?.edit && one.config?.across === 3 ? one : undefined,
+  )) as Wid;
+  expect(saved.config.across).toBe(3);
+  // The sheet on the canvas is previewed on a sample invoice, with the fields.
+  await expect(widget(/^Record detail/)).toContainText("Number");
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Invoice sheet/ }).click();
+  await outline().getByRole("button", { name: /^Record detail/ }).click();
+  await tabOf("Display").click();
+  await expect(flip("Let people edit fields in place")).toBeChecked();
+  await expect(widget(/^Record detail/)).toContainText("Number");
+});
+
+test("POLISH-004: Form: made in its dialog on a table of choice, fields unchecked, previewed live, and the form is a modal page that writes that table", async () => {
+  await openBuilder("records", /^Blank/);
+  await owner.getByRole("button", { name: /^Add to page/ }).first().click();
+  await selector().getByRole("button", { name: /^Form\b/ }).click();
+  const dialog = owner.getByRole("dialog", { name: "Add a form" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Table").selectOption({ label: "Invoices" });
+  // The preview on the right is drawn from the settings on the left, live.
+  const preview = dialog.getByRole("region", { name: "Preview" });
+  await expect(preview).toContainText("New invoice");
+  await expect(preview).toContainText("Payment ref");
+  await dialog.getByRole("checkbox", { name: "Payment ref" }).uncheck();
+  await expect(preview).not.toContainText("Payment ref");
+  await expectNoAxeViolations(owner, "the Add a form dialog");
+  await dialog.getByRole("button", { name: /^Create form$/ }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(async () => (await drafted("records")).pages.some((one: Wid) => one.kind === "modal"))
+    .toBe(true);
+  const modal = (await drafted("records")).pages.find((one: Wid) => one.kind === "modal");
+  const form = modal.widgets.find((one: Wid) => one.type === "core/form");
+  expect(form, "the modal page holds the form").toBeTruthy();
+  const columns = (form.config.fields as Wid[]).map((one) => one.column);
+  expect(columns).toContain("number");
+  expect(columns).not.toContain("payment_ref");
+  expect(JSON.stringify(form.data)).toContain("invoices");
+  await owner.reload();
+  await expect(pages().getByRole("button", { name: /^New invoice/ })).toBeVisible();
+});
+
+test("POLISH-004: Button: its words, tone, icon and place in its cell (3 by 3) are written, drawn in that corner, and kept after a reload", async () => {
+  await openBuilder("layout", /^Blank/);
+  const added = await addAndSave("layout", "blank", "Button", "core/button");
+  await tabOf("Display").click();
+  await rowOf("Says").click();
+  await editor().getByRole("textbox").first().fill("Print");
+  await owner.keyboard.press("Enter");
+  await choose(settings().getByRole("group", { name: "Style" }), "Danger").click();
+  await rowOf("Icon").click();
+  await choose(editor(), "Download").click();
+  await owner.keyboard.press("Escape");
+  // The nine places in the cell: the button moves to the bottom right of it.
+  const where = settings().getByRole("radiogroup", { name: "Where it sits in its place" });
+  const cell = widget("Button");
+  await expect(cell).toBeVisible();
+  await choose(where, "Bottom right").click();
+  const saved = (await settle("layout", "blank", added.id, (one) =>
+    one.config?.place === "bottom-right" ? one : undefined,
+  )) as Wid;
+  expect(saved.config.label).toBe("Print");
+  expect(saved.config.tone).toBe("danger");
+  expect(saved.config.icon).toBe("download");
+  const button = cell.getByRole("button", { name: /Print/ });
+  const inner = await button.boundingBox();
+  const outer = await cell.boundingBox();
+  expect(inner && outer, "the button and its cell are drawn").toBeTruthy();
+  if (inner && outer) {
+    expect(inner.x + inner.width, "right edge").toBeGreaterThan(outer.x + outer.width - 40);
+    expect(inner.y + inner.height, "bottom edge").toBeGreaterThan(outer.y + outer.height - 40);
+  }
+  await choose(where, "Top left").click();
+  await expect
+    .poll(async () => (await widgetNow("layout", "blank", added.id))?.config?.place)
+    .toBe("top-left");
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await outline().getByRole("button", { name: "Button" }).click();
+  await tabOf("Display").click();
+  await expect(choose(settings().getByRole("radiogroup", { name: "Where it sits in its place" }), "Top left")).toBeVisible();
+  await expect(
+    settings().getByRole("radiogroup", { name: "Where it sits in its place" }).getByRole("radio", { name: "Top left" }),
+  ).toBeChecked();
+});
+
+test("POLISH-004: Action group: its buttons are rows with their own settings, lined up and shown up to a number; kept after a reload", async () => {
+  await openBuilder("layout", /^Blank/);
+  const added = await addAndSave("layout", "blank", "Action group", "core/actions");
+  await tabOf("Display").click();
+  await settings().getByRole("button", { name: "Button", exact: true }).click();
+  // The new button opens its own Display, Actions and Rules; Back returns to the group.
+  await expect(settings().getByRole("button", { name: /^Back/ })).toBeVisible();
+  await settings().getByRole("button", { name: /^Back/ }).click();
+  await expect(settings().getByRole("list", { name: "Buttons" }).getByRole("listitem")).toHaveCount(2);
+  // A button with nothing to do keeps the page from being published, and the page says why in
+  // its own words, not in the schema's.
+  await expect(owner.getByText(/To fix before it can be published/)).toBeVisible();
+  await expect
+    .soft(owner.getByText(/must NOT have fewer than/), "the reason is in words, not the schema's")
+    .toHaveCount(0);
+  await choose(settings().getByRole("group", { name: "Line up" }), "Spread").click();
+  const saved = (await settle("layout", "blank", added.id, (one) =>
+    one.config?.lineUp === "spread" ? one : undefined,
+  )) as Wid;
+  expect((saved.config.actions as Wid[]).length).toBe(2);
+  const group = widget(/^Action group/);
+  await expect(group.getByRole("button")).toHaveCount(2);
+  await rowOf("Show up to").click();
+  await editor().getByLabel("Buttons shown before the ⋯ menu").selectOption("1");
+  await owner.keyboard.press("Escape");
+  await expect
+    .poll(async () => (await widgetNow("layout", "blank", added.id))?.config?.showUpTo)
+    .toBe(1);
+  // One button shows; the other is under ⋯.
+  await expect(group.getByRole("button", { name: /More/ })).toBeVisible();
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await expect(widget(/^Action group/).getByRole("button", { name: /More/ })).toBeVisible();
+});
+
+test("POLISH-004: Section: plain or a card, and can be collapsed; kept after a reload", async () => {
+  await openBuilder("layout", /^Blank/);
+  const section = await addAndSave("layout", "blank", "Section", "core/section");
+  await tabOf("Display").click();
+  await choose(settings().getByRole("group", { name: "Style" }), "Card").click();
+  await flip("Can be collapsed").check();
+  const savedSection = (await settle("layout", "blank", section.id, (one) =>
+    one.config?.look === "card" && one.config?.folds ? one : undefined,
+  )) as Wid;
+  expect(savedSection.config.look).toBe("card");
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await outline().getByRole("button", { name: /^Section/ }).click();
+  await tabOf("Display").click();
+  await expect(flip("Can be collapsed")).toBeChecked();
+});
+
+test("POLISH-004: Tabs: the tab that opens first is chosen, the style is pills and the last tab is remembered; kept after a reload", async () => {
+  await openBuilder("layout", /^Blank/);
+  const tabs = await addAndSave("layout", "blank", "Tabs", "core/tabs");
+  await tabOf("Display").click();
+  const list = settings().getByRole("list", { name: "Tabs" });
+  await expect(list).toContainText("First");
+  await expect(list).toContainText("Second");
+  // "Opens first" is a chip on the tab chosen: Second is chosen, and the page opens on it.
+  await list.getByRole("button", { name: "Open Second first" }).last().click();
+  await choose(settings().getByRole("group", { name: "Style" }), "Pills").click();
+  await flip("Remember the last tab").check();
+  const saved = (await settle("layout", "blank", tabs.id, (one) =>
+    one.config?.look === "pills" && one.config?.remember === true && one.config?.opensFirst
+      ? one
+      : undefined,
+  )) as Wid;
+  expect(saved.config.opensFirst).toBe((saved.config.tabs as Wid[])[1].id);
+  const strip = widget(/^Tabs/).getByRole("tablist");
+  await expect(strip.getByRole("tab", { name: "Second" })).toHaveAttribute("aria-selected", "true");
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await expect(
+    widget(/^Tabs/).getByRole("tablist").getByRole("tab", { name: "Second" }),
+  ).toHaveAttribute("aria-selected", "true");
+});
+
+test("POLISH-004: Search and filter: a filter is added, sits behind a button, and the page's table follows it; kept after a reload", async () => {
+  await openBuilder("layout", /^Blank/);
+  const filter = await addAndSave("layout", "blank", "Search and filter", "core/filter");
+  await tabOf("Display").click();
+  await expect(settings().getByRole("list", { name: "Filters" })).toContainText("Search");
+  await choose(settings().getByRole("group", { name: "Filters sit" }), "Behind a button").click();
+  const saved = (await settle("layout", "blank", filter.id, (one) =>
+    one.config?.sit === "button" ? one : undefined,
+  )) as Wid;
+  expect(saved.config.sit).toBe("button");
+  await expect.soft(settings(), "the words are not written as escapes").not.toContainText("\\u201c");
+  await expect
+    .soft(widget(/^Search and filter/).getByRole("button", { name: /^Filters/ }), "behind a button on the canvas")
+    .toBeVisible();
+  // As a row it is a search box in the bar again.
+  await choose(settings().getByRole("group", { name: "Filters sit" }), "In a row").click();
+  await expect(widget(/^Search and filter/).getByRole("search")).toBeVisible();
+  await choose(settings().getByRole("group", { name: "Filters sit" }), "Behind a button").click();
+  await expect
+    .poll(async () => (await widgetNow("layout", "blank", filter.id))?.config?.sit)
+    .toBe("button");
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await outline().getByRole("button", { name: /^Search and filter/ }).click();
+  await expect(
+    choose(settings().getByRole("group", { name: "Filters sit" }), "Behind a button").locator("input"),
+  ).toBeChecked();
+});
+
+test("POLISH-004: Text: the style is chosen by looking, the words are written on the page in the Markdown editor, and what readers see is drawn; kept after a reload", async () => {
+  await openBuilder("layout", /^Blank/);
+  const text = await addAndSave("layout", "blank", "Text", "core/text");
+  await choose(settings().getByRole("group", { name: "Style" }), "Warning").click();
+  await settings().getByRole("button", { name: "Edit on the page" }).click();
+  // The documentation's editor opens, with its toolbar, the component help and its modes.
+  const write = owner.getByRole("dialog", { name: "Edit Text on the page" });
+  await expect(write).toBeVisible();
+  await expect(write.getByRole("toolbar", { name: "Write" })).toBeVisible();
+  await expect(write.getByRole("button", { name: "Insert /" })).toBeVisible();
+  const modes = write.getByRole("group", { name: "What is shown" });
+  await write.locator(".monaco-editor .view-lines").click();
+  await owner.keyboard.insertText("Closed on **Sunday**.");
+  await expect(write.getByRole("region", { name: "Preview of the text" }).locator("strong")).toHaveText("Sunday");
+  await modes.getByRole("button", { name: "Source" }).click();
+  await expect(write.getByRole("region", { name: "Preview of the text" })).toHaveCount(0);
+  await modes.getByRole("button", { name: "Preview" }).click();
+  await expect(write.getByRole("region", { name: "Preview of the text" }).locator("strong")).toHaveText("Sunday");
+  await expectNoAxeViolations(owner, "the Markdown editor of a Text widget");
+  await write.getByRole("button", { name: "Done" }).click();
+  await expect(write).toHaveCount(0);
+  const saved = (await settle("layout", "blank", text.id, (one) =>
+    typeof one.config?.text === "string" && one.config.text.includes("Sunday") ? one : undefined,
+  )) as Wid;
+  expect(saved.config.look).toBe("warning");
+  await expect(widget(/^Text/).getByText("Sunday")).toBeVisible();
+  await expect(widget(/^Text/).locator("strong")).toHaveText("Sunday");
+  await owner.reload();
+  await pages().getByRole("button", { name: /^Blank/ }).click();
+  await expect(widget(/^Text/).locator("strong")).toHaveText("Sunday");
 });
 
 /** What a table draws as its headings, left to right. */

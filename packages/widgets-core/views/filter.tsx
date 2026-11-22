@@ -1,4 +1,4 @@
-import { Button, DateField, Popover } from "@volvel/ui";
+import { Button, DateInput, Popover } from "@volvel/ui";
 import { ChevronDown, ListFilter, Search, X } from "@volvel/ui/icons";
 import type { Choice, FilterHost, WidgetViewProps } from "@volvel/widgets";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
@@ -143,22 +143,28 @@ function DateRangeControl({ filter, label, value, onChange }: Control) {
       {mode === CUSTOM ? (
         <>
           <div className="min-w-36 flex-1 @md/cell:w-44 @md/cell:flex-none">
-            <DateField
+            <DateInput
               name={`filter-${filter.name}-from`}
-              label="From"
+              inlineLabel="From"
+              aria-label="From"
               value={days?.from ?? ""}
-              error={problem}
               onChange={(from) => set({ from, to: days?.to ?? "" })}
             />
           </div>
           <div className="min-w-36 flex-1 @md/cell:w-44 @md/cell:flex-none">
-            <DateField
+            <DateInput
               name={`filter-${filter.name}-to`}
-              label="To"
+              inlineLabel="To"
+              aria-label="To"
               value={days?.to ?? ""}
               onChange={(to) => set({ from: days?.from ?? "", to })}
             />
           </div>
+          {problem ? (
+            <p role="alert" className="m-0 basis-full text-meta text-danger">
+              {problem}
+            </p>
+          ) : null}
         </>
       ) : null}
     </div>
@@ -421,7 +427,7 @@ function FiltersBehindButton({
             </Button>
           }
         >
-          <div className="flex w-72 max-w-full flex-col gap-3">
+          <div className="flex w-72 max-w-full flex-col gap-3 [&>*]:w-full [&>*]:flex-none!">
             {children}
             {clear}
           </div>

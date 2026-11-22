@@ -35,7 +35,11 @@ export function TextView({ config, building }: WidgetViewProps<{ text?: string; 
     ) : null;
   }
   return (
-    <div data-look={look} className={look in EDGE ? "pl-1" : ""}>
+    // A callout in the text sits in the widget's card: it keeps its rail and icon and drops its own box.
+    <div
+      data-look={look}
+      className={`[&_[role=note]]:border-transparent [&_[role=note]]:bg-transparent [&_[role=note]]:pr-0 ${look in EDGE ? "pl-1" : ""}`}
+    >
       <Markdown text={text} profile="page" />
     </div>
   );

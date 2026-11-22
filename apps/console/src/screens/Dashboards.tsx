@@ -319,8 +319,9 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   const answered = asking.filter((one) => readAt[one] !== undefined);
   const unread = answered.filter((one) => (readAt[one] ?? 0) < 0).length;
   const times = answered.map((one) => readAt[one] ?? 0).filter((at) => at > 0);
-  const asOf =
-    answered.length === asking.length && times.length > 0 ? Math.min(...times) : undefined;
+  // The oldest of what was read; with nothing read yet it says it is reading, never a bare "…".
+  const asOf = times.length > 0 ? Math.min(...times) : undefined;
+  const reading = answered.length < asking.length;
 
   const menu = (
     <Menu
@@ -507,7 +508,16 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           data-freshness=""
         >
           <span>
-            Last refreshed {asOf ? <Time value={new Date(asOf)} mode="clock" /> : "…"}
+            {asOf ? (
+              <>
+                Last refreshed 
+                <Time value={new Date(asOf)} mode="clock" />
+              </>
+            ) : reading ? (
+              "Refreshing"
+            ) : (
+              "Nothing could be read"
+            )}
             {unread > 0
               ? ` · ${unread === 1 ? "1 widget" : `${unread} widgets`} could not be read`
               : ""}

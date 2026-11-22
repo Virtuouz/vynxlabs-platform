@@ -32,6 +32,10 @@ const box =
 const compactBox =
   "h-9 w-full rounded-control border border-line-control bg-surface ps-2 pe-9 text-body-sm text-ink placeholder:text-ink-muted/70 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-60 aria-[invalid=true]:border-danger";
 
+/** A filter bar's box: as high as its selects, the label inside. */
+const inlineBox =
+  "h-[34px] w-full rounded-control border border-line-control bg-sunken pe-9 text-body-sm text-ink placeholder:text-ink-muted/70 focus-visible:outline-2 focus-visible:outline-action disabled:opacity-60 aria-[invalid=true]:border-danger";
+
 /** The part of a wall string a field compares on: the day, or the day and the minute. */
 const trimWall = (text: string | undefined, withTime: boolean) =>
   text ? text.slice(0, withTime ? 16 : 10) : "";
@@ -59,6 +63,8 @@ export interface DateInputProps {
   "aria-label"?: string | undefined;
   id?: string | undefined;
   compact?: boolean;
+  /** A word inside the box, before the date ("From"), as a filter bar's other controls say theirs. */
+  inlineLabel?: string;
 }
 
 function useCoarse(): boolean {
@@ -94,6 +100,7 @@ export function DateInput({
   boxProps,
   id,
   compact = false,
+  inlineLabel,
   ...rest
 }: DateInputProps) {
   const locale = useMemo(localeOf, []);
@@ -205,8 +212,21 @@ export function DateInput({
   return (
     <div className="flex flex-col gap-1">
       <div ref={wrapper} className="relative">
+        {inlineLabel ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 start-2.5 flex items-center text-body-sm text-ink-muted"
+          >
+            {inlineLabel}
+          </span>
+        ) : null}
         <input
           {...aria}
+          style={
+            inlineLabel
+              ? { paddingInlineStart: `calc(${inlineLabel.length}ch + 1.25rem)` }
+              : undefined
+          }
           ref={(node) => {
             input.current = node;
             if (typeof boxRef === "function") boxRef(node);
@@ -227,7 +247,7 @@ export function DateInput({
           aria-invalid={problem ? true : (aria["aria-invalid"] as boolean | undefined)}
           aria-describedby={describedBy}
           value={text}
-          className={compact ? compactBox : box}
+          className={inlineLabel ? inlineBox : compact ? compactBox : box}
           onFocus={(event) => {
             onFocus?.(event);
           }}

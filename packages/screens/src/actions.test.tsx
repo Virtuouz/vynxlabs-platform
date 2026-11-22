@@ -65,9 +65,7 @@ const pointsDef = defineWidget({
   ...base,
   type: "test/points",
   title: "Points",
-  data: {
-    totals: { shape: "summary", breakdowns: { min: 1, max: 2 }, values: { min: 1, max: 2 } },
-  },
+  data: { totals: { shape: "summary", breakdowns: { min: 1, max: 2 }, values: { min: 1, max: 2 } } },
   events: { pointClick: { gives: "group", label: "When a point is clicked" } },
 });
 const buttonDef = defineWidget({

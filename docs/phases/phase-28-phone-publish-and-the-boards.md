@@ -1,6 +1,6 @@
 # Phase 28: the builder looks and works as the boards draw it, on a phone too, and is published after a check
 
-Status: planned, on branch `phase-28-the-boards`, off `phase-27-composition` at `eb6da33`.
+Status: in progress, on branch `phase-28-the-boards`, off `phase-27-composition` at `922bc9e`.
 Last updated: 2026-11-22
 
 The roadmap's last phase:
@@ -191,6 +191,58 @@ The owner replaced the file on 2026-11-22 with nineteen boards. Boards 7 to 19 d
 
   The docs editor's editing core (source, preview, mode, the component help) is taken out of `apps/console/src/screens/docs/DocEditor.tsx` into a shared kit component, used by both.
 - **A Markdown alert was drawn as plain text** inside a widget's card: the kit's plain notice drops its border inside a panel. It is now a callout with a rail and an icon, as the documentation draws it (fixed on phase 27's branch, `f962d32`). Every component of the Markdown profile is to be checked rendered in a widget, in light and dark: alert, steps, tabs, fold, term, key and field.
+
+## The contract (M1, `faa5284`, and the options each widget gains)
+
+**In the model (built in M1):**
+- `Action.runBy?: { groups: string[] }` holds groups by path, end-user or member groups. It is enforced on the server, and someone outside the groups sees the action greyed, with "Only Billing can do this".
+- `WidgetRules.seenBy?: { groups }` decides only what is drawn.
+- New record sources: `{ selected: "<table or list id>" }` (the row chosen in it, on an app page) and `{ own: { table, by } }` (the current user's own row, where the column `by` holds their email).
+- `Page.size` takes `small`, `medium`, `large`, `xlarge` or `full`, for a sheet or a modal; left out, it is medium.
+- `Page.icon` names an icon of the kit's set.
+- `PageWidget.layout` holds `{ tablet?: {at}, phone?: {at}, narrow?: "full" | "stack" | "hide", priority? }`. Leaving out tablet or phone means automatic.
+
+**In the SDK (built in M1):**
+- `InspectorHint.group` names the group of rows a setting is drawn in.
+- New controls: `position` (3 × 3), `tiles` (chosen by looking), `slots` (a list's places), `icon` and `groups`.
+
+**Each widget's new options.** The agent that draws a widget adds them to its definition in `packages/widgets-core/src/index.ts`, with `x-volvel` hints (tab, group, control, label), and to its view:
+- **Every widget that takes a number format:** the format picker of board 8, a `format` drawn by the `format` control: Money, Money whole, Money short, Number, Percent, Plain, with the currency and "Stored in cents".
+- **`core/chart`:**
+  - `smooth`, `points` and `values` (show values on bars), all switches;
+  - `axisTitles`, a switch;
+  - `colors`: `theme` or a named palette;
+  - `order`: `biggest`, `smallest` or `label`;
+  - `fillGaps`, to include empty periods as zero;
+  - `compare` replaces `compareTo`'s filter name with a switch, using the page's date filter.
+  - Measure, For each and Split into colors are the data input's measure and first and second group.
+- **`core/table`:**
+  - each column gains `as: "badge"` with `badges: { [value]: tone }`, `align` (`auto` or `right`), `width` (`auto` or `fixed`), `sortable`, `total` and `phone: false`;
+  - `rowHeight` (`comfortable` or `compact`), `empty` (what an empty table says) and `stripes`;
+  - `buttons` above the table, actions as an Action group's are;
+  - `select`, for several rows, so a row action runs on each of them.
+- **`core/list`:** places `title`, `subtitle`, `right`, `badge` and `picture` (the first four replace `primary`, `secondary`, `meta` and `status`), and `look` (`list` or `cards`).
+- **`core/detail`:**
+  - its record from `{ record: "this" }`, `{ selected }` or `{ own }`;
+  - `across` (1, 2 or 3);
+  - `edit`, fields edited in place: the fields shown, on the server's terms as an action's.
+- **`core/button`:**
+  - `tone` adds `quiet`;
+  - `icon`;
+  - `full`, full width;
+  - `place`, one of the nine positions from `top-left` to `bottom-right`.
+- **`core/actions`:**
+  - `lineUp` (`left`, `right` or `spread`);
+  - `showUpTo`, a number, with the rest in ⋯;
+  - `place`;
+  - each button's `icon`.
+- **`core/section`:** `look` (`plain` or `card`); `folds` is "Can be collapsed".
+- **`core/tabs`:** `look` (`underline` or `pills`), `opensFirst` (a tab's id) and `remember` (the last tab, for each person on this device). The address still wins.
+- **`core/filter`:** `sit` (`row`, or `button`: behind a "Filters · n" button).
+- **`core/text`:** `look` (`plain`, `note`, `warning` or `tip`).
+- **`labs/goal`:** `goalFrom` (a column, instead of a fixed amount) and `reached` (`green` or nothing).
+
+**Wave A** builds the foundations and what is drawn: tokens and type, the drawer kit, the builder's frame, the server, the views, and the Markdown editor. **Wave B** builds on them: the drawers of every widget, the shared tabs, the selector and dialogs, and the phone and publish work.
 
 ## Owner decisions
 

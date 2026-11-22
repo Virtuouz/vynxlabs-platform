@@ -1,6 +1,6 @@
 import { displayGuess, type Page } from "@volvel/manifest";
 import { SelectField } from "@volvel/ui";
-import { useLoad } from "../../api.ts";
+import { useLoadOf } from "../../api.ts";
 import type { Catalog } from "../../kit/inspector/model.ts";
 import { manyOf, type TableInfo, tableInfo } from "./records.ts";
 
@@ -11,7 +11,9 @@ const OFFERED = 25;
 
 /** A table's definition, as a form and the suggestions need it. */
 export function useTableInfo(root: string, table: string | undefined): TableInfo | undefined {
-  const found = useLoad<Parameters<typeof tableInfo>[1]>(table ? `${root}/tables/${table}` : null);
+  const found = useLoadOf<Parameters<typeof tableInfo>[1]>(
+    table ? `${root}/tables/${table}` : null,
+  );
   return table && found.data ? tableInfo(table, found.data) : undefined;
 }
 
@@ -27,9 +29,9 @@ export function useSampleRecords(
   chosen: string | undefined,
 ) {
   const table = page?.kind && page.kind !== "page" ? page.record?.table : undefined;
-  const rows = useLoad<{ items: Row[] }>(table ? `${root}/rows/${table}?limit=${OFFERED}` : null);
+  const rows = useLoadOf<{ items: Row[] }>(table ? `${root}/rows/${table}?limit=${OFFERED}` : null);
   // How many rows the table has, as the caller may read it: what "of N" says, not how many are loaded.
-  const counted = useLoad<{ rows: number; sampled?: true }>(
+  const counted = useLoadOf<{ rows: number; sampled?: true }>(
     table ? `${root}/column-counts?table=${encodeURIComponent(table)}` : null,
   );
   const columns = catalog.tables.find((one) => one.name === table)?.columns ?? [];

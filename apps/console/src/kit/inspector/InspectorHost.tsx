@@ -7,7 +7,7 @@
 import type { PageWidget } from "@volvel/manifest";
 import type { PageDataClient } from "@volvel/screens";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { useLoad } from "../../api.ts";
+import { useLoadOf } from "../../api.ts";
 import { type ColumnCounts, useColumnCounts } from "./catalog.ts";
 import { SampleRecordProvider } from "./confirmPreview.tsx";
 import { type GroupKey, GroupsProvided } from "./groupChoices.tsx";
@@ -118,7 +118,7 @@ export function InspectorHost({
     return out;
   }, [found]);
   // The same read the sample bar makes, so it is asked once.
-  const rows = useLoad<{ items: Record<string, unknown>[] }>(
+  const rows = useLoadOf<{ items: Record<string, unknown>[] }>(
     sample.table ? `${root}/rows/${sample.table}?limit=25` : null,
   );
   const row = rows.data?.items.find((one) => one.id === sample.record);

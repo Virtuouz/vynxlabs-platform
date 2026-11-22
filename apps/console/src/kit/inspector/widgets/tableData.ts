@@ -1,4 +1,4 @@
-import { useLoad } from "../../../api.ts";
+import { useLoadOf } from "../../../api.ts";
 import { type TableInfo, tableInfo, tableOf } from "../../../screens/builder/records.ts";
 import type { Env } from "../controls.tsx";
 import { columnOptions } from "../controls.tsx";
@@ -20,10 +20,10 @@ export interface TableSource {
 export function useTableData(env: Env, source: TableSource) {
   const table = tableOf(env.widget);
   const root = source.root;
-  const loadedInfo = useLoad<Parameters<typeof tableInfo>[1]>(
+  const loadedInfo = useLoadOf<Parameters<typeof tableInfo>[1]>(
     root && table && !source.info ? `${root}/tables/${table}` : null,
   );
-  const loadedRows = useLoad<{ items: Row[] }>(
+  const loadedRows = useLoadOf<{ items: Row[] }>(
     root && table && !source.rows ? `${root}/rows/${table}?limit=25` : null,
   );
   const info =

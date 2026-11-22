@@ -227,6 +227,15 @@ export function useLoad<T>(
 }
 
 /**
+ * `useLoad` for a read that follows what is chosen (a table's columns, a column's values): what
+ * was read for the choice before is never given as this one's, nor anything when nothing is asked.
+ */
+export function useLoadOf<T>(path: string | null): Loaded<T> {
+  const found = useLoad<T>(path);
+  return path === null || found.stale ? { ...found, data: undefined } : found;
+}
+
+/**
  * Changes what a read holds on screen at once, before the server answers, and
  * gives back a way to undo that when it refuses. The write's own refresh then
  * brings what the server says.

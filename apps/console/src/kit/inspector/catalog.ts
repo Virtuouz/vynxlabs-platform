@@ -1,4 +1,4 @@
-import { useLoad } from "../../api.ts";
+import { useLoad, useLoadOf } from "../../api.ts";
 import { type Catalog, EMPTY_CATALOG, type FlowChoice, type ScriptChoice } from "./model.ts";
 
 interface Schema {
@@ -113,7 +113,7 @@ export function useColumnValues(
   column: { name: string; type: string } | undefined,
 ): { value: string; count?: number }[] | undefined {
   const listable = root && table && column && LISTABLE.has(column.type);
-  const found = useLoad<ColumnValues>(
+  const found = useLoadOf<ColumnValues>(
     listable
       ? `${root}/column-values?table=${encodeURIComponent(table)}&column=${encodeURIComponent(column.name)}`
       : null,
@@ -130,7 +130,7 @@ export function useColumnCounts(
   root: string | undefined,
   table: string | undefined,
 ): ColumnCounts | undefined {
-  return useLoad<ColumnCounts>(
+  return useLoadOf<ColumnCounts>(
     root && table ? `${root}/column-counts?table=${encodeURIComponent(table)}` : null,
   ).data;
 }

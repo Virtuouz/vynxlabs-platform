@@ -188,7 +188,6 @@ export {
   widgetQueries,
   widgetRegistry,
   widgetTables,
-  withFilters,
 } from "./page.js";
 export {
   APP_FACING_KINDS,

@@ -85,7 +85,7 @@ The agent is offered exactly the scripts and the flow it is bound to (`src/apps.
    - Then book a visit: only free times are offered, in Pacific time.
 5. **Front desk as Omar.** He sees none of Northside's visits.
 6. **Pet portal as George.** Book a visit for his dog from the free times (Hilltop is closed on Saturdays), and see his unpaid invoices in dollars.
-7. **Clinic performance**, through "Staff sign-in" on the portal as Maya. Try the page filters.
+7. **Clinic performance**, through "Staff sign-in" on the portal as Maya. Try the bars: Search invoices, Clinic, Issued and Status on Money; the tabs on Visits; the folded orders and the Reorder and Count stock buttons on Stock; and Mark paid, Edit and Void on an invoice.
 8. **The public form** at the portal's registration address (Operate → Triggers) lands in the front desk's Callbacks.
 9. **Ship a change as Devi.** Change the reminder text in `src/scripts.ts` and deploy it to the sandbox:
 

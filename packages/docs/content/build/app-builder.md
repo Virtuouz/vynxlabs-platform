@@ -11,8 +11,10 @@ Apps made here and apps written in the repository are the same kind of thing onc
 ## What is on a page
 
 - **Widgets** sit on a grid of twelve columns. Each has a place and a size. On a phone the widgets stack in one column, in the order of the page.
-- **Filters** run along the top of the page: a clinic, a range of dates, a word. A person who opens the page sets them, and every widget that is bound to a filter asks again. A filter has a value it starts with, so the page always says what it is showing.
+- **Search and filter** is a widget that sits where you put it, usually along the top: a search box, a clinic, a range of dates. A person who opens the page types and chooses, and every widget that is bound to one of them asks again. A filter has a value it starts with, so the page always says what it is showing.
 - A widget is bound to a filter on purpose. When you add a filter, or a widget, the builder binds every widget whose table has that filter's column, and says which. A widget over a table without the column is left alone.
+- **Sections** and **Tabs** group widgets. A Section is a heading with widgets under it, and may fold. Tabs shows one view at a time. Each holds its widgets on a grid of its own, one level deep, and on a phone what it holds is stacked.
+- An **Action group** is related buttons as one toolbar, with **More** for what doesn't fit.
 
 ## Making an app
 
@@ -33,11 +35,11 @@ A record page, a side sheet and a modal that opens on a record each say the tabl
 
 ## Showing and changing one record
 
-- **Record detail** shows one record: a heading, a status chip, its fields in the order and the groups you choose, and **actions** along the top. Put it on a side sheet and a table can open any of its rows into it.
+- **Record detail** shows one record: a heading, a status chip, its fields in the order and the groups you choose, and **actions**. Put its buttons in an **Action group** above it, as the invoice sheet does with Mark paid, Edit and Void. Put it on a side sheet and a table can open any of its rows into it.
 - **Form** makes a record or changes the one that is open. Each field's control is picked from its column's type: text, a number, a date, a choice from the column's values, and for a column that points at another table, a search over that table's rows by name. A column that is required is asked for, and the form says what is wrong beside the field. **The button says** is in the form's Display, and **When it is sent** in its Actions.
 - **Button** does one thing when it is pressed. Its look is **Main**, **Plain** or **Careful**.
 
-Add a form, a detail or a button from **Add to page**. When a page shows a table, the list suggests what goes with it: "Invoice detail", "New invoice form".
+Add a form, a detail or a button from **Add to page**. When a page shows a table, the list opens with suggestions of what goes with it: "Invoice detail", "New invoice form". **+ Page** starts a page from a table in the same way.
 
 ## What happens when something is pressed
 

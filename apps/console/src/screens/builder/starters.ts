@@ -5,8 +5,8 @@
  * page" is a page on one record, with the rows of each table that refers to it. Pure: the
  * builder adds what is returned as one step that Undo takes back whole.
  */
-import type { Page, PageWidget } from "@volvel/manifest";
-import type { Catalog } from "../../kit/inspector/model.ts";
+import { FILTER_WIDGET, type Page, type PageWidget, widgetRegistry } from "@volvel/manifest";
+import { type Catalog, insertFilterWidget, newSearch } from "../../kit/inspector/model.ts";
 import { uniquePageId } from "./pageKinds.ts";
 import {
   defaultPlan,
@@ -54,6 +54,22 @@ export const startTitle = (start: Start, table: string | undefined): string => {
   return start === "list" ? manyOf(table) : `${oneOf(table)} record`;
 };
 
+/** What the catalog would say of one table: enough for a search to find its text columns. */
+const catalogOf = (table: TableInfo): Catalog => ({
+  tables: [
+    {
+      name: table.name,
+      columns: table.columns.map((column) => ({
+        name: column.name,
+        type: column.type,
+        references: column.references ?? null,
+      })),
+    },
+  ],
+  queries: [],
+  maySql: false,
+});
+
 export function blankPage(title: string, pages: readonly Page[]): Started {
   const id = uniquePageId(pages, title);
   return { pages: [{ id, title, widgets: [] }], open: id, told: "" };
@@ -78,19 +94,13 @@ export function listPage(table: TableInfo, title: string, pages: readonly Page[]
   const page: Page = { id: uniquePageId(pages, title), title, widgets: [] };
   const taken = [...pages, page];
   const search = words.length > 0;
-  const top = search ? 2 : 0;
 
   const grid: PageWidget = {
     id: "table",
     type: "core/table",
     title: manyOf(table.name),
-    at: { x: 0, y: top + 1, w: 12, h: 10 },
-    data: {
-      rows: {
-        source: { visual: { table: table.name } },
-        ...(search ? { filters: [{ filter: "search", columns: words }] } : {}),
-      },
-    },
+    at: { x: 0, y: 1, w: 12, h: 10 },
+    data: { rows: { source: { visual: { table: table.name } } } },
     config: { pageSize: 25 },
   };
   const existing = detailPageFor(pages, table.name);
@@ -107,34 +117,21 @@ export function listPage(table: TableInfo, title: string, pages: readonly Page[]
   const modal = form ?? formModal(plan, taken);
   if (!form) added.push(modal);
 
-  page.widgets = [
-    ...(search
-      ? [
-          {
-            id: "filters",
-            type: "core/filter",
-            at: { x: 0, y: 0, w: 12, h: 2 },
-            config: {
-              filters: [
-                {
-                  name: "search",
-                  label: `Search ${manyOf(table.name).toLowerCase()}`,
-                  type: "search",
-                },
-              ],
-              reset: true,
-            },
-          } satisfies PageWidget,
-        ]
-      : []),
+  const body: PageWidget[] = [
     openButton("new", form ? `New ${noun.toLowerCase()}` : plan.title, modal.id, {
       x: 0,
-      y: top,
+      y: 0,
       w: 3,
       h: 1,
     }),
     withRowClick(grid, click),
   ];
+  // The search bar goes at the top and binds itself to what reads the table, as the inspector does.
+  const filter = widgetRegistry().get(FILTER_WIDGET);
+  page.widgets =
+    search && filter
+      ? insertFilterWidget(body, filter, [newSearch(table.name, [])], catalogOf(table)).widgets
+      : body;
   const made = [
     search ? "a search" : undefined,
     "a table",

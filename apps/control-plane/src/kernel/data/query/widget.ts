@@ -4,7 +4,6 @@ import {
   type PageFilter,
   type QueryBody,
   type VisualBucket,
-  type VisualCondition,
   type VisualQuery,
 } from "@volvel/manifest";
 import { followRecordedKey } from "../../dashboard-queries.js";
@@ -14,7 +13,7 @@ import { resolveResource } from "../../resolve.js";
 import { loadCatalog } from "../apply.js";
 import type { CatalogTable } from "../plan.js";
 import { dayAfter, daysIn, type FilterValues, rangeOf } from "./filters.js";
-import { compileVisual, type VisualCatalog, VisualRefused } from "./visual.js";
+import { compileVisual, type ExtraCondition, type VisualCatalog, VisualRefused } from "./visual.js";
 
 /**
  * What a data input of a widget asks, as SQL and the values it is given: its source, with the
@@ -97,10 +96,18 @@ export function conditionsFor(
   input: DataInput,
   filters: Map<string, PageFilter>,
   values: FilterValues,
-): VisualCondition[] {
-  const conditions: VisualCondition[] = [];
+): ExtraCondition[] {
+  const conditions: ExtraCondition[] = [];
   for (const binding of input.filters ?? []) {
     const filter = filters.get(binding.filter);
+    if (filter?.type === "search") {
+      const value = values[binding.filter];
+      const columns = binding.columns ?? (binding.column ? [binding.column] : []);
+      if (typeof value === "string" && value.trim() !== "" && columns.length > 0) {
+        conditions.push({ search: value, columns });
+      }
+      continue;
+    }
     const column = binding.column;
     if (!filter || !column) continue;
     const value = values[binding.filter];
@@ -144,7 +151,7 @@ export function bucketFor(
 export function writeVisual(
   query: VisualQuery,
   catalog: VisualCatalog,
-  extra: VisualCondition[] = [],
+  extra: ExtraCondition[] = [],
   at = "/query",
 ) {
   try {

@@ -98,6 +98,14 @@ export function previousRange(range: { from: string; to: string }): { from: stri
 const refuse = (name: string, message: string) =>
   badRequest("The filters are not valid.", [{ path: `/filters/${name}`, message }]);
 
+/** The most words a search is given: each must be found, so more only slows the reading. */
+export const MAX_SEARCH_WORDS = 10;
+
+/** The words typed into a search: split at spaces, none when it is empty or only spaces. */
+export function wordsOf(text: string): string[] {
+  return text.split(/\s+/).filter((word) => word !== "");
+}
+
 /** One filter's value as the server reads it, or `undefined` when it narrows nothing. */
 function filterValue(filter: PageFilter, raw: unknown, today: Date): unknown {
   if (raw === null || raw === undefined) return undefined;
@@ -152,6 +160,15 @@ function filterValue(filter: PageFilter, raw: unknown, today: Date): unknown {
       if (typeof raw !== "string") throw refuse(name, "is text");
       if (raw.length > 200) throw refuse(name, "is at most 200 letters");
       return raw === "" ? undefined : raw;
+    }
+    case "search": {
+      if (typeof raw !== "string") throw refuse(name, "is the words to look for, as text");
+      if (raw.length > 200) throw refuse(name, "is at most 200 letters");
+      const words = wordsOf(raw);
+      if (words.length > MAX_SEARCH_WORDS) {
+        throw refuse(name, `is at most ${MAX_SEARCH_WORDS} words`);
+      }
+      return words.length === 0 ? undefined : words.join(" ");
     }
   }
 }

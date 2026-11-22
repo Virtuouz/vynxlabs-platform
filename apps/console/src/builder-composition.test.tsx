@@ -137,6 +137,21 @@ const money = (): InterfaceBody => ({
     },
   ],
 });
+const catalog = {
+  tables: [
+    {
+      name: "invoices",
+      columns: [
+        { name: "number", type: "text", references: null },
+        { name: "note", type: "long_text", references: null },
+        { name: "total", type: "number", references: null },
+        { name: "status", type: "enum", references: null },
+      ],
+    },
+  ],
+  queries: [],
+  maySql: false,
+};
 const context = (body: InterfaceBody = money()): PageContext => ({
   widgets: body.pages[0]?.widgets ?? [],
   filters: [],
@@ -285,13 +300,13 @@ test("Search invoices puts a search bar at the top, bound to the widgets of the 
   const bar = widgets.find((one) => one.type === "core/filter");
   expect(bar).toMatchObject({
     at: { x: 0, y: 0, w: 12 },
-    config: { filters: [{ name: "search", type: "search", label: "Search invoices" }] },
+    config: { filters: [{ type: "search", label: "Search invoices" }] },
   });
   // Everything that read invoices follows it, in the columns that hold words; the rest moved down.
   for (const id of ["count", "total", "invoices"]) {
     expect(widgets.find((one) => one.id === id)?.data).toMatchObject({
       [id === "invoices" ? "rows" : "value"]: {
-        filters: [{ filter: "search", columns: ["number", "note"] }],
+        filters: [{ columns: ["number"] }],
       },
     });
   }
@@ -444,12 +459,16 @@ test("a search is bound to the table's widgets, and to a filter widget the page 
   const edit = searchEdit(
     { ...context(), widgets, filters: [{ name: "status", type: "choice" }] },
     invoices,
-    ["number"],
+    catalog,
   );
   expect(edit.widgets.filter((one) => one.type === "core/filter")).toHaveLength(1);
-  expect(edit.filters.map((one) => one.name)).toEqual(["status", "search"]);
-  expect(edit.widgets.find((one) => one.id === "invoices")?.data?.rows?.filters).toEqual([
-    { filter: "search", columns: ["number"] },
+  const holder = edit.widgets.find((one) => one.type === "core/filter");
+  expect(((holder?.config?.filters ?? []) as { type: string }[]).map((one) => one.type)).toEqual([
+    "choice",
+    "search",
+  ]);
+  expect(edit.widgets.find((one) => one.id === "invoices")?.data?.rows?.filters).toMatchObject([
+    { columns: ["number"] },
   ]);
 });
 
@@ -561,7 +580,7 @@ test("the page starters make valid pages: a list with its sheet and form, and a 
   expect(grid?.on?.rowClick).toEqual({
     steps: [{ do: "open", page: "invoice-detail", record: "event" }],
   });
-  expect(grid?.data?.rows?.filters).toEqual([{ filter: "search", columns: ["number", "note"] }]);
+  expect(grid?.data?.rows?.filters).toMatchObject([{ columns: ["number"] }]);
   expect(page?.widgets.find((one) => one.type === "core/button")).toMatchObject({
     config: { label: "New invoice" },
     on: { click: { steps: [{ do: "open", page: "new-invoice" }] } },

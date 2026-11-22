@@ -8,14 +8,18 @@ A dashboard is edited in the same editor as a page of an app, so what is said in
 
 ## What is different on a dashboard
 
-- **Add to page** offers only widgets that read: a table, a list, a stat, a chart, a pivot and text. A widget that changes data is not offered, and on a dashboard **Actions** will only ever show or narrow what is there, never change a row.
+- **Add to page** offers only widgets that read: a table, a list, a stat, a chart, a pivot, text, and **Section**, **Tabs** and **Search and filter** to organize them. An **Action group**, like a Button, is not offered. A widget that changes data is not offered, and on a dashboard **Actions** will only ever show or narrow what is there, never change a row.
 - **Source** can be a table from menus, a **saved query**, or **SQL**. A person who may write SQL writes it in the Data tab, and binds the page's filters to its parameters: a date range fills two, `from` and `to`. A table from menus is bound to a filter by a column.
 - A dashboard has **how often it asks again**, and a title and description of its own, in its settings.
 - It is **shared** from the dashboards screen, and the people it is shared with see only the rows they may read.
 
-## Filters
+## Search and filter
 
-**Add a filter** to make a date range, a choice, a word or a number, with the value it starts with. A date range can also be what a stat or a chart is **compared** with: "Compared with the period before" uses the same length of time, ending where the range begins, and a chart draws it as a dashed line.
+A dashboard's filters are a **Search and filter** widget, placed where you want the bar. **Add a filter** in its Data tab to make a search, a date range, a choice, a word or a number, with the value it starts with. A search looks in the columns you pick of a table, and a row is kept when any of them has the words.
+
+A **Section** groups widgets under a heading, and may fold. **Tabs** shows one view at a time, and the open tab is in the address. Drag a widget into one, or use **⋯ › Move to**, as in an app.
+
+A date range can also be what a stat or a chart is **compared** with: "Compared with the period before" uses the same length of time, ending where the range begins, and a chart draws it as a dashed line.
 
 When a filter is added, every widget whose table has its column is bound to it, and the editor says which. For a saved query or SQL, bind the filter to the parameter by hand.
 

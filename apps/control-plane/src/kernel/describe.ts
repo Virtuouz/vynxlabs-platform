@@ -181,7 +181,6 @@ function describeDashboard(before: Body, after: Body): string[] {
     (before?.widgets ?? []) as Widget[],
     (after?.widgets ?? []) as Widget[],
   );
-  if (!same(before?.filters, after?.filters)) out.push("Changes its filters.");
   if (!same(before?.title, after?.title)) out.push("Changes its title.");
   return out;
 }

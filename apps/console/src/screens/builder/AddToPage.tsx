@@ -57,6 +57,7 @@ export function AddToPage({
   onAdd,
   onCarry,
   suggestions,
+  target,
 }: {
   open: boolean;
   onClose: () => void;
@@ -64,6 +65,8 @@ export function AddToPage({
   onAdd: (definition: WidgetDefinition) => void;
   /** A widget was dragged out of the list: carry it onto the page from where the pointer is. */
   onCarry?: (definition: WidgetDefinition, from: { x: number; y: number }) => void;
+  /** Where a click adds, when it is not the end of the page: "Orders", "Views › By status". */
+  target?: string | undefined;
   /** "This page shows Invoices. Common next steps: …": what is worth adding to what the page shows. */
   suggestions?: {
     table: string;
@@ -262,9 +265,14 @@ export function AddToPage({
           })
         )}
         <p className="m-0 text-body-sm text-ink-muted">
+          {target ? (
+            <>
+              Adds to <strong className="font-medium text-ink">{target}</strong>.{" "}
+            </>
+          ) : null}
           {onCarry
-            ? "Click to place at the end of the page, or drag it onto the page where you want it."
-            : "Click to place at the end of the page, then drag it where you want it."}
+            ? `Click to place at the end of ${target ? "it" : "the page"}, or drag it onto the page where you want it.`
+            : `Click to place at the end of ${target ? "it" : "the page"}, then drag it where you want it.`}
         </p>
       </div>
     </Dialog>

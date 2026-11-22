@@ -69,6 +69,7 @@ const filters = [
   { name: "team", type: "choice", from: { table: "invoices", column: "team" } },
   { name: "status", type: "choice", from: { table: "invoices", column: "status" } },
   { name: "fixed", type: "choice", choices: ["a", "b"] },
+  { name: "find", type: "search" },
 ];
 /** Totals by team that a page filter narrows, for the rows behind a group. */
 const byTeamNarrowed = {
@@ -177,6 +178,56 @@ const newPayment = {
     },
   ],
 };
+/** Notes, found by the words typed into a search: over two columns, over a joined one, and over a saved query and SQL. */
+const noteWidget = (id: string, binding: object, source: object = {}) => ({
+  id,
+  type: "core/table",
+  at,
+  data: {
+    rows: {
+      source: {
+        visual: { table: "notes", columns: ["title", "body"], sort: [{ by: "title" }], ...source },
+      },
+      filters: [binding],
+    },
+  },
+});
+const searches = [
+  noteWidget("notes_two", { filter: "find", columns: ["title", "body"] }),
+  noteWidget("notes_one", { filter: "find", column: "body" }),
+  noteWidget(
+    "notes_joined",
+    { filter: "find", columns: ["title", "invoice.number"] },
+    { joins: ["invoice"] },
+  ),
+  {
+    id: "notes_saved",
+    type: "core/table",
+    at,
+    data: {
+      rows: {
+        source: { query: "reports/find-notes" },
+        filters: [{ filter: "find", parameter: "words" }],
+      },
+    },
+  },
+];
+
+/** SQL is written on dashboards only. */
+const notesSql = {
+  id: "notes_sql",
+  type: "core/table",
+  at,
+  data: {
+    rows: {
+      source: {
+        sql: "select title from notes where $1::text is null or title ilike '%' || $1 || '%' order by title",
+      },
+      filters: [{ filter: "find", parameter: "$1" }],
+    },
+  },
+};
+
 const screen = {
   title: "Invoices",
   pages: [
@@ -188,6 +239,7 @@ const screen = {
         byTeam,
         byTeamNarrowed,
         byMonth,
+        ...searches,
         {
           id: "filters",
           type: "core/filter",
@@ -222,7 +274,12 @@ const board = {
       id: "filters",
       type: "core/filter",
       at: { x: 0, y: 30, w: 12, h: 2 },
-      config: { filters: [{ name: "when", type: "date_range" }] },
+      config: {
+        filters: [
+          { name: "when", type: "date_range" },
+          { name: "find", type: "search" },
+        ],
+      },
     },
     {
       id: "sql",
@@ -267,6 +324,22 @@ function bundle(): Bundle {
           rules: [{ allow: "read", when: { column: "team", in: "groups" } }],
         },
       }),
+      manifest("table", "notes", {
+        columns: {
+          title: { type: "text", required: true },
+          body: { type: "text" },
+          team: { type: "text" },
+          invoice: { type: "reference", references: "invoices" },
+        },
+        policy: {
+          type: "rules",
+          rules: [{ allow: "read", when: { column: "team", in: "groups" } }],
+        },
+      }),
+      manifest("query", "reports/find-notes", {
+        sql: "select title from notes where $1::text is null or title ilike '%' || $1 || '%' order by title",
+        parameters: [{ name: "words", type: "text" }],
+      }),
       manifest("table", "payments", {
         columns: {
           invoice: { type: "reference", references: "invoices", required: true },
@@ -276,7 +349,10 @@ function bundle(): Bundle {
         },
       }),
       manifest("interface", "screens/invoices", screen),
-      manifest("dashboard", "boards/by-team", board),
+      manifest("dashboard", "boards/by-team", {
+        ...board,
+        widgets: [...board.widgets, notesSql],
+      }),
       manifest("app", "billing", { title: "Invoices", interface: "screens/invoices" }),
       manifest("binding", "bindings/app", {
         role: "portal_user",
@@ -287,6 +363,11 @@ function bundle(): Bundle {
         role: "portal_user",
         principal: { type: "end_users" },
         resource: "invoices",
+      }),
+      manifest("binding", "bindings/notes", {
+        role: "portal_user",
+        principal: { type: "end_users" },
+        resource: "notes",
       }),
       manifest("binding", "bindings/payments", {
         role: "portal_user",
@@ -416,6 +497,36 @@ beforeAll(async () => {
     ],
   });
   expect(seeded.status, JSON.stringify(seeded.body)).toBe(201);
+  const invoiceIds = Object.fromEntries(
+    (await alice.get(`${ws()}/rows/invoices?limit=1000`)).body.items.map((row: Any) => [
+      row.number,
+      row.id,
+    ]),
+  );
+  const noted = await alice.post(`${ws()}/rows/notes`, {
+    rows: [
+      {
+        title: "Late payment",
+        body: "call about the 100% discount",
+        team: "finance",
+        invoice: invoiceIds["INV-1"],
+      },
+      {
+        title: "Reminder_sent",
+        body: "awaiting a reply",
+        team: "finance",
+        invoice: invoiceIds["INV-2"],
+      },
+      { title: "Discount", body: "100 percent paid", team: "finance" },
+      {
+        title: "Late reminder",
+        body: "ping the buyer about 100%",
+        team: "sales",
+        invoice: invoiceIds["INV-3"],
+      },
+    ],
+  });
+  expect(noted.status, JSON.stringify(noted.body)).toBe(201);
   ivy = await endUser("ivy@customer.example", "finance");
   jon = await endUser("jon@customer.example", "sales");
 }, 60_000);
@@ -502,6 +613,101 @@ describe("rows and totals of a widget, as whoever asks", () => {
     // The kernel's usual error body says what is wrong, and where.
     const refused = await ask({ when: "sometime" });
     expect(refused.body.errors[0].path).toBe("/filters/when");
+  });
+});
+
+describe("a search", () => {
+  const find = (
+    who: { get: (url: string) => Promise<{ status: number; body: Any }> },
+    widget: string,
+    words: unknown,
+    prefix = "",
+  ) => asked(who, onPage(widget, { filters: { find: words } as object }), prefix);
+  const titles = async (widget: string, words: unknown, who: Any = ivy.browser) => {
+    const read = await find(who, widget, words, who === alice ? "" : "/api/v1");
+    expect(read.status, JSON.stringify(read.body)).toBe(200);
+    return read.body.inputs.rows.rows.map((row: Any) => row.title);
+  };
+
+  test("keeps a row when a word is in any of its columns, whatever the case", async () => {
+    expect(await titles("notes_two", "late")).toEqual(["Late payment"]);
+    expect(await titles("notes_two", "REPLY")).toEqual(["Reminder_sent"]);
+    // The body alone: "late" is only in a title.
+    expect(await titles("notes_one", "late")).toEqual([]);
+    expect(await titles("notes_one", "reply")).toEqual(["Reminder_sent"]);
+  });
+
+  test("needs every word, each in any column", async () => {
+    // "late" is in a title and "call" in the body of the same note.
+    expect(await titles("notes_two", "late call")).toEqual(["Late payment"]);
+    expect(await titles("notes_two", "  late   call ")).toEqual(["Late payment"]);
+    // "late" and "reply" are in two different notes.
+    expect(await titles("notes_two", "late reply")).toEqual([]);
+  });
+
+  test("looks for a word as written: % and _ are letters", async () => {
+    expect(await titles("notes_two", "%")).toEqual(["Late payment"]);
+    expect(await titles("notes_two", "_")).toEqual(["Reminder_sent"]);
+    expect(await titles("notes_two", "100%")).toEqual(["Late payment"]);
+    expect(await titles("notes_two", "\\")).toEqual([]);
+  });
+
+  test("narrows nothing when it is empty or only spaces", async () => {
+    const all = ["Discount", "Late payment", "Reminder_sent"];
+    expect(await titles("notes_two", "")).toEqual(all);
+    expect(await titles("notes_two", "   ")).toEqual(all);
+    expect(await titles("notes_two", null)).toEqual(all);
+    const left = await asked(ivy.browser, onPage("notes_two"), "/api/v1");
+    expect(left.body.inputs.rows.rows).toHaveLength(3);
+  });
+
+  test("reaches a column of a joined table", async () => {
+    expect(await titles("notes_joined", "inv-2")).toEqual(["Reminder_sent"]);
+    expect(await titles("notes_joined", "inv-2 reminder")).toEqual(["Reminder_sent"]);
+    expect(await titles("notes_joined", "inv-2 late")).toEqual([]);
+  });
+
+  test("fills the parameter of a saved query or of SQL with the words, or nothing", async () => {
+    expect(await titles("notes_saved", "  reminder ")).toEqual(["Reminder_sent"]);
+    expect(await titles("notes_saved", "")).toEqual(["Discount", "Late payment", "Reminder_sent"]);
+    // SQL is on a dashboard, which staff read.
+    const sql = async (words: string) => {
+      const read = await asked(alice, {
+        of: "dashboard",
+        path: "boards/by-team",
+        widget: "notes_sql",
+        filters: { find: words } as object,
+      });
+      expect(read.status, JSON.stringify(read.body)).toBe(200);
+      return read.body.inputs.rows.rows.map((row: Any) => row.title);
+    };
+    expect(await sql("  reminder ")).toEqual(["Late reminder", "Reminder_sent"]);
+    expect(await sql("   ")).toHaveLength(4);
+  });
+
+  test("is read under each group's row policy", async () => {
+    expect(await titles("notes_two", "late")).toEqual(["Late payment"]);
+    expect(await titles("notes_two", "late", jon.browser)).toEqual(["Late reminder"]);
+    expect(await titles("notes_two", "100%", jon.browser)).toEqual(["Late reminder"]);
+    expect(await titles("notes_two", "discount", jon.browser)).toEqual([]);
+    expect(await titles("notes_joined", "inv-3", jon.browser)).toEqual(["Late reminder"]);
+    // Staff who may read every row see them all.
+    expect(await titles("notes_two", "late", alice)).toEqual(["Late payment", "Late reminder"]);
+  });
+
+  test("is refused when it is not words, or too long, or too many", async () => {
+    for (const bad of [5, ["a"], "x".repeat(201), "a b c d e f g h i j k"]) {
+      const read = await find(alice, "notes_two", bad);
+      expect(read.status).toBe(400);
+      expect(read.body.errors[0].path).toBe("/filters/find");
+    }
+  });
+
+  test("is not offered as a choice's values", async () => {
+    const read = await alice.get(
+      `${ws()}/filter-options?of=interface&path=screens/invoices&page=main&filter=find`,
+    );
+    expect(read.status).toBe(400);
   });
 });
 
@@ -642,7 +848,7 @@ describe("a draft", () => {
     ]);
     expect(
       (await alice.get(`${ws()}/interfaces/screens/invoices`)).body.body.pages[0].widgets,
-    ).toHaveLength(5);
+    ).toHaveLength(5 + searches.length);
     // A dashboard's draft is read the same way.
     expect(
       (await asked(alice, { of: "dashboard", path: "boards/by-team", widget: "sql", draft: "1" }))

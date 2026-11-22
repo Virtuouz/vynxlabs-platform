@@ -252,6 +252,47 @@ test("its maker adds a widget from Add to page, changes it in its settings, remo
   expect(sent("PUT")[4]?.body).toEqual({ shared: true, revision: 8 });
 });
 
+test("a dashboard's filters are edited through its Search and filter widget, with no section for them under the page", async () => {
+  let stored: Any = mine;
+  routes[`GET ${api}/dashboards/d1`] = () => [200, stored];
+  routes[`PUT ${api}/dashboards/d1`] = (body) => {
+    stored = { ...stored, ...(body as object), revision: stored.revision + 1 };
+    return [200, stored];
+  };
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByLabelText("Held", { selector: "section" });
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  // The old section under the canvas is gone.
+  expect(screen.queryByText("Filters for whoever reads this page")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add a filter" })).toBeNull();
+  // The widget is chosen, and its Data tab holds the list.
+  fireEvent.click(await screen.findByRole("button", { name: "Search and filter" }));
+  const settings = within(screen.getByRole("complementary", { name: "Settings" }));
+  fireEvent.change(settings.getByLabelText("Called"), { target: { value: "Created" } });
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  const saved = put(0);
+  // Kept by the widget, not beside the widgets, and the name is what the widgets follow.
+  expect(saved.body.filters).toBeUndefined();
+  expect(saved.body.widgets.find((one: Any) => one.id === "filters").config.filters).toEqual([
+    { name: "created_at", label: "Created", type: "date_range", default: "last_30_days" },
+  ]);
+  expect(saved.body.widgets.find((one: Any) => one.id === "held").data.rows.filters).toEqual([
+    { filter: "created_at", column: "created_at" },
+  ]);
+  // A search is added to it, and the table follows it by its text columns.
+  fireEvent.click(settings.getByRole("button", { name: "Add a search" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(2));
+  const searched = put(1).body.widgets;
+  expect(searched.find((one: Any) => one.id === "filters").config.filters.at(-1)).toMatchObject({
+    name: "search_stock",
+    type: "search",
+  });
+  expect(searched.find((one: Any) => one.id === "held").data.rows.filters).toContainEqual({
+    filter: "search_stock",
+    columns: ["item"],
+  });
+});
+
 test("someone who holds sql:read is offered SQL as a source, and someone who does not is not", async () => {
   routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
   maySql = true;

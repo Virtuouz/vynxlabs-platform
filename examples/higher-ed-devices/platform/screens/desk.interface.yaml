@@ -16,6 +16,7 @@ body:
           config:
             reset: true
             filters:
+            - { name: q, label: Search the desk, type: search }
             - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
         - id: pending
           title: Waiting for a decision
@@ -79,7 +80,9 @@ body:
                   table: requests
                   filters: [{ column: status, op: in, value: [pending, ready, waitlisted] }]
                   sort: [{ by: created_at }]
-              filters: [{ filter: kind, column: kind }]
+              filters:
+                - { filter: q, columns: [number, device_tag, student_name, student_number] }
+                - { filter: kind, column: kind }
           config:
             pageSize: 25
             columns:
@@ -118,7 +121,9 @@ body:
                   table: loans
                   filters: [{ column: status, op: eq, value: out }]
                   sort: [{ by: due_on }]
-              filters: [{ filter: kind, column: kind }]
+              filters:
+                - { filter: q, columns: [number, device_tag, student_name, student_number] }
+                - { filter: kind, column: kind }
           config:
             pageSize: 25
             columns:
@@ -157,6 +162,7 @@ body:
           config:
             reset: true
             filters:
+            - { name: q, label: Search devices, type: search }
             - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
             - {
                 name: location,
@@ -190,6 +196,7 @@ body:
                   table: devices
                   sort: [{ by: asset_tag }]
               filters:
+                - { filter: q, columns: [asset_tag, model, serial, reserved_for] }
                 - { filter: kind, column: kind }
                 - { filter: location, column: location }
           config:

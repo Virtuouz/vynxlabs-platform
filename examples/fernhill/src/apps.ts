@@ -51,20 +51,36 @@ const narrowedBy = (dateFilter: string, dateColumn: string, clinic = true) => [
   { filter: dateFilter, column: dateColumn },
 ];
 
+/** What Money's search looks in, on an invoice. */
+const INVOICE_SEARCH = ["number", "client_code", "payment_ref"];
+
+/**
+ * What Money's bar narrows an invoice by: the words typed, the clinic, the Issued range and
+ * the Status. Every stat, chart and table that reads invoices follows all four.
+ */
+const invoiceFilters = () => [
+  { filter: "q", columns: INVOICE_SEARCH },
+  ...narrowedBy("issued", "issued_on"),
+  { filter: "status", column: "status" },
+];
+
+/** A void invoice is not owed and not invoiced: the totals leave it out. */
+const NOT_VOID = { column: "status", op: "ne" as const, value: "void" };
+
 /** One value of the invoices, over the page's Issued range. */
 const invoiceValue = (
   as: string,
   fn: "sum" | "avg",
-  only: { column: string; op: "eq"; value: unknown }[] = [],
+  only: { column: string; op: "eq" | "ne"; value: unknown }[] = [NOT_VOID],
 ) => ({
   source: {
     visual: {
       table: "invoices",
-      ...(only.length > 0 ? { filters: only } : {}),
+      filters: only,
       measures: [{ fn, column: "total", as }],
     },
   },
-  filters: narrowedBy("issued", "issued_on"),
+  filters: invoiceFilters(),
 });
 
 /** Invoices totalled by one breakdown. */
@@ -73,13 +89,23 @@ const invoicesBy = (group: { column: string; bucket?: "week" }): Record<string, 
     source: {
       visual: {
         table: "invoices",
+        filters: [NOT_VOID],
         groupBy: [group],
         measures: [{ fn: "sum", column: "total", as: "invoiced" }],
       },
     },
-    filters: narrowedBy("issued", "issued_on"),
+    filters: invoiceFilters(),
   },
 });
+
+/** What the search of Visits looks in, on a visit: the pet, the owner's code and the reason. */
+const VISIT_SEARCH = ["pet_name", "client_code", "reason"];
+
+/** What Visits' bar narrows a visit by: the words typed, the clinic and the range of dates. */
+const visitFilters = () => [
+  { filter: "q", columns: VISIT_SEARCH },
+  ...narrowedBy("when", "starts_at"),
+];
 
 /** Visits counted by one breakdown. */
 const visitsBy = (column: string): Record<string, DataInput> => ({
@@ -91,9 +117,34 @@ const visitsBy = (column: string): Record<string, DataInput> => ({
         measures: [{ fn: "count", as: "visits" }],
       },
     },
-    filters: narrowedBy("when", "starts_at"),
+    filters: visitFilters(),
   },
 });
+
+/** One count of visits, over the page's range, of those with one of these statuses (all, when none). */
+const visitCount = (statuses: string[] = []): Record<string, DataInput> => ({
+  value: {
+    source: {
+      visual: {
+        table: "appointments",
+        ...(statuses.length > 0
+          ? { filters: [{ column: "status", op: "in", value: statuses }] }
+          : {}),
+        measures: [{ fn: "count", as: "visits" }],
+      },
+    },
+    filters: visitFilters(),
+  },
+});
+
+/** What the search of Stock looks in, on a stock line or an order. */
+const STOCK_SEARCH = ["item", "sku"];
+
+/** What Stock's bar narrows a line or an order by: the words typed, and the clinic. */
+const stockFilters = () => [
+  { filter: "q", columns: STOCK_SEARCH },
+  { filter: "clinic", column: "clinic" },
+];
 
 /** When a row is clicked, its record opens in a side sheet. */
 const openSheet = (page: string) => ({
@@ -120,6 +171,61 @@ const INVOICE_FORM_FIELDS = [
   { column: "payment_ref", label: "Payment reference" },
 ];
 
+/** Ordering more of one stock line: a row's action, and what the "Reorder" window offers on each row. */
+const REORDER_LINE = {
+  id: "reorder",
+  label: "Reorder",
+  action: {
+    when: [
+      { field: "reorder_pending", of: "event" as const, test: "is_not" as const, value: true },
+    ],
+    confirm: {
+      title: "Order more?",
+      text: "Order {reorder_qty} more of {item} for {clinic}? An order over the threshold waits for a practice manager.",
+      button: "Order",
+    },
+    steps: [
+      {
+        do: "flow" as const,
+        path: "inventory/reorder",
+        input: {
+          line: { record: "id", of: "event" as const },
+          clinic: { record: "clinic", of: "event" as const },
+          sku: { record: "sku", of: "event" as const },
+          item: { record: "item", of: "event" as const },
+          on_hand: { record: "on_hand", of: "event" as const },
+          quantity: { record: "reorder_qty", of: "event" as const },
+        },
+      },
+      { do: "message" as const, text: "The order is on its way to be priced." },
+    ],
+  },
+};
+
+/** Setting one stock line to what was counted on the shelf: a row's action in the "Count stock" window. */
+const COUNT_LINE = {
+  id: "count",
+  label: "Count",
+  action: {
+    confirm: {
+      title: "Count {item}",
+      text: "How many of {item} are on the shelf at {clinic}?",
+      button: "Save the count",
+      ask: [
+        { name: "counted", label: "Counted on the shelf", type: "number" as const, required: true },
+      ],
+    },
+    steps: [
+      {
+        do: "update" as const,
+        record: "event" as const,
+        set: { on_hand: { asked: "counted" } },
+      },
+      { do: "message" as const, text: "The count is saved.", tone: "success" as const },
+    ],
+  },
+};
+
 /** For practice managers, with no code: money, visits and stock across the group. */
 export const performance = defineInterface({
   path: "screens/performance",
@@ -131,12 +237,13 @@ export const performance = defineInterface({
       title: "Money",
       widgets: [
         {
-          // The page's filters, set by whoever reads it: every widget bound to one follows it.
+          // The page's bar, set by whoever reads it: every widget bound to one follows it.
           id: "filters",
           type: "core/filter",
           at: { x: 0, y: 0, w: 12, h: 2 },
           config: {
             filters: [
+              { name: "q", label: "Search invoices", type: "search" },
               {
                 name: "clinic",
                 label: "Clinic",
@@ -144,6 +251,12 @@ export const performance = defineInterface({
                 from: { table: "invoices", column: "clinic" },
               },
               { name: "issued", label: "Issued", type: "date_range", default: "last_30_days" },
+              {
+                name: "status",
+                label: "Status",
+                type: "choice",
+                from: { table: "invoices", column: "status" },
+              },
               // The goal is a month's: its own range, so the page's range can be anything.
               {
                 name: "goal_month",
@@ -160,7 +273,7 @@ export const performance = defineInterface({
           type: "core/text",
           at: { x: 0, y: 2, w: 12, h: 3 },
           config: {
-            text: ":::alert[In dollars]{type=info}\nEvery amount here is in dollars, as the clinics invoice. Change **Issued** to look at another stretch of time.\n:::",
+            text: ":::alert[In dollars]{type=info}\nEvery amount here is in dollars, as the clinics invoice. Change **Issued** to look at another stretch of time. A void invoice is left out of the totals.\n:::",
           },
         },
         {
@@ -201,10 +314,16 @@ export const performance = defineInterface({
               source: {
                 visual: {
                   table: "invoices",
+                  filters: [NOT_VOID],
                   measures: [{ fn: "sum", column: "total", as: "invoiced" }],
                 },
               },
-              filters: narrowedBy("goal_month", "issued_on"),
+              filters: [
+                { filter: "q", columns: INVOICE_SEARCH },
+                { filter: "clinic", column: "clinic" },
+                { filter: "goal_month", column: "issued_on" },
+                { filter: "status", column: "status" },
+              ],
             },
           },
           // $200,000, kept in cents like the invoices.
@@ -233,16 +352,25 @@ export const performance = defineInterface({
           type: "core/text",
           at: { x: 0, y: 16, w: 12, h: 3 },
           config: {
-            text: ":::alert[For practice managers]{type=info}\nOwners are texted about invoices unpaid for two weeks every Monday morning. Press an invoice to see it, mark it paid, or change it.\n:::",
+            text: ":::alert[For practice managers]{type=info}\nOwners are texted about invoices unpaid for two weeks every Monday morning. Press an invoice to see it, mark it paid, void it, or change it.\n:::",
           },
           rules: { showWhen: [{ user: "in", group: "Practice managers" }] },
         },
         {
-          id: "new-invoice",
-          type: "core/button",
-          at: { x: 9, y: 19, w: 3, h: 1 },
-          config: { label: "New invoice", tone: "primary" },
-          on: { click: { steps: [{ do: "open", page: "new-invoice" }] } },
+          id: "invoice-actions",
+          type: "core/actions",
+          at: { x: 0, y: 19, w: 12, h: 1 },
+          config: {
+            align: "end",
+            actions: [
+              {
+                id: "new-invoice",
+                label: "New invoice",
+                tone: "primary",
+                action: { steps: [{ do: "open", page: "new-invoice" }] },
+              },
+            ],
+          },
         },
         {
           id: "list",
@@ -254,7 +382,7 @@ export const performance = defineInterface({
               source: {
                 visual: { table: "invoices", sort: [{ by: "issued_on", descending: true }] },
               },
-              filters: narrowedBy("issued", "issued_on"),
+              filters: invoiceFilters(),
             },
           },
           config: {
@@ -277,43 +405,88 @@ export const performance = defineInterface({
       title: "Visits",
       widgets: [
         {
-          // The page's filters, set by whoever reads it: every widget bound to one follows it.
+          // The page's bar, set by whoever reads it: every widget bound to one follows it.
           id: "filters",
           type: "core/filter",
           at: { x: 0, y: 0, w: 12, h: 2 },
           config: {
             filters: [
+              { name: "q", label: "Search visits", type: "search" },
               {
                 name: "clinic",
                 label: "Clinic",
                 type: "choice",
                 from: { table: "appointments", column: "clinic" },
               },
-              { name: "when", label: "When", type: "date_range", default: "last_30_days" },
+              { name: "when", label: "When", type: "date_range", default: "today" },
             ],
             reset: true,
+          },
+        },
+        {
+          id: "today",
+          type: "core/section",
+          title: "Today at the clinics",
+          at: { x: 0, y: 2, w: 12, h: 4 },
+          config: {
+            description: "How many visits there are, and where they stand, at the clinics chosen.",
           },
         },
         {
           id: "count",
           type: "core/stat",
           title: "Visits",
-          at: { x: 0, y: 2, w: 4, h: 3 },
-          data: {
-            value: {
-              source: {
-                visual: { table: "appointments", measures: [{ fn: "count", as: "visits" }] },
-              },
-              filters: narrowedBy("when", "starts_at"),
-            },
-          },
+          in: { widget: "today" },
+          at: { x: 0, y: 0, w: 3, h: 3 },
+          data: visitCount(),
           config: { caption: "In the range chosen" },
+        },
+        {
+          id: "waiting",
+          type: "core/stat",
+          title: "Booked",
+          in: { widget: "today" },
+          at: { x: 3, y: 0, w: 3, h: 3 },
+          data: visitCount(["booked"]),
+          config: { caption: "Not yet arrived" },
+        },
+        {
+          id: "inside",
+          type: "core/stat",
+          title: "In the clinic",
+          in: { widget: "today" },
+          at: { x: 6, y: 0, w: 3, h: 3 },
+          data: visitCount(["checked_in", "in_exam"]),
+          config: { caption: "Checked in or with the vet" },
+        },
+        {
+          id: "finished",
+          type: "core/stat",
+          title: "Done",
+          in: { widget: "today" },
+          at: { x: 9, y: 0, w: 3, h: 3 },
+          data: visitCount(["done"]),
+          config: { caption: "Seen and finished" },
+        },
+        {
+          id: "views",
+          type: "core/tabs",
+          title: "Visits",
+          at: { x: 0, y: 6, w: 12, h: 13 },
+          config: {
+            tabs: [
+              { id: "by-status", title: "By status" },
+              { id: "by-reason", title: "By reason" },
+              { id: "every", title: "Every visit" },
+            ],
+          },
         },
         {
           id: "by-status",
           type: "core/chart",
           title: "How visits ended",
-          at: { x: 4, y: 2, w: 4, h: 9 },
+          in: { widget: "views", tab: "by-status" },
+          at: { x: 0, y: 0, w: 12, h: 9 },
           data: visitsBy("status"),
           config: { mark: "pie" },
         },
@@ -321,7 +494,8 @@ export const performance = defineInterface({
           id: "by-reason",
           type: "core/chart",
           title: "Why they came",
-          at: { x: 8, y: 2, w: 4, h: 9 },
+          in: { widget: "views", tab: "by-reason" },
+          at: { x: 0, y: 0, w: 12, h: 9 },
           data: visitsBy("reason"),
           config: { mark: "bar" },
         },
@@ -329,13 +503,14 @@ export const performance = defineInterface({
           id: "list",
           type: "core/table",
           title: "Visits",
-          at: { x: 0, y: 11, w: 8, h: 12 },
+          in: { widget: "views", tab: "every" },
+          at: { x: 0, y: 0, w: 8, h: 12 },
           data: {
             rows: {
               source: {
                 visual: { table: "appointments", sort: [{ by: "starts_at", descending: true }] },
               },
-              filters: narrowedBy("when", "starts_at"),
+              filters: visitFilters(),
             },
           },
           config: {
@@ -356,7 +531,8 @@ export const performance = defineInterface({
           id: "latest",
           type: "core/list",
           title: "Latest visits",
-          at: { x: 8, y: 11, w: 4, h: 12 },
+          in: { widget: "views", tab: "every" },
+          at: { x: 8, y: 0, w: 4, h: 12 },
           data: {
             rows: {
               source: {
@@ -366,7 +542,7 @@ export const performance = defineInterface({
                   limit: 20,
                 },
               },
-              filters: narrowedBy("when", "starts_at"),
+              filters: visitFilters(),
             },
           },
           config: {
@@ -384,12 +560,13 @@ export const performance = defineInterface({
       title: "Stock",
       widgets: [
         {
-          // The page's filters, set by whoever reads it: every widget bound to one follows it.
+          // The page's bar, set by whoever reads it: every widget bound to one follows it.
           id: "filters",
           type: "core/filter",
           at: { x: 0, y: 0, w: 12, h: 2 },
           config: {
             filters: [
+              { name: "q", label: "Search stock", type: "search" },
               {
                 name: "clinic",
                 label: "Clinic",
@@ -401,14 +578,35 @@ export const performance = defineInterface({
           },
         },
         {
+          id: "stock-actions",
+          type: "core/actions",
+          at: { x: 0, y: 2, w: 12, h: 1 },
+          config: {
+            actions: [
+              {
+                id: "reorder",
+                label: "Reorder",
+                tone: "primary",
+                action: { steps: [{ do: "open", page: "reorder-stock" }] },
+              },
+              {
+                id: "count",
+                label: "Count stock",
+                tone: "default",
+                action: { steps: [{ do: "open", page: "count-stock" }] },
+              },
+            ],
+          },
+        },
+        {
           id: "lines",
           type: "core/table",
           title: "Stock",
-          at: { x: 0, y: 2, w: 8, h: 14 },
+          at: { x: 0, y: 3, w: 12, h: 12 },
           data: {
             rows: {
               source: { visual: { table: "inventory", sort: [{ by: "on_hand" }] } },
-              filters: [{ filter: "clinic", column: "clinic" }],
+              filters: stockFilters(),
             },
           },
           config: {
@@ -420,42 +618,24 @@ export const performance = defineInterface({
               { column: "reorder_at", label: "Reorder at" },
               { column: "reorder_pending", label: "Ordering" },
             ],
-            rowActions: [
-              {
-                id: "reorder",
-                label: "Reorder",
-                action: {
-                  when: [{ field: "reorder_pending", of: "event", test: "is_not", value: true }],
-                  confirm: {
-                    title: "Order more?",
-                    text: "Order {reorder_qty} more of {item} for {clinic}? An order over the threshold waits for a practice manager.",
-                    button: "Order",
-                  },
-                  steps: [
-                    {
-                      do: "flow",
-                      path: "inventory/reorder",
-                      input: {
-                        line: { record: "id", of: "event" },
-                        clinic: { record: "clinic", of: "event" },
-                        sku: { record: "sku", of: "event" },
-                        item: { record: "item", of: "event" },
-                        on_hand: { record: "on_hand", of: "event" },
-                        quantity: { record: "reorder_qty", of: "event" },
-                      },
-                    },
-                    { do: "message", text: "The order is on its way to be priced." },
-                  ],
-                },
-              },
-            ],
+            rowActions: [REORDER_LINE],
+          },
+        },
+        {
+          id: "orders-section",
+          type: "core/section",
+          title: "Orders to VetSupply",
+          at: { x: 0, y: 15, w: 12, h: 9 },
+          config: {
+            description: "What the clinics have asked the supplier for, newest first.",
+            folds: true,
           },
         },
         {
           id: "orders",
           type: "core/table",
-          title: "Orders to VetSupply",
-          at: { x: 8, y: 2, w: 4, h: 14 },
+          in: { widget: "orders-section" },
+          at: { x: 0, y: 0, w: 12, h: 8 },
           data: {
             rows: {
               source: {
@@ -464,7 +644,7 @@ export const performance = defineInterface({
                   sort: [{ by: "created_at", descending: true }],
                 },
               },
-              filters: [{ filter: "clinic", column: "clinic" }],
+              filters: stockFilters(),
             },
           },
           config: {
@@ -479,6 +659,70 @@ export const performance = defineInterface({
         },
       ],
     },
+    {
+      // Opened by "Reorder": the lines with the least on the shelf, each with its own Reorder.
+      id: "reorder-stock",
+      title: "Reorder stock",
+      kind: "modal",
+      widgets: [
+        {
+          id: "low",
+          type: "core/table",
+          title: "Running lowest",
+          at: { x: 0, y: 0, w: 12, h: 12 },
+          data: {
+            rows: {
+              source: { visual: { table: "inventory", sort: [{ by: "on_hand" }], limit: 15 } },
+            },
+          },
+          config: {
+            columns: [
+              { column: "clinic" },
+              { column: "item" },
+              { column: "on_hand", label: "On hand" },
+              { column: "reorder_at", label: "Reorder at" },
+              { column: "reorder_pending", label: "Ordering" },
+            ],
+            rowActions: [REORDER_LINE],
+          },
+        },
+      ],
+    },
+    {
+      // Opened by "Count stock": any line, found by its name, set to what was counted.
+      id: "count-stock",
+      title: "Count stock",
+      kind: "modal",
+      widgets: [
+        {
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: { filters: [{ name: "q", label: "Search stock", type: "search" }], reset: true },
+        },
+        {
+          id: "shelf",
+          type: "core/table",
+          at: { x: 0, y: 2, w: 12, h: 12 },
+          data: {
+            rows: {
+              source: { visual: { table: "inventory", sort: [{ by: "item" }] } },
+              filters: [{ filter: "q", columns: STOCK_SEARCH }],
+            },
+          },
+          config: {
+            pageSize: 25,
+            columns: [
+              { column: "clinic" },
+              { column: "item" },
+              { column: "sku" },
+              { column: "on_hand", label: "On hand" },
+            ],
+            rowActions: [COUNT_LINE],
+          },
+        },
+      ],
+    },
 
     {
       id: "invoice",
@@ -487,14 +731,10 @@ export const performance = defineInterface({
       record: { table: "invoices" },
       widgets: [
         {
-          id: "detail",
-          type: "core/detail",
-          at: { x: 0, y: 0, w: 12, h: 12 },
-          data: { record: { source: { record: "this" } } },
+          id: "invoice-actions",
+          type: "core/actions",
+          at: { x: 0, y: 0, w: 12, h: 1 },
           config: {
-            heading: "number",
-            status: "status",
-            fields: INVOICE_FIELDS,
             actions: [
               {
                 id: "mark-paid",
@@ -523,7 +763,35 @@ export const performance = defineInterface({
                 tone: "default",
                 action: { steps: [{ do: "open", page: "edit-invoice", record: "this" }] },
               },
+              {
+                id: "void",
+                label: "Void",
+                tone: "danger",
+                action: {
+                  when: [{ field: "status", test: "is", value: "unpaid" }],
+                  confirm: {
+                    title: "Void this invoice?",
+                    text: "Void {number}? It stops counting as owed, and it can't be paid.",
+                    button: "Void",
+                  },
+                  steps: [
+                    { do: "update", record: "this", set: { status: { value: "void" } } },
+                    { do: "message", text: "Invoice voided", tone: "success" },
+                  ],
+                },
+              },
             ],
+          },
+        },
+        {
+          id: "detail",
+          type: "core/detail",
+          at: { x: 0, y: 1, w: 12, h: 12 },
+          data: { record: { source: { record: "this" } } },
+          config: {
+            heading: "number",
+            status: "status",
+            fields: INVOICE_FIELDS,
           },
         },
       ],

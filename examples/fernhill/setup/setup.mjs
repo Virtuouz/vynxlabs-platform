@@ -532,12 +532,120 @@ await draftInSandbox("reports/visits-by-clinic", "query", {
 await draftInSandbox("boards/clinic-visits", "dashboard", {
   title: "Visits by clinic",
   widgets: [
+    // The bar whoever reads it sets. The saved query below has no parameters, so it is all time;
+    // the visits and the chart follow the bar.
+    {
+      id: "filters",
+      type: "core/filter",
+      at: { x: 0, y: 0, w: 12, h: 2 },
+      config: {
+        filters: [
+          { name: "q", label: "Search visits", type: "search" },
+          {
+            name: "clinic",
+            label: "Clinic",
+            type: "choice",
+            from: { table: "appointments", column: "clinic" },
+          },
+          { name: "when", label: "When", type: "date_range", default: "last_30_days" },
+        ],
+        reset: true,
+      },
+    },
+    {
+      id: "views",
+      type: "core/tabs",
+      title: "Visits",
+      at: { x: 0, y: 2, w: 12, h: 12 },
+      config: {
+        tabs: [
+          { id: "visits", title: "Visits" },
+          { id: "clinics", title: "By clinic" },
+        ],
+      },
+    },
+    {
+      id: "count",
+      type: "core/stat",
+      title: "Visits",
+      in: { widget: "views", tab: "visits" },
+      at: { x: 0, y: 0, w: 4, h: 3 },
+      data: {
+        value: {
+          source: {
+            visual: { table: "appointments", measures: [{ fn: "count", as: "visits" }] },
+          },
+          filters: [
+            { filter: "q", columns: ["pet_name", "client_code", "reason"] },
+            { filter: "clinic", column: "clinic" },
+            { filter: "when", column: "starts_at" },
+          ],
+        },
+      },
+      config: { caption: "In the range chosen" },
+    },
+    {
+      id: "recent",
+      type: "core/table",
+      title: "Latest visits",
+      in: { widget: "views", tab: "visits" },
+      at: { x: 0, y: 3, w: 12, h: 8 },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "appointments",
+              sort: [{ by: "starts_at", descending: true }],
+              limit: 50,
+            },
+          },
+          filters: [
+            { filter: "q", columns: ["pet_name", "client_code", "reason"] },
+            { filter: "clinic", column: "clinic" },
+            { filter: "when", column: "starts_at" },
+          ],
+        },
+      },
+      config: {
+        columns: [
+          { column: "starts_at", label: "When" },
+          { column: "pet_name", label: "Pet" },
+          { column: "clinic" },
+          { column: "reason" },
+          { column: "status" },
+        ],
+      },
+    },
     {
       id: "by-clinic",
       type: "core/table",
       title: "Visits by clinic",
+      in: { widget: "views", tab: "clinics" },
       at: { x: 0, y: 0, w: 6, h: 8 },
       data: { rows: { source: { query: "reports/visits-by-clinic" } } },
+    },
+    {
+      id: "clinic-chart",
+      type: "core/chart",
+      title: "In the range chosen",
+      in: { widget: "views", tab: "clinics" },
+      at: { x: 6, y: 0, w: 6, h: 8 },
+      data: {
+        rows: {
+          source: {
+            visual: {
+              table: "appointments",
+              groupBy: [{ column: "clinic" }],
+              measures: [{ fn: "count", as: "visits" }],
+            },
+          },
+          filters: [
+            { filter: "q", columns: ["pet_name", "client_code", "reason"] },
+            { filter: "when", column: "starts_at" },
+          ],
+        },
+      },
+      config: { mark: "bar" },
     },
   ],
 });
@@ -561,6 +669,7 @@ await draftInSandbox("screens/front-desk-board", "interface", {
           at: { x: 0, y: 0, w: 12, h: 2 },
           config: {
             filters: [
+              { name: "q", label: "Search visits", type: "search" },
               {
                 name: "clinic",
                 label: "Clinic",
@@ -583,6 +692,7 @@ await draftInSandbox("screens/front-desk-board", "interface", {
                 visual: { table: "appointments", measures: [{ fn: "count", as: "visits" }] },
               },
               filters: [
+                { filter: "q", columns: ["pet_name", "client_code", "reason"] },
                 { filter: "clinic", column: "clinic" },
                 { filter: "when", column: "starts_at" },
               ],
@@ -599,6 +709,7 @@ await draftInSandbox("screens/front-desk-board", "interface", {
             rows: {
               source: { visual: { table: "appointments", sort: [{ by: "starts_at" }] } },
               filters: [
+                { filter: "q", columns: ["pet_name", "client_code", "reason"] },
                 { filter: "clinic", column: "clinic" },
                 { filter: "when", column: "starts_at" },
               ],

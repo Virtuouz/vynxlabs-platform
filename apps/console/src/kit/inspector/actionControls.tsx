@@ -745,7 +745,7 @@ function StepCard({
             label="Filter"
             hint={
               env.filters.length === 0
-                ? "The page has no filters yet. Add one under Filters on the page."
+                ? "The page has no filters yet. Add Search and filter to it."
                 : ""
             }
             value={step.filter}

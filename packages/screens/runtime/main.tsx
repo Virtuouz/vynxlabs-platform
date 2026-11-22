@@ -16,6 +16,7 @@ import { corePack } from "@volvel/widgets-core/views";
 import { labsPack } from "@volvel/widgets-labs/views";
 import { StrictMode, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { filtersFromSearch, searchWithFilters } from "../src/filterAddress.ts";
 import {
   ActionError,
   type FilterValues,
@@ -158,17 +159,44 @@ function PageOf({
   onActed(): void;
 }) {
   const client = useMemo(() => clientFor(path, page.id, record), [path, page.id, record]);
-  const [values, setValues] = useState<FilterValues>({});
+  const filters = useMemo(() => filtersOf(page.widgets, roles), [page.widgets]);
+  // The page on screen keeps its filters in the address, so a reload and a link keep them; a
+  // side sheet or modal over it has its own, in memory.
+  const kept = over !== true;
+  const [values, setValues] = useState<FilterValues>(() =>
+    kept
+      ? filtersFromSearch(
+          window.location.search,
+          filters.map((one) => one.name),
+        )
+      : {},
+  );
+  const keep = (next: FilterValues) => {
+    if (!kept) return;
+    // Replaced, not pushed: a search is typed a letter at a time, and Back is not for undoing it.
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${searchWithFilters(window.location.search, next)}${window.location.hash}`,
+    );
+  };
   return (
     <PageView
       widgets={page.widgets}
-      filters={filtersOf(page.widgets, roles)}
+      filters={filters}
       registry={registry}
       client={client}
       filterValues={values}
-      onFilterValues={setValues}
+      onFilterValues={(next) => {
+        setValues(next);
+        keep(next);
+      }}
       pages={pages}
-      onNavigate={onNavigate}
+      onNavigate={(to) => {
+        onNavigate(to);
+        // Opening a sheet or modal, or closing one, rebuilds the address: the filters go back in it.
+        if ("close" in to || to.as !== "page") keep(values);
+      }}
       refreshKey={changed}
       onActed={onActed}
       {...(over ? { over } : {})}

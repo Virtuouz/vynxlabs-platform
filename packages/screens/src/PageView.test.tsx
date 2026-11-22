@@ -138,8 +138,21 @@ function clientOf(
   };
 }
 
+/** A page's filters are drawn by a Search and filter widget, where it sits: given `filters`, one is placed at the top. */
 function Page(props: Partial<PageViewProps> & { client: PageDataClient; widgets: PageWidget[] }) {
   const [values, setValues] = useState<FilterValues>({});
+  const widgets: PageWidget[] =
+    props.filters && props.filters.length > 0
+      ? [
+          {
+            id: "filters",
+            type: "core/filter",
+            at: { x: 0, y: 0, w: 12, h: 2 },
+            config: { filters: props.filters, reset: true },
+          },
+          ...props.widgets,
+        ]
+      : props.widgets;
   return (
     <PageView
       filters={[]}
@@ -147,6 +160,7 @@ function Page(props: Partial<PageViewProps> & { client: PageDataClient; widgets:
       filterValues={values}
       onFilterValues={setValues}
       {...props}
+      widgets={widgets}
     />
   );
 }
@@ -411,7 +425,7 @@ describe("the frame", () => {
     render(
       <Page client={clientOf({ invoices: { rows: none } })} widgets={[table]} filters={filters} />,
     );
-    expect(await screen.findByText("Nothing matches the filters above.")).toBeTruthy();
+    expect(await screen.findByText("Nothing matches the filters.")).toBeTruthy();
   });
 
   test("a read that failed says why, and Try again reads again", async () => {
@@ -536,7 +550,7 @@ describe("reading", () => {
     await waitFor(() => expect(client.read).toHaveBeenCalledTimes(4));
     expect(client.read.mock.calls[3]?.[1]).toEqual({ range: "this_year", clinic: null });
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     await waitFor(() => expect(client.read).toHaveBeenCalledTimes(5));
     expect(client.read.mock.calls[4]?.[1]).toEqual({});
   });

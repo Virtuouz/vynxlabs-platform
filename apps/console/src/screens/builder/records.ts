@@ -1,18 +1,27 @@
 /**
  * What the builder writes for records (phase 26): the detail a table's rows
  * open, the form that makes or changes a record, and the next steps "Add to
- * page" suggests. Each is a pure change: the page's widgets and filters as
+ * page" suggests. Each is a pure change: the page's widgets as
  * they should become, with the pages it also adds. The editor applies one as a
  * single step that Undo takes back whole.
  */
 import {
   displayGuess,
+  FILTER_WIDGET,
   type Page,
   type PageFilter,
   type PageWidget,
   topLevel,
+  widgetRegistry,
 } from "@volvel/manifest";
-import { bindFilter, type Catalog, heading, newId, visualOf } from "../../kit/inspector/model.ts";
+import {
+  bindHolderFilters,
+  type Catalog,
+  heading,
+  visualOf,
+  withPageFilters,
+} from "../../kit/inspector/model.ts";
+import { nextId } from "./containers.ts";
 import type { Action, Condition, Step } from "./contract.ts";
 import { kindOf, uniquePageId } from "./pageKinds.ts";
 
@@ -116,10 +125,9 @@ export const isRowsWidget = (widget: PageWidget): boolean =>
 export const bottomOf = (widgets: readonly PageWidget[]): number =>
   topLevel(widgets).reduce((low, one) => Math.max(low, one.at.y + one.at.h), 0);
 
-/** What a builder change makes of a page: its widgets and filters, the pages it adds, and what it says. */
+/** What a builder change makes of a page: its widgets (its filters are those of its Search and filter widgets), the pages it adds, and what it says. */
 export interface Edit {
   widgets: PageWidget[];
-  filters: PageFilter[];
   addPages: Page[];
   /** The widget to choose after. */
   select?: string;
@@ -264,7 +272,6 @@ export function detailEdit(context: PageContext, widget: PageWidget, table: Tabl
     widgets: context.widgets.map((one) =>
       one.id === widget.id ? withRowClick(one, made.click) : one,
     ),
-    filters: [...context.filters],
     addPages: [made.page],
     select: widget.id,
     told: `${made.page.title} is made, and a click on a row of ${widget.title || manyOf(table.name)} opens it.`,
@@ -407,11 +414,10 @@ export function formEdit(context: PageContext, plan: FormPlan): Edit {
   const { widgets, pages } = context;
   const table = plan.table.name;
   if (plan.where === "page") {
-    const id = newId("core/form", widgets);
+    const id = nextId("core/form", widgets);
     const y = bottomOf(widgets);
     return {
       widgets: [...widgets, formWidget(plan, id, { x: 0, y, w: 12, h: 10 })],
-      filters: [...context.filters],
       addPages: [],
       select: id,
       told: `The form for ${manyOf(table)} is added at the end of the page.`,
@@ -425,14 +431,13 @@ export function formEdit(context: PageContext, plan: FormPlan): Edit {
   const next = [...widgets];
   let select: string | undefined;
   if (addButton) {
-    const id = newId("core/button", widgets);
+    const id = nextId("core/button", widgets);
     const y = bottomOf(widgets);
     next.push(openButton(id, plan.title, pageId, { x: 0, y, w: 3, h: 1 }, opensOnRecord));
     select = id;
   }
   return {
     widgets: next,
-    filters: [...context.filters],
     addPages: [modal],
     ...(select ? { select } : {}),
     told: addButton
@@ -605,7 +610,7 @@ export function suggestionEdit(
   table: TableInfo,
   catalog: Catalog,
 ): Edit {
-  const { widgets, filters, page } = context;
+  const { widgets, page } = context;
   if (suggestion.key === "detail") return detailEdit(context, suggestion.widget, table);
   if (suggestion.key === "filter") {
     const filter: PageFilter = {
@@ -615,15 +620,18 @@ export function suggestionEdit(
       from: { table: table.name, column: suggestion.column },
     };
     return {
-      widgets: widgets.map((one) => bindFilter(one, filter, catalog, widgets)),
-      filters: [...filters, filter],
+      widgets: bindHolderFilters(
+        withPageFilters(widgets, [filter], widgetRegistry().get(FILTER_WIDGET), catalog),
+        [filter],
+        catalog,
+      ),
       addPages: [],
       told: `A ${heading(suggestion.column).toLowerCase()} filter is added.`,
     };
   }
   const label = `Mark ${suggestion.value.toLowerCase()}`;
   if (page.record?.table === table.name) {
-    const id = newId("core/button", widgets);
+    const id = nextId("core/button", widgets);
     const y = bottomOf(widgets);
     return {
       widgets: [
@@ -637,7 +645,6 @@ export function suggestionEdit(
           on: { click: markAction(suggestion, "this") },
         },
       ],
-      filters: [...filters],
       addPages: [],
       select: id,
       told: `A “${label}” button is added at the end of the page.`,
@@ -665,7 +672,6 @@ export function suggestionEdit(
   });
   return {
     widgets: next,
-    filters: [...filters],
     addPages: [],
     ...(target ? { select: target.id } : {}),
     told: `“${label}” is added to each row of ${target?.title || manyOf(table.name)}.`,

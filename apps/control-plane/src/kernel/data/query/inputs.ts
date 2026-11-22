@@ -13,9 +13,16 @@ import type { ColumnInfo, DataInputDeclaration } from "@volvel/widgets";
 import { badRequest, forbidden, HttpError, notFound } from "../../errors.js";
 import type { RequestContext } from "../../http.js";
 import type { Kernel } from "../../kernel.js";
-import { describeTable, findRows, type RowTarget, scopeFor, withData } from "../rows.js";
+import {
+  describeTable,
+  type Filter,
+  findRows,
+  type RowTarget,
+  scopeFor,
+  withData,
+} from "../rows.js";
 import { openSource, sourceTable } from "../sources.js";
-import { dayAfter, type FilterValues, isDay, previousRange, rangeOf } from "./filters.js";
+import { dayAfter, type FilterValues, isDay, previousRange, rangeOf, wordsOf } from "./filters.js";
 import { QueryRefused } from "./parse.js";
 import { checkFor, QUERY_ROWS, type QueryResult, refusal, runQuery } from "./run.js";
 import {
@@ -438,7 +445,10 @@ export async function readWidget(
     const source = await openSource(kernel, kernel.db, tenantId, workspaceId, sourcePath);
     const target: RowTarget = await sourceTable(source.db, source.schema, sourcePath, table);
     const extra = conditionsFor(input, filters, request.values);
-    const conditions = [...(visual.filters ?? []), ...extra].map((one) =>
+    const conditions: Filter[] = [
+      ...(visual.filters ?? []),
+      ...extra.filter((one): one is VisualCondition => !("search" in one)),
+    ].map((one) =>
       one.op === "not_null"
         ? { column: one.column, op: "is_null", value: false }
         : {
@@ -447,6 +457,15 @@ export async function readWidget(
             ...(one.value !== undefined ? { value: one.value } : {}),
           },
     );
+    // A search is each word found in one of its columns: an "or" of "contains" for each word.
+    for (const one of extra) {
+      if (!("search" in one)) continue;
+      for (const word of wordsOf(one.search)) {
+        conditions.push({
+          or: one.columns.map((column) => ({ column, op: "contains", value: word })),
+        });
+      }
+    }
     const sort = (visual.sort ?? []).map((one) => `${one.descending ? "-" : ""}${one.by}`);
     const page = await findRows(source.db, target, {
       ...(conditions.length > 0 ? { filter: { and: conditions } } : {}),

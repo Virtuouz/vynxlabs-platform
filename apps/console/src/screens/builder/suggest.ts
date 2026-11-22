@@ -6,14 +6,19 @@
  */
 import {
   containerHeight,
+  FILTER_WIDGET,
   filterWidgets,
-  type PageFilter,
   type PageWidget,
   topLevel,
   widgetRegistry,
-  withFilters,
 } from "@volvel/manifest";
-import { type Catalog, newId, visualOf } from "../../kit/inspector/model.ts";
+import {
+  bindHolderFilters,
+  type Catalog,
+  newSearch,
+  withPageFilters,
+} from "../../kit/inspector/model.ts";
+import { nextId } from "./containers.ts";
 import type { Action } from "./contract.ts";
 import {
   type Edit,
@@ -61,53 +66,28 @@ function settleTop(widgets: readonly PageWidget[]): PageWidget[] {
 
 // ----- Search -----
 
-/** A widget whose rows of `table` are narrowed by a search over `columns`. */
-export function bindSearch(
-  widget: PageWidget,
-  filter: string,
-  table: string,
-  columns: readonly string[],
-): PageWidget {
-  if (!widget.data) return widget;
-  let changed = false;
-  const data = Object.fromEntries(
-    Object.entries(widget.data).map(([name, input]) => {
-      const bound = (input.filters ?? []).some((one) => one.filter === filter);
-      if (visualOf(input)?.table !== table || bound) return [name, input];
-      changed = true;
-      return [
-        name,
-        { ...input, filters: [...(input.filters ?? []), { filter, columns: [...columns] }] },
-      ];
-    }),
-  );
-  return changed ? { ...widget, data } : widget;
-}
-
 /**
  * "Search invoices": a Search and filter widget at the top of the page (or a search added
- * to the one it has) with a search bound to every widget that reads the table, on the
- * table's text columns. The filters the page already has stay as they are.
+ * to the one it has) whose search is bound, as the inspector binds one, to every widget
+ * that reads a table that has text to look in. The filters the page already has stay.
  */
-export function searchEdit(context: PageContext, table: TableInfo, columns: string[]): Edit {
-  const taken = new Set(context.filters.map((one) => one.name));
-  let name = "search";
-  for (let n = 2; taken.has(name); n += 1) name = `search-${n}`;
-  const filter: PageFilter = {
-    name,
-    label: `Search ${manyOf(table.name).toLowerCase()}`,
-    type: "search",
-  };
-  const filters = [...context.filters, filter];
-  const bound = context.widgets.map((one) => bindSearch(one, name, table.name, columns));
-  const widgets = withFilters(bound, filters, widgetRegistry());
+export function searchEdit(context: PageContext, table: TableInfo, catalog: Catalog): Edit {
+  const filter = newSearch(
+    table.name,
+    context.filters.map((one) => one.name),
+  );
+  const definition = widgetRegistry().get(FILTER_WIDGET);
+  const widgets = bindHolderFilters(
+    withPageFilters(context.widgets, [filter], definition, catalog),
+    [filter],
+    catalog,
+  );
   const holder = filterWidgets(widgets, widgetRegistry())[0];
   return {
     widgets,
-    filters,
     addPages: [],
     ...(holder ? { select: holder.id } : {}),
-    told: `A search bar is added at the top, looking in ${columns.join(", ")} of ${manyOf(table.name)}.`,
+    told: `A search bar is added at the top, looking in the text of ${manyOf(table.name)}.`,
   };
 }
 
@@ -132,7 +112,7 @@ export function wrapInSection(
   if (!first) return undefined;
   const top = Math.min(...held.map((one) => one.at.y));
   const bottom = Math.max(...held.map((one) => one.at.y + one.at.h));
-  const id = newId("core/section", widgets);
+  const id = nextId("core/section", widgets);
   const inside = new Set(held.map((one) => one.id));
   const children = widgets.filter((one) => inside.has(one.id));
   const asChildren = children.map(
@@ -179,11 +159,10 @@ export function wrapInSection(
 export function sectionEdit(context: PageContext, ids: readonly string[], title: string): Edit {
   const made = wrapInSection(context.widgets, ids, title);
   if (!made) {
-    return { widgets: [...context.widgets], filters: [...context.filters], addPages: [], told: "" };
+    return { widgets: [...context.widgets], addPages: [], told: "" };
   }
   return {
     widgets: made.widgets,
-    filters: [...context.filters],
     addPages: [],
     select: made.section.id,
     told: `${ids.length} widgets are now in a section called “${title}”.`,
@@ -229,7 +208,7 @@ export function groupButtons(
     .slice(0, GROUP_MAX);
   const first = buttons[0];
   if (!first || buttons.length < 2) return undefined;
-  const id = newId("core/actions", widgets);
+  const id = nextId("core/actions", widgets);
   const w = Math.min(
     12,
     Math.max(
@@ -267,12 +246,11 @@ export function groupButtons(
 export function groupEdit(context: PageContext, ids: readonly string[]): Edit {
   const made = groupButtons(context.widgets, ids);
   if (!made) {
-    return { widgets: [...context.widgets], filters: [...context.filters], addPages: [], told: "" };
+    return { widgets: [...context.widgets], addPages: [], told: "" };
   }
   const count = (made.group.config as { actions: unknown[] }).actions.length;
   return {
     widgets: made.widgets,
-    filters: [...context.filters],
     addPages: [],
     select: made.group.id,
     told: `${count} buttons are now one Action group.`,
@@ -299,7 +277,7 @@ export function detailActionsToGroup(
   const detail = widgets.find((one) => one.id === detailId);
   const actions = detail ? detailActionsOf(detail) : [];
   if (!detail || actions.length === 0 || actions.length > GROUP_MAX) return undefined;
-  const id = newId("core/actions", widgets);
+  const id = nextId("core/actions", widgets);
   const group: PageWidget = {
     id,
     type: "core/actions",
@@ -325,12 +303,11 @@ export function detailActionsToGroup(
 export function detailActionsEdit(context: PageContext, detailId: string): Edit {
   const made = detailActionsToGroup(context.widgets, detailId);
   if (!made) {
-    return { widgets: [...context.widgets], filters: [...context.filters], addPages: [], told: "" };
+    return { widgets: [...context.widgets], addPages: [], told: "" };
   }
   const count = (made.group.config as { actions: unknown[] }).actions.length;
   return {
     widgets: made.widgets,
-    filters: [...context.filters],
     addPages: [],
     select: made.group.id,
     told: `${count} buttons moved from the record detail to an Action group above it.`,
@@ -351,7 +328,7 @@ export function suggestedEdit(
 ): Edit {
   switch (suggestion.key) {
     case "search":
-      return searchEdit(context, table, suggestion.columns);
+      return searchEdit(context, table, catalog);
     case "group":
       return groupEdit(context, suggestion.ids);
     case "section":

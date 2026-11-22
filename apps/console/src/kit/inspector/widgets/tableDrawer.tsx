@@ -286,7 +286,8 @@ export function actionSummary(action: Action | undefined, ctx?: ActionContext): 
   const when = action.when?.length
     ? `Only when ${[...new Set(action.when.map((one) => conditionSentence(one, ctx)))].join(" and ")}`
     : undefined;
-  if (when) return when;
+  // What it waits for, and that it asks first: "Only when Status is Unpaid · Asks to confirm".
+  if (when) return action.confirm ? `${when} · asks to confirm` : when;
   if (action.confirm) return "Asks to confirm";
   const steps = action.steps.length;
   return steps ? `${steps} step${steps === 1 ? "" : "s"}` : "No steps yet";

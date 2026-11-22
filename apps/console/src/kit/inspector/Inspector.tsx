@@ -56,10 +56,10 @@ import {
   type FlowChoice,
   heading,
   isShown,
+  READS_NO_ROWS,
   type ScriptChoice,
   type TabFate,
   tabsOf,
-  READS_NO_ROWS,
   widgetName,
 } from "./model.ts";
 import { RulesTab } from "./RulesTab.tsx";
@@ -486,8 +486,8 @@ function TabBody({
   if (tab === "data" && blocks.length === 0 && READS_NO_ROWS.has(definition.type)) {
     return (
       <p className="m-0 px-1 text-body-sm text-ink-muted">
-        {definition.type === "core/actions" ? "An action group" : "A button"} reads no rows. What
-        it does is on the Actions tab.
+        {definition.type === "core/actions" ? "An action group" : "A button"} reads no rows. What it
+        does is on the Actions tab.
       </p>
     );
   }

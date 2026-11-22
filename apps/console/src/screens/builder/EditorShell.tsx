@@ -153,10 +153,11 @@ export function EditorShell({
         state={
           <>
             {onRename && !renaming ? <RenameButton onClick={() => setRenaming(true)} /> : null}
-            {pill ? <span className="max-sm:hidden">{pill}</span> : null}
+            {pill ? <span className="whitespace-nowrap max-md:hidden">{pill}</span> : null}
             <span
               role="status"
-              className={`text-body-sm max-xl:sr-only ${typeof saving === "object" ? "text-danger" : "text-ink-muted"}`}
+              title={typeof saving === "object" ? savingWords(saving, savedWords) : undefined}
+              className={`min-w-0 max-w-[26rem] truncate text-body-sm max-xl:sr-only ${typeof saving === "object" ? "text-danger" : "text-ink-muted"}`}
             >
               {savingWords(saving, savedWords)}
             </span>

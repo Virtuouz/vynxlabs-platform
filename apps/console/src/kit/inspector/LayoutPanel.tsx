@@ -11,6 +11,7 @@ import {
   type DrawerIcon,
   NumberField,
   SegmentedControl,
+  SelectField,
   TextField,
 } from "@volvel/ui";
 import type { WidgetDefinition } from "@volvel/widgets";
@@ -232,20 +233,26 @@ export function LayoutPanel(props: LayoutPanelProps) {
           <div className="flex flex-col gap-2">
             <span className="text-body-sm text-ink">On narrow screens</span>
             <div>
-              <SegmentedControl
+              <SelectField
+                name={`${widget.id}-narrow`}
                 label="On narrow screens"
-                size="small"
+                labelHidden
+                value={widget.layout?.narrow ?? "automatic"}
                 options={[
                   { value: "automatic", label: "Automatic" },
-                  { value: "keep", label: "Keep" },
+                  { value: "keep", label: "Keep the desktop layout" },
                   { value: "full", label: "Full width" },
                   { value: "stack", label: "Stack below" },
                   { value: "hide", label: "Hide" },
                 ]}
-                value={widget.layout?.narrow ?? "automatic"}
                 onChange={(next) =>
                   setLayout(
-                    { narrow: next === "automatic" ? undefined : next },
+                    {
+                      narrow:
+                        next === "automatic"
+                          ? undefined
+                          : (next as "keep" | "full" | "stack" | "hide"),
+                    },
                     "setting what narrow screens do",
                   )
                 }
@@ -264,6 +271,7 @@ export function LayoutPanel(props: LayoutPanelProps) {
               name={`${widget.id}-priority`}
               label="Priority"
               step={1}
+              placeholder="Automatic"
               value={widget.layout?.priority}
               onChange={(n) =>
                 setLayout({ priority: n }, "setting its priority", `layout-priority:${widget.id}`)

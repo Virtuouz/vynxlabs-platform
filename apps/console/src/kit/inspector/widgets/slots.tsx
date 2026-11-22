@@ -163,13 +163,7 @@ export function SlotsGroup({
             <span className="text-tag text-action" aria-hidden="true">
               {SLOT_WORDS[slot]}
             </span>
-            <span
-              className={`max-w-full truncate text-body-sm text-ink ${
-                slot === "title" ? "font-mono" : ""
-              }`}
-            >
-              {shown(slot)}
-            </span>
+            <span className="max-w-full truncate text-body-sm text-ink">{shown(slot)}</span>
           </button>
         }
       >

@@ -483,7 +483,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
       title={loaded.title}
       description={
         loaded.kind === "resource"
-          ? `A dashboard the workspace keeps, at ${loaded.path}. It is changed where resources are, and reaches production by promotion.`
+          ? `Kept by the workspace, at ${loaded.path}. You see the rows you may read.`
           : mine
             ? `Yours. Seen by: ${audience.toLowerCase()}.`
             : `${loaded.owner}'s, shared with you. You see the rows you may read.`

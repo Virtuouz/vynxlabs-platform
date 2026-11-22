@@ -15,7 +15,7 @@ export type TextLook = "plain" | "note" | "warning" | "tip";
 
 const LOOKS: { value: TextLook; label: string; face: string }[] = [
   { value: "plain", label: "Plain", face: "border border-dashed border-line-strong" },
-  { value: "note", label: "Note", face: "border border-line border-l-4 border-l-action" },
+  { value: "note", label: "Note", face: "border border-line" },
   { value: "warning", label: "Warning", face: "border border-line border-l-4 border-l-attention" },
   { value: "tip", label: "Tip", face: "border border-line border-l-4 border-l-success" },
 ];

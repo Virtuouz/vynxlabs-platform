@@ -1,7 +1,7 @@
 import { childrenOf, type PageWidget, tabsOf, topLevel } from "@volvel/manifest";
 import { isContainer } from "@volvel/manifest/parts";
 import { useFlip } from "@volvel/ui";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Link2 } from "lucide-react";
 import { type DragEvent, type KeyboardEvent, useState } from "react";
 import { nameOf, registryRoles } from "./containers.ts";
 import { reading, reordered, siblingsOf, stepped } from "./outline.ts";
@@ -141,6 +141,9 @@ export function Outline({
           {isContainer(one, registryRoles) ? (
             <Held container={one} widgets={widgets} row={row} />
           ) : null}
+          {one.type === "core/actions" ? (
+            <Buttons group={one} onSelect={() => onSelect(one.id)} />
+          ) : null}
         </li>
       ))}
     </ul>
@@ -195,6 +198,33 @@ function Held({
             </ul>
           </li>
         ))}
+    </ul>
+  );
+}
+
+/** The buttons an Action group holds, under it (board 4): choosing one chooses the group. */
+function Buttons({ group, onSelect }: { group: PageWidget; onSelect: () => void }) {
+  const buttons = Array.isArray(group.config?.actions)
+    ? (group.config.actions as { id: string; label?: string }[])
+    : [];
+  if (buttons.length === 0) return null;
+  return (
+    <ul
+      className="m-0 flex list-none flex-col gap-0.5 p-0"
+      aria-label={`Buttons of ${nameOf(group)}`}
+    >
+      {buttons.map((one) => (
+        <li key={one.id}>
+          <button
+            type="button"
+            onClick={onSelect}
+            className="flex w-full min-w-0 items-center gap-2 rounded-inner py-1 pr-2 pl-9 text-left text-body-sm text-ink hover:bg-sunken"
+          >
+            <Link2 aria-hidden="true" size={14} className="shrink-0 text-ink-muted" />
+            <span className="truncate">{one.label || one.id}</span>
+          </button>
+        </li>
+      ))}
     </ul>
   );
 }

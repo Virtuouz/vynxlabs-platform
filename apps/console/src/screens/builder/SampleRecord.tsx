@@ -51,13 +51,18 @@ export function useSampleRecords(
   };
   // A row chosen on the canvas may be past the first ones read: it is read by its own address and put first.
   const away =
-    chosen !== undefined && rows.data !== undefined && !rows.data.items.some((row) => row.id === chosen);
+    chosen !== undefined &&
+    rows.data !== undefined &&
+    !rows.data.items.some((row) => row.id === chosen);
   const one = useLoadOf<{ items: Row[] }>(
     away && table
       ? `${root}/rows/${table}?limit=1&filter=${encodeURIComponent(JSON.stringify({ column: "id", op: "eq", value: chosen }))}`
       : null,
   );
-  const items = [...(away && one.data?.items[0] ? [one.data.items[0]] : []), ...(rows.data?.items ?? [])];
+  const items = [
+    ...(away && one.data?.items[0] ? [one.data.items[0]] : []),
+    ...(rows.data?.items ?? []),
+  ];
   const current = items.find((row) => row.id === chosen) ?? items[0];
   return {
     table,

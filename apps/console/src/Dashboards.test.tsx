@@ -338,7 +338,7 @@ test("a dashboard someone else shared, or the workspace keeps, is looked at and 
     { ...mine, kind: "resource", path: "boards/stock", mine: false, shared: true },
   ];
   show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
-  await screen.findByText(/A dashboard the workspace keeps, at boards\/stock/);
+  await screen.findByText(/Kept by the workspace, at boards\/stock/);
   expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
 });
 

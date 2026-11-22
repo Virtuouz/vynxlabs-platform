@@ -39,6 +39,12 @@ const WIDTH = 330;
  * there is room in the canvas, else right, else under it.
  */
 function place(anchor: DOMRect) {
+  const at = placeAt(anchor);
+  // Never below the window: the card is about 210 px tall.
+  return { left: at.left, top: Math.max(8, Math.min(at.top, window.innerHeight - 230)) };
+}
+
+function placeAt(anchor: DOMRect) {
   const canvas = document.querySelector("[data-canvas]")?.getBoundingClientRect();
   const from = Math.max(canvas?.left ?? 0, 0) + 8;
   const to = Math.min(canvas?.right ?? window.innerWidth, window.innerWidth) - 8;

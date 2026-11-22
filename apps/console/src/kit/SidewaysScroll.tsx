@@ -27,6 +27,22 @@ export function SidewaysScroll({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ more: false, left: false, right: false });
+  // What is inside changes with each render (a tablet's width, a new widget): measured again each time.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: every render
+  useEffect(() => {
+    const element = box.current;
+    if (!element) return;
+    const more = element.scrollWidth > element.clientWidth + 24;
+    setEdges((before) =>
+      before.more === more
+        ? before
+        : {
+            more,
+            left: more && element.scrollLeft > 1,
+            right: more && element.scrollLeft + element.clientWidth < element.scrollWidth - 1,
+          },
+    );
+  });
   useEffect(() => {
     const element = box.current;
     if (!element) return;

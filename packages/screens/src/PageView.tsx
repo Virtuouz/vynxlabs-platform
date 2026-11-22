@@ -1552,6 +1552,10 @@ export function PageView({
   if (!held && !carrying?.at) resting.current = drawn;
   // It is lifted and under the pointer in the same frame, and stays there as the page is drawn again.
   useLayoutEffect(() => placement.follow());
+  const restingTall = useRef<number>(undefined);
+  useLayoutEffect(() => {
+    if (editing && !held && !carrying) restingTall.current = gridRef.current?.offsetHeight;
+  });
   // What was let go goes from where it was held to where it landed, or back.
   useLayoutEffect(() => {
     if (held) return;
@@ -1750,7 +1754,14 @@ export function PageView({
           {editing ? "Add a widget to start." : undefined}
         </EmptyState>
       ) : null}
-      <div data-canvas="" tabIndex={editing ? -1 : undefined} className="outline-none">
+      <div
+        data-canvas=""
+        tabIndex={editing ? -1 : undefined}
+        className="outline-none"
+        // While something is held the page is no shorter than it was: one that shortened under the
+        // pointer would scroll, and what is held would shrink or move by that.
+        style={held || carrying ? { minHeight: restingTall.current } : undefined}
+      >
         <WidgetGrid ctx={ctx} widgets={topLevel(drawn)} gridRef={gridRef} />
         {carrying && !carrying.at ? <Carried carrying={carrying} /> : null}
         <span role="status" className="sr-only">

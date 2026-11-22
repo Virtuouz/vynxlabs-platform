@@ -20,23 +20,48 @@ export function canonical(value: unknown): string {
   );
 }
 
+/** What differs between two versions of a widget: only where it is, only how big it is, or more. */
+function howChanged(
+  was: PageWidget,
+  now: PageWidget,
+  precise: boolean,
+): "changed" | "moved" | "resized" {
+  if (!precise) return "changed";
+  const rest = (widget: PageWidget) => {
+    const { at: _at, in: _in, ...others } = widget as PageWidget & { in?: unknown };
+    return canonical(others);
+  };
+  if (rest(was) !== rest(now)) return "changed";
+  const sameSize = was.at.w === now.at.w && was.at.h === now.at.h;
+  return sameSize ? "moved" : "resized";
+}
+
 /** How the draft differs from what people see now, widget by widget. */
-export function widgetChanges(published: InterfaceBody | undefined, draft: InterfaceBody) {
+export function widgetChanges(
+  published: InterfaceBody | undefined,
+  draft: InterfaceBody,
+  /** Say "moved" and "resized" when that is all that differs, not "changed". */
+  precise = false,
+) {
   const out: {
     page: string;
     widget: string;
     kind: string;
-    change: "added" | "changed" | "removed";
+    change: "added" | "changed" | "removed" | "moved" | "resized";
   }[] = [];
   const pagesBefore = new Map((published?.pages ?? []).map((page) => [page.id, page]));
-  const entry = (page: Page, widget: PageWidget, change: "added" | "changed" | "removed") =>
-    out.push({ page: page.title, widget: nameOfWidget(widget), kind: kindWord(widget), change });
+  const entry = (
+    page: Page,
+    widget: PageWidget,
+    change: "added" | "changed" | "removed" | "moved" | "resized",
+  ) => out.push({ page: page.title, widget: nameOfWidget(widget), kind: kindWord(widget), change });
   for (const page of draft.pages) {
     const before = new Map((pagesBefore.get(page.id)?.widgets ?? []).map((one) => [one.id, one]));
     for (const widget of page.widgets) {
       const was = before.get(widget.id);
       if (!was) entry(page, widget, "added");
-      else if (canonical(was) !== canonical(widget)) entry(page, widget, "changed");
+      else if (canonical(was) !== canonical(widget))
+        entry(page, widget, howChanged(was, widget, precise));
       before.delete(widget.id);
     }
     for (const gone of before.values()) entry(page, gone, "removed");
@@ -62,6 +87,8 @@ export function draftChanges(
   draft: InterfaceBody,
   /** Names are quoted (“Invoice detail”): where the lines stand beside other words, as the history's do. */
   quoted = false,
+  /** Say "moved" and "resized" for a widget that only was. */
+  precise = false,
 ): string[] {
   const q = (name: string) => (quoted ? `\u201c${name}\u201d` : name);
   const lines: string[] = [];
@@ -84,8 +111,14 @@ export function draftChanges(
     if (kept.map((page) => page.id).join() !== was.map((page) => page.id).join())
       lines.push("Changed the order of the pages");
   }
-  const verb = { added: "Added", changed: "Changed", removed: "Removed" } as const;
-  for (const one of widgetChanges(deployed, draft)) {
+  const verb = {
+    added: "Added",
+    changed: "Changed",
+    removed: "Removed",
+    moved: "Moved",
+    resized: "Resized",
+  } as const;
+  for (const one of widgetChanges(deployed, draft, precise)) {
     // A widget named for its kind ("Text", "Button") is not said twice: "Changed text on Money".
     const named = one.widget.toLowerCase() === one.kind ? one.kind : `${one.kind} ${q(one.widget)}`;
     lines.push(`${verb[one.change]} ${named}${one.change === "added" ? "" : ` on ${q(one.page)}`}`);
@@ -103,4 +136,20 @@ export function draftChangeCount(
   draft: InterfaceBody,
 ): number {
   return draftChanges(deployed, draft).length;
+}
+
+/**
+ * What a save changed, in a few words: "Added stat, moved table". `before` is the version it put
+ * aside and `after` what it made; a page's name is left off when the app has one page.
+ */
+export function savedWords(before: InterfaceBody, after: InterfaceBody, most = 3): string {
+  const lines = draftChanges(before, after, false, true).map((line) =>
+    after.pages.length > 1 ? line : line.replace(/ on [^,]*$/, ""),
+  );
+  if (lines.length === 0) return "No change to the pages";
+  const shown = lines
+    .slice(0, most)
+    .map((line, at) => (at === 0 ? line : line.charAt(0).toLowerCase() + line.slice(1)));
+  const more = lines.length - shown.length;
+  return `${shown.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
 }

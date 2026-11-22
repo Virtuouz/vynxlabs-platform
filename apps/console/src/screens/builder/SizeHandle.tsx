@@ -13,8 +13,11 @@ export function SizeHandle({
   onDrag,
   onSize,
   snap,
+  scale = 1,
 }: {
   size: PageSize;
+  /** How much smaller than its own width the frame is drawn: a drag on the screen is that much larger in its pixels. */
+  scale?: number;
   /** The width the frame is drawn at while it is dragged, or nothing when it is let go. */
   onDrag: (pixels: number | undefined) => void;
   onSize: (size: PageSize, key?: string) => void;
@@ -27,14 +30,14 @@ export function SizeHandle({
   const move = (event: React.PointerEvent<HTMLElement>) => {
     if (!start.current) return;
     // The frame is centred, so its edge travels half as far as the pointer does.
-    const pixels = start.current.width + 2 * (event.clientX - start.current.x);
+    const pixels = (start.current.width + 2 * (event.clientX - start.current.x)) / scale;
     const next = snap(pixels);
     setShown(next);
     onDrag(Math.max(320, pixels));
   };
   const end = (event: React.PointerEvent<HTMLElement>, keep: boolean) => {
     if (!start.current) return;
-    const pixels = start.current.width + 2 * (event.clientX - start.current.x);
+    const pixels = (start.current.width + 2 * (event.clientX - start.current.x)) / scale;
     start.current = undefined;
     setShown(undefined);
     onDrag(undefined);

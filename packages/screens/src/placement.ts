@@ -229,8 +229,11 @@ export function usePlacement({
     const node = on;
     if (!node) return undefined;
     const box = node.getBoundingClientRect();
-    const column = (box.width + GRID.gap) / GRID.columns;
-    const row = GRID.row + GRID.gap;
+    // A grid drawn scaled down (a Large sheet in a narrow canvas) is smaller on the screen than
+    // in its own pixels: a cell is that much smaller too.
+    const k = node.offsetWidth > 0 ? box.width / node.offsetWidth : 1;
+    const column = (box.width + GRID.gap * k) / GRID.columns;
+    const row = (GRID.row + GRID.gap) * k;
     return {
       x: (point.x - box.left) / column,
       y: (point.y - box.top) / row,

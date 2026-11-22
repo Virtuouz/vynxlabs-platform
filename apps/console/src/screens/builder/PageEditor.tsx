@@ -82,6 +82,7 @@ import {
   placed,
 } from "./renderer.ts";
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
+import { ScaledFrame } from "./ScaledFrame.tsx";
 import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
 import { approvalsSuggestion } from "./selectorData.ts";
@@ -488,7 +489,17 @@ export function PageEditor({
       .filter((one) => !next.some((other) => other.id === one.id))
       .reduce((list, gone) => unbindDeclared(list, gone), next);
     const { widgets: kept, orphans } = withoutOrphans(kept0);
-    if (orphans.length === 0) return put(kept0, label);
+    if (orphans.length === 0) {
+      // Its own Delete key: no question, and Undo is one press away, said and reachable.
+      const gone = widgets.filter((one) => !next.some((other) => other.id === one.id));
+      put(kept0, label);
+      if (gone.length > 0) {
+        notify.success(`Removed ${removalWords(gone)}.`, {
+          action: { label: "Undo", onClick: shell.history.undo },
+        });
+      }
+      return;
+    }
     const ids = new Set(next.map((one) => one.id));
     const container = widgets.find((one) => !ids.has(one.id) && one.id === orphans[0]?.in?.widget);
     const words = removalWords(container ? [container, ...orphans] : orphans);
@@ -573,6 +584,15 @@ export function PageEditor({
       : kindWidth !== undefined
         ? Math.min(kindWidth, frame?.width ?? kindWidth)
         : frame?.width;
+  // A sheet, a modal or a tablet is drawn at its true width, scaled down to the room there is (and
+  // the scale said), not cut to it: Large, Extra large and Full can then be told from each other.
+  const trueWidth =
+    overlay || device === "tablet"
+      ? dragged !== undefined
+        ? dragged
+        : Math.min(kindWidth ?? window.innerWidth, frame?.width ?? Number.POSITIVE_INFINITY)
+      : undefined;
+  const scaled = trueWidth !== undefined && Number.isFinite(trueWidth);
   // What the renderer is told beyond the data (phase 26): the page's record, and what its steps open.
   const opens = pageInfo
     ? {
@@ -603,159 +623,181 @@ export function PageEditor({
         <DeviceBanner device={device} changed={changedByHand(widgets, device)} />
       ) : null}
       {layout?.viewAs ? <ViewAsNote name={layout.viewAs.name} /> : null}
-      <div
-        // A row of the table clicked on the canvas is the record its sheet is previewed with.
-        onClickCapture={(event) => {
+      {(() => {
+        const sizeHandle = (scale: number) =>
+          overlay && pageInfo ? (
+            <SizeHandle
+              size={size}
+              scale={scale}
+              onDrag={setDragged}
+              onSize={(next, key) =>
+                pageInfo.onPage(
+                  withSize(pageInfo.page, next),
+                  `making ${pageInfo.page.title} ${SIZE_NAMES[next].toLowerCase()}`,
+                  key,
+                )
+              }
+              snap={snapSize}
+            />
+          ) : null;
+        const clicked = (event: React.MouseEvent<HTMLElement>) => {
           if (!rowSheet) return;
           const row = (event.target as HTMLElement).closest<HTMLElement>("[data-record]");
           const cell = row?.closest("[data-widget-cell]");
           if (row?.dataset.record && cell?.getAttribute("data-widget-cell") === rowSheet.id) {
             setPicked((before) => ({ id: row.dataset.record as string, n: (before?.n ?? 0) + 1 }));
           }
-        }}
-        className={overlay ? "relative mx-auto" : "relative"}
-        style={overlay && width ? { maxWidth: `${width}px` } : undefined}
-      >
-        {rowSheet && pageInfo && inspectorTab === "actions" && !previewHidden.has(rowSheet.id) ? (
-          <SheetPreviewHost
-            key={rowSheet.page.id}
-            root={root}
-            source={source}
-            page={rowSheet.page}
-            pages={pageInfo.pages}
-            catalog={catalog}
-            pick={picked}
-            onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
-            onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
-          />
-        ) : null}
-        <PhoneFrame
-          on={device === "phone" && !overlay && width !== undefined}
-          title={pageInfo?.page.title ?? ""}
-          width={width ?? 390}
-        >
-          <div
-            data-preview={frame?.name}
-            data-page-kind={kind ?? "page"}
-            data-page-size={overlay ? size : undefined}
-            className={`mx-auto overflow-x-auto bg-canvas ${device === "phone" && !overlay ? "" : frame ? "rounded-panel border border-line p-3" : "rounded-panel p-3"} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
-            style={
-              width && !overlay && device !== "phone"
-                ? {
-                    maxWidth: `${width}px`,
-                    ...(device === "tablet" ? { minWidth: `${width}px` } : {}),
-                  }
-                : device === "desktop" && !overlay
-                  ? // The desktop layout is drawn at a desktop's width, scrolled in a narrow canvas, never as the phone's.
-                    { minWidth: `${DESKTOP_MIN}px` }
-                  : undefined
-            }
-          >
-            {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
-            <div
-              data-column-guides=""
-              className={device === "phone" ? undefined : "relative isolate"}
+        };
+        const framed = (
+          <>
+            {rowSheet &&
+            pageInfo &&
+            inspectorTab === "actions" &&
+            !previewHidden.has(rowSheet.id) ? (
+              <SheetPreviewHost
+                key={rowSheet.page.id}
+                root={root}
+                source={source}
+                page={rowSheet.page}
+                pages={pageInfo.pages}
+                catalog={catalog}
+                pick={picked}
+                onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
+                onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
+              />
+            ) : null}
+            <PhoneFrame
+              on={device === "phone" && !overlay && width !== undefined}
+              title={pageInfo?.page.title ?? ""}
+              width={width ?? 390}
             >
-              {device === "phone" ? null : (
-                <>
-                  <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 -z-10"
-                    style={GUIDE_BANDS}
-                  />
-                  <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 -z-10"
-                    style={GUIDE_LINES}
-                  />
-                </>
-              )}
-              {widgets.length === 0 ? (
-                <EmptyState
-                  title="Nothing on this page yet"
-                  action={
-                    readOnly ? undefined : (
-                      <span className="flex flex-wrap items-center justify-center gap-2">
-                        <Button variant="primary" onClick={() => setAdding(true)}>
-                          <Plus aria-hidden="true" size={16} /> Add to page
-                        </Button>
-                        {starts.map((one) => (
-                          <Button
-                            key={one.key}
-                            variant="secondary"
-                            onClick={() => pickNext(one.key)}
-                          >
-                            {one.label}
-                          </Button>
-                        ))}
-                      </span>
-                    )
-                  }
+              <div
+                data-preview={frame?.name}
+                data-page-kind={kind ?? "page"}
+                data-page-size={overlay ? size : undefined}
+                className={`mx-auto overflow-x-auto bg-canvas ${device === "phone" && !overlay ? "" : frame ? "rounded-panel border border-line p-3" : "rounded-panel p-3"} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
+                style={
+                  width && !overlay && device !== "phone"
+                    ? {
+                        maxWidth: `${width}px`,
+                        ...(device === "tablet" ? { minWidth: `${width}px` } : {}),
+                      }
+                    : device === "desktop" && !overlay
+                      ? // The desktop layout is drawn at a desktop's width, scrolled in a narrow canvas, never as the phone's.
+                        { minWidth: `${DESKTOP_MIN}px` }
+                      : undefined
+                }
+              >
+                {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
+                <div
+                  data-column-guides=""
+                  className={device === "phone" ? undefined : "relative isolate"}
                 >
-                  Add a table, a chart or a number. What you see is drawn from this workspace's
-                  rows, as you may read them.
-                </EmptyState>
-              ) : (
-                <PageView
-                  widgets={widgets}
-                  filters={filters}
-                  registry={views}
-                  client={client}
-                  filterValues={filterValues}
-                  onFilterValues={setFilterValues}
-                  {...(refreshKey !== undefined ? { refreshKey } : {})}
-                  {...opens}
-                  device={device}
-                  groupNames={groupNames}
-                  {...(layout?.viewAs ? { viewAs: layout.viewAs } : {})}
-                  editing={{
-                    readOnly,
-                    selected,
-                    onSelect,
-                    onChange: fromCanvas,
-                    ...(layout?.askLayout ? { askLayout: layout.askLayout } : {}),
-                    onRename: (id, title) =>
-                      put(
-                        widgets.map((one) => (one.id === id ? { ...one, title } : one)),
-                        "renaming a widget",
-                        `title:${id}`,
-                      ),
-                    onColumn: (id, column) => {
-                      onSelect(id);
-                      // A heading clicked opens its column in the drawer's Display tab.
-                      setInspectorTab("display");
-                      requestColumn(id, column);
-                    },
-                    ...(readOnly
-                      ? {}
-                      : {
-                          onEditText: (id: string) => {
-                            onSelect(id);
-                            setWriting(id);
-                          },
-                        }),
-                    carrying,
-                  }}
-                />
-              )}
+                  {device === "phone" ? null : (
+                    <>
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 -z-10"
+                        style={GUIDE_BANDS}
+                      />
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 -z-10"
+                        style={GUIDE_LINES}
+                      />
+                    </>
+                  )}
+                  {widgets.length === 0 ? (
+                    <EmptyState
+                      title="Nothing on this page yet"
+                      action={
+                        readOnly ? undefined : (
+                          <span className="flex flex-wrap items-center justify-center gap-2">
+                            <Button variant="primary" onClick={() => setAdding(true)}>
+                              <Plus aria-hidden="true" size={16} /> Add to page
+                            </Button>
+                            {starts.map((one) => (
+                              <Button
+                                key={one.key}
+                                variant="secondary"
+                                onClick={() => pickNext(one.key)}
+                              >
+                                {one.label}
+                              </Button>
+                            ))}
+                          </span>
+                        )
+                      }
+                    >
+                      Add a table, a chart or a number. What you see is drawn from this workspace's
+                      rows, as you may read them.
+                    </EmptyState>
+                  ) : (
+                    <PageView
+                      widgets={widgets}
+                      filters={filters}
+                      registry={views}
+                      client={client}
+                      filterValues={filterValues}
+                      onFilterValues={setFilterValues}
+                      {...(refreshKey !== undefined ? { refreshKey } : {})}
+                      {...opens}
+                      device={device}
+                      groupNames={groupNames}
+                      {...(layout?.viewAs ? { viewAs: layout.viewAs } : {})}
+                      editing={{
+                        readOnly,
+                        selected,
+                        onSelect,
+                        onChange: fromCanvas,
+                        ...(layout?.askLayout ? { askLayout: layout.askLayout } : {}),
+                        onRename: (id, title) =>
+                          put(
+                            widgets.map((one) => (one.id === id ? { ...one, title } : one)),
+                            "renaming a widget",
+                            `title:${id}`,
+                          ),
+                        onColumn: (id, column) => {
+                          onSelect(id);
+                          // A heading clicked opens its column in the drawer's Display tab.
+                          setInspectorTab("display");
+                          requestColumn(id, column);
+                        },
+                        ...(readOnly
+                          ? {}
+                          : {
+                              onEditText: (id: string) => {
+                                onSelect(id);
+                                setWriting(id);
+                              },
+                            }),
+                        carrying,
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            </PhoneFrame>
+          </>
+        );
+        return scaled && trueWidth !== undefined ? (
+          <ScaledFrame width={trueWidth} handle={sizeHandle}>
+            {/* A row of the table clicked on the canvas is the record its sheet is previewed with. */}
+            <div onClickCapture={clicked} className="relative">
+              {framed}
             </div>
+          </ScaledFrame>
+        ) : (
+          <div
+            onClickCapture={clicked}
+            className={overlay ? "relative mx-auto" : "relative"}
+            style={overlay && width ? { maxWidth: `${width}px` } : undefined}
+          >
+            {framed}
+            {sizeHandle(1)}
           </div>
-        </PhoneFrame>
-        {overlay && pageInfo ? (
-          <SizeHandle
-            size={size}
-            onDrag={setDragged}
-            onSize={(next, key) =>
-              pageInfo.onPage(
-                withSize(pageInfo.page, next),
-                `making ${pageInfo.page.title} ${SIZE_NAMES[next].toLowerCase()}`,
-                key,
-              )
-            }
-            snap={snapSize}
-          />
-        ) : null}
-      </div>
+        );
+      })()}
     </>
   );
 

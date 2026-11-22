@@ -137,9 +137,9 @@ export function DetailDataSection({ env }: { env: Env }) {
 
 export function DetailDisplaySection({ env }: { env: Env }) {
   const across = typeof env.config.across === "number" ? env.config.across : 2;
-  // Which column names the record, and which is its status: two rows of their own.
+  // Which column names the record, which is its big figure and which its status: rows of their own.
   const named = configSettings(env.definition, "display").filter(
-    (one) => one.name === "heading" || one.name === "status",
+    (one) => one.name === "heading" || one.name === "figure" || one.name === "status",
   );
   return (
     <>
@@ -147,7 +147,7 @@ export function DetailDisplaySection({ env }: { env: Env }) {
       {named.length > 0 ? (
         <Group
           label="Record header"
-          note="The column that names the record, and the one drawn as its status."
+          note="What names the record, what is written large under it, and what is drawn as its status."
         >
           {named.map((setting) => (
             <SettingRow key={setting.name} env={env} setting={setting} />

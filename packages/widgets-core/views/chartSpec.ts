@@ -1,5 +1,5 @@
 import { SURFACE } from "@volvel/ui";
-import type { SummaryData } from "@volvel/widgets";
+import { choiceWords, type SummaryData } from "@volvel/widgets";
 import { axisFormat, labelOf, numberOf, type ValueFormat } from "./format.ts";
 
 export interface ChartConfig {
@@ -211,8 +211,11 @@ export function orderRows(
 export function chartFor(
   config: ChartConfig,
   data: SummaryData,
-  /** How wide the chart is drawn, when it is known: bars and labels are sized by it. */
-  room: { width?: number } = {},
+  /**
+   * How big the chart is drawn, when it is known, and how wide a text is on it: bars and labels
+   * are sized by it, and a label is tilted or cut short only when it is measured not to fit.
+   */
+  room: { width?: number; height?: number; measure?: (text: string) => number } = {},
 ): { spec: object; rows: Record<string, unknown>[]; description: string } {
   const mark = config.mark ?? "bar";
   const typeOf = (name: string) => data.columns.find((column) => column.name === name)?.type;
@@ -247,12 +250,30 @@ export function chartFor(
     }
     return copy;
   });
+  // A series, and a category that is a choice, are named as people read them ("No show"), by the
+  // choice's own label. The rows keep the stored value, which is what a click on a mark gives.
+  const infoOf = (name: string | undefined) => data.columns.find((c) => c.name === name);
+  const nameField = (name: string | undefined, always: boolean): string | undefined => {
+    if (name === undefined || TEMPORAL.has(typeOf(name) ?? "") || typeOf(name) === "number") {
+      return name;
+    }
+    const info = infoOf(name);
+    if (!always && info?.type !== "enum") return name;
+    const field = `${name}_label`;
+    for (const row of rows) {
+      const value = row[name];
+      if (value !== null && value !== undefined) row[field] = choiceWords(info, value);
+    }
+    return field;
+  };
   if (temporal && config.fillGaps && mark !== "scatter" && mark !== "heatmap") {
     rows = fillGapsIn(rows, x, measured, several ? undefined : series);
   } else if (!temporal && config.order && (mark === "bar" || mark === "pie")) {
     rows = orderRows(rows, x, measured, config.order);
   }
 
+  const xField = nameField(x, false) ?? x;
+  const seriesField = nameField(series, true);
   const palette = config.colors && config.colors !== "theme" ? PALETTES[config.colors] : undefined;
   const scale = palette ? { scale: { range: palette } } : {};
   const named = config.axisTitles === true;
@@ -272,8 +293,12 @@ export function chartFor(
   const count = new Set(rows.map((row) => String(row[x]))).size;
   const plot = Math.max(120, (room.width ?? 560) - 56);
   const band = plot / Math.max(1, count);
-  const longest = Math.max(0, ...rows.map((row) => String(row[x] ?? "").replace(/_/g, " ").length));
-  const tilted = !temporal && typeOf(x) !== "number" && count > 1 && longest * 5.2 > band * 0.96;
+  const wide = room.measure ?? ((text: string) => text.length * 5.6);
+  const longest = Math.max(
+    0,
+    ...rows.map((row) => wide(String(row[xField] ?? "").replace(/_/g, " "))),
+  );
+  const tilted = !temporal && typeOf(x) !== "number" && count > 1 && longest > band * 0.92;
   const words = "replace(datum.label, regexp('_', 'g'), ' ')";
   const categoryAxis = {
     labelAngle: tilted ? -45 : 0,
@@ -286,17 +311,22 @@ export function chartFor(
     grid: false,
   };
   // Where a bar is, and how much room there is round it: not fatter than a bar of the boards.
-  const spacing = config.horizontal === true ? 0.45 : Math.min(0.75, Math.max(0.3, 1 - 56 / band));
-  // A few periods are each named, by the day they begin: not ticked on hours the data does not have.
-  const few = temporal && rows.length <= 12 && mark !== "scatter";
-  const dayAxis = { labelOverlap: true, format: "%b %-d", grid: false };
+  const lyingBars = mark === "bar" && config.horizontal === true;
+  const across = lyingBars ? Math.max(60, (room.height ?? 260) - 40) / Math.max(1, count) : band;
+  const spacing = lyingBars
+    ? Math.min(0.8, Math.max(0.35, 1 - 24 / across))
+    : Math.min(0.75, Math.max(0.3, 1 - 56 / band));
+  // Periods are each named, by the day they begin: not ticked on hours the data does not have.
+  // Bars over time are always so, or they have no room between them.
+  const few = temporal && (rows.length <= 12 || mark === "bar") && mark !== "scatter";
+  const dayAxis = { labelOverlap: "parity", format: "%b %-d", grid: false };
   const legend =
     config.legend === "hidden"
       ? { legend: null }
       : { legend: { title: null, labelExpr: "replace(datum.label, regexp('_', 'g'), ' ')" } };
   const description = `${mark} chart of ${measured.map(title).join(", ")} by ${[x, ...others].map(title).join(" and ")}`;
   const xEncoding = {
-    field: x,
+    field: xField,
     type:
       mark === "scatter"
         ? typeOf(x) === "number" || typeOf(x) === "integer"
@@ -318,7 +348,7 @@ export function chartFor(
           sort: null,
           axis: {
             labelAngle: 0,
-            labelOverlap: "greedy",
+            labelOverlap: "parity",
             grid: false,
             labelExpr: "utcFormat(toDate(datum.value), '%b %-d')",
           },
@@ -339,14 +369,14 @@ export function chartFor(
         mark: { type: "rect", tooltip: true },
         encoding: {
           x: {
-            field: x,
+            field: xField,
             type: "ordinal",
             title: named ? title(x) : null,
             sort: null,
             axis: { labelAngle: 0, grid: false },
           },
           y: {
-            field: down,
+            field: nameField(series, true) ?? down,
             type: "ordinal",
             title: named ? title(down) : null,
             sort: null,
@@ -380,13 +410,25 @@ export function chartFor(
             ...(axis ? { format: axis.format } : {}),
           },
           color: {
-            field: x,
+            field: xField,
             type: "nominal",
             title: title(x),
             ...scale,
+            // Beside the pie where there is room, under it where there is not.
             ...(config.legend === "hidden"
               ? legend
-              : { legend: { ...legend.legend, orient: "right", direction: "vertical" } }),
+              : {
+                  legend: {
+                    ...legend.legend,
+                    ...((room.width ?? 600) < 420
+                      ? {
+                          orient: "bottom",
+                          direction: "horizontal",
+                          columns: (room.width ?? 600) < 300 ? 2 : 3,
+                        }
+                      : { orient: "right", direction: "vertical" }),
+                  },
+                }),
           },
         },
       },
@@ -409,7 +451,7 @@ export function chartFor(
           ...(series
             ? {
                 color: {
-                  field: series,
+                  field: seriesField,
                   type: "nominal",
                   title: title(series),
                   ...scale,
@@ -422,7 +464,11 @@ export function chartFor(
     };
   }
 
-  const colour = several ? "series" : series;
+  const lone =
+    rows.length === 1 && (mark === "line" || mark === "area")
+      ? (numberOf(rows[0]?.[y]) ?? 0)
+      : undefined;
+  const colour = several ? "series" : seriesField;
   const value = several ? "value" : y;
   const grouped = mark === "bar" && colour && config.bars === "grouped";
   const drawing = mark === "line" || mark === "area";
@@ -447,6 +493,10 @@ export function chartFor(
         type: "quantitative",
         title: several || !named ? (named ? "" : null) : yTitle,
         axis: valueAxis,
+        // One point alone has nothing to be measured against: the scale gives it room.
+        ...(lone && lone !== 0
+          ? { scale: { domain: lone > 0 ? [0, lone * 1.4] : [lone * 1.4, 0] } }
+          : {}),
         ...(mark === "bar" && colour ? { stack: grouped ? null : true } : {}),
       },
       ...(colour
@@ -464,7 +514,7 @@ export function chartFor(
     },
     ...(several ? { transform: [{ fold: measured, as: ["series", "value"] }] } : {}),
   };
-  const lying = mark === "bar" && config.horizontal === true;
+  const lying = lyingBars;
   const drawn = lying
     ? (() => {
         const { x: across, y: up, xOffset, ...rest } = base.encoding as Record<string, unknown>;
@@ -518,7 +568,11 @@ export function chartFor(
       },
     });
   }
-  if (config.values && mark === "bar") {
+  // The figures on the bars are written only where they fit: a bar narrower than its figure has none.
+  const seriesCount = grouped ? new Set(rows.map((row) => String(row[colour ?? ""]))).size : 1;
+  const barPx = lying ? 99 : (band / Math.max(1, seriesCount)) * (1 - spacing);
+  const figure = wide(`${axis ? "$" : ""}${Math.round(biggest).toLocaleString("en-US")}`) + 4;
+  if (config.values && mark === "bar" && barPx >= figure) {
     // The value on each bar: above it, beside it when it lies down, inside its part of a stack.
     const { color: _color, ...place } = drawn.encoding as Record<string, unknown>;
     layers.push({

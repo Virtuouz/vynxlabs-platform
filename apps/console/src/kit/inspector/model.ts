@@ -77,11 +77,6 @@ export function withSystemColumns(columns: CatalogColumn[]): CatalogColumn[] {
   return [...SYSTEM.filter((column) => !have.has(column.name)), ...columns];
 }
 
-/**
- * What a choice is called to people: the label the table's definition gives it, else the value
- * with its first letter raised (`paid` is "Paid", `no_show` is "No show"). One word for it
- * wherever a drawer lists or says a choice.
- */
 /** Whether a column holds a few named things: a choice, a yes or no, or text the server counted to a dozen values. */
 export function isChoiceLike(column: CatalogColumn | undefined): boolean {
   if (!column) return false;
@@ -96,10 +91,8 @@ export function isChoiceLike(column: CatalogColumn | undefined): boolean {
   );
 }
 
-export function choiceWords(column: CatalogColumn | undefined, value: string): string {
-  const given = column?.values?.find((one) => one.value === value)?.label;
-  return given ?? heading(value);
-}
+/** What a choice is called to people: the widgets' own words for it, so a drawer says it as the page does. */
+export { choiceWords } from "@volvel/widgets";
 
 /** A column's name as a heading: `customer_id` as "Customer id". */
 export function heading(name: string): string {

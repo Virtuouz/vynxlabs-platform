@@ -154,6 +154,18 @@ export function Frame({
   const asked = Object.values(reading.read ?? {}).find((wire) => wire.shape === "approvals");
   const waiting = asked?.shape === "approvals" ? asked.waiting.length : 0;
   const moreWaiting = asked?.shape === "approvals" && asked.more;
+  // The body is a stop for the keyboard only while it scrolls, so that it can be scrolled by keys.
+  const [scrolls, setScrolls] = useState(false);
+  const watching = useRef<ResizeObserver | undefined>(undefined);
+  const watch = (node: HTMLDivElement | null) => {
+    watching.current?.disconnect();
+    if (!node || typeof ResizeObserver !== "function") return;
+    const look = () => setScrolls(node.scrollHeight > node.clientHeight + 3);
+    watching.current = new ResizeObserver(look);
+    watching.current.observe(node);
+    for (const child of Array.from(node.children)) watching.current.observe(child);
+    look();
+  };
   const heading = bare
     ? false
     : widget.title || widget.subtitle || controls || (building && (selected || opens));
@@ -262,7 +274,8 @@ export function Frame({
       ) : null}
       <HeadingSlot.Provider value={slot}>
         <div
-          tabIndex={tabbable && !container ? 0 : undefined}
+          ref={watch}
+          tabIndex={tabbable && !container && scrolls ? 0 : undefined}
           aria-busy={reading.stale ? true : undefined}
           className={`flex min-h-0 flex-1 flex-col ${container ? "" : "gap-2 overflow-auto"} ${bare ? "justify-center" : container ? "" : "px-[14px] pb-[14px]"} outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
             bare || container ? "" : heading ? "pt-[10px]" : "pt-[14px]"

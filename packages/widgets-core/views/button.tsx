@@ -44,7 +44,9 @@ export function ButtonView({
         <Button
           variant={variant}
           tabIndex={-1}
-          aria-disabled="true"
+          // Drawn at full strength, as the boards draw it: pressing it only chooses the widget.
+          data-inert=""
+          onClick={(event) => event.preventDefault()}
           className={`cursor-default ${width}`}
         >
           {content}

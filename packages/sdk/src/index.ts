@@ -1219,7 +1219,6 @@ export function defineDashboard(options: DashboardOptions): ResourceDefinition {
         title: options.title,
         description: options.description,
         refresh: options.refresh,
-        filters: options.filters,
         widgets: options.widgets,
       }),
     3,

@@ -799,9 +799,20 @@ describe("a member's own dashboards", () => {
   let dev: string;
   let id: string;
   const base = () => `/tenants/${tenant}/workspaces/${dev}/dashboards`;
+  // The filters are a Search and filter widget's, after the others.
   const board = (widgets: object[], filters: object[] = []) => ({
-    ...(filters.length > 0 ? { filters } : {}),
-    widgets,
+    widgets:
+      filters.length > 0
+        ? [
+            ...widgets,
+            {
+              id: "filters",
+              type: "core/filter",
+              at: { x: 0, y: 30, w: 12, h: 2 },
+              config: { filters: filters },
+            },
+          ]
+        : widgets,
   });
   const held = {
     id: "held",
@@ -1125,8 +1136,13 @@ describe("a member's own dashboards", () => {
     const saved = await mona.put(`${base()}/${trends}`, {
       body: {
         refresh: 15,
-        filters: [{ name: "added", type: "date_range" }],
         widgets: [
+          {
+            id: "filters",
+            type: "core/filter",
+            at: { x: 0, y: 30, w: 12, h: 2 },
+            config: { filters: [{ name: "added", type: "date_range" }] },
+          },
           {
             id: "items",
             type: "core/stat",
@@ -1152,7 +1168,7 @@ describe("a member's own dashboards", () => {
     });
     expect(saved.status, JSON.stringify(saved.body)).toBe(200);
     // Kept as it was placed, with how often it refreshes.
-    expect(saved.body.body.widgets[0].at).toEqual(at);
+    expect(saved.body.body.widgets[1].at).toEqual(at);
     expect(saved.body.body.refresh).toBe(15);
     const read = (widget: string) =>
       mona.get(

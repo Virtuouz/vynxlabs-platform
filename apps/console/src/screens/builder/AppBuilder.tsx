@@ -1,4 +1,10 @@
-import { type InterfaceBody, MAX_PAGES } from "@volvel/manifest";
+import {
+  filtersOf,
+  type InterfaceBody,
+  MAX_PAGES,
+  widgetRegistry,
+  withFilters,
+} from "@volvel/manifest";
 import { Button, Notice, TextField } from "@volvel/ui";
 import { Monitor, Smartphone, Tablet } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -357,7 +363,7 @@ export function AppBuilder({
           surface="app"
           source={{ of: "interface", path, page: page.id }}
           draft
-          value={{ widgets: page.widgets, filters: page.filters ?? [] }}
+          value={{ widgets: page.widgets, filters: filtersOf(page.widgets) }}
           selected={selected}
           onSelect={(id) => {
             setSelected(id);
@@ -436,9 +442,8 @@ export function AppBuilder({
               (draft) => {
                 const target = draft.pages.find((one) => one.id === page.id);
                 if (!target) return;
-                target.widgets = next.widgets;
-                if (next.filters.length > 0) target.filters = next.filters;
-                else delete target.filters;
+                // The page's filters are kept by its Search and filter widget.
+                target.widgets = withFilters(next.widgets, next.filters, widgetRegistry());
                 // What the change also made: the sheet a click opens, the modal a button opens.
                 for (const added of next.addPages ?? []) {
                   if (

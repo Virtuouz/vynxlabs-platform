@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import type { InterfaceBody } from "@volvel/manifest";
+import { filtersOf, type InterfaceBody } from "@volvel/manifest";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { InterfaceBuilder } from "./screens/builder/AppBuilder.tsx";
 import { KIND_LINE, pageLine, withKind } from "./screens/builder/pageKinds.ts";
@@ -372,15 +372,17 @@ test("Add to page suggests what follows from the table the page shows, each corr
   next = await suggestions();
   expect(next.queryByRole("button", { name: "Mark paid button" })).toBeNull();
   fireEvent.click(next.getByRole("button", { name: "Status filter" }));
-  await saved((body) => (body.pages[0]?.filters ?? []).length === 1);
-  expect(pageOf("money")?.filters?.[0]).toEqual({
+  await saved((body) => filtersOf(body.pages[0]?.widgets ?? []).length === 1);
+  expect(filtersOf(pageOf("money")?.widgets ?? [])[0]).toEqual({
     name: "status",
     label: "Status",
     type: "choice",
     from: { table: "invoices", column: "status" },
   });
   // The table is narrowed by it.
-  expect(pageOf("money")?.widgets[0]?.data?.rows?.filters).toEqual([
+  expect(
+    pageOf("money")?.widgets.find((one) => one.type === "core/table")?.data?.rows?.filters,
+  ).toEqual([
     { filter: "status", column: "status" },
   ]);
 });

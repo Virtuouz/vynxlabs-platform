@@ -13,9 +13,13 @@ test("the registry holds each type with its definition and its view", () => {
     "core/detail",
     "core/form",
     "core/button",
+    "core/actions",
     "core/stat",
     "core/chart",
     "core/pivot",
+    "core/section",
+    "core/tabs",
+    "core/filter",
     "core/text",
   ]);
   expect(registry.get("core/chart")?.definition.title).toBe("Chart");

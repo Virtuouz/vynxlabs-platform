@@ -12,21 +12,27 @@ body:
   description: Loans out, by month, status and kind
   # How often it asks again while it is on show, in minutes: off, 1, 5, 15 or 60.
   refresh: 15
-  filters:
-    - name: lent
-      label: Checked out
-      type: date_range
-      default: last_90_days
-    - name: kind
-      label: Kind
-      type: choice
-      from: { table: devices, column: kind }
   widgets:
+    # The filters whoever reads it sets: every widget bound to one follows it.
+    - id: filters
+      type: core/filter
+      at: { x: 0, y: 0, w: 12, h: 2 }
+      config:
+        reset: true
+        filters:
+        - name: lent
+          label: Checked out
+          type: date_range
+          default: last_90_days
+        - name: kind
+          label: Kind
+          type: choice
+          from: { table: devices, column: kind }
     - id: lent
       type: core/stat
       title: Loans
       subtitle: Checked out in the range
-      at: { x: 0, y: 0, w: 3, h: 4 }
+      at: { x: 0, y: 2, w: 3, h: 4 }
       data:
         value:
           source:
@@ -45,7 +51,7 @@ body:
     - id: out
       type: core/stat
       title: Still out
-      at: { x: 3, y: 0, w: 3, h: 4 }
+      at: { x: 3, y: 2, w: 3, h: 4 }
       data:
         value:
           source:
@@ -59,7 +65,7 @@ body:
       type: core/stat
       title: Overdue
       subtitle: Still out past the day they were due
-      at: { x: 6, y: 0, w: 3, h: 4 }
+      at: { x: 6, y: 2, w: 3, h: 4 }
       data:
         value:
           source:
@@ -80,7 +86,7 @@ body:
     - id: by-kind
       type: core/chart
       title: Loans by kind
-      at: { x: 9, y: 0, w: 3, h: 9 }
+      at: { x: 9, y: 2, w: 3, h: 9 }
       data:
         rows:
           source:
@@ -96,7 +102,7 @@ body:
       type: core/chart
       title: Checkouts, weekly
       subtitle: The dashed line is the period before
-      at: { x: 0, y: 4, w: 9, h: 7 }
+      at: { x: 0, y: 6, w: 9, h: 7 }
       data:
         rows:
           source:
@@ -113,7 +119,7 @@ body:
       type: core/chart
       title: Kind by status
       subtitle: Darker is more loans
-      at: { x: 9, y: 9, w: 3, h: 6 }
+      at: { x: 9, y: 11, w: 3, h: 6 }
       data:
         rows:
           source:
@@ -127,7 +133,7 @@ body:
     - id: performance
       type: core/table
       title: By kind
-      at: { x: 0, y: 11, w: 9, h: 6 }
+      at: { x: 0, y: 13, w: 9, h: 6 }
       data:
         rows:
           source:
@@ -148,7 +154,7 @@ body:
     - id: by-month
       type: core/pivot
       title: Loans by month and status
-      at: { x: 0, y: 17, w: 12, h: 7 }
+      at: { x: 0, y: 19, w: 12, h: 7 }
       data:
         rows:
           source:
@@ -165,7 +171,7 @@ body:
     - id: saved
       type: core/table
       title: By month and kind, from the saved query
-      at: { x: 0, y: 24, w: 12, h: 7 }
+      at: { x: 0, y: 26, w: 12, h: 7 }
       data:
         rows:
           source:

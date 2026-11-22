@@ -3,6 +3,9 @@ import {
   type DashboardBody,
   type DashboardRefresh,
   DEFAULT_DASHBOARD_REFRESH,
+  filtersOf,
+  widgetRegistry,
+  withFilters,
 } from "@volvel/manifest";
 import {
   Button,
@@ -440,18 +443,14 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           link={link}
           surface="dashboard"
           source={{ of: "dashboard", id }}
-          value={{ widgets: body.widgets, filters: body.filters ?? [] }}
+          value={{ widgets: body.widgets, filters: filtersOf(body.widgets) }}
           selected={selected}
           onSelect={setSelected}
           refreshKey={refreshKey}
           onChange={(next, label, key) => {
             history.record(label, key);
-            const { filters: _before, ...rest } = body;
-            keep({
-              ...rest,
-              widgets: next.widgets,
-              ...(next.filters.length > 0 ? { filters: next.filters } : {}),
-            });
+            // The dashboard's filters are kept by its Search and filter widget.
+            keep({ ...body, widgets: withFilters(next.widgets, next.filters, widgetRegistry()) });
           }}
           shell={{
             title: loaded.title,
@@ -542,7 +541,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
       ) : (
         <PageView
           widgets={body.widgets}
-          filters={body.filters ?? []}
+          filters={filtersOf(body.widgets)}
           registry={views}
           client={client}
           filterValues={filterValues}

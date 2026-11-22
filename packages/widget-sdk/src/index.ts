@@ -139,6 +139,10 @@ export const CONTROLS = [
   "actions",
   /** A page of the interface, chosen by name. */
   "page",
+  /** A container's tabs, in order, each with its title (Tabs'). */
+  "tabs",
+  /** The filters whoever reads the page sets, each with its type and what it offers (Search and filter's). */
+  "pageFilters",
   /** Fields of a table, in order, each with its label and help (a form's, a record detail's). */
   "fields",
   // a data input's parts
@@ -210,7 +214,18 @@ export interface WidgetDefinition {
   defaults?: Readonly<Record<string, unknown>>;
   events: Readonly<Record<string, EventDeclaration>>;
   layout: LayoutDeclaration;
+  /**
+   * What the platform gives it beyond its data (the `core` pack only):
+   * - `container`: other widgets of the page are placed in it, on its own grid of twelve
+   *   columns, one level deep. A container with a `tabs` config holds them by tab.
+   * - `filters`: its `config.filters` are filters whoever reads the page sets; the page's
+   *   widgets are narrowed by them. Its view is given `filters`.
+   */
+  role?: WidgetRole;
 }
+
+export const WIDGET_ROLES = ["container", "filters"] as const;
+export type WidgetRole = (typeof WIDGET_ROLES)[number];
 
 const TYPE = /^[a-z][a-z0-9-]{0,30}\/[a-z][a-z0-9-]{0,40}$/;
 const VERSION = /^\d+\.\d+\.\d+$/;
@@ -225,6 +240,11 @@ export function definitionProblems(definition: WidgetDefinition): string[] {
   if (!CATEGORIES.includes(definition.category))
     say(`there is no category "${definition.category}"`);
   if (definition.surfaces.length === 0) say("it is offered nowhere: give it a surface");
+  if (definition.role !== undefined) {
+    if (!WIDGET_ROLES.includes(definition.role)) say(`there is no role "${definition.role}"`);
+    else if (!definition.type.startsWith("core/"))
+      say("only the platform's own widgets hold other widgets or set the page's filters");
+  }
   for (const name of Object.keys(definition.data)) {
     if (!NAME.test(name)) say(`data input "${name}" is not a name`);
   }
@@ -432,6 +452,31 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
   listens?: (event: string) => boolean;
   /** What a reference or choice column of a data input offers, read for whoever is looking. */
   choices?: (input: string, column: string, search: string) => Promise<readonly Choice[]>;
+  /**
+   * A container's (`role: "container"`): the host's drawing of the widgets placed in it, on
+   * its grid; for a container with tabs, of those in `tab`. A view renders what it returns
+   * as a child (it is a React node; the contract does not depend on React).
+   */
+  place?: (tab?: string) => unknown;
+  /**
+   * The tab of a container with tabs that is open, as the host keeps it (in the address,
+   * so a reload and a link keep it), and how to open another.
+   */
+  tab?: { open: string | undefined; choose: (tab: string) => void };
+  /** A filter widget's (`role: "filters"`): what is set now, and how to set it. */
+  filters?: FilterHost;
+}
+
+/** What a filter widget is given: the page's values of its filters, and a way to change them. */
+export interface FilterHost {
+  /** The value of each filter, by name, as the reader set it or as it starts. */
+  values: Readonly<Record<string, unknown>>;
+  /** Sets one filter. Every widget it narrows is read again. `undefined` puts it back to how it starts. */
+  set: (name: string, value: unknown) => void;
+  /** Puts every filter of this widget back to how it starts. */
+  reset: () => void;
+  /** What a choice filter offers when it names the column its values come from, read for whoever is looking. */
+  options?: (name: string, search: string) => Promise<readonly Choice[]>;
 }
 
 /** What the inspector writes as a measure, a breakdown and a condition. The manifest checks them. */

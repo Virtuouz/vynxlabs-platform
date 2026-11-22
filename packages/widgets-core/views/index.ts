@@ -8,6 +8,7 @@ import type { ComponentType } from "react";
 import { CORE_WIDGETS } from "../src/index.ts";
 import { ButtonView } from "./button.tsx";
 import { ChartView } from "./chart.tsx";
+import { ActionsView, FilterView, SectionView, TabsView } from "./compose.tsx";
 import { DetailView } from "./detail.tsx";
 import { FormView } from "./form.tsx";
 import { ListView } from "./list.tsx";
@@ -35,17 +36,25 @@ export const corePack: CorePack = {
     "core/chart": ChartView,
     "core/pivot": PivotView,
     "core/text": TextView,
+    "core/section": SectionView,
+    "core/tabs": TabsView,
+    "core/filter": FilterView,
+    "core/actions": ActionsView,
   },
 };
 
 export {
+  ActionsView,
   ButtonView,
   ChartView,
   DetailView,
+  FilterView,
   FormView,
   ListView,
   PivotView,
+  SectionView,
   StatView,
   TableView,
+  TabsView,
   TextView,
 };

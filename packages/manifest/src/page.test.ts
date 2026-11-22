@@ -48,8 +48,16 @@ const body = (widgets: PageWidget[]): InterfaceBody => ({
     {
       id: "money",
       title: "Money",
-      filters: [{ name: "issued", type: "date_range", default: "last_30_days" }],
-      widgets,
+      // The page's filter is declared by a Search and filter widget, after the others.
+      widgets: [
+        ...widgets,
+        {
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 30, w: 12, h: 2 },
+          config: { filters: [{ name: "issued", type: "date_range", default: "last_30_days" }] },
+        },
+      ],
     },
   ],
 });
@@ -336,4 +344,148 @@ it("refuses a form whose submit saves nothing it asks for", () => {
   expect(checkInterface(body([pretend]), tableOf).map((one) => one.message)).toContain(
     "saves nothing that is typed: add a step that makes or changes the record",
   );
+});
+
+describe("composition (phase 27)", () => {
+  const page = (widgets: PageWidget[]): InterfaceBody => ({
+    title: "Clinic performance",
+    pages: [{ id: "stock", title: "Stock", widgets }],
+  });
+  const said = (widgets: PageWidget[]) =>
+    checkInterface(page(widgets), tableOf).map((issue) => `${issue.path} ${issue.message}`);
+  const table = (id: string, more: Partial<PageWidget> = {}): PageWidget => ({
+    id,
+    type: "core/table",
+    at: { x: 0, y: 0, w: 6, h: 4 },
+    data: { rows: { source: { visual: { table: "invoices" } } } },
+    ...more,
+  });
+  const section: PageWidget = {
+    id: "orders",
+    type: "core/section",
+    at: { x: 0, y: 2, w: 12, h: 6 },
+  };
+  const tabs: PageWidget = {
+    id: "views",
+    type: "core/tabs",
+    at: { x: 0, y: 8, w: 12, h: 6 },
+    config: {
+      tabs: [
+        { id: "open", title: "Open" },
+        { id: "paid", title: "Paid" },
+      ],
+    },
+  };
+  const filters = (declared: object[], id = "filters"): PageWidget => ({
+    id,
+    type: "core/filter",
+    at: { x: 0, y: 0, w: 12, h: 2 },
+    config: { filters: declared },
+  });
+
+  it("a widget is placed in a Section or on a tab of Tabs, one level deep", () => {
+    expect(
+      said([
+        section,
+        tabs,
+        table("a", { in: { widget: "orders" } }),
+        table("b", { in: { widget: "views", tab: "paid" } }),
+      ]),
+    ).toEqual([]);
+    expect(said([table("a", { in: { widget: "nowhere" } })])).toEqual([
+      '/body/pages/0/widgets/0/in/widget there is no widget "nowhere" on the page',
+    ]);
+    expect(said([table("x"), table("a", { in: { widget: "x" } })])).toEqual([
+      '/body/pages/0/widgets/1/in/widget "x" holds no widgets: only a Section or Tabs do',
+    ]);
+    expect(said([tabs, table("a", { in: { widget: "views" } })])).toEqual([
+      '/body/pages/0/widgets/1/in says which tab of "views" it is on',
+    ]);
+    expect(said([tabs, table("a", { in: { widget: "views", tab: "late" } })])).toEqual([
+      '/body/pages/0/widgets/1/in/tab "views" has no tab "late"',
+    ]);
+    expect(said([section, table("a", { in: { widget: "orders", tab: "open" } })])).toEqual([
+      '/body/pages/0/widgets/1/in/tab "orders" has no tabs',
+    ]);
+    expect(said([section, { ...tabs, in: { widget: "orders" } }])).toEqual([
+      "/body/pages/0/widgets/1/in a Section or Tabs is never placed in another",
+    ]);
+    expect(
+      said([
+        section,
+        { ...tabs, in: { widget: "orders" } },
+        table("a", { in: { widget: "views", tab: "open" } }),
+      ]),
+    ).toContain(
+      "/body/pages/0/widgets/2/in a container's widgets are one level deep: it is in another",
+    );
+  });
+
+  it("the page's filters are those its Search and filter widgets declare, each once", () => {
+    const bound = table("a", {
+      data: {
+        rows: {
+          source: { visual: { table: "invoices" } },
+          filters: [
+            { filter: "clinic", column: "clinic" },
+            { filter: "q", columns: ["status", "clinic"] },
+          ],
+        },
+      },
+    });
+    const clinic = { name: "clinic", label: "Clinic", type: "choice", choices: ["northside"] };
+    const search = { name: "q", label: "Search invoices", type: "search" };
+    expect(said([filters([clinic, search]), bound])).toEqual([]);
+    // Two widgets may declare filters; a name is declared once.
+    expect(said([filters([clinic]), filters([search], "more"), bound])).toEqual([]);
+    expect(said([filters([clinic]), filters([clinic, search], "more"), bound])).toEqual([
+      '/body/pages/0/widgets/1/config/filters/0/name the page has another filter "clinic"',
+    ]);
+    // Without the widget, the binding names a filter that isn't there.
+    expect(said([bound])).toContain(
+      '/body/pages/0/widgets/0/data/rows/filters/0/filter the page has no filter "clinic"',
+    );
+    // A filter has a filter's shape.
+    expect(said([filters([{ name: "clinic", type: "colour" }])]).join("\n")).toContain(
+      "/body/pages/0/widgets/0/config/filters/0/type",
+    );
+  });
+
+  it("a search looks in the columns it names; only a search names several", () => {
+    const binding = (one: object) =>
+      table("a", {
+        data: { rows: { source: { visual: { table: "invoices" } }, filters: [one as never] } },
+      });
+    const declared = filters([
+      { name: "q", type: "search" },
+      { name: "clinic", type: "text" },
+    ]);
+    expect(said([declared, binding({ filter: "q", columns: ["status"] })])).toEqual([]);
+    expect(said([declared, binding({ filter: "q", column: "status" })])).toEqual([]);
+    expect(said([declared, binding({ filter: "q" })])).toEqual([
+      "/body/pages/0/widgets/1/data/rows/filters/0 says which columns the search looks in",
+    ]);
+    expect(said([declared, binding({ filter: "q", columns: ["colour"] })]).join("\n")).toContain(
+      "colour",
+    );
+    expect(said([declared, binding({ filter: "clinic", columns: ["clinic"] })])).toEqual([
+      "/body/pages/0/widgets/1/data/rows/filters/0/columns only a search looks in several columns",
+    ]);
+  });
+
+  it("dashboards hold Section, Tabs and Search and filter, and no Action group", () => {
+    const group: PageWidget = {
+      id: "acts",
+      type: "core/actions",
+      at: { x: 0, y: 0, w: 6, h: 1 },
+      config: {
+        actions: [{ id: "a", label: "Go", action: { steps: [{ do: "message", text: "Gone" }] } }],
+      },
+    };
+    const issues = checkDashboard(
+      { widgets: [section, tabs, filters([{ name: "q", type: "search" }]), group] },
+      tableOf,
+    ).map((issue) => `${issue.path} ${issue.message}`);
+    expect(issues).toEqual(["/body/widgets/3/type Action group can't be used on a dashboard"]);
+  });
 });

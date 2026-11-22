@@ -8,13 +8,19 @@ body:
   pages:
     - id: queue
       title: Queue
-      filters:
-        - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
       widgets:
+        # The filters whoever reads it sets: every widget bound to one follows it.
+        - id: filters
+          type: core/filter
+          at: { x: 0, y: 0, w: 12, h: 2 }
+          config:
+            reset: true
+            filters:
+            - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
         - id: pending
           title: Waiting for a decision
           type: core/stat
-          at: { x: 0, y: 0, w: 3, h: 3 }
+          at: { x: 0, y: 2, w: 3, h: 3 }
           data:
             value:
               source:
@@ -26,7 +32,7 @@ body:
         - id: ready
           title: Ready to collect
           type: core/stat
-          at: { x: 3, y: 0, w: 3, h: 3 }
+          at: { x: 3, y: 2, w: 3, h: 3 }
           data:
             value:
               source:
@@ -38,7 +44,7 @@ body:
         - id: waitlisted
           title: Waitlisted
           type: core/stat
-          at: { x: 6, y: 0, w: 3, h: 3 }
+          at: { x: 6, y: 2, w: 3, h: 3 }
           data:
             value:
               source:
@@ -50,7 +56,7 @@ body:
         - id: overdue
           title: Overdue loans
           type: core/stat
-          at: { x: 9, y: 0, w: 3, h: 3 }
+          at: { x: 9, y: 2, w: 3, h: 3 }
           data:
             value:
               source:
@@ -65,7 +71,7 @@ body:
         - id: open
           title: Open requests
           type: core/table
-          at: { x: 0, y: 3, w: 12, h: 9 }
+          at: { x: 0, y: 5, w: 12, h: 9 }
           data:
             rows:
               source:
@@ -104,7 +110,7 @@ body:
         - id: out
           title: On loan
           type: core/table
-          at: { x: 0, y: 12, w: 12, h: 9 }
+          at: { x: 0, y: 14, w: 12, h: 9 }
           data:
             rows:
               source:
@@ -143,19 +149,25 @@ body:
                     - { do: message, text: Checked in, tone: success }
     - id: shelf
       title: Shelf
-      filters:
-        - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
-        - {
-            name: location,
-            label: Location,
-            type: choice,
-            from: { table: devices, column: location },
-          }
       widgets:
+        # The filters whoever reads it sets: every widget bound to one follows it.
+        - id: filters
+          type: core/filter
+          at: { x: 0, y: 0, w: 12, h: 2 }
+          config:
+            reset: true
+            filters:
+            - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
+            - {
+                name: location,
+                label: Location,
+                type: choice,
+                from: { table: devices, column: location },
+              }
         - id: by-kind
           title: Devices by kind and state
           type: core/chart
-          at: { x: 0, y: 0, w: 12, h: 8 }
+          at: { x: 0, y: 2, w: 12, h: 8 }
           data:
             rows:
               source:
@@ -170,7 +182,7 @@ body:
         - id: devices
           title: Devices
           type: core/table
-          at: { x: 0, y: 8, w: 12, h: 12 }
+          at: { x: 0, y: 10, w: 12, h: 12 }
           data:
             rows:
               source:
@@ -199,7 +211,7 @@ body:
                     - { do: open, page: edit-device, record: event }
         - id: add
           type: core/button
-          at: { x: 9, y: 20, w: 3, h: 1 }
+          at: { x: 9, y: 22, w: 3, h: 1 }
           config: { label: Add device, tone: primary }
           on:
             click:

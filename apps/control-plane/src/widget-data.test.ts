@@ -180,7 +180,22 @@ const newPayment = {
 const screen = {
   title: "Invoices",
   pages: [
-    { id: "main", title: "Invoices", filters, widgets: [list, byTeam, byTeamNarrowed, byMonth] },
+    {
+      id: "main",
+      title: "Invoices",
+      widgets: [
+        list,
+        byTeam,
+        byTeamNarrowed,
+        byMonth,
+        {
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 30, w: 12, h: 2 },
+          config: { filters: filters },
+        },
+      ],
+    },
     recordPage,
     {
       id: "payment",
@@ -202,8 +217,13 @@ const screen = {
 /** A dashboard of SQL, and one that narrows rows by when they were made. */
 const board = {
   title: "By team",
-  filters: [{ name: "when", type: "date_range" }],
   widgets: [
+    {
+      id: "filters",
+      type: "core/filter",
+      at: { x: 0, y: 30, w: 12, h: 2 },
+      config: { filters: [{ name: "when", type: "date_range" }] },
+    },
     {
       id: "sql",
       type: "core/table",
@@ -576,7 +596,10 @@ describe("a dashboard's widget over SQL", () => {
 describe("a draft", () => {
   const draft = (extra: object) => ({
     ...screen,
-    pages: [{ ...screen.pages[0], widgets: [list, byTeam, extra] }],
+    // Its filters are kept: the page's Search and filter widget is its last.
+    pages: [
+      { ...screen.pages[0], widgets: [list, byTeam, extra, screen.pages[0]?.widgets.at(-1)] },
+    ],
   });
   const added = {
     id: "extra",
@@ -615,10 +638,11 @@ describe("a draft", () => {
       "list",
       "by_team",
       "extra",
+      "filters",
     ]);
     expect(
       (await alice.get(`${ws()}/interfaces/screens/invoices`)).body.body.pages[0].widgets,
-    ).toHaveLength(4);
+    ).toHaveLength(5);
     // A dashboard's draft is read the same way.
     expect(
       (await asked(alice, { of: "dashboard", path: "boards/by-team", widget: "sql", draft: "1" }))

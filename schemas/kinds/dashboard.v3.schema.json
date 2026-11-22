@@ -25,76 +25,6 @@
       ],
       "description": "How often an open dashboard reads its widgets again."
     },
-    "filters": {
-      "type": "array",
-      "maxItems": 8,
-      "items": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9_]{0,54}$",
-            "description": "What the page's widgets name the filter by, and its key in the address."
-          },
-          "label": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100,
-            "description": "What the reader sees above the filter. Left out, the name."
-          },
-          "type": {
-            "enum": [
-              "date_range",
-              "choice",
-              "text",
-              "number"
-            ],
-            "description": "What is chosen: a stretch of days, a choice, a number or text."
-          },
-          "default": {
-            "description": "What the filter holds until the reader changes it."
-          },
-          "choices": {
-            "description": "The values a choice filter offers, when they are listed here.",
-            "type": "array",
-            "maxItems": 200,
-            "items": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200
-            }
-          },
-          "from": {
-            "description": "The column a choice filter offers the values of, read as the reader may.",
-            "type": "object",
-            "properties": {
-              "table": {
-                "type": "string",
-                "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                "maxLength": 255,
-                "description": "The table of that column."
-              },
-              "column": {
-                "type": "string",
-                "pattern": "^[a-z][a-z0-9_]{0,62}$",
-                "description": "The column whose values are offered."
-              }
-            },
-            "required": [
-              "table",
-              "column"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "required": [
-          "name",
-          "type"
-        ],
-        "additionalProperties": false
-      },
-      "description": "What the reader narrows every widget by, above the dashboard."
-    },
     "widgets": {
       "type": "array",
       "maxItems": 30,
@@ -387,6 +317,15 @@
                       "column": {
                         "type": "string",
                         "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                      },
+                      "columns": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 10,
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                        }
                       },
                       "parameter": {
                         "type": "string",
@@ -1240,6 +1179,26 @@
             },
             "additionalProperties": false,
             "description": "When the widget is shown. Hiding a widget isn't security: the rows a person gets are decided by the tables' row rules."
+          },
+          "in": {
+            "type": "object",
+            "description": "The Section, or the tab of Tabs, the widget is placed in. Its place is then on that container's own grid.",
+            "properties": {
+              "widget": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+                "description": "The container, by its id."
+              },
+              "tab": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+                "description": "For Tabs: the tab it is on, by its id."
+              }
+            },
+            "required": [
+              "widget"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [

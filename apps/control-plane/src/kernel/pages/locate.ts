@@ -1,6 +1,7 @@
 import { sql } from "@volvel/db";
 import {
   type DashboardBody,
+  filtersOf,
   type InterfaceBody,
   PATH_PATTERN,
   type Page,
@@ -129,7 +130,7 @@ export async function locatePage(
       surface: "app",
       page,
       widgets: page.widgets,
-      filters: page.filters ?? [],
+      filters: filtersOf(page.widgets),
       recordTable: page.record?.table,
       follow: found.deployed && found.id ? { pageId: found.id, page: page.id } : undefined,
       app,
@@ -180,7 +181,7 @@ export async function locatePage(
     surface: "dashboard",
     page: undefined,
     widgets: body.widgets,
-    filters: body.filters ?? [],
+    filters: filtersOf(body.widgets),
     recordTable: undefined,
     follow,
     app: null,

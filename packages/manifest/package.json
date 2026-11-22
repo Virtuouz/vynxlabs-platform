@@ -11,6 +11,10 @@
     "./action": {
       "types": "./dist/action.d.ts",
       "default": "./dist/action.js"
+    },
+    "./parts": {
+      "types": "./dist/parts.d.ts",
+      "default": "./dist/parts.js"
     }
   },
   "files": [

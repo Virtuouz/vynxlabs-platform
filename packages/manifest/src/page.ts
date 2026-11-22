@@ -11,6 +11,7 @@ import {
   type WidgetRules,
   widgetRulesSchema,
 } from "./action.js";
+import * as parts from "./parts.js";
 import type { KindDefinition, ManifestIssue } from "./registry.js";
 import type { TableBody } from "./table.js";
 
@@ -102,11 +103,13 @@ export type ConditionValueRef = { record: string } | { user: "id" };
 export interface FilterBinding {
   filter: string;
   column?: VisualColumn;
+  /** For a search over a visual query: the columns it looks in. A row is kept when any holds the words. */
+  columns?: VisualColumn[];
   parameter?: string;
   part?: "from" | "to";
 }
 
-/** One data input of a widget: what it asks, and which of the page's filters narrow it. */
+/** One data input of a widget: what it asks, and which of the page's filters narrow it (by name, as a Search and filter widget declares them). */
 export interface DataInput {
   source: WidgetSource;
   filters?: FilterBinding[];
@@ -115,7 +118,11 @@ export interface DataInput {
 // ---------------------------------------------------------------------------
 // Filters set by whoever reads the page
 
-export const PAGE_FILTER_TYPES = ["date_range", "choice", "text", "number"] as const;
+/**
+ * `search` is the words typed into a search box, looked for in the columns each binding
+ * names; `text` is one column's value, as typed.
+ */
+export const PAGE_FILTER_TYPES = ["date_range", "choice", "text", "number", "search"] as const;
 export type PageFilterType = (typeof PAGE_FILTER_TYPES)[number];
 
 /** The ranges a date filter offers by name, each counted back from today. */
@@ -132,6 +139,11 @@ export const RELATIVE_RANGES = [
 ] as const;
 export type RelativeRange = (typeof RELATIVE_RANGES)[number];
 
+/**
+ * A filter whoever reads the page sets. It is declared by a Search and filter widget
+ * (`config.filters` of a widget whose definition has `role: "filters"`); a page's filters
+ * are those of all its filter widgets (`filtersOf`), each name once.
+ */
 export interface PageFilter {
   /** What data inputs refer to it by. */
   name: string;
@@ -176,6 +188,13 @@ export const MAX_PAGE_ROWS = 400;
 export const MAX_PAGES = 20;
 export const MAX_PAGE_WIDGETS = 30;
 export const MAX_PAGE_FILTERS = 8;
+/** The rows a container's heading takes on the page's grid, above the grid of what it holds. */
+
+/** Where a widget held by a container is: the container, and for one with tabs, the tab. */
+export interface WidgetIn {
+  widget: string;
+  tab?: string;
+}
 
 export interface PageWidget {
   /** Unique on its page. */
@@ -194,6 +213,11 @@ export interface PageWidget {
   on?: Record<string, Action>;
   /** When it is shown. Only what is drawn: never what someone may read or do. */
   rules?: WidgetRules;
+  /**
+   * The container it is placed in (a Section, or a tab of Tabs), when it is in one. Its `at`
+   * is then on the container's own grid of twelve columns. One level: a container is never in one.
+   */
+  in?: WidgetIn;
 }
 
 /**
@@ -217,7 +241,7 @@ export interface Page {
   record?: { table: string };
   /** The topic of the workspace documentation's page that is this page's help. */
   help?: string;
-  filters?: PageFilter[];
+  /** Every widget of the page, those placed in a container too (they say so with `in`). */
   widgets: PageWidget[];
 }
 
@@ -238,7 +262,6 @@ export interface DashboardBody {
   description?: string;
   /** How often its widgets ask again while it is on show, in minutes, or `off`. Default 5. */
   refresh?: DashboardRefresh;
-  filters?: PageFilter[];
   widgets: PageWidget[];
 }
 
@@ -368,6 +391,12 @@ const dataInputSchema = {
         properties: {
           filter: { type: "string", pattern: NAME },
           column: { type: "string", pattern: COLUMN },
+          columns: {
+            type: "array",
+            minItems: 1,
+            maxItems: 10,
+            items: { type: "string", pattern: COLUMN },
+          },
           parameter: { type: "string", pattern: "^(\\$[0-9]{1,2}|[a-z][a-z0-9_]{0,54})$" },
           part: { enum: ["from", "to"] },
         },
@@ -505,16 +534,26 @@ export const pageWidgetSchema = {
       description:
         "When the widget is shown. Hiding a widget isn't security: the rows a person gets are decided by the tables' row rules.",
     },
+    in: {
+      type: "object",
+      description:
+        "The Section, or the tab of Tabs, the widget is placed in. Its place is then on that container's own grid.",
+      properties: {
+        widget: { type: "string", pattern: SLUG, description: "The container, by its id." },
+        tab: {
+          type: "string",
+          pattern: SLUG,
+          description: "For Tabs: the tab it is on, by its id.",
+        },
+      },
+      required: ["widget"],
+      additionalProperties: false,
+    },
   },
   required: ["id", "type", "at"],
   additionalProperties: false,
 } as const;
 
-const filtersSchema = {
-  type: "array",
-  maxItems: MAX_PAGE_FILTERS,
-  items: pageFilterSchema,
-} as const;
 const widgetsSchema = {
   type: "array",
   maxItems: MAX_PAGE_WIDGETS,
@@ -554,10 +593,6 @@ export const pageSchema = {
       minLength: 1,
       maxLength: 255,
       description: "A topic of the workspace's documentation, shown by the page's Help button.",
-    },
-    filters: {
-      ...filtersSchema,
-      description: "What the reader narrows every widget by, above the page.",
     },
     widgets: { ...widgetsSchema, description: "What is on the page." },
   },
@@ -603,10 +638,6 @@ export const dashboardBodySchema = {
     refresh: {
       enum: [...DASHBOARD_REFRESH],
       description: "How often an open dashboard reads its widgets again.",
-    },
-    filters: {
-      ...filtersSchema,
-      description: "What the reader narrows every widget by, above the dashboard.",
     },
     widgets: { ...widgetsSchema, description: "What is on the dashboard." },
   },
@@ -722,6 +753,47 @@ export function widgetQueries(widgets: readonly PageWidget[]): string[] {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// Filters and containers: what a page's widgets give it
+
+let filterCompiled: ReturnType<typeof configAjv.compile> | undefined;
+/** Whether a filter a Search and filter widget declares has a filter's shape. */
+function validFilter(value: unknown, at: string, say: (path: string, message: string) => void) {
+  filterCompiled ??= configAjv.compile(pageFilterSchema);
+  if (filterCompiled(value)) return true;
+  for (const error of filterCompiled.errors ?? [])
+    say(`${at}${error.instancePath}`, error.message ?? "is not allowed");
+  return false;
+}
+
+export {
+  CONTAINER_HEAD_ROWS,
+  childrenOf,
+  containerHeight,
+  FILTER_WIDGET,
+  tabsOf,
+  topLevel,
+  withFilters,
+} from "./parts.js";
+
+/** The widgets of a page that set its filters: those whose definition's role is `filters`. */
+export const filterWidgets = (
+  widgets: readonly PageWidget[],
+  registry: WidgetRegistry = platformWidgets,
+): PageWidget[] => parts.filterWidgets(widgets, registry);
+
+/** The filters whoever reads the page sets, from its Search and filter widgets. */
+export const filtersOf = (
+  widgets: readonly PageWidget[],
+  registry: WidgetRegistry = platformWidgets,
+): PageFilter[] => parts.filtersOf(widgets, registry);
+
+/** Whether a widget holds others: its definition's role is `container`. */
+export const isContainer = (
+  widget: Pick<PageWidget, "type">,
+  registry: WidgetRegistry = platformWidgets,
+): boolean => parts.isContainer(widget, registry);
+
 export interface CheckContext {
   /** The page the widgets are on, and the interface's other pages: what actions open and read. */
   page?: Page;
@@ -747,15 +819,54 @@ export interface CheckContext {
  */
 export function checkWidgets(
   widgets: readonly PageWidget[],
-  filters: readonly PageFilter[],
   context: CheckContext,
   at = "/body",
 ): ManifestIssue[] {
   const issues: ManifestIssue[] = [];
   const registry = context.registry ?? platformWidgets;
-  const byName = new Map(filters.map((filter) => [filter.name, filter]));
-  if (byName.size !== filters.length)
-    issues.push({ path: `${at}/filters`, message: "two filters have the same name" });
+  const filters = filtersOf(widgets, registry);
+  const byName = new Map<string, PageFilter>();
+  // Each filter is declared once on the page, whichever widget declares it; and no more than eight.
+  widgets.forEach((widget, index) => {
+    if (registry.get(widget.type)?.role !== "filters") return;
+    const declared = widget.config?.filters;
+    if (!Array.isArray(declared)) return;
+    declared.forEach((filter, which) => {
+      const path = `${at}/widgets/${index}/config/filters/${which}`;
+      const say = (where: string, message: string) => issues.push({ path: where, message });
+      if (!validFilter(filter, path, say)) return;
+      const one = filter as PageFilter;
+      if (byName.has(one.name)) say(`${path}/name`, `the page has another filter "${one.name}"`);
+      else byName.set(one.name, one);
+      if (one.type === "search" && one.default !== undefined && typeof one.default !== "string")
+        say(`${path}/default`, "a search starts with words, or with none");
+    });
+  });
+  if (filters.length > MAX_PAGE_FILTERS) {
+    issues.push({ path: at, message: `a page has at most ${MAX_PAGE_FILTERS} filters` });
+  }
+  // What a widget is placed in is a container on this page, one level deep, and on one of its tabs.
+  const byId = new Map(widgets.map((widget) => [widget.id, widget]));
+  widgets.forEach((widget, index) => {
+    if (!widget.in) return;
+    const path = `${at}/widgets/${index}/in`;
+    const say = (where: string, message: string) => issues.push({ path: where, message });
+    const holder = byId.get(widget.in.widget);
+    if (!holder)
+      return say(`${path}/widget`, `there is no widget "${widget.in.widget}" on the page`);
+    if (registry.get(holder.type)?.role !== "container") {
+      return say(`${path}/widget`, `"${holder.id}" holds no widgets: only a Section or Tabs do`);
+    }
+    if (holder.in) return say(path, "a container's widgets are one level deep: it is in another");
+    if (registry.get(widget.type)?.role === "container")
+      say(path, "a Section or Tabs is never placed in another");
+    const tabs = parts.tabsOf(holder);
+    if (tabs.length > 0) {
+      if (!widget.in.tab) say(path, `says which tab of "${holder.id}" it is on`);
+      else if (!tabs.some((tab) => tab.id === widget.in?.tab))
+        say(`${path}/tab`, `"${holder.id}" has no tab "${widget.in.tab}"`);
+    } else if (widget.in.tab) say(`${path}/tab`, `"${holder.id}" has no tabs`);
+  });
 
   const columnType = (table: string, column: string): string | null | undefined => {
     const known = context.tableOf?.(table);
@@ -1020,7 +1131,13 @@ export function checkWidgets(
           return;
         }
         if ("visual" in source) {
-          if (!binding.column) say(path, "says which column the filter narrows");
+          if (filter.type === "search") {
+            const looked = binding.columns ?? (binding.column ? [binding.column] : []);
+            if (looked.length === 0) say(path, "says which columns the search looks in");
+            for (const column of looked) known2(path, source.visual.table, column);
+          } else if (binding.columns)
+            say(`${path}/columns`, "only a search looks in several columns");
+          else if (!binding.column) say(path, "says which column the filter narrows");
           else known2(path, source.visual.table, binding.column);
         } else if (!binding.parameter) {
           say(path, "says which parameter the filter fills");
@@ -1119,7 +1236,6 @@ export function checkInterface(
     issues.push(
       ...checkWidgets(
         page.widgets,
-        page.filters ?? [],
         {
           surface: "app",
           page,
@@ -1141,7 +1257,7 @@ export function checkDashboard(
   registry?: WidgetRegistry,
   how: { incomplete?: boolean } = {},
 ): ManifestIssue[] {
-  return checkWidgets(body.widgets, body.filters ?? [], {
+  return checkWidgets(body.widgets, {
     surface: "dashboard",
     ...(tableOf ? { tableOf } : {}),
     ...(registry ? { registry } : {}),

@@ -129,22 +129,36 @@ export const performance = defineInterface({
     {
       id: "money",
       title: "Money",
-      filters: [
-        {
-          name: "clinic",
-          label: "Clinic",
-          type: "choice",
-          from: { table: "invoices", column: "clinic" },
-        },
-        { name: "issued", label: "Issued", type: "date_range", default: "last_30_days" },
-        // The goal is a month's: its own range, so the page's range can be anything.
-        { name: "goal_month", label: "Goal month", type: "date_range", default: "this_month" },
-      ],
       widgets: [
+        {
+          // The page's filters, set by whoever reads it: every widget bound to one follows it.
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            filters: [
+              {
+                name: "clinic",
+                label: "Clinic",
+                type: "choice",
+                from: { table: "invoices", column: "clinic" },
+              },
+              { name: "issued", label: "Issued", type: "date_range", default: "last_30_days" },
+              // The goal is a month's: its own range, so the page's range can be anything.
+              {
+                name: "goal_month",
+                label: "Goal month",
+                type: "date_range",
+                default: "this_month",
+              },
+            ],
+            reset: true,
+          },
+        },
         {
           id: "note",
           type: "core/text",
-          at: { x: 0, y: 0, w: 12, h: 3 },
+          at: { x: 0, y: 2, w: 12, h: 3 },
           config: {
             text: ":::alert[In dollars]{type=info}\nEvery amount here is in dollars, as the clinics invoice. Change **Issued** to look at another stretch of time.\n:::",
           },
@@ -153,7 +167,7 @@ export const performance = defineInterface({
           id: "invoiced",
           type: "core/stat",
           title: "Invoiced",
-          at: { x: 0, y: 3, w: 3, h: 3 },
+          at: { x: 0, y: 5, w: 3, h: 3 },
           data: { value: invoiceValue("invoiced", "sum") },
           config: { format: DOLLARS, caption: "Issued in the range chosen" },
           on: { click: { steps: [{ do: "rows" }] } },
@@ -162,7 +176,7 @@ export const performance = defineInterface({
           id: "unpaid",
           type: "core/stat",
           title: "Unpaid",
-          at: { x: 3, y: 3, w: 3, h: 3 },
+          at: { x: 3, y: 5, w: 3, h: 3 },
           data: {
             value: invoiceValue("unpaid", "sum", [{ column: "status", op: "eq", value: "unpaid" }]),
           },
@@ -173,7 +187,7 @@ export const performance = defineInterface({
           id: "average",
           type: "core/stat",
           title: "Average invoice",
-          at: { x: 6, y: 3, w: 3, h: 3 },
+          at: { x: 6, y: 5, w: 3, h: 3 },
           data: { value: invoiceValue("average", "avg") },
           config: { format: DOLLARS },
         },
@@ -181,7 +195,7 @@ export const performance = defineInterface({
           id: "goal",
           type: "labs/goal",
           title: "This month",
-          at: { x: 9, y: 3, w: 3, h: 3 },
+          at: { x: 9, y: 5, w: 3, h: 3 },
           data: {
             value: {
               source: {
@@ -200,7 +214,7 @@ export const performance = defineInterface({
           id: "by-week",
           type: "core/chart",
           title: "Invoiced by week",
-          at: { x: 0, y: 6, w: 8, h: 8 },
+          at: { x: 0, y: 8, w: 8, h: 8 },
           data: invoicesBy({ column: "issued_on", bucket: "week" }),
           config: { mark: "line", format: DOLLARS },
           on: { pointClick: { steps: [{ do: "rows" }] } },
@@ -209,7 +223,7 @@ export const performance = defineInterface({
           id: "by-clinic",
           type: "core/chart",
           title: "By clinic",
-          at: { x: 8, y: 6, w: 4, h: 8 },
+          at: { x: 8, y: 8, w: 4, h: 8 },
           data: invoicesBy({ column: "clinic" }),
           config: { mark: "bar", format: DOLLARS },
           on: { pointClick: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
@@ -217,7 +231,7 @@ export const performance = defineInterface({
         {
           id: "managers",
           type: "core/text",
-          at: { x: 0, y: 14, w: 12, h: 3 },
+          at: { x: 0, y: 16, w: 12, h: 3 },
           config: {
             text: ":::alert[For practice managers]{type=info}\nOwners are texted about invoices unpaid for two weeks every Monday morning. Press an invoice to see it, mark it paid, or change it.\n:::",
           },
@@ -226,7 +240,7 @@ export const performance = defineInterface({
         {
           id: "new-invoice",
           type: "core/button",
-          at: { x: 9, y: 17, w: 3, h: 1 },
+          at: { x: 9, y: 19, w: 3, h: 1 },
           config: { label: "New invoice", tone: "primary" },
           on: { click: { steps: [{ do: "open", page: "new-invoice" }] } },
         },
@@ -234,7 +248,7 @@ export const performance = defineInterface({
           id: "list",
           type: "core/table",
           title: "Invoices",
-          at: { x: 0, y: 18, w: 12, h: 10 },
+          at: { x: 0, y: 20, w: 12, h: 10 },
           data: {
             rows: {
               source: {
@@ -261,21 +275,30 @@ export const performance = defineInterface({
     {
       id: "visits",
       title: "Visits",
-      filters: [
-        {
-          name: "clinic",
-          label: "Clinic",
-          type: "choice",
-          from: { table: "appointments", column: "clinic" },
-        },
-        { name: "when", label: "When", type: "date_range", default: "last_30_days" },
-      ],
       widgets: [
+        {
+          // The page's filters, set by whoever reads it: every widget bound to one follows it.
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            filters: [
+              {
+                name: "clinic",
+                label: "Clinic",
+                type: "choice",
+                from: { table: "appointments", column: "clinic" },
+              },
+              { name: "when", label: "When", type: "date_range", default: "last_30_days" },
+            ],
+            reset: true,
+          },
+        },
         {
           id: "count",
           type: "core/stat",
           title: "Visits",
-          at: { x: 0, y: 0, w: 4, h: 3 },
+          at: { x: 0, y: 2, w: 4, h: 3 },
           data: {
             value: {
               source: {
@@ -290,7 +313,7 @@ export const performance = defineInterface({
           id: "by-status",
           type: "core/chart",
           title: "How visits ended",
-          at: { x: 4, y: 0, w: 4, h: 9 },
+          at: { x: 4, y: 2, w: 4, h: 9 },
           data: visitsBy("status"),
           config: { mark: "pie" },
         },
@@ -298,7 +321,7 @@ export const performance = defineInterface({
           id: "by-reason",
           type: "core/chart",
           title: "Why they came",
-          at: { x: 8, y: 0, w: 4, h: 9 },
+          at: { x: 8, y: 2, w: 4, h: 9 },
           data: visitsBy("reason"),
           config: { mark: "bar" },
         },
@@ -306,7 +329,7 @@ export const performance = defineInterface({
           id: "list",
           type: "core/table",
           title: "Visits",
-          at: { x: 0, y: 9, w: 8, h: 12 },
+          at: { x: 0, y: 11, w: 8, h: 12 },
           data: {
             rows: {
               source: {
@@ -333,7 +356,7 @@ export const performance = defineInterface({
           id: "latest",
           type: "core/list",
           title: "Latest visits",
-          at: { x: 8, y: 9, w: 4, h: 12 },
+          at: { x: 8, y: 11, w: 4, h: 12 },
           data: {
             rows: {
               source: {
@@ -359,20 +382,29 @@ export const performance = defineInterface({
     {
       id: "stock",
       title: "Stock",
-      filters: [
-        {
-          name: "clinic",
-          label: "Clinic",
-          type: "choice",
-          from: { table: "inventory", column: "clinic" },
-        },
-      ],
       widgets: [
+        {
+          // The page's filters, set by whoever reads it: every widget bound to one follows it.
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            filters: [
+              {
+                name: "clinic",
+                label: "Clinic",
+                type: "choice",
+                from: { table: "inventory", column: "clinic" },
+              },
+            ],
+            reset: true,
+          },
+        },
         {
           id: "lines",
           type: "core/table",
           title: "Stock",
-          at: { x: 0, y: 0, w: 8, h: 14 },
+          at: { x: 0, y: 2, w: 8, h: 14 },
           data: {
             rows: {
               source: { visual: { table: "inventory", sort: [{ by: "on_hand" }] } },
@@ -423,7 +455,7 @@ export const performance = defineInterface({
           id: "orders",
           type: "core/table",
           title: "Orders to VetSupply",
-          at: { x: 8, y: 0, w: 4, h: 14 },
+          at: { x: 8, y: 2, w: 4, h: 14 },
           data: {
             rows: {
               source: {

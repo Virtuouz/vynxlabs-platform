@@ -729,7 +729,251 @@ export const form = defineWidget({
   layout: { min: { w: 3, h: 4 }, default: { w: 6, h: 8 }, phone: "stack" },
 });
 
-export const CORE_WIDGETS = [table, list, detail, form, button, stat, chart, pivot, text] as const;
+const ID = "^[a-z][a-z0-9_-]{0,39}$";
+
+/** A heading over widgets placed in it, on its own grid; it may fold. */
+export const section = defineWidget({
+  type: "core/section",
+  version: "1.0.0",
+  title: "Section",
+  description: "Group widgets under a heading",
+  category: "organize",
+  icon: "section",
+  surfaces: ["app", "dashboard"],
+  role: "container",
+  data: {},
+  config: {
+    type: "object",
+    properties: {
+      description: {
+        type: "string",
+        maxLength: 300,
+        "x-volvel": hint({
+          tab: "display",
+          control: "text",
+          label: "A line under the heading",
+          order: 1,
+        }),
+      },
+      folds: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          control: "switch",
+          label: "Can be folded",
+          help: "Whoever reads the page may fold it away. A reload keeps it as they left it.",
+          order: 2,
+        }),
+      },
+      folded: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          control: "switch",
+          label: "Starts folded",
+          when: { folds: true },
+          order: 3,
+        }),
+      },
+    },
+    additionalProperties: false,
+  },
+  defaults: { folds: false },
+  events: {},
+  layout: { min: { w: 3, h: 2 }, default: { w: 12, h: 6 }, phone: "stack" },
+});
+
+/** Views of one place, one at a time: each tab holds its own widgets. */
+export const tabs = defineWidget({
+  type: "core/tabs",
+  version: "1.0.0",
+  title: "Tabs",
+  description: "Switch between views in one place",
+  category: "organize",
+  icon: "tabs",
+  surfaces: ["app", "dashboard"],
+  role: "container",
+  data: {},
+  config: {
+    type: "object",
+    properties: {
+      tabs: {
+        type: "array",
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", pattern: ID },
+            title: { type: "string", minLength: 1, maxLength: 40 },
+          },
+          required: ["id", "title"],
+          additionalProperties: false,
+        },
+        "x-volvel": hint({
+          tab: "display",
+          control: "tabs",
+          label: "Tabs",
+          help: "Each tab holds its own widgets. Drag a widget onto a tab to put it there.",
+          order: 1,
+        }),
+      },
+    },
+    required: ["tabs"],
+    additionalProperties: false,
+  },
+  defaults: {
+    tabs: [
+      { id: "first", title: "First" },
+      { id: "second", title: "Second" },
+    ],
+  },
+  events: {},
+  layout: { min: { w: 4, h: 3 }, default: { w: 12, h: 8 }, phone: "stack" },
+});
+
+/**
+ * A search box and filters whoever reads the page sets. Every widget of the page whose
+ * data is bound to one of its filters is narrowed by it. A page's filters are only here.
+ */
+export const filter = defineWidget({
+  type: "core/filter",
+  version: "1.0.0",
+  title: "Search and filter",
+  description: "Let people narrow the page",
+  category: "organize",
+  icon: "filter",
+  surfaces: ["app", "dashboard"],
+  role: "filters",
+  data: {},
+  config: {
+    type: "object",
+    properties: {
+      filters: {
+        type: "array",
+        minItems: 1,
+        maxItems: 8,
+        // Each one's shape is checked by the manifest, as a page filter.
+        items: { type: "object" },
+        "x-volvel": hint({
+          tab: "data",
+          control: "pageFilters",
+          label: "Filters",
+          help: "A search box, or a filter by a column. Widgets whose table has the column follow it.",
+          order: 1,
+        }),
+      },
+      reset: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          control: "switch",
+          label: "Offer \u201cClear\u201d",
+          help: "A button that puts every filter here back to how it starts.",
+          order: 1,
+        }),
+      },
+    },
+    required: ["filters"],
+    additionalProperties: false,
+  },
+  defaults: { filters: [{ name: "search", type: "search", label: "Search" }], reset: true },
+  events: {},
+  layout: {
+    min: { w: 3, h: 1 },
+    default: { w: 12, h: 2 },
+    max: { w: 12, h: 4 },
+    phone: "stack",
+    frame: "none",
+  },
+});
+
+/** Related buttons as one toolbar; those that don't fit go under "More". */
+export const actions = defineWidget({
+  type: "core/actions",
+  version: "1.0.0",
+  title: "Action group",
+  description: "Related buttons as a toolbar",
+  category: "action",
+  icon: "actions",
+  surfaces: ["app"],
+  data: {},
+  config: {
+    type: "object",
+    properties: {
+      actions: {
+        type: "array",
+        minItems: 1,
+        maxItems: 8,
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string", pattern: ID },
+            label: { type: "string", minLength: 1, maxLength: 40 },
+            tone: { enum: ["primary", "default", "danger"] },
+            action: { type: "object" },
+          },
+          required: ["id", "label", "action"],
+          additionalProperties: false,
+        },
+        "x-volvel": hint({
+          tab: "actions",
+          control: "actions",
+          label: "Buttons",
+          help: "In order; the first is the main one. Each says when it may be pressed.",
+          order: 1,
+        }),
+      },
+      align: {
+        enum: ["start", "end"],
+        "x-volvel": hint({
+          tab: "display",
+          control: "segmented",
+          label: "Placed",
+          choices: { start: "At the start", end: "At the end" },
+          order: 1,
+        }),
+      },
+    },
+    required: ["actions"],
+    additionalProperties: false,
+  },
+  defaults: {
+    actions: [
+      {
+        id: "first",
+        label: "Do it",
+        tone: "primary",
+        action: { steps: [{ do: "message", text: "Done" }] },
+      },
+    ],
+    align: "start",
+  },
+  events: {},
+  layout: {
+    min: { w: 2, h: 1 },
+    default: { w: 6, h: 1 },
+    max: { w: 12, h: 2 },
+    phone: "stack",
+    frame: "none",
+  },
+});
+
+export const CORE_WIDGETS = [
+  table,
+  list,
+  detail,
+  form,
+  button,
+  actions,
+  stat,
+  chart,
+  pivot,
+  section,
+  tabs,
+  filter,
+  text,
+] as const;
 
 /** A registry of the core pack, to add other packs to. */
 export function coreRegistry(): WidgetRegistry {

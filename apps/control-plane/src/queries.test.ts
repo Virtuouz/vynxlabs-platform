@@ -818,7 +818,6 @@ describe("a dashboard the workspace keeps", () => {
       schemaVersion: 3,
       body: {
         title: "Lending",
-        filters: [{ name: "due", type: "date_range" }],
         widgets: [
           {
             id: "fees",
@@ -858,6 +857,12 @@ describe("a dashboard the workspace keeps", () => {
               },
             },
           },
+          {
+            id: "filters",
+            type: "core/filter",
+            at: { x: 0, y: 30, w: 12, h: 2 },
+            config: { filters: [{ name: "due", type: "date_range" }] },
+          },
         ],
       },
     });
@@ -889,7 +894,7 @@ describe("a dashboard the workspace keeps", () => {
     ]);
     const id = listed[0].id as string;
     const whole = (await carol.client.get(`${boards()}/${id}`)).body;
-    expect(whole.body.widgets).toHaveLength(3);
+    expect(whole.body.widgets).toHaveLength(4);
     // It is changed where resources are, not here.
     expect(
       (await carol.client.put(`${boards()}/${id}`, { title: "Mine" })).status,

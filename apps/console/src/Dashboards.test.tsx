@@ -22,8 +22,18 @@ const mine = {
   revision: 4,
   updatedAt: "2026-11-13T10:00:00.000Z",
   body: {
-    filters: [{ name: "created_at", label: "Added", type: "date_range", default: "last_30_days" }],
     widgets: [
+      {
+        // The dashboard's filter, beside the stat: whoever reads it sets it.
+        id: "filters",
+        type: "core/filter",
+        at: { x: 9, y: 8, w: 3, h: 2 },
+        config: {
+          filters: [
+            { name: "created_at", label: "Added", type: "date_range", default: "last_30_days" },
+          ],
+        },
+      },
       {
         id: "held",
         type: "core/table",

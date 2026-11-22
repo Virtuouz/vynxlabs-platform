@@ -1,6 +1,7 @@
 import "./styles.css";
 import { ApiError, api, appContext, signInUrl, signOut, type Term, terms } from "@volvel/app";
 import type { ActingUser, InterfaceBody, Page } from "@volvel/manifest";
+import { filtersOf } from "@volvel/manifest/parts";
 import {
   Button,
   Closing,
@@ -35,6 +36,8 @@ interface InterfaceView {
 
 /** The platform's packs: what a page made in the console may hold. */
 const registry = viewRegistry(corePack, labsPack);
+/** Each type's role, for what a page's widgets give it (its filters, its containers). */
+const roles = { get: (type: string) => registry.get(type)?.definition };
 
 function workspaceApi() {
   const context = appContext();
@@ -159,7 +162,7 @@ function PageOf({
   return (
     <PageView
       widgets={page.widgets}
-      filters={page.filters ?? []}
+      filters={filtersOf(page.widgets, roles)}
       registry={registry}
       client={client}
       filterValues={values}

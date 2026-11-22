@@ -554,21 +554,29 @@ await draftInSandbox("screens/front-desk-board", "interface", {
     {
       id: "today",
       title: "Today",
-      filters: [
-        {
-          name: "clinic",
-          label: "Clinic",
-          type: "choice",
-          from: { table: "appointments", column: "clinic" },
-        },
-        { name: "when", label: "When", type: "date_range", default: "today" },
-      ],
       widgets: [
+        {
+          id: "filters",
+          type: "core/filter",
+          at: { x: 0, y: 0, w: 12, h: 2 },
+          config: {
+            filters: [
+              {
+                name: "clinic",
+                label: "Clinic",
+                type: "choice",
+                from: { table: "appointments", column: "clinic" },
+              },
+              { name: "when", label: "When", type: "date_range", default: "today" },
+            ],
+            reset: true,
+          },
+        },
         {
           id: "visits",
           type: "core/stat",
           title: "Visits",
-          at: { x: 0, y: 0, w: 3, h: 3 },
+          at: { x: 0, y: 2, w: 3, h: 3 },
           data: {
             value: {
               source: {
@@ -586,7 +594,7 @@ await draftInSandbox("screens/front-desk-board", "interface", {
           id: "list",
           type: "core/table",
           title: "Visits",
-          at: { x: 0, y: 3, w: 12, h: 9 },
+          at: { x: 0, y: 5, w: 12, h: 9 },
           data: {
             rows: {
               source: { visual: { table: "appointments", sort: [{ by: "starts_at" }] } },

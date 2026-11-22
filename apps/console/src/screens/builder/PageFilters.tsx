@@ -36,6 +36,7 @@ const KIND_WORDS: Record<PageFilterType, string> = {
   choice: "One of a list",
   text: "Text to look for",
   number: "A number",
+  search: "Words to search for",
 };
 
 /** What a column suggests a filter on it is. */

@@ -498,7 +498,7 @@ describe("the frame", () => {
     };
     render(<Held />);
     expect(await screen.findByText("Nothing matches \u201czzzqqq\u201d")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Clear filters" }));
     // Not null for each: the search is off, and the range is the one the page starts on.
     expect(seen.at(-1)).toEqual({});
     expect(JSON.stringify(seen)).not.toContain("null");

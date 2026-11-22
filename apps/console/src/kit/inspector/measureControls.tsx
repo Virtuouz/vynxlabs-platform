@@ -531,7 +531,7 @@ export function BreakdownGroup({
       {groups.map((one, at) => (
         <BreakdownRow
           // biome-ignore lint/suspicious/noArrayIndexKey: a part of a query has no identity but its place in the list
-          key={`${one.column}-${at}`}
+          key={`breakdown-${at}`}
           env={env}
           input={input}
           at={at}

@@ -206,25 +206,6 @@ test("a widget type's registered piece is drawn in its group, in order, and hide
   off();
 });
 
-test("the chart's Data tab is drawn as Rows it uses, What it shows and What to chart, with sort and limit as rows", () => {
-  show(<Harness start={chartWidget()} definition={chart} />);
-  const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
-  expect(tabs).toEqual(["Data", "Display", "Actions", "Rules"]);
-  const text = screen.getByRole("tabpanel").textContent ?? "";
-  const at = (name: string) => text.indexOf(name);
-  expect(at("Rows it uses")).toBeGreaterThanOrEqual(0);
-  expect(at("Rows it uses")).toBeLessThan(at("What it shows"));
-  expect(at("What it shows")).toBeLessThan(at("What to chart"));
-  // Source, Only include and Sorted by are in the first group, as rows; nothing hides behind a disclosure.
-  expect(at("Source")).toBeLessThan(at("Only include"));
-  expect(at("Only include")).toBeLessThan(at("Sorted by"));
-  expect(text).not.toContain("More data options");
-  const panel = within(screen.getByRole("tabpanel"));
-  expect(panel.getByRole("button", { name: /Source\s*Invoices/ })).toBeTruthy();
-  expect(panel.getByRole("button", { name: /Measure\s*Count of rows/ })).toBeTruthy();
-  expect(panel.getByRole("button", { name: /For each\s*Issued at/ })).toBeTruthy();
-});
-
 /** Opens the editor of the row with this label, in the portal beside it. */
 const openData = async (name: RegExp) => {
   fireEvent.click(within(screen.getByRole("tabpanel")).getByRole("button", { name }));

@@ -9,7 +9,6 @@ import {
   DashedAdd,
   DrawerBlock,
   DrawerEditor,
-  DrawerGroup,
   DrawerRow,
   NumberField,
   SegmentedControl,
@@ -36,11 +35,14 @@ import {
 } from "./columnModel.ts";
 import { clearColumnRequest, useColumnRequest } from "./columnRequest.ts";
 import { FullSegments } from "./FullSegments.tsx";
+import { Section } from "./Section.tsx";
 import { type TableSource, useTableData } from "./tableData.ts";
 
 /** What every section of these drawers is given. */
 export interface TableSectionProps extends TableSource {
   env: Env;
+  /** Only the group's rows: the shell draws the group. */
+  bare?: boolean;
 }
 
 const writeConfig = (env: Env, name: string, value: unknown, label: string, key?: string) =>
@@ -50,7 +52,7 @@ const writeConfig = (env: Env, name: string, value: unknown, label: string, key?
 // Display
 
 /** COLUMNS: a row for each, to drag, hide and open. */
-export function TableColumnsSection({ env, ...source }: TableSectionProps) {
+export function TableColumnsSection({ env, bare, ...source }: TableSectionProps) {
   const { names, facts } = useTableData(env, source);
   const stored = env.config.columns as ColumnSetting[] | undefined;
   const columns = columnsOf(stored, names);
@@ -85,7 +87,8 @@ export function TableColumnsSection({ env, ...source }: TableSectionProps) {
   const left = unused(columns, names);
 
   return (
-    <DrawerGroup
+    <Section
+      bare={bare}
       label="Columns"
       aside={shownCount(columns)}
       note="Drag to reorder, the eye to hide, click to rename or format. Clicking a heading on the page opens the same thing."
@@ -156,7 +159,7 @@ export function TableColumnsSection({ env, ...source }: TableSectionProps) {
           spec={spec}
           facts={factsOfOpen}
           onChange={change}
-          open
+          open={true}
           onClose={close}
           side="left"
         />
@@ -167,16 +170,16 @@ export function TableColumnsSection({ env, ...source }: TableSectionProps) {
           spec={spec}
           facts={factsOfOpen}
           onChange={change}
-          open
+          open={true}
           onClose={close}
         />
       ) : null}
-    </DrawerGroup>
+    </Section>
   );
 }
 
 /** LOOK: row height, rows at a time, what an empty table says, stripes. */
-export function TableLookSection({ env }: TableSectionProps) {
+export function TableLookSection({ env, bare }: TableSectionProps) {
   const config = env.config;
   const height = config.rowHeight === "compact" ? "compact" : "comfortable";
   const pageSize = typeof config.pageSize === "number" ? config.pageSize : 25;
@@ -184,7 +187,7 @@ export function TableLookSection({ env }: TableSectionProps) {
   const put = (name: string, value: unknown, label: string, key?: string) =>
     writeConfig(env, name, value, label, key ?? `config:${env.widget.id}:${name}`);
   return (
-    <DrawerGroup label="Look">
+    <Section bare={bare} label="Look">
       <DrawerBlock label="Row height">
         <FullSegments>
           <SegmentedControl
@@ -243,7 +246,7 @@ export function TableLookSection({ env }: TableSectionProps) {
         checked={config.stripes === true}
         onChange={(next) => put("stripes", next || undefined, "changing stripes")}
       />
-    </DrawerGroup>
+    </Section>
   );
 }
 
@@ -281,6 +284,7 @@ export function actionSummary(action: Action | undefined): string {
  */
 function ActionRows({
   env,
+  bare,
   name,
   group,
   noun,
@@ -297,6 +301,7 @@ function ActionRows({
   firstLabel: string;
   note: ReactNode;
   icon: typeof Zap | undefined;
+  bare?: boolean | undefined;
 }) {
   const list = (Array.isArray(env.config[name]) ? env.config[name] : []) as Labelled[];
   const setting = configSettings(env.definition, "actions").find((one) => one.name === name);
@@ -315,7 +320,7 @@ function ActionRows({
     setOpenId(id);
   };
   return (
-    <DrawerGroup label={group} note={note}>
+    <Section bare={bare} label={group} note={note}>
       {list.map((one) => (
         <DrawerRow
           key={one.id}
@@ -382,7 +387,7 @@ function ActionRows({
           </DashedAdd>
         </div>
       ) : null}
-    </DrawerGroup>
+    </Section>
   );
 }
 
@@ -413,6 +418,7 @@ export function rowClickWords(widget: PageWidget, env: Pick<Env, "pages">) {
  */
 export function TableRowClickSection({
   env,
+  bare,
   rowClickEditor,
   rowClickOffer,
 }: TableSectionProps & {
@@ -445,7 +451,7 @@ export function TableRowClickSection({
     </div>
   );
   return (
-    <DrawerGroup label="When a row is clicked">
+    <Section bare={bare} label="When a row is clicked">
       <DrawerRow
         label="Do"
         value={does ?? "Nothing"}
@@ -463,7 +469,61 @@ export function TableRowClickSection({
           </p>
         }
       />
-    </DrawerGroup>
+    </Section>
+  );
+}
+
+export const ROW_ACTIONS_NOTE = "Shown at the end of the row on hover, and in the detail sheet.";
+export const BUTTONS_NOTE =
+  "Replaces the separate action group placed above the table today. The buttons move with the table.";
+
+/** ROW ACTIONS: each with when it may be pressed. */
+export function TableRowActionsSection({ env, bare }: TableSectionProps) {
+  return (
+    <ActionRows
+      env={env}
+      bare={bare}
+      name="rowActions"
+      group="Row actions"
+      noun="row action"
+      addLabel="Row action"
+      firstLabel="Action"
+      icon={Zap}
+      note={ROW_ACTIONS_NOTE}
+    />
+  );
+}
+
+/** BUTTONS ABOVE THE TABLE. */
+export function TableButtonsSection({ env, bare }: TableSectionProps) {
+  return (
+    <ActionRows
+      env={env}
+      bare={bare}
+      name="buttons"
+      group="Buttons above the table"
+      noun="button"
+      addLabel="Button"
+      firstLabel="Button"
+      icon={undefined}
+      note={BUTTONS_NOTE}
+    />
+  );
+}
+
+/** SELECTING ROWS. */
+export function TableSelectSection({ env, bare }: TableSectionProps) {
+  return (
+    <Section bare={bare} label="Selecting rows">
+      <ToggleRow
+        label="Let people select several rows"
+        help="Adds checkboxes and lets actions run on all of them."
+        checked={env.config.select === true}
+        onChange={(next) =>
+          writeConfig(env, "select", next || undefined, "changing selecting rows")
+        }
+      />
+    </Section>
   );
 }
 
@@ -471,40 +531,12 @@ export function TableRowClickSection({
 export function TableActions(
   props: TableSectionProps & { rowClickEditor?: ReactNode; rowClickOffer?: ReactNode },
 ) {
-  const { env } = props;
   return (
     <>
       <TableRowClickSection {...props} />
-      <ActionRows
-        env={env}
-        name="rowActions"
-        group="Row actions"
-        noun="row action"
-        addLabel="Row action"
-        firstLabel="Action"
-        icon={Zap}
-        note="Shown at the end of the row on hover, and in the detail sheet."
-      />
-      <ActionRows
-        env={env}
-        name="buttons"
-        group="Buttons above the table"
-        noun="button"
-        addLabel="Button"
-        firstLabel="Button"
-        icon={undefined}
-        note="Replaces the separate action group placed above the table today. The buttons move with the table."
-      />
-      <DrawerGroup label="Selecting rows">
-        <ToggleRow
-          label="Let people select several rows"
-          help="Adds checkboxes and lets actions run on all of them."
-          checked={env.config.select === true}
-          onChange={(next) =>
-            writeConfig(env, "select", next || undefined, "changing selecting rows")
-          }
-        />
-      </DrawerGroup>
+      <TableRowActionsSection {...props} />
+      <TableButtonsSection {...props} />
+      <TableSelectSection {...props} />
     </>
   );
 }

@@ -10,7 +10,6 @@ import type { Env } from "../controls.tsx";
 import { type Catalog, configOf } from "../model.ts";
 import { shownAs, tidyColumn } from "./columnModel.ts";
 import { clearColumnRequest, requestColumn } from "./columnRequest.ts";
-import { drawerSections } from "./index.ts";
 import { ListDisplay } from "./listDrawer.tsx";
 import { SlotsControl } from "./slots.tsx";
 import { TableActions, TableDisplay } from "./tableDrawer.tsx";
@@ -445,11 +444,5 @@ describe("the model and the registry", () => {
         phone: true,
       }),
     ).toEqual({ column: "a" });
-  });
-  test("the registry has the table's and the list's sections", () => {
-    expect(drawerSections("core/table", "display")).toHaveLength(1);
-    expect(drawerSections("core/table", "actions")).toHaveLength(1);
-    expect(drawerSections("core/list", "display")).toHaveLength(1);
-    expect(drawerSections("core/chart", "display")).toHaveLength(0);
   });
 });

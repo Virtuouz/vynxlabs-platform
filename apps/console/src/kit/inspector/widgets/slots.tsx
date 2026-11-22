@@ -7,11 +7,12 @@
  * group; `SlotsControl` draws one setting of it as a single row, for a shell that draws each
  * setting on its own.
  */
-import { DrawerBlock, DrawerEditor, DrawerGroup, DrawerRow } from "@volvel/ui";
+import { DrawerBlock, DrawerEditor, DrawerRow } from "@volvel/ui";
 import { Check, Hash, Image, List, Type } from "lucide-react";
-import { useState } from "react";
+import { useSyncExternalStore } from "react";
 import { columnOptions, type Env } from "../controls.tsx";
 import { type ConfigSetting, configSettings, heading, withConfig } from "../model.ts";
+import { Section } from "./Section.tsx";
 import { type TableSource, useTableData } from "./tableData.ts";
 
 /** The places of a list's row, in the order the board draws them. */
@@ -89,14 +90,42 @@ function SlotPicker({
   );
 }
 
-type Opened = { slot: Slot; from: "preview" | "row" } | undefined;
+type Opened = { widget: string; slot: Slot; from: "preview" | "row" } | undefined;
+
+// Which slot's picker is open. It is shared, so the preview and the rows (drawn as two groups by
+// the shell) open the same picker and only one is open at a time.
+let openNow: Opened;
+const watchers = new Set<() => void>();
+const watch = (fn: () => void) => {
+  watchers.add(fn);
+  return () => {
+    watchers.delete(fn);
+  };
+};
+function useOpened(widget: string): [Opened, (next: Opened) => void] {
+  const now = useSyncExternalStore(
+    watch,
+    () => openNow,
+    () => undefined,
+  );
+  const set = (next: Opened) => {
+    openNow = next;
+    for (const fn of watchers) fn();
+  };
+  return [now?.widget === widget ? now : undefined, set];
+}
 
 /** The whole group: a sample row with its places, and a row for each. */
-export function SlotsGroup({ env, ...source }: { env: Env } & TableSource) {
+export function SlotsGroup({
+  env,
+  bare,
+  part,
+  ...source
+}: { env: Env; bare?: boolean; part?: "preview" | "rows" } & TableSource) {
   const { rows } = useTableData(env, source);
   const sample = rows[0];
   const settings = slotSettings(env);
-  const [opened, setOpened] = useState<Opened>();
+  const [opened, setOpened] = useOpened(env.widget.id);
   const put = (slot: Slot, column: string | undefined) => {
     env.write(withConfig(env.widget, slot, column), `changing ${SLOT_WORDS[slot].toLowerCase()}`);
     setOpened(undefined);
@@ -119,7 +148,9 @@ export function SlotsGroup({ env, ...source }: { env: Env } & TableSource) {
         footer={false}
         side="left"
         open={opened?.slot === slot && opened.from === "preview"}
-        onOpenChange={(next) => setOpened(next ? { slot, from: "preview" } : undefined)}
+        onOpenChange={(next) =>
+          setOpened(next ? { widget: env.widget.id, slot, from: "preview" } : undefined)
+        }
         trigger={
           <button
             type="button"
@@ -154,88 +185,101 @@ export function SlotsGroup({ env, ...source }: { env: Env } & TableSource) {
   const has = (slot: Slot) => filled.some((one) => one.name === slot);
   return (
     <>
-      <DrawerGroup label="Each row looks like">
-        <DrawerBlock>
-          <div className="flex items-stretch gap-2" data-testid="slots-preview">
-            {has("picture") ? cell("picture", false) : null}
-            <div className="flex min-w-0 flex-1 flex-col gap-2">
-              <div className="flex gap-2">
-                {has("title") ? cell("title", true) : null}
-                {has("right") ? cell("right", false) : null}
-              </div>
-              {has("subtitle") || has("badge") ? (
+      {part === "rows" ? null : (
+        <Section bare={bare} label="Each row looks like">
+          <DrawerBlock>
+            <div className="flex items-stretch gap-2" data-testid="slots-preview">
+              {has("picture") ? cell("picture", false) : null}
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <div className="flex gap-2">
-                  {has("subtitle") ? cell("subtitle", true) : null}
-                  {has("badge") ? cell("badge", false) : null}
+                  {has("title") ? cell("title", true) : null}
+                  {has("right") ? cell("right", false) : null}
                 </div>
-              ) : null}
+                {has("subtitle") || has("badge") ? (
+                  <div className="flex gap-2">
+                    {has("subtitle") ? cell("subtitle", true) : null}
+                    {has("badge") ? cell("badge", false) : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
-          </div>
-          {empty.length ? (
-            <div className="flex flex-wrap gap-1.5">
-              {empty.map((one) => (
-                <DrawerEditor
-                  key={one.name}
-                  title={SLOT_WORDS[one.name]}
-                  footer={false}
-                  side="left"
-                  open={opened?.slot === one.name && opened.from === "preview"}
-                  onOpenChange={(next) =>
-                    setOpened(next ? { slot: one.name, from: "preview" } : undefined)
-                  }
-                  trigger={
-                    <button
-                      type="button"
-                      data-slot={one.name}
-                      className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-control border border-dashed border-line-strong px-2 text-meta text-ink-muted outline-offset-2 hover:border-action hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
-                    >
-                      <span aria-hidden="true">+</span>
-                      {SLOT_WORDS[one.name]}
-                    </button>
-                  }
-                >
+            {empty.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {empty.map((one) => (
+                  <DrawerEditor
+                    key={one.name}
+                    title={SLOT_WORDS[one.name]}
+                    footer={false}
+                    side="left"
+                    open={opened?.slot === one.name && opened.from === "preview"}
+                    onOpenChange={(next) =>
+                      setOpened(
+                        next
+                          ? { widget: env.widget.id, slot: one.name, from: "preview" }
+                          : undefined,
+                      )
+                    }
+                    trigger={
+                      <button
+                        type="button"
+                        data-slot={one.name}
+                        className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-control border border-dashed border-line-strong px-2 text-meta text-ink-muted outline-offset-2 hover:border-action hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+                      >
+                        <span aria-hidden="true">+</span>
+                        {SLOT_WORDS[one.name]}
+                      </button>
+                    }
+                  >
+                    <SlotPicker
+                      label={SLOT_WORDS[one.name]}
+                      options={pickerOptions(env, one)}
+                      value={undefined}
+                      onPick={(column) => put(one.name, column)}
+                    />
+                  </DrawerEditor>
+                ))}
+              </div>
+            ) : null}
+          </DrawerBlock>
+        </Section>
+      )}
+      {part === "preview" ? null : (
+        <Section
+          bare={bare}
+          label="What goes where"
+          note="Click a slot in the preview or a row here. Empty slots take no space."
+        >
+          {settings.map((one) => {
+            const column = columnOfSlot(env.config, one.name);
+            const Icon = SLOT_ICONS[one.name];
+            return (
+              <DrawerRow
+                key={one.name}
+                label={SLOT_WORDS[one.name]}
+                icon={Icon}
+                value={column ? heading(column) : "None"}
+                editorTitle={SLOT_WORDS[one.name]}
+                editorFooter={false}
+                side="left"
+                open={opened?.slot === one.name && opened.from === "row"}
+                onOpenChange={(next) =>
+                  setOpened(
+                    next ? { widget: env.widget.id, slot: one.name, from: "row" } : undefined,
+                  )
+                }
+                editor={
                   <SlotPicker
                     label={SLOT_WORDS[one.name]}
                     options={pickerOptions(env, one)}
-                    value={undefined}
-                    onPick={(column) => put(one.name, column)}
+                    value={column}
+                    onPick={(next) => put(one.name, next)}
                   />
-                </DrawerEditor>
-              ))}
-            </div>
-          ) : null}
-        </DrawerBlock>
-      </DrawerGroup>
-      <DrawerGroup
-        label="What goes where"
-        note="Click a slot in the preview or a row here. Empty slots take no space."
-      >
-        {settings.map((one) => {
-          const column = columnOfSlot(env.config, one.name);
-          const Icon = SLOT_ICONS[one.name];
-          return (
-            <DrawerRow
-              key={one.name}
-              label={SLOT_WORDS[one.name]}
-              icon={Icon}
-              value={column ? heading(column) : "None"}
-              editorTitle={SLOT_WORDS[one.name]}
-              editorFooter={false}
-              side="left"
-              open={opened?.slot === one.name && opened.from === "row"}
-              onOpenChange={(next) => setOpened(next ? { slot: one.name, from: "row" } : undefined)}
-              editor={
-                <SlotPicker
-                  label={SLOT_WORDS[one.name]}
-                  options={pickerOptions(env, one)}
-                  value={column}
-                  onPick={(next) => put(one.name, next)}
-                />
-              }
-            />
-          );
-        })}
-      </DrawerGroup>
+                }
+              />
+            );
+          })}
+        </Section>
+      )}
     </>
   );
 }

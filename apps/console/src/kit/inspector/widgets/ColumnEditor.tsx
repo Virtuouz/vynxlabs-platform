@@ -133,6 +133,7 @@ export function ColumnEditorBody({
           </FullSegments>
         </div>
       </div>
+      {/* panel-allowed: the drawer's own rows, as DrawerGroup draws them */}
       <div className="divide-y divide-line overflow-hidden rounded-panel border border-line bg-surface">
         <ToggleRow
           label="Sort by clicking the heading"
@@ -156,6 +157,7 @@ export function ColumnEditorBody({
       {badge ? (
         <section aria-label="Badge colors" className="flex flex-col gap-1.5">
           <h4 className="m-0 text-body-sm text-ink-muted">Badge colors</h4>
+          {/* panel-allowed: the drawer's own rows, as DrawerGroup draws them */}
           {values.length ? (
             <ul className="m-0 list-none divide-y divide-line overflow-hidden rounded-panel border border-line bg-surface p-0">
               {values.map((value) => {
@@ -282,7 +284,7 @@ export function AnchoredColumnEditor({
       spec={spec}
       facts={facts}
       onChange={onChange}
-      open
+      open={true}
       side={side}
       onOpenChange={(next) => {
         if (!next) onClose();

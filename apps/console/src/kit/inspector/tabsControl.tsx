@@ -186,7 +186,8 @@ function TitleField({
 }) {
   const [draft, setDraft] = useState<string | undefined>();
   return (
-    <div role="presentation" onBlur={() => setDraft(undefined)}>
+    // biome-ignore lint/a11y/noStaticElementInteractions: only hears the field inside lose focus
+    <div onBlur={() => setDraft(undefined)}>
       <TextField
         label={label}
         name={name}

@@ -243,7 +243,9 @@ export function DetailView({
   if (record === null) {
     return (
       <p className="m-0 text-ink-muted">
-        {building ? "Opens on a record of the table you choose in Data." : "There is nothing here for you yet."}
+        {building
+          ? "Opens on a record of the table you choose in Data."
+          : "There is nothing here for you yet."}
       </p>
     );
   }

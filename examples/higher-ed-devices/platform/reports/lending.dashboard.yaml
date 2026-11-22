@@ -20,14 +20,14 @@ body:
       config:
         reset: true
         filters:
-        - name: lent
-          label: Checked out
-          type: date_range
-          default: last_90_days
-        - name: kind
-          label: Kind
-          type: choice
-          from: { table: devices, column: kind }
+          - name: lent
+            label: Checked out
+            type: date_range
+            default: last_90_days
+          - name: kind
+            label: Kind
+            type: choice
+            from: { table: devices, column: kind }
     - id: lent
       type: core/stat
       title: Loans

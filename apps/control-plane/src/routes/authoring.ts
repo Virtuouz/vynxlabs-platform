@@ -820,7 +820,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "The keys of the tenant's groups, members' and end users'",
           description:
             "What an action's `runBy` and a widget's `seenBy` name groups by. The builder's " +
-            "publish check and its \"View as\" read it: a group named there that is not here " +
+            'publish check and its "View as" read it: a group named there that is not here ' +
             "matches nobody.",
           tags: ["authoring"],
           params: WorkspaceParams,

@@ -38,7 +38,8 @@ export const DEFAULT_THEME: { tokens: Tokens; dark: Tokens } = {
     "radius-control": "8px",
     "radius-panel": "12px",
     font: '"Geist", ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    "font-code": '"Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace',
+    "font-code":
+      '"Geist Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace',
   },
   dark: {
     canvas: "#0e1218",

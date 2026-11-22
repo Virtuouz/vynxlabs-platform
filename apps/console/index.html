@@ -10,43 +10,51 @@
     <script>
       // The theme a person chose is on the page before anything is drawn, so the first paint is not the other one.
       try {
-        var t = JSON.parse(localStorage.getItem("vx-pref:theme") || "null");
-        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-      } catch (e) {}
+        const theme = JSON.parse(localStorage.getItem("vx-pref:theme") || "null");
+        if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+      } catch {}
     </script>
     <script>
       // What an address is certain to ask for is asked for now, while the scripts arrive: who is
       // signed in, the workspace's counts, and for an app's builder the app and its drafts. A
       // screen takes the answer when it asks (`api.ts`), once. A failed one is asked again then.
-      (function () {
-        var at = /^\/t\/([^/]+)(?:\/workspaces\/([^/]+)(?:\/([^?#]*))?)?/.exec(location.pathname);
+      (() => {
+        const at = /^\/t\/([^/]+)(?:\/workspaces\/([^/]+)(?:\/([^?#]*))?)?/.exec(location.pathname);
         if (!at) return;
-        var early = (window.__vxEarly = {});
-        var ask = function (path) {
-          early[path] = fetch("/api/v1" + path, { credentials: "same-origin" });
-          early[path].catch(function () {
+        const early = {};
+        window.__vxEarly = early;
+        const ask = (path) => {
+          early[path] = fetch(`/api/v1${path}`, { credentials: "same-origin" });
+          early[path].catch(() => {
             delete early[path];
           });
-          setTimeout(function () {
+          setTimeout(() => {
             delete early[path];
           }, 30000);
         };
         ask("/me");
         ask("/me/preferences");
         ask("/instance/branding");
-        ask("/tenants/" + at[1] + "/workspaces");
-        ask("/tenants/" + at[1] + "/summary");
+        ask(`/tenants/${at[1]}/workspaces`);
+        ask(`/tenants/${at[1]}/summary`);
         if (!at[2]) return;
-        var root = "/tenants/" + at[1] + "/workspaces/" + at[2];
+        const root = `/tenants/${at[1]}/workspaces/${at[2]}`;
         ask(root);
-        ask(root + "/terms");
-        ask(root + "/summary");
-        var built = /^screens\/(.+?)\/?$/.exec(at[3] || "");
+        ask(`${root}/terms`);
+        ask(`${root}/summary`);
+        const built = /^screens\/(.+?)\/?$/.exec(at[3] || "");
         if (built && !/\/preview$/.test(built[1])) {
-          var path = built[1];
-          ["interfaces", "drafts", "apps", "group-keys", "interfaces/" + path, "drafts/" + path].forEach(function (read) {
-            ask(root + "/" + read);
-          });
+          const path = built[1];
+          for (const read of [
+            "interfaces",
+            "drafts",
+            "apps",
+            "group-keys",
+            `interfaces/${path}`,
+            `drafts/${path}`,
+          ]) {
+            ask(`${root}/${read}`);
+          }
         }
       })();
     </script>

@@ -24,9 +24,21 @@ body:
                 text: The Tech Desk will set one aside for you.
                 button: Send request
                 ask:
-                  - { name: kind, label: What would you like to borrow, type: choice, required: true, choices: [laptop, chromebook, hotspot, ipad, calculator, charger] }
+                  - {
+                      name: kind,
+                      label: What would you like to borrow,
+                      type: choice,
+                      required: true,
+                      choices: [laptop, chromebook, hotspot, ipad, calculator, charger],
+                    }
                   - { name: reason, label: What it is for, type: long_text, required: true }
-                  - { name: location, label: Collect it from, type: choice, required: true, choices: [tech-desk, library] }
+                  - {
+                      name: location,
+                      label: Collect it from,
+                      type: choice,
+                      required: true,
+                      choices: [tech-desk, library],
+                    }
               steps:
                 - do: script
                   path: requests/submit
@@ -34,7 +46,11 @@ body:
                     kind: { asked: kind }
                     reason: { asked: reason }
                     location: { asked: location }
-                - { do: message, text: Request sent. The Tech Desk will let you know when it is ready., tone: success }
+                - {
+                    do: message,
+                    text: Request sent. The Tech Desk will let you know when it is ready.,
+                    tone: success,
+                  }
         - id: requests
           title: My requests
           type: core/table

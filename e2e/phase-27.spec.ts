@@ -846,7 +846,7 @@ test("POLISH-003: + Page offers A list of Invoices, which makes a page with a se
   const pageOf = (id: string) => all.find((one) => one.id === id);
   const sheet = pageOf(table?.on?.rowClick?.steps?.[0]?.page);
   expect(sheet?.kind).toBe("sheet");
-  expect((sheet?.widgets as Wid[]).map((one) => one.type)).toContain("core/detail");
+  expect(((sheet?.widgets ?? []) as Wid[]).map((one) => one.type)).toContain("core/detail");
   // The button is on the table's heading line (its `buttons`), not a separate widget over it.
   expect(widgets.some((one) => one.type === "core/button")).toBe(false);
   const button = ((table?.config.buttons ?? []) as Wid[]).find((one) =>
@@ -854,7 +854,7 @@ test("POLISH-003: + Page offers A list of Invoices, which makes a page with a se
   );
   const modal = pageOf(button?.action?.steps?.[0]?.page);
   expect(modal?.kind).toBe("modal");
-  expect((modal?.widgets as Wid[]).map((one) => one.type)).toContain("core/form");
+  expect(((modal?.widgets ?? []) as Wid[]).map((one) => one.type)).toContain("core/form");
   expect(all.filter((one) => one.kind === "sheet" && one.title === sheet?.title)).toHaveLength(1);
   // The builder opens the page that was added.
   await expect(

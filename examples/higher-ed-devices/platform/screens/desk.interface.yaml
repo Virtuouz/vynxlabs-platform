@@ -16,8 +16,8 @@ body:
           config:
             reset: true
             filters:
-            - { name: q, label: Search the desk, type: search }
-            - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
+              - { name: q, label: Search the desk, type: search }
+              - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
         - id: pending
           title: Waiting for a decision
           type: core/stat
@@ -142,7 +142,13 @@ body:
                     text: "{student_name} is returning {device_tag}."
                     button: Check in
                     ask:
-                      - { name: condition, label: Condition, type: choice, required: true, choices: [good, worn, damaged] }
+                      - {
+                          name: condition,
+                          label: Condition,
+                          type: choice,
+                          required: true,
+                          choices: [good, worn, damaged],
+                        }
                       - { name: note, label: Note, type: text }
                   steps:
                     - do: script
@@ -162,14 +168,14 @@ body:
           config:
             reset: true
             filters:
-            - { name: q, label: Search devices, type: search }
-            - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
-            - {
-                name: location,
-                label: Location,
-                type: choice,
-                from: { table: devices, column: location },
-              }
+              - { name: q, label: Search devices, type: search }
+              - { name: kind, label: Kind, type: choice, from: { table: devices, column: kind } }
+              - {
+                  name: location,
+                  label: Location,
+                  type: choice,
+                  from: { table: devices, column: location },
+                }
         - id: by-kind
           title: Devices by kind and state
           type: core/chart

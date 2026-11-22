@@ -541,7 +541,15 @@ function ConditionsBlock({
   // else a date of the table's own, else a number.
   const first =
     columns.find(
-      (one) => spokenType(one) === "choice" || one.type === "enum" || one.type === "boolean",
+      (one) =>
+        spokenType(one) === "choice" ||
+        one.type === "enum" ||
+        one.type === "boolean" ||
+        // A text column the server counted to a few values is a choice in all but its type.
+        (one.type === "text" &&
+          one.distinct !== undefined &&
+          one.distinct > 1 &&
+          one.distinct <= 12),
     ) ??
     columns.find(
       (one) => TEMPORAL.has(one.type) && !["created_at", "updated_at"].includes(one.name),

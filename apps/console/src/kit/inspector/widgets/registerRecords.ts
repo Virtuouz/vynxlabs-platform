@@ -80,4 +80,5 @@ registerTilePreview("core/button", "tone", (value, env) =>
   }),
 );
 registerTilePreview("core/text", "look", (value) => createElement(CalloutPreview, { look: value }));
-piece("core/text", "display", TextContentSection, { hides: ["text", "look"] });
+// The text's heading is a row of its Text group (board 19), not a group of its own.
+piece("core/text", "display", TextContentSection, { hides: ["text", "look"], ownHeading: true });

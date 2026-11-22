@@ -160,8 +160,8 @@ export function EditorShell({
           <SplitPane
             id="page-editor"
             label="Resize the page and its settings"
-            // The settings take about 400 px at 1440, as boards 8 to 19 draw them (35%).
-            initial={bleed ? 65 : 74}
+            // The settings take about 400 px at 1440, as boards 8 to 19 draw them (36%).
+            initial={bleed ? 63.7 : 74}
             {...(bleed ? { minSecond: 300 } : {})}
             {...(bleed
               ? {

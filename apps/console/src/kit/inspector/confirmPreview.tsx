@@ -34,16 +34,22 @@ export interface PreviewConfirm {
 
 const WIDTH = 330;
 
-/** Where the popover goes: left of the widget if there is room, else right, else under it. */
+/**
+ * Where the popover goes, over the canvas and never over the settings: left of the widget if
+ * there is room in the canvas, else right, else under it.
+ */
 function place(anchor: DOMRect) {
-  const room = window.innerWidth;
-  const left =
-    anchor.left - WIDTH - 12 >= 8
-      ? anchor.left - WIDTH - 12
-      : anchor.right + 12 + WIDTH <= room - 8
-        ? anchor.right + 12
-        : Math.max(8, Math.min(anchor.left, room - WIDTH - 8));
-  const top = Math.max(8, anchor.top);
+  const canvas = document.querySelector("[data-canvas]")?.getBoundingClientRect();
+  const from = Math.max(canvas?.left ?? 0, 0) + 8;
+  const to = Math.min(canvas?.right ?? window.innerWidth, window.innerWidth) - 8;
+  if (anchor.left - WIDTH - 12 >= from) {
+    return { left: anchor.left - WIDTH - 12, top: Math.max(8, anchor.top) };
+  }
+  if (anchor.right + 12 + WIDTH <= to) {
+    return { left: anchor.right + 12, top: Math.max(8, anchor.top) };
+  }
+  const left = Math.max(from, Math.min(anchor.left, to - WIDTH));
+  const top = Math.min(anchor.bottom + 12, Math.max(8, window.innerHeight - 200));
   return { left, top };
 }
 

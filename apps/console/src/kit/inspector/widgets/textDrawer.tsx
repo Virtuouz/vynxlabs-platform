@@ -3,11 +3,12 @@
  * words. They are written where they appear (the on-page editor, with a small toolbar); the
  * Markdown row opens the documentation's editor in a large dialog, for steps, tabs and folds.
  */
-import { Button, Dialog, DrawerRow, Markdown, TilePicker } from "@volvel/ui";
-import { Hash, Pencil } from "lucide-react";
+import { Button, Dialog, DrawerRow, Markdown, TextField, TilePicker } from "@volvel/ui";
+import { Hash, Pencil, Type } from "lucide-react";
 import { useState } from "react";
 import { MarkdownEditor } from "../../markdown/MarkdownEditor.tsx";
 import { useEditOnPage } from "../../markdown/onThePage.ts";
+import { withText } from "../model.ts";
 import { type Env, Group, setConfig } from "./recordShared.tsx";
 
 export type TextLook = "plain" | "note" | "warning" | "tip";
@@ -73,6 +74,31 @@ export function TextContentSection({ env }: { env: Env }) {
         label="Text"
         note="Text is written where it appears, with a small toolbar. The style replaces typing :::alert by hand."
       >
+        <DrawerRow
+          label="Heading"
+          icon={Type}
+          value={
+            env.widget.title || <span className="text-ink-muted">Add a heading</span>
+          }
+          editorTitle="Heading"
+          editor={
+            <TextField
+              name={`${env.widget.id}-heading`}
+              label="Heading"
+              hint="Drawn above the text. Or click it on the page."
+              required={false}
+              maxLength={100}
+              value={env.widget.title ?? ""}
+              onChange={(next) =>
+                env.write(
+                  withText(env.widget, "title", next),
+                  "changing the heading",
+                  `title:${env.widget.id}`,
+                )
+              }
+            />
+          }
+        />
         <div className="flex flex-col gap-3 px-3 py-3">
           {text.trim() ? (
             <div className="max-h-40 overflow-hidden text-body-sm text-ink">

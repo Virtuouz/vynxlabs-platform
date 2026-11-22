@@ -203,9 +203,17 @@ export function DrawerGroup({
 }
 
 /** Free content in a group, padded as a row is: chips, a sentence, a preview. */
-export function DrawerBlock({ children, label }: { children: ReactNode; label?: string }) {
+export function DrawerBlock({
+  children,
+  label,
+  className = "",
+}: {
+  children: ReactNode;
+  label?: string;
+  className?: string;
+}) {
   return (
-    <div className="flex flex-col gap-2 px-3 py-3">
+    <div className={`flex flex-col gap-2 px-3 py-3 ${className}`}>
       {label ? <p className="m-0 text-body-sm text-ink-muted">{label}</p> : null}
       {children}
     </div>

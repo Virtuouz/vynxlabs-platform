@@ -3,8 +3,11 @@
  * this file does it. The shell draws each group; a piece here is only the rows of one.
  */
 
-import { columnOptions } from "../controls.tsx";
+import { DrawerRow } from "@volvel/ui";
+import { Search } from "lucide-react";
+import { columnOptions, type Env } from "../controls.tsx";
 import { registerDrawer, registerSettingControl } from "../custom.ts";
+import { heading, searchColumns, visualOf } from "../model.ts";
 import { type ColumnSetting, columnsOf, shownCount } from "./columnModel.ts";
 import { ListLookSection } from "./listDrawer.tsx";
 import { SlotsControl, SlotsGroup, slotSettings } from "./slots.tsx";
@@ -20,6 +23,42 @@ import {
 } from "./tableDrawer.tsx";
 
 const TABLE = "core/table";
+
+/** The page's search box this table follows, with the columns it looks in (board 13's "Searching"). */
+function searchOf(env: Env): { label: string; columns: string[] } | undefined {
+  const bound = env.widget.data?.rows?.filters ?? [];
+  const found = env.filters.find(
+    (one) => one.type === "search" && bound.some((b) => b.filter === one.name),
+  );
+  const table = visualOf(env.widget.data?.rows)?.table;
+  if (!found || !table) return undefined;
+  return {
+    label: found.label ?? heading(found.name),
+    columns: searchColumns(env.widget, table, env.catalog),
+  };
+}
+
+registerDrawer(TABLE, {
+  tab: "data",
+  group: "Searching",
+  order: 50,
+  when: (env) => searchOf(env) !== undefined,
+  note: "Which columns the search box looks in is set on the Search and filter widget, where the box is.",
+  render: (env) => {
+    const found = searchOf(env);
+    return (
+      <DrawerRow
+        label="Search box"
+        icon={Search}
+        value={
+          found
+            ? `${found.label}${found.columns.length > 0 ? `, in ${found.columns.map(heading).join(", ")}` : ""}`
+            : undefined
+        }
+      />
+    );
+  },
+});
 const LIST = "core/list";
 
 registerDrawer(TABLE, {

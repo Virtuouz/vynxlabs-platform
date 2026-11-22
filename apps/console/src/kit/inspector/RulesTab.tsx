@@ -197,7 +197,7 @@ export function ActionRules({
         label="Can be pressed when"
         note="Shown but greyed out otherwise, with the reason as a tooltip."
       >
-        <DrawerBlock>
+        <DrawerBlock className="[&_fieldset]:w-full [&_fieldset]:flex-nowrap [&_label]:flex-1 [&_label]:justify-center">
           <SegmentedControl
             label="Can be pressed when"
             options={[
@@ -308,7 +308,7 @@ export function RulesTab({
         label={`Show this ${kind}`}
         note="Conditions can use the current user, the page filters or the record that is open."
       >
-        <DrawerBlock>
+        <DrawerBlock className="[&_fieldset]:w-full [&_fieldset]:flex-nowrap [&_label]:flex-1 [&_label]:justify-center">
           <SegmentedControl
             label={`Show this ${kind}`}
             options={[

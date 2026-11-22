@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import type { PageWidget } from "@volvel/manifest";
-import { button, chart, stat, table } from "@volvel/widgets-core";
+import { button, chart, stat, table, text } from "@volvel/widgets-core";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
@@ -181,4 +181,28 @@ test("a date is spoken as 'is in the last' and 'is between', and what is stored 
   const after = { column: "issued_at", op: "gte" as const, value: "2026-11-01" };
   expect(sentenceOf(after, column).before).toBe("Issued at is on or after");
   expect(fromEditor(toEditor(after, column))).toEqual([after]);
+});
+
+test("a new condition starts on a choice column, else a date, else a number", async () => {
+  const widget: PageWidget = {
+    id: "c",
+    type: "core/chart",
+    at,
+    data: { rows: { source: { visual: { ...visual } } } },
+  };
+  show(<Harness start={widget} definition={chart} />);
+  fireEvent.click(screen.getByRole("button", { name: "Condition" }));
+  // The table's only choice column (an enum) comes first, not the date every table has.
+  expect(((await screen.findByLabelText("Field")) as HTMLSelectElement).value).toBe("status");
+});
+
+test("a text widget has no Heading group: its heading is a row of its Text group", () => {
+  show(
+    <Harness
+      start={{ id: "n", type: "core/text", at, title: "In dollars", config: { text: "Hello" } }}
+      definition={text}
+    />,
+  );
+  expect(screen.queryByRole("heading", { name: "Heading" })).toBeNull();
+  expect(screen.getByRole("button", { name: /^Heading/ }).textContent).toContain("In dollars");
 });

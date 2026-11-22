@@ -933,11 +933,12 @@ test("POLISH-004: Record detail: the record, its fields in sections and edit in 
   await tabOf("Display").click();
   const fields = settings().getByRole("region", { name: "Fields" });
   // Every column is shown, so each is in the list, to hide, reorder and group into sections.
-  await expect
-    .soft(fields.getByRole("list", { name: "Fields" }), "the Fields list holds the columns shown")
-    .toContainText("Number");
+  await expect(
+    fields.getByRole("list", { name: "Fields" }),
+    "the Fields list holds the columns shown",
+  ).toContainText("Number");
   // A column is not drawn as the words "[object Object]".
-  await expect.soft(widget(/^Record detail/)).not.toContainText("[object Object]");
+  await expect(widget(/^Record detail/)).not.toContainText("[object Object]");
   await choose(settings().getByRole("group", { name: "Fields across" }), "3").click();
   await flip("Let people edit fields in place").check();
   const saved = (await settle("records", "invoice", added.id, (one) =>
@@ -1057,9 +1058,10 @@ test("POLISH-004: Action group: its buttons are rows with their own settings, li
   // A button with nothing to do keeps the page from being published, and the page says why in
   // its own words, not in the schema's.
   await expect(owner.getByText(/To fix before it can be published/)).toBeVisible();
-  await expect
-    .soft(owner.getByText(/must NOT have fewer than/), "the reason is in words, not the schema's")
-    .toHaveCount(0);
+  await expect(
+    owner.getByText(/must NOT have fewer than/),
+    "the reason is in words, not the schema's",
+  ).toHaveCount(0);
   await choose(settings().getByRole("group", { name: "Line up" }), "Spread").click();
   const saved = (await settle("layout", "blank", added.id, (one) =>
     one.config?.lineUp === "spread" ? one : undefined,
@@ -1141,15 +1143,11 @@ test("POLISH-004: Search and filter: a filter is added, sits behind a button, an
     one.config?.sit === "button" ? one : undefined,
   )) as Wid;
   expect(saved.config.sit).toBe("button");
-  await expect
-    .soft(settings(), "the words are not written as escapes")
-    .not.toContainText("\\u201c");
-  await expect
-    .soft(
-      widget(/^Search and filter/).getByRole("button", { name: /^Filters/ }),
-      "behind a button on the canvas",
-    )
-    .toBeVisible();
+  await expect(settings(), "the words are not written as escapes").not.toContainText("\\u201c");
+  await expect(
+    widget(/^Search and filter/).getByRole("button", { name: /^Filters/ }),
+    "behind a button on the canvas",
+  ).toBeVisible();
   // As a row it is a search box in the bar again.
   await choose(settings().getByRole("group", { name: "Filters sit" }), "In a row").click();
   await expect(widget(/^Search and filter/).getByRole("search")).toBeVisible();
@@ -1440,7 +1438,7 @@ test("POLISH-010: the publish check blocks what cannot work, says why, passes on
   await expectNoAxeViolations(owner, "the publish popover that passes");
   await publish.click();
   // Published: the pill is gone, the header says so, and the served app has the chart.
-  await expect.soft(draftPill(), "publishing clears the pill").toHaveCount(0);
+  await expect(draftPill(), "publishing clears the pill").toHaveCount(0);
   await expect(owner.getByRole("status").filter({ hasText: "Published." })).toBeVisible();
   const live = (await ok(owner, "GET", `${W}/interfaces/${path("publish")}`)).body;
   expect(live.pages.find((one: { id: string }) => one.id === "blank").widgets).toHaveLength(2);
@@ -2001,9 +1999,10 @@ test("POLISH-005: on a phone each widget is automatic or set by hand (hide, full
     settings().getByRole("group", { name: "On narrow screens" }),
     "Hide",
   ).boundingBox();
-  expect
-    .soft(pane && hide && hide.x + hide.width <= pane.x + pane.width, "Hide is inside the pane")
-    .toBe(true);
+  expect(
+    pane && hide && hide.x + hide.width <= pane.x + pane.width,
+    "Hide is inside the pane",
+  ).toBe(true);
   await settings().getByRole("button", { name: "Back to settings" }).click();
 
   // The phone preview: a banner, a placeholder for what is hidden, and the table as a list.
@@ -2320,12 +2319,11 @@ test("Acceptance, invoices: a table of invoices, a click that opens the record, 
   await sheet.getByRole("textbox").first().fill("hilltop");
   await owner.keyboard.press("Enter");
   await expect
-    .configure({ soft: true })
     .poll(async () => (await ok(owner, "GET", `${W}/row/${made.a?.id}/invoices`)).clinic, {
       message: "the clinic edited in place is saved",
     })
     .toBe("hilltop");
-  await expect.soft(sheet.getByRole("alert"), "no error is shown").toHaveCount(0);
+  await expect(sheet.getByRole("alert"), "no error is shown").toHaveCount(0);
   // Back to the table, as a person would open it again.
   await openServed(owner, "invoices");
 

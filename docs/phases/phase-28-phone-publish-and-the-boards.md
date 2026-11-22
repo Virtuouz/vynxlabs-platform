@@ -402,4 +402,20 @@ On 2026-11-22, on the final build.
 
 ## After the owner's first look
 
-Not yet.
+On 2026-11-22 the owner looked at the builder, found it "looking and functioning fairly well", asked for an example app that uses everything, and gave these corrections.
+
+| What the owner found | What it was | What was done, and where (POLISH-013) |
+|---|---|---|
+| Columns pop into place when dragged by their handle | The list was redrawn in its new order on each step | One hook, `useSortable` (`packages/ui/src/drawer`): the row follows the pointer, the others slide, it slides home on release or Esc. Used by `SortableRows` (columns, filters, tabs, sections, actions, approvals), form fields, action steps, pages, "On this page" and "Add a form". `enforce.test.ts` refuses a list with a drag of its own |
+| A long Text grows to its limit and can't be made shorter | A Text at its first height always grew, whatever it was sized to | `core/text` has `height`: `fit`, or `set` by its corner, its keys, ⋯ › Layout or the drawer. Set, it scrolls |
+| Jitter on the canvas while a widget is moved | A chart was torn down on every draw (its rows were a new object each time); a move that interrupted a move started from the wrong place; the page was drawn again for each pixel; the canvas scrolled to the widget as it was grabbed; choosing a widget changed its heading's height | Charts (everywhere) draw over the one shown and take its place, and only when their rows differ; `useFlip` (every reordering in the console) is interruptible; a drag draws the page again only when the landing changes, and the widget itself follows the pointer; choosing moves nothing |
+| Popping when data is read again | Every save made every widget read again, faded it, and put an "Updating…" line above its rows | A save reads again only when what is read changed; the same rows draw nothing; on served pages a read is faded only after half a second, and adds no line. A widget moved to another container starts from the rows it had |
+| A second scroll bar flashes | The page's frame had a sideways scroll box, which made it scroll up and down too as something was dragged past its end | The frame clips sideways and only the canvas scrolls, with room kept for its bar |
+| A widget can't be dragged into a Section | The Section was pushed away by the widget coming to it, while it was counted where it had been | Containers hold still as they are approached, make room after a rest of 220 ms (one passed over moves nothing), and take the widget wherever they are seen. "Add to page" drops into them too, which it did not |
+| Dots on Data and Display read as something broken | They said that something was set | A dot is only what needs fixing in that tab, with words; the tab lists it ("Needs fixing"). Apps and dashboards |
+| Help topic is free text | | A searchable window of the workspace's documents, by folder; one without a topic says so and links to its editor. A topic that is gone is said there and in the publish check |
+| "Full" draws everything small | Full was drawn at the window's width and scaled down | Full fills the canvas at its true size. **The owner's note stopped mid-sentence ("The behavior can be kept, but visually they"), so this is our reading of it** |
+
+Found in our own walk and fixed: shrinking a tall widget at the end of a page ran away, because the page got shorter under the pointer (it keeps its height while something is held); a problem the console and the server both found was listed twice.
+
+**Walked:** `e2e/phase-28-canvas.spec.ts` (4) and `e2e/phase-28-look-inspector.spec.ts` (13) measure each frame of real drags: where the widget is against the pointer, blank charts, scroll bars, reads, rows that jump.

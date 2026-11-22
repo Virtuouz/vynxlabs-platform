@@ -23,7 +23,7 @@ A widget that comes from a pack other than the one Volvel ships says the pack's 
 Everything is done on the page itself.
 
 - **Click** anywhere on a widget to select it. :kbd[Esc] lets go.
-- **Drag** a widget to move it, and by its corner to stretch it. While you do, a note says its size and place, such as "8 × 5 · col 1 · row 3", and the widgets in its way move aside as it travels.
+- **Drag** a widget to move it, and by its corner to stretch it. While you do, a note says its size and place, such as "8 × 5 · col 1 · row 3", and the widgets in its way move aside. A dragged widget follows the pointer, and a dashed place shows where it would land; Esc puts it back.
 - The **arrow keys** move the selected widget one cell. :kbd[Shift] with an arrow makes it one cell wider, narrower, taller or shorter. The change is read out for screen readers.
 - Click the **title** to rename it where it is.
 - :kbd[Ctrl]+:kbd[D] (:kbd[⌘]+:kbd[D] on a Mac) duplicates it. :kbd[Delete] removes it.
@@ -33,7 +33,7 @@ A widget can't be made smaller than it can be read, or larger than it can be dra
 
 Under the **⋯** of the selected widget, **Layout** sets the same numbers exactly (and the phone, see below), **Duplicate** copies it and **Remove** takes it off.
 
-A side sheet or a modal is sized the same way: drag the edge of its frame, and it snaps to **Small**, **Medium**, **Large**, **Extra large** or **Full**. The same choice is **Size** in the page's settings. The size is the one it opens at when the app is served, and its widgets are laid out on its grid as you placed them. They stack in one column only where the screen is narrow, as on a phone.
+A side sheet or a modal is sized the same way: drag the edge of its frame, and it snaps to **Small**, **Medium**, **Large**, **Extra large** or **Full**. The same choice is **Size** in the page's settings. The size is the one it opens at when the app is served, and its widgets are laid out on its grid as you placed them. They stack in one column only where the screen is narrow, as on a phone. In the builder a size wider than the canvas is drawn smaller, with the scale said; Full fills the canvas at its true size.
 
 A **Button**, and an **Action group**, sit in their own cell. The **Position** on their Display tab is a three by three picker: top, middle or bottom, by left, centre or right.
 
@@ -45,7 +45,7 @@ A Section is **Plain** or a **Card**. Tabs are drawn with an **Underline** or as
 
 A Section and Tabs each have their own grid of twelve columns inside them. A widget in one is placed and sized there, and moves with it. They go one level deep: a Section is never put in another Section, or in a tab.
 
-- **Drag** a widget onto a Section or onto a tab of Tabs to put it in, and out onto the page to take it out. The container shows where it would land.
+- **Drag** a widget onto a Section or onto a tab of Tabs to put it in, and out onto the page to take it out. The container stays where it is as you come to it, makes room when you rest over it, and shows where the widget would land. A widget dragged out of **Add to page** goes into one the same way.
 - From the keyboard, **⋯ › Move to** lists the Sections and the tabs on the page, and "The page" to take it out.
 - The **outline** shows what each Section and tab holds.
 - A container grows with what it holds. **Duplicate** and **Remove** on a container take what it holds, and **Undo** brings it back.
@@ -89,6 +89,7 @@ Display shows only what fits the data, and says why when something doesn't.
 - **Record detail.** Its record is the one the page was opened with, **the row selected in a table on the page** (the detail follows as people click rows), or **the current user's own record**, matched by email against a column of the table. Fields are a list in sections, **1, 2 or 3 across**, and **Let people edit fields in place** lets a person change what is shown on the page, on the server's terms as an action's.
 - **Approvals.** Data is **Which requests**: the workflows to ask of, as chips with their real titles (none chosen is every workflow with an approval step, including those made later), and **Whose**: **Theirs to decide**, or **Every one, theirs or not**. Display is **Looks like** (rows, cards or a queue), what a click opens (a side sheet, a modal or nothing), **What each shows** (the step's own details as a list: drag to reorder, the eye to hide; left alone, the first four) and **Decided ones** (a Waiting and Decided switch, with who decided and why, and what it says when nothing waits). Actions is **Deciding**: what the two buttons say, **Ask why** (never, when rejecting, or always), **Ask before approving**, and **Go to the next one**. **Who may decide is set on the workflow's step**, not here; the drawer says so and links to the workflow. While you build, the buttons don't run, and a page with nothing waiting shows a sample, marked as one.
 - **Form.** Fields and sections with what each requires, what **Submit says**, and **After saving**.
+- **Text.** Its **height** fits the text and grows as it is written. Drag its corner, or choose **Set by hand**, to give it a height of its own: longer text then scrolls inside it.
 - **Button.** What it **says**, an **icon**, its style, **Full width**, and its position. Its actions are shown collapsed, one line per step.
 - **Search and filter.** Every filter is in one list, each with a line on what it does ("Search invoices: looks in Number, Client code, Payment ref"). A filter's editor sets its label, kind and starting value, and which widgets it narrows, as checkboxes. **Filters sit** in a row, or behind a "Filters" button.
 - **Text.** See below.

@@ -54,10 +54,15 @@ export function PublishCheck({
   /** "Try as Billing first": View as that group, and the panel closes. */
   onTry: (group: { key: string; name: string }) => void;
 }) {
+  // Only what has a draft is asked about: a page nobody has changed has none, and asking for it
+  // is refused ("A draft at … was not found"), which read as a problem with the app.
   const paths = [path, ...(appPath ? [appPath] : [])]
-    .filter((one) => one === path || drafted.includes(one))
+    .filter((one) => drafted.includes(one))
     .join(",");
-  const preview = useLoad<Preview>(`${root}/changes/preview?paths=${encodeURIComponent(paths)}`);
+  const nothing = paths === "";
+  const preview = useLoad<Preview>(
+    nothing ? null : `${root}/changes/preview?paths=${encodeURIComponent(paths)}`,
+  );
   const workspace = useLoad<{ name: string }>(root);
   const { catalog, loading } = useCatalog(root);
   const lists = useActionLists(root);
@@ -91,7 +96,9 @@ export function PublishCheck({
       instance.data,
     ],
   );
-  const asked = preview.data;
+  const asked: Preview | undefined = nothing
+    ? { possible: true, refusal: null, summary: null }
+    : preview.data;
   const checks: CheckItem[] = useMemo(
     () =>
       checksFor({
@@ -195,7 +202,7 @@ export function PublishCheck({
         <Button
           variant="primary"
           loading={publishing}
-          disabled={!ready || blocked}
+          disabled={!ready || blocked || nothing}
           onClick={onPublish}
         >
           {lines && lines.length > 0

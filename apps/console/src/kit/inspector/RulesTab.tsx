@@ -273,7 +273,8 @@ export function RulesTab({
     ),
   ];
   const noun = env.surface === "app" ? "app" : "dashboard";
-  const kind = env.definition.title.toLowerCase();
+  // "Show this approvals" reads wrong: a title that is a plural is called a widget.
+  const kind = /s$/i.test(env.definition.title) ? "widget" : env.definition.title.toLowerCase();
   // A widget's own rules can read the record its page is open on, and no clicked one.
   const ctx = { ...actionContext(env), eventTable: undefined, defaultRef: "this" as const };
   const showWhen = env.widget.rules?.showWhen;

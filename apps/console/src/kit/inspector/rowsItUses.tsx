@@ -144,7 +144,8 @@ export function RowsItUses({
       {data && rows.source && env.filters.length > 0 ? (
         <FollowChips env={env} input={input} columns={columns} />
       ) : null}
-      {data && rows.source && env.filters.length === 0 && env.addFilters ? (
+      {/* A form only writes: there is nothing on it for a search to narrow. */}
+      {data && rows.source && rows.conditions && env.filters.length === 0 && env.addFilters ? (
         <DrawerBlock>
           <p className="m-0 text-body-sm text-ink-muted">
             Add Search and filter to let people narrow this page.

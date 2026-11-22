@@ -234,7 +234,7 @@ describe("Add to page", () => {
     expect(offer).toEqual({
       key: "approvals",
       label: "Approvals",
-      hint: "Stock orders waits for a decision",
+      hint: "Stock orders asks for a decision",
     });
     expect(
       approvalsSuggestion(
@@ -244,7 +244,7 @@ describe("Add to page", () => {
         ],
         [],
       )?.hint,
-    ).toBe("2 workflows wait for a decision");
+    ).toBe("2 workflows ask for a decision");
   });
 
   test("does not, when no workflow asks, or the page already has one", () => {

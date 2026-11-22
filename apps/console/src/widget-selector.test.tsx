@@ -192,12 +192,12 @@ describe("Approvals in the selector", () => {
       suggestions: {
         table: "this page",
         items: [
-          { key: "approvals", label: "Approvals", hint: "Stock orders waits for a decision" },
+          { key: "approvals", label: "Approvals", hint: "Stock orders asks for a decision" },
         ],
         onPick,
       },
     });
-    fireEvent.click(dialog.getByRole("button", { name: /Approvals.*waits for a decision/ }));
+    fireEvent.click(dialog.getByRole("button", { name: /Approvals.*asks for a decision/ }));
     expect(onPick).toHaveBeenCalledWith("approvals");
   });
 });

@@ -239,8 +239,8 @@ export function approvalsSuggestion(
     label: "Approvals",
     hint:
       flows.length === 1 && first
-        ? `${flowWords(first.path, first.title)} waits for a decision`
-        : `${flows.length} workflows wait for a decision`,
+        ? `${flowWords(first.path, first.title)} asks for a decision`
+        : `${flows.length} workflows ask for a decision`,
   };
 }
 

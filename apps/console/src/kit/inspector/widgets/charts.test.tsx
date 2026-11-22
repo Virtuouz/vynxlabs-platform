@@ -449,7 +449,7 @@ test("Over follows one of the page's date filters", async () => {
 });
 
 test("goal display: the percentage, and what the bar does when it is reached", async () => {
-  show(<Harness start={thisMonth()} definition={goal} tab="display" />);
+  show(<Harness start={thisMonth()} definition={goal} tab="data" />);
   fireEvent.click(screen.getByRole("switch", { name: "Show the percentage" }));
   expect(last().config?.percent).toBe(false);
   expect(screen.getByRole("group", { name: "Preview" }).textContent).not.toContain("25.9%");

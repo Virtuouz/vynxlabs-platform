@@ -111,10 +111,10 @@ describe("Data: which requests", () => {
   test("the workflows are chips with their real titles, all on when none is chosen", () => {
     mount(ApprovalsDataSection);
     const group = within(screen.getByRole("group", { name: "Workflows" }));
-    expect(group.getByRole("button", { name: "Stock orders" }).getAttribute("aria-pressed")).toBe(
+    expect(group.getByRole("button", { name: /^Stock orders/ }).getAttribute("aria-pressed")).toBe(
       "true",
     );
-    expect(group.getByRole("button", { name: "Time off" }).getAttribute("aria-pressed")).toBe(
+    expect(group.getByRole("button", { name: /^Time off/ }).getAttribute("aria-pressed")).toBe(
       "true",
     );
     expect(screen.getByText(/including those made later/)).toBeTruthy();
@@ -122,12 +122,12 @@ describe("Data: which requests", () => {
 
   test("switching one off chooses the others; all back on is every workflow again; never none", () => {
     const seen = mount(ApprovalsDataSection);
-    fireEvent.click(screen.getByRole("button", { name: "Time off" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Time off/ }));
     expect(source(seen.widget).flows).toEqual(["stock/reorder"]);
     // The last one stays on.
-    fireEvent.click(screen.getByRole("button", { name: "Stock orders" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Stock orders/ }));
     expect(source(seen.widget).flows).toEqual(["stock/reorder"]);
-    fireEvent.click(screen.getByRole("button", { name: "Time off" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Time off/ }));
     expect(source(seen.widget).flows).toBeUndefined();
   });
 

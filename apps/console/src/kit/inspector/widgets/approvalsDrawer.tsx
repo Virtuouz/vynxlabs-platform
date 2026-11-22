@@ -149,12 +149,16 @@ export function ApprovalsDataSection({ env }: { env: Env }) {
                 checked={everyOne || listed.includes(chip.path)}
                 onChange={(on) => toggle(chip.path, on)}
               >
-                {chip.title}
-                {chip.missing ? " (not found)" : ""}
-                {/* A workflow with no title of its own, or one of the same name as another, has its path beside it. */}
-                {!chip.titled || chips.filter((one) => one.title === chip.title).length > 1 ? (
-                  <span className="text-meta opacity-70">{chip.path}</span>
-                ) : null}
+                <span className="flex flex-col">
+                  <span>
+                    {chip.title}
+                    {chip.missing ? " (not found)" : ""}
+                  </span>
+                  {/* The path under the title: two workflows may share one, and an untitled one is only its path. */}
+                  {chip.path.toLowerCase() !== chip.title.toLowerCase() ? (
+                    <span className="text-meta opacity-70">{chip.path}</span>
+                  ) : null}
+                </span>
               </CheckChip>
             ))}
           </ChipSet>

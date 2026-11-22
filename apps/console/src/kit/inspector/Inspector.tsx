@@ -59,6 +59,7 @@ import {
   type ScriptChoice,
   type TabFate,
   tabsOf,
+  READS_NO_ROWS,
   widgetName,
 } from "./model.ts";
 import { RulesTab } from "./RulesTab.tsx";
@@ -133,6 +134,11 @@ export function Inspector(props: InspectorProps) {
     setOwn(next);
     props.onTab?.(next);
   };
+  // A button opens on Display: its Data tab only says it reads no rows.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, as it is opened
+  useEffect(() => {
+    if (READS_NO_ROWS.has(widget.type) && tab === "data") setTab("display");
+  }, []);
   const prefix = useId();
   const menu = useRef<HTMLSpanElement>(null);
   const cameBack = useRef(false);
@@ -476,6 +482,15 @@ function TabBody({
     });
   }
   blocks.sort((a, b) => a.order - b.order);
+
+  if (tab === "data" && blocks.length === 0 && READS_NO_ROWS.has(definition.type)) {
+    return (
+      <p className="m-0 px-1 text-body-sm text-ink-muted">
+        {definition.type === "core/actions" ? "An action group" : "A button"} reads no rows. What
+        it does is on the Actions tab.
+      </p>
+    );
+  }
 
   return (
     <>

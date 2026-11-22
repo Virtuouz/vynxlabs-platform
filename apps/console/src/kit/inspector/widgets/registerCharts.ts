@@ -79,10 +79,11 @@ registerDrawer(STAT, {
 registerDrawer(GOAL, { tab: "data", order: -5000, section: withData(GoalPreview) });
 registerDrawer(GOAL, {
   tab: "data",
-  order: 10,
+  // Progress follows the preview, ahead of the rows it uses (board 14).
+  order: -4000,
   section: withData(GoalData),
   hidesData: ["measure"],
-  hides: ["target", "goalFrom"],
+  hides: ["target", "goalFrom", "percent", "reached"],
 });
 registerDrawer(GOAL, {
   tab: "display",

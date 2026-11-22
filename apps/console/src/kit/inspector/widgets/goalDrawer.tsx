@@ -79,8 +79,13 @@ function goalWords(env: SectionProps["env"]): string | undefined {
     const measure = query?.visual.measures?.find((one) => one.as === from);
     return measure?.column ? `${heading(measure.column)} of each row, added up` : heading(from);
   }
-  return typeof env.config.target === "number"
-    ? formatNumber(env.config.target, env.config.format as Parameters<typeof formatNumber>[1])
+  const target = env.config.target;
+  // A whole amount is written whole: "$200,000", not "$200,000.00".
+  return typeof target === "number"
+    ? formatNumber(target, {
+        ...((env.config.format as Parameters<typeof formatNumber>[1]) ?? { style: "number" }),
+        ...(Number.isInteger(target) ? { decimals: 0 } : {}),
+      })
     : undefined;
 }
 
@@ -231,27 +236,20 @@ function OverRow({ env }: SectionProps) {
   );
 }
 
-export function GoalData({ env, data }: SectionProps) {
-  return (
-    <DrawerGroup
-      label="Progress"
-      note="The goal can be a fixed amount or come from a column, such as a monthly target table."
-    >
-      <MeasureRow env={env} input="value" at={0} label="Value" />
-      <GoalRow env={env} />
-      <OverRow env={env} />
-    </DrawerGroup>
-  );
-}
-
-export function GoalDisplay({ env, data }: SectionProps) {
+/** Board 14: the Data tab reads Preview, Progress (value, goal, over), then Look (the percentage, when reached). */
+export function GoalData({ env }: SectionProps) {
   const set = setter(env);
   return (
     <>
-      <GoalPreview env={env} data={data} />
-      <HeadingGroup env={env} caption="label" />
+      <DrawerGroup
+        label="Progress"
+        note="The goal can be a fixed amount or come from a column, such as a monthly target table."
+      >
+        <MeasureRow env={env} input="value" at={0} label="Value" />
+        <GoalRow env={env} />
+        <OverRow env={env} />
+      </DrawerGroup>
       <DrawerGroup label="Look">
-        <NumbersRow env={env} />
         <ConfigToggle
           env={env}
           name="percent"
@@ -270,6 +268,19 @@ export function GoalDisplay({ env, data }: SectionProps) {
             set("reached", next, "changing what happens when the goal is reached")
           }
         />
+      </DrawerGroup>
+    </>
+  );
+}
+
+export function GoalDisplay({ env, data }: SectionProps) {
+  const set = setter(env);
+  return (
+    <>
+      <GoalPreview env={env} data={data} />
+      <HeadingGroup env={env} caption="label" />
+      <DrawerGroup label="Numbers">
+        <NumbersRow env={env} />
       </DrawerGroup>
     </>
   );

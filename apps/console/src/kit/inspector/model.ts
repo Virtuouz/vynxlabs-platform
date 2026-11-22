@@ -162,13 +162,19 @@ export function isShown(hint: InspectorHint, config: Record<string, unknown>): b
   );
 }
 
+/** Widgets that only do things: their Data tab says they read no rows. */
+export const READS_NO_ROWS: ReadonlySet<string> = new Set(["core/button", "core/actions"]);
+
 /** Whether a tab has anything to draw. Rules and Actions say what is so even when nothing can be set. */
 export function tabsOf(definition: WidgetDefinition): Tab[] {
   return TABS.filter((tab) => {
     // A widget's own drawer pieces (Approvals' "Which requests") make a tab as a setting does.
     if (drawersFor(definition.type, tab).length > 0) return true;
-    if (tab === "data")
+    if (tab === "data") {
+      // A button and an action group read no rows, and still have the tab, as board 17 draws it: it says so.
+      if (READS_NO_ROWS.has(definition.type)) return true;
       return dataParts(definition).length > 0 || configSettings(definition, tab).length > 0;
+    }
     if (tab === "display") return true; // the title and the line under it are every widget's
     if (tab === "actions")
       return (

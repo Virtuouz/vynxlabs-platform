@@ -35,7 +35,7 @@ export function CheckChip({
       type="button"
       aria-pressed={checked}
       onClick={() => onChange(!checked)}
-      className={`inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-control border px-3 text-body-sm ${focus} ${
+      className={`inline-flex min-h-7 cursor-pointer items-center gap-1.5 rounded-control border px-3 py-0.5 text-left text-body-sm ${focus} ${
         checked
           ? "border-action bg-action-soft text-action"
           : "border-dashed border-line-strong text-ink-muted hover:text-ink"

@@ -103,7 +103,7 @@ export function NumberFormatPicker({
           return (
             <label
               key={one.id}
-              className={`flex h-10 cursor-pointer items-center justify-between gap-3 rounded-control border px-3 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
+              className={`flex h-9 cursor-pointer items-center justify-between gap-3 rounded-control border px-3 text-body-sm min-[640px]:h-10 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus ${
                 on ? "border-action bg-selected" : "border-transparent hover:bg-selected"
               }`}
             >

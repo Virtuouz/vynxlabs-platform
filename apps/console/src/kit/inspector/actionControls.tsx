@@ -1237,6 +1237,7 @@ export function OpensPages({ env, action }: { env: Env; action: Action | undefin
   if (unique.length === 0) return null;
   const open = env.openPage;
   return (
+    // panel-allowed: rows of the drawer with no heading of their own, as a group's are
     <div className="divide-y divide-line overflow-hidden rounded-panel border border-line bg-surface">
       {unique.map((page) => (
         <DrawerRow key={page.id} label="Opens" value={page.title} onClick={() => open(page.id)} />

@@ -413,7 +413,7 @@ export function DrawerEditor({
             </div>
             <div
               className="min-h-0 flex-1 overflow-y-auto p-3"
-              // A soft shadow at the foot while there is more to see: a small screen shows part of a long editor.
+              // A soft edge at the foot while there is more to see: a small screen shows part of a long editor.
               style={edgeShadows("var(--color-raised)")}
             >
               {children}

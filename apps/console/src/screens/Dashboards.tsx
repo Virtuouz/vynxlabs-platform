@@ -510,8 +510,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
           <span>
             {asOf ? (
               <>
-                Last refreshed
-                <Time value={new Date(asOf)} mode="clock" />
+                Last refreshed <Time value={new Date(asOf)} mode="clock" />
               </>
             ) : reading ? (
               "Refreshing"

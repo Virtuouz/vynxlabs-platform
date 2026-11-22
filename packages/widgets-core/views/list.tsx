@@ -1,6 +1,6 @@
 import type { ColumnInfo, RowsData } from "@volvel/widgets";
 import type { ReactNode } from "react";
-import { cellOf, isDefaultColumn, rowId } from "./cells.tsx";
+import { cellOf, defaultColumns, rowId } from "./cells.tsx";
 import {
   listensTo,
   PRESSABLE,
@@ -67,7 +67,7 @@ export function ListView(props: WithSelected<ListConfig>) {
   const { config, data, emit, selectedRecord } = props;
   const rows = data.rows;
   if (rows?.shape !== "rows") return null;
-  const first = rows.columns.find(isDefaultColumn)?.name;
+  const first = defaultColumns(rows.columns)[0]?.name;
   const title = config.title ?? first;
   const pressable = listensTo(props, "rowClick");
   const actions = config.rowActions ?? [];

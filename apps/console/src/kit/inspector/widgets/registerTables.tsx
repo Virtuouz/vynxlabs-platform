@@ -4,6 +4,7 @@
  */
 
 import { DrawerRow } from "@volvel/ui";
+import { DEFAULT_COLUMNS } from "@volvel/widgets-core/views";
 import { Search } from "lucide-react";
 import { columnOptions, type Env } from "../controls.tsx";
 import { registerDrawer, registerSettingControl } from "../custom.ts";
@@ -78,7 +79,11 @@ registerDrawer(TABLE, {
     shownCount(
       columnsOf(
         env.config.columns as ColumnSetting[] | undefined,
-        columnOptions(env, "rows").map((one) => one.value),
+        // As the page draws a table that names none: not the system columns, and no more than it takes.
+        columnOptions(env, "rows")
+          .map((one) => one.value)
+          .filter((name) => !["id", "created_at", "updated_at"].includes(name))
+          .slice(0, DEFAULT_COLUMNS),
       ),
     ),
   note: "Drag to reorder, the eye to hide, click to rename or format. Clicking a heading on the page opens the same thing.",

@@ -436,6 +436,30 @@ describe("deciding", () => {
     );
   });
 
+  test("putting a settled request away with Done opens the next one and takes the focus there", async () => {
+    const decide = vi.fn<Decide>(async () => ({
+      ok: false,
+      conflict: true,
+      message: "Maya Brooks approved this a moment ago.",
+    }));
+    draw({ look: "queue" }, data([item(1), item(2), item(3)]), { decide });
+    fireEvent.click(screen.getByText("Approve order 2"));
+    fireEvent.click(screen.getAllByRole("button", { name: "Approve" })[0] as HTMLElement);
+    await screen.findAllByText("Maya Brooks approved this a moment ago.");
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    // The one after it opens (not the first of the list), with the focus on its row.
+    await waitFor(() =>
+      expect(
+        (document.querySelector("[data-approval-detail]") as HTMLElement).getAttribute(
+          "data-approval-detail",
+        ),
+      ).toBe("run-3/ask"),
+    );
+    await waitFor(() =>
+      expect(document.activeElement?.getAttribute("data-approval-row")).toBe("run-3/ask"),
+    );
+  });
+
   test("with reduced motion a decided request is gone at once, though the page has not read again", async () => {
     vi.stubGlobal(
       "matchMedia",

@@ -782,14 +782,20 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
           next.delete(item.id);
           return next;
         });
-        leave(
-          item,
-          Math.max(
-            0,
-            live.findIndex((one) => one.id === item.id),
-          ),
-        );
-        setSheet(undefined);
+        const at = live.findIndex((one) => one.id === item.id);
+        leave(item, Math.max(0, at));
+        // Putting it away moves on as a decision does: the next request, with the focus on it,
+        // not the top of the list and the focus lost with the button that was pressed.
+        const next = live[at + 1] ?? live[at - 1];
+        if (advance && next) {
+          setSelected(next.id);
+          if (sheet) setSheet(next.id);
+          setFocus(next.id);
+        } else {
+          setSelected(undefined);
+          setSheet(undefined);
+          setFocus(null);
+        }
       }}
       onDecide={onDecide}
       {...(heading ? { heading } : {})}

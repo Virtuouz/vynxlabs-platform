@@ -1,3 +1,4 @@
+import { closeSetting, openSetting, settingRow } from "./inspector.ts";
 import { signInWithPassword } from "./sign-in.ts";
 import { type Browser, expect, type Page, test } from "./test.ts";
 
@@ -120,17 +121,23 @@ test("POLISH-002: Invoiced by week is a line of the sum of Total by week, in fiv
   for (const tab of ["Data", "Display", "Actions", "Rules"]) {
     await expect(inspector.getByRole("tab", { name: new RegExp(`^${tab}`) })).toBeVisible();
   }
-  // Data, in the drawings' words: Source, Value, Break down by.
-  await expect(inspector.getByText(/^Follows the page filters:/)).toBeVisible();
-  await expect(inspector.getByLabel("What value 1 works out")).toHaveValue("sum");
-  await expect(inspector.getByLabel("Column value 1 is of")).toHaveValue("total");
-  await expect(inspector.getByLabel("Breakdown 1", { exact: true })).toHaveValue("issued_on");
-  await expect(inspector.getByLabel("How often breakdown 1 is cut")).toHaveValue("week");
+  // Data, in the drawings' words: the rows it uses, then what to chart (Measure, For each).
+  await expect(inspector.getByText(/^Follows \d+ page filters/)).toBeVisible();
+  await expect(inspector.getByRole("group", { name: "Page filters this follows" })).toBeVisible();
+  await expect(settingRow(inspector, "Measure")).toContainText("Sum of Total");
+  await expect(settingRow(inspector, "For each")).toContainText("Issued on");
+  await expect(settingRow(inspector, "For each")).toContainText("Weekly");
+  const measure = await openSetting(owner, inspector, "Measure");
+  await expect(measure.getByLabel("What it works out")).toHaveValue("sum");
+  await expect(measure.getByLabel("Column it works on")).toHaveValue("total");
+  await closeSetting(owner, measure);
+  const breakdown = await openSetting(owner, inspector, "For each");
+  await expect(breakdown.getByRole("radio", { name: /^Issued on/ })).toBeChecked();
+  await expect(breakdown.getByRole("radio", { name: "Week" })).toBeChecked();
+  await closeSetting(owner, breakdown);
   // The settings that matter are seen without scrolling the inspector.
-  const panel = inspector.getByRole("tabpanel");
-  const box = await panel.boundingBox();
-  const cut = await inspector.getByLabel("How often breakdown 1 is cut").boundingBox();
-  expect(cut && box && cut.y + cut.height).toBeLessThanOrEqual(900);
+  const cut = await settingRow(inspector, "For each").boundingBox();
+  expect(cut && cut.y + cut.height).toBeLessThanOrEqual(900);
   // Display: the chart type is a line.
   await inspector.getByRole("tab", { name: /^Display/ }).click();
   await expect(inspector.getByRole("radio", { name: "Line" })).toBeChecked();
@@ -142,7 +149,9 @@ test("POLISH-002: Invoiced by week is a line of the sum of Total by week, in fiv
 test("POLISH-003: Unpaid is changed to a count in the reader's words, and Undo takes it back", async () => {
   await openBuilder();
   await choose("Unpaid");
-  await settings().getByLabel("What value 1 works out").selectOption("count");
+  const value = await openSetting(owner, settings(), "Value");
+  await value.getByLabel("What it works out").selectOption("count");
+  await closeSetting(owner, value);
   await expect
     .poll(
       async () =>
@@ -241,14 +250,16 @@ test("POLISH-011: a Text widget is added from Add to page and written in Markdow
     .first()
     .click();
   await owner.getByRole("dialog").getByRole("button", { name: /^Text/ }).click();
-  await settings()
-    .getByRole("tab", { name: /^Display/ })
-    .click();
-  await settings()
-    .getByRole("textbox", { name: /^Text/ })
-    .fill(
-      ":::alert[Read this first]{type=warning}\nThe numbers are in dollars.\n:::\n\n:::steps\n1. Choose a clinic.\n2. Choose a stretch of time.\n:::",
-    );
+  const markdown = await openSetting(owner, settings(), "Markdown", "Text");
+  // The editor loads as a read-only box first; the one that takes typing is Monaco's.
+  await markdown
+    .locator(".monaco-editor .native-edit-context, .monaco-editor textarea")
+    .first()
+    .focus();
+  await owner.keyboard.insertText(
+    ":::alert[Read this first]{type=warning}\nThe numbers are in dollars.\n:::\n\n:::steps\n1. Choose a clinic.\n2. Choose a stretch of time.\n:::",
+  );
+  await closeSetting(owner, markdown);
   const text = owner.locator("section[data-selected]");
   await expect(text.getByText("Read this first")).toBeVisible();
   await expect(text.locator("ol")).toHaveCount(1);
@@ -262,14 +273,14 @@ test("POLISH-002: the labs Goal is added from Add to page, marked with its pack,
     .first()
     .click();
   const goal = owner.getByRole("dialog").getByRole("button", { name: /^Goal/ });
-  await expect(goal).toContainText("Labs pack");
+  await expect(goal).toContainText("Labs");
   await goal.click();
   await expect(owner.locator("section[data-selected]")).toHaveAttribute("aria-label", "Goal");
-  await settings()
-    .getByRole("tab", { name: /^Display/ })
-    .click();
-  await settings().getByLabel("Target").fill("20000000");
-  await settings().getByLabel("Target").press("Tab");
+  await expect(settings()).toContainText("Labs pack");
+  // The target is the Goal row of the Data tab: a fixed amount, or a column.
+  const target = await openSetting(owner, settings(), "Goal");
+  await target.getByRole("spinbutton", { name: "Amount" }).fill("20000000");
+  await target.getByRole("spinbutton", { name: "Amount" }).press("Tab");
   await expect
     .poll(
       async () =>
@@ -313,9 +324,11 @@ test("POLISH-001: the page is published, says what it changes first, and opens f
   test.setTimeout(180_000);
   await openBuilder();
   await owner.getByRole("button", { name: "Publish" }).first().click();
-  const dialog = owner.getByRole("dialog");
-  await expect(dialog).toContainText("On the page");
-  await expect(dialog).toContainText("What is deployed");
+  // It says what publishing does first, then what it changes on this page.
+  const dialog = owner.getByRole("dialog", { name: "What publishing does" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText(/^Publishes to Sandbox/)).toBeVisible();
+  await expect(dialog.getByText(/^\d+ changes?$/)).toBeVisible();
   await dialog.getByRole("button", { name: /^Publish/ }).click();
   await expect(owner.getByText("Published. People who open the app now see this.")).toBeVisible({
     timeout: 60_000,

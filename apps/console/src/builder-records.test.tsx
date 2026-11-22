@@ -198,7 +198,10 @@ test("a page's kind is listed beside it, set in its settings, and a page is reor
   fireEvent.click(settings.getByRole("radio", { name: "Side sheet" }));
   await saved((body) => body.pages[0]?.kind === "sheet");
   expect(pageOf("money")?.record).toEqual({ table: "invoices" });
+  // The table of its record is on the Data tab.
+  fireEvent.click(settings.getByRole("tab", { name: /^Data/ }));
   expect(settings.getByLabelText("Table of its record")).toBeTruthy();
+  fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
   fireEvent.click(settings.getByRole("radio", { name: "Page" }));
   await saved((body) => body.pages[0]?.kind === undefined && body.pages[0]?.record === undefined);
 
@@ -213,7 +216,8 @@ test("a page's kind is listed beside it, set in its settings, and a page is reor
   await saved((body) => body.pages.some((page) => page.title === "Takings"));
 
   // Removed, after asking.
-  fireEvent.click(screen.getByRole("button", { name: "Remove page" }));
+  fireEvent.click(screen.getByRole("button", { name: /^More about / }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Remove page" }));
   fireEvent.click(
     await within(await screen.findByRole("dialog")).findByRole("button", {
       name: "Remove the page",

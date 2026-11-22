@@ -3,6 +3,7 @@
  * of the grid. Display: its heading, how numbers look, shading, and the totals.
  */
 import { DrawerBlock, DrawerGroup } from "@volvel/ui";
+import { formatNumber } from "@volvel/widgets";
 import { shadeOf } from "@volvel/widgets-core/views";
 import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
 import {
@@ -32,7 +33,15 @@ function headingOf(value: unknown, bucket: string | undefined, dated: boolean): 
 }
 
 /** The grid the pivot draws, small: the first breakdown down the side, the last across, each cell shaded by its size. */
-export function PivotPreview({ query, data }: { query: Query; data: DrawerData | undefined }) {
+export function PivotPreview({
+  query,
+  data,
+  format,
+}: {
+  query: Query;
+  data: DrawerData | undefined;
+  format?: Parameters<typeof formatNumber>[1];
+}) {
   const groups = groupsOf(query);
   const summary = data?.summary ?? sampleSummary(query, data?.counts);
   const across = groups.at(-1);
@@ -81,7 +90,7 @@ export function PivotPreview({ query, data }: { query: Query; data: DrawerData |
                 background: `color-mix(in srgb, var(--color-action) ${Math.round(shadeOf(cell(r, c), low, high) * 100)}%, transparent)`,
               }}
             >
-              {cellWords(cell(r, c))}
+              {cellWords(cell(r, c), format)}
             </span>
           ))}
         </div>
@@ -90,13 +99,11 @@ export function PivotPreview({ query, data }: { query: Query; data: DrawerData |
   );
 }
 
-/** A cell's number, short: 1.2M, 634k, 87. */
-const cellWords = (value: number | null): string =>
+/** A cell's number, short: 1.2M, 634k, 87, in the pivot's own format. */
+const cellWords = (value: number | null, format: Parameters<typeof formatNumber>[1]): string =>
   value === null
     ? ""
-    : new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(
-        value,
-      );
+    : formatNumber(value, { ...(format ?? { style: "number" }), notation: "compact" });
 
 export function PivotData({ env, data }: SectionProps) {
   const query = queryOf(env, "rows");
@@ -112,7 +119,11 @@ export function PivotData({ env, data }: SectionProps) {
       <BreakdownRow env={env} input="rows" at={0} label="Rows" />
       <BreakdownRow env={env} input="rows" at={columnsAt} label="Columns" none="Nothing" />
       <DrawerBlock>
-        <PivotPreview query={query} data={data} />
+        <PivotPreview
+          query={query}
+          data={data}
+          format={env.config.format as Parameters<typeof formatNumber>[1]}
+        />
       </DrawerBlock>
     </DrawerGroup>
   );

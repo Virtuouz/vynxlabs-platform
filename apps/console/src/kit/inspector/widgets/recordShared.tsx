@@ -4,28 +4,10 @@
  * icons a button may carry.
  */
 import { DrawerGroup, type DrawerIcon, DrawerRow } from "@volvel/ui";
-import {
-  Archive,
-  ArrowRight,
-  Bell,
-  Calendar,
-  Check,
-  ChevronLeft,
-  Copy,
-  Download,
-  Mail,
-  Pencil,
-  Play,
-  Plus,
-  Printer,
-  Send,
-  Settings,
-  Star,
-  Trash2,
-  Zap,
-} from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Env } from "../controls.tsx";
+import { ICON_CHOICES as KIT_ICONS } from "../controls.tsx";
 import { withConfig } from "../model.ts";
 
 export type { Env };
@@ -120,26 +102,10 @@ export const TONE_WORDS: Record<string, string> = {
   danger: "Danger",
 };
 
-/** The icons a button may carry, by the names the views know them by. */
-export const ICON_CHOICES: { name: string; label: string; Icon: DrawerIcon }[] = [
-  { name: "check", label: "Check", Icon: Check },
-  { name: "plus", label: "Plus", Icon: Plus },
-  { name: "pencil", label: "Pencil", Icon: Pencil },
-  { name: "trash", label: "Trash", Icon: Trash2 },
-  { name: "send", label: "Send", Icon: Send },
-  { name: "mail", label: "Mail", Icon: Mail },
-  { name: "bell", label: "Bell", Icon: Bell },
-  { name: "calendar", label: "Calendar", Icon: Calendar },
-  { name: "copy", label: "Copy", Icon: Copy },
-  { name: "download", label: "Download", Icon: Download },
-  { name: "printer", label: "Print", Icon: Printer },
-  { name: "archive", label: "Archive", Icon: Archive },
-  { name: "arrow-right", label: "Arrow", Icon: ArrowRight },
-  { name: "play", label: "Play", Icon: Play },
-  { name: "star", label: "Star", Icon: Star },
-  { name: "settings", label: "Settings", Icon: Settings },
-  { name: "zap", label: "Bolt", Icon: Zap },
-];
+/** The icons a button may carry: the kit's one curated set (`controls.tsx`), the names the views know. */
+export const ICON_CHOICES: { name: string; label: string; Icon: DrawerIcon }[] = KIT_ICONS.map(
+  ({ name, label, icon }) => ({ name, label, Icon: icon as DrawerIcon }),
+);
 
 export const iconOf = (name: string | undefined) => ICON_CHOICES.find((one) => one.name === name);
 

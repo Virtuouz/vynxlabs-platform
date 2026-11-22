@@ -260,10 +260,10 @@ export function DrawerRow({
       <span className="w-24 shrink-0 text-ink-muted">{label}</span>
       <span className="flex min-w-0 flex-1 items-center gap-2">
         {Icon ? <Icon size={14} aria-hidden className="shrink-0 text-ink-muted" /> : null}
-        <span className={`min-w-0 truncate ${mono ? "font-mono text-action" : ""}`}>
+        <span className={`min-w-[4ch] truncate ${mono ? "font-mono text-action" : ""}`}>
           {value ?? <span className="text-ink-muted">Not set</span>}
         </span>
-        {hint ? <span className="shrink-0 text-ink-muted">· {hint}</span> : null}
+        {hint ? <span className="min-w-0 shrink-[4] truncate text-ink-muted">· {hint}</span> : null}
       </span>
       {editor || onClick ? (
         <ChevronRight aria-hidden="true" size={14} className="shrink-0 text-ink-muted" />

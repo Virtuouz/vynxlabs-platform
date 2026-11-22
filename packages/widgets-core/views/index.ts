@@ -6,10 +6,12 @@
 import type { WidgetDefinition, WidgetViewProps } from "@volvel/widgets";
 import type { ComponentType } from "react";
 import { CORE_WIDGETS } from "../src/index.ts";
+import { ActionsView } from "./actions.tsx";
 import { ButtonView } from "./button.tsx";
 import { ChartView } from "./chart.tsx";
-import { ActionsView, FilterView, SectionView, TabsView } from "./compose.tsx";
+import { SectionView, TabsView } from "./compose.tsx";
 import { DetailView } from "./detail.tsx";
+import { FilterView } from "./filter.tsx";
 import { FormView } from "./form.tsx";
 import { ListView } from "./list.tsx";
 import { PivotView } from "./pivot.tsx";
@@ -43,6 +45,16 @@ export const corePack: CorePack = {
   },
 };
 
+export { fitCount } from "./actions.tsx";
+export { TYPING_PAUSE } from "./filter.tsx";
+export {
+  type DateRange,
+  isRelative,
+  RANGE_LABELS,
+  type RelativeRange,
+  relativeRange,
+  valueFor,
+} from "./filterValues.ts";
 export {
   ActionsView,
   ButtonView,

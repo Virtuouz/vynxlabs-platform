@@ -425,7 +425,7 @@ describe("reading what waits", () => {
     const { check } = await import("./kernel/authorize.js");
     expect((await check(t.db, appOnly, "approval:write", at2)).allowed).toBe(false);
     // Suspended: nothing.
-    expect(await approvalStanding(t.db, { type: "member", id: ids.sam }, at2)).toBe(undefined);
+    expect(await approvalStanding(t.db, { type: "member", id: ids.sam as string }, at2)).toBe(undefined);
   });
 
   test("the operator, in through an access grant, is given nothing", async () => {
@@ -625,7 +625,7 @@ describe("deciding", () => {
   test("a suspended member cannot decide", async () => {
     const step = await ask("orders/reorder");
     // Sam's own sign-in would not even open; his standing is what is asked.
-    expect(await approvalStanding(t.db, { type: "member", id: ids.sam }, {
+    expect(await approvalStanding(t.db, { type: "member", id: ids.sam as string }, {
       tenantId: tenant,
       workspaceId: dev,
     })).toBe(undefined);

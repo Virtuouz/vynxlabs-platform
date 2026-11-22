@@ -7,6 +7,7 @@ import type { WidgetDefinition, WidgetViewProps } from "@volvel/widgets";
 import type { ComponentType } from "react";
 import { CORE_WIDGETS } from "../src/index.ts";
 import { ActionsView } from "./actions.tsx";
+import { ApprovalsView } from "./approvals.tsx";
 import { ButtonView } from "./button.tsx";
 import { ChartView } from "./chart.tsx";
 import { DetailView } from "./detail.tsx";
@@ -43,6 +44,7 @@ export const corePack: CorePack = {
     "core/tabs": TabsView,
     "core/filter": FilterView,
     "core/actions": ActionsView,
+    "core/approvals": ApprovalsView,
   },
 };
 
@@ -69,10 +71,12 @@ export {
   relativeRange,
   valueFor,
 } from "./filterValues.ts";
+export { metaOf, relativeTime, valueWords, whyNot } from "./approvals.tsx";
 export { shadeOf } from "./pivot.tsx";
 export { changeTone } from "./stat.tsx";
 export {
   ActionsView,
+  ApprovalsView,
   ButtonView,
   ChartView,
   DetailView,

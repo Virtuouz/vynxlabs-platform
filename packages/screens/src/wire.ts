@@ -17,7 +17,8 @@ export function isEmpty(inputs: Readonly<Record<string, WireData>>): boolean {
   if (all.length === 0) return false;
   return all.every((wire) => {
     // A record input with no record is for the view to draw: a create form, or a detail that says nothing is open.
-    if (wire.shape === "record") return false;
+    // Approvals draw their own "Nothing waits for you.", beside the switch to what was decided.
+    if (wire.shape === "record" || wire.shape === "approvals") return false;
     if (wire.shape === "summary" && wire.breakdowns.length === 0) return false;
     return wire.rows.length === 0;
   });

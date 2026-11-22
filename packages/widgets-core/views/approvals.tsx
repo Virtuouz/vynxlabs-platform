@@ -4,7 +4,6 @@ import type { ApprovalItem, ApprovalsData, WidgetViewProps } from "@volvel/widge
 import { formatNumber } from "@volvel/widgets";
 import {
   type KeyboardEvent,
-  type ReactNode,
   useCallback,
   useEffect,
   useId,
@@ -313,6 +312,7 @@ function Decider({ item, config, disabledReason, pending, onDecide }: DeciderPro
                   : "Why are you rejecting this? (optional)"
                 : "Why are you approving this?"
             }
+            name="reason"
             rows={2}
             value={comment}
             maxLength={2000}
@@ -352,6 +352,8 @@ interface DetailProps extends Omit<DeciderProps, "disabledReason"> {
   settled?: string | undefined;
   onDismiss?: (() => void) | undefined;
   heading?: "h3" | "h4";
+  /** The title is written by what holds the detail (a sheet's header), so it is not written twice. */
+  untitled?: boolean;
   sample?: boolean;
 }
 
@@ -367,9 +369,11 @@ function Detail(props: DetailProps) {
       aria-label={item.title}
     >
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <Heading className="m-0 min-w-0 break-words text-display font-semibold">
-          {item.title}
-        </Heading>
+        {props.untitled ? null : (
+          <Heading className="m-0 min-w-0 break-words text-display font-semibold">
+            {item.title}
+          </Heading>
+        )}
         <Status item={item} overdue={meta.overdue && !settled} />
         {sample ? (
           <span className="rounded-full border border-dashed border-line-strong px-2 py-0.5 text-meta text-ink-muted">
@@ -533,7 +537,7 @@ function arrows(event: KeyboardEvent<HTMLElement>) {
 // ---------------------------------------------------------------------------
 // What the widget shows when nothing is on the page to decide
 
-const SAMPLE: ApprovalItem = {
+const sampleOf = (now: number): ApprovalItem => ({
   id: "sample/ask",
   title: "Approve a stock order",
   flow: { path: "orders/reorder", title: "Reorder" },
@@ -542,11 +546,11 @@ const SAMPLE: ApprovalItem = {
     { name: "item", label: "Item", value: "Gauze, 10 cm" },
     { name: "total", label: "Total", value: 184 },
   ],
-  waitingSince: new Date(Date.now() - 2 * 3_600_000).toISOString(),
-  timesOutAt: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+  waitingSince: new Date(now - 2 * 3_600_000).toISOString(),
+  timesOutAt: new Date(now + 2 * 86_400_000).toISOString(),
   mayDecide: true,
   approvers: null,
-};
+});
 
 // ---------------------------------------------------------------------------
 // The widget
@@ -582,7 +586,10 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
   const decidedOnes = real?.decided ?? [];
   // A page being built with nothing waiting shows what a request looks like, said to be a sample.
   const sample = building && waiting.length === 0 && leaving.size === 0;
-  const base = sample ? [SAMPLE] : waiting;
+  const base = useMemo(
+    () => (sample ? [sampleOf(now)] : waiting),
+    [sample, now, waiting],
+  );
 
   // What is drawn: what waits, with what has just been decided kept in its place until it has left.
   const list = useMemo(() => {
@@ -676,7 +683,7 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
     return undefined;
   };
 
-  const detail = (item: ApprovalItem, heading?: "h3" | "h4") => (
+  const detail = (item: ApprovalItem, heading?: "h3" | "h4", untitled = false) => (
     <Detail
       item={item}
       now={now}
@@ -695,6 +702,7 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
       }}
       onDecide={onDecide}
       {...(heading ? { heading } : {})}
+      {...(untitled ? { untitled: true } : {})}
       {...(sample ? { sample: true } : {})}
     />
   );
@@ -874,7 +882,7 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
           footer={stepper}
           size="wide"
         >
-          {inSheet ? detail(inSheet, "h4") : null}
+          {inSheet ? detail(inSheet, "h4", true) : null}
         </Dialog>
       ) : (
         <SideSheet
@@ -885,7 +893,7 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
           footer={stepper}
           returnFocus={returnTo}
         >
-          {inSheet ? detail(inSheet, "h4") : null}
+          {inSheet ? detail(inSheet, "h4", true) : null}
         </SideSheet>
       )
     ) : null;
@@ -927,6 +935,3 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
     </div>
   );
 }
-
-/** Wraps a node for a test or a drawing: nothing the view needs. */
-export type { ReactNode };

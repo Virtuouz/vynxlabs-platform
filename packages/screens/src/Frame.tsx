@@ -11,7 +11,7 @@ import type { Reading } from "./useWidgetData.ts";
 function resultOf(read: Readonly<Record<string, WireData>> | undefined): Result | undefined {
   for (const wire of Object.values(read ?? {})) {
     // Rows are worth keeping; one number, or one record, is read off the page.
-    if (wire.shape === "record" || wire.rows.length === 0) continue;
+    if (wire.shape === "record" || wire.shape === "approvals" || wire.rows.length === 0) continue;
     if (wire.shape === "summary" && wire.breakdowns.length === 0) continue;
     const columns = wire.columns.map((column) => ({ name: column.label || column.name }));
     const names = wire.shape === "rows" ? (wire.names ?? {}) : {};
@@ -147,6 +147,13 @@ export function Frame({
   // A widget drawn with no card (a button, a filter bar) has no title on the page: it is named in
   // the inspector, for the outline. A heading there would sit over what it draws.
   const bare = definition?.layout.frame === "none" && !container;
+  // What waits for a decision is counted in the heading, when something does.
+  const waiting = (() => {
+    for (const wire of Object.values(reading.read ?? {})) {
+      if (wire.shape === "approvals") return wire.waiting.length + (wire.more ? 1 : 0);
+    }
+    return 0;
+  })();
   const heading = bare
     ? false
     : widget.title || widget.subtitle || (building && (selected || opens));
@@ -190,6 +197,21 @@ export function Frame({
               renamable={building && selected && onRename !== undefined}
               onRename={(title) => onRename?.(title)}
             />
+            {waiting > 0 && state.status === "ready" ? (
+              <span
+                data-count=""
+                role="img"
+                aria-label={`${waiting}${reading.read && Object.values(reading.read).some((wire) => wire.shape === "approvals" && wire.more) ? " or more" : ""} waiting`}
+                className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-action-soft px-1.5 text-meta font-medium text-action tabular-nums"
+              >
+                {waiting}
+                {Object.values(reading.read ?? {}).some(
+                  (wire) => wire.shape === "approvals" && wire.more,
+                )
+                  ? "+"
+                  : ""}
+              </span>
+            ) : null}
             {building && opens ? (
               <span
                 data-chrome="opens"

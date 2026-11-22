@@ -107,6 +107,20 @@ function clientFor(path: string, page: string, record?: string): PageDataClient 
         throw refusal(error);
       }
     },
+    async decide(widget, id, decision, comment) {
+      try {
+        return await api.post(`${workspaceApi()}/page-approvals`, {
+          path,
+          page,
+          widget,
+          id,
+          decision,
+          ...(comment ? { comment } : {}),
+        });
+      } catch (error) {
+        throw refusal(error);
+      }
+    },
     async choices(widget, input, column, search) {
       const query = where(widget);
       query.set("input", input);

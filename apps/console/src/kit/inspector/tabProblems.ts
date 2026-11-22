@@ -249,7 +249,16 @@ export function tabProblems(input: TabProblemInput): TabProblem[] {
   }
 
   // What the server refused when the draft was saved.
-  for (const one of input.refusals ?? []) add(tabOfRefusal(definition, one.rest), one.text);
+  // One that names a thing already said on its tab ("no_such_table") is that problem again.
+  const said = [...found];
+  for (const one of input.refusals ?? []) {
+    const tab = tabOfRefusal(definition, one.rest);
+    const named = [...one.text.matchAll(/["“`]([^"”`]+)["”`]/g)].map((match) => match[1] as string);
+    const again = said.some(
+      (other) => other.tab === tab && named.some((name) => other.text.includes(name)),
+    );
+    if (!again) add(tab, one.text);
+  }
   return found;
 }
 

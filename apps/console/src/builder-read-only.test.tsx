@@ -78,7 +78,7 @@ test("a viewer reads the published page, with no way to change, add, preview or 
   expect(screen.queryByRole("button", { name: /Preview/ })).toBeNull();
   expect(screen.queryByRole("button", { name: "Add a page" })).toBeNull();
   // The outline's rows cannot be dragged.
-  expect(document.querySelector("[data-outline-row][draggable=true]")).toBeNull();
+  expect(document.querySelector("[data-outline-row] [data-handle]")).toBeNull();
   // A widget is chosen and its drawer read, but its settings are switched off.
   fireEvent.click(screen.getByRole("button", { name: "a" }));
   await waitFor(() => expect(document.querySelector("fieldset[disabled]")).toBeTruthy());

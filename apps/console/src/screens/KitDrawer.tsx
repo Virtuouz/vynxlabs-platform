@@ -122,7 +122,7 @@ export function KitDrawer() {
             value={tab}
             onChange={setTab}
             tabs={[
-              { id: "data", label: "Data", dot: true },
+              { id: "data", label: "Data", attention: "The table Invoices no longer exists." },
               { id: "display", label: "Display" },
               { id: "actions", label: "Actions", count: 2 },
               { id: "rules", label: "Rules" },

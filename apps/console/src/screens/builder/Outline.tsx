@@ -1,8 +1,8 @@
 import { childrenOf, type PageWidget, tabsOf, topLevel } from "@volvel/manifest";
 import { isContainer } from "@volvel/manifest/parts";
-import { useFlip } from "@volvel/ui";
+import { LIFTED, useSortable } from "@volvel/ui";
 import { GripVertical, Link2 } from "lucide-react";
-import { type DragEvent, type KeyboardEvent, useState } from "react";
+import type { ComponentProps, CSSProperties, KeyboardEvent, ReactNode } from "react";
 import { nameOf, registryRoles } from "./containers.ts";
 import { reading, reordered, siblingsOf, stepped } from "./outline.ts";
 import { definitionOf } from "./registry.ts";
@@ -10,8 +10,8 @@ import { outlineIcon } from "./widgetIcons.ts";
 
 /**
  * "On this page" (board 1): each widget a row with a drag handle and its type's icon, a container's
- * widgets nested under it (by tab for Tabs). A row is dragged in the list to reorder it among the
- * widgets on its own grid, and Alt+↑ and Alt+↓ do the same from the keyboard; both change the
+ * widgets nested under it (by tab for Tabs). A row is dragged by its handle to reorder it among the
+ * widgets on its own grid (it follows the pointer and the others slide: `useSortable`), and Alt+↑ and Alt+↓ do the same from the keyboard; both change the
  * widgets' places exactly as moving them on the page does.
  */
 export function Outline({
@@ -32,12 +32,6 @@ export function Outline({
   /** Rows are chosen, never moved. */
   readOnly?: boolean;
 }) {
-  const [dragging, setDragging] = useState<string>();
-  const [over, setOver] = useState<{ id: string; side: "before" | "after" }>();
-  // What is moved is seen to move: the widgets in the order they are in now.
-  const flip = useFlip<HTMLUListElement>(
-    widgets.map((one) => `${one.id}@${one.at.y},${one.at.x}`).join("|"),
-  );
   const by = (id: string) => widgets.find((one) => one.id === id);
 
   const move = (id: string, next: PageWidget[] | undefined, label: string) => {
@@ -54,66 +48,39 @@ export function Outline({
     const by1 = event.key === "ArrowUp" ? -1 : 1;
     move(one.id, stepped(widgets, one.id, by1), `moving ${nameOf(one)}`);
   };
-  const drop = (event: DragEvent, one: PageWidget) => {
-    event.preventDefault();
-    if (!readOnly && dragging && over)
-      move(
-        dragging,
-        reordered(widgets, dragging, one.id, over.side),
-        `moving ${nameOf(by(dragging) as PageWidget)}`,
-      );
-    setDragging(undefined);
-    setOver(undefined);
-  };
-  const hover = (event: DragEvent, one: PageWidget) => {
-    const from = dragging ? by(dragging) : undefined;
-    // Only among the widgets on its own grid: the page's, or one tab of one container.
-    if (
-      !from ||
-      from.id === one.id ||
-      from.in?.widget !== one.in?.widget ||
-      from.in?.tab !== one.in?.tab
-    )
-      return;
-    event.preventDefault();
-    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    const side = event.clientY < box.top + box.height / 2 ? "before" : "after";
-    if (over?.id !== one.id || over.side !== side) setOver({ id: one.id, side });
+  /** A drag let go: `ids` are one grid's widgets in their new order, and `id` is the one that moved. */
+  const dropped = (ids: string[], id: string) => {
+    const at = ids.indexOf(id);
+    const next =
+      at > 0
+        ? reordered(widgets, id, ids[at - 1] as string, "after")
+        : reordered(widgets, id, ids[1] as string, "before");
+    move(id, next, `moving ${nameOf(by(id) as PageWidget)}`);
   };
 
-  const row = (one: PageWidget, inside: boolean) => {
+  const row = (one: PageWidget, inside: boolean, grip: Grip) => {
     const Icon = outlineIcon(definitionOf(one.type)?.icon);
     const here = one.id === selected;
-    const line = over?.id === one.id ? over.side : undefined;
     return (
-      // biome-ignore lint/a11y/noStaticElementInteractions: the row is a drop target; its button is what is operated
       <div
-        draggable={!readOnly}
         data-outline-row={one.id}
         data-nested={inside ? "" : undefined}
-        onDragStart={(event) => {
-          setDragging(one.id);
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("text/plain", one.id);
-        }}
-        onDragEnd={() => {
-          setDragging(undefined);
-          setOver(undefined);
-        }}
-        onDragOver={(event) => hover(event, one)}
-        onDrop={(event) => drop(event, one)}
         className={`group relative flex items-center rounded-inner ${
-          dragging === one.id ? "opacity-50" : ""
-        } ${here ? "bg-selected text-action" : "text-ink hover:bg-sunken"}`}
+          here ? "bg-selected text-action" : "text-ink hover:bg-sunken"
+        }`}
       >
-        {line ? (
-          <span
-            aria-hidden="true"
-            className={`pointer-events-none absolute inset-x-1 h-0.5 rounded bg-action ${
-              line === "before" ? "-top-px" : "-bottom-px"
+        {readOnly ? null : (
+          <button
+            type="button"
+            {...grip}
+            aria-label={`Reorder ${nameOf(one)}. Alt and the up or down arrow move it.`}
+            className={`grid h-7 w-5 shrink-0 cursor-grab place-items-center rounded-inner text-ink-subtle opacity-60 hover:text-ink group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-focus ${
+              inside ? "ml-3" : "ml-0.5"
             }`}
-          />
-        ) : null}
+          >
+            <GripVertical aria-hidden="true" size={14} />
+          </button>
+        )}
         <button
           type="button"
           aria-current={here ? "true" : undefined}
@@ -121,16 +88,9 @@ export function Outline({
           onClick={() => onSelect(one.id)}
           onKeyDown={(event) => keys(event, one)}
           className={`flex min-w-0 flex-1 items-center gap-2 rounded-inner py-1 pr-2 text-left text-body-sm ${
-            inside ? "pl-4" : "pl-1"
+            readOnly ? (inside ? "pl-4" : "pl-1") : "pl-1"
           }`}
         >
-          {readOnly ? null : (
-            <GripVertical
-              aria-hidden="true"
-              size={14}
-              className="shrink-0 cursor-grab text-ink-subtle opacity-60 group-hover:opacity-100"
-            />
-          )}
           <Icon aria-hidden="true" size={14} className="shrink-0 text-ink-muted" />
           <span className="truncate">{nameOf(one)}</span>
         </button>
@@ -139,16 +99,58 @@ export function Outline({
   };
 
   return (
-    <ul ref={flip} className="m-0 flex list-none flex-col gap-0.5 p-0">
-      {reading(topLevel(widgets as PageWidget[])).map((one) => (
-        <li key={one.id} data-flip-key={one.id}>
-          {row(one, false)}
+    <SortableList
+      items={reading(topLevel(widgets as PageWidget[]))}
+      onDropped={dropped}
+      readOnly={readOnly}
+      render={(one, grip) => (
+        <>
+          {row(one, false, grip)}
           {isContainer(one, registryRoles) ? (
-            <Held container={one} widgets={widgets} row={row} />
+            <Held
+              container={one}
+              widgets={widgets}
+              row={row}
+              onDropped={dropped}
+              readOnly={readOnly}
+            />
           ) : null}
           {one.type === "core/actions" ? (
             <Buttons group={one} onSelect={() => onSelect(one.id)} />
           ) : null}
+        </>
+      )}
+    />
+  );
+}
+
+type Grip = Omit<ComponentProps<"button">, "ref" | "style"> & { style?: CSSProperties };
+
+/**
+ * The widgets of one grid, as a list whose rows are moved by their handles. Each is lifted and
+ * follows the pointer, the others slide aside, and it settles where it is let go.
+ */
+function SortableList({
+  items,
+  onDropped,
+  readOnly,
+  render,
+}: {
+  items: readonly PageWidget[];
+  onDropped: (ids: string[], id: string) => void;
+  readOnly: boolean;
+  render: (one: PageWidget, grip: Grip) => ReactNode;
+}) {
+  const sort = useSortable({
+    ids: items.map((one) => one.id),
+    onReorder: onDropped,
+    nameOf: (id) => nameOf(items.find((one) => one.id === id) as PageWidget),
+  });
+  return (
+    <ul ref={sort.list} className="m-0 flex list-none flex-col gap-0.5 p-0">
+      {items.map((one) => (
+        <li key={one.id} {...sort.row(one.id)} className={`rounded-inner ${LIFTED}`}>
+          {render(one, readOnly ? {} : (sort.handle(one.id) as Grip))}
         </li>
       ))}
     </ul>
@@ -160,10 +162,14 @@ function Held({
   container,
   widgets,
   row,
+  onDropped,
+  readOnly,
 }: {
   container: PageWidget;
   widgets: readonly PageWidget[];
-  row: (widget: PageWidget, inside: boolean) => React.ReactNode;
+  row: (widget: PageWidget, inside: boolean, grip: Grip) => ReactNode;
+  onDropped: (ids: string[], id: string) => void;
+  readOnly: boolean;
 }) {
   const tabs = tabsOf(container);
   const held = childrenOf(widgets as PageWidget[], container.id);
@@ -194,13 +200,12 @@ function Held({
                 {group.title}
               </span>
             ) : null}
-            <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
-              {group.items.map((one) => (
-                <li key={one.id} data-flip-key={one.id}>
-                  {row(one, true)}
-                </li>
-              ))}
-            </ul>
+            <SortableList
+              items={group.items}
+              onDropped={onDropped}
+              readOnly={readOnly}
+              render={(one, grip) => row(one, true, grip)}
+            />
           </li>
         ))}
     </ul>

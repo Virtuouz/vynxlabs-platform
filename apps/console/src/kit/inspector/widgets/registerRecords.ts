@@ -40,7 +40,6 @@ function piece(
     hidesData?: readonly ("source" | "conditions" | "sort" | "limit" | "measure" | "breakdown")[];
     headingLast?: boolean;
     ownHeading?: boolean;
-    dot?: (env: Env) => boolean;
   } = {},
 ) {
   registerDrawer(type, { tab, order: 0, section, ...options });
@@ -48,7 +47,6 @@ function piece(
 
 piece("core/detail", "data", DetailDataSection, {
   hidesData: ["source"],
-  dot: (env) => env.widget.data?.record !== undefined,
 });
 piece("core/detail", "display", DetailDisplaySection, {
   hides: ["fields", "across", "edit", "heading", "figure", "status", "statusBadges"],

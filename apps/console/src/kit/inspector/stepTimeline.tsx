@@ -5,15 +5,10 @@
  * on the handle or the card (the arrow alone on the handle); each move is said to screen readers.
  * The "Ask to confirm" card is always first and stays where it is.
  */
+
+import { useSortable } from "@volvel/ui";
 import { ChevronDown, ChevronRight, GripVertical, X } from "lucide-react";
-import {
-  type ComponentType,
-  type KeyboardEvent,
-  type PointerEvent,
-  type ReactNode,
-  useRef,
-  useState,
-} from "react";
+import { type ComponentType, type ReactNode, useState } from "react";
 
 export interface TimelineItem {
   key: string;
@@ -55,22 +50,15 @@ export function StepTimeline({
   const [closed, setClosed] = useState<ReadonlySet<string>>(
     () => new Set(startCollapsed ? items.map((item) => item.key) : []),
   );
-  const [said, setSaid] = useState("");
-  const [drag, setDrag] = useState<{ key: string; order: string[] } | undefined>();
-  const cards = useRef(new Map<string, HTMLElement>());
-  const refocus = useRef<string | undefined>(undefined);
-
-  const movable = items.filter((item) => !item.fixed).map((item) => item.key);
   const byKey = new Map(items.map((item) => [item.key, item]));
-  // While dragging, the movable cards are drawn in the order the pointer has made.
-  const fixedFirst = items.filter((item) => item.fixed);
-  const shown = [
-    ...fixedFirst,
-    ...(drag?.order ?? movable).flatMap((key) => {
-      const item = byKey.get(key);
-      return item ? [item] : [];
-    }),
-  ];
+  const movable = items.filter((item) => !item.fixed).map((item) => item.key);
+  const sort = useSortable<HTMLOListElement>({
+    ids: movable,
+    onReorder: (keys) => onReorder(keys),
+    nameOf: (key) => byKey.get(key)?.title ?? "the step",
+    focus: "[data-handle]",
+  });
+  const shown = items;
   const numberOf = (key: string) => items.findIndex((item) => item.key === key) + 1;
 
   const toggle = (key: string) =>
@@ -81,77 +69,19 @@ export function StepTimeline({
       return next;
     });
 
-  const nudge = (event: KeyboardEvent, key: string, plain: boolean) => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
-    if (!event.altKey && !plain) return;
-    event.preventDefault();
-    const from = movable.indexOf(key);
-    if (from < 0) return;
-    const to = Math.min(movable.length - 1, Math.max(0, from + (event.key === "ArrowUp" ? -1 : 1)));
-    if (to === from) return;
-    const next = [...movable];
-    next.splice(from, 1);
-    next.splice(to, 0, key);
-    refocus.current = key;
-    setSaid(
-      `Moved ${byKey.get(key)?.title ?? "the step"} to position ${to + 1} of ${movable.length}`,
-    );
-    onReorder(next);
-  };
-
-  const start = (event: PointerEvent<HTMLButtonElement>, key: string) => {
-    if (event.button !== 0) return;
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    setDrag({ key, order: movable });
-  };
-  const over = (event: PointerEvent) => {
-    if (!drag) return;
-    const others = drag.order.filter((key) => key !== drag.key);
-    let to = 0;
-    for (const key of others) {
-      const box = cards.current.get(key)?.getBoundingClientRect();
-      if (box && event.clientY > box.top + box.height / 2) to += 1;
-    }
-    const next = [...others];
-    next.splice(to, 0, drag.key);
-    if (next.join() !== drag.order.join()) setDrag({ key: drag.key, order: next });
-  };
-  const end = () => {
-    if (!drag) return;
-    const next = drag.order;
-    setDrag(undefined);
-    if (next.join() !== movable.join()) {
-      setSaid(
-        `Moved ${byKey.get(drag.key)?.title ?? "the step"} to position ${next.indexOf(drag.key) + 1} of ${next.length}`,
-      );
-      onReorder(next);
-    }
-  };
-
   return (
     <>
-      <ol aria-label={label} className="m-0 flex list-none flex-col p-0">
+      <ol ref={sort.list} aria-label={label} className="m-0 flex list-none flex-col p-0">
         {shown.map((item, at) => {
           const n = numberOf(item.key);
           const open = !closed.has(item.key);
           const Icon = item.icon;
-          const dragging = drag?.key === item.key;
           return (
             <li
               key={item.key}
-              ref={(node) => {
-                if (node) {
-                  cards.current.set(item.key, node);
-                  if (refocus.current === item.key) {
-                    refocus.current = undefined;
-                    node.querySelector<HTMLElement>("[data-handle]")?.focus();
-                  }
-                } else cards.current.delete(item.key);
-              }}
+              {...(item.fixed ? {} : sort.row(item.key))}
               onKeyDown={(event) => {
-                if (!item.fixed && !(event.target as HTMLElement).closest("[data-handle]")) {
-                  nudge(event, item.key, false);
-                }
+                if (!item.fixed) sort.rowKeyDown(event, item.key);
               }}
               className="relative flex gap-3"
             >
@@ -164,11 +94,7 @@ export function StepTimeline({
                 ) : null}
               </div>
               {/* panel-allowed: a step is a card on the rail, a box by design */}
-              <div
-                className={`group mb-2 min-w-0 flex-1 rounded-panel border border-line bg-surface ${
-                  dragging ? "bg-raised shadow-drag" : ""
-                }`}
-              >
+              <div className="group mb-2 min-w-0 flex-1 rounded-panel border border-line bg-surface in-data-[dragging]:bg-raised in-data-[dragging]:shadow-drag">
                 <div className="flex items-center gap-1">
                   {item.sentence !== undefined ? (
                     <button
@@ -226,13 +152,8 @@ export function StepTimeline({
                   {item.fixed ? null : (
                     <button
                       type="button"
-                      data-handle=""
+                      {...sort.handle(item.key)}
                       aria-label={`Reorder step ${n}. Alt and the up or down arrow move it.`}
-                      onPointerDown={(event) => start(event, item.key)}
-                      onPointerMove={over}
-                      onPointerUp={end}
-                      onPointerCancel={end}
-                      onKeyDown={(event) => nudge(event, item.key, true)}
                       className={`grid size-7 shrink-0 cursor-grab touch-none place-items-center rounded-inner text-ink-subtle hover:text-ink ${focus}`}
                     >
                       <GripVertical aria-hidden="true" size={14} />
@@ -260,7 +181,7 @@ export function StepTimeline({
         })}
       </ol>
       <div role="status" aria-live="polite" className="sr-only">
-        {said}
+        {sort.said}
       </div>
     </>
   );

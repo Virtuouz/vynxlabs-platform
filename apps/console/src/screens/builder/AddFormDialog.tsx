@@ -1,4 +1,13 @@
-import { Button, CheckboxField, Dialog, MoveButtons, SelectField, TextField } from "@volvel/ui";
+import {
+  Button,
+  CheckboxField,
+  Dialog,
+  LIFTED,
+  MoveButtons,
+  SelectField,
+  TextField,
+  useSortable,
+} from "@volvel/ui";
 import type { RecordData } from "@volvel/widgets";
 import { ClipboardList, GripVertical, Pencil, Plus, Table } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
@@ -262,7 +271,6 @@ function Fields({
     ...left.filter((column) => column.type === "long_text"),
   ];
   const automatic = info.columns.filter((column) => isSystem(column.name));
-  const [dragging, setDragging] = useState<string>();
   const place = (name: string, to: number) => {
     const at = plan.fields.indexOf(name);
     if (at < 0 || to < 0 || to >= plan.fields.length || at === to) return;
@@ -270,10 +278,18 @@ function Fields({
     next.splice(to, 0, ...next.splice(at, 1));
     onChange({ ...plan, fields: next });
   };
+  const sort = useSortable({
+    ids: plan.fields,
+    nameOf: (name) => heading(name),
+    onReorder: (fields) => onChange({ ...plan, fields }),
+  });
   return (
     <fieldset className="m-0 flex flex-col gap-1.5 border-0 p-0">
       <legend className="mb-1.5 p-0 text-body-sm font-medium text-ink">Fields</legend>
-      <ul className="m-0 flex max-h-[min(19rem,34vh)] list-none flex-col overflow-y-auto rounded-control border border-line p-1">
+      <ul
+        ref={sort.list}
+        className="m-0 flex max-h-[min(19rem,34vh)] list-none flex-col overflow-y-auto rounded-control border border-line p-1"
+      >
         {ordered.map((column) => {
           const on = plan.fields.includes(column.name);
           const at = plan.fields.indexOf(column.name);
@@ -281,26 +297,24 @@ function Fields({
             <li
               key={column.name}
               data-field={column.name}
-              draggable={on}
-              onDragStart={() => setDragging(column.name)}
-              onDragEnd={() => setDragging(undefined)}
-              onDragOver={(event) => {
-                if (dragging && on) event.preventDefault();
+              {...(on ? sort.row(column.name) : {})}
+              onKeyDown={(event) => {
+                if (on) sort.rowKeyDown(event, column.name);
               }}
-              onDrop={(event) => {
-                event.preventDefault();
-                if (dragging && on) place(dragging, at);
-                setDragging(undefined);
-              }}
-              className={`group flex items-center gap-2 rounded-control px-1.5 py-1 ${
-                dragging === column.name ? "opacity-50" : ""
-              }`}
+              className={`group flex items-center gap-2 rounded-control px-1.5 py-1 ${LIFTED}`}
             >
-              <GripVertical
-                aria-hidden="true"
-                size={14}
-                className={`shrink-0 ${on ? "cursor-grab text-ink-subtle" : "text-line"}`}
-              />
+              {on ? (
+                <button
+                  type="button"
+                  {...sort.handle(column.name)}
+                  aria-label={`Reorder ${heading(column.name)}. Alt and the up or down arrow move it.`}
+                  className="grid size-5 shrink-0 cursor-grab place-items-center rounded-inner text-ink-subtle hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+                >
+                  <GripVertical aria-hidden="true" size={14} />
+                </button>
+              ) : (
+                <GripVertical aria-hidden="true" size={14} className="shrink-0 text-line" />
+              )}
               <CheckboxField
                 label={heading(column.name)}
                 name={`field-${column.name}`}
@@ -344,6 +358,9 @@ function Fields({
           </li>
         ) : null}
       </ul>
+      <span role="status" className="sr-only">
+        {sort.said}
+      </span>
       <p className="m-0 text-meta text-ink-muted">
         Drag to change the order. The right control for each column is picked from its type.
       </p>

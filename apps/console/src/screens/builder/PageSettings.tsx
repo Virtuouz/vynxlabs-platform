@@ -23,6 +23,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useId, useState } from "react";
+import { DocTopicPicker } from "../../kit/DocTopicPicker.tsx";
 import { type Catalog, heading } from "../../kit/inspector/model.ts";
 import type { PageKind } from "./contract.ts";
 import {
@@ -43,8 +44,6 @@ const KIND_TILE_ICONS: Record<PageKind, LucideIcon> = {
   modal: AppWindow,
 };
 
-const TOPIC = /^[a-z0-9][a-z0-9_-]*$/;
-
 /**
  * The settings of the page itself, shown in the inspector's place when a page
  * is chosen and no widget (board 2's Page tab): what kind of page it is, the
@@ -57,6 +56,8 @@ export function PageSettings({
   onChange,
   onRemove,
   canRemove,
+  root,
+  link,
 }: {
   page: Page;
   catalog: Catalog;
@@ -65,12 +66,13 @@ export function PageSettings({
   onChange: (next: Page, label: string, key?: string) => void;
   onRemove: () => void;
   canRemove: boolean;
+  /** The workspace's path and link: the documents a Help topic is chosen from are read there. */
+  root: string;
+  link: string;
 }) {
   const kind = kindOf(page);
   const prefix = useId();
   const [tab, setTab] = useState<"data" | "display">("display");
-  const [topic, setTopic] = useState(page.help ?? "");
-  const [topicError, setTopicError] = useState<string>();
   const tables = catalog.tables.map((one) => ({ value: one.name, label: heading(one.name) }));
   const opensOnRecord = kind !== "page";
   // A page's data is on its widgets: only one that opens on a record has some of its own. It has no rules.
@@ -208,26 +210,16 @@ export function PageSettings({
             </DrawerGroup>
             <DrawerGroup label="Help">
               <DrawerBlock>
-                <TextField
+                <DocTopicPicker
+                  root={root}
+                  link={link}
                   label="Help topic"
-                  name="page-help"
-                  required={false}
-                  value={topic}
-                  error={topicError}
-                  hint="A topic of your documentation. Whoever uses the app, and may open that documentation, gets a Help button that shows it. Leave it empty for no help."
-                  onChange={(value) => {
-                    setTopic(value);
-                    const named = value.trim();
-                    if (named !== "" && !TOPIC.test(named)) {
-                      setTopicError(
-                        "A topic is lowercase letters, digits, hyphens and underscores, as it is written in the page's frontmatter.",
-                      );
-                      return;
-                    }
-                    setTopicError(undefined);
+                  value={page.help}
+                  hint="A page of your documentation. Whoever uses the app, and may open that documentation, gets a Help button that shows it."
+                  onChange={(topic) => {
                     const { help: _help, ...rest } = page;
                     onChange(
-                      named === "" ? rest : { ...rest, help: named },
+                      topic === undefined ? rest : { ...rest, help: topic },
                       "setting the page's help",
                       `page-help:${page.id}`,
                     );

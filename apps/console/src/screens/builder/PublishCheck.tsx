@@ -4,6 +4,7 @@ import { Check, TriangleAlert, X } from "lucide-react";
 import { useMemo } from "react";
 import { useLoad } from "../../api.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
+import type { DocsList } from "../docs/model.ts";
 import { draftChanges } from "./changes.ts";
 import { useGroupKeys } from "./groupKeys.ts";
 import {
@@ -79,6 +80,8 @@ export function PublishCheck({
   const lists = useActionLists(root);
   const keyed = useGroupKeys(root);
   const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
+  // Only when the documents were read: a read that failed leaves the Help topics unchecked, not wrong.
+  const docs = useLoad<DocsList>(`${root}/docs`);
 
   const known = useMemo(
     () => ({
@@ -95,6 +98,9 @@ export function PublishCheck({
         lists.everyFlow.map((flow) => [flow.path, { title: flow.title, asks: flow.asks }]),
       ),
       appsAddress: instance.data?.appsAddress,
+      docTopics: docs.data
+        ? new Set(docs.data.pages.flatMap((page) => (page.topic ? [page.topic] : [])))
+        : undefined,
     }),
     [
       loading,
@@ -105,6 +111,7 @@ export function PublishCheck({
       keyed.loaded,
       keyed.groups,
       instance.data,
+      docs.data,
     ],
   );
   const asked: Preview | undefined = nothing

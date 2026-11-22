@@ -753,10 +753,10 @@ export function KitSheet() {
                 {
                   id: "data",
                   label: "Data",
-                  dot: true,
+                  attention: "The table Invoices no longer exists.",
                   content: "Pills: a track, the open tab raised.",
                 },
-                { id: "display", label: "Display", dot: true, content: "Display." },
+                { id: "display", label: "Display", content: "Display." },
                 { id: "actions", label: "Actions", content: "Actions." },
                 { id: "rules", label: "Rules", count: 2, content: "Rules." },
               ]}

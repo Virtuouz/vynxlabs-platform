@@ -43,6 +43,8 @@ export interface Known {
   groups: readonly string[] | undefined;
   /** Each flow, with whether it asks for an approval: `undefined` while it is read. */
   approvalFlows?: ReadonlyMap<string, { title: string | null; asks: boolean }> | undefined;
+  /** The topics the workspace's documents have; `undefined` while they are read, or when they cannot be: that check is left out. */
+  docTopics?: ReadonlySet<string> | undefined;
   /** Where apps are served: at their own address (decisions are made in the console), or on the console's. */
   appsAddress?: "separate" | "console" | "none" | undefined;
 }
@@ -76,10 +78,15 @@ export function actionsOf(widget: PageWidget): { at: string; action: Action }[] 
 const NO_STEPS = "has no steps yet";
 
 /** What is wrong with an action, in words; nothing when it is complete. */
-function actionProblem(action: Action, body: InterfaceBody, known: Known): string | undefined {
+export function actionProblem(
+  action: Action,
+  body: InterfaceBody,
+  known: Known,
+  checkPages = true,
+): string | undefined {
   if (action.steps.length === 0) return NO_STEPS;
   for (const step of action.steps) {
-    if (step.do === "open" && !body.pages.some((page) => page.id === step.page))
+    if (step.do === "open" && checkPages && !body.pages.some((page) => page.id === step.page))
       return "it opens a page that is gone";
     if (step.do === "create" && known.tables && !known.tables.has(step.table))
       return `it adds to ${step.table}, which does not exist`;
@@ -339,6 +346,21 @@ export function checksFor(input: {
     });
   }
 
+  // A page's Help button shows the document that has its topic: one that no document has any more shows nothing.
+  if (known.docTopics) {
+    for (const page of body.pages) {
+      if (page.help && !known.docTopics.has(page.help)) {
+        items.push({
+          id: `help:${page.id}`,
+          state: "warn",
+          text: `${page.title} has Help topic ${page.help}, and no document has that topic`,
+          detail:
+            "Its Help button shows nothing. Choose a document in the page's settings, or clear the topic.",
+        });
+      }
+    }
+  }
+
   // Groups the rules name that are gone: the action runs for nobody.
   if (known.groups) {
     const lost = missingGroups(body, known.groups);
@@ -414,7 +436,7 @@ const thing = (key: string, count: number): string => {
  * The nearest thing with a name on the way down a path into a widget: the button or the column
  * a problem is in, "Do it" in `config/actions/0/action/steps`.
  */
-function nameAlong(widget: PageWidget, rest: readonly string[]): string | undefined {
+export function nameAlong(widget: PageWidget, rest: readonly string[]): string | undefined {
   let at: unknown = widget;
   let found: string | undefined;
   for (const key of rest) {

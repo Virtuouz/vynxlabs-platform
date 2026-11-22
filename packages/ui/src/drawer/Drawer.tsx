@@ -9,6 +9,7 @@ import {
   useRef,
 } from "react";
 import { useOpening } from "../presence.tsx";
+import { Tooltip } from "../Tooltip.tsx";
 import { edgeShadows } from "./edgeShadows.ts";
 
 /** An icon component from `@volvel/ui/icons`, or any component that takes a class and a size. */
@@ -60,8 +61,12 @@ export function DrawerHeader({
 export interface DrawerTab {
   id: string;
   label: string;
-  /** Something is set on this tab: a dot. */
-  dot?: boolean;
+  /**
+   * Something in this tab needs fixing: a dot in the attention tone, and these words (what is
+   * wrong) for a screen reader and a tooltip. Left out, there is no dot: it is never "something is
+   * set here".
+   */
+  attention?: string;
   /** A count, in place of the dot. */
   count?: number;
 }
@@ -114,7 +119,7 @@ export function DrawerTabs({
     >
       {tabs.map((tab, at) => {
         const on = tab.id === value;
-        return (
+        const button = (
           <button
             key={tab.id}
             ref={(node) => {
@@ -136,13 +141,24 @@ export function DrawerTabs({
             {tab.label}
             {tab.count !== undefined ? (
               <span className="text-meta text-ink-muted tabular-nums">{tab.count}</span>
-            ) : tab.dot ? (
+            ) : tab.attention ? (
               <>
-                <span aria-hidden="true" className="size-1.5 rounded-full bg-action" />
-                <span className="sr-only">, has settings</span>
+                <span
+                  aria-hidden="true"
+                  data-attention=""
+                  className="size-1.5 rounded-full bg-attention"
+                />
+                <span className="sr-only">, needs fixing: {tab.attention}</span>
               </>
             ) : null}
           </button>
+        );
+        return tab.attention ? (
+          <Tooltip key={tab.id} label={tab.attention} side="bottom">
+            {button}
+          </Tooltip>
+        ) : (
+          button
         );
       })}
     </div>

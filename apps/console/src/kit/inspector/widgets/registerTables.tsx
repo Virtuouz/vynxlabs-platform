@@ -89,7 +89,6 @@ registerDrawer(TABLE, {
     ),
   note: "Drag to reorder, the eye to hide, click to rename or format. Clicking a heading on the page opens the same thing.",
   render: (env) => <TableColumnsSection env={env} bare />,
-  dot: (env) => Array.isArray(env.config.columns) && env.config.columns.length > 0,
 });
 
 registerDrawer(TABLE, {

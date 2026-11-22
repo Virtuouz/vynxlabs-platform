@@ -23,6 +23,7 @@ import { ActionEditor, actionContext } from "../actionControls.tsx";
 import { type ActionContext, conditionValueWords } from "../actionModel.ts";
 import { uniqueName } from "../model.ts";
 import { ActionRules } from "../RulesTab.tsx";
+import { actionFix } from "../tabProblems.ts";
 import { ButtonLabelGroup, ToneTiles } from "./buttonDrawer.tsx";
 import {
   BackHead,
@@ -106,6 +107,7 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
       replace({ ...current, ...change }, "a button", key);
     const prefix = `${env.widget.id}-${current.id}`;
     const action = current.action;
+    const fix = actionFix(action, env);
     return (
       <div className="flex flex-col gap-4">
         <BackHead onBack={() => setOpen(undefined)} title={current.label} kind="Button" />
@@ -115,9 +117,19 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
           value={tab}
           onChange={(next) => setTab(next as SubTab)}
           tabs={[
-            { id: "display", label: "Display", dot: true },
-            { id: "actions", label: "Actions", dot: action.steps.length > 0 },
-            { id: "rules", label: "Rules", dot: (action.when?.length ?? 0) > 0 },
+            {
+              id: "display",
+              label: "Display",
+              ...(current.label.trim() === "" && !current.icon
+                ? { attention: "This button has no label: write what it says, or choose an icon." }
+                : {}),
+            },
+            {
+              id: "actions",
+              label: "Actions",
+              ...(fix ? { attention: fix } : {}),
+            },
+            { id: "rules", label: "Rules" },
           ]}
         />
         <DrawerPanel idPrefix={prefix} tab={tab}>

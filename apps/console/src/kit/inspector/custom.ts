@@ -11,7 +11,6 @@
  *   order: 10,                    // among the group's other rows and groups, lower first
  *   hides: ["mark"],              // config settings this replaces, so they are not drawn twice
  *   render: (env) => <DrawerRow label="Measure" … />,   // rows: DrawerRow, DrawerBlock, ToggleRow…
- *   dot: (env) => env.widget.data?.rows !== undefined,  // optional: this tab has something set
  * });
  * ```
  *
@@ -48,8 +47,6 @@ interface PieceBase {
   /** Data parts (of the Data tab) this draws itself, so the shell does not draw them too. */
   hidesData?: readonly DataPartName[];
   when?: (env: Env) => boolean;
-  /** The tab has something set because of this (a dot on the tab). */
-  dot?: (env: Env) => boolean;
   /** The piece places the shell's Heading group itself (`HeadingGroup`): the shell does not. */
   ownHeading?: boolean;
   /** The Heading group is drawn as two fields written in place (the chart's, board 11), not as rows. */

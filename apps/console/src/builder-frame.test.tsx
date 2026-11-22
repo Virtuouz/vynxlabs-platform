@@ -226,12 +226,13 @@ test("the outline's rows have the widget's icon and a handle, and Alt+↓ and Al
   expect(
     outline()
       .getAllByRole("button")
-      .map((one) => one.textContent),
+      .map((one) => one.textContent)
+      .filter(Boolean),
   ).toEqual(["Alpha", "Bravo", "Charlie"]);
   const rows = document.querySelectorAll("[data-outline-row]");
   expect(rows.length).toBe(3);
   for (const row of rows) expect(row.querySelectorAll("svg").length).toBe(2);
-  expect(rows[0]?.getAttribute("draggable")).toBe("true");
+  expect(rows[0]?.querySelector("[data-handle]")).toBeTruthy();
 
   fireEvent.keyDown(outline().getByRole("button", { name: "Alpha" }), {
     key: "ArrowDown",
@@ -241,7 +242,8 @@ test("the outline's rows have the widget's icon and a handle, and Alt+↓ and Al
   expect(
     outline()
       .getAllByRole("button")
-      .map((one) => one.textContent),
+      .map((one) => one.textContent)
+      .filter(Boolean),
   ).toEqual(["Bravo", "Alpha", "Charlie"]);
   fireEvent.keyDown(outline().getByRole("button", { name: "Charlie" }), {
     key: "ArrowUp",
@@ -250,23 +252,25 @@ test("the outline's rows have the widget's icon and a handle, and Alt+↓ and Al
   await waitFor(() => expect(order()).toEqual("b,c,a".split(",")), { timeout: 4000 });
 });
 
-test("dragging a row in the outline puts it where it is let go", async () => {
+test("dragging a row's handle in the outline puts it where it is let go, and the others make room", async () => {
   await open();
   const row = (name: string) =>
     outline().getByRole("button", { name }).closest("[data-outline-row]") as HTMLElement;
-  const dataTransfer = { setData: () => undefined, effectAllowed: "" };
-  fireEvent.dragStart(row("Charlie"), { dataTransfer });
-  // Over the upper half of Alpha: before it. (There is no layout here: the row is given a place.)
-  row("Alpha").getBoundingClientRect = () => ({ top: 100, height: 20 }) as DOMRect;
-  fireEvent(
-    row("Alpha"),
-    Object.assign(new Event("dragover", { bubbles: true, cancelable: true }), {
-      dataTransfer,
-      clientY: 101,
-    }),
-  );
-  expect(row("Alpha").querySelector("span.bg-action")?.className).toContain("-top-px");
-  fireEvent.drop(row("Alpha"), { dataTransfer });
+  const item = (name: string) => row(name).closest("li") as HTMLElement;
+  // There is no layout here: the rows are given places, 20 high.
+  for (const [at, name] of ["Alpha", "Bravo", "Charlie"].entries()) {
+    item(name).getBoundingClientRect = () =>
+      ({ top: 100 + at * 20, height: 20, bottom: 120 + at * 20 }) as DOMRect;
+  }
+  const grip = row("Charlie").querySelector("[data-handle]") as HTMLElement;
+  fireEvent.pointerDown(grip, { button: 0, pointerId: 1, clientY: 150 });
+  // Up over Alpha's upper half: it is lifted, follows the pointer, and Alpha and Bravo slide down.
+  fireEvent.pointerMove(grip, { pointerId: 1, clientY: 105 });
+  expect(item("Charlie").hasAttribute("data-dragging")).toBe(true);
+  expect(item("Charlie").style.transform).toBe("translateY(-40px)");
+  expect(item("Alpha").style.transform).toBe("translateY(20px)");
+  expect(item("Alpha").style.transition).not.toBe("none");
+  fireEvent.pointerUp(grip, { pointerId: 1, clientY: 105 });
   await waitFor(() => expect(order()).toEqual("c,a,b".split(",")), { timeout: 4000 });
 });
 

@@ -205,3 +205,23 @@ test("a row action with no words and no icon is refused, and named in the check"
     at: { page: "edit", widget: "t" },
   });
 });
+
+test("a page whose Help topic no document has is a warning; a known topic, or documents not yet read, say nothing", () => {
+  const made = body();
+  (made.pages[0] as { help?: string }).help = "billing-help";
+  const check = (docTopics: ReadonlySet<string> | undefined) =>
+    checksFor({
+      body: made,
+      known: { ...known, docTopics },
+      definitionOf: () => undefined,
+      problems: [],
+      refusal: [],
+      warnings: [],
+    }).find((one) => one.id === "help:edit");
+  expect(check(new Set(["other"]))).toMatchObject({
+    state: "warn",
+    text: "Edit invoice has Help topic billing-help, and no document has that topic",
+  });
+  expect(check(new Set(["billing-help"]))).toBeUndefined();
+  expect(check(undefined)).toBeUndefined();
+});

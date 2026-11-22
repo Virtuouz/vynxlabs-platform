@@ -20,7 +20,6 @@ registerDrawer(TYPE, {
   tab: "data",
   order: 0,
   section: ApprovalsDataSection,
-  dot: (env) => env.widget.data?.requests !== undefined,
 });
 
 registerDrawer(TYPE, {
@@ -29,7 +28,6 @@ registerDrawer(TYPE, {
   section: ApprovalsFieldsSection,
   hides: ["fields"],
   headingLast: true,
-  dot: (env) => Array.isArray(env.config.fields) && env.config.fields.length > 0,
 });
 
 registerDrawer(TYPE, {

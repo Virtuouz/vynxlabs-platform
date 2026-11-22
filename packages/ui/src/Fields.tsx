@@ -87,6 +87,14 @@ interface Common {
 const Beside = createContext<ReactNode>(null);
 
 /**
+ * Which marks a field's label carries. The console marks both ("optional" on what may be left
+ * out, as the pattern library has it). A form made for the people who use an app marks only what
+ * is required, with an asterisk, as board 5 draws it.
+ */
+const Marks = createContext<"both" | "required">("both");
+export const FieldMarks = Marks.Provider;
+
+/**
  * Puts something beside the label of the field inside it: the ⓘ that says
  * more about the field. It sits next to the label and not in it, since a
  * label may hold only the control it names.
@@ -112,6 +120,7 @@ export function FieldFrame({
   children,
 }: Common & { required?: boolean | undefined; children: ReactNode }) {
   const beside = useContext(Beside);
+  const marks = useContext(Marks);
   return (
     <Field.Root invalid={error !== undefined} className="flex flex-col gap-1">
       <div className={labelHidden ? "sr-only" : "flex items-baseline gap-1 text-body-sm"}>
@@ -127,7 +136,7 @@ export function FieldFrame({
           <span aria-hidden="true" className="text-danger">
             *
           </span>
-        ) : required === false ? (
+        ) : required === false && marks === "both" ? (
           <span aria-hidden="true" className="text-ink-subtle">
             optional
           </span>

@@ -37,6 +37,7 @@ export function AddFormDialog({
   root,
   catalog,
   initialTable,
+  pageRecordTable,
   takenTitles = [],
   onMake,
 }: {
@@ -46,6 +47,8 @@ export function AddFormDialog({
   catalog: Catalog;
   /** The table the page shows, when it shows one. */
   initialTable: string | undefined;
+  /** The table of the record the page is open on, when it is a record page, side sheet or modal. */
+  pageRecordTable?: string | undefined;
   /** The titles of the app's pages: a modal named as one of them is said to be so. */
   takenTitles?: string[];
   onMake: (plan: FormPlan) => void;
@@ -67,6 +70,8 @@ export function AddFormDialog({
       : info
         ? defaultPlan(info, mode)
         : undefined;
+  const ready = plan !== undefined && plan.fields.length > 0 && plan.title.trim() !== "";
+  const make = () => plan && ready && onMake({ ...plan, title: plan.title.trim() });
   const noun = plan ? oneOf(plan.table.name).toLowerCase() : "record";
   const taken =
     plan?.where === "modal" &&
@@ -82,30 +87,28 @@ export function AddFormDialog({
       footer={
         <>
           <p className="m-0 mr-auto min-w-0 text-body-sm text-ink-muted">
-            {plan?.where === "modal" ? (
-              <>
-                Also adds a “{plan.title}” button
-                {mode === "edit"
-                  ? " to a page that is open on a record"
-                  : ` to the ${table ? manyOf(table) : ""} table`}
-                .
-              </>
-            ) : null}
+            {plan ? footNote(plan, pageRecordTable) : null}
           </p>
           <Button variant="quiet" onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            disabled={!plan || plan.fields.length === 0 || plan.title.trim() === ""}
-            onClick={() => plan && onMake({ ...plan, title: plan.title.trim() })}
-          >
+          <Button variant="primary" disabled={!ready} onClick={make}>
             Create form
           </Button>
         </>
       }
     >
-      <div className="grid gap-6 md:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: Enter in a text box of the settings makes the form, as the button does */}
+      <div
+        className="grid gap-6 md:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]"
+        onKeyDown={(event) => {
+          const target = event.target as HTMLElement;
+          if (event.key !== "Enter" || event.defaultPrevented || target.tagName !== "INPUT") return;
+          if ((target as HTMLInputElement).type !== "text") return;
+          event.preventDefault();
+          make();
+        }}
+      >
         <div className="flex min-w-0 flex-col gap-4">
           <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
             <legend className="mb-2 p-0 text-body-sm font-medium text-ink">
@@ -393,4 +396,19 @@ function FormPreview({ info, plan }: { info: TableInfo | undefined; plan: FormPl
       </p>
     </section>
   );
+}
+
+/**
+ * What making the form does besides making it, as `formEdit` will do it: the line has to be
+ * true in every case it is shown. A modal made to make a record gets a button at the end of
+ * the page; one that changes a record gets one only on a page open on a record of its table;
+ * a form on the page is added at the end of it.
+ */
+export function footNote(plan: FormPlan, pageRecordTable: string | undefined): string {
+  const table = manyOf(plan.table.name);
+  if (plan.where === "page") return "The form is added at the end of this page.";
+  if (plan.mode === "create") return `Also adds a “${plan.title}” button at the end of this page.`;
+  if (pageRecordTable === plan.table.name)
+    return `Also adds a “${plan.title}” button at the end of this page, which opens on the record.`;
+  return `No button is added here: this page is not open on a record of ${table}. Open the form from a button on one that is.`;
 }

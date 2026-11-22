@@ -36,6 +36,7 @@ export {
   control as fieldControl,
   DateField,
   FieldFrame,
+  FieldMarks,
   FieldHelp,
   NumberField,
   SelectField,

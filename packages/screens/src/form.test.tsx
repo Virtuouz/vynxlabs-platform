@@ -165,7 +165,7 @@ describe("controls by column type", () => {
     expect(act.mock.calls[0]?.[1]?.inputs).toMatchObject({ total: 1234 });
   });
 
-  test("required fields are marked, the others say optional; labels and help come from the page", async () => {
+  test("required fields carry an asterisk and the others nothing; labels and help come from the page", async () => {
     draw(null, {
       ...create,
       fields: [
@@ -178,7 +178,7 @@ describe("controls by column type", () => {
     expect(screen.getByText("As printed on the paper.")).toBeTruthy();
     const frame = (label: RegExp) => screen.getByLabelText(label).closest("[data-invalid], div");
     expect(frame(/Invoice number/)?.parentElement?.textContent).toContain("*");
-    expect(screen.getByText("optional")).toBeTruthy();
+    expect(screen.queryByText("optional")).toBeNull();
   });
 
   test("fields keep their order and sections", async () => {

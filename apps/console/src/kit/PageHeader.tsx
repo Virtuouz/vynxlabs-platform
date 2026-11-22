@@ -78,7 +78,7 @@ export function PageHeader({
     <h1
       className={`m-0 min-w-0 ${
         bar
-          ? "text-title"
+          ? "truncate text-title"
           : mono
             ? `font-mono text-title ${compact ? "truncate" : "break-all"}`
             : size === "display-lg"

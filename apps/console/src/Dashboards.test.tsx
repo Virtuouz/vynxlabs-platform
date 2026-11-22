@@ -199,9 +199,7 @@ test("its maker adds a widget from Add to page, changes it in its settings, remo
   expect(dialog.getByText("Work with records")).toBeTruthy();
   expect(dialog.getByText("A trend or a comparison")).toBeTruthy();
   expect(
-    dialog.getByText(
-      "Click to place at the end of the page, or drag it onto the page where you want it.",
-    ),
+    dialog.getByText("Click to place at the end of the page, or drag onto the grid."),
   ).toBeTruthy();
   fireEvent.change(dialog.getByLabelText(/^Find something to add/), { target: { value: "chart" } });
   expect(dialog.queryByText("Many records, dense and sortable")).toBeNull();

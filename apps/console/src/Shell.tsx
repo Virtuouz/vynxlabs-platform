@@ -38,6 +38,7 @@ import { Junction, Wire } from "./kit/motifs.tsx";
 import { OperatorMark, OperatorStrip } from "./kit/OperatorStrip.tsx";
 import { EnvTag, StatePill, Tag } from "./kit/status.tsx";
 import { pageTitle, useNamedObject } from "./kit/title.ts";
+import { useBleeding } from "./kit/workbench.ts";
 import {
   AREA_ICON,
   AREA_LABEL,
@@ -694,7 +695,10 @@ export function Shell({
 }) {
   const brand = useBrand();
   const operator = isOperator(me);
-  const where = whereIs(path, operator);
+  const base = whereIs(path, operator);
+  // A dashboard in its editor is the same workbench as an app's builder: panes edge to edge under one toolbar.
+  const bleeding = useBleeding();
+  const where = base;
   // The help follows where the reader is. A page or a dialog can say its own over this.
   useEffect(() => setSectionTopic(where.help), [where.help]);
   useShortcut("help", toggleHelp);
@@ -1270,7 +1274,7 @@ export function Shell({
           id="main"
           ref={main}
           tabIndex={-1}
-          className={`relative flex min-h-0 outline-none flex-1 flex-col bg-canvas ${where.workbench ? "overflow-hidden" : "overflow-auto"}`}
+          className={`relative flex min-h-0 outline-none flex-1 flex-col bg-canvas ${where.workbench || bleeding ? "overflow-hidden" : "overflow-auto"}`}
         >
           {where.workbench ? (
             <ErrorBoundary resetOn={path} what="This page">
@@ -1280,11 +1284,14 @@ export function Shell({
             </ErrorBoundary>
           ) : (
             <div
-              className={`w-full px-4 md:px-8 ${
-                where.editor
-                  ? "py-4"
-                  : // An overview takes a wide screen's room for a third column; other pages keep a reading width.
-                    `mx-auto py-6 ${where.area === "overview" ? "max-w-[1440px] 3xl:max-w-[1920px]" : "max-w-[1440px]"}`
+              // A dashboard in its editor changes this div's classes, not the tree, so it is not drawn again.
+              className={`w-full ${bleeding ? "flex min-h-0 flex-1 flex-col" : "px-4 md:px-8"} ${
+                bleeding
+                  ? ""
+                  : where.editor
+                    ? "py-4"
+                    : // An overview takes a wide screen's room for a third column; other pages keep a reading width.
+                      `mx-auto py-6 ${where.area === "overview" ? "max-w-[1440px] 3xl:max-w-[1920px]" : "max-w-[1440px]"}`
               }`}
             >
               <ErrorBoundary resetOn={path} what="This page">

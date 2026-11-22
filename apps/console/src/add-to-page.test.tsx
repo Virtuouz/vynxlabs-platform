@@ -44,7 +44,7 @@ describe("Add to page", () => {
     });
     expect(onCarry).toHaveBeenCalledTimes(1);
     expect(onAdd).not.toHaveBeenCalled();
-    expect(screen.getByText(/or drag it onto the page where you want it/)).toBeTruthy();
+    expect(screen.getByText(/or drag onto the grid/)).toBeTruthy();
   });
 
   test("a finger scrolls the list and is not a carry", () => {

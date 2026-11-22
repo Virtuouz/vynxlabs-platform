@@ -15,6 +15,11 @@
  * });
  * ```
  *
+ * - Without a `group`, a piece is a whole section: `section` is a component drawing its own
+ *   `DrawerGroup`s (hooks allowed), placed by `order`. `hidesData` names the data parts it draws
+ *   itself ("source", "conditions", "sort", "limit", "measure", "breakdown"); `hides` applies to
+ *   the setting in every tab. `ownHeading` says it places `HeadingGroup` itself; `headingLast`
+ *   sends the shell's Heading group after everything else in the tab.
  * - `render` draws the rows that go inside the group's bordered list. Return `DrawerRow`s,
  *   `ToggleRow`s or a `DrawerBlock` of free content. It is given the `Env` every control gets.
  * - A group takes its place among the others by the lowest `order` of what is in it, a
@@ -29,22 +34,46 @@
  * Registration is a module side effect; the registry is read on every render.
  */
 import type { Tab } from "@volvel/widgets";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import type { Env } from "./controls.tsx";
 
-export interface DrawerContribution {
+/** The data parts of a widget's Data tab that a section may draw itself. */
+export type DataPartName = "source" | "conditions" | "sort" | "limit" | "measure" | "breakdown";
+
+interface PieceBase {
   tab: Tab;
-  group: string;
   order?: number;
-  render: (env: Env) => ReactNode;
-  /** Config properties this draws in its own way: the generic row of each is left out. */
+  /** Settings this draws in its own way, in any tab: the generic row of each is left out. */
   hides?: readonly string[];
+  /** Data parts (of the Data tab) this draws itself, so the shell does not draw them too. */
+  hidesData?: readonly DataPartName[];
   when?: (env: Env) => boolean;
-  note?: ReactNode | ((env: Env) => ReactNode);
-  aside?: ReactNode | ((env: Env) => ReactNode);
   /** The tab has something set because of this (a dot on the tab). */
   dot?: (env: Env) => boolean;
+  /** The piece places the shell's Heading group itself (`HeadingGroup`): the shell does not. */
+  ownHeading?: boolean;
+  /** The shell's Heading group goes after everything else in the tab, not before. */
+  headingLast?: boolean;
 }
+
+/** A piece with a `group`: its rows go into that group of the tab. */
+export interface GroupPiece extends PieceBase {
+  group: string;
+  render: (env: Env) => ReactNode;
+  note?: ReactNode | ((env: Env) => ReactNode);
+  aside?: ReactNode | ((env: Env) => ReactNode);
+}
+
+/**
+ * A piece without a group is a whole section: a component that draws its own `DrawerGroup`s
+ * (hooks allowed), placed among the tab's groups by `order`.
+ */
+export interface SectionPiece extends PieceBase {
+  group?: undefined;
+  section: ComponentType<{ env: Env }>;
+}
+
+export type DrawerContribution = GroupPiece | SectionPiece;
 
 const contributions = new Map<string, DrawerContribution[]>();
 
@@ -67,9 +96,21 @@ export function drawersFor(type: string, tab: Tab): DrawerContribution[] {
   return (contributions.get(type) ?? []).filter((one) => one.tab === tab);
 }
 
-/** Every config property a type's registered pieces draw themselves. */
-export function hiddenSettings(type: string, tab: Tab): Set<string> {
-  return new Set(drawersFor(type, tab).flatMap((one) => [...(one.hides ?? [])]));
+/** How a type's pieces place the Heading group in a tab. */
+export function headingPlace(type: string, tab: Tab): "first" | "last" | "own" {
+  const mine = drawersFor(type, tab);
+  if (mine.some((one) => one.ownHeading)) return "own";
+  return mine.some((one) => one.headingLast) ? "last" : "first";
+}
+
+/** Every config property a type's registered pieces draw themselves (in any tab: a setting is drawn once). */
+export function hiddenSettings(type: string): Set<string> {
+  return new Set((contributions.get(type) ?? []).flatMap((one) => [...(one.hides ?? [])]));
+}
+
+/** The data parts of a type's Data tab that its pieces draw themselves. */
+export function hiddenData(type: string): Set<DataPartName> {
+  return new Set((contributions.get(type) ?? []).flatMap((one) => [...(one.hidesData ?? [])]));
 }
 
 // ---------------------------------------------------------------------------

@@ -1217,7 +1217,7 @@ export const filter = defineWidget({
         // Each one's shape is checked by the manifest, as a page filter.
         items: { type: "object" },
         "x-volvel": hint({
-          tab: "data",
+          tab: "display",
           control: "pageFilters",
           group: "Filters",
           label: "Filters",
@@ -1295,7 +1295,7 @@ export const actions = defineWidget({
           additionalProperties: false,
         },
         "x-volvel": hint({
-          tab: "actions",
+          tab: "display",
           group: "Buttons",
           control: "actions",
           label: "Buttons",

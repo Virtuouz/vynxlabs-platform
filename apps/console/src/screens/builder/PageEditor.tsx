@@ -53,6 +53,7 @@ import { GroupButtonsDialog } from "./GroupButtonsDialog.tsx";
 import { Outline } from "./Outline.tsx";
 import { PageSettings } from "./PageSettings.tsx";
 import { SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
+import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
 import { RowClickOffer } from "./RowClickOffer.tsx";
 import {
   type Edit,
@@ -487,7 +488,10 @@ export function PageEditor({
                       "renaming a widget",
                       `title:${id}`,
                     ),
-                  onColumn: (id) => onSelect(id),
+                  onColumn: (id, column) => {
+                    onSelect(id);
+                    requestColumn(id, column);
+                  },
                   onEditText: (id) => {
                     onSelect(id);
                     setWriting(id);

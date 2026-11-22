@@ -14,6 +14,7 @@ import {
   groupName,
   MAX_WIDGET_HEIGHT,
   PAGE_COLUMNS,
+  type Page,
   type PageFilter,
   type PageWidget,
   type VisualQuery,
@@ -237,6 +238,66 @@ export function withText(
 
 export const visualOf = (input: DataInput | undefined): VisualQuery | undefined =>
   input && "visual" in input.source ? input.source.visual : undefined;
+
+/**
+ * The table an input reads, whichever way it is wired: a table from menus, the record the page
+ * opens on (the page's record table), the row selected in a table or list of the page (that
+ * widget's table), or the user's own row (its table). A column control asks this, so a detail
+ * or form wired to a record offers that table's columns as one wired to the table does.
+ */
+export function tableOfInput(
+  input: DataInput | undefined,
+  page: { record?: { table: string } | undefined } | undefined,
+  widgets: readonly PageWidget[] = [],
+): string | undefined {
+  const visual = visualOf(input);
+  if (visual) return visual.table;
+  const source = input?.source;
+  if (!source) return undefined;
+  if ("record" in source) return page?.record?.table;
+  if ("own" in source) return source.own.table;
+  if ("selected" in source) {
+    const followed = widgets.find((one) => one.id === source.selected);
+    for (const given of Object.values(followed?.data ?? {})) {
+      const table = visualOf(given)?.table;
+      if (table) return table;
+    }
+  }
+  return undefined;
+}
+
+/** Whether a page is opened on one record: a record page, a side sheet or a modal with its table. */
+export const opensOnRecord = (page: Page | undefined): boolean =>
+  Boolean(page?.record) && (page?.kind ?? "page") !== "page";
+
+/**
+ * A widget that reads one record, put where the page's record is: a new Record detail on a record
+ * page, a side sheet or a modal, and a Form that is changed to edit a record, start on the record
+ * the page opens with, so nothing is left to wire. A widget already wired is left as it is.
+ */
+export function onThePagesRecord(widget: PageWidget, page: Page | undefined): PageWidget {
+  if (!opensOnRecord(page)) return widget;
+  const table = page?.record?.table;
+  // A form changed back to making records reads the table again, as it did before it was wired.
+  if (
+    widget.type === "core/form" &&
+    table &&
+    (widget.config as { mode?: string } | undefined)?.mode !== "edit"
+  ) {
+    const source = widget.data?.record?.source;
+    return source && "record" in source
+      ? { ...widget, data: { ...widget.data, record: { source: { visual: { table } } } } }
+      : widget;
+  }
+  const wants =
+    widget.type === "core/detail" ||
+    (widget.type === "core/form" &&
+      (widget.config as { mode?: string } | undefined)?.mode === "edit");
+  if (!wants) return widget;
+  const have = widget.data?.record?.source;
+  if (have && ("record" in have || "selected" in have || "own" in have)) return widget;
+  return { ...widget, data: { ...widget.data, record: { source: { record: "this" } } } };
+}
 
 /** A visual query with the parts that came empty taken out, so a page holds nothing it need not. */
 export function tidyVisual(visual: VisualQuery): VisualQuery {

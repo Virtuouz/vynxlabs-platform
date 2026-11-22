@@ -60,7 +60,11 @@ const writeConfig = (env: Env, name: string, value: unknown, label: string, key?
 export function TableColumnsSection({ env, bare, ...source }: TableSectionProps) {
   const { names, facts, table } = useTableData(env, source);
   const stored = env.config.columns as ColumnSetting[] | undefined;
-  const columns = columnsOf(stored, names);
+  // A table that names no columns draws them all but JSON, which says nothing in a cell.
+  const columns = columnsOf(
+    stored,
+    names.filter((name) => facts.find((one) => one.name === name)?.type !== "json"),
+  );
   const request = useColumnRequest(env.widget.id);
   const [open, setOpen] = useState<{ column: string; canvas: boolean } | undefined>();
   const holder = useRef<HTMLDivElement>(null);

@@ -77,7 +77,7 @@ import {
   heading,
   isChoiceLike,
   resultNames,
-  visualOf,
+  tableOfInput,
   withConfig,
   withSystemColumns,
 } from "./model.ts";
@@ -138,8 +138,8 @@ export function columnOptions(
   types?: readonly string[],
 ): Option[] {
   const input = of ? env.widget.data?.[of] : undefined;
-  const visual = visualOf(input);
-  const table = visual ? env.catalog.tables.find((one) => one.name === visual.table) : undefined;
+  const named = tableOfInput(input, env.page, env.widgets);
+  const table = named ? env.catalog.tables.find((one) => one.name === named) : undefined;
   const columns = table ? withSystemColumns(table.columns) : [];
   if (types) {
     return columns

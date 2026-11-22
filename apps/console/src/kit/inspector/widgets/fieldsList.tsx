@@ -20,7 +20,7 @@ import {
 import { Layers } from "lucide-react";
 import { useState } from "react";
 import { columnOptions } from "../controls.tsx";
-import { heading, visualOf } from "../model.ts";
+import { heading, tableOfInput } from "../model.ts";
 import { BackHead, dashedFace, type Env, Group, setConfig } from "./recordShared.tsx";
 
 export interface FieldRow {
@@ -42,7 +42,7 @@ const FIELD = "field:";
 /** What a column is, in a word: "Picker", "Date", "Long text". */
 export function kindOfColumn(env: Env, column: string, row?: FieldRow): string {
   // A detail on a record page has no table of its own: the page's record is its table.
-  const table = visualOf(env.widget.data?.record)?.table ?? env.page?.record?.table;
+  const table = tableOfInput(env.widget.data?.record, env.page, env.widgets);
   const found = env.catalog.tables
     .find((one) => one.name === table)
     ?.columns.find((one) => one.name === column);
@@ -74,9 +74,22 @@ export function kindOfColumn(env: Env, column: string, row?: FieldRow): string {
 export function fieldRows(env: Env): FieldRow[] {
   const value = env.config.fields;
   if (Array.isArray(value) && value.length > 0) return value as FieldRow[];
-  return columnOptions(env, "record")
-    .filter((one) => !["id", "created_at", "updated_at"].includes(one.value))
-    .map((one) => ({ column: one.value }));
+  return recordColumns(env, true).map((one) => ({ column: one.value }));
+}
+
+/**
+ * The columns of the record's table that a list of fields offers: not the system ones. A
+ * list that starts on every column (`starting`) also leaves out JSON, which says nothing in a
+ * field, as the page does; it is still there to add.
+ */
+export function recordColumns(env: Env, starting = false) {
+  const named = tableOfInput(env.widget.data?.record, env.page, env.widgets);
+  const own = env.catalog.tables.find((one) => one.name === named)?.columns ?? [];
+  return columnOptions(env, "record").filter(
+    (one) =>
+      !["id", "created_at", "updated_at"].includes(one.value) &&
+      !(starting && own.find((column) => column.name === one.value)?.type === "json"),
+  );
 }
 
 /** The list as rows: a header row where a section starts, then its fields. */
@@ -147,9 +160,7 @@ export function FieldsList({
   const [section, setSection] = useState("");
   const write = (next: FieldRow[]) => setConfig(env, "fields", next, "the fields");
 
-  const all = columnOptions(env, "record").filter(
-    (one) => !["id", "created_at", "updated_at"].includes(one.value),
-  );
+  const all = recordColumns(env);
   const left = all.filter((one) => !rows.some((row) => row.column === one.value));
   const hidden = left.length + rows.filter((row) => row.hidden).length;
 

@@ -108,6 +108,27 @@ export function sortedBy(
 /** The columns every table has, which are not shown unless a widget asks. */
 export const SYSTEM_COLUMNS = new Set(["id", "created_at", "updated_at"]);
 
+/** A column a widget draws when it names none: not a system column, and not JSON, which says nothing in a cell. */
+export const isDefaultColumn = (column: { name: string; type: string }): boolean =>
+  !SYSTEM_COLUMNS.has(column.name) && column.type !== "json";
+
+/**
+ * A JSON value as a short, readable form: how many items a list holds, or the JSON written
+ * compactly and cut. `full` is the whole of it, for a tooltip.
+ */
+export function jsonWords(value: unknown, cut = 40): { text: string; full: string } {
+  const full = JSON.stringify(value) ?? "";
+  if (Array.isArray(value)) {
+    return { text: `${value.length} ${value.length === 1 ? "item" : "items"}`, full };
+  }
+  return { text: full.length > cut ? `${full.slice(0, cut - 1)}…` : full, full };
+}
+
+const isJsonValue = (type: string, value: unknown): boolean =>
+  type === "json" ||
+  (typeof value === "object" && value !== null && !Array.isArray(value)) ||
+  (Array.isArray(value) && value.some((item) => typeof item === "object" && item !== null));
+
 /** The most columns drawn when a widget names none. */
 export const DEFAULT_COLUMNS = 8;
 
@@ -121,7 +142,7 @@ export function columnsToShow(
     specs && specs.length > 0
       ? named
       : data.columns
-          .filter((column) => !SYSTEM_COLUMNS.has(column.name))
+          .filter(isDefaultColumn)
           .slice(0, DEFAULT_COLUMNS)
           .map((column) => ({ column: column.name }));
   return chosen.map((spec) => ({
@@ -150,6 +171,14 @@ export function cellOf(
 ): ReactNode {
   if (value === null || value === undefined || value === "") return nothing;
   const type = info?.type ?? "text";
+  if (isJsonValue(type, value)) {
+    const { text, full } = jsonWords(value);
+    return (
+      <span title={full} className="font-mono text-[12.5px] text-ink-muted">
+        {text}
+      </span>
+    );
+  }
   if (spec.as === "bar" && numberOf(value) !== undefined) {
     const share = (Math.abs(numberOf(value) as number) / (most || 1)) * 100;
     return (

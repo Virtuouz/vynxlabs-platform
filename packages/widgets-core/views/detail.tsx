@@ -1,7 +1,7 @@
 import { Button, Details } from "@volvel/ui";
 import type { ColumnInfo, RecordData, RowsData, WidgetViewProps } from "@volvel/widgets";
 import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
-import { type ColumnSpec, cellOf, SYSTEM_COLUMNS } from "./cells.tsx";
+import { type ColumnSpec, cellOf, isDefaultColumn, SYSTEM_COLUMNS } from "./cells.tsx";
 import { labelOf } from "./format.ts";
 import { NamedIcon, type Tone, VARIANT } from "./look.tsx";
 import { CANNOT_NOW, useRunning } from "./press.tsx";
@@ -79,7 +79,7 @@ function showField(
 /** The fields to show: the config's, or every column that is not a system one. */
 function fieldsOf(config: DetailConfig, columns: readonly ColumnInfo[]): DetailField[] {
   if (config.fields && config.fields.length > 0) return config.fields;
-  return columns.filter((c) => !SYSTEM_COLUMNS.has(c.name)).map((c) => ({ column: c.name }));
+  return columns.filter(isDefaultColumn).map((c) => ({ column: c.name }));
 }
 
 /** Consecutive fields of one section, in the order given. */
@@ -258,7 +258,7 @@ export function DetailView({
   const all = fieldsOf(config, input.columns);
   const shown = all.filter((field) => !field.hidden);
   const hidden = all.filter((field) => field.hidden);
-  const first = input.columns.find((column) => !SYSTEM_COLUMNS.has(column.name))?.name;
+  const first = input.columns.find(isDefaultColumn)?.name;
   const heading = config.heading ?? first;
   const status = config.status;
   // A record with a money figure reads as the boards draw it: its number small, the figure big.

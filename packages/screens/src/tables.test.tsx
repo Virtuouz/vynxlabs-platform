@@ -499,3 +499,54 @@ describe("rows chosen, sent to the server", () => {
     );
   });
 });
+
+describe("a JSON column", () => {
+  const withLines = [
+    ...columns,
+    { name: "lines", type: "json", label: "Lines" },
+    { name: "meta", type: "json", label: "Meta" },
+  ];
+  const jsonRows = [
+    {
+      id: "a",
+      number: "INV-1",
+      lines: [{ sku: "x", qty: 2 }, { sku: "y" }],
+      meta: { source: "web", note: "a longer note than will fit in one cell of a table" },
+    },
+  ];
+  const as = (
+    type: "core/table" | "core/list" | "core/detail",
+    config: Record<string, unknown>,
+  ) => {
+    const View = views[type] as unknown as (props: WidgetViewProps) => React.ReactNode;
+    const data: RowsData = { shape: "rows", columns: withLines, rows: jsonRows };
+    return render(
+      <View
+        config={config}
+        data={{ rows: data }}
+        size={{ w: 12, h: 8, narrow: false }}
+        emit={() => {}}
+        building={false}
+      />,
+    );
+  };
+
+  test("is drawn as a count of items or cut compact JSON with the whole in a tooltip, never as an object", () => {
+    const { container } = as("core/table", {
+      columns: [{ column: "number" }, { column: "lines" }, { column: "meta" }],
+    });
+    expect(container.textContent).not.toContain("[object Object]");
+    expect(screen.getByText("2 items").getAttribute("title")).toBe(
+      JSON.stringify(jsonRows[0]?.lines),
+    );
+    const meta = container.querySelector(`[title='${JSON.stringify(jsonRows[0]?.meta)}']`);
+    expect(meta?.textContent?.endsWith("…")).toBe(true);
+  });
+
+  test("is not one of the columns a table starts with", () => {
+    const { container } = as("core/table", {});
+    expect(container.textContent).toContain("Number");
+    expect(container.textContent).not.toContain("Lines");
+    expect(container.textContent).not.toContain("Meta");
+  });
+});

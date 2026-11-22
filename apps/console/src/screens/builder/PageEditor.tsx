@@ -23,6 +23,7 @@ import {
   defaultInputs,
   insertFilterWidget,
   mainTable,
+  onThePagesRecord,
   settleOnGrid,
   unbindDeclared,
 } from "../../kit/inspector/model.ts";
@@ -314,8 +315,10 @@ export function PageEditor({
   };
 
   /** A widget changed in the inspector; if its place changed, what it now lies on moves out of its way. */
-  const edit = (changed: PageWidget, label: string, key?: string) => {
-    const before = widgets.find((one) => one.id === changed.id);
+  const edit = (changedAs: PageWidget, label: string, key?: string) => {
+    const before = widgets.find((one) => one.id === changedAs.id);
+    // A form changed to edit is on the record the page opens with.
+    const changed = onThePagesRecord(changedAs, pageInfo?.page);
     const next = widgets.map((one) => (one.id === changed.id ? changed : one));
     const moved = before && JSON.stringify(before.at) !== JSON.stringify(changed.at);
     put(moved ? settleOnGrid(next, changed.id) : next, label, key);
@@ -346,6 +349,7 @@ export function PageEditor({
         ? { data: defaultInputs(definition, mainTable(widgets, catalog), catalog) }
         : {}),
     };
+    added = onThePagesRecord(added, pageInfo?.page);
     if (added.data && Object.keys(added.data).length === 0) delete added.data;
     for (const filter of filters) added = bindFilter(added, filter, catalog, widgets);
     let next = at ? placed([...widgets, added], id, at) : [...widgets, added];

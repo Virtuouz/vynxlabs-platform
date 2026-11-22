@@ -62,10 +62,12 @@ const chartWidget = (): PageWidget => ({
   },
 });
 
-/** A tab by its name: a tab with something set says so after its name. */
+/** A tab by its name: a tab with something to fix says so after its name. */
 const tabByName = (name: string) => screen.getByRole("tab", { name: new RegExp(`^${name}`) });
 const tabNames = () =>
-  screen.getAllByRole("tab").map((one) => (one.textContent ?? "").replace(/, has settings$/, ""));
+  screen
+    .getAllByRole("tab")
+    .map((one) => (one.textContent ?? "").replace(/, needs fixing: .*$/, ""));
 /** Opens the row of a setting in the drawer, and returns its editor. */
 const openRow = (label: string) => {
   fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}`) }));
@@ -151,23 +153,46 @@ test("every drawer has the same header, the tabs its widget has, and its setting
   expect(screen.queryByText(/Size and position live on the page/)).toBeNull();
 });
 
-test("a dot marks a tab that has something set, and none marks one that has nothing", () => {
-  const empty: PageWidget = { id: "by-week", type: "core/chart", at: place };
-  show(<Harness start={empty} definition={chart} />);
-  expect(screen.queryAllByText(/has settings/)).toHaveLength(0);
-  cleanup();
-  // Data bound, a setting off its default, an action and a rule each light their tab.
+test("a dot marks a tab only when something in it needs fixing, never because something is set", () => {
+  // Data bound, a setting off its default, a title, an action and a rule: all set, nothing wrong: no dot.
   const set: PageWidget = {
     ...chartWidget(),
     title: "Weekly",
     config: { mark: "line" },
-    on: { click: { do: [{ do: "say", message: "Hi" }] } as never },
+    on: { click: { steps: [{ do: "say", message: "Hi" }] } as never },
     rules: { showWhen: [{ left: "this.status", op: "eq", value: "paid" }] as never },
   };
   show(<Harness start={set} definition={chart} />);
-  for (const name of ["Data", "Display", "Actions", "Rules"]) {
-    expect(tabByName(name).textContent).toContain("has settings");
-  }
+  expect(document.querySelectorAll("[data-attention]")).toHaveLength(0);
+  expect(screen.queryAllByText(/needs fixing/i)).toHaveLength(0);
+  cleanup();
+  // The table is gone, and an action has no steps: Data and Actions say so, Display and Rules do not.
+  const broken: PageWidget = {
+    ...chartWidget(),
+    data: {
+      rows: {
+        source: {
+          visual: { table: "gone", measures: [{ fn: "count", as: "count" }] },
+        },
+      },
+    },
+    on: { click: { steps: [] } as never },
+  };
+  show(<Harness start={broken} definition={chart} />);
+  expect(tabByName("Data").textContent).toContain(
+    "needs fixing: Source: the table gone no longer exists.",
+  );
+  expect(tabByName("Data").querySelector("[data-attention]")).toBeTruthy();
+  expect(tabByName("Actions").textContent).toContain("has no steps yet");
+  expect(tabByName("Display").querySelector("[data-attention]")).toBeNull();
+  expect(tabByName("Rules").querySelector("[data-attention]")).toBeNull();
+  // In the tab, the field at fault says so.
+  expect(within(screen.getByRole("tabpanel")).getByText("Needs fixing")).toBeTruthy();
+  expect(
+    within(screen.getByRole("tabpanel")).getByText(/the table gone no longer exists/),
+  ).toBeTruthy();
+  fireEvent.click(tabByName("Display"));
+  expect(within(screen.getByRole("tabpanel")).queryByText("Needs fixing")).toBeNull();
 });
 
 test("settings are drawn in the group their hint names, in order, and a row opens its editor", async () => {

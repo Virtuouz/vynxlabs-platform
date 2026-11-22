@@ -5,7 +5,8 @@
  *
  * Board 8's drawer, for every widget: a header (the type's icon tile, the name, the kind, a ⋯
  * menu: Layout, Duplicate, Move to, Remove); the tabs its definition has, with a dot on a tab that
- * has something set; and in a tab, groups of rows, each row showing its value and opening a small
+ * has something to fix (`tabProblems.ts`; never "something is set"), and in that tab the words for
+ * each thing to fix; and in a tab, groups of rows, each row showing its value and opening a small
  * editor. What a widget type adds of its own is registered in `custom.ts`. Size and position are
  * not a tab: ⋯ › Layout (`LayoutPanel.tsx`).
  */
@@ -18,6 +19,7 @@ import {
   DrawerPanel,
   DrawerTabs,
   Menu,
+  Notice,
 } from "@volvel/ui";
 import {
   type Surface,
@@ -31,6 +33,7 @@ import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from "re
 import { outlineIcon } from "../../screens/builder/widgetIcons.ts";
 import { formatCombo } from "../keys.ts";
 import { ActionsTab, RulesSummary } from "./ActionsTab.tsx";
+import { useChosenGroups } from "./groupChoices.tsx";
 import { useOpenAction } from "./widgets/subView.ts";
 import "./widgets/registerAll.ts";
 import { type Env, SettingRow } from "./controls.tsx";
@@ -64,6 +67,7 @@ import {
   withMoneyStart,
 } from "./model.ts";
 import { RulesTab } from "./RulesTab.tsx";
+import { inTab, tabProblems, type WidgetRefusal } from "./tabProblems.ts";
 
 export interface InspectorProps {
   widget: PageWidget;
@@ -112,6 +116,8 @@ export interface InspectorProps {
   onOpenPage?: ((id: string) => void) | undefined;
   /** "When a row is clicked" as the builder draws it, for a table or a list. */
   rowClickEditor?: ReactNode;
+  /** What the server refused about this widget when the draft was saved, by where in the widget. */
+  refused?: readonly WidgetRefusal[] | undefined;
   /** Someone who may not edit reads the drawer: its settings are shown, none can be changed. */
   readOnly?: boolean;
   /** ⋯ › Layout: what a device's automatic place is now, for "Custom" to start from. */
@@ -162,6 +168,7 @@ export function Inspector(props: InspectorProps) {
     if (READS_NO_ROWS.has(widget.type) && tab === "data") setTab("display");
   }, []);
   const prefix = useId();
+  const groups = useChosenGroups();
   const menu = useRef<HTMLSpanElement>(null);
   const cameBack = useRef(false);
   const name = widgetName(widget, definition);
@@ -247,6 +254,19 @@ export function Inspector(props: InspectorProps) {
   };
   const tabs = tabsOf(definition);
   const current = tabs.includes(tab) ? tab : (tabs[0] ?? "display");
+  // What needs fixing, by the tab it is fixed in: the dots, and the words in the tab.
+  const problems = tabProblems({
+    widget,
+    definition,
+    catalog: props.catalog,
+    pages: props.pages,
+    flows: props.flows,
+    scripts: props.scripts,
+    groups: groups.length > 0 ? groups.map((one) => one.path) : undefined,
+    refusals: props.refused,
+    page: props.page,
+  });
+  const fixes = (one: Tab) => inTab(problems, one);
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -313,7 +333,7 @@ export function Inspector(props: InspectorProps) {
         tabs={tabs.map((one) => ({
           id: one,
           label: tabName(definition.type, one),
-          dot: tabHasSettings(env, one),
+          ...(fixes(one).length > 0 ? { attention: fixes(one).join(" ") } : {}),
         }))}
       />
       <DrawerPanel idPrefix={prefix} tab={current}>
@@ -321,6 +341,16 @@ export function Inspector(props: InspectorProps) {
           disabled={props.readOnly}
           className="m-0 flex min-w-0 flex-col gap-5 border-0 p-0"
         >
+          {fixes(current).length > 0 ? (
+            <Notice tone="attention">
+              <p className="m-0 mb-1 font-medium">Needs fixing</p>
+              <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                {fixes(current).map((words) => (
+                  <li key={words}>{words}</li>
+                ))}
+              </ul>
+            </Notice>
+          ) : null}
           <TabBody
             tab={current}
             env={env}
@@ -331,37 +361,6 @@ export function Inspector(props: InspectorProps) {
       </DrawerPanel>
     </div>
   );
-}
-
-// ---------------------------------------------------------------------------
-// The dot on a tab
-
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-
-/** Whether a tab has something set: a setting that is not its default, data bound, an action, a rule. */
-export function tabHasSettings(env: Env, tab: Tab): boolean {
-  const { definition, widget } = env;
-  if (drawersFor(definition.type, tab).some((one) => one.dot?.(env))) return true;
-  const changed = configSettings(definition, tab).some(({ name, schema }) => {
-    const set = widget.config?.[name];
-    if (set === undefined) return false;
-    return !same(set, definition.defaults?.[name] ?? schema.default);
-  });
-  if (changed) return true;
-  switch (tab) {
-    case "data":
-      return Object.values(widget.data ?? {}).some(
-        (input) => "visual" in input.source || Object.keys(input.source).length > 0,
-      );
-    case "display":
-      return Boolean(widget.title || widget.subtitle);
-    case "actions":
-      return Object.keys(widget.on ?? {}).length > 0;
-    case "rules":
-      return Object.values(widget.rules ?? {}).some(
-        (one) => one !== undefined && (!Array.isArray(one) || one.length > 0),
-      );
-  }
 }
 
 // ---------------------------------------------------------------------------

@@ -114,7 +114,7 @@ The owner replaced the file on 2026-11-22 with nineteen boards. Boards 7 to 19 d
 ### Board 8: one drawer, one pattern
 
 **Every widget's inspector:**
-- The same header (icon tile, name, kind, ⋯) and the same four tabs, with a dot on each tab that has something set.
+- The same header (icon tile, name, kind, ⋯) and the same four tabs, with a dot on a tab only when something in it needs fixing (changed after the owner's first look at the builder: it first meant "something is set here", which read as a warning; see `kit/inspector/tabProblems.ts`).
 - Grouped rows, each showing its current value. Clicking a row opens a small editor.
 
 **The parts every widget shares:**

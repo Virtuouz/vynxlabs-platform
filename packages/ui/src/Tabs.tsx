@@ -7,8 +7,8 @@ export interface TabItem {
   label: string;
   content: ReactNode;
   disabled?: boolean;
-  /** A dot after the label: there is something set in this tab. */
-  dot?: boolean;
+  /** A dot after the label: something in this tab needs fixing, said in these words. No dot otherwise. */
+  attention?: string;
   /** A small drawing before the label: a page's icon in the menu. */
   icon?: ReactNode;
   /** A count after the label. */
@@ -75,8 +75,15 @@ export function Tabs({
             {tab.count !== undefined ? (
               <span className="text-meta text-ink-subtle tabular-nums">{tab.count}</span>
             ) : null}
-            {tab.dot ? (
-              <span aria-hidden="true" className="size-1.5 rounded-full bg-action" />
+            {tab.attention ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  data-attention=""
+                  className="size-1.5 rounded-full bg-attention"
+                />
+                <span className="sr-only">, needs fixing: {tab.attention}</span>
+              </>
             ) : null}
           </Base.Tab>
         ))}

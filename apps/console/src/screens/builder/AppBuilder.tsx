@@ -575,6 +575,7 @@ export function AppBuilder({
                 if (at >= 0) draft.pages[at] = next;
               }, label),
             onRemovePage: !readOnly && body.pages.length > 1 ? removePage : undefined,
+            problems,
           }}
           pages={
             <PagesList

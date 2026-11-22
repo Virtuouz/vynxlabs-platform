@@ -148,7 +148,7 @@ const numberOf = (key: string) => `${PREFIX}-${key.toUpperCase()}`;
 
 /** The builder's right pane. */
 const settings = () => owner.getByRole("complementary", { name: "Settings" });
-/** A tab of the inspector. Its name gains ", has settings" once something on it is set. */
+/** A tab of the inspector. Its name gains ", needs fixing: …" only when something in it is wrong. */
 const tabOf = (name: string) => settings().getByRole("tab", { name: new RegExp(`^${name}\\b`) });
 /** A row of the inspector: a button named by its label and its current value ("Source Invoices"). */
 const rowOf = (label: string) =>

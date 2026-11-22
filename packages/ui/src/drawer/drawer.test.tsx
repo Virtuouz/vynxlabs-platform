@@ -66,17 +66,23 @@ describe("tabs", () => {
         value={value}
         onChange={setValue}
         tabs={[
-          { id: "data", label: "Data", dot: true },
+          { id: "data", label: "Data", attention: "The table invoices no longer exists." },
           { id: "display", label: "Display", count: 3 },
           { id: "rules", label: "Rules" },
         ]}
       />
     );
   }
-  test("arrow keys move and open, and a dot is said", () => {
+  test("arrow keys move and open, and what needs fixing is said, only where something does", () => {
     render(<Tabs />);
     const data = screen.getByRole("tab", { name: /Data/ });
-    expect(data.textContent).toContain("has settings");
+    expect(data.textContent).toContain("needs fixing: The table invoices no longer exists.");
+    expect(data.querySelector("[data-attention]")).toBeTruthy();
+    // A tab with nothing to fix has no dot, whatever is set in it.
+    expect(screen.getByRole("tab", { name: "Rules" }).querySelector("[data-attention]")).toBeNull();
+    expect(
+      screen.getByRole("tab", { name: /Display/ }).querySelector("[data-attention]"),
+    ).toBeNull();
     data.focus();
     fireEvent.keyDown(data, { key: "ArrowRight" });
     const display = screen.getByRole("tab", { name: /Display/ });

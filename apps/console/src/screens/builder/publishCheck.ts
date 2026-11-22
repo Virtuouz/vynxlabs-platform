@@ -76,10 +76,15 @@ export function actionsOf(widget: PageWidget): { at: string; action: Action }[] 
 const NO_STEPS = "has no steps yet";
 
 /** What is wrong with an action, in words; nothing when it is complete. */
-function actionProblem(action: Action, body: InterfaceBody, known: Known): string | undefined {
+export function actionProblem(
+  action: Action,
+  body: InterfaceBody,
+  known: Known,
+  checkPages = true,
+): string | undefined {
   if (action.steps.length === 0) return NO_STEPS;
   for (const step of action.steps) {
-    if (step.do === "open" && !body.pages.some((page) => page.id === step.page))
+    if (step.do === "open" && checkPages && !body.pages.some((page) => page.id === step.page))
       return "it opens a page that is gone";
     if (step.do === "create" && known.tables && !known.tables.has(step.table))
       return `it adds to ${step.table}, which does not exist`;
@@ -414,7 +419,7 @@ const thing = (key: string, count: number): string => {
  * The nearest thing with a name on the way down a path into a widget: the button or the column
  * a problem is in, "Do it" in `config/actions/0/action/steps`.
  */
-function nameAlong(widget: PageWidget, rest: readonly string[]): string | undefined {
+export function nameAlong(widget: PageWidget, rest: readonly string[]): string | undefined {
   let at: unknown = widget;
   let found: string | undefined;
   for (const key of rest) {

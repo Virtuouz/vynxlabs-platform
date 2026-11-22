@@ -27,6 +27,7 @@ import {
   settleOnGrid,
   unbindDeclared,
 } from "../../kit/inspector/model.ts";
+import { refusalsFor } from "../../kit/inspector/tabProblems.ts";
 import { ApprovalFlowsProvider } from "../../kit/inspector/widgets/approvalFlows.tsx";
 import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
 import { useShortcut } from "../../kit/keys.ts";
@@ -145,6 +146,8 @@ export interface PageInfo {
   /** Another page of the app is changed, found by its id: the detail a row opens, made another kind. */
   onSetPage?: (next: Page, label: string) => void;
   onRemovePage: (() => void) | undefined;
+  /** What the server refused when the draft was saved: the inspector's tabs say which of them is fixed where. */
+  problems?: readonly { path: string; message: string }[] | undefined;
   /** "A list of Invoices" or "A record page for Invoice" from an empty page: asks the builder to make it (the empty page becomes it). */
   onStart?: ((start: "list" | "record", table: string) => void) | undefined;
 }
@@ -890,6 +893,11 @@ export function PageEditor({
                   groupKeys={keyed}
                   tab={inspectorTab}
                   onTab={setInspectorTab}
+                  refused={
+                    pageInfo?.problems
+                      ? refusalsFor(pageInfo.problems, pageInfo.pages, pageInfo.page.id, widget.id)
+                      : undefined
+                  }
                   sample={{ table: sample.table, record: sample.record }}
                   onSelect={onSelect}
                   {...(pageInfo

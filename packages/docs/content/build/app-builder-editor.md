@@ -54,7 +54,7 @@ An **Action group** puts related buttons in one toolbar, the first as the main o
 
 ## The inspector: Data, Display, Actions, Rules
 
-The inspector is the same for every widget. It is drawn from what the widget says it can do, so a widget that comes from another pack has the same tabs and the same controls. It begins with the widget's icon, its name and kind, and **⋯**. A tab with nothing in it is not shown, and a tab with something set has a dot.
+The inspector is the same for every widget. It is drawn from what the widget says it can do, so a widget that comes from another pack has the same tabs and the same controls. It begins with the widget's icon, its name and kind, and **⋯**. A tab with nothing in it is not shown. A tab has an orange dot only when something in it needs fixing, such as a table that is gone, an action with no steps or a group that no longer exists; point at the tab, or open it, for what is wrong. A tab with nothing to fix has no dot, however much is set in it.
 
 Settings are grouped rows, each showing its current value. A click on a row opens a small editor for that setting, and the row shows the new value when it is closed. The ones every widget shares are the same everywhere:
 

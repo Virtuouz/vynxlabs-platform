@@ -1189,6 +1189,8 @@ export function checkWidgets(
     typed: readonly string[] = [],
   ) {
     checkConditions(action.when, `${path}/when`, eventGivesRecord, say);
+    // An unfinished action is kept in a draft; it is said here, and publishing refuses it.
+    if (action.steps.length === 0) say(`${path}/steps`, "must NOT have fewer than 1 items");
     const asked = new Set([...(action.confirm?.ask ?? []).map((field) => field.name), ...typed]);
     action.steps.forEach((step, index) => {
       const at = `${path}/steps/${index}`;

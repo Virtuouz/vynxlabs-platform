@@ -778,6 +778,16 @@ describe("a draft", () => {
     ),
   });
 
+  test("holds a button with no steps yet, says so as a problem, and is not deployed with it", async () => {
+    const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
+      kind: "interface",
+      schemaVersion: 2,
+      body: draftOf([button("unfinished", 8, { steps: [] })]),
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(JSON.stringify(saved.body.problems)).toContain("must NOT have fewer than 1 items");
+  });
+
   test("is refused to an end user and run by an editor", async () => {
     const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
       kind: "interface",

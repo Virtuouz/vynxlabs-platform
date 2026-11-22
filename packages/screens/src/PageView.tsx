@@ -653,7 +653,7 @@ function Cell({
               aria-hidden="true"
               data-chrome="resize"
               title="Drag to change its size"
-              className="absolute -right-1 -bottom-1 layer-sticky size-3 cursor-nwse-resize touch-none rounded-inner border-2 border-canvas bg-action after:absolute after:-inset-2 after:content-['']"
+              className="absolute -right-1 -bottom-1 layer-sticky size-2.5 cursor-nwse-resize touch-none rounded-none border border-canvas bg-action after:absolute after:-inset-2 after:content-['']"
               onPointerDown={(event) => {
                 event.stopPropagation();
                 handlers.onPointerDown(event, "stretch");

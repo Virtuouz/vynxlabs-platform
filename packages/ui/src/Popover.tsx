@@ -43,7 +43,7 @@ export function Popover({
           <Base.Popup
             className={`rounded-panel border border-line-strong text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0 ${
               wide
-                ? "w-[22rem] max-w-[90vw] overflow-hidden bg-raised p-0"
+                ? "w-[23.875rem] max-w-[90vw] overflow-hidden bg-raised p-0"
                 : "max-w-sm bg-raised p-3"
             }`}
           >

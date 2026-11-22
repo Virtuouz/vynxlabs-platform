@@ -173,7 +173,7 @@ export function EditorShell({
                 data-canvas
                 className={
                   bleed
-                    ? "min-h-0 min-w-0 flex-1 overflow-auto border-line border-t p-5 lg:[container-type:size]"
+                    ? "min-h-0 min-w-0 flex-1 overflow-auto border-line border-t p-4 lg:[container-type:size]"
                     : "min-w-0 lg:pr-1"
                 }
               >

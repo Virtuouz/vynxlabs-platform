@@ -99,8 +99,13 @@ const DESKTOP_MIN = 720;
  * The page grid's columns, faintly, behind the widgets: twelve columns of equal width with `GRID.gap`
  * between them, over the grid's own box (the frame's padding is outside it).
  */
+const GUIDE_LINE = "color-mix(in srgb, var(--color-action) 16%, transparent)";
+const GUIDE_PITCH = `calc((100% + ${GRID.gap}px) / ${GRID.columns})`;
+/** Thin lines along each column's two edges, as the boards draw the grid. */
 const GUIDES = {
-  backgroundImage: `repeating-linear-gradient(to right, color-mix(in srgb, var(--color-action) 8%, transparent) 0, color-mix(in srgb, var(--color-action) 8%, transparent) calc((100% - ${(GRID.columns - 1) * GRID.gap}px) / ${GRID.columns}), transparent calc((100% - ${(GRID.columns - 1) * GRID.gap}px) / ${GRID.columns}), transparent calc((100% + ${GRID.gap}px) / ${GRID.columns}))`,
+  backgroundImage: `linear-gradient(to right, ${GUIDE_LINE} 0 1px, transparent 1px), linear-gradient(to right, transparent calc(100% - ${GRID.gap + 1}px), ${GUIDE_LINE} calc(100% - ${GRID.gap + 1}px), ${GUIDE_LINE} calc(100% - ${GRID.gap}px), transparent calc(100% - ${GRID.gap}px))`,
+  backgroundSize: `${GUIDE_PITCH} 100%`,
+  backgroundRepeat: "repeat-x",
 } as const;
 
 /** What a page of an app is, to the editor: its kind and record, the app's other pages, and what is changed about the page itself. */

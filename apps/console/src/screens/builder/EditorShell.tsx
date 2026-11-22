@@ -54,6 +54,7 @@ export function EditorShell({
   more,
   after,
   notices,
+  banner,
   outline,
   outlineKey,
   outlineLabel,
@@ -89,6 +90,11 @@ export function EditorShell({
   /** Under the toolbar: the field that names it. */
   after?: ReactNode;
   notices?: ReactNode;
+  /**
+   * Over the top of the panes, in no room of its own: what needs fixing is said without the
+   * workbench moving down under it. It scrolls when it is long.
+   */
+  banner?: ReactNode;
   /** Saves at once, rather than a moment after the last change: ⌘S. */
   saveNow?: () => void;
   outline: ReactNode;
@@ -223,6 +229,13 @@ export function EditorShell({
         after={after}
       />
       {notices}
+      {banner ? (
+        <div className="pointer-events-none relative layer-sticky h-0 shrink-0">
+          <div className="pointer-events-auto absolute inset-x-0 top-0 mx-auto max-h-[40vh] w-[min(44rem,calc(100%-1.5rem))] overflow-auto pt-2 shadow-overlay">
+            {banner}
+          </div>
+        </div>
+      ) : null}
       <div
         className={
           bleed

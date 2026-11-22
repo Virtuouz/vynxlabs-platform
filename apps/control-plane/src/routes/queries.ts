@@ -185,6 +185,17 @@ export const queryRoutes =
                       name: Type.String(),
                       type: Type.String(),
                       references: NullableString,
+                      required: Type.Optional(
+                        Type.Boolean({
+                          description:
+                            "Whether the column is NOT NULL. A row must give it unless it has a default.",
+                        }),
+                      ),
+                      default: Type.Optional(
+                        Type.Unknown({
+                          description: "What a row gets when it gives none, when the table says.",
+                        }),
+                      ),
                       description: Type.Optional(
                         Type.String({
                           description:
@@ -255,6 +266,10 @@ export const queryRoutes =
                   name: column.name,
                   type: column.type,
                   references: column.referenceTable,
+                  ...(column.required ? { required: true } : {}),
+                  ...(column.default !== null && column.default !== undefined
+                    ? { default: column.default }
+                    : {}),
                   ...(defined.get(table.name)?.[column.name]?.description
                     ? { description: defined.get(table.name)?.[column.name]?.description as string }
                     : {}),

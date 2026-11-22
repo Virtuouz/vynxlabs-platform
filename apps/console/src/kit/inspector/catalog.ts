@@ -8,6 +8,8 @@ interface Schema {
       name: string;
       type: string;
       references: string | null;
+      required?: boolean;
+      default?: unknown;
       /** What the column holds, as its table's definition says (what is owed, in cents). */
       description?: string;
       /** A choice column's values, with the labels the table's definition gives them. */

@@ -11,11 +11,11 @@ import {
   type DrawerIcon,
   NumberField,
   SegmentedControl,
-  SelectField,
   TextField,
 } from "@volvel/ui";
 import type { WidgetDefinition } from "@volvel/widgets";
 import { ChevronLeft } from "lucide-react";
+import { useState } from "react";
 import { clampPlace, settleOnGrid, withText } from "./model.ts";
 
 export type Device = "tablet" | "phone";
@@ -30,6 +30,36 @@ export function defaultAutomatic(widget: PageWidget, device: Device): WidgetPlac
 }
 
 const COLUMNS = 12;
+
+/**
+ * The four numbers of a place, as board 9 draws them: the labels small and muted over the
+ * boxes, the numbers at the left of them.
+ */
+const NUMBERS =
+  "grid grid-cols-2 gap-2 @[17rem]:grid-cols-4 [&_div>div>label]:font-normal [&_div>div>label]:text-meta [&_div>div>label]:text-ink-muted [&_input]:text-left";
+
+/** What a number typed past its limit is told: said, since the page keeps it within. */
+function limitWords(
+  what: string,
+  n: number | undefined,
+  min: number,
+  max: number,
+  noun: string,
+): string | undefined {
+  if (n === undefined) return undefined;
+  if (n > max) return `${what} is at most ${max} for ${noun}. It is kept at ${max}.`;
+  if (n < min) return `${what} is at least ${min} for ${noun}. It is kept at ${min}.`;
+  return undefined;
+}
+
+/** What each choice for narrow screens does, said under the choice. */
+const NARROW_WORDS: Record<string, string> = {
+  automatic: "A small widget shares a row with the next small one; another takes the row.",
+  keep: "Keeps its share of the row: half the desktop's or less sits two to a row.",
+  full: "Takes the whole row where it comes.",
+  stack: "Takes the whole row, after everything that is not stacked.",
+  hide: "Left out on narrow screens.",
+};
 
 /** A widget with its layout changed; a layout with nothing in it is left out. */
 export function withLayout(
@@ -65,6 +95,9 @@ export function LayoutPanel(props: LayoutPanelProps) {
   const { min, max } = definition.layout;
   const at = widget.at;
   const name = widget.title || definition.title;
+  const noun = `a ${definition.title.toLowerCase()}`;
+  // What was typed past a limit, said until the next number typed.
+  const [told, setTold] = useState<string>();
 
   const setDesktop = (patch: Partial<WidgetPlace>) => {
     const next = { ...widget, at: clampPlace(definition, { ...at, ...patch }) };
@@ -111,7 +144,7 @@ export function LayoutPanel(props: LayoutPanelProps) {
           />
         </div>
         {place ? (
-          <div className="grid grid-cols-2 gap-2 @[17rem]:grid-cols-4">
+          <div className={NUMBERS}>
             {(
               [
                 ["x", "column", 1],
@@ -184,10 +217,10 @@ export function LayoutPanel(props: LayoutPanelProps) {
       ) : null}
       <DrawerGroup
         label="On desktop"
-        note={`Usually you drag. These are for exact placement and for keyboards: arrow keys move, Shift+arrow resizes. A ${definition.title.toLowerCase()} is ${min.w} to ${maxW} wide and ${min.h} to ${maxH} high, on twelve columns.`}
+        note={`Usually you drag. These are for exact placement and for keyboards: arrow keys move, Shift+arrow resizes. A ${definition.title.toLowerCase()} is ${min.w} to ${maxW} wide and ${min.h} to ${maxH} high, on twelve columns${widget.in ? " (of the section's columns, inside a section)" : ""}.`}
       >
         <DrawerBlock>
-          <div className="grid grid-cols-2 gap-2 @[17rem]:grid-cols-4">
+          <div className={NUMBERS}>
             <NumberField
               name={`${widget.id}-column`}
               label="Column"
@@ -212,7 +245,10 @@ export function LayoutPanel(props: LayoutPanelProps) {
               max={maxW}
               step={1}
               value={at.w}
-              onChange={(n) => n !== undefined && setDesktop({ w: n })}
+              onChange={(n) => {
+                setTold(limitWords("Width", n, min.w, maxW, noun));
+                if (n !== undefined) setDesktop({ w: n });
+              }}
             />
             <NumberField
               name={`${widget.id}-height`}
@@ -221,9 +257,17 @@ export function LayoutPanel(props: LayoutPanelProps) {
               max={maxH}
               step={1}
               value={at.h}
-              onChange={(n) => n !== undefined && setDesktop({ h: n })}
+              onChange={(n) => {
+                setTold(limitWords("Height", n, min.h, maxH, noun));
+                if (n !== undefined) setDesktop({ h: n });
+              }}
             />
           </div>
+          {told ? (
+            <p role="status" className="m-0 text-body-sm text-attention">
+              {told}
+            </p>
+          ) : null}
         </DrawerBlock>
       </DrawerGroup>
       <DrawerGroup label="Smaller screens">
@@ -233,18 +277,18 @@ export function LayoutPanel(props: LayoutPanelProps) {
           <div className="flex flex-col gap-2">
             <span className="text-body-sm text-ink">On narrow screens</span>
             <div>
-              <SelectField
-                name={`${widget.id}-narrow`}
+              {/* Five short words fit the drawer's width (362px) in one row: no select is needed. */}
+              <SegmentedControl
                 label="On narrow screens"
-                labelHidden
-                value={widget.layout?.narrow ?? "automatic"}
+                size="small"
                 options={[
                   { value: "automatic", label: "Automatic" },
-                  { value: "keep", label: "Keep the desktop layout" },
-                  { value: "full", label: "Full width" },
-                  { value: "stack", label: "Stack below" },
+                  { value: "keep", label: "Keep" },
+                  { value: "full", label: "Full" },
+                  { value: "stack", label: "Stack" },
                   { value: "hide", label: "Hide" },
                 ]}
+                value={widget.layout?.narrow ?? "automatic"}
                 onChange={(next) =>
                   setLayout(
                     {
@@ -258,6 +302,9 @@ export function LayoutPanel(props: LayoutPanelProps) {
                 }
               />
             </div>
+            <p className="m-0 text-body-sm text-ink-muted">
+              {NARROW_WORDS[widget.layout?.narrow ?? "automatic"]}
+            </p>
           </div>
         </DrawerBlock>
       </DrawerGroup>

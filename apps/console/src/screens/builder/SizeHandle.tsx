@@ -53,7 +53,7 @@ export function SizeHandle({
         aria-valuenow={index}
         aria-valuetext={SIZE_NAMES[size]}
         title="Drag to change its size"
-        className="absolute top-1/2 -right-3 flex h-12 w-3 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center rounded-inner bg-action text-action-ink outline-none after:absolute after:-inset-2 after:content-[''] focus-visible:ring-2 focus-visible:ring-focus"
+        className="absolute top-1/2 -right-3 flex h-12 w-3 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center rounded-inner bg-action text-action-ink outline-none after:absolute after:-inset-y-2 after:-left-2 after:right-0 after:content-[''] focus-visible:ring-2 focus-visible:ring-focus"
         onPointerDown={(event) => {
           const frame = event.currentTarget.parentElement;
           start.current = {

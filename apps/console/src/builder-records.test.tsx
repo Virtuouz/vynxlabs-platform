@@ -677,8 +677,8 @@ test("a new form starts with what a person fills in, by a rule from the table's 
   expect(startingFields(table)).toEqual(["clinic", "total", "status", "issued_on", "reference"]);
   const words = (name: string, mode: "create" | "edit" = "create") =>
     controlWords(table.columns.find((one) => one.name === name) as InfoColumn, mode);
-  expect(words("clinic")).toBe("Picker · clinics");
-  expect(words("total")).toBe("Money");
+  expect(words("clinic")).toBe("Picker · clinics · required");
+  expect(words("total")).toBe("Money · required");
   expect(words("status")).toBe("Choice · Unpaid by default");
   expect(words("status", "edit")).toBe("Choice · required");
   expect(words("issued_on")).toBe("Date · today by default");

@@ -447,7 +447,10 @@ describe("while building", () => {
     await screen.findByText(/Sends with:/);
     expect(screen.getByText(/Sends with: Number, Client, Total/)).toBeTruthy();
     expect((screen.getByLabelText(/Number/) as HTMLInputElement).disabled).toBe(true);
-    expect(screen.queryByRole("button", { name: "Create invoice" })).toBeNull();
+    // The button is drawn as people will see it, and does nothing: it is inert.
+    const submit = screen.getByRole("button", { name: "Create invoice" });
+    expect(submit.closest("[inert]")).not.toBeNull();
+    fireEvent.click(submit);
     expect(act).not.toHaveBeenCalled();
     expect(choices).not.toHaveBeenCalled();
     within(document.body).getByText(/Sends with:/);
@@ -480,7 +483,8 @@ describe("a form in a side sheet or a modal", () => {
       return found;
     });
     expect(cell.className).toContain("grid-row");
-    expect(cell.parentElement?.className).toContain("auto-rows");
+    // The overlay is the one scroller: rows are as tall as what is in them, not a fixed height.
+    expect(cell.parentElement?.className).not.toContain("auto-rows-[2.5rem]");
     expect(cell.parentElement?.className).toContain("grid-cols-12");
   });
 
@@ -606,5 +610,20 @@ describe("what a field starts with", () => {
     await waitFor(() =>
       expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe(shownToday()),
     );
+  });
+});
+
+describe("what a form asks for, by the server's rule", () => {
+  test("a required column with a default starts with it and has no asterisk; a required reference has one", async () => {
+    columns.push(
+      col("minutes", "integer", "Minutes", { required: true, default: 20 }),
+      col("pet", "reference", "Pet", { references: "pets", required: true }),
+    );
+    draw(null, { mode: "create", fields: [{ column: "minutes" }, { column: "pet" }] });
+    const minutes = (await screen.findByLabelText(/Minutes/)) as HTMLInputElement;
+    expect(minutes.value).toBe("20");
+    const label = (name: string) => screen.getByText(name, { selector: "label" }).parentElement;
+    expect(label("Minutes")?.textContent).not.toContain("*");
+    expect(label("Pet")?.textContent).toContain("*");
   });
 });

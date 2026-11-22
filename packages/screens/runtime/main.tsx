@@ -1,10 +1,18 @@
 import "./styles.css";
 import { ApiError, api, appContext, signInUrl, signOut, type Term, terms } from "@volvel/app";
 import type { ActingUser, InterfaceBody } from "@volvel/manifest";
-import { Button, GlossaryProvider, Notice, SideSheet, ToastProvider } from "@volvel/ui";
+import {
+  Button,
+  GlossaryProvider,
+  knowledgeFrom,
+  MarkdownKnows,
+  Notice,
+  SideSheet,
+  ToastProvider,
+} from "@volvel/ui";
 import { corePack } from "@volvel/widgets-core/views";
 import { labsPack } from "@volvel/widgets-labs/views";
-import { StrictMode, useCallback, useEffect, useState } from "react";
+import { StrictMode, useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ActionError,
@@ -143,6 +151,9 @@ function App() {
   const [problem, setProblem] = useState<string>();
   // What the workspace's words mean, as far as this person may know. An app works without it.
   const [glossary, setGlossary] = useState<Term[]>([]);
+  const [described, setDescribed] = useState<Awaited<ReturnType<typeof terms>>["resources"]>([]);
+  // What the kinds say of their fields, for a page's `::field`. A page does without them.
+  const [fields, setFields] = useState<Record<string, string>>();
   // Where each topic of the workspace's documentation is served, of those this person may open.
   const [topics, setTopics] = useState<Record<string, { title: string; url: string }>>({});
   const [helping, setHelping] = useState(false);
@@ -150,11 +161,22 @@ function App() {
     terms().then(
       (found) => {
         setGlossary(found.terms);
+        setDescribed(found.resources);
         setTopics(Object.fromEntries(found.topics.map((one) => [one.topic, one.page])));
       },
       () => {},
     );
   }, []);
+  useEffect(() => {
+    fetch("/help/fields.json").then(
+      (response) => (response.ok ? response.json().then(setFields, () => {}) : undefined),
+      () => {},
+    );
+  }, []);
+  const knows = useMemo(
+    () => knowledgeFrom({ terms: glossary, resources: described, fields }),
+    [glossary, described, fields],
+  );
   // What is open is in the address, so that it can be linked to, reloaded and closed with Back.
   const nav = useAddress(context.base);
   const { address } = nav;
@@ -256,14 +278,16 @@ function App() {
       </SideSheet>
       {view ? (
         <GlossaryProvider terms={glossary}>
-          <AppView
-            nav={nav}
-            pages={pages}
-            user={user}
-            registry={registry}
-            clientFor={clientForPage}
-            appKey={path ?? ""}
-          />
+          <MarkdownKnows value={knows}>
+            <AppView
+              nav={nav}
+              pages={pages}
+              user={user}
+              registry={registry}
+              clientFor={clientForPage}
+              appKey={path ?? ""}
+            />
+          </MarkdownKnows>
         </GlossaryProvider>
       ) : problem ? null : (
         <AppSkeleton />

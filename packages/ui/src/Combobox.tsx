@@ -18,6 +18,8 @@ interface Common {
   options: readonly Option[];
   placeholder?: string;
   disabled?: boolean;
+  /** Marked with an asterisk, and read as required; `false` says it is optional (as the other fields do). */
+  required?: boolean | undefined;
   /** What the list says when nothing matches what was typed. */
   empty?: string;
 }
@@ -88,11 +90,12 @@ export function ComboboxField({
   onSearch,
   placeholder,
   disabled,
+  required,
   empty = "Nothing matches.",
 }: ComboboxFieldProps) {
   const chosen = options.find((option) => option.value === value) ?? null;
   return (
-    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error}>
+    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error} required={required}>
       <Base.Root
         items={options}
         value={chosen}
@@ -103,6 +106,7 @@ export function ComboboxField({
           ? { filter: null, onInputValueChange: (typed: string) => onSearch(typed) }
           : {})}
         {...(disabled ? { disabled: true } : {})}
+        {...(required ? { required: true } : {})}
       >
         <div className={box}>
           <Base.Input className={input} {...(placeholder ? { placeholder } : {})} />
@@ -132,13 +136,14 @@ export function MultiSelectField({
   onChange,
   placeholder,
   disabled,
+  required,
   empty = "Nothing matches.",
 }: MultiSelectFieldProps) {
   const chosen = value
     .map((one) => options.find((option) => option.value === one))
     .filter((option): option is Option => option !== undefined);
   return (
-    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error}>
+    <FieldFrame label={label} {...(hint ? { hint } : {})} error={error} required={required}>
       <Base.Root
         multiple
         items={options}
@@ -147,6 +152,7 @@ export function MultiSelectField({
         itemToStringLabel={text}
         isItemEqualToValue={same}
         {...(disabled ? { disabled: true } : {})}
+        {...(required ? { required: true } : {})}
       >
         <Base.Chips className={box}>
           <Base.Value>

@@ -63,6 +63,13 @@ export {
 export { Markdown } from "./Markdown.tsx";
 export { Menu, type MenuItem, type MenuProps } from "./Menu.tsx";
 export { MoveButtons, type MoveButtonsProps } from "./MoveButtons.tsx";
+export {
+  knowledgeFrom,
+  type MarkdownKnowledge,
+  MarkdownKnows,
+  useMarkdownKnowledge,
+  type WorkspaceWords,
+} from "./markdownKnowledge.ts";
 export { EmptyState, Notice } from "./Notice.tsx";
 export { type PageNavItem, PageShell, type PageShellProps } from "./PageShell.tsx";
 export { Pagination, type PaginationProps } from "./Pagination.tsx";

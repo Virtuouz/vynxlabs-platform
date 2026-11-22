@@ -186,7 +186,8 @@ export function PageSettings({
                       Drawn beside its title in the app's menu.
                     </p>
                   </div>
-                ) : (
+                ) : kind === "record" ? null : (
+                  // Only a side sheet or a modal opens over something, so only they have a size.
                   <SelectField
                     label="Size"
                     name="page-size"

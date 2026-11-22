@@ -495,18 +495,26 @@ export function AppBuilder({
             No app serves this yet, so nobody can open it.
           </Notice>
         ) : null}
-        {problems.length > 0 ? (
-          <Notice tone="attention">
-            <strong>To fix before it can be published:</strong>
+      </>
+    ),
+    // Over the top of the panes, not between them and the toolbar: the workbench does not move
+    // when something needs fixing.
+    banner:
+      problems.length > 0 ? (
+        <Notice tone="attention">
+          <details>
+            <summary className="cursor-pointer">
+              <strong>To fix before it can be published:</strong> {problems.length}{" "}
+              {problems.length === 1 ? "thing" : "things"}
+            </summary>
             <ul className="mt-1 mb-0 pl-5">
               {problems.map((problem) => (
                 <li key={`${problem.path} ${problem.message}`}>{problemWords(problem, body)}.</li>
               ))}
             </ul>
-          </Notice>
-        ) : null}
-      </>
-    ),
+          </details>
+        </Notice>
+      ) : null,
   };
 
   return (

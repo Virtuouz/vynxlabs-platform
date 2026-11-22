@@ -11,7 +11,7 @@ import {
 import { GRID } from "@volvel/screens";
 import { Button, Closing, EmptyState, Kbd } from "@volvel/ui";
 import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../../ask.tsx";
 import { edgeShadows } from "../../kit/edgeShadows.ts";
@@ -636,7 +636,7 @@ export function PageEditor({
             data-preview={frame?.name}
             data-page-kind={kind ?? "page"}
             data-page-size={overlay ? size : undefined}
-            className={`mx-auto overflow-x-auto bg-canvas ${device === "phone" && !overlay ? "" : frame ? "rounded-panel border border-line p-3" : "rounded-panel p-3"} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
+            className={`mx-auto overflow-x-auto ${overlay ? "rounded-overlay border border-line-strong bg-surface px-5 pt-0 pb-8 shadow-modal" : `bg-canvas ${device === "phone" ? "pb-8" : frame ? "rounded-panel border border-line px-3 pt-3 pb-8" : "rounded-panel px-3 pt-3 pb-8"}`} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
             style={
               width && !overlay && device !== "phone"
                 ? {
@@ -649,6 +649,24 @@ export function PageEditor({
                   : undefined
             }
           >
+            {/* A side sheet or a modal is drawn as it opens: its title bar and the size it opens at. */}
+            {overlay && pageInfo ? (
+              <div
+                data-overlay-bar=""
+                className="-mx-5 mb-4 flex items-center justify-between gap-3 border-line border-b px-5 py-3"
+              >
+                <span className="min-w-0 truncate text-title font-semibold">
+                  {pageInfo.page.title}
+                </span>
+                <span className="flex shrink-0 items-center gap-3 text-meta text-ink-muted">
+                  <span>
+                    {kind === "modal" ? "Modal" : "Side sheet"} · {SIZE_NAMES[size]}
+                    {SIZE_WIDTH[size] ? ` · ${SIZE_WIDTH[size]}px` : ""}
+                  </span>
+                  <X aria-hidden="true" size={16} />
+                </span>
+              </div>
+            ) : null}
             {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
             <div
               data-column-guides=""
@@ -704,6 +722,7 @@ export function PageEditor({
                   {...(refreshKey !== undefined ? { refreshKey } : {})}
                   {...opens}
                   device={device}
+                  {...(overlay && kind ? { overlay: kind as "sheet" | "modal" } : {})}
                   groupNames={groupNames}
                   {...(layout?.viewAs ? { viewAs: layout.viewAs } : {})}
                   editing={{

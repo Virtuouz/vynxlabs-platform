@@ -15,7 +15,7 @@ import {
   type ValueFormat,
   widgetRegistry,
 } from "@volvel/manifest";
-import { moneyFormatOf } from "@volvel/widgets";
+import { moneyFormatOf, mustGive } from "@volvel/widgets";
 import {
   bindHolderFilters,
   type Catalog,
@@ -400,9 +400,7 @@ export function controlWords(column: InfoColumn, mode: "create" | "edit" = "crea
   })();
   const initial = defaultWords(column, mode);
   if (initial) return `${control} · ${initial} by default`;
-  if (column.required) {
-    return control === "Money" || column.type === "reference" ? control : `${control} · required`;
-  }
+  if (mode === "create" ? mustGive(column) : column.required) return `${control} · required`;
   if (column.type === "enum" && column.values.length > 0) {
     return `${control} · ${column.values.length} to pick from`;
   }
@@ -497,7 +495,10 @@ export function formWidget(plan: FormPlan, id: string, at: PageWidget["at"]): Pa
         const column = plan.table.columns.find((one) => one.name === name);
         return {
           column: name,
-          ...(column?.required ? { required: true } : {}),
+          // The server's own rule: asked for when required and without a default (an edit sends null to clear).
+          ...(column && (plan.mode === "create" ? mustGive(column) : column.required)
+            ? { required: true }
+            : {}),
           ...startingFormat(column),
           // A new record's date starts at today; the person filling it in may change it.
           ...(plan.mode === "create" && column?.type === "date"

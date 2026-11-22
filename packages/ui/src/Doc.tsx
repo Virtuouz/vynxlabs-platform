@@ -1,7 +1,7 @@
 import { DOC_CSS, type Root } from "@volvel/markup";
 import { type Components, type ReactOptions, renderReact } from "@volvel/markup/react";
 import { CircleCheck, Info, OctagonAlert, TriangleAlert } from "lucide-react";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Details } from "./Details.tsx";
 import { servedComponents } from "./DocServed.tsx";
 import { Tabs } from "./Tabs.tsx";
@@ -17,8 +17,9 @@ const THEMED = `
   --vd-surface: var(--vx-surface);
   --vd-sunken: var(--vx-sunken);
   --vd-action: var(--vx-action);
-  --vd-info: var(--vx-action);
-  --vd-info-soft: var(--vx-action-soft);
+  /* A note is neutral: the accent of a tenant's theme may be green, which reads as success. */
+  --vd-info: var(--vx-ink-muted);
+  --vd-info-soft: var(--vx-sunken);
   --vd-success: var(--vx-success);
   --vd-success-soft: var(--vx-success-soft);
   --vd-attention: var(--vx-attention);
@@ -28,20 +29,39 @@ const THEMED = `
   --vd-font-code: var(--vx-font-code);
   --vd-radius: var(--vx-radius-control);
 }
+/* Inline code gets an edge, so its padding reads as part of the code, not as a space before the comma after it. */
+.vd-doc :not(pre) > code { box-shadow: inset 0 0 0 1px var(--vx-line); }
 /* As a served site sets its pages: a size of its own, whatever is around it. */
 .vd-doc.vd-served { font-size: 16px; line-height: 1.6; }
 `;
 
 /** An alert's type, as its rail, icon and words are coloured. */
 const ALERT = {
-  info: { rail: "bg-action", ink: "text-action", Icon: Info, label: "Note" },
+  // Neutral, never the theme's accent: a green accent would make a note read as success.
+  info: { rail: "bg-ink-subtle", ink: "text-ink-muted", Icon: Info, label: "Note" },
   success: { rail: "bg-success", ink: "text-success", Icon: CircleCheck, label: "Done" },
   warning: { rail: "bg-attention", ink: "text-attention", Icon: TriangleAlert, label: "Warning" },
   danger: { rail: "bg-danger", ink: "text-danger", Icon: OctagonAlert, label: "Danger" },
 } as const;
 
+/** A picture in the text; where it cannot be loaded, its description in its place. */
+function Picture({ src, alt, title }: { src: string; alt: string; title?: string | undefined }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <span className="text-ink-muted italic">{alt}</span>;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      {...(title ? { title } : {})}
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 /** The kit's own components, for the parts of a page that are more than text. */
 const KIT: Components = {
+  image: ({ src, alt, title }) => <Picture src={src} alt={alt} title={title} />,
   // A callout, as the documentation site draws one: a coloured rail and an icon for its type,
   // its border kept wherever it sits (inside a widget's card too, where a notice drops its own).
   alert: ({ type, title, children }) => {

@@ -83,7 +83,10 @@ export function PagesList({
                 <button
                   type="button"
                   {...sort.handle(one.id)}
-                  aria-label={`Reorder ${one.title}. Alt and the up or down arrow move it.`}
+                  // For the pointer: the row itself is the keyboard's, and the arrows beside it move it.
+                  aria-hidden="true"
+                  tabIndex={-1}
+                  onClick={() => onChoose(one.id)}
                   className="-mr-1 ml-0.5 grid h-7 w-5 shrink-0 cursor-grab place-items-center rounded-inner text-ink-subtle opacity-0 hover:text-ink focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-focus group-hover:opacity-100 pointer-coarse:opacity-100"
                 >
                   <GripVertical aria-hidden="true" size={14} />

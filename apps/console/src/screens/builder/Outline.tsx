@@ -73,7 +73,10 @@ export function Outline({
           <button
             type="button"
             {...grip}
-            aria-label={`Reorder ${nameOf(one)}. Alt and the up or down arrow move it.`}
+            // For the pointer: the row beside it is the keyboard's, and moves with Alt and the arrows.
+            aria-hidden="true"
+            tabIndex={-1}
+            onClick={() => onSelect(one.id)}
             className={`grid h-7 w-5 shrink-0 cursor-grab place-items-center rounded-inner text-ink-subtle opacity-60 hover:text-ink group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-focus ${
               inside ? "ml-3" : "ml-0.5"
             }`}

@@ -591,8 +591,10 @@ function RowsBehind({
   const [attempt, setAttempt] = useState(0);
   const filters = useRef(filterValues);
   filters.current = filterValues;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: what is read is decided by the group and the attempt
+  // Opened again it reads again: the page's filters may have changed while it was closing.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: what is read is decided by the group, the filters and the attempt
   useEffect(() => {
+    if (!open) return;
     setWire(undefined);
     setFailure(undefined);
     let live = true;
@@ -607,7 +609,15 @@ function RowsBehind({
     return () => {
       live = false;
     };
-  }, [client, held.widget, held.input, JSON.stringify(held.group), attempt]);
+  }, [
+    client,
+    open,
+    held.widget,
+    held.input,
+    JSON.stringify(held.group),
+    JSON.stringify(filterValues),
+    attempt,
+  ]);
   const table = registry.get("core/table");
   const View = table?.View;
   return (

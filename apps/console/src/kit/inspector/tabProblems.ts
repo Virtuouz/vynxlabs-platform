@@ -65,6 +65,8 @@ export interface TabProblemInput {
   page?: Page | undefined;
 }
 
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 /** The refusals of a saved draft that are about one widget, by the page and widget they name. */
 export function refusalsFor(
   problems: readonly { path: string; message: string }[],
@@ -77,12 +79,15 @@ export function refusalsFor(
   const widgetAt = pages[pageAt]?.widgets.findIndex((widget) => widget.id === widgetId) ?? -1;
   if (pageAt < 0 || widgetAt < 0) return [];
   const prefix = `/body/pages/${pageAt}/widgets/${widgetAt}`;
+  const widget = pages[pageAt]?.widgets[widgetAt];
+  const named = `${widget?.title || widget?.id} on ${pages[pageAt]?.title}: `;
   return problems.flatMap((problem) => {
     if (problem.path !== prefix && !problem.path.startsWith(`${prefix}/`)) return [];
     return [
       {
         rest: problem.path.slice(prefix.length).split("/").filter(Boolean),
-        text: `${problemWords(problem, body)}.`.replace(/\.\.$/, "."),
+        // Said in the widget's own drawer, where it need not be named.
+        text: capital(`${problemWords(problem, body)}.`.replace(/\.\.$/, ".").replace(named, "")),
       },
     ];
   });

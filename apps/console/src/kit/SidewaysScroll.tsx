@@ -27,12 +27,20 @@ export function SidewaysScroll({
 }) {
   const box = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ more: false, left: false, right: false });
+  /** It scrolls up and down and holds nothing the keyboard stops at, so it is a stop itself. */
+  const [stop, setStop] = useState(false);
   // What is inside changes with each render (a tablet's width, a new widget): measured again each time.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: every render
   useEffect(() => {
     const element = box.current;
     if (!element) return;
     const more = element.scrollWidth > element.clientWidth + 2;
+    setStop(
+      /auto|scroll/.test(getComputedStyle(element).overflowY) &&
+        element.scrollHeight > element.clientHeight + 2 &&
+        !element.querySelector(
+          "a[href], button:not([disabled]):not([tabindex='-1']), input, select, textarea, [tabindex='0']",
+        ),
+    );
     setEdges((before) =>
       before.more === more
         ? before
@@ -88,7 +96,9 @@ export function SidewaysScroll({
           style={style}
           {...(edges.more
             ? { tabIndex: 0, role: "region" as const, "aria-label": `${label}, scrolls sideways` }
-            : {})}
+            : stop
+              ? { tabIndex: 0, role: "region" as const, "aria-label": label }
+              : {})}
         >
           {children}
         </div>

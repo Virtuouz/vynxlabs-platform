@@ -1413,7 +1413,7 @@ test("POLISH-010: the publish check blocks what cannot work, says why, passes on
   // A chart with nothing to read cannot be saved as it is: Publish is off, and the page says why.
   await expect(publishButton().first()).toBeDisabled();
   await owner.getByRole("button", { name: /to fix$/ }).click();
-  await expect(owner.getByText(/Chart needs a source to show/)).toBeVisible();
+  await expect(owner.getByText(/Chart needs a source to show/).last()).toBeVisible();
   await owner.keyboard.press("Escape");
   // Fixed: it reads the invoices. Now every check passes and the changes are listed.
   await chooseSource("Invoices");

@@ -79,6 +79,7 @@ import {
   placed,
 } from "./renderer.ts";
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
+import { ScrollEdge } from "./ScrollEdge.tsx";
 import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
 import { approvalsSuggestion } from "./selectorData.ts";
@@ -96,7 +97,7 @@ export interface PageValue {
 }
 
 /** The width the desktop layout is drawn at, at least: a narrower canvas scrolls. */
-const DESKTOP_MIN = 720;
+const DESKTOP_MIN = 960;
 
 /**
  * The page grid's columns, faintly, behind the widgets: twelve columns of equal width with `GRID.gap`
@@ -519,6 +520,7 @@ export function PageEditor({
       : undefined;
   const canvas = (
     <>
+      {device === "desktop" && !overlay ? <ScrollEdge /> : null}
       {canvasHead}
       {pageInfo ? (
         <SampleBar page={pageInfo.page} sample={sample} onChoose={pageInfo.onRecord} />

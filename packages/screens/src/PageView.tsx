@@ -715,7 +715,7 @@ function Cell({
           <span
             aria-hidden="true"
             data-chrome="size"
-            className="pointer-events-none absolute right-2 -bottom-8 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta text-ink"
+            className="pointer-events-none absolute top-[calc(100%+4px)] left-1/2 layer-sticky -translate-x-1/2 rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta leading-4 whitespace-nowrap text-ink @max-[11rem]/cell:px-1 @max-[11rem]/cell:text-[10px]"
           >
             {sizeWords(at)}
           </span>
@@ -1423,7 +1423,7 @@ function Landing({ card, at }: { card: PlaceCard; at: Box }) {
     >
       <span className="truncate font-semibold text-ink">{card.title}</span>
       <span className="text-body-sm text-ink-muted">{card.kind}</span>
-      <span className="pointer-events-none absolute right-2 -bottom-8 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta text-ink">
+      <span className="pointer-events-none absolute top-[calc(100%+4px)] left-1/2 layer-sticky -translate-x-1/2 rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta leading-4 whitespace-nowrap text-ink @max-[11rem]/cell:px-1 @max-[11rem]/cell:text-[10px]">
         {sizeWords(at)}
       </span>
     </div>

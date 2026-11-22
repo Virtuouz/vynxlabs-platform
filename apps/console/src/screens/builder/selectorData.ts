@@ -219,7 +219,7 @@ export const SUGGESTION_WORDS: Record<string, string> = {
   mark: "pay payment paid settle approve complete",
   filter: "narrow status filter",
   group: "toolbar buttons group",
-  section: "heading group numbers card",
+  section: "heading numbers card",
 };
 
 const FILLER = new Set(

@@ -288,7 +288,7 @@ export function AddToPage({
                 className="flex flex-col gap-2"
               >
                 <h3 className="m-0 flex items-center gap-1.5 text-label text-ink-subtle uppercase">
-                  <Sparkles aria-hidden="true" size={12} /> Suggested for this page
+                  <Sparkles aria-hidden="true" size={14} /> Suggested for this page
                 </h3>
                 <ul className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2 xl:grid-cols-3">
                   {suggested.map((item) => {

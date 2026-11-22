@@ -61,7 +61,7 @@ export function SheetPreview({
         </p>
         <span className="flex shrink-0 items-center gap-1">
           <Button size="small" variant="primary" onClick={onEditLayout}>
-            <Pencil aria-hidden="true" size={12} /> Edit layout
+            <Pencil aria-hidden="true" size={14} /> Edit layout
           </Button>
           <Button size="small" variant="quiet" aria-label="Hide the preview" onClick={onClose}>
             <X aria-hidden="true" size={14} />

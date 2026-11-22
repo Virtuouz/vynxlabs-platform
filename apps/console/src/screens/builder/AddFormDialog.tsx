@@ -369,7 +369,7 @@ function FormPreview({ info, plan }: { info: TableInfo | undefined; plan: FormPl
         })),
       };
       body = (
-        <div className="flex flex-col gap-2 rounded-panel border border-line bg-surface p-4">
+        <div className="flex flex-col gap-2 rounded-panel border border-line bg-sunken p-4">
           <h4 className="m-0 text-title font-semibold text-ink">{plan.title}</h4>
           <View
             config={widget.config}

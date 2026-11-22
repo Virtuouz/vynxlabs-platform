@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { show } from "../../../testing.tsx";
 import type { Env } from "../controls.tsx";
 import { type Catalog, configOf } from "../model.ts";
-import { type DrawerData, drawerSections } from "./b4Sections.ts";
+import { type DrawerData, drawerSections } from "./chartSections.ts";
 
 const catalog: Catalog = {
   tables: [

@@ -26,6 +26,8 @@ interface FieldConfig {
   required?: boolean;
   /** How the value is typed in: money kept in cents is typed as dollars. */
   format?: { style?: string; minorUnits?: boolean; currency?: string };
+  /** What the field starts with in a new record: today, the person filling it in, or a fixed value. */
+  initial?: { kind: "today" | "me" | "value"; as?: "email" | "name" | "id"; value?: unknown };
 }
 
 export interface FormConfig {
@@ -142,11 +144,52 @@ const jsonText = (value: unknown) =>
       ? value
       : JSON.stringify(value, null, 2);
 
-/** What the form starts with: the record's values for the fields, or nothing. */
-function startValues(fields: readonly FieldConfig[], record: Values | null): Values {
+/** Today as the page reads it: the day on the clock of the browser, as its date filters do. */
+export function today(now = new Date()): string {
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+}
+
+/**
+ * What a field of a new record starts with, by what its `initial` says: today (a date, or
+ * the moment for a timestamp), the person filling it in, or a fixed value. Nothing when it
+ * says none, or the host doesn't know who is looking.
+ */
+export function initialValue(
+  field: FieldConfig,
+  kind: Kind,
+  viewer: FormViewProps["viewer"],
+  now = new Date(),
+): unknown {
+  const initial = field.initial;
+  if (!initial) return undefined;
+  if (initial.kind === "value") return initial.value;
+  if (initial.kind === "today") {
+    if (kind === "date") return today(now);
+    if (kind === "timestamp") return now.toISOString();
+    return undefined;
+  }
+  if (!viewer) return undefined;
+  return viewer[initial.as ?? "email"];
+}
+
+/**
+ * What the form starts with: the open record's values for the fields. A new record starts
+ * with each field's own start (`initial`); an open record's own value always wins.
+ */
+function startValues(
+  fields: readonly FieldConfig[],
+  record: Values | null,
+  kinds: (field: FieldConfig) => Kind,
+  viewer: FormViewProps["viewer"],
+): Values {
   const out: Values = {};
-  if (!record) return out;
   for (const field of fields) {
+    if (!record) {
+      const value = initialValue(field, kinds(field), viewer);
+      if (!isEmpty(value)) out[field.column] = value;
+      continue;
+    }
     const held = record[field.column];
     if (held !== undefined && held !== null) out[field.column] = held;
   }
@@ -193,6 +236,7 @@ function FormBody({
   building,
   act,
   choices,
+  viewer,
   close: onClose,
 }: FormViewProps & { record: RecordData }) {
   const edit = config.mode === "edit";
@@ -213,7 +257,16 @@ function FormBody({
     [config.fields, byName],
   );
   const original = data.record as Values | null;
-  const begin = useCallback(() => startValues(fields, original), [fields, original]);
+  const begin = useCallback(
+    () =>
+      startValues(
+        fields,
+        edit ? original : null,
+        (field) => kindOf(byName.get(field.column) as FormColumn),
+        viewer,
+      ),
+    [fields, original, edit, byName, viewer],
+  );
 
   const [values, setValues] = useState<Values>(begin);
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -331,7 +384,7 @@ function FormBody({
     setPending(false);
     if (outcome.ok) {
       if (!edit) {
-        setValues({});
+        setValues(begin());
         setTyped({});
         setErrors({});
       }
@@ -534,7 +587,7 @@ function FormBody({
       noValidate
       aria-busy={pending}
       onSubmit={submit}
-      className="flex min-w-0 max-w-xl flex-col gap-4"
+      className="flex min-w-0 flex-col gap-4"
     >
       {failure ? <Notice tone="danger">{failure}</Notice> : null}
       {note ? <Notice tone="plain">{note}</Notice> : null}
@@ -549,7 +602,21 @@ function FormBody({
               {section.title}
             </h3>
           ) : null}
-          {section.fields.map(draw)}
+          {/* Two across once the form has the room (a large modal, a wide page); long text takes the row. */}
+          <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-4 @[34rem]/cell:grid-cols-2">
+            {section.fields.map((field) => {
+              const { kind, column } = info(field);
+              const whole = kind === "longtext" || kind === "json" || column.multiple === true;
+              return (
+                <div
+                  key={field.column}
+                  className={`min-w-0 ${whole ? "@[34rem]/cell:col-span-2" : ""}`}
+                >
+                  {draw(field)}
+                </div>
+              );
+            })}
+          </div>
         </div>
       ))}
       {building ? (

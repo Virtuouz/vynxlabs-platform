@@ -12,7 +12,7 @@ import { GRID } from "@volvel/screens";
 import { Button, EmptyState, Kbd } from "@volvel/ui";
 import type { Surface, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { notify } from "../../ask.tsx";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import { InspectorHost } from "../../kit/inspector/InspectorHost.tsx";
@@ -192,6 +192,15 @@ export function PageEditor({
   const onChange: typeof hostChange = (next, label, key) =>
     hostChange({ ...next, widgets: fitContainers(next.widgets) }, label, key);
   const [adding, setAdding] = useState(false);
+  // A widget chosen in the outline, or one just added at the end of the page, is brought into view.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the count makes it run again once an added widget is drawn
+  useEffect(() => {
+    if (!selected) return;
+    const cell = document.querySelector<HTMLElement>(
+      `[data-canvas] [data-widget-cell="${CSS.escape(selected)}"]`,
+    );
+    cell?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [selected, value.widgets.length]);
   const [forming, setForming] = useState(false);
   /** The button whose "Group with other buttons…" is open. */
   // The button asked about, and what it may be grouped with, as they were when asked: the
@@ -406,8 +415,8 @@ export function PageEditor({
   const outline = (
     <>
       {pages}
-      <section aria-labelledby="on-the-page" className="flex min-h-0 flex-col gap-1">
-        <h2 id="on-the-page" className="m-0 px-1 text-label text-ink-subtle uppercase">
+      <section aria-labelledby="on-the-page" className="flex shrink-0 flex-col gap-1">
+        <h2 id="on-the-page" className="m-0 px-1 text-label text-ink-muted uppercase">
           On this page
         </h2>
         {widgets.length === 0 ? (
@@ -422,18 +431,21 @@ export function PageEditor({
           />
         )}
       </section>
-      <Button
-        variant="quiet"
-        disabled={full}
-        aria-label="Add to page"
-        aria-keyshortcuts="A"
-        tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
-        className="w-full justify-center border border-action bg-action-soft"
-        onClick={() => setAdding(true)}
-      >
-        <Plus aria-hidden="true" size={14} /> Add to page <Kbd>A</Kbd>
-      </Button>
-      <p className="m-0 hidden px-1 text-meta text-ink-muted lg:block">
+      {/* Stays in view at the foot of the pane as the outline scrolls behind it. */}
+      <div className="sticky bottom-0 flex shrink-0 flex-col bg-inherit pt-1 pb-1">
+        <Button
+          variant="quiet"
+          disabled={full}
+          aria-label="Add to page"
+          aria-keyshortcuts="A"
+          tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
+          className="w-full shrink-0 justify-center border border-action bg-action-soft"
+          onClick={() => setAdding(true)}
+        >
+          <Plus aria-hidden="true" size={14} /> Add to page <Kbd>A</Kbd>
+        </Button>
+      </div>
+      <p className="m-0 mt-auto hidden shrink-0 px-1 pt-2 text-meta text-ink-muted lg:block">
         Drag in the outline or on the page to reorder. Alt with the arrow keys moves the chosen
         widget in the outline.
       </p>
@@ -485,6 +497,18 @@ export function PageEditor({
         className={overlay ? "relative mx-auto" : "relative"}
         style={overlay && width ? { maxWidth: `${width}px` } : undefined}
       >
+        {rowSheet && pageInfo && !previewHidden.has(rowSheet.id) ? (
+          <SheetPreviewHost
+            key={rowSheet.page.id}
+            root={root}
+            source={source}
+            page={rowSheet.page}
+            pages={pageInfo.pages}
+            catalog={catalog}
+            onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
+            onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
+          />
+        ) : null}
         <PhoneFrame
           on={device === "phone" && !overlay && width !== undefined}
           title={pageInfo?.page.title ?? ""}
@@ -559,18 +583,6 @@ export function PageEditor({
             </div>
           </div>
         </PhoneFrame>
-        {rowSheet && pageInfo && !previewHidden.has(rowSheet.id) ? (
-          <SheetPreviewHost
-            key={rowSheet.page.id}
-            root={root}
-            source={source}
-            page={rowSheet.page}
-            pages={pageInfo.pages}
-            catalog={catalog}
-            onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
-            onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
-          />
-        ) : null}
         {overlay && pageInfo ? (
           <SizeHandle
             size={size}

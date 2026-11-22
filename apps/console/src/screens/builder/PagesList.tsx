@@ -35,9 +35,9 @@ export function PagesList({
 }) {
   const flip = useFlip<HTMLUListElement>(pages.map((one) => one.id).join(","));
   return (
-    <section aria-labelledby="pages" className="flex flex-col gap-1">
+    <section aria-labelledby="pages" className="flex shrink-0 flex-col gap-1">
       <div className="flex items-center justify-between px-1">
-        <h2 id="pages" className="m-0 text-label text-ink-subtle uppercase">
+        <h2 id="pages" className="m-0 text-label text-ink-muted uppercase">
           Pages
         </h2>
         {onAdd ? (
@@ -75,7 +75,7 @@ export function PagesList({
                 <Icon aria-hidden="true" size={14} className="shrink-0" />
                 <span className="min-w-0 flex-1 truncate text-body-sm">{one.title}</span>
                 <span
-                  className={`shrink-0 text-meta text-ink-muted group-focus-within:invisible group-hover:invisible ${
+                  className={`shrink-0 text-meta text-ink-muted group-has-[:focus-visible]:invisible group-hover:invisible ${
                     here ? "max-lg:invisible" : ""
                   }`}
                 >
@@ -84,7 +84,7 @@ export function PagesList({
               </button>
               {pages.length > 1 ? (
                 <span
-                  className={`absolute inset-y-0 right-0.5 flex items-center rounded-inner opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 ${
+                  className={`absolute inset-y-0 right-0.5 flex items-center rounded-inner opacity-0 group-has-[:focus-visible]:opacity-100 group-hover:opacity-100 ${
                     here ? "max-lg:opacity-100" : ""
                   } ${here ? "bg-selected" : "bg-sunken"}`}
                 >

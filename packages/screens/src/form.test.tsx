@@ -71,7 +71,11 @@ function draw(
   record: Record<string, unknown> | null,
   config: object,
   outcome: ActOutcome | (() => Promise<ActOutcome>) = { ok: true },
-  options: { close?: boolean; building?: boolean } = {},
+  options: {
+    close?: boolean;
+    building?: boolean;
+    user?: { id: string; email?: string; name?: string; groups: string[] };
+  } = {},
 ): Setup {
   const setup: Setup = {
     act: vi.fn<Act>(async () => (typeof outcome === "function" ? outcome() : outcome)),
@@ -112,6 +116,7 @@ function draw(
       client={client}
       filterValues={{}}
       onFilterValues={() => {}}
+      {...(options.user ? { user: options.user } : {})}
       {...(options.building
         ? {
             editing: {
@@ -513,5 +518,91 @@ describe("a form in a side sheet or a modal", () => {
     );
     await screen.findByLabelText(/Total/);
     expect(screen.queryByText("What is owed, in cents.")).toBeNull();
+  });
+});
+
+describe("what a field starts with", () => {
+  const todayText = () => {
+    const now = new Date();
+    const two = (n: number) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}`;
+  };
+  const starts = (fields: object[], mode = "create") => ({
+    mode,
+    fields,
+    submitLabel: "Create invoice",
+  });
+
+  test("a date starts today and the person may change it", async () => {
+    draw(null, starts([{ column: "issued", initial: { kind: "today" } }, { column: "sent" }]));
+    await ready();
+    const issued = screen.getByLabelText(/Issued/) as HTMLInputElement;
+    expect(issued.value).toBe(todayText());
+    type(/Issued/, "2026-01-02");
+    expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe("2026-01-02");
+    expect((screen.getByLabelText(/Sent/) as HTMLInputElement).value).toBe("");
+  });
+
+  test("a timestamp starts now", async () => {
+    draw(null, starts([{ column: "sent", initial: { kind: "today" } }]));
+    await ready();
+    expect((screen.getByLabelText(/Sent/) as HTMLInputElement).value).not.toBe("");
+  });
+
+  test("it is sent with the record when left as it started", async () => {
+    const { act } = draw(null, starts([{ column: "issued", initial: { kind: "today" } }]));
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
+    await waitFor(() => expect(act).toHaveBeenCalled());
+    expect(act.mock.calls[0]?.[1]?.inputs).toEqual({ issued: todayText() });
+  });
+
+  test("a fixed value starts the field", async () => {
+    draw(null, starts([{ column: "number", initial: { kind: "value", value: "INV-0" } }]));
+    await ready();
+    expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("INV-0");
+  });
+
+  test("the person filling it in starts a text field, when the host knows them", async () => {
+    draw(null, starts([{ column: "number", initial: { kind: "me", as: "email" } }]), undefined, {
+      user: { id: "u1", email: "maya@fernhill.example", groups: [] },
+    });
+    await ready();
+    expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe(
+      "maya@fernhill.example",
+    );
+  });
+
+  test("with nobody known, the field starts empty", async () => {
+    draw(null, starts([{ column: "number", initial: { kind: "me" } }]));
+    await ready();
+    expect((screen.getByLabelText(/Number/) as HTMLInputElement).value).toBe("");
+  });
+
+  test("in edit mode the record's own value wins, and an empty one stays empty", async () => {
+    draw(
+      { id: "i1", issued: "2020-05-05", number: "INV-7" },
+      starts(
+        [
+          { column: "issued", initial: { kind: "today" } },
+          { column: "sent", initial: { kind: "today" } },
+        ],
+        "edit",
+      ),
+    );
+    await ready();
+    expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe("2020-05-05");
+    expect((screen.getByLabelText(/Sent/) as HTMLInputElement).value).toBe("");
+  });
+
+  test("after saving a new record the fields start again", async () => {
+    draw(null, starts([{ column: "issued", initial: { kind: "today" } }, { column: "number" }]));
+    await ready();
+    type(/Issued/, "2026-01-02");
+    type(/Number/, "INV-9");
+    fireEvent.click(screen.getByRole("button", { name: "Create invoice" }));
+    await waitFor(() =>
+      expect((screen.getByLabelText(/Issued/) as HTMLInputElement).value).toBe(todayText()),
+    );
   });
 });

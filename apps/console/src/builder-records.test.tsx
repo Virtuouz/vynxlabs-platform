@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { InterfaceBuilder } from "./screens/builder/AppBuilder.tsx";
 import { KIND_LINE, pageLine, withKind } from "./screens/builder/pageKinds.ts";
 import {
+  controlWords,
   defaultPlan,
   detailEdit,
   formEdit,
@@ -480,4 +481,29 @@ test("Add a form draws the form live from the checked fields, and makes the same
     | undefined;
   const set = submit?.steps[0]?.set;
   expect(Object.keys(set ?? {})).toEqual(["number", "total", "status"]);
+});
+
+test("a new form starts a date today, and the Add a form row says so", () => {
+  const dated: TableInfo = {
+    name: "invoices",
+    columns: [
+      { name: "number", type: "text", required: true, values: [] },
+      { name: "issued_on", type: "date", required: false, values: [] },
+    ],
+  };
+  const make = (mode: "create" | "edit") =>
+    formEdit(
+      { widgets: [], filters: [], pages: [], page: { id: "p", title: "P", widgets: [] } as never },
+      { ...defaultPlan(dated, mode), where: "page" },
+    ).widgets.at(-1) as unknown as { config: { fields: unknown[] } };
+  expect(make("create").config.fields).toEqual([
+    { column: "number", required: true },
+    { column: "issued_on", initial: { kind: "today" } },
+  ]);
+  expect(make("edit").config.fields).toEqual([
+    { column: "number", required: true },
+    { column: "issued_on" },
+  ]);
+  expect(controlWords(dated.columns[1] as never, "create")).toBe("Date · today by default");
+  expect(controlWords(dated.columns[1] as never, "edit")).toBe("Date");
 });

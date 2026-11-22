@@ -50,7 +50,10 @@ export function EditorShell({
   inspectorOpen,
   onCloseInspector,
   saveNow,
+  bleed = false,
 }: {
+  /** The panes run edge to edge under the toolbar, separated by hairlines, each scrolling on its own (the app builder's workbench). */
+  bleed?: boolean;
   title: string;
   /** Renames in place, with a pencil beside the name. Left out where the name is not changed here. */
   onRename?: ((title: string) => void) | undefined;
@@ -95,10 +98,11 @@ export function EditorShell({
   useShortcut("save", () => saveNow?.(), { enabled: saveNow !== undefined });
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col gap-3">
+    <section className={`flex min-h-0 flex-1 flex-col ${bleed ? "" : "gap-3"}`}>
       {/* One row under the breadcrumbs (board 1): the name and what is waiting on the left; the size, who it is seen as, undo, preview and publish on the right. */}
       <PageHeader
         compact
+        bar={bleed}
         title={
           renaming && onRename ? (
             <RenameField
@@ -135,10 +139,20 @@ export function EditorShell({
         after={after}
       />
       {notices}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:items-start">
+      <div
+        className={
+          bleed
+            ? "flex min-h-0 flex-1 flex-col max-lg:overflow-y-auto lg:flex-row"
+            : "flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:items-start"
+        }
+      >
         <nav
           aria-label="On this page"
-          className="flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-60 lg:overflow-y-auto lg:border-r lg:border-line lg:pr-3"
+          className={
+            bleed
+              ? "flex shrink-0 flex-col gap-4 border-line border-t bg-structure px-2 py-4 max-lg:max-h-[45vh] max-lg:overflow-y-auto lg:w-58 lg:overflow-y-auto lg:border-r"
+              : "flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-60 lg:overflow-y-auto lg:border-r lg:border-line lg:pr-3"
+          }
         >
           {outline}
         </nav>
@@ -146,25 +160,47 @@ export function EditorShell({
           <SplitPane
             id="page-editor"
             label="Resize the page and its settings"
-            initial={74}
+            initial={bleed ? 70 : 74}
+            {...(bleed
+              ? {
+                  collapsible: "second" as const,
+                  paneLabels: { first: "the page", second: "the settings" },
+                }
+              : {})}
             className="min-w-0 flex-1"
             first={
-              <div data-canvas className="min-w-0 lg:pr-1">
+              <div
+                data-canvas
+                className={
+                  bleed
+                    ? "min-h-0 min-w-0 flex-1 overflow-auto border-line border-t p-5 lg:[container-type:size]"
+                    : "min-w-0 lg:pr-1"
+                }
+              >
                 {canvas}
               </div>
             }
             second={
-              <Panel
-                as="aside"
-                aria-label="Settings"
-                className="p-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto"
-              >
-                {inspector}
-              </Panel>
+              bleed ? (
+                <aside
+                  aria-label="Settings"
+                  className="min-h-0 flex-1 overflow-auto border-line border-t border-l bg-structure p-4"
+                >
+                  {inspector}
+                </aside>
+              ) : (
+                <Panel
+                  as="aside"
+                  aria-label="Settings"
+                  className="p-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:overflow-auto"
+                >
+                  {inspector}
+                </Panel>
+              )
             }
           />
         ) : (
-          <div data-canvas className="min-w-0 flex-1">
+          <div data-canvas className={bleed ? "min-w-0 flex-1 p-4" : "min-w-0 flex-1"}>
             {canvas}
           </div>
         )}

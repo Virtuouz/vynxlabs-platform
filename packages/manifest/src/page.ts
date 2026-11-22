@@ -1399,6 +1399,32 @@ export function checkWidgets(
     for (const [property, schema] of Object.entries(definition.config.properties)) {
       const control = schema["x-volvel"]?.control;
       const held = widget.config?.[property];
+      if (control === "fields" && Array.isArray(held)) {
+        // What a form's field starts with must be a value its column can hold.
+        const of = schema["x-volvel"]?.of;
+        const visual = of
+          ? (data[of]?.source as { visual?: { table: string } })?.visual
+          : undefined;
+        held.forEach((field, index) => {
+          const one = field as {
+            column?: string;
+            initial?: { kind: string; as?: string; value?: unknown };
+          };
+          if (!one.initial || !visual || typeof one.column !== "string") return;
+          const type = columnType(visual.table, one.column);
+          if (type === undefined || type === null) return;
+          const at = `/config/${property}/${index}/initial`;
+          if (one.initial.kind === "today" && type !== "date" && type !== "timestamp")
+            say(at, `"today" starts a date or a timestamp, and "${one.column}" is ${type}`);
+          else if (one.initial.kind === "me" && type !== "text" && type !== "uuid")
+            say(
+              at,
+              `the person filling it in goes in a text column, and "${one.column}" is ${type}`,
+            );
+          else if (one.initial.kind === "value" && !startFits(type, one.initial.value))
+            say(at, `the value does not fit the ${type} column "${one.column}"`);
+        });
+      }
       if (control === "action" && held && typeof held === "object") {
         // A form's submit asks for what is typed into its fields: their columns.
         const typed = Object.entries(definition.config.properties)
@@ -1442,6 +1468,30 @@ export function checkWidgets(
     }
   });
   return issues;
+}
+
+/** Whether a form field may start with this value in a column of this type. */
+function startFits(type: string, value: unknown): boolean {
+  switch (type) {
+    case "text":
+    case "uuid":
+    case "enum":
+      return typeof value === "string";
+    case "date":
+      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+    case "timestamp":
+      return typeof value === "string" && !Number.isNaN(Date.parse(value));
+    case "integer":
+      return Number.isSafeInteger(value);
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "boolean":
+      return typeof value === "boolean";
+    case "enum_list":
+      return Array.isArray(value) && value.every((one) => typeof one === "string");
+    default:
+      return true;
+  }
 }
 
 /** Checks an interface's pages beyond their schema. */

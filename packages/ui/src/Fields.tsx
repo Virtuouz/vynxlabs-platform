@@ -206,6 +206,8 @@ export interface SelectFieldProps extends Common {
   disabled?: boolean;
   options: { value: string; label: string }[];
   onChange?: (value: string) => void;
+  /** Drawn inside the box before the value: the table's icon, as the boards' selects have it. */
+  icon?: ReactNode;
 }
 
 /** A native select: it works with every keyboard, screen reader and phone as it is. */
@@ -217,6 +219,7 @@ export function SelectField({
   onChange,
   labelHidden = false,
   inline = false,
+  icon,
   ...select
 }: SelectFieldProps) {
   const choices = options.map((option) => (
@@ -250,11 +253,19 @@ export function SelectField({
       labelHidden={labelHidden}
     >
       <div className="relative">
+        {icon ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute top-1/2 left-3 flex -translate-y-1/2 text-ink-muted"
+          >
+            {icon}
+          </span>
+        ) : null}
         <Field.Control
           render={
             <select
               {...select}
-              className={selectControl}
+              className={icon ? `${selectControl} pl-10` : selectControl}
               onChange={(event) => onChange?.(event.currentTarget.value)}
             >
               {choices}

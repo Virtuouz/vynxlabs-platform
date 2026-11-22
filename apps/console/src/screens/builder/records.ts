@@ -208,7 +208,7 @@ export function makeDetail(
     (list.config?.rowActions as
       | { id: string; label: string; tone?: string; action: Action }[]
       | undefined) ?? [];
-  const detail = detailWidget(table, title, { x: 0, y: 0, w: 12, h: 12 }, rowActions);
+  const detail = detailWidget(table, { x: 0, y: 0, w: 12, h: 12 }, rowActions);
   return {
     page: { id, title, kind: "sheet", record: { table: table.name }, widgets: [detail] },
     click: openRecord(id),
@@ -221,7 +221,6 @@ export function makeDetail(
  */
 export function detailWidget(
   table: TableInfo,
-  title: string,
   at: PageWidget["at"],
   rowActions: readonly { id: string; label: string; tone?: string; action: Action }[] = [],
 ): PageWidget {
@@ -233,7 +232,7 @@ export function detailWidget(
   return {
     id: "detail",
     type: "core/detail",
-    title,
+    // The sheet says what it is in its own header; the record's heading is the first thing it shows.
     at,
     data: { record: { source: { record: "this" } } },
     config: {
@@ -281,7 +280,7 @@ export function detailEdit(context: PageContext, widget: PageWidget, table: Tabl
 // ----- Forms -----
 
 /** How a column is drawn as a field, in words. */
-export function controlWords(column: InfoColumn): string {
+export function controlWords(column: InfoColumn, mode: "create" | "edit" = "create"): string {
   switch (column.type) {
     case "reference":
       return `Picker · ${column.references ? manyOf(column.references).toLowerCase() : "records"}`;
@@ -292,7 +291,7 @@ export function controlWords(column: InfoColumn): string {
     case "boolean":
       return "Yes or no";
     case "date":
-      return "Date";
+      return mode === "create" ? "Date · today by default" : "Date";
     case "timestamp":
       return "Date and time";
     case "integer":
@@ -364,7 +363,14 @@ export function formWidget(plan: FormPlan, id: string, at: PageWidget["at"]): Pa
       mode: plan.mode,
       fields: plan.fields.map((name) => {
         const column = plan.table.columns.find((one) => one.name === name);
-        return { column: name, ...(column?.required ? { required: true } : {}) };
+        return {
+          column: name,
+          ...(column?.required ? { required: true } : {}),
+          // A new record's date starts at today; the person filling it in may change it.
+          ...(plan.mode === "create" && column?.type === "date"
+            ? { initial: { kind: "today" } }
+            : {}),
+        };
       }),
       submitLabel: plan.mode === "create" ? `Create ${noun}` : "Save",
       submit: submitAction(plan),

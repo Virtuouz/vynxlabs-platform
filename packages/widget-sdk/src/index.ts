@@ -473,6 +473,8 @@ export interface WidgetViewProps<Config = Record<string, unknown>> {
   why?: (at: string, row?: Readonly<Record<string, unknown>>) => string | undefined;
   /** Closes the side sheet or modal the widget is shown in; absent when it is on a page. */
   close?: () => void;
+  /** The person looking, where the host knows who: a form starts a field with them. */
+  viewer?: { id: string; email?: string; name?: string };
   /** The record whose side sheet or modal is open over the page: a list marks its row. */
   selectedRecord?: string;
   /** Whether the page does something when this event is raised: then the view draws it as pressable. */

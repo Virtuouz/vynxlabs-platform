@@ -31,12 +31,23 @@ import type { RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { resolveResource } from "../resolve.js";
 import { type LocatedPage, locatePage, type PageRequest } from "./locate.js";
+import { checkRunBy, principalEmail } from "./who.js";
+
+/** The most records one action is run on at once. */
+export const MAX_RECORDS = 200;
 
 /** What the browser sends to run an action (phase 26, decision 0004). */
 export interface ActRequest extends PageRequest {
   widget: string;
   at: string;
-  records?: { this?: string | undefined; event?: string | undefined } | undefined;
+  records?:
+    | {
+        this?: string | undefined;
+        event?: string | undefined;
+        /** Several rows chosen in a table: the action runs once per row, all in one transaction. */
+        events?: string[] | undefined;
+      }
+    | undefined;
   inputs?: Record<string, unknown> | undefined;
 }
 
@@ -44,6 +55,8 @@ export interface ActResult {
   client: Record<string, unknown>[];
   made?: { table: string; id: string };
   message?: string;
+  /** How many records the action ran on: with `records.events`, how many changed. */
+  changed?: number;
 }
 
 type Issue = { path: string; message: string };
@@ -85,14 +98,34 @@ export function findAction(widget: PageWidget, at: string): Action | undefined {
 }
 
 /** The table a widget's rows come from: what an event of the widget gives a record of. */
-function tableOfWidget(widget: PageWidget, pageTable: string | undefined): string | undefined {
+function tableOfWidget(
+  widget: PageWidget,
+  pageTable: string | undefined,
+  widgets: readonly PageWidget[] = [],
+): string | undefined {
   for (const input of Object.values(widget.data ?? {})) {
     const source = input.source;
     if ("visual" in source) return source.visual.table;
     if ("record" in source) return pageTable;
+    if ("own" in source) return source.own.table;
+    if ("selected" in source) {
+      // The table of the table or list the row was chosen in.
+      const from = widgets.find((one) => one.id === source.selected);
+      return from ? tableOfWidget(from, pageTable, []) : undefined;
+    }
   }
   return undefined;
 }
+
+/** The columns a Record detail shows: those of its fields not hidden, or every one when it lists none. */
+function shownColumns(widget: PageWidget, all: readonly string[]): string[] {
+  const listed = widget.config?.fields as { column: string; hidden?: boolean }[] | undefined;
+  if (!listed || listed.length === 0) return all.filter((name) => name !== "id");
+  return listed.filter((field) => field.hidden !== true).map((field) => field.column);
+}
+
+/** The edit in place of a Record detail (`config/edit`): an update of the columns it shows. */
+const EDIT_AT = "config/edit";
 
 const humanize = (name: string) => {
   const text = name.replace(/[._]+/g, " ").trim();
@@ -178,18 +211,59 @@ export async function runAction(
   const located = await locatePage(kernel, ctx, params, request);
   const widget = located.widgets.find((one) => one.id === request.widget);
   if (!widget) throw notFound("The widget");
-  const action = findAction(widget, request.at);
+  const editing = request.at === EDIT_AT;
+  const inputs = request.inputs ?? {};
+  if (editing) {
+    if (widget.type !== "core/detail" || widget.config?.edit !== true) {
+      throw notFound("The action");
+    }
+    if (typeof inputs !== "object" || inputs === null || Array.isArray(inputs)) {
+      throw badRequest("The inputs must be an object.", [
+        { path: "/inputs", message: "must be an object" },
+      ]);
+    }
+    if (located.surface !== "app") throw badRequest("A dashboard only reads.");
+    if (
+      request.records?.this === undefined ||
+      request.records.event !== undefined ||
+      request.records.events !== undefined
+    ) {
+      throw badRequest("Say which record is edited, as `records.this`.");
+    }
+    if (Object.keys(inputs).length === 0) throw badRequest("Say what is changed, as `inputs`.");
+  }
+  const editedTable = editing
+    ? tableOfWidget(widget, located.page?.record?.table, located.widgets)
+    : undefined;
+  if (editing && !editedTable) throw notFound("The record");
+  /** The action an edit in place is: an update of the columns it was given, nothing else. */
+  const action: Action | undefined = editing
+    ? {
+        ...(widget.config?.editBy ? { runBy: widget.config.editBy as { groups: string[] } } : {}),
+        steps: [
+          {
+            do: "update",
+            record: "this",
+            set: Object.fromEntries(
+              Object.keys(inputs).map((column) => [column, { asked: column }] as const),
+            ),
+          },
+        ],
+      }
+    : findAction(widget, request.at);
   if (!action) throw notFound("The action");
+  // ---- Who can run it: checked before anything is read or run.
+  await checkRunBy(kernel, ctx, located.at.tenantId, action);
 
   const serverSteps = action.steps.filter(runsOnServer);
   if (located.surface === "dashboard" && serverSteps.length > 0) {
     throw badRequest("A dashboard only reads: it can't change data or start work.");
   }
 
-  const inputs = request.inputs ?? {};
   const { tenantId, workspaceId } = located.at;
   const pageTable = located.page?.record?.table;
-  const eventTable = tableOfWidget(widget, pageTable);
+  const eventTable = tableOfWidget(widget, pageTable, located.widgets);
+  const thisTable = editedTable ?? pageTable;
 
   // ---- The tables the action touches, as the workspace defines them.
   const targets = new Map<string, RowTarget>();
@@ -202,9 +276,25 @@ export async function runAction(
     return found;
   };
   const given = request.records ?? {};
-  const tableOf: Record<RecordRef, string | undefined> = { this: pageTable, event: eventTable };
+  const events = given.events;
+  if (events !== undefined) {
+    if (given.event !== undefined)
+      throw badRequest("Name one row as `event`, or several as `events`.");
+    if (events.length < 1 || events.length > MAX_RECORDS) {
+      throw badRequest(`Choose between 1 and ${MAX_RECORDS} rows.`);
+    }
+    if (new Set(events).size !== events.length) throw badRequest("A row is named twice.");
+    if (events.length > 1) {
+      const bad = action.steps.find((step) => step.do === "rows" || step.do === "narrow");
+      if (bad)
+        throw badRequest(
+          "Showing rows or narrowing the page can't be done for several rows at once.",
+        );
+    }
+  }
+  const tableOf: Record<RecordRef, string | undefined> = { this: thisTable, event: eventTable };
   for (const ref of ["this", "event"] as const) {
-    if (given[ref] !== undefined) {
+    if (given[ref] !== undefined || (ref === "event" && events !== undefined)) {
       const table = tableOf[ref];
       if (!table) {
         throw badRequest(
@@ -234,13 +324,25 @@ export async function runAction(
     ]);
   }
   const form = widget.type === "core/form";
-  const formTable = form ? (tableOfWidget(widget, pageTable) ?? pageTable) : undefined;
+  const formTable = form
+    ? (tableOfWidget(widget, pageTable, located.widgets) ?? pageTable)
+    : undefined;
   const formFields = form
     ? ((widget.config?.fields as { column: string; required?: boolean }[] | undefined) ?? [])
     : [];
   const formMeta = formTable ? await target(formTable) : undefined;
   const asks = new Map((action.confirm?.ask ?? []).map((field) => [field.name, field] as const));
-  const allowedNames = new Set([...asks.keys(), ...formFields.map((field) => field.column)]);
+  const editable = editing
+    ? shownColumns(
+        widget,
+        (await target(editedTable as string)).columns.map((column) => column.name),
+      )
+    : [];
+  const allowedNames = new Set([
+    ...asks.keys(),
+    ...formFields.map((field) => field.column),
+    ...editable,
+  ]);
   for (const name of Object.keys(inputs)) {
     if (!allowedNames.has(name)) {
       issues.push({ path: `/inputs/${name}`, message: "is not asked for" });
@@ -313,134 +415,154 @@ export async function runAction(
   const changes: { action: string; table: string; id: string; fields: string[] }[] = [];
   const starts: { do: "flow" | "script"; path: string; input: Record<string, unknown> }[] = [];
   let made: { table: string; id: string } | undefined;
-  const ids: Partial<Record<RecordRef, string>> = {};
+  let ids: Partial<Record<RecordRef, string>> = {};
+
+  // One round for each record the action runs on (a table's chosen rows), in one transaction.
+  const rounds: { this?: string; event?: string }[] = (events ?? [undefined]).map((event) => ({
+    ...(given.this !== undefined ? { this: given.this } : {}),
+    ...(event !== undefined ? { event } : given.event !== undefined ? { event: given.event } : {}),
+  }));
 
   await withData(kernel, tenantId, base, async (trx, actAs) => {
-    // ---- Read the records as the caller: a row the policy hides is not there.
-    const records: Partial<Record<RecordRef, Row>> = {};
-    for (const ref of ["this", "event"] as const) {
-      const id = given[ref];
-      if (id === undefined) continue;
-      const table = targets.get(tableOf[ref] as string) as RowTarget;
-      const mayRead = await ctx.allowed("data:read", {
-        ...located.at,
-        resourceId: table.resourceId ?? undefined,
-      });
-      if (!mayRead) throw notFound("The record");
-      await actAs(await callerScope(table));
-      try {
-        records[ref] = await getRow(trx, table, id);
-      } catch (error) {
-        if (error instanceof HttpError && error.statusCode === 404) throw notFound("The record");
-        throw error;
+    for (const round of rounds) {
+      const roundIds: Partial<Record<RecordRef, string>> = {};
+      // ---- Read the records as the caller: a row the policy hides is not there.
+      const records: Partial<Record<RecordRef, Row>> = {};
+      for (const ref of ["this", "event"] as const) {
+        const id = round[ref];
+        if (id === undefined) continue;
+        const table = targets.get(tableOf[ref] as string) as RowTarget;
+        const mayRead = await ctx.allowed("data:read", {
+          ...located.at,
+          resourceId: table.resourceId ?? undefined,
+        });
+        if (!mayRead) throw notFound("The record");
+        await actAs(await callerScope(table));
+        try {
+          records[ref] = await getRow(trx, table, id);
+        } catch (error) {
+          if (error instanceof HttpError && error.statusCode === 404) throw notFound("The record");
+          throw error;
+        }
+        roundIds[ref] = id;
       }
-      ids[ref] = id;
-    }
-
-    // ---- Its conditions, against the records as they are now.
-    const label = (field: string) => humanize(field);
-    const failing = (action.when ?? []).filter((one) => !conditionsHold([one], records, user));
-    if (failing.length > 0) {
-      throw new HttpError(
-        403,
-        "forbidden",
-        `It can't be done now: ${failing.map((one) => conditionWords(one, label)).join(", ")}.`,
-      );
-    }
-
-    const resolve = (value: ActionValue): unknown => {
-      if ("value" in value) return value.value;
-      if ("today" in value) return new Date().toISOString().slice(0, 10);
-      if ("now" in value) return new Date().toISOString();
-      if ("user" in value) return value.user === "id" ? user.id : (user[value.user] ?? null);
-      if ("record" in value) return records[value.of ?? "this"]?.[value.record];
-      return inputs[value.asked];
-    };
-    /** The values a step sets: what an answer left out is left alone, not emptied. */
-    const resolveAll = (set: Record<string, ActionValue>) => {
-      const out: Record<string, unknown> = {};
-      for (const [name, value] of Object.entries(set)) {
-        const resolved = resolve(value);
-        if (resolved !== undefined) out[name] = resolved;
+      ids = rounds.length === 1 ? roundIds : {};
+      // An edit in place of the user's own record is of theirs alone.
+      if (editing) {
+        const source = Object.values(widget.data ?? {})[0]?.source;
+        if (source && "own" in source) {
+          const email = await principalEmail(kernel, tenantId, ctx.principal);
+          const mine = records.this?.[source.own.by];
+          if (!email || typeof mine !== "string" || mine.toLowerCase() !== email.toLowerCase()) {
+            throw notFound("The record");
+          }
+        }
       }
-      return out;
-    };
-    /** A bad value is said in the terms of what was asked, when it came from there. */
-    const remap = (set: Record<string, ActionValue>, error: unknown): never => {
-      if (error instanceof HttpError && error.issues) {
-        throw badRequest(
-          "Some of what was typed needs another look.",
-          error.issues.map((issue) => {
-            const column = issue.path.replace(/^\//, "");
-            const how = set[column];
-            return {
-              path:
-                how && "asked" in how
-                  ? `/inputs/${how.asked}`
-                  : formFields.some((field) => field.column === column)
-                    ? `/inputs/${column}`
-                    : `/set/${column}`,
-              message: issue.message,
-            };
-          }),
+
+      // ---- Its conditions, against the records as they are now.
+      const label = (field: string) => humanize(field);
+      const failing = (action.when ?? []).filter((one) => !conditionsHold([one], records, user));
+      if (failing.length > 0) {
+        throw new HttpError(
+          403,
+          "forbidden",
+          `It can't be done now: ${failing.map((one) => conditionWords(one, label)).join(", ")}.`,
         );
       }
-      throw error;
-    };
 
-    // ---- The data steps: one transaction, as the action's own grant.
-    for (const step of action.steps) {
-      if (step.do === "update" || step.do === "delete" || step.do === "create") {
-        const table =
-          step.do === "create"
-            ? await target(step.table)
-            : await target(tableOf[step.record] as string);
-        const grant: DataScope = { ...(await callerScope(table)), all: true };
-        await actAs(grant);
-        if (step.do === "create") {
-          const set = resolveAll(step.set);
-          try {
-            const [row] = await insertRows(trx, table, [set], grant);
-            if (row) {
-              made = { table: table.name, id: String(row.id) };
-              changes.push({
-                action: "create",
-                table: table.name,
-                id: String(row.id),
-                fields: Object.keys(set),
-              });
-            }
-          } catch (error) {
-            remap(step.set, error);
-          }
-        } else if (step.do === "update") {
-          const id = ids[step.record] as string;
-          const set = resolveAll(step.set);
-          try {
-            records[step.record] = await updateRowKeepingFiles(
-              kernel,
-              trx,
-              { tenantId, id: workspaceId },
-              ctx.principal,
-              table,
-              id,
-              set,
-            );
-          } catch (error) {
-            remap(step.set, error);
-          }
-          changes.push({ action: "update", table: table.name, id, fields: Object.keys(set) });
-        } else {
-          const id = ids[step.record] as string;
-          await deleteRow(trx, table, id);
-          delete records[step.record];
-          changes.push({ action: "delete", table: table.name, id, fields: [] });
+      const resolve = (value: ActionValue): unknown => {
+        if ("value" in value) return value.value;
+        if ("today" in value) return new Date().toISOString().slice(0, 10);
+        if ("now" in value) return new Date().toISOString();
+        if ("user" in value) return value.user === "id" ? user.id : (user[value.user] ?? null);
+        if ("record" in value) return records[value.of ?? "this"]?.[value.record];
+        return inputs[value.asked];
+      };
+      /** The values a step sets: what an answer left out is left alone, not emptied. */
+      const resolveAll = (set: Record<string, ActionValue>) => {
+        const out: Record<string, unknown> = {};
+        for (const [name, value] of Object.entries(set)) {
+          const resolved = resolve(value);
+          if (resolved !== undefined) out[name] = resolved;
         }
-      } else if (step.do === "flow" || step.do === "script") {
-        starts.push({ do: step.do, path: step.path, input: resolveAll(step.input ?? {}) });
+        return out;
+      };
+      /** A bad value is said in the terms of what was asked, when it came from there. */
+      const remap = (set: Record<string, ActionValue>, error: unknown): never => {
+        if (error instanceof HttpError && error.issues) {
+          throw badRequest(
+            "Some of what was typed needs another look.",
+            error.issues.map((issue) => {
+              const column = issue.path.replace(/^\//, "");
+              const how = set[column];
+              return {
+                path:
+                  how && "asked" in how
+                    ? `/inputs/${how.asked}`
+                    : formFields.some((field) => field.column === column)
+                      ? `/inputs/${column}`
+                      : `/set/${column}`,
+                message: issue.message,
+              };
+            }),
+          );
+        }
+        throw error;
+      };
+
+      // ---- The data steps: one transaction, as the action's own grant.
+      for (const step of action.steps) {
+        if (step.do === "update" || step.do === "delete" || step.do === "create") {
+          const table =
+            step.do === "create"
+              ? await target(step.table)
+              : await target(tableOf[step.record] as string);
+          const grant: DataScope = { ...(await callerScope(table)), all: true };
+          await actAs(grant);
+          if (step.do === "create") {
+            const set = resolveAll(step.set);
+            try {
+              const [row] = await insertRows(trx, table, [set], grant);
+              if (row) {
+                made = { table: table.name, id: String(row.id) };
+                changes.push({
+                  action: "create",
+                  table: table.name,
+                  id: String(row.id),
+                  fields: Object.keys(set),
+                });
+              }
+            } catch (error) {
+              remap(step.set, error);
+            }
+          } else if (step.do === "update") {
+            const id = roundIds[step.record] as string;
+            const set = resolveAll(step.set);
+            try {
+              records[step.record] = await updateRowKeepingFiles(
+                kernel,
+                trx,
+                { tenantId, id: workspaceId },
+                ctx.principal,
+                table,
+                id,
+                set,
+              );
+            } catch (error) {
+              remap(step.set, error);
+            }
+            changes.push({ action: "update", table: table.name, id, fields: Object.keys(set) });
+          } else {
+            const id = roundIds[step.record] as string;
+            await deleteRow(trx, table, id);
+            delete records[step.record];
+            changes.push({ action: "delete", table: table.name, id, fields: [] });
+          }
+        } else if (step.do === "flow" || step.do === "script") {
+          starts.push({ do: step.do, path: step.path, input: resolveAll(step.input ?? {}) });
+        }
       }
     }
-
     // ---- Each change is audited, with where it came from, in the same transaction.
     for (const change of changes) {
       await writeAudit(kernel.db, ctx.actor, {
@@ -527,6 +649,7 @@ export async function runAction(
   const said = client.some((step) => step.do === "message");
   return {
     client,
+    ...(events ? { changed: changes.length === 0 ? 0 : rounds.length } : {}),
     ...(made ? { made } : {}),
     ...(!said && action.done ? { message: action.done } : {}),
   };

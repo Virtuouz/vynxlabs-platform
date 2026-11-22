@@ -27,7 +27,11 @@ export function pageActionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "scripts start after the commit, as the caller, marked with where they came from. " +
             "`inputs` holds what the confirmation asked, or what a form was given, by field " +
             "name; an input the action doesn't ask for is refused. A dashboard's actions run no " +
-            "data step. With `draft`, the draft is run, for someone who may edit it in a dev " +
+            "data step. An action that names groups in `runBy` is run only by their members (403 " +
+            '"Only A and B can do this." otherwise). `records.events` (1 to 200 IDs) runs the ' +
+            "action once per row, all in one transaction: if one row can't, none changes; " +
+            '`changed` says how many. `at: "config/edit"` on a Record detail with `edit` on ' +
+            "updates, from `inputs` by column, the columns it shows, on `records.this`. With `draft`, the draft is run, for someone who may edit it in a dev " +
             "workspace. Answers the steps the browser does next, with each record named by its ID.",
           tags: ["apps", "dashboards"],
           params: Type.Object({ t: Id, w: Id }),
@@ -43,6 +47,9 @@ export function pageActionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   {
                     this: Type.Optional(Type.String({ maxLength: 200 })),
                     event: Type.Optional(Type.String({ maxLength: 200 })),
+                    events: Type.Optional(
+                      Type.Array(Type.String({ maxLength: 200 }), { minItems: 1, maxItems: 200 }),
+                    ),
                   },
                   { additionalProperties: false },
                 ),
@@ -57,6 +64,7 @@ export function pageActionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               client: Type.Array(AnyObject),
               made: Type.Optional(Type.Object({ table: Type.String(), id: Type.String() })),
               message: Type.Optional(Type.String()),
+              changed: Type.Optional(Type.Integer()),
             }),
           },
         },

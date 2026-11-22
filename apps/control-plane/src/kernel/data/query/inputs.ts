@@ -13,6 +13,7 @@ import type { ColumnInfo, DataInputDeclaration } from "@volvel/widgets";
 import { badRequest, forbidden, HttpError, notFound } from "../../errors.js";
 import type { RequestContext } from "../../http.js";
 import type { Kernel } from "../../kernel.js";
+import { principalEmail } from "../../pages/who.js";
 import {
   describeTable,
   type Filter,
@@ -72,7 +73,11 @@ export type WireData =
       /** For reference columns: the name of the row each id points to. */
       names?: Record<string, Record<string, string>>;
       followed?: { names: string; now: string };
+      /** Why there is no record, in words: "Choose a row in Invoices". */
+      empty?: string;
     };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** How many rows a page of a rows input holds. */
 export const ROWS_PAGE = 100;
@@ -97,6 +102,10 @@ export interface ReadRequest {
   record?: string;
   /** With `only`: read the rows behind one group of that summary, by the groups' names. */
   behind?: Record<string, unknown>;
+  /** The page's widgets, for a `{ selected }` source to find the table it was chosen in. */
+  widgets?: readonly PageWidget[];
+  /** The row chosen in each table or list of the page, by the widget's ID: a record id. */
+  chosen?: Record<string, string>;
 }
 
 /** A condition no row meets: no row has an empty `id`. */
@@ -529,9 +538,48 @@ export async function readWidget(
     }
     // The record the page is open on, as a table to read.
     const ofThisRecord = "record" in input.source;
+    let recordId = request.record;
+    /** Why a record that is chosen or the user's own is not there, said in words. */
+    let whyEmpty: string | undefined;
+    let ofChosen = false;
+    let ofOwn = false;
     if ("record" in input.source) {
       if (!recordTable) throw badRequest("This page is not open on a record.");
       input = { ...input, source: { visual: { table: recordTable } } };
+    } else if ("selected" in input.source) {
+      // The row chosen in a table or list of this page, read as the caller reads that table.
+      const selected = input.source.selected;
+      const from = request.widgets?.find((one) => one.id === selected);
+      const fromTable = Object.values(from?.data ?? {})
+        .map((one) => ("visual" in one.source ? one.source.visual.table : undefined))
+        .find((one) => one !== undefined);
+      if (!from || !fromTable)
+        throw badRequest("The row is chosen in a table or list of the page.");
+      ofChosen = true;
+      const one = request.chosen?.[from.id];
+      recordId = typeof one === "string" && UUID.test(one) ? one : undefined;
+      whyEmpty = `Choose a row in ${humanize(fromTable)}`;
+      input = { ...input, source: { visual: { table: fromTable } } };
+    } else if ("own" in input.source) {
+      // The user's own row: the one whose column holds their email.
+      const own = input.source.own;
+      ofChosen = true;
+      ofOwn = true;
+      const email = await principalEmail(kernel, tenantId, ctx.principal);
+      const noun = humanize(own.table)
+        .toLowerCase()
+        .replace(/(?<!s)s$/, "");
+      whyEmpty = `There is no ${noun} for you yet`;
+      input = {
+        ...input,
+        source: {
+          visual: {
+            table: own.table,
+            filters: [email !== undefined ? { column: own.by, op: "eq", value: email } : NOTHING],
+          },
+        },
+      };
+      recordId = undefined;
     }
     // What a condition names of the record or of the caller is filled in.
     if (
@@ -599,9 +647,9 @@ export async function readWidget(
 
     // The record the page is open on: its row, or for a form that makes one, only its columns.
     let mustFind = false;
-    if (visual && (ofThisRecord || declared.shape === "record")) {
-      const here = ofThisRecord || visual.table === recordTable;
-      if (declared.shape === "record" && !(here && request.record !== undefined)) {
+    if (visual && (ofThisRecord || ofChosen || declared.shape === "record")) {
+      const here = ofThisRecord || (ofChosen ? !ofOwn : visual.table === recordTable);
+      if (declared.shape === "record" && !ofOwn && !(here && recordId !== undefined)) {
         const table = catalog.tables.get(visual.table);
         if (!table) throw notFound(`The table ${visual.table}`);
         await mayRead({ name: table.name, resourceId: table.resourceId ?? null });
@@ -610,6 +658,7 @@ export async function readWidget(
           shape: "record",
           columns: visualColumns(visual, catalog, asked.columns ?? []),
           record: null,
+          ...(whyEmpty ? { empty: whyEmpty } : {}),
         };
         continue;
       }
@@ -618,13 +667,11 @@ export async function readWidget(
           ...visual,
           filters: [
             ...(visual.filters ?? []),
-            request.record !== undefined
-              ? { column: "id", op: "eq", value: request.record }
-              : NOTHING,
+            recordId !== undefined ? { column: "id", op: "eq", value: recordId } : NOTHING,
           ],
         };
         input = { ...input, source: { visual } };
-        mustFind = declared.shape === "record";
+        mustFind = declared.shape === "record" && !ofChosen;
       }
     }
 
@@ -735,11 +782,22 @@ export async function readWidget(
     const asked = await inputQuery(kernel, at, input, page, { shape: declared.shape });
     const size = declared.shape === "record" ? 1 : ROWS_PAGE;
     const result = await run(asked, { limit: size, offset }).catch((error) => {
+      // A chosen or own row the caller may not read is told as one that is not there.
+      if (ofChosen && error instanceof HttpError && error.statusCode === 403) return null;
       // A record the caller may not read is told as one that is not there.
       if (mustFind && error instanceof HttpError && error.statusCode === 403)
         throw notFound("The record");
       throw error;
     });
+    if (result === null) {
+      out[name] = {
+        shape: "record",
+        columns: visual ? visualColumns(visual, catalog, asked.columns ?? []) : [],
+        record: null,
+        ...(whyEmpty ? { empty: whyEmpty } : {}),
+      };
+      continue;
+    }
     const rows = asRecords(result, asked.columns);
     if (mustFind && rows.length === 0) throw notFound("The record");
     const columns = visual
@@ -752,6 +810,7 @@ export async function readWidget(
         shape: "record",
         columns,
         record: rows[0] ?? null,
+        ...(!rows[0] && whyEmpty ? { empty: whyEmpty } : {}),
         ...(Object.keys(pointedAt).length > 0 ? { names: pointedAt } : {}),
         ...(asked.followed ? { followed: asked.followed } : {}),
       };

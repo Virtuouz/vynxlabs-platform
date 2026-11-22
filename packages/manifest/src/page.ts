@@ -852,6 +852,7 @@ export function groupName(group: { column: string; bucket?: string }): string {
 
 /** Every table a data input reads from menus. A saved query or SQL names its own. */
 export function inputTables(input: DataInput): string[] {
+  if ("own" in input.source) return [input.source.own.table];
   return "visual" in input.source ? [input.source.visual.table] : [];
 }
 

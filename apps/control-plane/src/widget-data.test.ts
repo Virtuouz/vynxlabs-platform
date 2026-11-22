@@ -239,6 +239,19 @@ const screen = {
         byTeam,
         byTeamNarrowed,
         byMonth,
+        // The row chosen in the table above, and the user's own payment.
+        {
+          id: "chosen",
+          type: "core/detail",
+          at,
+          data: { record: { source: { selected: "list" } } },
+        },
+        {
+          id: "mine_own",
+          type: "core/detail",
+          at,
+          data: { record: { source: { own: { table: "payments", by: "owner" } } } },
+        },
         ...searches,
         {
           id: "filters",
@@ -848,7 +861,7 @@ describe("a draft", () => {
     ]);
     expect(
       (await alice.get(`${ws()}/interfaces/screens/invoices`)).body.body.pages[0].widgets,
-    ).toHaveLength(5 + searches.length);
+    ).toHaveLength(7 + searches.length);
     // A dashboard's draft is read the same way.
     expect(
       (await asked(alice, { of: "dashboard", path: "boards/by-team", widget: "sql", draft: "1" }))
@@ -1183,5 +1196,80 @@ describe("what a field may be set to", () => {
     expect((await choices(alice, "invoice", "", "", "nope")).status).toBe(404);
     expect((await choices(browser(), "invoice", "", "/api/v1")).status).toBe(404);
     expect((await choices(ivy.browser, "invoice", "&draft=1", "/api/v1")).status).toBe(403);
+  });
+});
+
+describe("a record from the row chosen, or the user's own", () => {
+  let ids: Record<string, string>;
+  const chosenOn = (
+    who: typeof alice | typeof ivy.browser,
+    number: string | undefined,
+    prefix = "",
+  ) =>
+    asked(
+      who,
+      onPage("chosen", number === undefined ? {} : { chosen: { list: ids[number] as string } }),
+      prefix,
+    );
+
+  beforeAll(async () => {
+    const read = await alice.get(`${ws()}/rows/invoices?limit=1000`);
+    ids = Object.fromEntries(
+      read.body.items
+        .filter((row: Any) => /^INV-\d$/.test(row.number))
+        .map((row: Any) => [row.number, row.id]),
+    );
+    const made = await alice.post(`${ws()}/rows/payments`, {
+      rows: [
+        { invoice: ids["INV-1"], amount: 31, owner: "ivy@customer.example" },
+        { invoice: ids["INV-3"], amount: 32, owner: "jon@customer.example" },
+      ],
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+  });
+
+  test("reads the row chosen in the table, as a record", async () => {
+    const read = await chosenOn(alice, "INV-1");
+    expect(read.status, JSON.stringify(read.body)).toBe(200);
+    expect(read.body.inputs.record).toMatchObject({
+      shape: "record",
+      record: { id: ids["INV-1"], number: "INV-1" },
+    });
+  });
+
+  test("with no row chosen, it is empty and says what to do", async () => {
+    const read = await chosenOn(alice, undefined);
+    expect(read.status, JSON.stringify(read.body)).toBe(200);
+    expect(read.body.inputs.record.record).toBeNull();
+    expect(read.body.inputs.record.empty).toBe("Choose a row in Invoices");
+    expect(read.body.inputs.record.columns.length).toBeGreaterThan(0);
+  });
+
+  test("a row the caller's policy hides is read as empty, not as a row", async () => {
+    const seen = await chosenOn(ivy.browser, "INV-1", "/api/v1");
+    expect(seen.body.inputs.record.record).toMatchObject({ number: "INV-1" });
+    const hidden = await chosenOn(ivy.browser, "INV-3", "/api/v1");
+    expect(hidden.status, JSON.stringify(hidden.body)).toBe(200);
+    expect(hidden.body.inputs.record.record).toBeNull();
+    expect(hidden.body.inputs.record.empty).toBe("Choose a row in Invoices");
+    // Not JSON is refused; not an id is nothing chosen.
+    expect((await asked(alice, onPage("chosen", { chosen: "[" }))).status).toBe(400);
+    const odd = await asked(alice, onPage("chosen", { chosen: { list: "nope" } }));
+    expect(odd.body.inputs.record.record).toBeNull();
+  });
+
+  test("the user's own row is the one whose column holds their email", async () => {
+    const mine = await asked(ivy.browser, onPage("mine_own"), "/api/v1");
+    expect(mine.status, JSON.stringify(mine.body)).toBe(200);
+    expect(mine.body.inputs.record.record).toMatchObject({ amount: 31 });
+    const his = await asked(jon.browser, onPage("mine_own"), "/api/v1");
+    expect(his.body.inputs.record.record).toMatchObject({ amount: 32 });
+  });
+
+  test("with no row of their own, it is empty and says so", async () => {
+    const none = await asked(alice, onPage("mine_own"));
+    expect(none.status, JSON.stringify(none.body)).toBe(200);
+    expect(none.body.inputs.record.record).toBeNull();
+    expect(none.body.inputs.record.empty).toBe("There is no payment for you yet");
   });
 });

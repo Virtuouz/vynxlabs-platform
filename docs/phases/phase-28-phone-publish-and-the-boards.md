@@ -384,8 +384,9 @@ Also walked: by keyboard alone from making an app to publishing it; drags on the
 
 ## Left out, and asked
 
-- **Grouping a List or a Table by day** ("a calendar-like list"): no board draws it and no decision asks for it. Asked of the owner on 2026-11-22; left out unless they want it.
-- **Limiting Fernhill's Edit and Void to a group:** whoever may open the app may run an action that names no group (decision 0004). Mentioned to the owner on 2026-11-22.
+- **Grouping a List or a Table by day** ("a calendar-like list"): no board draws it and no decision asks for it. Asked of the owner on 2026-11-22, who asked for it to be explained before deciding.
+- **Limiting Fernhill's Edit and Void to a group:** whoever may open the app may run an action that names no group (decision 0004). The owner decided on 2026-11-22 to keep it open.
+- **A widget hidden by a rule leaves its gap** on the served page. The owner decided on 2026-11-22 to keep it so for now, and look again if it becomes an issue.
 
 ## The full suites
 
@@ -414,7 +415,7 @@ On 2026-11-22 the owner looked at the builder, found it "looking and functioning
 | A widget can't be dragged into a Section | The Section was pushed away by the widget coming to it, while it was counted where it had been | Containers hold still as they are approached, make room after a rest of 220 ms (one passed over moves nothing), and take the widget wherever they are seen. "Add to page" drops into them too, which it did not |
 | Dots on Data and Display read as something broken | They said that something was set | A dot is only what needs fixing in that tab, with words; the tab lists it ("Needs fixing"). Apps and dashboards |
 | Help topic is free text | | A searchable window of the workspace's documents, by folder; one without a topic says so and links to its editor. A topic that is gone is said there and in the publish check |
-| "Full" draws everything small | Full was drawn at the window's width and scaled down | Full fills the canvas at its true size. **The owner's note stopped mid-sentence ("The behavior can be kept, but visually they"), so this is our reading of it** |
+| "Full" draws everything small | Full was drawn at the window's width and scaled down | Full fills the canvas at its true size. The owner's note stopped mid-sentence; they confirmed this reading |
 
 Found in our own walk and fixed: shrinking a tall widget at the end of a page ran away, because the page got shorter under the pointer (it keeps its height while something is held); a problem the console and the server both found was listed twice.
 

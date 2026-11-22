@@ -48,7 +48,7 @@ function GroupChip({
         gone ? "border-danger text-danger" : "border-line-strong"
       }`}
     >
-      <span className="inline-flex min-w-0 items-center gap-1.5 pr-1 pl-2.5">
+      <span className="inline-flex min-w-0 items-center gap-2 pr-1 pl-3">
         <User aria-hidden="true" size={14} className="shrink-0 text-ink-muted" />
         <span className="truncate">{name}</span>
         {gone ? <span className="text-meta">not found</span> : null}

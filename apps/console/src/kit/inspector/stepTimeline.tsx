@@ -155,6 +155,7 @@ export function StepTimeline({
                   <span aria-hidden="true" className="w-px flex-1 bg-line" />
                 ) : null}
               </div>
+              {/* panel-allowed: a step is a card on the rail, a box by design */}
               <div
                 className={`mb-2 min-w-0 flex-1 rounded-panel border border-line bg-surface ${
                   dragging ? "bg-raised shadow-drag" : ""

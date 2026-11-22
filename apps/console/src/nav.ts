@@ -309,6 +309,8 @@ const WORKBENCHES: RegExp[] = [
   /^(runs|triggers|events|approvals)(\/|$)/,
   /^(flows|scripts|apps)$/,
   /^flows\/(new|edit\/)/,
+  // An app's builder: its panes run edge to edge under the toolbar, each scrolling on its own.
+  /^screens\/.+/,
   // A table's rows are one scroller under a pinned header (A2-08).
   /^tables\/.+/,
   // A data source's tables beside the rows of the one chosen.

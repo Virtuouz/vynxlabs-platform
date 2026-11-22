@@ -55,9 +55,8 @@ import { PageSettings } from "./PageSettings.tsx";
 import { SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
 import "../../kit/inspector/widgets/registerTables.tsx";
 import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
-import { RowClickOffer } from "./RowClickOffer.tsx";
 import { choiceOf, openedPage } from "./RowClickEditor.tsx";
-import { SheetPreviewHost } from "./SheetPreview.tsx";
+import { RowClickOffer } from "./RowClickOffer.tsx";
 import {
   type Edit,
   type FormPlan,
@@ -70,6 +69,7 @@ import {
 import { definitionOf, views } from "./registry.ts";
 import { type Box, type CarryRequest, type FilterValues, PageView, placed } from "./renderer.ts";
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
+import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
 import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
 import { TextOnPage } from "./TextOnPage.tsx";
@@ -388,7 +388,7 @@ export function PageEditor({
     <>
       {pages}
       <section aria-labelledby="on-the-page" className="flex min-h-0 flex-col gap-1">
-        <h2 id="on-the-page" className="m-0 px-1 text-label text-ink-subtle uppercase">
+        <h2 id="on-the-page" className="m-0 px-1 text-label text-ink-muted uppercase">
           On this page
         </h2>
         {widgets.length === 0 ? (
@@ -414,7 +414,7 @@ export function PageEditor({
       >
         <Plus aria-hidden="true" size={14} /> Add to page <Kbd>A</Kbd>
       </Button>
-      <p className="m-0 hidden px-1 text-meta text-ink-muted lg:block">
+      <p className="m-0 mt-auto hidden px-1 pt-2 text-meta text-ink-muted lg:block">
         Drag in the outline or on the page to reorder. Alt with the arrow keys moves the chosen
         widget in the outline.
       </p>
@@ -462,6 +462,18 @@ export function PageEditor({
         className={overlay ? "relative mx-auto" : "relative"}
         style={overlay && width ? { maxWidth: `${width}px` } : undefined}
       >
+        {rowSheet && pageInfo && !previewHidden.has(rowSheet.id) ? (
+          <SheetPreviewHost
+            key={rowSheet.page.id}
+            root={root}
+            source={source}
+            page={rowSheet.page}
+            pages={pageInfo.pages}
+            catalog={catalog}
+            onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
+            onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
+          />
+        ) : null}
         <div
           data-preview={frame?.name}
           data-page-kind={kind ?? "page"}
@@ -517,18 +529,6 @@ export function PageEditor({
             )}
           </div>
         </div>
-        {rowSheet && pageInfo && !previewHidden.has(rowSheet.id) ? (
-          <SheetPreviewHost
-            key={rowSheet.page.id}
-            root={root}
-            source={source}
-            page={rowSheet.page}
-            pages={pageInfo.pages}
-            catalog={catalog}
-            onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
-            onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
-          />
-        ) : null}
         {overlay && pageInfo ? (
           <SizeHandle
             size={size}

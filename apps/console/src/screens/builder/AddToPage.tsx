@@ -197,17 +197,21 @@ export function AddToPage({
         onFocus={() => setLit(definition.type)}
         onPointerEnter={() => setLit(definition.type)}
         draggable={false}
-        className={`flex h-full w-full items-start gap-3 rounded-control border p-3 text-left select-none hover:border-action/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${
+        className={`flex h-full w-full items-start gap-2.5 rounded-panel border p-2.5 text-left select-none hover:border-action/60 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus ${
           shown?.type === definition.type
             ? "border-action bg-action-soft"
             : "border-line bg-surface"
         } ${onCarry ? "cursor-grab active:cursor-grabbing" : ""}`}
       >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-control border border-line text-ink-muted">
+        <span
+          className={`flex size-9 shrink-0 items-center justify-center rounded-control border border-line-control bg-sunken ${
+            shown?.type === definition.type ? "text-action" : "text-ink"
+          }`}
+        >
           <Icon aria-hidden="true" size={16} />
         </span>
         <span className="flex min-w-0 flex-col gap-0.5">
-          <span className="flex flex-wrap items-center gap-x-2 font-medium text-ink">
+          <span className="flex flex-wrap items-center gap-x-2 text-body-sm font-semibold text-ink">
             {definition.title}
             {pack === "labs" ? (
               <span className="rounded-control border border-action/40 px-1.5 text-tag font-normal text-action">
@@ -217,7 +221,7 @@ export function AddToPage({
               <span className="text-meta font-normal text-ink-muted">{heading(pack)} pack</span>
             )}
           </span>
-          <span className="text-body-sm text-ink-muted">{definition.description}</span>
+          <span className="text-meta text-ink-muted">{definition.description}</span>
         </span>
       </button>
     );
@@ -228,7 +232,7 @@ export function AddToPage({
     if (!here || here.widgets.length === 0) return null;
     return (
       <section key={id} aria-label={here.title} className="flex min-w-0 flex-col gap-2">
-        <h3 className="m-0 text-label text-ink-subtle uppercase">{here.title}</h3>
+        <h3 className="m-0 text-label text-ink-muted uppercase">{here.title}</h3>
         <ul className={`m-0 grid list-none gap-2 p-0 ${cols}`}>
           {here.widgets.map((definition) => (
             <li key={definition.type} className="min-w-0">
@@ -255,12 +259,16 @@ export function AddToPage({
       }}
       title="Add to page"
       size="wide"
-      width={1040}
+      width={1042}
+      bare
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the arrow keys walk the tiles inside; each is reachable by Tab as well */}
-      <div className="flex flex-col gap-4" onKeyDown={walk}>
+      <div
+        className="flex h-[min(742px,calc(100vh-4rem))] min-h-0 flex-col md:h-[min(742px,74vh)]"
+        onKeyDown={walk}
+      >
         <form
-          className="flex items-center gap-3 rounded-control border border-line-control px-3 focus-within:border-action"
+          className="flex h-14 shrink-0 items-center gap-3 border-line border-b px-4"
           onSubmit={(event) => {
             event.preventDefault();
             const [first] = suggested;
@@ -272,23 +280,25 @@ export function AddToPage({
           <Search aria-hidden="true" size={16} className="shrink-0 text-ink-muted" />
           <input
             name="add-to-page-search"
+            data-autofocus=""
             aria-label="Find something to add, or describe what people should do"
             placeholder="Find something to add, or describe what people should do"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="h-10 min-w-0 flex-1 border-0 bg-transparent text-ink outline-none placeholder:text-ink-muted"
+            className="h-10 min-w-0 flex-1 border-0 bg-transparent text-emphasis text-ink outline-none focus-visible:outline-none placeholder:text-ink-muted"
           />
           <Kbd>esc</Kbd>
         </form>
-        <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_16rem]">
-          <div className="flex min-w-0 flex-col gap-5">
+        <div className="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_17.5rem]">
+          <div className="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto px-4 pt-4 pb-4.5 md:px-[18px]">
             {suggestions && suggested.length > 0 ? (
               <section
                 aria-label={`Suggested for ${suggestions.table}`}
                 className="flex flex-col gap-2"
               >
-                <h3 className="m-0 flex items-center gap-1.5 text-label text-ink-subtle uppercase">
-                  <Sparkles aria-hidden="true" size={14} /> Suggested for this page
+                <h3 className="m-0 flex items-center gap-1.5 text-label text-ink-muted uppercase">
+                  <Sparkles aria-hidden="true" size={14} className="text-action" /> Suggested for
+                  this page
                 </h3>
                 <ul className="m-0 grid list-none gap-2 p-0 sm:grid-cols-2 xl:grid-cols-3">
                   {suggested.map((item) => {
@@ -299,15 +309,15 @@ export function AddToPage({
                           type="button"
                           data-add-item={`suggest:${item.key}`}
                           onClick={() => pick(item.key)}
-                          className="flex h-full w-full items-start gap-3 rounded-control border border-action/40 bg-action-soft p-3 text-left hover:border-action focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+                          className="flex h-full w-full items-center gap-2.5 rounded-panel border border-action/40 bg-surface px-3 py-2.5 text-left hover:border-action focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
                         >
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-control border border-action/30 text-action">
-                            <Icon aria-hidden="true" size={16} />
-                          </span>
+                          <Icon aria-hidden="true" size={16} className="shrink-0 text-action" />
                           <span className="flex min-w-0 flex-col gap-0.5">
-                            <span className="font-medium text-ink">{item.label}</span>
+                            <span className="text-body-sm font-semibold text-ink">
+                              {item.label}
+                            </span>
                             {item.hint ? (
-                              <span className="text-body-sm text-ink-muted">{item.hint}</span>
+                              <span className="text-meta text-ink-muted">{item.hint}</span>
                             ) : null}
                           </span>
                         </button>
@@ -318,10 +328,17 @@ export function AddToPage({
               </section>
             ) : null}
             {found.length === 0 && suggested.length === 0 ? (
-              <p className="m-0 text-ink-muted">
-                Nothing here matches that. Try a word for what it shows, such as “chart” or
-                “records”, or for what people do, such as “take payments”.
-              </p>
+              <div
+                role="status"
+                className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center"
+              >
+                <Search aria-hidden="true" size={20} className="text-ink-subtle" />
+                <p className="m-0 font-semibold text-ink">Nothing matches “{typed}”</p>
+                <p className="m-0 max-w-sm text-body-sm text-ink-muted">
+                  Try a word for what it shows, such as “chart” or “records”, or for what people do,
+                  such as “take payments”.
+                </p>
+              </div>
             ) : (
               <>
                 {group("records", "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3")}
@@ -331,7 +348,9 @@ export function AddToPage({
                 ) : null}
               </>
             )}
-            <p className="m-0 text-body-sm text-ink-muted">
+            <p
+              className={`m-0 text-meta text-ink-muted ${found.length === 0 && suggested.length === 0 ? "hidden" : ""}`}
+            >
               {target ? (
                 <>
                   Adds to <strong className="font-medium text-ink">{target}</strong> (a Section or
@@ -347,15 +366,15 @@ export function AddToPage({
             <aside
               aria-label="Preview"
               data-preview-of={shown.type}
-              className="hidden flex-col gap-3 md:flex md:sticky md:top-0 md:self-start"
+              className="hidden min-h-0 flex-col gap-3 overflow-y-auto border-line border-l bg-sunken p-[18px] md:flex"
             >
               <WidgetDrawing drawing={more.drawing} />
-              <h3 className="m-0 text-title font-semibold text-ink">{shown.title}</h3>
+              <h3 className="m-0 mt-1 text-title font-semibold text-ink">{shown.title}</h3>
               <p className="m-0 text-body-sm text-ink-muted">{more.about}</p>
               {more.goodFor(facts).length > 0 ? (
                 <div className="flex flex-col gap-1">
-                  <h4 className="m-0 text-label text-ink-subtle uppercase">Good for</h4>
-                  <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-body-sm text-ink">
+                  <h4 className="m-0 text-label text-ink-muted uppercase">Good for</h4>
+                  <ul className="m-0 flex list-none flex-col gap-1 p-0 text-meta text-ink">
                     {more.goodFor(facts).map((example) => (
                       <li key={example}>{example}</li>
                     ))}
@@ -363,12 +382,16 @@ export function AddToPage({
                 </div>
               ) : null}
               {more.reads && startTable ? (
-                <p className="m-0 text-body-sm text-ink-muted">
+                <p className="m-0 mt-auto text-meta text-ink-muted">
                   Starts on <strong className="font-medium text-ink">{manyOf(startTable)}</strong>,
                   the table this page already uses.
                 </p>
               ) : null}
-              <p className="m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-ink-muted">
+              <p
+                className={`m-0 flex flex-wrap items-center gap-x-3 gap-y-1 text-meta text-ink-muted ${
+                  more.reads && startTable ? "" : "mt-auto"
+                }`}
+              >
                 <span className="flex items-center gap-1.5">
                   <Kbd>↵</Kbd> place at the end
                 </span>

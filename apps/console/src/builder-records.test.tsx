@@ -480,7 +480,7 @@ test("a new form starts a date today, and the Add a form row says so", () => {
     formEdit(
       { widgets: [], filters: [], pages: [], page: { id: "p", title: "P", widgets: [] } as never },
       { ...defaultPlan(dated, mode), where: "page" },
-    ).widgets.at(-1) as { config: { fields: unknown[] } };
+    ).widgets.at(-1) as unknown as { config: { fields: unknown[] } };
   expect(make("create").config.fields).toEqual([
     { column: "number", required: true },
     { column: "issued_on", initial: { kind: "today" } },

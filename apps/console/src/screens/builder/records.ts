@@ -294,7 +294,7 @@ export function controlWords(column: InfoColumn, mode: "create" | "edit" = "crea
     case "date":
       return mode === "create" ? "Date · today by default" : "Date";
     case "timestamp":
-      return mode === "create" ? "Date and time · now by default" : "Date and time";
+      return "Date and time";
     case "integer":
     case "number":
       return "Number";
@@ -368,7 +368,7 @@ export function formWidget(plan: FormPlan, id: string, at: PageWidget["at"]): Pa
           column: name,
           ...(column?.required ? { required: true } : {}),
           // A new record's date starts at today; the person filling it in may change it.
-          ...(plan.mode === "create" && (column?.type === "date" || column?.type === "timestamp")
+          ...(plan.mode === "create" && column?.type === "date"
             ? { initial: { kind: "today" } }
             : {}),
         };

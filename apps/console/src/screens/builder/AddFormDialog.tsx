@@ -77,7 +77,7 @@ export function AddFormDialog({
       onClose={onClose}
       title="Add a form"
       size="wide"
-      width={1040}
+      width={902}
       icon={<ClipboardList size={16} />}
       footer={
         <>
@@ -147,26 +147,17 @@ export function AddFormDialog({
               ))}
             </div>
           </fieldset>
-          <div className="flex items-end gap-2">
-            <span
-              aria-hidden="true"
-              className="mb-px flex size-9 shrink-0 items-center justify-center rounded-control border border-line text-ink-muted"
-            >
-              <Table size={16} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <SelectField
-                label="Table"
-                name="form-table"
-                value={table ?? ""}
-                options={catalog.tables.map((one) => ({
-                  value: one.name,
-                  label: heading(one.name),
-                }))}
-                onChange={setTable}
-              />
-            </div>
-          </div>
+          <SelectField
+            label="Table"
+            name="form-table"
+            icon={<Table size={16} />}
+            value={table ?? ""}
+            options={catalog.tables.map((one) => ({
+              value: one.name,
+              label: heading(one.name),
+            }))}
+            onChange={setTable}
+          />
           {plan && info ? (
             <>
               <Fields info={info} plan={plan} onChange={setEdited} />
@@ -289,7 +280,7 @@ function Fields({
                 if (dragging && on) place(dragging, at);
                 setDragging(undefined);
               }}
-              className={`flex items-center gap-2 rounded-control px-1.5 py-1 ${
+              className={`group flex items-center gap-2 rounded-control px-1.5 py-1 ${
                 dragging === column.name ? "opacity-50" : ""
               }`}
             >
@@ -315,12 +306,14 @@ function Fields({
                 {controlWords(column, plan.mode)}
                 {column.required ? <span className="text-ink-subtle">required</span> : null}
                 {on ? (
-                  <MoveButtons
-                    label={heading(column.name)}
-                    at={at}
-                    count={plan.fields.length}
-                    onMove={(by) => place(column.name, at + by)}
-                  />
+                  <span className="flex opacity-0 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 pointer-coarse:opacity-100">
+                    <MoveButtons
+                      label={heading(column.name)}
+                      at={at}
+                      count={plan.fields.length}
+                      onMove={(by) => place(column.name, at + by)}
+                    />
+                  </span>
                 ) : null}
               </span>
             </li>
@@ -358,7 +351,7 @@ function FormPreview({ info, plan }: { info: TableInfo | undefined; plan: FormPl
       const widget = formWidget(plan, "preview", { x: 0, y: 0, w: 12, h: 10 });
       const record: RecordData = {
         shape: "record",
-        record: null,
+        record: plan.mode === "edit" ? {} : null,
         columns: info.columns.map((column) => ({
           name: column.name,
           label: heading(column.name),
@@ -376,7 +369,9 @@ function FormPreview({ info, plan }: { info: TableInfo | undefined; plan: FormPl
             data={{ record }}
             size={{ w: 12, h: 10, narrow: true }}
             emit={() => undefined}
-            building
+            building={false}
+            act={async () => ({ ok: true })}
+            close={() => undefined}
             choices={async () => []}
           />
         </div>

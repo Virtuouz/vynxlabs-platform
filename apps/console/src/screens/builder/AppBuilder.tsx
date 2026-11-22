@@ -282,6 +282,7 @@ export function AppBuilder({
   };
 
   const shell = {
+    bleed: true,
     title: body.title || "Untitled app",
     saving,
     savedWords: hasChanges ? "Saved. Not published yet." : "Published.",

@@ -44,7 +44,7 @@ describe("the Goal's definition", () => {
     expect(goal.surfaces).toEqual(["app", "dashboard"]);
     expect(goal.data.value).toMatchObject({
       shape: "summary",
-      values: { min: 1, max: 1 },
+      values: { min: 1, max: 2 },
       breakdowns: { min: 0, max: 0 },
     });
     expect(goal.events.click?.gives).toBe("nothing");
@@ -60,6 +60,9 @@ describe("the Goal's definition", () => {
     expect(hints.format?.control).toBe("format");
     expect(hints.label?.control).toBe("text");
     expect(hints.goodWhen).toMatchObject({ control: "segmented", level: "more" });
+    expect(hints.goalFrom).toMatchObject({ control: "column", group: "Progress" });
+    expect(hints.reached).toMatchObject({ control: "segmented", group: "Look" });
+    expect(goal.defaults).toMatchObject({ reached: "green" });
     expect(hints.bands).toMatchObject({ control: "switch", level: "more" });
   });
 
@@ -101,6 +104,50 @@ describe("the Goal's view", () => {
     cleanup();
     draw({ target: 100, bands: true, goodWhen: "down" }, 10);
     expect(fill()).toContain("bg-success");
+  });
+
+  test("turns green when reached, if it is asked to", () => {
+    const fill = () => screen.getByRole("progressbar").firstElementChild?.className ?? "";
+    draw({ target: 100, reached: "green" }, 100);
+    expect(fill()).toContain("bg-success");
+    cleanup();
+    draw({ target: 100, reached: "green" }, 99);
+    expect(fill()).toContain("bg-action");
+    cleanup();
+    draw({ target: 100, reached: "none" }, 120);
+    expect(fill()).toContain("bg-action");
+    cleanup();
+    draw({ target: 100 }, 120);
+    expect(fill()).toContain("bg-action");
+  });
+
+  test("takes its goal from a column when it is told which", () => {
+    render(
+      <GoalView
+        config={{ goalFrom: "goal", target: 999 }}
+        data={{
+          value: {
+            shape: "summary",
+            columns: [
+              { name: "total", label: "Total", type: "number" },
+              { name: "goal", label: "Goal", type: "number" },
+            ],
+            breakdowns: [],
+            values: ["total", "goal"],
+            rows: [{ total: 50, goal: 200 }],
+          },
+        }}
+        size={SIZE}
+        emit={vi.fn()}
+        building={false}
+      />,
+    );
+    expect(screen.getByText("25%")).toBeTruthy();
+  });
+
+  test("the percentage can be left out", () => {
+    draw({ target: 100, percent: false }, 25);
+    expect(screen.queryByText("25%")).toBeNull();
   });
 
   test("a click is raised as the event it declares", () => {

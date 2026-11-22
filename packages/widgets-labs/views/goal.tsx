@@ -10,7 +10,13 @@ export { formatNumber };
 
 /** What the Goal's configuration holds, as its definition declares it. */
 export interface GoalConfig {
-  target: number;
+  target?: number;
+  /** A column of the result that holds the goal; wins over `target`. */
+  goalFrom?: string;
+  /** `green`: the bar turns green once the goal is reached. Left out: it does not. */
+  reached?: "green" | "none";
+  /** Left out: shown. */
+  percent?: boolean;
   format?: ValueFormat;
   label?: string;
   goodWhen?: "up" | "down";
@@ -32,16 +38,24 @@ const FILL: Record<Band | "plain", string> = {
   plain: "bg-action",
 };
 
+/** How the bar is coloured: green once reached when the goal says so, else by how close, else plain. */
+export function goalBand(share: number, config: GoalConfig): Band | "plain" {
+  if (config.reached === "green" && share >= 1 && config.goodWhen !== "down") return "good";
+  return config.bands ? bandOf(share, config.goodWhen ?? "up") : "plain";
+}
+
 /** Goal: one number, a bar toward a target, the share reached, and a line under it. */
 export function GoalView({ config, data, emit }: WidgetViewProps<GoalConfig>) {
   const input = data.value as SummaryData | undefined;
   const name = input?.values[0];
   const found = name === undefined ? undefined : numberOf(input?.rows[0]?.[name]);
   const value = found ?? 0;
-  const target = config.target;
+  const from = config.goalFrom;
+  const fromColumn = from === undefined ? undefined : numberOf(input?.rows[0]?.[from]);
+  const target = fromColumn ?? config.target ?? 0;
   const share = target > 0 ? value / target : 0;
   const shown = Math.round(share * 1000) / 10;
-  const band = config.bands ? bandOf(share, config.goodWhen ?? "up") : "plain";
+  const band = goalBand(share, config);
   const fill = Math.max(0, Math.min(100, share * 100));
   return (
     <button
@@ -68,7 +82,7 @@ export function GoalView({ config, data, emit }: WidgetViewProps<GoalConfig>) {
       </span>
       <span className="flex flex-wrap items-baseline justify-between gap-x-3 text-body-sm text-ink-muted">
         <span>{config.label ?? ""}</span>
-        <span className="tabular-nums">{shown}%</span>
+        {config.percent === false ? null : <span className="tabular-nums">{shown}%</span>}
       </span>
     </button>
   );

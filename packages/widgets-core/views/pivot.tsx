@@ -4,7 +4,21 @@ import { listensTo, PRESSABLE, press } from "./press.tsx";
 
 interface PivotConfig {
   format?: ValueFormat;
+  /** A total at the end of each row. Left out: the older `totals`, else shown. */
+  rowTotals?: boolean;
+  /** A total at the foot of each column. Left out: the older `totals`, else shown. */
+  columnTotals?: boolean;
+  /** The older setting, for both together. */
   totals?: boolean;
+  /** Cells are shaded by their size. */
+  shade?: boolean;
+}
+
+/** How much of the accent a cell is washed with, 0 to 1, by where it falls between the smallest and the biggest. */
+export function shadeOf(value: number | null, low: number, high: number): number {
+  if (value === null) return 0;
+  if (high <= low) return value === 0 ? 0 : 0.35;
+  return 0.08 + ((value - low) / (high - low)) * 0.5;
 }
 
 interface Turned {
@@ -68,7 +82,13 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
   const summary = data.rows;
   if (summary?.shape !== "summary") return null;
   const turned = turn(summary);
-  const totals = config.totals !== false;
+  const rowTotals = (config.rowTotals ?? config.totals) !== false;
+  const columnTotals = (config.columnTotals ?? config.totals) !== false;
+  const present = turned.rows.flatMap((row) =>
+    row.cells.filter((one): one is number => one !== null),
+  );
+  const low = Math.min(...present);
+  const high = Math.max(...present);
   const write = (value: number | null) =>
     value === null ? "" : formatNumber(value, config.format);
   const cell = "border-b border-line px-3 py-2 text-right tabular-nums";
@@ -106,7 +126,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
                 {name}
               </th>
             ))}
-            {totals && turned.columns.length > 1 ? (
+            {rowTotals && turned.columns.length > 1 ? (
               <th scope="col" className={`${cell} font-semibold`}>
                 Total
               </th>
@@ -128,6 +148,18 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
               {row.cells.map((value, at) => (
                 <td
                   key={turned.columns[at]}
+                  data-shade={
+                    config.shade && value !== null
+                      ? Math.round(shadeOf(value, low, high) * 100)
+                      : undefined
+                  }
+                  style={
+                    config.shade && value !== null
+                      ? {
+                          backgroundColor: `color-mix(in srgb, var(--vx-action) ${Math.round(shadeOf(value, low, high) * 100)}%, transparent)`,
+                        }
+                      : undefined
+                  }
                   className={`${cell} ${pressable && value !== null ? PRESSABLE : ""}`}
                   // biome-ignore lint/a11y/useKeyWithClickEvents: only a cell something listens to is pressed, and that one takes Enter
                   {...press(
@@ -140,13 +172,13 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
                   {write(value)}
                 </td>
               ))}
-              {totals && turned.columns.length > 1 ? (
+              {rowTotals && turned.columns.length > 1 ? (
                 <td className={`${cell} font-semibold`}>{write(row.total)}</td>
               ) : null}
             </tr>
           ))}
         </tbody>
-        {totals ? (
+        {columnTotals ? (
           <tfoot>
             <tr>
               <th
@@ -164,7 +196,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
                   {write(value)}
                 </td>
               ))}
-              {turned.columns.length > 1 ? (
+              {rowTotals && turned.columns.length > 1 ? (
                 <td className="px-3 py-2 text-right font-semibold tabular-nums">
                   {write(turned.totals.total)}
                 </td>

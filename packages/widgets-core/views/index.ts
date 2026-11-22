@@ -47,6 +47,19 @@ export const corePack: CorePack = {
 };
 
 export { fitCount } from "./actions.tsx";
+export {
+  type ChartKind,
+  type ChartNeed,
+  type ChartShape,
+  chartFits,
+  chartFor,
+  fillGapsIn,
+  isComparing,
+  orderRows,
+  PALETTES,
+  suggestedMark,
+  withCompare,
+} from "./chartSpec.ts";
 export { TYPING_PAUSE } from "./filter.tsx";
 export {
   type DateRange,
@@ -56,6 +69,8 @@ export {
   relativeRange,
   valueFor,
 } from "./filterValues.ts";
+export { shadeOf } from "./pivot.tsx";
+export { changeTone } from "./stat.tsx";
 export {
   ActionsView,
   ButtonView,

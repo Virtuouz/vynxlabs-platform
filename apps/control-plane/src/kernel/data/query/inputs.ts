@@ -856,12 +856,20 @@ export async function readWidget(
     // Rows and a record. A table in a data source goes by the rows path, which can read it.
     if (declared.shape === "rows" && request.sort && "visual" in input.source) {
       const descending = request.sort.startsWith("-");
+      const by = request.sort.replace(/^-/, "");
+      // Only by what the widget reads: the order of a column it does not send would tell of it.
+      const read = input.source.visual.columns;
+      if (read && !read.includes(by)) {
+        throw badRequest("The table can't be sorted by that.", [
+          { path: "/sort", message: `the widget does not read "${by}"` },
+        ]);
+      }
       input = {
         ...input,
         source: {
           visual: {
             ...input.source.visual,
-            sort: [{ by: request.sort.replace(/^-/, ""), ...(descending ? { descending } : {}) }],
+            sort: [{ by, ...(descending ? { descending } : {}) }],
           },
         },
       };

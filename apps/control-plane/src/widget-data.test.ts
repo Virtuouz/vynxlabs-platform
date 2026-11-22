@@ -1107,6 +1107,8 @@ describe("a rows input is read a page at a time", () => {
     const sorted = (await asked(alice, onPage("list", { sort: "-number" }))).body.inputs.rows;
     expect(sorted.rows[0].number >= sorted.rows[24].number).toBe(true);
     expect((await asked(alice, onPage("list", { sort: "nope" }))).status).toBe(400);
+    // A column of the table that the widget does not read: its order is not for asking either.
+    expect((await asked(alice, onPage("list", { sort: "total" }))).status).toBe(400);
     // A cursor that was not given is refused, and so is a cursor with no input.
     expect((await asked(alice, onPage("list", { input: "rows", cursor: "!!" }))).status).toBe(400);
     expect((await asked(alice, onPage("list", { cursor: first.next }))).status).toBe(400);

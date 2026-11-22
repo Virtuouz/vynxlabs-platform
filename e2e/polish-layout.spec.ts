@@ -33,7 +33,8 @@ test("every workbench's first row starts within 160 px of the top", async () => 
     await open(ctx.page, path as string);
     const top = await firstRowTop(ctx.page);
     expect(top, `${name} shows a first row`).not.toBeNull();
-    expect(top as number, `${name}'s first row`).toBeLessThanOrEqual(160);
+    // Soft: every workbench is measured, so one over its limit does not hide the others.
+    expect.soft(top as number, `${name}'s first row`).toBeLessThanOrEqual(160);
   }
 });
 

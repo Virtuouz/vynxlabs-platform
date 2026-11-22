@@ -295,7 +295,10 @@ export function Inspector(props: InspectorProps) {
         }))}
       />
       <DrawerPanel idPrefix={prefix} tab={current}>
-        <fieldset disabled={props.readOnly} className="m-0 min-w-0 border-0 p-0">
+        <fieldset
+          disabled={props.readOnly}
+          className="m-0 flex min-w-0 flex-col gap-5 border-0 p-0"
+        >
           <TabBody
             tab={current}
             env={env}

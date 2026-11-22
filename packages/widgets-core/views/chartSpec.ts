@@ -303,7 +303,8 @@ export function chartFor(
   const categoryAxis = {
     labelAngle: tilted ? -45 : 0,
     ...(tilted ? { labelAlign: "right", labelBaseline: "top" } : {}),
-    labelOverlap: tilted ? false : "greedy",
+    // A category is never left out: a name that does not fit is tilted, or cut short.
+    labelOverlap: typeOf(x) === "number" ? ("greedy" as const) : false,
     labelLimit: tilted
       ? Math.min(110, Math.max(54, Math.floor(band * 2.4)))
       : Math.max(48, Math.floor(band)),

@@ -165,6 +165,8 @@ type Editing = NonNullable<PageViewProps["editing"]>;
 
 /** The room a page is given, below which its widgets stack in reading order: 42rem, as the stylesheet says. */
 const NARROW_REM = 42;
+/** A container with less room than this stacks what it holds, whatever the page does (Tailwind's `@md`). */
+const INNER_NARROW_REM = 28;
 
 /** Whether a filter widget has a filter that is not a search. */
 const hasMoreThanSearch = (filters: unknown): boolean =>
@@ -172,13 +174,13 @@ const hasMoreThanSearch = (filters: unknown): boolean =>
   filters.some((one) => (one as { type?: unknown } | null)?.type !== "search");
 
 /** Whether the element is narrower than a phone's width or so. Measured at once, and kept as it changes. */
-function useNarrow(ref: RefObject<HTMLElement | null>): boolean {
+function useNarrow(ref: RefObject<HTMLElement | null>, under = NARROW_REM): boolean {
   const [narrow, setNarrow] = useState(false);
   useLayoutEffect(() => {
     const node = ref.current;
     if (!node) return;
     const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-    const measure = (width: number) => setNarrow(width > 0 && width < NARROW_REM * rem);
+    const measure = (width: number) => setNarrow(width > 0 && width < under * rem);
     measure(node.getBoundingClientRect().width);
     if (typeof ResizeObserver !== "function") return;
     const watching = new ResizeObserver((entries) => {
@@ -187,12 +189,14 @@ function useNarrow(ref: RefObject<HTMLElement | null>): boolean {
     });
     watching.observe(node);
     return () => watching.disconnect();
-  }, [ref]);
+  }, [ref, under]);
   return narrow;
 }
 
 /** What the page shares with every grid it draws, the page's own and each container's. */
 interface GridContext {
+  /** The page itself is narrower than its breakpoint. */
+  narrow: boolean;
   registry: ViewRegistry;
   roles: Roles;
   client: PageDataClient;
@@ -548,7 +552,7 @@ function Cell({
       data-selected={selected ? "" : undefined}
       style={style}
       // A view may size what it draws by its cell's width: the container named `cell`.
-      className={`@container/cell relative flex min-h-0 min-w-0 flex-col ${calloutEdge(widget.type, widget.config)} ${span === 2 ? "col-span-2" : ""} @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
+      className={`@container/cell relative flex min-h-0 min-w-0 flex-col ${calloutEdge(widget.type, widget.config)} ${span === 2 ? "col-span-2" : ""} @2xl/page:@md/grid:[grid-column:var(--col)] @2xl/page:@md/grid:[grid-row:var(--row)] ${
         selected ? "ring-2 ring-action" : building ? "hover:ring-1 hover:ring-action/40" : ""
       } ${fade || away ? "opacity-60" : ""} ${hiddenFor ? "opacity-40" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
         building
@@ -803,7 +807,9 @@ function WidgetGrid({
 }) {
   const own = useRef<HTMLDivElement>(null);
   const ref = gridRef ?? own;
-  const narrow = useNarrow(ref);
+  // A container's grid is narrow where the page is, or where it has less room than a phone.
+  const tight = useNarrow(ref, inner ? INNER_NARROW_REM : NARROW_REM);
+  const narrow = inner ? tight || ctx.narrow : tight;
   const { editing, placement, drawn } = ctx;
   // Top to bottom and left to right, so the page reads in order without the grid.
   // On a phone: by priority, then by the phone's own places (narrow.ts).
@@ -880,7 +886,7 @@ function WidgetGrid({
             ...(inner.tab !== undefined ? { "data-grid-tab": inner.tab } : {}),
           }
         : {})}
-      className={`grid grid-cols-2 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12 ${inner && editing ? "min-h-10 rounded-inner" : ""} ${
+      className={`grid grid-cols-2 gap-3 @2xl/page:@md/grid:auto-rows-[2.5rem] @2xl/page:@md/grid:grid-cols-12 ${inner && editing ? "min-h-10 rounded-inner" : ""} ${
         inner && landingHere ? "outline-2 outline-dashed outline-action/50 outline-offset-2" : ""
       }`}
       onClick={(event) => {
@@ -1006,9 +1012,20 @@ function WidgetGrid({
     </div>
   );
   // The page lays itself out by the room it is given, not by the window's width: an app served
-  // full-width and a preview drawn at a phone's width both get the layout of their size. So does
-  // a container: by the room the container is given.
-  return <div className="@container min-w-0">{grid}</div>;
+  // full-width and a preview drawn at a phone's width both get the layout of their size. What is
+  // in a container is laid out as the page is, so a Section's row is a row wherever the page's is,
+  // unless the container itself has less room than a phone.
+  return (
+    <div
+      className={
+        inner
+          ? "@container/grid min-w-0"
+          : "[container-name:page_grid] [container-type:inline-size] min-w-0"
+      }
+    >
+      {grid}
+    </div>
+  );
 }
 
 const gridKey = (into: WidgetIn | undefined) => gridOf({ in: into });
@@ -1361,6 +1378,7 @@ export function PageView({
       : undefined;
 
   const ctx: GridContext = {
+    narrow,
     registry,
     roles,
     client,
@@ -1460,7 +1478,7 @@ function Landing({ card, at }: { card: PlaceCard; at: Box }) {
       data-flip-key={CARRIED}
       data-landing=""
       style={style}
-      className="relative col-span-2 flex min-h-24 flex-col justify-center gap-0.5 rounded-panel border-2 border-dashed border-action bg-action-soft px-4 @2xl:min-h-0 @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)]"
+      className="relative col-span-2 flex min-h-24 flex-col justify-center gap-0.5 rounded-panel border-2 border-dashed border-action bg-action-soft px-4 @2xl/page:@md/grid:min-h-0 @2xl/page:@md/grid:[grid-column:var(--col)] @2xl/page:@md/grid:[grid-row:var(--row)]"
     >
       <span className="truncate font-semibold text-ink">{card.title}</span>
       <span className="text-body-sm text-ink-muted">{card.kind}</span>

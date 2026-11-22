@@ -99,18 +99,18 @@ export interface PageValue {
 }
 
 /** The width the desktop layout is drawn at, at least: a narrower canvas scrolls. */
-const DESKTOP_MIN = 960;
+const DESKTOP_MIN = 700;
 
 /**
  * The page grid's columns, faintly, behind the widgets: twelve columns of equal width with `GRID.gap`
  * between them, over the grid's own box (the frame's padding is outside it).
  */
-const GUIDE_LINE = "color-mix(in srgb, var(--color-action) 34%, transparent)";
-const GUIDE_BAND = "color-mix(in srgb, var(--color-action) 7%, transparent)";
+const GUIDE_LINE = "color-mix(in srgb, var(--color-action) 18%, transparent)";
+const GUIDE_BAND = "color-mix(in srgb, var(--color-action) 4%, transparent)";
 const GUIDE_PITCH = `calc((100% + ${GRID.gap}px) / ${GRID.columns})`;
-/** The gap between two columns, as a faint band (board 1). */
+/** Each column as a faint band, the gaps between them left clear (board 1). */
 const GUIDE_BANDS = {
-  backgroundImage: `linear-gradient(to right, transparent calc(100% - ${GRID.gap}px), ${GUIDE_BAND} calc(100% - ${GRID.gap}px))`,
+  backgroundImage: `linear-gradient(to right, ${GUIDE_BAND} calc(100% - ${GRID.gap}px), transparent calc(100% - ${GRID.gap}px))`,
   backgroundSize: `${GUIDE_PITCH} 100%`,
   backgroundRepeat: "repeat-x",
 } as const;

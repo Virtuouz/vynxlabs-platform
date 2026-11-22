@@ -1,26 +1,45 @@
 /**
- * The step editor (board 4): what a widget does when it is used, as steps that
- * read as sentences. "When clicked", then 1 Ask to confirm, 2 Update the record,
- * 3 Run a workflow, 4 Show a message; "Add a step"; and, at the end, what the
- * action changes and who may do it, said where it acts (POLISH-010).
+ * The step editor (board 4): what a widget does when it is used, as steps that read as
+ * sentences. A trigger line ("When clicked"), then the steps as a timeline: 1 Ask to confirm,
+ * 2 Update the record, 3 Run a workflow, 4 Show a message; "+ Add a step"; "If it fails"; and,
+ * at the end, what the action changes and who may do it, said where it acts (POLISH-010).
  *
- * Values are chosen from a menu, never typed as code. A dashboard offers only
- * narrow, message and rows. It draws from the widget's definition and the host's
- * lists (pages, flows, scripts, groups), so a pack's widget with an `action`
- * setting has this editor the day it is registered.
+ * The same list serves buttons, row actions, buttons above a table, form submits and chart
+ * clicks: only the trigger line changes. "Can be pressed when" and "Who can run it" are on the
+ * Rules tab (`ActionRules`).
+ *
+ * Values are chosen from a menu, never typed as code. A dashboard offers only filter, message
+ * and rows. It draws from the widget's definition and the host's lists (pages, flows, scripts,
+ * groups), so a pack's widget with an `action` setting has this editor the day it is registered.
  */
 import {
   Button,
   CheckboxField,
   Details,
+  DrawerEditor,
   Menu,
   MoveButtons,
   SegmentedControl,
   SelectField,
   TextField,
 } from "@volvel/ui";
-import { Plus, X } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  AlertTriangle,
+  Check,
+  CircleX,
+  Code2,
+  Filter,
+  MessageSquare,
+  PanelRight,
+  Pencil,
+  Plus,
+  Table2,
+  Trash2,
+  Workflow,
+  X,
+  Zap,
+} from "lucide-react";
+import { type ComponentType, type ReactNode, useRef } from "react";
 import {
   type Action,
   type ActionContext,
@@ -35,6 +54,7 @@ import {
   refWords,
   STEP_WORDS,
   type Step,
+  type StepKind,
   settableColumns,
   stepKindsFor,
   tableOfRef,
@@ -44,9 +64,29 @@ import {
   valueOptions,
   withSteps,
 } from "./actionModel.ts";
-import { ConditionsEditor } from "./conditions.tsx";
+import { ConfirmPreview } from "./confirmPreview.tsx";
 import type { Env } from "./controls.tsx";
 import { type ConfigSetting, heading, resultNames, visualOf, withSystemColumns } from "./model.ts";
+import { StepTimeline, type TimelineItem } from "./stepTimeline.tsx";
+import { TokenText } from "./TokenText.tsx";
+import { stepSummary, valueChipWords } from "./timelineModel.ts";
+
+/** The icon of each kind of step, on the timeline's rail. */
+export const STEP_ICONS: Record<
+  StepKind,
+  ComponentType<{ size?: number; "aria-hidden"?: boolean | "true" }>
+> = {
+  update: Pencil,
+  create: Plus,
+  delete: Trash2,
+  flow: Workflow,
+  script: Code2,
+  open: PanelRight,
+  close: CircleX,
+  message: Check,
+  narrow: Filter,
+  rows: Table2,
+};
 
 /** What an action here may reach, from the widget, the page and the host's lists. */
 export function actionContext(env: Env): ActionContext {
@@ -128,7 +168,43 @@ function ValuePicker({
   );
 }
 
-/** "Status becomes [Paid]" rows, and "+ Set another field". */
+/** A chip with the words it shows, that opens its editor beside it. */
+function ChipEditor({
+  title,
+  chip,
+  label,
+  tone = "plain",
+  children,
+}: {
+  title: string;
+  chip: string;
+  label: string;
+  tone?: "field" | "plain";
+  children: ReactNode;
+}) {
+  return (
+    <DrawerEditor
+      title={title}
+      trigger={
+        <button
+          type="button"
+          aria-label={label}
+          className={`inline-flex h-7 max-w-full cursor-pointer items-center truncate rounded-control border px-3 text-body-sm outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus ${
+            tone === "field"
+              ? "border-action bg-action-soft text-action"
+              : "border-line-strong bg-sunken text-ink"
+          }`}
+        >
+          {chip}
+        </button>
+      }
+    >
+      {children}
+    </DrawerEditor>
+  );
+}
+
+/** "[Status] becomes [Paid]" rows, and "+ Set another field". */
 function FieldSetter({
   id,
   table,
@@ -151,45 +227,74 @@ function FieldSetter({
   return (
     <div className="flex flex-col gap-2">
       {Object.entries(set).map(([name, value]) => (
-        <div key={name} className="flex flex-col gap-1">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-body-sm font-medium text-ink">
-              {heading(name)} <span className="font-normal text-ink-muted">{verb}</span>
-            </span>
-            <Button
-              size="small"
-              variant="quiet"
-              aria-label={`Stop setting ${heading(name)}`}
-              onClick={() => {
-                const { [name]: _gone, ...rest } = set;
-                onChange(rest);
-              }}
-            >
-              <X aria-hidden="true" size={14} />
-            </Button>
-          </div>
-          <ValuePicker
-            id={`${id}-${name}`}
-            label={`${heading(name)} ${verb}`}
-            value={value}
-            ctx={ctx}
-            asked={asked}
-            onChange={(next, key) => next && onChange({ ...set, [name]: next }, key)}
-          />
+        <div key={name} className="flex flex-wrap items-center gap-1.5">
+          <ChipEditor
+            title="Field"
+            chip={heading(name)}
+            label={`Change the field ${heading(name)}`}
+            tone="field"
+          >
+            <SelectField
+              name={`${id}-${name}-field`}
+              label={`Field that ${heading(name)} stands for`}
+              value={name}
+              options={[
+                ...(columns.some((column) => column.name === name)
+                  ? []
+                  : [{ value: name, label: heading(name) }]),
+                ...columns
+                  .filter((column) => column.name === name || !(column.name in set))
+                  .map((column) => ({ value: column.name, label: heading(column.name) })),
+              ]}
+              onChange={(next) =>
+                onChange(
+                  Object.fromEntries(
+                    Object.entries(set).map(([key, was]) => [key === name ? next : key, was]),
+                  ),
+                )
+              }
+            />
+          </ChipEditor>
+          <span className="text-body-sm text-ink-muted">{verb}</span>
+          <ChipEditor
+            title={`${heading(name)} ${verb}`}
+            chip={valueChipWords(value, ctx)}
+            label={`${heading(name)} ${verb} ${valueChipWords(value, ctx)}`}
+          >
+            <ValuePicker
+              id={`${id}-${name}`}
+              label={`${heading(name)} ${verb}`}
+              value={value}
+              ctx={ctx}
+              asked={asked}
+              onChange={(next, key) => next && onChange({ ...set, [name]: next }, key)}
+            />
+          </ChipEditor>
+          <Button
+            size="small"
+            variant="quiet"
+            aria-label={`Stop setting ${heading(name)}`}
+            onClick={() => {
+              const { [name]: _gone, ...rest } = set;
+              onChange(rest);
+            }}
+          >
+            <X aria-hidden="true" size={14} />
+          </Button>
         </div>
       ))}
       {left.length > 0 ? (
-        <SelectField
-          name={`${id}-add`}
-          label="Set another field"
-          labelHidden
-          value=""
-          options={[
-            { value: "", label: "+ Set another field" },
-            ...left.map((column) => ({ value: column.name, label: heading(column.name) })),
-          ]}
-          onChange={(name) => name && onChange({ ...set, [name]: { value: "" } })}
-        />
+        <div>
+          <Menu
+            ariaLabel="Set another field"
+            label="+ Set another field"
+            triggerClassName="inline-flex h-6 cursor-pointer items-center rounded-control px-1 text-body-sm text-ink-muted hover:text-ink"
+            items={left.map((column) => ({
+              label: heading(column.name),
+              onSelect: () => onChange({ ...set, [column.name]: { value: "" } }),
+            }))}
+          />
+        </div>
       ) : null}
     </div>
   );
@@ -198,55 +303,6 @@ function FieldSetter({
 // ---------------------------------------------------------------------------
 // The cards
 
-function Card({
-  number,
-  title,
-  count,
-  onMove,
-  onRemove,
-  children,
-}: {
-  number: number;
-  title: string;
-  count: number;
-  onMove?: ((by: -1 | 1) => void) | undefined;
-  onRemove: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <li className="flex flex-col gap-2 rounded-control border border-line p-3">
-      <div className="flex items-center justify-between gap-2">
-        <h4 className="m-0 flex min-w-0 items-center gap-2 text-body-sm font-medium text-ink">
-          <span
-            aria-hidden="true"
-            className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-sunken text-meta"
-          >
-            {number}
-          </span>
-          <span className="min-w-0 break-words">
-            <span className="sr-only">Step {number}: </span>
-            {title}
-          </span>
-        </h4>
-        <div className="flex shrink-0 items-center">
-          {onMove ? (
-            <MoveButtons label={`step ${number}`} at={number - 1} count={count} onMove={onMove} />
-          ) : null}
-          <Button
-            size="small"
-            variant="quiet"
-            aria-label={`Remove step ${number}`}
-            onClick={onRemove}
-          >
-            <X aria-hidden="true" size={14} />
-          </Button>
-        </div>
-      </div>
-      {children}
-    </li>
-  );
-}
-
 const SLUG = (text: string) =>
   text
     .toLowerCase()
@@ -254,42 +310,45 @@ const SLUG = (text: string) =>
     .replace(/^[^a-z]+|_+$/g, "")
     .slice(0, 40);
 
-function ConfirmCard({
+/** What the "Ask to confirm" card holds: the question in words with the record's fields as tokens. */
+function ConfirmBody({
   id,
-  number,
-  count,
+  widgetId,
   confirm,
+  ctx,
   onChange,
-  onRemove,
 }: {
   id: string;
-  number: number;
-  count: number;
+  widgetId: string;
   confirm: NonNullable<Action["confirm"]>;
+  ctx: ActionContext;
   onChange: (next: NonNullable<Action["confirm"]>, key?: string) => void;
-  onRemove: () => void;
 }) {
   const ask = confirm.ask ?? [];
   const setAsk = (next: AskedField[]) => {
     const { ask: _before, ...rest } = confirm;
     onChange(next.length ? { ...rest, ask: next } : rest);
   };
+  const table = tableOfRef(ctx, ctx.defaultRef) ?? ctx.thisTable ?? ctx.eventTable;
+  const fields = settableColumns(ctx.columnsOf(table)).map((column) => ({
+    name: column.name,
+    label: heading(column.name),
+  }));
   return (
-    <Card number={number} title="Ask to confirm" count={count} onRemove={onRemove}>
-      <TextField
-        name={`${id}-confirm-title`}
+    <>
+      <TokenText
         label="Confirmation title"
-        hint="Write {column} to use a field of the record, as in Mark {number} as paid?"
-        required={false}
+        placeholder="Are you sure?"
         maxLength={120}
+        fields={fields}
         value={confirm.title}
         onChange={(title) => onChange({ ...confirm, title }, `${id}:confirm-title`)}
       />
-      <TextField
-        name={`${id}-confirm-text`}
+      <TokenText
         label="Confirmation text"
-        required={false}
+        placeholder="Say what will happen"
         maxLength={500}
+        fields={fields}
         value={confirm.text ?? ""}
         onChange={(text) => {
           const { text: _before, ...rest } = confirm;
@@ -416,7 +475,11 @@ function ConfirmCard({
           </Button>
         </div>
       ) : null}
-    </Card>
+      <ConfirmPreview
+        widgetId={widgetId}
+        confirm={{ title: confirm.title, text: confirm.text, button: confirm.button }}
+      />
+    </>
   );
 }
 
@@ -522,34 +585,22 @@ function InputMapper({
   );
 }
 
-function StepCard({
+function stepParts({
   id,
-  number,
-  count,
   step,
   env,
   ctx,
   asked,
   onChange,
-  onMove,
-  onRemove,
 }: {
   id: string;
-  number: number;
-  count: number;
   step: Step;
   env: Env;
   ctx: ActionContext;
   asked: readonly AskedField[];
   onChange: (next: Step, key?: string) => void;
-  onMove: (by: -1 | 1) => void;
-  onRemove: () => void;
-}) {
-  const card = (title: string, body: ReactNode) => (
-    <Card number={number} title={title} count={count} onMove={onMove} onRemove={onRemove}>
-      {body}
-    </Card>
-  );
+}): { title: string; body: ReactNode } {
+  const card = (title: string, body: ReactNode) => ({ title, body });
   switch (step.do) {
     case "update":
       return card(
@@ -575,7 +626,7 @@ function StepCard({
       );
     case "create":
       return card(
-        "Create a record",
+        "Make a record",
         <>
           <SelectField
             name={`${id}-table`}
@@ -603,7 +654,7 @@ function StepCard({
       );
     case "delete":
       return card(
-        "Delete the record",
+        "Remove the record",
         <RecordChoice
           id={`${id}-record`}
           label="Which record"
@@ -738,7 +789,7 @@ function StepCard({
         ...new Set(Object.values(env.widget.data ?? {}).flatMap((input) => resultNames(input))),
       ];
       return card(
-        "Narrow a filter",
+        "Filter the page",
         <>
           <SelectField
             name={`${id}-filter`}
@@ -792,15 +843,29 @@ const KIND_WORDS = {
 } as const;
 
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // The editor
 
-/** The steps of one action, with its conditions and what it grants. */
+/** A step's key in the timeline: it stays with its step while the list is put in order. */
+function useStepKeys(count: number) {
+  const keys = useRef<string[]>([]);
+  const counter = useRef(0);
+  if (keys.current.length !== count) {
+    keys.current = Array.from({ length: count }, () => `s${++counter.current}`);
+  }
+  return { keys, fresh: () => `s${++counter.current}` };
+}
+
+/** The steps of one action, as a timeline, and what it grants. */
 export function ActionEditor({
   env,
   id,
   heading: when,
   action,
   onChange,
+  startCollapsed = false,
+  trigger,
 }: {
   env: Env;
   id: string;
@@ -808,17 +873,26 @@ export function ActionEditor({
   heading: string;
   action: Action | undefined;
   onChange: (next: Action | undefined, key?: string) => void;
+  /** Steps that are already there are drawn as one line each (a row action's, a button's in a group). */
+  startCollapsed?: boolean;
+  /** Left of the trigger line. Default: a bolt. */
+  trigger?: ReactNode;
 }) {
   const ctx = actionContext(env);
   const current: Action = action ?? { steps: [] };
   const asked = current.confirm?.ask ?? [];
-  const empty = !current.confirm && current.steps.length === 0;
   const put = (next: Action, key?: string) =>
-    onChange(!next.confirm && next.steps.length === 0 && !next.when ? undefined : next, key);
+    onChange(
+      !next.confirm && next.steps.length === 0 && !next.when && !next.runBy ? undefined : next,
+      key,
+    );
+  const stepKeys = useStepKeys(current.steps.length);
   const kinds = stepKindsFor(ctx);
-  const offset = current.confirm ? 1 : 0;
-  const count = current.steps.length + offset;
   const firstPage = env.pages[0]?.id;
+  const addStep = (step: Step) => {
+    stepKeys.keys.current = [...stepKeys.keys.current, stepKeys.fresh()];
+    put(withSteps(current, [...current.steps, step]));
+  };
   const items = [
     ...(!current.confirm && ctx.surface !== "dashboard"
       ? [
@@ -830,114 +904,128 @@ export function ActionEditor({
       : []),
     ...kinds.map((kind) => ({
       label: STEP_WORDS[kind].title,
-      onSelect: () => put(withSteps(current, [...current.steps, newStep(kind, ctx, firstPage)])),
+      onSelect: () => addStep(newStep(kind, ctx, firstPage)),
     })),
   ];
-  const place = (at: number, by: -1 | 1) => {
-    if (at + by < 0 || at + by >= current.steps.length) return;
-    put(withSteps(current, moved(current.steps, at, at + by)));
-  };
   const failure =
     ctx.openAs === "sheet"
       ? "Show the error and keep the sheet open"
       : ctx.openAs === "modal"
         ? "Show the error and keep the dialog open"
         : "Show the error and stop";
+
+  const timeline: TimelineItem[] = [
+    ...(current.confirm
+      ? [
+          {
+            key: "confirm",
+            title: "Ask to confirm",
+            summary: `Ask: ${current.confirm.title}`,
+            icon: MessageSquare,
+            fixed: true,
+            body: (
+              <ConfirmBody
+                id={id}
+                widgetId={env.widget.id}
+                confirm={current.confirm}
+                ctx={ctx}
+                onChange={(confirm, key) => put({ ...current, confirm }, key)}
+              />
+            ),
+            onRemove: () => {
+              const { confirm: _before, ...rest } = current;
+              put(rest);
+            },
+          } satisfies TimelineItem,
+        ]
+      : []),
+    ...current.steps.map((step, at): TimelineItem => {
+      const parts = stepParts({
+        id: `${id}-step-${at + 1}`,
+        step,
+        env,
+        ctx,
+        asked,
+        onChange: (next, key) =>
+          put(
+            withSteps(
+              current,
+              current.steps.map((one, index) => (index === at ? next : one)),
+            ),
+            key,
+          ),
+      });
+      const target = step.do === "open" ? env.pages.find((one) => one.id === step.page) : undefined;
+      return {
+        key: stepKeys.keys.current[at] ?? `s-${at}`,
+        title:
+          step.do === "open" && target?.kind && target.kind !== "page"
+            ? `Open a ${KIND_WORDS[target.kind]}`
+            : parts.title,
+        summary: stepSummary(step, ctx, env.pages),
+        icon: STEP_ICONS[step.do],
+        body: parts.body,
+        onRemove: () => {
+          stepKeys.keys.current = stepKeys.keys.current.filter((_, index) => index !== at);
+          put(
+            withSteps(
+              current,
+              current.steps.filter((_, index) => index !== at),
+            ),
+          );
+        },
+      };
+    }),
+  ];
+  const count = timeline.length;
+
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <p className="m-0 text-body-sm font-medium text-ink">{when}</p>
-      {empty ? (
-        <p className="m-0 flex h-control items-center rounded-control border border-line px-3 text-ink-muted">
-          Nothing
-        </p>
-      ) : null}
+      <p className="m-0 flex items-center gap-2 text-body-sm font-medium text-ink">
+        {trigger ?? <Zap aria-hidden="true" size={14} className="text-action" />}
+        {when}
+      </p>
+      {count === 0 ? <p className="m-0 text-body-sm text-ink-muted">Nothing yet.</p> : null}
       {count > 0 ? (
-        <ol className="m-0 flex list-none flex-col gap-2 p-0">
-          {current.confirm ? (
-            <ConfirmCard
-              id={id}
-              number={1}
-              count={count}
-              confirm={current.confirm}
-              onChange={(confirm, key) => put({ ...current, confirm }, key)}
-              onRemove={() => {
-                const { confirm: _before, ...rest } = current;
-                put(rest);
-              }}
-            />
-          ) : null}
-          {current.steps.map((step, at) => (
-            <StepCard
-              // biome-ignore lint/suspicious/noArrayIndexKey: a step has no identity but its place in the list
-              key={`${step.do}-${at}`}
-              id={`${id}-step-${at + 1}`}
-              number={at + 1 + offset}
-              count={count}
-              step={step}
-              env={env}
-              ctx={ctx}
-              asked={asked}
-              onChange={(next, key) =>
-                put(
-                  withSteps(
-                    current,
-                    current.steps.map((one, index) => (index === at ? next : one)),
-                  ),
-                  key,
-                )
-              }
-              onMove={(by) => place(at, by)}
-              onRemove={() =>
-                put(
-                  withSteps(
-                    current,
-                    current.steps.filter((_, index) => index !== at),
-                  ),
-                )
-              }
-            />
-          ))}
-        </ol>
-      ) : null}
-      <div>
-        <Menu
-          ariaLabel="Add a step"
-          label={
-            <span className="inline-flex items-center gap-1">
-              <Plus aria-hidden="true" size={14} /> Add a step
-            </span>
-          }
-          triggerClassName="inline-flex h-control items-center rounded-control border border-line-control px-3 text-body-sm hover:bg-sunken"
-          items={items}
+        <StepTimeline
+          label={`Steps of ${when.toLowerCase()}`}
+          items={timeline}
+          startCollapsed={startCollapsed}
+          onReorder={(order) => {
+            const keys = stepKeys.keys.current;
+            const from = order.map((key) => keys.indexOf(key));
+            if (from.some((index) => index < 0)) return;
+            stepKeys.keys.current = order;
+            put(
+              withSteps(
+                current,
+                from.map((index) => current.steps[index] as Step),
+              ),
+            );
+          }}
         />
-      </div>
-      {count > 0 ? (
-        <p className="m-0 text-body-sm text-ink-muted">
-          <span className="font-medium text-ink">If something fails</span> {failure}.
-        </p>
       ) : null}
+      <Menu
+        ariaLabel="Add a step"
+        label={
+          <span className="inline-flex items-center gap-1.5">
+            <Plus aria-hidden="true" size={14} /> Add a step
+          </span>
+        }
+        triggerClassName="flex h-8 w-full cursor-pointer items-center justify-center rounded-control border border-dashed border-line-strong px-3 text-body-sm text-ink-muted hover:border-action hover:text-ink"
+        items={items}
+      />
       {count > 0 ? (
-        <div className="flex flex-col gap-1">
-          <span className="text-body-sm font-medium text-ink">Can be pressed when</span>
-          <ConditionsEditor
-            id={`${id}-when`}
-            conditions={current.when}
-            ctx={ctx}
-            groups={env.groups}
-            onChange={(when, key) => {
-              const { when: _before, ...rest } = current;
-              put(when ? { ...rest, when } : rest, key);
-            }}
-          />
-          {!current.when ? (
-            <p className="m-0 text-body-sm text-ink-muted">Always, for anyone who can open it.</p>
-          ) : null}
-        </div>
+        <p className="m-0 flex items-center gap-3 rounded-control border border-line px-3 py-2 text-body-sm">
+          <span className="text-ink-muted">If it fails</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-ink">
+            <AlertTriangle aria-hidden="true" size={14} className="shrink-0" />
+            {failure}
+          </span>
+        </p>
       ) : null}
       {current.steps.length > 0 ? (
-        <p className="m-0 rounded-control border border-line p-3 text-body-sm text-ink-muted">
-          {grantWords(current, ctx)}
-        </p>
+        <p className="m-0 text-body-sm text-ink-muted">{grantWords(current, ctx)}</p>
       ) : null}
     </div>
   );

@@ -363,6 +363,17 @@ export function conditionFields(
   );
 }
 
+/**
+ * `is` and `is not` take one value, or several as an array, read as "any of" and "none of".
+ * An empty list matches nothing.
+ */
+function isAmong(value: unknown, wanted: unknown): boolean {
+  const text = String(value);
+  return Array.isArray(wanted)
+    ? wanted.some((one) => String(one) === text)
+    : text === String(wanted);
+}
+
 export interface ActingUser {
   id: string;
   email?: string;
@@ -399,9 +410,9 @@ export function conditionsHold(
       case "is_not_empty":
         return !empty;
       case "is":
-        return !empty && String(value) === String(one.value);
+        return !empty && isAmong(value, one.value);
       case "is_not":
-        return empty || String(value) !== String(one.value);
+        return empty || !isAmong(value, one.value);
       case "contains":
         return (
           !empty &&
@@ -424,6 +435,11 @@ export function conditionsHold(
   });
 }
 
+/** "A", "A or B", "A, B or C". */
+export function listWords(list: readonly string[]): string {
+  return list.length < 3 ? list.join(" or ") : `${list.slice(0, -1).join(", ")} or ${list.at(-1)}`;
+}
+
 /** What a sentence says, in the reader's words: "Status is Unpaid". For a label, not a check. */
 export function conditionWords(
   one: Condition,
@@ -444,7 +460,7 @@ export function conditionWords(
     is_not_empty: "is not empty",
   };
   const said = `${label(one.field)} ${words[one.test]}`;
-  return one.test === "is_empty" || one.test === "is_not_empty"
-    ? said
-    : `${said} ${String(one.value ?? "")}`;
+  if (one.test === "is_empty" || one.test === "is_not_empty") return said;
+  if (Array.isArray(one.value)) return `${said} ${listWords(one.value.map(String))}`;
+  return `${said} ${String(one.value ?? "")}`;
 }

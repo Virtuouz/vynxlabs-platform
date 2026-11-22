@@ -1,47 +1,103 @@
 /**
- * The conditions editor: sentences, never code. "Status is Unpaid", "the current
- * user is in Managers", "a record is chosen". It writes the `Condition` list an
- * action's `when` and a widget's `rules.showWhen` hold (decision 0004, S9).
+ * The conditions editor (boards 8 and 9): sentences as chips, never code. "Status is Unpaid ×",
+ * "Current user is in Billing ×", "+ And". Pressing a chip opens the drawer kit's condition editor
+ * beside it, with the operators in the column's own words and, for a choice column, its values as
+ * a checked list. It writes the `Condition` list an action's `when` and a widget's `rules.showWhen`
+ * hold (decision 0004, S9). Several values chosen are an array: "any of" for `is`, "none of" for
+ * `is not`.
  */
-import { Button, SelectField, TextField } from "@volvel/ui";
-import { Plus, X } from "lucide-react";
+import { listWords } from "@volvel/manifest";
+import {
+  AddChip,
+  ChipSet,
+  type ConditionChoice,
+  type ConditionColumn,
+  ConditionEditor,
+  type ConditionValue,
+  DrawerEditor,
+  SelectField,
+} from "@volvel/ui";
+import { X } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import {
   type ActionContext,
   type Condition,
   conditionFromKey,
   conditionKey,
-  NO_VALUE_TESTS,
+  firstCondition,
   refsOf,
   refWords,
-  TEST_LABELS,
-  TESTS,
   tableOfRef,
-  typedConstant,
 } from "./actionModel.ts";
 import { heading } from "./model.ts";
+import { operatorsFor } from "./timelineModel.ts";
 
-/** What the first menu of a sentence holds: the fields of the records, then the two other kinds. */
-function whatOptions(ctx: ActionContext) {
+type ChoiceValues = { value: string; label?: string }[] | undefined;
+
+/** The columns of the records an action or a widget can read, as the editor lists them. */
+function columnsOf(ctx: ActionContext): (ConditionColumn & { values?: ChoiceValues })[] {
   const refs = refsOf(ctx);
-  const options: { value: string; label: string }[] = [];
-  for (const ref of refs) {
-    for (const column of ctx.columnsOf(tableOfRef(ctx, ref))) {
-      options.push({
-        value: `field:${ref}:${column.name}`,
+  return refs.flatMap((ref) =>
+    ctx.columnsOf(tableOfRef(ctx, ref)).map((column) => {
+      const values = (column as { values?: ChoiceValues }).values;
+      return {
+        id: `${ref}:${column.name}`,
         label:
           refs.length > 1
             ? `${heading(column.name)} of ${refWords(ctx, ref)}`
             : heading(column.name),
-      });
-    }
-  }
-  options.push(
-    { value: "user", label: "The current user is in a group" },
-    { value: "record:exists", label: "A record is chosen" },
-    { value: "record:missing", label: "No record is chosen" },
+        type: column.type === "enum" ? "choice" : column.type,
+        ...(values ? { values } : {}),
+      };
+    }),
   );
-  return options;
 }
+
+const WORDS: Record<string, string> = {
+  is: "is",
+  is_not: "is not",
+  gt: "is more than",
+  gte: "is at least",
+  lt: "is less than",
+  lte: "is at most",
+  contains: "contains",
+  is_empty: "is empty",
+  is_not_empty: "is not empty",
+};
+
+/** A condition as its chip reads: the value in bold. */
+function Face({ one, ctx }: { one: Condition; ctx: ActionContext }): ReactNode {
+  if ("user" in one) {
+    return (
+      <>
+        Current user is in <strong className="font-semibold">{one.group || "a group"}</strong>
+      </>
+    );
+  }
+  if ("record" in one) {
+    return one.record === "exists" ? "A record is chosen" : "No record is chosen";
+  }
+  const refs = refsOf(ctx);
+  const name =
+    heading(one.field) + (refs.length > 1 && one.of === "event" ? " of the clicked record" : "");
+  const test = WORDS[one.test] ?? one.test;
+  if (one.test === "is_empty" || one.test === "is_not_empty") return `${name} ${test}`;
+  const value = Array.isArray(one.value)
+    ? listWords(one.value.map(String))
+    : String(one.value ?? "");
+  return (
+    <>
+      {name} {test} {value ? <strong className="font-semibold">{value}</strong> : null}
+    </>
+  );
+}
+
+const KINDS = [
+  { value: "field", label: "A field of a record" },
+  { value: "user", label: "The current user is in a group" },
+  { value: "record:exists", label: "A record is chosen" },
+  { value: "record:missing", label: "No record is chosen" },
+];
 
 export function ConditionsEditor({
   id,
@@ -50,146 +106,153 @@ export function ConditionsEditor({
   ctx,
   groups,
   onChange,
+  addLabel,
 }: {
   id: string;
   /** What one is called to a screen reader: "condition 1", "rule 1". */
   noun?: string;
   conditions: readonly Condition[] | undefined;
   ctx: ActionContext;
+  /** The names of the groups the current user can be in. */
   groups: readonly string[];
   /** The list as it should now be, or nothing when none are left. */
   onChange: (next: Condition[] | undefined, key?: string) => void;
+  /** The dashed chip's words. "And" after the first. */
+  addLabel?: string;
 }) {
   const list = conditions ?? [];
-  const options = whatOptions(ctx);
+  const [editing, setEditing] = useState<number | undefined>(undefined);
+  const columns = columnsOf(ctx);
   const put = (next: Condition[], key?: string) => onChange(next.length ? next : undefined, key);
   const set = (at: number, one: Condition, key?: string) =>
     put(
       list.map((was, index) => (index === at ? one : was)),
       key,
     );
-  const first = options[0];
-  return (
-    <div className="flex flex-col gap-2">
-      <ul className="m-0 flex list-none flex-col gap-2 p-0">
-        {list.map((one, at) => {
-          const n = at + 1;
-          const key = conditionKey(one);
-          return (
-            <li
-              // biome-ignore lint/suspicious/noArrayIndexKey: a sentence has no identity but its place in the list
-              key={`${key}-${at}`}
-              className="flex flex-col gap-2 rounded-control border border-line p-2"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="min-w-0 flex-1 basis-40">
-                  <SelectField
-                    name={`${id}-${noun}-${n}-what`}
-                    label={`What ${noun} ${n} is about`}
-                    labelHidden
-                    value={key}
-                    options={
-                      options.some((option) => option.value === key)
-                        ? options
-                        : [{ value: key, label: heading(key.split(":").pop() ?? key) }, ...options]
-                    }
-                    onChange={(next) => set(at, conditionFromKey(next, one, groups))}
-                  />
-                </div>
-                <Button
-                  size="small"
-                  variant="quiet"
-                  aria-label={`Remove ${noun} ${n}`}
-                  onClick={() => put(list.filter((_, index) => index !== at))}
-                >
-                  <X aria-hidden="true" size={14} />
-                </Button>
-              </div>
-              {"field" in one ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="w-36 max-w-full">
-                    <SelectField
-                      name={`${id}-${noun}-${n}-test`}
-                      label={`Test of ${noun} ${n}`}
-                      labelHidden
-                      value={one.test}
-                      options={TESTS.map((test) => ({
-                        value: test,
-                        label: TEST_LABELS[test] ?? test,
-                      }))}
-                      onChange={(test) => {
-                        const { value, ...rest } = one;
-                        set(at, {
-                          ...rest,
-                          test: test as typeof one.test,
-                          ...(NO_VALUE_TESTS.has(test) || value === undefined ? {} : { value }),
-                        });
-                      }}
-                    />
-                  </div>
-                  {NO_VALUE_TESTS.has(one.test) ? null : (
-                    <div className="min-w-0 flex-1 basis-28">
-                      <TextField
-                        name={`${id}-${noun}-${n}-value`}
-                        label={`Value of ${noun} ${n}`}
-                        labelHidden
-                        placeholder="Value"
-                        required={false}
-                        value={
-                          one.value === undefined || one.value === null ? "" : String(one.value)
-                        }
-                        onChange={(text) =>
-                          set(at, { ...one, value: typedConstant(text) }, `${id}:${noun}:${at}`)
-                        }
-                      />
-                    </div>
-                  )}
-                </div>
-              ) : "user" in one ? (
-                groups.length > 0 ? (
-                  <SelectField
-                    name={`${id}-${noun}-${n}-group`}
-                    label={`Group of ${noun} ${n}`}
-                    labelHidden
-                    value={one.group}
-                    options={[
-                      ...(groups.includes(one.group)
-                        ? []
-                        : [{ value: one.group, label: one.group || "Choose a group" }]),
-                      ...groups.map((name) => ({ value: name, label: name })),
-                    ]}
-                    onChange={(group) => set(at, { user: "in", group })}
-                  />
-                ) : (
-                  <TextField
-                    name={`${id}-${noun}-${n}-group`}
-                    label={`Group of ${noun} ${n}`}
-                    labelHidden
-                    placeholder="Name of the group"
-                    required={false}
-                    value={one.group}
-                    onChange={(group) => set(at, { user: "in", group }, `${id}:${noun}:${at}`)}
-                  />
-                )
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-      {list.length < 10 ? (
-        <div>
-          <Button
-            size="small"
-            variant="quiet"
-            disabled={!first}
-            onClick={() =>
-              first && put([...list, conditionFromKey(first.value, undefined, groups)])
+
+  const choices = (field: string): readonly ConditionChoice[] | undefined => {
+    const values = columns.find((one) => one.id === field)?.values;
+    return values?.map((one) => ({ value: one.value, ...(one.label ? { label: one.label } : {}) }));
+  };
+
+  const body = (one: Condition, at: number) => {
+    const n = at + 1;
+    const kind = "user" in one ? "user" : "record" in one ? conditionKey(one) : "field";
+    return (
+      <div className="flex flex-col gap-3">
+        <SelectField
+          name={`${id}-${noun}-${n}-what`}
+          label={`What ${noun} ${n} is about`}
+          labelHidden
+          value={kind}
+          options={columns.length > 0 ? KINDS : KINDS.filter((option) => option.value !== "field")}
+          onChange={(next) => {
+            if (next === "field") {
+              const first = columns[0];
+              if (first) set(at, conditionFromKey(`field:${first.id}`, undefined, groups));
+            } else set(at, conditionFromKey(next, one, groups));
+          }}
+        />
+        {"field" in one ? (
+          <ConditionEditor
+            columns={columns}
+            operators={operatorsFor}
+            choices={choices}
+            value={{
+              field: `${one.of ?? "this"}:${one.field}`,
+              test: one.test,
+              ...(one.value === undefined ? {} : { value: one.value }),
+            }}
+            onChange={(next: ConditionValue) => {
+              const [ref, ...rest] = next.field.split(":");
+              const field = rest.join(":");
+              set(
+                at,
+                {
+                  field,
+                  ...(ref === "event" ? { of: "event" as const } : {}),
+                  test: next.test as Extract<Condition, { field: string }>["test"],
+                  ...(next.value === undefined || next.value === "" ? {} : { value: next.value }),
+                },
+                `${id}:${noun}:${at}`,
+              );
+            }}
+            note={
+              columns.some((one) => one.type === "choice" && one.values)
+                ? "A choice column offers its values."
+                : "Type the value the column should have."
             }
+          />
+        ) : "user" in one ? (
+          <SelectField
+            name={`${id}-${noun}-${n}-group`}
+            label={`Group of ${noun} ${n}`}
+            value={one.group}
+            options={[
+              ...(groups.includes(one.group)
+                ? []
+                : [{ value: one.group, label: one.group || "Choose a group" }]),
+              ...groups.map((name) => ({ value: name, label: name })),
+            ]}
+            onChange={(group) => set(at, { user: "in", group })}
+          />
+        ) : null}
+      </div>
+    );
+  };
+
+  const first = list.length === 0;
+  return (
+    <ChipSet label={`${noun}s`}>
+      {list.map((one, at) => {
+        const n = at + 1;
+        return (
+          <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: a sentence has no identity but its place in the list
+            key={`${conditionKey(one)}-${at}`}
+            className="inline-flex h-7 max-w-full items-center rounded-control border border-line-strong bg-sunken text-body-sm text-ink"
           >
-            <Plus aria-hidden="true" size={14} /> Add a {noun}
-          </Button>
-        </div>
+            <DrawerEditor
+              title={heading(noun)}
+              open={editing === at}
+              onOpenChange={(open) => setEditing(open ? at : undefined)}
+              trigger={
+                <button
+                  type="button"
+                  aria-label={`Edit ${noun} ${n}`}
+                  className="h-full min-w-0 cursor-pointer truncate rounded-l-control pr-1 pl-3 outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus"
+                >
+                  <Face one={one} ctx={ctx} />
+                </button>
+              }
+            >
+              {body(one, at)}
+            </DrawerEditor>
+            <button
+              type="button"
+              aria-label={`Remove ${noun} ${n}`}
+              onClick={() => {
+                setEditing(undefined);
+                put(list.filter((_, index) => index !== at));
+              }}
+              className="grid h-full w-6 shrink-0 cursor-pointer place-items-center rounded-r-control text-ink-muted outline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+            >
+              <X aria-hidden="true" size={14} />
+            </button>
+          </span>
+        );
+      })}
+      {list.length < 10 ? (
+        <AddChip
+          aria-label={`Add a ${noun}`}
+          onClick={() => {
+            put([...list, firstCondition(ctx, groups)]);
+            setEditing(list.length);
+          }}
+        >
+          {addLabel ?? (first ? "Condition" : "And")}
+        </AddChip>
       ) : null}
-    </div>
+    </ChipSet>
   );
 }

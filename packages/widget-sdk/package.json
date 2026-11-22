@@ -8,9 +8,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./action": {
+      "types": "./dist/action.d.ts",
+      "default": "./dist/action.js"
+    },
+    "./page": {
+      "types": "./dist/page.d.ts",
+      "default": "./dist/page.js"
     }
   },
   "files": [
-    "dist"
-  ]
+    "dist",
+    "!dist/**/*.test.*",
+    "!dist/**/*.map"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

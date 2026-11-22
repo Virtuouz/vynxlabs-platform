@@ -527,9 +527,6 @@ importers:
 
   packages/sdk:
     dependencies:
-      '@volvel/manifest':
-        specifier: workspace:*
-        version: link:../manifest
       '@volvel/widgets':
         specifier: workspace:*
         version: link:../widget-sdk

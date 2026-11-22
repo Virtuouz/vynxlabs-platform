@@ -3,6 +3,7 @@ import type { ScriptContext } from "./context.js";
 import type { ConnectionTest } from "./extensions.js";
 import type { ColumnSpec, InsertOf, RowOf } from "./tables.js";
 
+export * from "@volvel/widgets";
 export type {
   DashboardBody,
   DataInput,
@@ -10,10 +11,9 @@ export type {
   Page,
   PageFilter,
   PageWidget,
-} from "@volvel/manifest";
-export * from "@volvel/widgets";
+} from "@volvel/widgets/page";
 
-import type { DashboardBody, InterfaceBody } from "@volvel/manifest";
+import type { DashboardBody, InterfaceBody } from "@volvel/widgets/page";
 
 export type { Logger, RunInfo, ScriptContext } from "./context.js";
 export type {

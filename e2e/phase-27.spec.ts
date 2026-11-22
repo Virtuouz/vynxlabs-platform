@@ -112,7 +112,9 @@ const toolbarOf = (button: ReturnType<Page["getByRole"]>) =>
   button.locator("xpath=ancestor::*[self::section or @role='toolbar' or @role='group'][1]");
 
 /** The builder's widget on the canvas, the outline and the inspector. */
-const widget = (name: string) => owner.getByRole("group", { name, exact: true });
+/** A widget on the canvas, by its name: a cell of a grid (the inspector has groups of its own). */
+const widget = (name: string) =>
+  owner.locator("[data-widget-cell]").and(owner.getByRole("group", { name, exact: true }));
 const settings = () => owner.getByRole("complementary", { name: "Settings" });
 /** GUESS: the outline keeps `aria-labelledby="on-the-page"` and nests children in a list inside their container's item. */
 const outline = () => owner.locator('[aria-labelledby="on-the-page"]');
@@ -153,12 +155,23 @@ const drafted = async (path = PAGE) => (await ok(owner, "GET", `${W}/drafts/${pa
 const draftPage = async (id: string, path = PAGE) => {
   const answer = await call(owner, "GET", `${W}/drafts/${path}`);
   if (answer.status === 404) return undefined;
-  return answer.body.pages.find((one: { id: string }) => one.id === id);
+  return answer.body.body.pages.find((one: { id: string }) => one.id === id);
 };
 // biome-ignore lint/suspicious/noExplicitAny: widgets are inspected freely
 type Wid = any;
 const draftWidget = async (page: string, match: (one: Wid) => boolean) =>
   (await draftPage(page))?.widgets.find(match);
+/** The id of the first widget of a type on Play, once the builder has saved it. */
+async function savedId(type: string): Promise<string> {
+  let id: string | undefined;
+  await expect
+    .poll(async () => {
+      id = (await draftWidget("play", (one) => one.type === type))?.id;
+      return id;
+    })
+    .toBeTruthy();
+  return id as string;
+}
 
 async function openApp(page: Page, path = "") {
   await page.goto(`${base}${path}`);
@@ -581,7 +594,7 @@ test("POLISH-008: a widget is dragged into a Section and out again, and the page
   await expect
     .poll(async () => (await draftWidget("play", (one) => one.type === "core/section"))?.id)
     .toBeTruthy();
-  const container = (await draftWidget("play", (one) => one.type === "core/section")).id;
+  const container = await savedId("core/section");
   // Dragged into the section: the widget is in it, on the section's own grid.
   const target = await middle(widget("Section"));
   await dragTo("Alpha", { x: target.x, y: target.y });
@@ -610,15 +623,16 @@ test("POLISH-007: the same moves from the keyboard: ⋯ › Move to lists The pa
   await openBuilder(`screens/${PAGE}`, /^Play/);
   await ensure("Section", /^Section/);
   await ensure("Tabs", /^Tabs/);
-  const container = (await draftWidget("play", (one) => one.type === "core/section")).id;
-  const tabs = (await draftWidget("play", (one) => one.type === "core/tabs")).id;
-  // The destinations are the page, the section and each of the tabs.
+  const container = await savedId("core/section");
+  const tabs = await savedId("core/tabs");
+  // The destinations are the section and each of the tabs; not the page, where it already is.
   await widget("Beta").focus();
   await moreAbout("Beta").click();
   await owner.getByRole("menuitem", { name: /^Move to/ }).click();
-  for (const name of [/The page/, /Section/, /First/, /Second/]) {
+  for (const name of [/Section/, /First/, /Second/]) {
     await expect(destination(name), String(name)).toBeVisible();
   }
+  await expect(destination(/The page/)).toHaveCount(0);
   await destination(/Section/).click();
   await expect
     .poll(async () => (await draftWidget("play", (one) => one.id === "beta"))?.in?.widget)
@@ -638,7 +652,7 @@ test("POLISH-007: the same moves from the keyboard: ⋯ › Move to lists The pa
 test("POLISH-008: a widget is dragged onto a tab of Tabs, and out of it", async () => {
   await openBuilder(`screens/${PAGE}`, /^Play/);
   await ensure("Tabs", /^Tabs/);
-  const tabs = (await draftWidget("play", (one) => one.type === "core/tabs")).id;
+  const tabs = await savedId("core/tabs");
   // GUESS: while building, Tabs draws its strip, and a tab is a `tab` that a widget can be let go on.
   const second = widget("Tabs").getByRole("tab", { name: "Second", exact: true });
   await expect(second).toBeVisible();
@@ -657,7 +671,7 @@ test("POLISH-008: a widget is dragged onto a tab of Tabs, and out of it", async 
 test("POLISH-003: the outline nests what a Section holds, the Section grows with it, and duplicating or removing it takes what it holds, and Undo brings it back", async () => {
   await openBuilder(`screens/${PAGE}`, /^Play/);
   await ensure("Section", /^Section/);
-  const container = (await draftWidget("play", (one) => one.type === "core/section")).id;
+  const container = await savedId("core/section");
   await moveTo("Alpha", /Section/);
   await expect
     .poll(async () => (await draftWidget("play", (one) => one.id === "alpha"))?.in?.widget)

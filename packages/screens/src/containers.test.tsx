@@ -189,6 +189,21 @@ describe("a container draws what it holds on a grid of its own", () => {
     fireEvent.click(screen.getByText("pick y"));
     expect(await screen.findByText("In beta")).toBeTruthy();
   });
+
+  test("the chosen widget moved onto a hidden tab (⋯ › Move to) opens that tab, so it stays in sight", async () => {
+    const on = (into: PageWidget["in"]) => [
+      tabs,
+      text("x", "In alpha", box(0, 0, 6, 2), { widget: "t", tab: "a" }),
+      text("y", "Moved", box(0, 4, 6, 2), into),
+    ];
+    const editing = { selected: "y", onSelect: vi.fn(), onChange: vi.fn(), onRename: vi.fn() };
+    const { rerender } = render(<Page widgets={on({ widget: "t", tab: "a" })} editing={editing} />);
+    expect(await screen.findByText("In alpha")).toBeTruthy();
+    // Still chosen, now on the second tab: the second tab is opened.
+    rerender(<Page widgets={on({ widget: "t", tab: "b" })} editing={editing} />);
+    expect(await screen.findByText("Moved")).toBeTruthy();
+    expect(screen.queryByText("In alpha")).toBeNull();
+  });
 });
 
 describe("the open tab is in the address", () => {

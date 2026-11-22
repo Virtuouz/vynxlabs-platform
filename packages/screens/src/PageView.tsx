@@ -755,15 +755,18 @@ export function PageView({
     !editing && tabHost
       ? tabHost.choose(container, tab)
       : setOpenTabs((now) => ({ ...now, [container]: tab }));
-  // Choosing a widget in a tab that is not open opens that tab.
+  // Choosing a widget in a tab that is not open opens that tab; so does the chosen widget being
+  // moved onto one (⋯ › Move to), so that it is still in sight.
   const selectedId = editing?.selected;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: opened when the choice changes
+  const selectedIn = selectedId ? byId.get(selectedId)?.in : undefined;
+  const selectedPlace = selectedIn ? `${selectedIn.widget}/${selectedIn.tab ?? ""}` : "";
+  // biome-ignore lint/correctness/useExhaustiveDependencies: opened when the choice, or where it is, changes
   useEffect(() => {
     const chosen = selectedId ? byId.get(selectedId) : undefined;
     const container = chosen?.in ? byId.get(chosen.in.widget) : undefined;
     if (chosen?.in?.tab && container && openTab(container) !== chosen.in.tab)
       setOpenTabs((now) => ({ ...now, [container.id]: chosen.in?.tab as string }));
-  }, [selectedId]);
+  }, [selectedId, selectedPlace]);
 
   // A Section folded by its reader stays folded for them: kept in this browser, if it will.
   const [folds, setFolds] = useState<Readonly<Record<string, boolean>>>({});

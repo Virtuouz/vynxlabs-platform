@@ -231,19 +231,28 @@ export function usePlacement({
     };
   };
 
-  /** The grid under a point: that of the container it is over, if any. */
-  const gridUnder = (id: string, point: { x: number; y: number }): Target | undefined => {
-    for (const target of targets?.(id) ?? []) {
+  /** Where each container that may be dropped on is, measured when a drag starts. */
+  const areasOf = (id: string): [Target, DOMRect][] =>
+    (targets?.(id) ?? []).map((target) => [
+      target,
       // Anywhere over the container counts, its heading too, so that it can be dragged down inside it.
-      const area = (
-        target.node.closest("[data-widget-cell]") ?? target.node
-      ).getBoundingClientRect();
-      if (
-        point.x >= area.left &&
-        point.x <= area.right &&
-        point.y >= area.top &&
-        point.y <= area.bottom
-      )
+      (target.node.closest("[data-widget-cell]") ?? target.node).getBoundingClientRect(),
+    ]);
+
+  /**
+   * The grid under a point: that of the container it is over, if any. The containers are where
+   * they were when the drag began: the page makes room live as a thing is dragged over it, and
+   * a container pushed down by that would never be reached.
+   */
+  const gridUnder = (
+    areas: readonly [Target, DOMRect][],
+    point: { x: number; y: number },
+    scrolledBy: number,
+  ): Target | undefined => {
+    for (const [target, area] of areas) {
+      const top = area.top - scrolledBy;
+      const bottom = area.bottom - scrolledBy;
+      if (point.x >= area.left && point.x <= area.right && point.y >= top && point.y <= bottom)
         return target;
     }
     return undefined;
@@ -265,6 +274,10 @@ export function usePlacement({
     const holdX = start.x - own.x;
     const holdY = start.y - own.y;
     let latestIn = origin;
+    // The containers' places, and how far the page has scrolled since they were measured.
+    let areas: [Target, DOMRect][] = [];
+    const scroller = scrollerOf(node);
+    let scrolledFrom = scroller.scrollTop;
     const least = limits(id);
     let pointer = from;
     let latest = own;
@@ -279,7 +292,7 @@ export function usePlacement({
         setHeld({ id, at: latest, how, in: origin });
         return;
       }
-      const under = gridUnder(id, pointer);
+      const under = gridUnder(areas, pointer, scroller.scrollTop - scrolledFrom);
       const now = cellOf(pointer, under ? under.node : node);
       if (!now) return;
       latestIn = under?.into;
@@ -294,6 +307,8 @@ export function usePlacement({
       if (!dragging) {
         if (Math.hypot(pointer.x - from.x, pointer.y - from.y) < DRAG_FROM) return;
         dragging = true;
+        areas = areasOf(id);
+        scrolledFrom = scroller.scrollTop;
         grabbed.current?.(id);
         stopScrolling = scrollAtEdges(node, () => pointer, place);
       }

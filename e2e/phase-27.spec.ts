@@ -149,8 +149,16 @@ const decoded = (page: Page) => {
   return `${decodeURIComponent(url.pathname)}?${params.join("&")}`;
 };
 
-/** The walk's own app as it is drafted now, and one page of it. */
-const drafted = async (path = PAGE) => (await ok(owner, "GET", `${W}/drafts/${path}`)).body;
+/**
+ * The walk's own app as it is drafted now, and one page of it. A page that equals what is
+ * published has no draft, so then it is the published one.
+ */
+const drafted = async (path = PAGE) => {
+  const answer = await call(owner, "GET", `${W}/drafts/${path}`);
+  if (answer.status === 404) return (await ok(owner, "GET", `${W}/interfaces/${path}`)).body;
+  if (answer.status >= 300) throw new Error(`GET drafts/${path}: ${answer.status}`);
+  return answer.body.body;
+};
 /** A page of the draft; none while the builder hasn't saved its first change (a save waits a moment). */
 const draftPage = async (id: string, path = PAGE) => {
   const answer = await call(owner, "GET", `${W}/drafts/${path}`);
@@ -271,6 +279,9 @@ test.beforeAll(async ({ browser }) => {
       .find((one: Wid) => one.type === "core/stat" && !one.in),
   );
   delete model.on;
+  // Money's stats now compare with the stretch before the Issued filter's; without that filter,
+  // there is nothing to compare across.
+  delete model.config?.compareTo;
   for (const input of Object.values<Wid>(model.data ?? {})) delete input.filters;
   const statOf = (id: string, title: string, x: number) => ({
     ...structuredClone(model),
@@ -451,20 +462,32 @@ test("POLISH-006: Visits is a Section of stats and Tabs; the open tab is in the 
   await expectNoAxeViolations(owner, "Visits with its tabs");
 });
 
-test("POLISH-005: on a phone Visits' tabs and what its Section holds are stacked, and nothing scrolls sideways", async () => {
+test("POLISH-005: on a phone Visits' tabs and what its Section holds are laid out in the phone's two columns, and nothing scrolls sideways", async () => {
   await owner.setViewportSize({ width: 390, height: 844 });
   await openApp(owner, "visits");
   const clinics = section(owner, "At the clinics");
   await expect(clinics).toBeVisible({ timeout: 30_000 });
   await expect(owner.getByRole("tablist", { name: "Visits" })).toBeVisible();
   expect(await noSideways(owner)).toBe(true);
-  // What the section holds is one under another, not side by side.
+  // What the section holds is not the desktop's row of four: a phone has two columns (phase 28's
+  // rule for small widgets), so the first two stats share a row, the next two are under them, and
+  // every one is inside the screen.
   const inside = clinics.getByRole("region");
-  if ((await inside.count()) > 1) {
-    const one = await inside.nth(0).boundingBox();
-    const two = await inside.nth(1).boundingBox();
-    expect(one && two && Math.abs(one.x - two.x) < 2 && two.y >= one.y + one.height - 2).toBe(true);
+  expect(await inside.count()).toBe(4);
+  const box = async (at: number) => {
+    const found = await inside.nth(at).boundingBox();
+    if (!found) throw new Error(`Stat ${at + 1} of the section has no box`);
+    return found;
+  };
+  const [one, two, three, four] = [await box(0), await box(1), await box(2), await box(3)];
+  for (const each of [one, two, three, four]) {
+    expect(each.x).toBeGreaterThanOrEqual(0);
+    expect(each.x + each.width).toBeLessThanOrEqual(390);
   }
+  expect(Math.abs(one.y - two.y)).toBeLessThan(2);
+  expect(two.x).toBeGreaterThanOrEqual(one.x + one.width - 2);
+  expect(three.y).toBeGreaterThanOrEqual(one.y + one.height - 2);
+  expect(Math.abs(three.y - four.y)).toBeLessThan(2);
   await owner.setViewportSize({ width: 1440, height: 900 });
 });
 
@@ -527,18 +550,26 @@ test("POLISH-006: Stock has a search that finds an item, a folding Orders to Vet
   ).toBeVisible();
 });
 
-test("POLISH-005: the invoice sheet's Action group holds Mark paid, Edit and Void; at 390 px what does not fit is under More", async () => {
+test("POLISH-005: the invoice sheet's Action group holds Mark paid, Send invoice, Edit and Void, the last under More; at 390 px what does not fit is under More too", async () => {
   const link = `${base}?sheet=invoice&record=${invoice.sheet.id}`;
-  const names = ["Mark paid", "Edit", "Void"];
-  // At a desktop width all three are buttons, and there is nothing to put under More.
+  const names = ["Mark paid", "Send invoice", "Edit", "Void"];
+  // At a desktop width the first three are buttons (Fernhill's Action group shows up to three),
+  // and the fourth, Void, is the one thing under More.
   await owner.setViewportSize({ width: 1440, height: 900 });
   await openApp(owner);
   await owner.goto(link);
   await expect(sheetOf(owner)).toContainText(invoice.sheet.number, { timeout: 30_000 });
-  for (const name of names) {
+  for (const name of names.slice(0, 3)) {
     await expect(sheetOf(owner).getByRole("button", { name, exact: true }), name).toBeVisible();
   }
-  await expect(sheetOf(owner).getByRole("button", { name: "More", exact: true })).toHaveCount(0);
+  await expect(sheetOf(owner).getByRole("button", { name: "Void", exact: true })).toHaveCount(0);
+  const menu = sheetOf(owner).getByRole("button", { name: "More", exact: true });
+  await menu.focus();
+  await owner.keyboard.press("Enter");
+  await expect(owner.getByRole("menuitem")).toHaveCount(1);
+  await expect(owner.getByRole("menuitem", { name: "Void" })).toBeVisible();
+  await owner.keyboard.press("Escape");
+  await expect(owner.getByRole("menuitem")).toHaveCount(0);
   // On a phone each is a button or is under More; none is lost, and nothing runs off the screen.
   await owner.setViewportSize({ width: 390, height: 844 });
   await owner.reload();
@@ -578,11 +609,17 @@ test("POLISH-002: Add to page's Organize group offers Section, Tabs and Search a
     .first()
     .click();
   const dialog = owner.getByRole("dialog");
-  // GUESS: the group is headed "Organize".
-  await expect(dialog.getByText("Organize", { exact: true })).toBeVisible();
-  for (const name of [/^Section/, /^Tabs/, /^Search and filter/, /^Action group/]) {
-    await expect(dialog.getByRole("button", { name })).toBeVisible();
+  // The group that organizes the page is "Organize and explain"; the Action group, which only an
+  // app has, is among the buttons in "Take action".
+  const organize = dialog.getByRole("region", { name: "Organize and explain" });
+  for (const name of [/^Section/, /^Tabs/, /^Search and filter/]) {
+    await expect(organize.getByRole("button", { name })).toBeVisible();
   }
+  await expect(
+    dialog
+      .getByRole("region", { name: "Take action" })
+      .getByRole("button", { name: /^Action group/ }),
+  ).toBeVisible();
   await owner.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
 });
@@ -725,9 +762,11 @@ test("POLISH-003: Add to page suggests Search invoices where a page of Invoices 
       .click();
   await open();
   const dialog = owner.getByRole("dialog");
-  // GUESS: the group is headed "Suggested for Invoices", and comes before the others.
-  await expect(dialog.getByText("Suggested for Invoices")).toBeVisible();
-  const suggestion = dialog.getByRole("button", { name: /^Search invoices/ });
+  // The group is "Suggested for Invoices", and comes before the others.
+  const suggested = dialog.getByRole("region", { name: "Suggested for Invoices" });
+  await expect(suggested).toBeVisible();
+  await expect(dialog.getByRole("region").first()).toHaveAccessibleName("Suggested for Invoices");
+  const suggestion = suggested.getByRole("button", { name: /^Search invoices/ });
   await expect(suggestion).toBeVisible();
   await suggestion.click();
   await expect(dialog).toHaveCount(0);
@@ -763,7 +802,8 @@ test("POLISH-003: a button offers to be grouped with the one beside it, and the 
   await expect
     .poll(async () => {
       const tools = await draftPage("tools");
-      const widgets = tools.widgets as Wid[];
+      // Until the first change is saved there is no draft: a page that equals what is published has none.
+      const widgets = (tools?.widgets ?? []) as Wid[];
       const made = widgets.find((one) => one.type === "core/actions");
       const labels = (made?.config?.actions ?? []).map((one: Wid) => one.label);
       return (
@@ -783,7 +823,7 @@ test("POLISH-003: a button offers to be grouped with the one beside it, and the 
 test("POLISH-003: + Page offers A list of Invoices, which makes a page with a search, a table, a detail sheet and a New invoice form", async () => {
   await openBuilder(`screens/${PAGE}`, /^Play/);
   const known = new Set(((await drafted()).pages as Wid[]).map((one) => one.id));
-  await owner.getByRole("button", { name: "Page", exact: true }).click();
+  await owner.getByRole("button", { name: "Add a page", exact: true }).click();
   const dialog = owner.getByRole("dialog");
   // GUESS: the offers are listed in a dialog, with their words as the exit criterion has them.
   await expect(dialog.getByText("An Invoice record page")).toBeVisible();
@@ -881,13 +921,17 @@ test("POLISH-002: a dashboard's filters are a Search and filter widget that is e
   await expect(dialog.getByRole("button", { name: /^Action group/ })).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: /^Button/ })).toHaveCount(0);
   await owner.keyboard.press("Escape");
-  // The filters are edited by choosing the widget: Data has them in a list, with "Add a filter".
+  // The filters are edited by choosing the widget: its Filters group lists them, with "+ Filter",
+  // and pressing one opens it in the drawer, with a Back.
   await widget("Search and filter").focus();
-  await settings().getByRole("tab", { name: /^Data/ }).click();
-  await expect(settings().getByRole("button", { name: /Add a filter/ })).toBeVisible();
-  // GUESS: each filter's name is a text box labelled "Called", as page filters had it.
-  await settings().getByLabel("Called").first().fill("Issued on");
-  await settings().getByLabel("Called").first().press("Tab");
+  const filters = settings().getByRole("list", { name: "Filters" });
+  await expect(settings().getByRole("button", { name: "Filter", exact: true })).toBeVisible();
+  await filters.getByRole("button", { name: /^Issued\b/ }).click();
+  // Each filter's name is a text box labelled "Label".
+  const called = settings().getByRole("textbox", { name: "Label" });
+  await called.fill("Issued on");
+  await called.press("Tab");
+  await settings().getByRole("button", { name: "Back" }).click();
   await expect
     .poll(async () => {
       const stored = await ok(owner, "GET", `${W}/dashboards/${board}`);

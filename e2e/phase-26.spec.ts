@@ -311,7 +311,7 @@ test("Mark paid asks first, changes the row, says so, and the table shows it", a
     .click();
   await expect(owner.getByText("Invoice marked paid")).toBeVisible();
   // The record says so, and its button can't be pressed again: it is not unpaid now.
-  await expect(sheet(owner).getByText("paid", { exact: true })).toBeVisible();
+  await expect(sheet(owner).getByText("Paid", { exact: true })).toBeVisible();
   await expect(sheet(owner).getByRole("button", { name: "Mark paid" })).toBeDisabled();
   // Closed, the row in the table behind shows it too.
   await owner.keyboard.press("Escape");

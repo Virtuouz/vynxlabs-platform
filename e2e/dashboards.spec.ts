@@ -275,7 +275,7 @@ test("a number opens the rows behind it", async () => {
   await expect(behind).toBeVisible();
   await expect(behind.getByRole("row")).toHaveCount(4);
   await expect(behind).toContainText("40");
-  await expect(behind).toContainText("late");
+  await expect(behind).toContainText("Late");
   // Esc puts the sheet away, and the page is as it was.
   await page.keyboard.press("Escape");
   await expect(behind).toHaveCount(0);

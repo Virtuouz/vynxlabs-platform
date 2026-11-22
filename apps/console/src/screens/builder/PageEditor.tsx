@@ -56,6 +56,8 @@ import { SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.
 import "../../kit/inspector/widgets/registerTables.tsx";
 import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
 import { RowClickOffer } from "./RowClickOffer.tsx";
+import { choiceOf, openedPage } from "./RowClickEditor.tsx";
+import { SheetPreviewHost } from "./SheetPreview.tsx";
 import {
   type Edit,
   type FormPlan,
@@ -105,6 +107,8 @@ export interface PageInfo {
   settingsOpen: boolean;
   onCloseSettings: () => void;
   onPage: (next: Page, label: string, key?: string) => void;
+  /** Another page of the app is changed, found by its id: the detail a row opens, made another kind. */
+  onSetPage?: (next: Page, label: string) => void;
   onRemovePage: (() => void) | undefined;
 }
 
@@ -438,6 +442,16 @@ export function PageEditor({
         ...(sample.record ? { record: sample.record } : {}),
       }
     : {};
+  // A table whose click opens a side sheet shows that sheet over the canvas while it is chosen (board 3).
+  const [previewHidden, setPreviewHidden] = useState<ReadonlySet<string>>(new Set());
+  const rowSheetPage =
+    widget && pageInfo && choiceOf(widget, pageInfo.pages) === "detail"
+      ? openedPage(widget, pageInfo.pages)
+      : undefined;
+  const rowSheet =
+    widget && rowSheetPage && rowSheetPage.kind === "sheet" && rowSheetPage.id !== pageInfo?.page.id
+      ? { id: widget.id, page: rowSheetPage }
+      : undefined;
   const canvas = (
     <>
       {canvasHead}
@@ -445,7 +459,7 @@ export function PageEditor({
         <SampleBar page={pageInfo.page} sample={sample} onChoose={pageInfo.onRecord} />
       ) : null}
       <div
-        className={overlay ? "relative mx-auto" : ""}
+        className={overlay ? "relative mx-auto" : "relative"}
         style={overlay && width ? { maxWidth: `${width}px` } : undefined}
       >
         <div
@@ -503,6 +517,18 @@ export function PageEditor({
             )}
           </div>
         </div>
+        {rowSheet && pageInfo && !previewHidden.has(rowSheet.id) ? (
+          <SheetPreviewHost
+            key={rowSheet.page.id}
+            root={root}
+            source={source}
+            page={rowSheet.page}
+            pages={pageInfo.pages}
+            catalog={catalog}
+            onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
+            onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
+          />
+        ) : null}
         {overlay && pageInfo ? (
           <SizeHandle
             size={size}
@@ -536,7 +562,14 @@ export function PageEditor({
           widget ? (
             <>
               {pageInfo ? (
-                <RowClickOffer root={root} widget={widget} context={context} onApply={apply} />
+                <RowClickOffer
+                  root={root}
+                  widget={widget}
+                  context={context}
+                  onApply={apply}
+                  {...(pageInfo.onSetPage ? { onSetPage: pageInfo.onSetPage } : {})}
+                  onEditLayout={(opened) => pageInfo.onOpen({ page: opened.id, as: "page" })}
+                />
               ) : null}
               {pageInfo ? (
                 <ButtonOffers
@@ -624,6 +657,8 @@ export function PageEditor({
         onClose={() => setAdding(false)}
         surface={surface}
         target={addsTo ? targetWords(widgets, addsTo) : undefined}
+        catalog={catalog}
+        startTable={suggested}
         onAdd={(definition) => {
           // A form is made from a table: it asks what it should do first.
           if (definition.type === "core/form" && pageInfo) {

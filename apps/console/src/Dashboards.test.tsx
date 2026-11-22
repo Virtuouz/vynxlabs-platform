@@ -203,7 +203,7 @@ test("its maker adds a widget from Add to page, changes it in its settings, remo
       "Click to place at the end of the page, or drag it onto the page where you want it.",
     ),
   ).toBeTruthy();
-  fireEvent.change(dialog.getByLabelText("Find something to add"), { target: { value: "chart" } });
+  fireEvent.change(dialog.getByLabelText(/^Find something to add/), { target: { value: "chart" } });
   expect(dialog.queryByText("Many records, dense and sortable")).toBeNull();
   fireEvent.click(dialog.getByRole("button", { name: /Chart/ }));
   await waitFor(() => expect(sent("PUT")).toHaveLength(1));

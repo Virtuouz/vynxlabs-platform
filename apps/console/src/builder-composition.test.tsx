@@ -271,9 +271,9 @@ test("Add to page opens with what the page lacks, above the categories, and the 
   }
   // The group is first: before any category of widgets.
   const first = dialog.getAllByRole("heading", { level: 3 })[0];
-  expect(first?.textContent).toBe("Suggested for Invoices");
+  expect(first?.textContent?.trim()).toBe("Suggested for this page");
 
-  const field = dialog.getByLabelText("Find something to add");
+  const field = dialog.getByLabelText(/^Find something to add/);
   fireEvent.change(field, { target: { value: "group" } });
   const left = within(dialog.getByRole("region", { name: "Suggested for Invoices" }));
   expect(left.getAllByRole("button")).toHaveLength(1);
@@ -284,9 +284,9 @@ test("Add to page opens with what the page lacks, above the categories, and the 
   (field as HTMLElement).focus();
   fireEvent.keyDown(field, { key: "ArrowDown" });
   expect(document.activeElement).toBe(group.getAllByRole("button")[0]);
-  fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowDown" });
+  // The tiles are laid out in rows: across with Right, and Up from the first row is the search field.
+  fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowRight" });
   expect(document.activeElement).toBe(group.getAllByRole("button")[1]);
-  fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp" });
   fireEvent.keyDown(document.activeElement as HTMLElement, { key: "ArrowUp" });
   expect(document.activeElement).toBe(field);
 });

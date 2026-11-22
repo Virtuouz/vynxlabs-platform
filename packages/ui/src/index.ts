@@ -85,6 +85,7 @@ export { Avatar, initialsOf, Skeleton } from "./Surfaces.tsx";
 export { Switch } from "./Switch.tsx";
 export { type Column, Table } from "./Table.tsx";
 export { type TabItem, Tabs, type TabsProps } from "./Tabs.tsx";
+export { PAGE_ICONS, pageIconOf } from "./pageIcons.ts";
 export {
   GlossaryProvider,
   type GlossaryTerm,

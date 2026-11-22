@@ -1,10 +1,19 @@
 import type { Page } from "@volvel/manifest";
-import { Button, SelectField, TextField } from "@volvel/ui";
+import { PAGE_SIZES } from "@volvel/manifest";
+import { Button, PAGE_ICONS, pageIconOf, SelectField, TextField } from "@volvel/ui";
 import { AppWindow, File, FileText, type LucideIcon, PanelRight } from "lucide-react";
 import { useState } from "react";
 import { type Catalog, heading } from "../../kit/inspector/model.ts";
 import type { PageKind } from "./contract.ts";
-import { KIND_LINE, KIND_NAMES, kindOf, withKind } from "./pageKinds.ts";
+import {
+  KIND_LINE,
+  KIND_NAMES,
+  kindOf,
+  SIZE_NAMES,
+  sizeOf,
+  withKind,
+  withSize,
+} from "./pageKinds.ts";
 
 /** Page type's tiles (board 2). */
 const KIND_TILE_ICONS: Record<PageKind, LucideIcon> = {
@@ -42,6 +51,7 @@ export function PageSettings({
   const [topicError, setTopicError] = useState<string>();
   const tables = catalog.tables.map((one) => ({ value: one.name, label: heading(one.name) }));
   const opensOnRecord = kind !== "page";
+  const PageIcon = pageIconOf(page.icon);
   return (
     <section className="flex flex-col gap-4" aria-label="Page settings">
       <h2 className="m-0 text-heading-sm">{page.title}</h2>
@@ -114,6 +124,54 @@ export function PageSettings({
           if (title) onChange({ ...page, title }, "renaming the page", `page-title:${page.id}`);
         }}
       />
+      {kind === "page" ? (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-end gap-2">
+            <span
+              aria-hidden="true"
+              data-page-icon-preview=""
+              className="mb-px flex size-9 shrink-0 items-center justify-center rounded-control border border-line text-ink-muted"
+            >
+              {PageIcon ? <PageIcon size={16} /> : null}
+            </span>
+            <div className="min-w-0 flex-1">
+              <SelectField
+                label="Icon"
+                name="page-icon"
+                value={page.icon && PAGE_ICONS[page.icon] ? page.icon : ""}
+                options={[
+                  { value: "", label: "No icon" },
+                  ...Object.entries(PAGE_ICONS).map(([value, one]) => ({
+                    value,
+                    label: one.label,
+                  })),
+                ]}
+                onChange={(value) => {
+                  const { icon: _icon, ...rest } = page;
+                  onChange(value ? { ...rest, icon: value } : rest, "choosing the page's icon");
+                }}
+              />
+            </div>
+          </div>
+          <p className="m-0 text-meta text-ink-muted">Drawn beside its title in the app's menu.</p>
+        </div>
+      ) : (
+        <SelectField
+          label="Size"
+          name="page-size"
+          value={sizeOf(page)}
+          hint="How big it opens. The edge of its frame on the page changes it too."
+          options={PAGE_SIZES.map((value) => ({ value, label: SIZE_NAMES[value] }))}
+          onChange={(value) => {
+            const size = PAGE_SIZES.find((one) => one === value);
+            if (size)
+              onChange(
+                withSize(page, size),
+                `making ${page.title} ${SIZE_NAMES[size].toLowerCase()}`,
+              );
+          }}
+        />
+      )}
       <TextField
         label="Help topic"
         name="page-help"

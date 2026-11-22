@@ -430,20 +430,12 @@ export function rowClickWords(widget: PageWidget, env: Pick<Env, "pages">) {
  * `rowClickEditor` to draw another in its place.
  */
 export function TableRowClickSection({ env, bare }: TableSectionProps) {
-  // The builder's editor (board 3): radio cards, the detail chosen, "Opens as".
-  if (env.rowClickEditor) {
-    return (
-      <Section bare={bare} label="When a row is clicked">
-        <DrawerBlock>
-          {/* The group's own heading says it; the editor's is for where it stands alone. */}
-          <div className="[&_h3]:sr-only">{env.rowClickEditor}</div>
-        </DrawerBlock>
-      </Section>
-    );
-  }
   const click = env.widget.on?.rowClick;
   const { does, opensAs } = rowClickWords(env.widget, env);
-  const editor = (
+  // The builder's editor (board 3: radio cards, the detail chosen, "Opens as") is what each row opens.
+  const editor = env.rowClickEditor ? (
+    <div className="[&_h3]:sr-only">{env.rowClickEditor}</div>
+  ) : (
     <div className="flex flex-col gap-3">
       <ActionControl
         env={env}
@@ -477,10 +469,14 @@ export function TableRowClickSection({ env, bare }: TableSectionProps) {
         value={opensAs}
         editorTitle="Opens as"
         editor={
-          <p className="m-0 text-body-sm text-ink-muted">
-            A page that opens on the row clicked is opened as a side sheet, a full page or a modal,
-            as its page is set.
-          </p>
+          env.rowClickEditor ? (
+            <div className="[&_h3]:sr-only">{env.rowClickEditor}</div>
+          ) : (
+            <p className="m-0 text-body-sm text-ink-muted">
+              A page that opens on the row clicked is opened as a side sheet, a full page or a
+              modal, as its page is set.
+            </p>
+          )
         }
       />
     </Section>

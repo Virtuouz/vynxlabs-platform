@@ -269,6 +269,8 @@ test("a table that does nothing on a click can be made to open an Invoice detail
   fireEvent.click(screen.getAllByRole("button", { name: "All invoices" })[0] as HTMLElement);
   // The click is the table's Actions tab.
   fireEvent.click(await screen.findByRole("tab", { name: /^Actions/ }));
+  // The click is two rows, Do and Opens as; the radio cards are what Do opens.
+  fireEvent.click(await screen.findByRole("button", { name: /^Do\b/ }));
   const offer = within(
     (await screen.findAllByRole("region", { name: "When a row is clicked" })).at(-1) as HTMLElement,
   );
@@ -303,6 +305,8 @@ test("a table that does nothing on a click can be made to open an Invoice detail
   fireEvent.click(screen.getAllByRole("button", { name: "All invoices" })[0] as HTMLElement);
   // The click is the table's Actions tab.
   fireEvent.click(await screen.findByRole("tab", { name: /^Actions/ }));
+  // The click is two rows, Do and Opens as; the radio cards are what Do opens.
+  fireEvent.click(await screen.findByRole("button", { name: /^Do\b/ }));
   const again = within(
     (await screen.findAllByRole("region", { name: "When a row is clicked" })).at(-1) as HTMLElement,
   );
@@ -441,6 +445,8 @@ test("the row click editor writes each choice, and Opens as changes the detail's
   fireEvent.click(screen.getAllByRole("button", { name: "All invoices" })[0] as HTMLElement);
   // The click is the table's Actions tab.
   fireEvent.click(await screen.findByRole("tab", { name: /^Actions/ }));
+  // The click is two rows, Do and Opens as; the radio cards are what Do opens.
+  fireEvent.click(await screen.findByRole("button", { name: /^Do\b/ }));
   let offer = within(
     (await screen.findAllByRole("region", { name: "When a row is clicked" })).at(-1) as HTMLElement,
   );

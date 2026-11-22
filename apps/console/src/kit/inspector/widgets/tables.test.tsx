@@ -208,14 +208,13 @@ describe("table columns", () => {
     fireEvent.click(within(editor).getByRole("radio", { name: "Badge" }));
     expect(within(editor).getByText("Badge colors")).toBeTruthy();
     for (const value of ["Paid", "Unpaid", "Void"]) {
-      expect(within(editor).getByLabelText(`Color of ${value}`)).toBeTruthy();
+      expect(within(editor).getByRole("button", { name: `Color of ${value}` })).toBeTruthy();
     }
-    fireEvent.change(within(editor).getByLabelText("Color of Paid"), {
-      target: { value: "success" },
-    });
-    fireEvent.change(within(editor).getByLabelText("Color of Unpaid"), {
-      target: { value: "attention" },
-    });
+    // A value's badge, with a chevron, opens a small menu of tones.
+    fireEvent.click(within(editor).getByRole("button", { name: "Color of Paid" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Green" }));
+    fireEvent.click(within(editor).getByRole("button", { name: "Color of Unpaid" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Amber" }));
     expect(columnsOf().find((one) => one.column === "status")).toEqual({
       column: "status",
       as: "badge",
@@ -223,7 +222,8 @@ describe("table columns", () => {
     });
     expect(within(editor).getByText(/Values come from the column's choices/)).toBeTruthy();
     // "Automatic" takes a value's colour back.
-    fireEvent.change(within(editor).getByLabelText("Color of Paid"), { target: { value: "" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "Color of Paid" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Automatic" }));
     expect(columnsOf().find((one) => one.column === "status")).toMatchObject({
       badges: { Unpaid: "attention" },
     });

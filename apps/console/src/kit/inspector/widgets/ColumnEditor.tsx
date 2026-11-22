@@ -7,12 +7,14 @@
 import type { ValueFormat } from "@volvel/manifest";
 import {
   DrawerEditor,
+  Menu,
   type NumberFormat,
   NumberFormatRow,
   SegmentedControl,
   TextField,
   ToggleRow,
 } from "@volvel/ui";
+import { ChevronDown } from "lucide-react";
 import { type ReactElement, type ReactNode, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -165,27 +167,33 @@ export function ColumnEditorBody({
                 return (
                   <li key={value} className="flex min-h-10 items-center justify-between gap-3 px-3">
                     <span className="min-w-0 truncate text-body-sm text-ink">{value}</span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      <ToneChip tone={tone ?? "neutral"}>{value}</ToneChip>
-                      <select
-                        aria-label={`Color of ${value}`}
-                        value={tone ?? ""}
-                        onChange={(event) => {
-                          const next = { ...(spec.badges ?? {}) };
-                          if (event.target.value) next[value] = event.target.value as Tone;
-                          else delete next[value];
-                          onChange({ badges: next });
-                        }}
-                        className="h-7 rounded-control border border-line-control bg-surface px-1 text-meta text-ink focus-visible:outline-2 focus-visible:outline-focus"
-                      >
-                        <option value="">Automatic</option>
-                        {TONES.map((one) => (
-                          <option key={one} value={one}>
-                            {TONE_WORDS[one]}
-                          </option>
-                        ))}
-                      </select>
-                    </span>
+                    {/* The badge as it will look, with a chevron: it opens a small menu of tones. */}
+                    <Menu
+                      ariaLabel={`Color of ${value}`}
+                      align="end"
+                      triggerClassName="inline-flex h-7 cursor-pointer items-center gap-1 rounded-control px-1 text-ink-muted outline-offset-2 hover:bg-selected focus-visible:outline-2 focus-visible:outline-focus"
+                      label={
+                        <span className="inline-flex items-center gap-1.5">
+                          <ToneChip tone={tone ?? "neutral"}>{value}</ToneChip>
+                          <ChevronDown aria-hidden="true" size={14} />
+                        </span>
+                      }
+                      items={[
+                        {
+                          label: "Automatic",
+                          onSelect: () => {
+                            const next = { ...(spec.badges ?? {}) };
+                            delete next[value];
+                            onChange({ badges: next });
+                          },
+                        },
+                        ...TONES.map((one) => ({
+                          label: TONE_WORDS[one],
+                          onSelect: () =>
+                            onChange({ badges: { ...(spec.badges ?? {}), [value]: one } }),
+                        })),
+                      ]}
+                    />
                   </li>
                 );
               })}
@@ -211,7 +219,10 @@ export function ColumnEditor({
   open,
   onOpenChange,
   side = "right",
+  boundary,
 }: {
+  /** Stays inside this element (the canvas, for the editor of a heading on it). */
+  boundary?: Element | null | undefined;
   spec: ColumnSetting;
   facts: ColumnFacts | undefined;
   onChange: (patch: Partial<ColumnSetting>) => void;
@@ -226,6 +237,7 @@ export function ColumnEditor({
       title={`Column · ${headingOf(spec)}`}
       footer={false}
       side={side}
+      boundary={boundary}
       {...(open === undefined ? {} : { open })}
       {...(onOpenChange ? { onOpenChange } : {})}
     >
@@ -286,6 +298,7 @@ export function AnchoredColumnEditor({
       onChange={onChange}
       open={true}
       side={side}
+      boundary={side === "bottom" ? document.querySelector("[data-canvas]") : undefined}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}

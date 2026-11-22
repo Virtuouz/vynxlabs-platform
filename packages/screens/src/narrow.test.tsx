@@ -284,7 +284,14 @@ describe("the filters on a phone", () => {
   const search = { name: "search", type: "search", label: "Search invoices" } as const;
   const clinic = { name: "clinic", type: "text", label: "Clinic" } as const;
 
+  // The page goes by its own width, which happy-dom does not lay out.
+  const phone = () =>
+    vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({ width: 390, height: 800, top: 0, left: 0 } as DOMRect);
+
   test("wait behind one button, beside the search", async () => {
+    phone();
     render(<Draw widgets={[bar([search, clinic])]} filters={[search, clinic]} device="phone" />);
     expect(await screen.findByRole("button", { name: /Filters/ })).toBeTruthy();
     expect(screen.getByLabelText("Search invoices")).toBeTruthy();
@@ -292,7 +299,8 @@ describe("the filters on a phone", () => {
   });
 
   test("a search alone stays a box", async () => {
-    render(<Draw widgets={[bar([search])]} filters={[search]} device="phone" />);
+    phone();
+    render(<Draw widgets={[bar([search])]} filters={[search]} />);
     expect(await screen.findByLabelText("Search invoices")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Filters/ })).toBeNull();
   });

@@ -22,13 +22,13 @@ import {
 import {
   type DataInputDeclaration,
   type InspectorHint,
+  moneyFormatOf,
   type Surface,
   TABS,
   type Tab,
   type WidgetDefinition,
 } from "@volvel/widgets";
 import { DEFAULT_COLUMNS, defaultColumns, SYSTEM_COLUMNS } from "@volvel/widgets-core/views";
-import { moneyFormatOf } from "@volvel/widgets";
 import { drawersFor } from "./custom.ts";
 
 /** A column of a table, as the workspace's schema says. */

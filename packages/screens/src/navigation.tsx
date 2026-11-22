@@ -74,7 +74,7 @@ export function parseAddress(base: string, pathname: string, search: string): Ad
   // A modal opened from a sheet (an invoice's Edit) is over the sheet, which stays: its record
   // is `modalRecord`. A modal on its own has `record`, as a sheet does; a link that gives it
   // `modalRecord` alone (no sheet under it) means the same, so it is read, not dropped.
-  const modalOn = (query.get("modalRecord") ?? (sheet ? undefined : on)) ?? undefined;
+  const modalOn = query.get("modalRecord") ?? (sheet ? undefined : on) ?? undefined;
   const own = ownParams(search);
   return {
     ...(Object.keys(own).length > 0 ? { own } : {}),

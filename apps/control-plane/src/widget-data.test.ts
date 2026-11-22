@@ -900,6 +900,9 @@ describe("the values a choice filter offers", () => {
 
   test("are an enum's own values, and a filter's own choices are not read from a table", async () => {
     expect((await options(alice, "status")).body.values).toEqual(["open", "paid"]);
+    // In the choice's words: its own label, else the value with a capital ("Paid").
+    expect((await options(alice, "status")).body.labels).toEqual({ open: "Open", paid: "Paid" });
+    expect((await options(alice, "team")).body.labels).toBeUndefined();
     expect((await options(alice, "fixed")).status).toBe(400);
   });
 

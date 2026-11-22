@@ -468,9 +468,9 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
               <>
                 {refreshSelect}
                 <Button onClick={() => setSharing(true)}>Share</Button>
+                {menu}
               </>
             ),
-            more: menu,
           }}
         />
         {sharingDialog}

@@ -312,8 +312,8 @@ function Decider({
   }
 
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: Escape leaves the box that opened under it
     // A sticky foot: where what is above it scrolls (a widget's card, a sheet), Approve and Reject stay in sight.
+    // biome-ignore lint/a11y/noStaticElementInteractions: Escape leaves the box that opened under it
     <div
       ref={box}
       data-decider=""

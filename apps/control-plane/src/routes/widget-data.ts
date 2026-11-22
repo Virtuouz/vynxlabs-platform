@@ -1,4 +1,5 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
+import { choiceWords } from "@volvel/widgets";
 import { Type } from "typebox";
 import { resolveFilters } from "../kernel/data/query/filters.js";
 import { readWidget } from "../kernel/data/query/inputs.js";
@@ -257,9 +258,10 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const named = enumValues.slice(0, MAX_OPTIONS);
           // A choice is offered in its own words ("Paid"), as the table's chips say it.
           const labels = Object.fromEntries(
-            named.flatMap((one) =>
-              one.label && one.label !== one.value ? [[one.value, one.label]] : [],
-            ),
+            named.flatMap((one) => {
+              const words = choiceWords({ values: named }, one.value);
+              return words !== one.value ? [[one.value, words]] : [];
+            }),
           );
           return {
             values: named.map((one) => one.value),

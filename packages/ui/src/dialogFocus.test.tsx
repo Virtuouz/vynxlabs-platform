@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { useEffect, useState } from "react";
 import { afterEach, expect, test } from "vitest";
 import { Dialog } from "./Dialog.tsx";
 import { SelectField } from "./Fields.tsx";
@@ -60,4 +61,28 @@ test("a select can carry an icon inside its box", () => {
   );
   expect(screen.getByTestId("icon")).toBeTruthy();
   expect(screen.getByLabelText("Table").className).toContain("pl-10");
+});
+
+test("a form that arrives after the dialog opened takes the focus, but not on an optional date", async () => {
+  const Later = () => {
+    const [ready, setReady] = useState(false);
+    useEffect(() => {
+      const wait = setTimeout(() => setReady(true), 50);
+      return () => clearTimeout(wait);
+    }, []);
+    return (
+      <Dialog open onClose={() => undefined} title="New invoice">
+        {ready ? (
+          <form>
+            <input aria-label="A day" data-date-input="" />
+            <select aria-label="Clinic" required>
+              <option value="a">A</option>
+            </select>
+          </form>
+        ) : null}
+      </Dialog>
+    );
+  };
+  render(<Later />);
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Clinic")));
 });

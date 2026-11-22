@@ -6,8 +6,8 @@ import {
   type Tone as BadgeTone,
   type ColumnSpec,
   cellOf,
-  isCode,
   defaultColumns,
+  isCode,
   SYSTEM_COLUMNS,
 } from "./cells.tsx";
 import { labelOf } from "./format.ts";

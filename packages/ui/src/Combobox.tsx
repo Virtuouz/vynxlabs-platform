@@ -182,6 +182,7 @@ export function MultiSelectField({
         isItemEqualToValue={same}
         open={open}
         onOpenChange={(next: boolean) => setOpen(next)}
+        autoHighlight
         {...(inline ? { inline: true } : {})}
         {...(disabled ? { disabled: true } : {})}
       >

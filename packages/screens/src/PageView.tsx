@@ -1070,7 +1070,8 @@ const factsOf = (
 
 /** Nothing, no words and `null` are one value: the filter narrows nothing. */
 const sameValue = (a: unknown, b: unknown) => {
-  const norm = (value: unknown) => JSON.stringify(value === undefined || value === "" ? null : value);
+  const norm = (value: unknown) =>
+    JSON.stringify(value === undefined || value === "" ? null : value);
   return norm(a) === norm(b);
 };
 
@@ -1450,7 +1451,9 @@ export function PageView({
             onFilterValues({
               ...filterValues,
               ...Object.fromEntries(
-                filters.filter((filter) => !startsAs(filter)).map((filter) => [filter.name, undefined]),
+                filters
+                  .filter((filter) => !startsAs(filter))
+                  .map((filter) => [filter.name, undefined]),
               ),
             }),
         }

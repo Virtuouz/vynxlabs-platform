@@ -365,6 +365,8 @@ describe("record detail options", () => {
     const call = client.act.mock.calls[0] as unknown[];
     expect(call[1]).toBe("config/edit");
     expect(JSON.stringify(call)).toContain('"total":20');
+    // The edited record is `this`, never an `event`, whatever the detail's record came from.
+    expect(JSON.stringify(call[2])).toContain('"records":{"this":"a"}');
     // Escape leaves without saving.
     fireEvent.click(await screen.findByRole("button", { name: "Edit Note" }));
     const note = await screen.findByLabelText("Note");

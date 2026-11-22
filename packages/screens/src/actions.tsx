@@ -262,13 +262,18 @@ export function useActions(host: ActionsHost): {
       const now = latest.current;
       if (!now.client.act) throw new ActionError("Actions can't be run here.");
       const response = await now.client.act(request.widget.id, request.at, {
-        records: {
-          ...(now.record ? { this: now.record } : {}),
-          ...(request.record ? { event: request.record } : {}),
-          ...(request.records && request.records.length > 0
-            ? { events: [...request.records] }
-            : {}),
-        },
+        records:
+          request.at === "config/edit" && request.record
+            ? // A field edited in place changes the record the detail shows, whichever way the detail
+              // came by it (the page's, a row selected, the user's own, the one a sheet was opened on).
+              { this: request.record }
+            : {
+                ...(now.record ? { this: now.record } : {}),
+                ...(request.record ? { event: request.record } : {}),
+                ...(request.records && request.records.length > 0
+                  ? { events: [...request.records] }
+                  : {}),
+              },
         ...(inputs && Object.keys(inputs).length > 0 ? { inputs } : {}),
       });
       let said = false;

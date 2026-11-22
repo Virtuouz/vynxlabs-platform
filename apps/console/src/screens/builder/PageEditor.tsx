@@ -15,7 +15,7 @@ import { Plus } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { notify } from "../../ask.tsx";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
-import { Inspector } from "../../kit/inspector/Inspector.tsx";
+import { InspectorHost } from "../../kit/inspector/InspectorHost.tsx";
 import {
   bindFilter,
   bindHolderFilters,
@@ -55,10 +55,8 @@ import { Outline } from "./Outline.tsx";
 import { PageSettings } from "./PageSettings.tsx";
 import { DeviceBanner, PhoneFrame, ViewAsNote } from "./PhoneFrame.tsx";
 import { SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
-import "../../kit/inspector/widgets/registerTables.tsx";
 import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
-import { choiceOf, openedPage } from "./RowClickEditor.tsx";
-import { RowClickOffer } from "./RowClickOffer.tsx";
+import { choiceOf, openedPage, RowClickEditor } from "./RowClickEditor.tsx";
 import {
   type Edit,
   type FormPlan,
@@ -600,16 +598,6 @@ export function PageEditor({
           widget ? (
             <>
               {pageInfo ? (
-                <RowClickOffer
-                  root={root}
-                  widget={widget}
-                  context={context}
-                  onApply={apply}
-                  {...(pageInfo.onSetPage ? { onSetPage: pageInfo.onSetPage } : {})}
-                  onEditLayout={(opened) => pageInfo.onOpen({ page: opened.id, as: "page" })}
-                />
-              ) : null}
-              {pageInfo ? (
                 <ButtonOffers
                   widget={widget}
                   widgets={widgets}
@@ -630,8 +618,28 @@ export function PageEditor({
                   }
                 />
               ) : null}
-              <Inspector
+              <InspectorHost
                 key={widget.id}
+                root={root}
+                client={client}
+                filterValues={filterValues}
+                groupKeys={keyed}
+                sample={{ table: sample.table, record: sample.record }}
+                onSelect={onSelect}
+                {...(pageInfo && (widget.type === "core/table" || widget.type === "core/list")
+                  ? {
+                      rowClick: (
+                        <RowClickEditor
+                          root={root}
+                          widget={widget}
+                          context={context}
+                          onApply={apply}
+                          {...(pageInfo.onSetPage ? { onSetPage: pageInfo.onSetPage } : {})}
+                          onEditLayout={(opened) => pageInfo.onOpen({ page: opened.id, as: "page" })}
+                        />
+                      ),
+                    }
+                  : {})}
                 widget={widget}
                 definition={definitionOf(widget.type)}
                 surface={surface}
@@ -669,10 +677,6 @@ export function PageEditor({
                 {...(pageInfo ? { page: pageInfo.page, pages: pageInfo.pages } : {})}
                 flows={lists.flows}
                 scripts={lists.scripts}
-                groups={lists.groups}
-                endUserGroups={keyed
-                  .filter((one) => one.kind === "end_user")
-                  .map((one) => one.name)}
                 automaticAt={(one, on) => automaticAt(widgets, one, on)}
               />
             </>

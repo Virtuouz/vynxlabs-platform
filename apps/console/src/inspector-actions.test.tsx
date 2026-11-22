@@ -43,13 +43,11 @@ function Harness({
   definition,
   surface = "app",
   page = sheetPage as Page | null,
-  groups = [],
 }: {
   start: PageWidget;
   definition: WidgetDefinition;
   surface?: "app" | "dashboard";
   page?: Page | null;
-  groups?: string[];
 }) {
   const [widget, setWidget] = useState(start);
   return (
@@ -62,7 +60,6 @@ function Harness({
       page={page ?? undefined}
       pages={pages}
       flows={[{ path: "send-receipt", manualInput: null }]}
-      groups={groups}
       onChange={(next) => {
         written.push(next);
         setWidget(next);

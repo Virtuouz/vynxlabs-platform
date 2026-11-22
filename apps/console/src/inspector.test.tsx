@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import type { PageFilter, PageWidget } from "@volvel/manifest";
+import { type PageFilter, type PageWidget, parseGroupPath } from "@volvel/manifest";
 import { defineWidget, type WidgetDefinition } from "@volvel/widgets";
 import { chart, stat, text } from "@volvel/widgets-core";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { registerDrawer } from "./kit/inspector/custom.ts";
+import { type GroupKey, GroupsProvided } from "./kit/inspector/groupChoices.tsx";
 import { Inspector } from "./kit/inspector/Inspector.tsx";
 import {
   bindFilter,
@@ -78,26 +79,23 @@ function Harness({
   definition,
   surface = "app",
   filters = [],
-  groups = [],
-  endUserGroups = [],
+  groupKeys = [],
 }: {
   start: PageWidget;
   definition: WidgetDefinition | undefined;
   surface?: "app" | "dashboard";
   filters?: PageFilter[];
-  groups?: string[];
-  endUserGroups?: string[];
+  groupKeys?: GroupKey[];
 }) {
   const [widget, setWidget] = useState(start);
   return (
+    <GroupsProvided groups={groupKeys}>
     <Inspector
       widget={widget}
       definition={definition}
       surface={surface}
       filters={filters}
       catalog={catalog}
-      groups={groups}
-      endUserGroups={endUserGroups}
       onChange={(next) => {
         written.push(next);
         setWidget(next);
@@ -106,6 +104,7 @@ function Harness({
       onRemove={() => {}}
       rowRules={(table) => `/t/t/workspaces/w/tables/${table}?view=definition`}
     />
+    </GroupsProvided>
   );
 }
 
@@ -509,8 +508,10 @@ test("a choice with numbers writes numbers, and tiles, a position, an icon and g
     <Harness
       start={{ id: "t", type: "labs/y", at: { x: 0, y: 0, w: 3, h: 3 } }}
       definition={labs}
-      groups={["Billing"]}
-      endUserGroups={["Pet owners"]}
+      groupKeys={[
+        { key: "billing", name: "Billing", kind: "member" },
+        { key: "pet-owners", name: "Pet owners", kind: "end_user" },
+      ]}
     />,
   );
   fireEvent.click(tabByName("Display"));
@@ -526,11 +527,19 @@ test("a choice with numbers writes numbers, and tiles, a position, an icon and g
   expect(written.at(-1)?.config?.icon).toBe("star");
   fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-  // Groups: member and end-user groups by their names.
+  // Groups: member and end-user groups are shown by their names and stored by their paths,
+  // which is what the server matches (`parseGroupPath` reads the key back).
   fireEvent.click(screen.getByRole("button", { name: /^Who/ }));
   fireEvent.click(await screen.findByLabelText("Pet owners"));
   fireEvent.click(screen.getByLabelText("Billing"));
-  expect(written.at(-1)?.config?.who).toEqual(["Pet owners", "Billing"]);
+  const stored = written.at(-1)?.config?.who as string[];
+  expect(stored).toEqual(["end-user-groups/pet-owners", "groups/billing"]);
+  expect(stored.map((path) => parseGroupPath(path))).toEqual([
+    { key: "pet-owners", kind: "end_user" },
+    { key: "billing", kind: "member" },
+  ]);
+  // And read back, the row says the names.
+  expect(screen.getByRole("button", { name: /^Who/ }).textContent).toContain("Pet owners");
 });
 
 test("a stat's money format is said in a line and shown with an example", async () => {

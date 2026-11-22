@@ -82,10 +82,6 @@ export interface InspectorProps {
   /** The workspace's flows; only those with a manual trigger are offered to "Run a workflow". */
   flows?: readonly FlowChoice[];
   scripts?: readonly ScriptChoice[];
-  /** The names of the groups of members, for "the current user is in …". */
-  groups?: readonly string[];
-  /** The names of the end-user groups, for the `groups` control. */
-  endUserGroups?: readonly string[];
   /** Every widget of the page, this one included: a filter followed or a tab removed reaches the others. */
   widgets?: readonly PageWidget[];
   /** Writes the page's widgets as they should now be, for a change that reaches more than this widget. */
@@ -187,8 +183,6 @@ export function Inspector(props: InspectorProps) {
     pages: props.pages ?? [],
     flows: props.flows ?? [],
     scripts: props.scripts ?? [],
-    groups: props.groups ?? [],
-    endUserGroups: props.endUserGroups,
     widgets: props.widgets ?? [widget, ...(props.neighbours ?? [])],
     writeAll:
       props.onChangeWidgets ??

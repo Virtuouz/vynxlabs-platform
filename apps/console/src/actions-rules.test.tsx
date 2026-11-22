@@ -77,7 +77,6 @@ function useEnv(start: PageWidget, definition: typeof button, surface: "app" | "
     pages: [sheet, { id: "money", title: "Money", widgets: [] }],
     flows: [{ path: "send-receipt", manualInput: null }],
     scripts: [],
-    groups: ["Billing", "Managers"],
     widgets: [widget],
     writeAll: () => {},
   };

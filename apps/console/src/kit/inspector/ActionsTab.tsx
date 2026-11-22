@@ -22,7 +22,7 @@ export function RulesSummary({
   onOpenRules?: (() => void) | undefined;
   groupChoices?: readonly GroupChoice[];
 }) {
-  const given = useChosenGroups(env.groups);
+  const given = useChosenGroups();
   const choices = groupChoices ?? given;
   const slots = actionSlots(env).filter(
     (slot) => slot.action && (slot.action.steps.length > 0 || slot.action.confirm),

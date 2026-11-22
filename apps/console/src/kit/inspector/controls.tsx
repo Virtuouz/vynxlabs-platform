@@ -60,6 +60,8 @@ import { type ReactNode, useState } from "react";
 import { MarkdownEditor } from "../markdown/MarkdownEditor.tsx";
 import { useEditOnPage } from "../markdown/onThePage.ts";
 import { ActionControl, ActionsControl } from "./actionControls.tsx";
+import { useChosenGroups } from "./groupChoices.tsx";
+import { type GroupChoice, groupName } from "./timelineModel.ts";
 import { settingControlFor, tilePreviewFor } from "./custom.ts";
 import { DataControl, FormatRow } from "./dataControls.tsx";
 import { FieldsControl, PageControl } from "./fieldsControl.tsx";
@@ -88,10 +90,6 @@ export interface Env {
   /** The workspace's flows (only those with a manual trigger are offered) and scripts. */
   flows: readonly FlowChoice[];
   scripts: readonly ScriptChoice[];
-  /** The names of the groups of members, for "the current user is in …". */
-  groups: readonly string[];
-  /** The names of the end-user groups, for the `groups` control (who may run, who sees). */
-  endUserGroups?: readonly string[] | undefined;
   /** Every widget of the page, this one as it is now (a filter reaches the others). */
   widgets: readonly PageWidget[];
   /** Writes the page's widgets: for a change that reaches other widgets (a filter followed, a tab removed). */
@@ -138,6 +136,7 @@ const labelOf = (setting: ConfigSetting) => setting.hint.label;
 export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetting }) {
   const { hint, name, schema } = setting;
   const { widget } = env;
+  const chosenGroups = useChosenGroups();
   const value = env.config[name];
   const field = `${widget.id}-${name}`;
   const set = (next: unknown, key = true) =>
@@ -414,8 +413,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
           field={field}
           label={hint.label}
           help={help}
-          members={env.groups}
-          endUsers={env.endUserGroups ?? []}
+          choices={chosenGroups}
           value={Array.isArray(value) ? (value as string[]) : []}
           onChange={(next) => set(next, false)}
         />
@@ -430,6 +428,12 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
     default:
       return null;
   }
+}
+
+/** The names of groups held by their paths, as a row says them. */
+function GroupNames({ paths }: { paths: readonly string[] }) {
+  const choices = useChosenGroups();
+  return <>{paths.map((path) => groupName(path, choices)).join(", ")}</>;
 }
 
 /** The value a choice writes: the schema's own (1, not "1"), found by its text. */
@@ -757,36 +761,37 @@ function GroupsControl({
   field,
   label,
   help,
-  members,
-  endUsers,
+  choices,
   value,
   onChange,
 }: {
   field: string;
   label: string;
   help: string | undefined;
-  members: readonly string[];
-  endUsers: readonly string[];
+  choices: readonly GroupChoice[];
+  /** The paths held: `groups/<key>` or `end-user-groups/<key>`. */
   value: string[];
   onChange: (next: string[] | undefined) => void;
 }) {
-  const toggle = (name: string, on: boolean) =>
+  const toggle = (path: string, on: boolean) =>
     onChange(
-      on ? [...value.filter((one) => one !== name), name] : value.filter((one) => one !== name),
+      on ? [...value.filter((one) => one !== path), path] : value.filter((one) => one !== path),
     );
-  // A named group that is gone stays listed, so it can be taken out.
-  const gone = value.filter((one) => !members.includes(one) && !endUsers.includes(one));
-  const section = (title: string, names: readonly string[]) =>
-    names.length === 0 ? null : (
+  const members = choices.filter((one) => one.kind === "member");
+  const endUsers = choices.filter((one) => one.kind === "end_user");
+  // A group that is gone stays listed (by its key), so it can be taken out.
+  const gone = value.filter((one) => !choices.some((choice) => choice.path === one));
+  const section = (title: string, list: readonly { path: string; name: string }[]) =>
+    list.length === 0 ? null : (
       <div className="flex flex-col gap-1">
         <span className="text-meta text-ink-muted">{title}</span>
-        {names.map((name) => (
+        {list.map((one) => (
           <CheckboxField
-            key={`${title}:${name}`}
-            name={`${field}-${title}-${name}`}
-            label={name}
-            checked={value.includes(name)}
-            onChange={(on) => toggle(name, on)}
+            key={one.path}
+            name={`${field}-${one.path}`}
+            label={one.name}
+            checked={value.includes(one.path)}
+            onChange={(on) => toggle(one.path, on)}
           />
         ))}
       </div>
@@ -794,12 +799,17 @@ function GroupsControl({
   return (
     <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
       <legend className="p-0 text-body-sm font-medium text-ink">{label}</legend>
-      {members.length === 0 && endUsers.length === 0 && gone.length === 0 ? (
+      {choices.length === 0 && gone.length === 0 ? (
         <p className="m-0 text-body-sm text-ink-muted">There are no groups yet.</p>
       ) : null}
       {section("Member groups", members)}
       {section("End-user groups", endUsers)}
-      {gone.length > 0 ? section("No longer exist", gone) : null}
+      {gone.length > 0
+        ? section(
+            "No longer exist",
+            gone.map((path) => ({ path, name: groupName(path, choices) })),
+          )
+        : null}
       {help ? <p className="m-0 text-meta text-ink-muted">{help}</p> : null}
     </fieldset>
   );
@@ -869,7 +879,9 @@ export function settingSummary(env: Env, setting: ConfigSetting): ReactNode {
       );
     }
     case "groups":
-      return Array.isArray(value) && value.length > 0 ? value.join(", ") : undefined;
+      return Array.isArray(value) && value.length > 0 ? (
+        <GroupNames paths={value as string[]} />
+      ) : undefined;
     default:
       return undefined;
   }

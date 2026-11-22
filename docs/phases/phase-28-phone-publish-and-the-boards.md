@@ -438,4 +438,6 @@ Building and walking it found seven faults, all fixed:
 
 The suites found one more, older than this phase: "the rows behind a number", opened again right after a filter changed, showed the rows of before. It reads again each time it opens.
 
-**Walked:** served, the six menu pages at 1440 dark, 768 light and 390 dark (measured for overlaps and sideways scroll at all three; looked at: Today and Money at 1440, Visits at 768); in the builder, Today at 1440. Not walked: the record page, sheets and modals on this last build, and the builder at 768 and 390.
+**Walked:** served, the six menu pages at 1440 dark, 768 light and 390 dark (measured for overlaps and sideways scroll at all three; looked at: Today and Money at 1440, Visits at 768); in the builder, Today at 1440. Opened at 1440 light: the pet's record page, the Full and Medium modals, the invoice sheet. Not walked: the other sheets and modals on this last build, and the builder at 768 and 390.
+
+**The full suites, again**, on the merged code: 3,078 unit tests pass (one, a worker's lease, failed while the browser suite shared the machine, and passes alone); 209 browser tests pass and 2 are skipped on port 8093, where the single sign-on file failed because its identity provider takes only port 8080 (it passes there, 7 of 7). No reference picture changed.

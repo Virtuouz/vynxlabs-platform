@@ -1014,6 +1014,17 @@ export const form = defineWidget({
             section: { type: "string", maxLength: 60 },
             required: { type: "boolean" },
             format: FORMAT,
+            /** What the field starts with when a record is made: today, the person filling it in, or a fixed value. */
+            initial: {
+              type: "object",
+              properties: {
+                kind: { enum: ["today", "me", "value"] },
+                as: { enum: ["email", "name", "id"] },
+                value: {},
+              },
+              required: ["kind"],
+              additionalProperties: false,
+            },
           },
           required: ["column"],
           additionalProperties: false,

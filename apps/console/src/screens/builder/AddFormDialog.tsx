@@ -312,7 +312,7 @@ function Fields({
                 }
               />
               <span className="ml-auto flex shrink-0 items-center gap-2 text-body-sm text-ink-muted">
-                {controlWords(column)}
+                {controlWords(column, plan.mode)}
                 {column.required ? <span className="text-ink-subtle">required</span> : null}
                 {on ? (
                   <MoveButtons

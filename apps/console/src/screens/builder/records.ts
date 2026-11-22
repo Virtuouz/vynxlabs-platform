@@ -281,7 +281,7 @@ export function detailEdit(context: PageContext, widget: PageWidget, table: Tabl
 // ----- Forms -----
 
 /** How a column is drawn as a field, in words. */
-export function controlWords(column: InfoColumn): string {
+export function controlWords(column: InfoColumn, mode: "create" | "edit" = "create"): string {
   switch (column.type) {
     case "reference":
       return `Picker · ${column.references ? manyOf(column.references).toLowerCase() : "records"}`;
@@ -292,9 +292,9 @@ export function controlWords(column: InfoColumn): string {
     case "boolean":
       return "Yes or no";
     case "date":
-      return "Date";
+      return mode === "create" ? "Date · today by default" : "Date";
     case "timestamp":
-      return "Date and time";
+      return mode === "create" ? "Date and time · now by default" : "Date and time";
     case "integer":
     case "number":
       return "Number";
@@ -364,7 +364,14 @@ export function formWidget(plan: FormPlan, id: string, at: PageWidget["at"]): Pa
       mode: plan.mode,
       fields: plan.fields.map((name) => {
         const column = plan.table.columns.find((one) => one.name === name);
-        return { column: name, ...(column?.required ? { required: true } : {}) };
+        return {
+          column: name,
+          ...(column?.required ? { required: true } : {}),
+          // A new record's date starts at today; the person filling it in may change it.
+          ...(plan.mode === "create" && (column?.type === "date" || column?.type === "timestamp")
+            ? { initial: { kind: "today" } }
+            : {}),
+        };
       }),
       submitLabel: plan.mode === "create" ? `Create ${noun}` : "Save",
       submit: submitAction(plan),

@@ -489,3 +489,42 @@ describe("composition (phase 27)", () => {
     expect(issues).toEqual(["/body/widgets/3/type Action group can't be used on a dashboard"]);
   });
 });
+
+describe("what a form's field starts with", () => {
+  const form = (initial: unknown, column = "total"): PageWidget => ({
+    id: "new",
+    type: "core/form",
+    at: { x: 0, y: 0, w: 6, h: 8 },
+    data: { record: { source: { visual: { table: "invoices" } } } },
+    config: {
+      mode: "create",
+      fields: [{ column, initial }],
+      submit: {
+        steps: [{ do: "create", table: "invoices", set: { [column]: { asked: column } } }],
+      },
+    },
+  });
+  const said = (widget: PageWidget) =>
+    checkInterface(body([widget]), tableOf).map((one) => `${one.path} ${one.message}`);
+
+  it("accepts a start that fits the column", () => {
+    expect(said(form({ kind: "value", value: 100 }))).toEqual([]);
+  });
+
+  it("refuses a value that does not fit", () => {
+    expect(said(form({ kind: "value", value: "ten" }))).toEqual([
+      expect.stringContaining("the value does not fit"),
+    ]);
+  });
+
+  it("refuses today on a column that is not a date, and the person on a number", () => {
+    expect(said(form({ kind: "today" }))[0]).toContain('"today" starts a date or a timestamp');
+    expect(said(form({ kind: "me" }))[0]).toContain(
+      "the person filling it in goes in a text column",
+    );
+  });
+
+  it("refuses a start the schema does not know", () => {
+    expect(said(form({ kind: "tomorrow" })).length).toBeGreaterThan(0);
+  });
+});

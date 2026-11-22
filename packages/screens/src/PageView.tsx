@@ -556,6 +556,15 @@ function Cell({
                 (widget.on?.[event] !== undefined ||
                   (event === "rowClick" && ctx.followed.has(widget.id)))
               }
+              {...(user
+                ? {
+                    viewer: {
+                      id: user.id,
+                      ...(user.email ? { email: user.email } : {}),
+                      ...(user.name ? { name: user.name } : {}),
+                    },
+                  }
+                : {})}
               {...(client.choices
                 ? {
                     choices: (

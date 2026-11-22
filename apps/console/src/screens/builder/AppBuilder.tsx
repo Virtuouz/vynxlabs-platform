@@ -252,8 +252,15 @@ export function AppBuilder({
       revision.current = undefined;
       setReviewing(false);
       deployed.reload();
+      // An app published for the first time is not in the list read when the builder opened: its address is read now.
+      const address =
+        url ??
+        (await api.get<{ items: { path: string; url: string }[] }>(`${root}/apps`).then(
+          (now) => now.items.find((one) => one.path === appPath)?.url,
+          () => undefined,
+        ));
       notify.success("Published. People who open the app now see this.", {
-        ...(url ? { link: { label: "Open the app", href: url } } : {}),
+        ...(address ? { link: { label: "Open the app", href: address } } : {}),
       });
       list.reload();
       drafts.reload();

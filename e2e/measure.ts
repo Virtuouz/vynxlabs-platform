@@ -82,11 +82,11 @@ export function nested(page: Page): Promise<string[]> {
     const main = document.querySelector("main");
     if (!main) return [];
     const bordered = (element: Element) => {
-      // A field, a table's parts, and a recessed well (`data-well`: code, JSON, a log) have a
+      // A field, a choice tile (a label around a radio: a control, as a button is), a table's parts, and a recessed well (`data-well`: code, JSON, a log) have a
       // border of their own at any depth (07 §7.5): they are not panels.
       if (
         element.matches(
-          "input, select, textarea, button, hr, a, kbd, td, th, tr, table, [data-well]",
+          "input, select, textarea, button, hr, a, kbd, td, th, tr, table, [data-well], label:has(> input[type=radio], > input[type=checkbox])",
         )
       ) {
         return false;

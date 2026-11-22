@@ -117,7 +117,7 @@ export function MembersAndAccess({
 export function toolbarOf(framed: Framed | undefined, own?: ReactNode): ReactNode {
   if (!framed && !own) return undefined;
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-2">
       {own ? <div className="flex flex-wrap items-center gap-2">{own}</div> : null}
       {framed?.tabs}
     </div>

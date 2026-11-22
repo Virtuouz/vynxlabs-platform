@@ -74,7 +74,6 @@
                 "description": "A line under the heading."
               },
               "at": {
-                "description": "Where it sits on the page's grid of twelve columns, and its size.",
                 "type": "object",
                 "properties": {
                   "x": {
@@ -108,7 +107,8 @@
                   "w",
                   "h"
                 ],
-                "additionalProperties": false
+                "additionalProperties": false,
+                "description": "Where it sits on the page's grid of twelve columns, and its size."
               },
               "data": {
                 "description": "What the widget reads, by the name of each input its definition declares, read on the server as the reader may.",
@@ -283,10 +283,12 @@
                             "query": {
                               "type": "string",
                               "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                              "maxLength": 255
+                              "maxLength": 255,
+                              "description": "A saved query, by its path."
                             },
                             "values": {
-                              "type": "object"
+                              "type": "object",
+                              "description": "What its parameters are given, by name."
                             }
                           },
                           "required": [
@@ -300,7 +302,8 @@
                             "sql": {
                               "type": "string",
                               "minLength": 1,
-                              "maxLength": 20000
+                              "maxLength": 20000,
+                              "description": "One SELECT, on a dashboard, with $1, $2 as parameters."
                             },
                             "values": {
                               "type": "array",
@@ -316,7 +319,8 @@
                           "type": "object",
                           "properties": {
                             "record": {
-                              "const": "this"
+                              "const": "this",
+                              "description": "The record the page was opened on."
                             }
                           },
                           "required": [
@@ -329,7 +333,8 @@
                           "properties": {
                             "selected": {
                               "type": "string",
-                              "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                              "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+                              "description": "The row chosen in a table or list of the page, by that widget's id."
                             }
                           },
                           "required": [
@@ -342,15 +347,18 @@
                           "properties": {
                             "own": {
                               "type": "object",
+                              "description": "The current user's own row of a table.",
                               "properties": {
                                 "table": {
                                   "type": "string",
                                   "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                                  "maxLength": 255
+                                  "maxLength": 255,
+                                  "description": "The table."
                                 },
                                 "by": {
                                   "type": "string",
-                                  "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                                  "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$",
+                                  "description": "The column that holds the user's email."
                                 }
                               },
                               "required": [
@@ -1294,6 +1302,7 @@
                 "properties": {
                   "tablet": {
                     "type": "object",
+                    "description": "Placed by hand on a tablet. Left out, its place is made from the desktop's.",
                     "properties": {
                       "at": {
                         "type": "object",
@@ -1301,22 +1310,26 @@
                           "x": {
                             "type": "integer",
                             "minimum": 0,
-                            "maximum": 11
+                            "maximum": 11,
+                            "description": "The column it starts at, from 0."
                           },
                           "y": {
                             "type": "integer",
                             "minimum": 0,
-                            "maximum": 399
+                            "maximum": 399,
+                            "description": "The row it starts at, from 0."
                           },
                           "w": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 12
+                            "maximum": 12,
+                            "description": "How many columns wide it is."
                           },
                           "h": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 40
+                            "maximum": 40,
+                            "description": "How many rows tall it is."
                           }
                         },
                         "required": [
@@ -1325,7 +1338,8 @@
                           "w",
                           "h"
                         ],
-                        "additionalProperties": false
+                        "additionalProperties": false,
+                        "description": "Its place on a tablet."
                       }
                     },
                     "required": [
@@ -1335,6 +1349,7 @@
                   },
                   "phone": {
                     "type": "object",
+                    "description": "Placed by hand on a phone. Left out, its place is made from the desktop's.",
                     "properties": {
                       "at": {
                         "type": "object",
@@ -1342,22 +1357,26 @@
                           "x": {
                             "type": "integer",
                             "minimum": 0,
-                            "maximum": 11
+                            "maximum": 11,
+                            "description": "The column it starts at, from 0."
                           },
                           "y": {
                             "type": "integer",
                             "minimum": 0,
-                            "maximum": 399
+                            "maximum": 399,
+                            "description": "The row it starts at, from 0."
                           },
                           "w": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 12
+                            "maximum": 12,
+                            "description": "How many columns wide it is."
                           },
                           "h": {
                             "type": "integer",
                             "minimum": 1,
-                            "maximum": 40
+                            "maximum": 40,
+                            "description": "How many rows tall it is."
                           }
                         },
                         "required": [
@@ -1366,7 +1385,8 @@
                           "w",
                           "h"
                         ],
-                        "additionalProperties": false
+                        "additionalProperties": false,
+                        "description": "Its place on a phone."
                       }
                     },
                     "required": [
@@ -1379,12 +1399,14 @@
                       "full",
                       "stack",
                       "hide"
-                    ]
+                    ],
+                    "description": "On narrow screens: full width, stacked below, or hidden."
                   },
                   "priority": {
                     "type": "integer",
                     "minimum": -10,
-                    "maximum": 10
+                    "maximum": 10,
+                    "description": "When the page stacks, what is higher is kept nearer the top."
                   }
                 },
                 "additionalProperties": false

@@ -380,8 +380,13 @@ const sourceSchema = {
     {
       type: "object",
       properties: {
-        query: { type: "string", pattern: PATH, maxLength: 255 },
-        values: { type: "object" },
+        query: {
+          type: "string",
+          pattern: PATH,
+          maxLength: 255,
+          description: "A saved query, by its path.",
+        },
+        values: { type: "object", description: "What its parameters are given, by name." },
       },
       required: ["query"],
       additionalProperties: false,
@@ -389,7 +394,12 @@ const sourceSchema = {
     {
       type: "object",
       properties: {
-        sql: { type: "string", minLength: 1, maxLength: 20000 },
+        sql: {
+          type: "string",
+          minLength: 1,
+          maxLength: 20000,
+          description: "One SELECT, on a dashboard, with $1, $2 as parameters.",
+        },
         values: { type: "array", maxItems: 20 },
       },
       required: ["sql"],
@@ -397,13 +407,21 @@ const sourceSchema = {
     },
     {
       type: "object",
-      properties: { record: { const: "this" } },
+      properties: {
+        record: { const: "this", description: "The record the page was opened on." },
+      },
       required: ["record"],
       additionalProperties: false,
     },
     {
       type: "object",
-      properties: { selected: { type: "string", pattern: SLUG } },
+      properties: {
+        selected: {
+          type: "string",
+          pattern: SLUG,
+          description: "The row chosen in a table or list of the page, by that widget's id.",
+        },
+      },
       required: ["selected"],
       additionalProperties: false,
     },
@@ -412,9 +430,14 @@ const sourceSchema = {
       properties: {
         own: {
           type: "object",
+          description: "The current user's own row of a table.",
           properties: {
-            table: { type: "string", pattern: PATH, maxLength: 255 },
-            by: { type: "string", pattern: COLUMN },
+            table: { type: "string", pattern: PATH, maxLength: 255, description: "The table." },
+            by: {
+              type: "string",
+              pattern: COLUMN,
+              description: "The column that holds the user's email.",
+            },
           },
           required: ["table", "by"],
           additionalProperties: false,
@@ -530,6 +553,39 @@ export const pageFilterSchema = {
   additionalProperties: false,
 } as const;
 
+/** A place on a grid of twelve columns, in cells. */
+const placeSchema = {
+  type: "object",
+  properties: {
+    x: {
+      type: "integer",
+      minimum: 0,
+      maximum: PAGE_COLUMNS - 1,
+      description: "The column it starts at, from 0.",
+    },
+    y: {
+      type: "integer",
+      minimum: 0,
+      maximum: MAX_PAGE_ROWS - 1,
+      description: "The row it starts at, from 0.",
+    },
+    w: {
+      type: "integer",
+      minimum: 1,
+      maximum: PAGE_COLUMNS,
+      description: "How many columns wide it is.",
+    },
+    h: {
+      type: "integer",
+      minimum: 1,
+      maximum: MAX_WIDGET_HEIGHT,
+      description: "How many rows tall it is.",
+    },
+  },
+  required: ["x", "y", "w", "h"],
+  additionalProperties: false,
+} as const;
+
 export const pageWidgetSchema = {
   type: "object",
   properties: {
@@ -550,36 +606,8 @@ export const pageWidgetSchema = {
     },
     subtitle: { type: "string", maxLength: 200, description: "A line under the heading." },
     at: {
+      ...placeSchema,
       description: "Where it sits on the page's grid of twelve columns, and its size.",
-      type: "object",
-      properties: {
-        x: {
-          type: "integer",
-          minimum: 0,
-          maximum: PAGE_COLUMNS - 1,
-          description: "The column it starts at, from 0.",
-        },
-        y: {
-          type: "integer",
-          minimum: 0,
-          maximum: MAX_PAGE_ROWS - 1,
-          description: "The row it starts at, from 0.",
-        },
-        w: {
-          type: "integer",
-          minimum: 1,
-          maximum: PAGE_COLUMNS,
-          description: "How many columns wide it is.",
-        },
-        h: {
-          type: "integer",
-          minimum: 1,
-          maximum: MAX_WIDGET_HEIGHT,
-          description: "How many rows tall it is.",
-        },
-      },
-      required: ["x", "y", "w", "h"],
-      additionalProperties: false,
     },
     data: {
       description:
@@ -613,42 +641,29 @@ export const pageWidgetSchema = {
       properties: {
         tablet: {
           type: "object",
-          properties: {
-            at: {
-              type: "object",
-              properties: {
-                x: { type: "integer", minimum: 0, maximum: PAGE_COLUMNS - 1 },
-                y: { type: "integer", minimum: 0, maximum: MAX_PAGE_ROWS - 1 },
-                w: { type: "integer", minimum: 1, maximum: PAGE_COLUMNS },
-                h: { type: "integer", minimum: 1, maximum: MAX_WIDGET_HEIGHT },
-              },
-              required: ["x", "y", "w", "h"],
-              additionalProperties: false,
-            },
-          },
+          description:
+            "Placed by hand on a tablet. Left out, its place is made from the desktop's.",
+          properties: { at: { ...placeSchema, description: "Its place on a tablet." } },
           required: ["at"],
           additionalProperties: false,
         },
         phone: {
           type: "object",
-          properties: {
-            at: {
-              type: "object",
-              properties: {
-                x: { type: "integer", minimum: 0, maximum: PAGE_COLUMNS - 1 },
-                y: { type: "integer", minimum: 0, maximum: MAX_PAGE_ROWS - 1 },
-                w: { type: "integer", minimum: 1, maximum: PAGE_COLUMNS },
-                h: { type: "integer", minimum: 1, maximum: MAX_WIDGET_HEIGHT },
-              },
-              required: ["x", "y", "w", "h"],
-              additionalProperties: false,
-            },
-          },
+          description: "Placed by hand on a phone. Left out, its place is made from the desktop's.",
+          properties: { at: { ...placeSchema, description: "Its place on a phone." } },
           required: ["at"],
           additionalProperties: false,
         },
-        narrow: { enum: ["full", "stack", "hide"] },
-        priority: { type: "integer", minimum: -10, maximum: 10 },
+        narrow: {
+          enum: ["full", "stack", "hide"],
+          description: "On narrow screens: full width, stacked below, or hidden.",
+        },
+        priority: {
+          type: "integer",
+          minimum: -10,
+          maximum: 10,
+          description: "When the page stacks, what is higher is kept nearer the top.",
+        },
       },
       additionalProperties: false,
     },

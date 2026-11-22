@@ -21,6 +21,7 @@ import {
 import {
   Button,
   ComboboxField,
+  Details,
   MultiSelectField,
   NumberField,
   SelectField,
@@ -373,97 +374,116 @@ function FollowFilters({
         ]
       : [{ filter: filter.name, parameter: filter.name }];
   };
+  // One line, as board 1 draws it, that opens to the switches: a page of five filters would
+  // otherwise push Value and Break down by out of sight.
+  const followed = env.filters
+    .filter((filter) => bindings.some((one) => one.filter === filter.name))
+    .map((filter) => filter.label ?? heading(filter.name));
+  const summary =
+    followed.length === 0
+      ? "None"
+      : followed.length === env.filters.length
+        ? "All of them"
+        : followed.join(", ");
   return (
-    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
-      <legend className="p-0 text-body-sm font-medium text-ink">Follows the page filters</legend>
-      <ul className="m-0 flex list-none flex-col gap-2 rounded-control border border-line p-3">
-        {env.filters.map((filter) => {
-          const mine = bindings.filter((one) => one.filter === filter.name);
-          const on = mine.length > 0;
-          const name = filter.label ?? heading(filter.name);
-          return (
-            <li key={filter.name} className="flex flex-col gap-1">
-              <label className="flex items-center gap-2 text-body-sm font-medium text-ink">
-                <input
-                  type="checkbox"
-                  className="size-4 accent-(--vx-action)"
-                  checked={on}
-                  onChange={(event) =>
-                    save(
-                      event.currentTarget.checked
-                        ? [...bindings, ...follow(filter)]
-                        : bindings.filter((one) => one.filter !== filter.name),
-                      `changing which filters ${env.widget.title || "the widget"} follows`,
-                    )
-                  }
-                />
-                {name}
-              </label>
-              {on && visual && filter.type === "search" ? (
-                <MultiSelectField
-                  label={`Columns ${name} looks in`}
-                  options={columns
-                    .filter((one) => one.type === "text")
-                    .map((one) => ({ value: one.name, label: heading(one.name) }))}
-                  value={mine[0]?.columns ?? (mine[0]?.column ? [mine[0].column] : [])}
-                  placeholder="None"
-                  hint={`Up to ${MAX_SEARCH_COLUMNS}. A row is kept when any of them has the words.`}
-                  onChange={(next) => {
-                    const chosen = next.slice(0, MAX_SEARCH_COLUMNS);
-                    // A search that looks nowhere is not following.
-                    save(
-                      chosen.length === 0
-                        ? bindings.filter((one) => one.filter !== filter.name)
-                        : bindings.map((one) =>
-                            one.filter === filter.name
-                              ? { filter: filter.name, columns: chosen }
-                              : one,
-                          ),
-                      "changing the columns a search looks in",
-                    );
-                  }}
-                />
-              ) : null}
-              {on && visual && filter.type !== "search" ? (
-                <SelectField
-                  name={`${env.widget.id}-${input}-bind-${filter.name}`}
-                  label={`Column that ${name} narrows`}
-                  value={mine[0]?.column ?? ""}
-                  options={columns.map((column) => ({
-                    value: column.name,
-                    label: heading(column.name),
-                  }))}
-                  onChange={(column) =>
-                    save(
-                      bindings.map((one) =>
-                        one.filter === filter.name ? { ...one, column } : one,
-                      ),
-                      "changing the column a filter narrows",
-                    )
-                  }
-                />
-              ) : null}
-              {on && !visual
-                ? mine.map((binding) => (
-                    <TextField
-                      key={binding.part ?? "value"}
-                      name={`${env.widget.id}-${input}-param-${filter.name}-${binding.part ?? "value"}`}
-                      label={`Parameter that ${name} fills${binding.part ? ` (${binding.part})` : ""}`}
-                      value={binding.parameter ?? ""}
-                      onChange={(parameter) =>
-                        save(
-                          bindings.map((one) => (one === binding ? { ...one, parameter } : one)),
-                          "changing the parameter a filter fills",
-                        )
-                      }
-                    />
-                  ))
-                : null}
-            </li>
-          );
-        })}
-      </ul>
-    </fieldset>
+    <Details
+      summary={
+        <span className="text-body-sm">
+          Follows the page filters: <span className="font-normal text-ink-muted">{summary}</span>
+        </span>
+      }
+    >
+      <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+        <legend className="sr-only">Follows the page filters</legend>
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          {env.filters.map((filter) => {
+            const mine = bindings.filter((one) => one.filter === filter.name);
+            const on = mine.length > 0;
+            const name = filter.label ?? heading(filter.name);
+            return (
+              <li key={filter.name} className="flex flex-col gap-1">
+                <label className="flex items-center gap-2 text-body-sm font-medium text-ink">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-(--vx-action)"
+                    checked={on}
+                    onChange={(event) =>
+                      save(
+                        event.currentTarget.checked
+                          ? [...bindings, ...follow(filter)]
+                          : bindings.filter((one) => one.filter !== filter.name),
+                        `changing which filters ${env.widget.title || "the widget"} follows`,
+                      )
+                    }
+                  />
+                  {name}
+                </label>
+                {on && visual && filter.type === "search" ? (
+                  <MultiSelectField
+                    label={`Columns ${name} looks in`}
+                    options={columns
+                      .filter((one) => one.type === "text")
+                      .map((one) => ({ value: one.name, label: heading(one.name) }))}
+                    value={mine[0]?.columns ?? (mine[0]?.column ? [mine[0].column] : [])}
+                    placeholder="None"
+                    hint={`Up to ${MAX_SEARCH_COLUMNS}. A row is kept when any of them has the words.`}
+                    onChange={(next) => {
+                      const chosen = next.slice(0, MAX_SEARCH_COLUMNS);
+                      // A search that looks nowhere is not following.
+                      save(
+                        chosen.length === 0
+                          ? bindings.filter((one) => one.filter !== filter.name)
+                          : bindings.map((one) =>
+                              one.filter === filter.name
+                                ? { filter: filter.name, columns: chosen }
+                                : one,
+                            ),
+                        "changing the columns a search looks in",
+                      );
+                    }}
+                  />
+                ) : null}
+                {on && visual && filter.type !== "search" ? (
+                  <SelectField
+                    name={`${env.widget.id}-${input}-bind-${filter.name}`}
+                    label={`Column that ${name} narrows`}
+                    value={mine[0]?.column ?? ""}
+                    options={columns.map((column) => ({
+                      value: column.name,
+                      label: heading(column.name),
+                    }))}
+                    onChange={(column) =>
+                      save(
+                        bindings.map((one) =>
+                          one.filter === filter.name ? { ...one, column } : one,
+                        ),
+                        "changing the column a filter narrows",
+                      )
+                    }
+                  />
+                ) : null}
+                {on && !visual
+                  ? mine.map((binding) => (
+                      <TextField
+                        key={binding.part ?? "value"}
+                        name={`${env.widget.id}-${input}-param-${filter.name}-${binding.part ?? "value"}`}
+                        label={`Parameter that ${name} fills${binding.part ? ` (${binding.part})` : ""}`}
+                        value={binding.parameter ?? ""}
+                        onChange={(parameter) =>
+                          save(
+                            bindings.map((one) => (one === binding ? { ...one, parameter } : one)),
+                            "changing the parameter a filter fills",
+                          )
+                        }
+                      />
+                    ))
+                  : null}
+              </li>
+            );
+          })}
+        </ul>
+      </fieldset>
+    </Details>
   );
 }
 

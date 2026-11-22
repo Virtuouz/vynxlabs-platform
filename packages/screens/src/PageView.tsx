@@ -468,7 +468,7 @@ function Cell({
                         widget,
                         at,
                         record: given?.record,
-                        row: given?.record ? lookup(given.record) : undefined,
+                        row: given?.record ? lookup(given.record) : record ? thisRow : undefined,
                         input: groupInput,
                         inputs: given?.inputs,
                         among: amongIds(),

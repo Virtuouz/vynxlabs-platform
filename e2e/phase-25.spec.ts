@@ -121,7 +121,7 @@ test("POLISH-002: Invoiced by week is a line of the sum of Total by week, in fiv
     await expect(inspector.getByRole("tab", { name: new RegExp(`^${tab}`) })).toBeVisible();
   }
   // Data, in the drawings' words: Source, Value, Break down by.
-  await expect(inspector.getByText("Follows the page filters")).toBeVisible();
+  await expect(inspector.getByText(/^Follows the page filters:/)).toBeVisible();
   await expect(inspector.getByLabel("What value 1 works out")).toHaveValue("sum");
   await expect(inspector.getByLabel("Column value 1 is of")).toHaveValue("total");
   await expect(inspector.getByLabel("Breakdown 1", { exact: true })).toHaveValue("issued_on");

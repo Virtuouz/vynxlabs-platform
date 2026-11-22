@@ -2,6 +2,25 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 27, pages composed of sections, tabs, a search bar and toolbars
+
+A page holds its widgets in Sections and Tabs. Its search box and filters are a widget on the page, Search and filter, and related buttons are one toolbar, an Action group. Suggestions help start a page from a table. **Nothing made before is kept as it was:** a page's or a dashboard's own `filters` are refused. Re-run the examples' setup, or move them into a Search and filter widget.
+
+### For operators
+
+- **A page's filters are a Search and filter widget** placed on it, not a bar above the page. A search box looks for words across the columns each widget shows; a filter by a column is a range of dates, a choice, a number or text. In a published app what was typed and chosen is in the address, so a reload and a link keep it.
+- **A Section** groups widgets under a heading and may fold; a reader's fold is kept across a reload. **Tabs** show one view of a place at a time; the open tab is in the address. Widgets are dragged into them and out, or moved with ⋯ › Move to; one level deep.
+- **An Action group** is a row of buttons; what doesn't fit goes under "More". It is for apps, as Button is.
+- **"Add to page" opens with suggestions** for the page's table; a button offers to be grouped with the ones beside it; "+ Page" starts a list of a table, or a record page for it.
+- **A list of rows sorts by any column of its table**, shown or not (newest first by when each was made).
+
+### For tenant developers
+
+- `Page.filters` and a dashboard body's `filters` are gone. A widget of type `core/filter` declares them in `config.filters`; a data input's `filters` bind to them by name, as before. A `search` filter's binding names `columns` (or a `column`) for a table read from menus, or a `parameter` for a saved query or SQL.
+- A widget in a container says so: `in: { widget, tab? }`, with its `at` on the container's own twelve columns. `core/section` and `core/tabs` (`config.tabs`) hold widgets; a container is never in one.
+- The core pack gains `core/section`, `core/tabs`, `core/filter` and `core/actions`. A definition may have a `role` (`container` or `filters`, the platform's pack only); views are given `title`, and a container's `place` and `tab`, a filter widget's `filters`.
+- `@volvel/manifest/parts` exports the pure helpers for a page's filters and containers (`filtersOf`, `childrenOf`, `containerHeight`, …), for code where nothing may be compiled.
+
 ## Unreleased: phase 26, records, actions and forms in apps
 
 An app's pages open on a record, and buttons, row actions and forms change records through actions that run on the server (S9 "Records and actions", decision 0004). Nothing needs migrating; bodies written for phase 25 are still valid, except a form whose submit saves nothing, which is now refused.

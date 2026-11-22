@@ -398,12 +398,13 @@ test("staff who may only read press Mark paid, because the button is the grant, 
   const after = await stored(invoice.grant.number);
   expect(after.status).toBe("paid");
   expect(after.total).toBe(12345);
-  // The same action aimed at Riverside's invoice is not found: they may not read it.
+  // The same action (the sheet's Action group's first, Mark paid) aimed at Riverside's invoice
+  // is not found: they may not read it.
   const there = await call(staff, "POST", `${W}/page-actions`, {
     of: "interface",
     path: PAGE,
     page: "invoice",
-    widget: "detail",
+    widget: "invoice-actions",
     at: "config/actions/0/action",
     records: { this: invoice.other.id },
   });
@@ -414,7 +415,7 @@ test("staff who may only read press Mark paid, because the button is the grant, 
     of: "interface",
     path: PAGE,
     page: "invoice",
-    widget: "detail",
+    widget: "invoice-actions",
     at: "config/actions/0/action",
     records: { this: invoice.grant.id },
   });

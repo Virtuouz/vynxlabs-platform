@@ -64,6 +64,21 @@
             "maxLength": 255,
             "description": "A topic of the workspace's documentation, shown by the page's Help button."
           },
+          "size": {
+            "enum": [
+              "small",
+              "medium",
+              "large",
+              "xlarge",
+              "full"
+            ],
+            "description": "For a side sheet or a modal: how big it opens."
+          },
+          "icon": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,40}$",
+            "description": "The icon beside the page in the app's menu, by its name in the kit's set."
+          },
           "widgets": {
             "type": "array",
             "maxItems": 30,
@@ -338,6 +353,47 @@
                             },
                             "required": [
                               "record"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "selected": {
+                                "type": "string",
+                                "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                              }
+                            },
+                            "required": [
+                              "selected"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "own": {
+                                "type": "object",
+                                "properties": {
+                                  "table": {
+                                    "type": "string",
+                                    "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                                    "maxLength": 255
+                                  },
+                                  "by": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                                  }
+                                },
+                                "required": [
+                                  "table",
+                                  "by"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "required": [
+                              "own"
                             ],
                             "additionalProperties": false
                           }
@@ -1130,6 +1186,25 @@
                       "done": {
                         "type": "string",
                         "maxLength": 300
+                      },
+                      "runBy": {
+                        "type": "object",
+                        "properties": {
+                          "groups": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 10,
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                              "maxLength": 255
+                            }
+                          }
+                        },
+                        "required": [
+                          "groups"
+                        ],
+                        "additionalProperties": false
                       }
                     },
                     "required": [
@@ -1221,10 +1296,130 @@
                           }
                         ]
                       }
+                    },
+                    "seenBy": {
+                      "type": "object",
+                      "properties": {
+                        "groups": {
+                          "type": "array",
+                          "minItems": 1,
+                          "maxItems": 10,
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
+                            "maxLength": 255
+                          }
+                        }
+                      },
+                      "required": [
+                        "groups"
+                      ],
+                      "additionalProperties": false
                     }
                   },
                   "additionalProperties": false,
                   "description": "When the widget is shown. Hiding a widget isn't security: the rows a person gets are decided by the tables' row rules."
+                },
+                "layout": {
+                  "type": "object",
+                  "description": "How it is placed on smaller screens: tablet and phone made from the desktop or placed by hand, what narrow screens do with it, and its priority when the page stacks.",
+                  "properties": {
+                    "tablet": {
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 11
+                            },
+                            "y": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 399
+                            },
+                            "w": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 12
+                            },
+                            "h": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 40
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "w",
+                            "h"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "at"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "phone": {
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "object",
+                          "properties": {
+                            "x": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 11
+                            },
+                            "y": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 399
+                            },
+                            "w": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 12
+                            },
+                            "h": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 40
+                            }
+                          },
+                          "required": [
+                            "x",
+                            "y",
+                            "w",
+                            "h"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "at"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "narrow": {
+                      "enum": [
+                        "full",
+                        "stack",
+                        "hide"
+                      ]
+                    },
+                    "priority": {
+                      "type": "integer",
+                      "minimum": -10,
+                      "maximum": 10
+                    }
+                  },
+                  "additionalProperties": false
                 },
                 "in": {
                   "type": "object",

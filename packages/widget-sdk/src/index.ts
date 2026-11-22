@@ -143,6 +143,16 @@ export const CONTROLS = [
   "tabs",
   /** The filters whoever reads the page sets, each with its type and what it offers (Search and filter's). */
   "pageFilters",
+  /** Where it sits in its own cell: a 3 × 3 grid of positions (a button's, an action group's). */
+  "position",
+  /** One of a few choices drawn as tiles to choose by looking (a button's style, a chart's type, a text's callout). */
+  "tiles",
+  /** Columns placed into named places on a sample row (a list's title, line under it, right, badge, picture). */
+  "slots",
+  /** An icon from the kit's set, by name. */
+  "icon",
+  /** Groups of people, by path (who may run an action, who sees a widget). */
+  "groups",
   /** Fields of a table, in order, each with its label and help (a form's, a record detail's). */
   "fields",
   // a data input's parts
@@ -158,6 +168,11 @@ export type Control = (typeof CONTROLS)[number];
 /** How the inspector draws one setting. Kept on a config property as `x-volvel`. */
 export interface InspectorHint {
   tab: Tab;
+  /**
+   * The group of rows it is drawn in, in its tab (board 8: "Rows it uses", "What it shows",
+   * "Look", "Compare"). Rows of a group are drawn together, under its name, in `order`.
+   */
+  group?: string;
   /** `main` is shown at once; `more` under "More … options", one level and no deeper. */
   level?: "main" | "more";
   control: Control;

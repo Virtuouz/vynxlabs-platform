@@ -86,7 +86,11 @@ export type WidgetSource =
   | { query: string; values?: Record<string, unknown> }
   | { sql: string; values?: unknown[] }
   /** The record the page was opened on: a record page, side sheet or modal. */
-  | { record: "this" };
+  | { record: "this" }
+  /** The row chosen in a table or list on the same page (its id), followed as it changes. */
+  | { selected: string }
+  /** The current user's own row of `table`, matched by `by` (the user's email against that column). */
+  | { own: { table: string; by: string } };
 
 /**
  * What a condition of a query built from menus may compare with, besides a
@@ -190,6 +194,14 @@ export const MAX_PAGE_WIDGETS = 30;
 export const MAX_PAGE_FILTERS = 8;
 /** The rows a container's heading takes on the page's grid, above the grid of what it holds. */
 
+/** How a widget is placed on smaller screens. */
+export interface WidgetLayout {
+  tablet?: { at: WidgetPlace };
+  phone?: { at: WidgetPlace };
+  narrow?: "full" | "stack" | "hide";
+  priority?: number;
+}
+
 /** Where a widget held by a container is: the container, and for one with tabs, the tab. */
 export interface WidgetIn {
   widget: string;
@@ -214,6 +226,12 @@ export interface PageWidget {
   /** When it is shown. Only what is drawn: never what someone may read or do. */
   rules?: WidgetRules;
   /**
+   * On smaller screens (phase 28, board 9): tablet and phone each automatic (made from the
+   * desktop) or placed by hand; on narrow screens full width, stacked, or hidden; and a priority,
+   * higher kept nearer the top when the page stacks.
+   */
+  layout?: WidgetLayout;
+  /**
    * The container it is placed in (a Section, or a tab of Tabs), when it is in one. Its `at`
    * is then on the container's own grid of twelve columns. One level: a container is never in one.
    */
@@ -227,6 +245,9 @@ export interface PageWidget {
  * - `modal`: opened over the page it was opened from, on one record or none (a form to fill).
  */
 export const PAGE_KINDS = ["page", "record", "sheet", "modal"] as const;
+/** How big a side sheet or a modal opens: its width, and for a modal its most height too. */
+export const PAGE_SIZES = ["small", "medium", "large", "xlarge", "full"] as const;
+export type PageSize = (typeof PAGE_SIZES)[number];
 export type PageKind = (typeof PAGE_KINDS)[number];
 
 export interface Page {
@@ -241,6 +262,10 @@ export interface Page {
   record?: { table: string };
   /** The topic of the workspace documentation's page that is this page's help. */
   help?: string;
+  /** For a side sheet or a modal: how big it opens. Left out, `medium`. */
+  size?: PageSize;
+  /** The icon beside it in the app's menu, from the kit's set, by name. */
+  icon?: string;
   /** Every widget of the page, those placed in a container too (they say so with `in`). */
   widgets: PageWidget[];
 }
@@ -374,6 +399,28 @@ const sourceSchema = {
       type: "object",
       properties: { record: { const: "this" } },
       required: ["record"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: { selected: { type: "string", pattern: SLUG } },
+      required: ["selected"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        own: {
+          type: "object",
+          properties: {
+            table: { type: "string", pattern: PATH, maxLength: 255 },
+            by: { type: "string", pattern: COLUMN },
+          },
+          required: ["table", "by"],
+          additionalProperties: false,
+        },
+      },
+      required: ["own"],
       additionalProperties: false,
     },
   ],
@@ -559,6 +606,52 @@ export const pageWidgetSchema = {
       description:
         "When the widget is shown. Hiding a widget isn't security: the rows a person gets are decided by the tables' row rules.",
     },
+    layout: {
+      type: "object",
+      description:
+        "How it is placed on smaller screens: tablet and phone made from the desktop or placed by hand, what narrow screens do with it, and its priority when the page stacks.",
+      properties: {
+        tablet: {
+          type: "object",
+          properties: {
+            at: {
+              type: "object",
+              properties: {
+                x: { type: "integer", minimum: 0, maximum: PAGE_COLUMNS - 1 },
+                y: { type: "integer", minimum: 0, maximum: MAX_PAGE_ROWS - 1 },
+                w: { type: "integer", minimum: 1, maximum: PAGE_COLUMNS },
+                h: { type: "integer", minimum: 1, maximum: MAX_WIDGET_HEIGHT },
+              },
+              required: ["x", "y", "w", "h"],
+              additionalProperties: false,
+            },
+          },
+          required: ["at"],
+          additionalProperties: false,
+        },
+        phone: {
+          type: "object",
+          properties: {
+            at: {
+              type: "object",
+              properties: {
+                x: { type: "integer", minimum: 0, maximum: PAGE_COLUMNS - 1 },
+                y: { type: "integer", minimum: 0, maximum: MAX_PAGE_ROWS - 1 },
+                w: { type: "integer", minimum: 1, maximum: PAGE_COLUMNS },
+                h: { type: "integer", minimum: 1, maximum: MAX_WIDGET_HEIGHT },
+              },
+              required: ["x", "y", "w", "h"],
+              additionalProperties: false,
+            },
+          },
+          required: ["at"],
+          additionalProperties: false,
+        },
+        narrow: { enum: ["full", "stack", "hide"] },
+        priority: { type: "integer", minimum: -10, maximum: 10 },
+      },
+      additionalProperties: false,
+    },
     in: {
       type: "object",
       description:
@@ -618,6 +711,15 @@ export const pageSchema = {
       minLength: 1,
       maxLength: 255,
       description: "A topic of the workspace's documentation, shown by the page's Help button.",
+    },
+    size: {
+      enum: [...PAGE_SIZES],
+      description: "For a side sheet or a modal: how big it opens.",
+    },
+    icon: {
+      type: "string",
+      pattern: "^[a-z][a-z0-9-]{0,40}$",
+      description: "The icon beside the page in the app's menu, by its name in the kit's set.",
     },
     widgets: { ...widgetsSchema, description: "What is on the page." },
   },
@@ -1080,6 +1182,27 @@ export function checkWidgets(
           );
         } else if (declared.shape !== "record") {
           say(`${where}/source`, `${definition.title} reads ${declared.shape}, not one record`);
+        }
+        continue;
+      }
+      if ("selected" in source || "own" in source) {
+        // One record: the row chosen in a table or list of this page, or the user's own row.
+        if (declared.shape !== "record") {
+          say(`${where}/source`, `${definition.title} reads ${declared.shape}, not one record`);
+        } else if ("selected" in source) {
+          const from = widgets.find((one) => one.id === source.selected);
+          const picks = from && (from.type === "core/table" || from.type === "core/list");
+          if (!picks)
+            say(
+              `${where}/source/selected`,
+              `there is no table or list "${source.selected}" on the page`,
+            );
+          else if (context.surface !== "app")
+            say(`${where}/source`, "a dashboard has no row to choose");
+        } else {
+          if (context.surface !== "app")
+            say(`${where}/source`, "a dashboard is read by members, not by a user's own row");
+          known2(`${where}/source/own/by`, source.own.table, source.own.by);
         }
         continue;
       }

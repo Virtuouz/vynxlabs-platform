@@ -92,6 +92,17 @@ export interface Action {
   when?: Condition[];
   /** What is said when it worked, if the steps say nothing themselves. */
   done?: string;
+  /**
+   * Who may run it (phase 28, decision 2). Left out, whoever may open the app may (decision
+   * 0004). With groups named, only their members may: checked on the server, a call to the API
+   * too. Each is a group's path, of an end-user group or a member group. It only narrows.
+   */
+  runBy?: { groups: string[] };
+}
+
+/** Who may see a widget: drawing only, never security (the tables' row rules are). */
+export interface SeenBy {
+  groups: string[];
 }
 
 /** The tests a condition may make. */
@@ -120,6 +131,8 @@ export type Condition =
 /** When a widget is shown. Only what is drawn: never what someone may read or do (S9). */
 export interface WidgetRules {
   showWhen?: Condition[];
+  /** Shown only to members of these groups (by path). Drawing only: hiding is not security. */
+  seenBy?: SeenBy;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +292,19 @@ export const actionSchema = {
     steps: { type: "array", minItems: 1, maxItems: 8, items: stepSchema },
     when: conditions,
     done: { type: "string", maxLength: 300 },
+    runBy: {
+      type: "object",
+      properties: {
+        groups: {
+          type: "array",
+          minItems: 1,
+          maxItems: 10,
+          items: { type: "string", pattern: PATH, maxLength: 255 },
+        },
+      },
+      required: ["groups"],
+      additionalProperties: false,
+    },
   },
   required: ["steps"],
   additionalProperties: false,
@@ -286,7 +312,22 @@ export const actionSchema = {
 
 export const widgetRulesSchema = {
   type: "object",
-  properties: { showWhen: conditions },
+  properties: {
+    showWhen: conditions,
+    seenBy: {
+      type: "object",
+      properties: {
+        groups: {
+          type: "array",
+          minItems: 1,
+          maxItems: 10,
+          items: { type: "string", pattern: PATH, maxLength: 255 },
+        },
+      },
+      required: ["groups"],
+      additionalProperties: false,
+    },
+  },
   additionalProperties: false,
 } as const;
 

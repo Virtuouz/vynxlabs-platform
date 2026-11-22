@@ -92,7 +92,9 @@ describe("the widget selector (board 7)", () => {
     expect(preview.getByText(/the table this page already uses/)).toBeTruthy();
     expect(preview.getByText("place at the end")).toBeTruthy();
     expect(preview.getByText("place anywhere")).toBeTruthy();
-    expect(dialog.getByRole("complementary", { name: "Preview" }).querySelector("svg")).toBeTruthy();
+    expect(
+      dialog.getByRole("complementary", { name: "Preview" }).querySelector("svg"),
+    ).toBeTruthy();
     fireEvent.focus(dialog.getByRole("button", { name: /^Button/ }));
     expect(preview.getByRole("heading", { name: "Button" })).toBeTruthy();
     expect(preview.queryByText(/the table this page already uses/)).toBeNull();
@@ -145,7 +147,7 @@ describe("the widget selector (board 7)", () => {
   });
 
   test("Enter in the search places the first match; a tile places its widget", () => {
-    const { onAdd, dialog, search } = open({ suggestions: undefined });
+    const { onAdd, dialog, search } = open({ suggestions: undefined } as never);
     fireEvent.change(search, { target: { value: "chart" } });
     fireEvent.submit(search.closest("form") as HTMLFormElement);
     expect(onAdd).toHaveBeenCalledWith(expect.objectContaining({ type: "core/chart" }));

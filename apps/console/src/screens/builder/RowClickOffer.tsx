@@ -1,6 +1,6 @@
 import type { Page, PageWidget } from "@volvel/manifest";
-import type { Edit, PageContext } from "./records.ts";
 import { RowClickEditor } from "./RowClickEditor.tsx";
+import type { Edit, PageContext } from "./records.ts";
 
 /**
  * "When a row is clicked" (board 3) beside the inspector of a table or list: the

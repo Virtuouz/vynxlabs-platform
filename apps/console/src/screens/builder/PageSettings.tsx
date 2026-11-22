@@ -164,7 +164,11 @@ export function PageSettings({
           options={PAGE_SIZES.map((value) => ({ value, label: SIZE_NAMES[value] }))}
           onChange={(value) => {
             const size = PAGE_SIZES.find((one) => one === value);
-            if (size) onChange(withSize(page, size), `making ${page.title} ${SIZE_NAMES[size].toLowerCase()}`);
+            if (size)
+              onChange(
+                withSize(page, size),
+                `making ${page.title} ${SIZE_NAMES[size].toLowerCase()}`,
+              );
           }}
         />
       )}

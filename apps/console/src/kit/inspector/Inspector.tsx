@@ -31,7 +31,7 @@ import {
 } from "@volvel/widgets";
 import { Copy, CornerDownRight, Ellipsis, LayoutGrid, Trash2 } from "lucide-react";
 import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { widgetIcon } from "../../screens/builder/AddToPage.tsx";
+import { outlineIcon } from "../../screens/builder/widgetIcons.ts";
 import { formatCombo } from "../keys.ts";
 import { ActionsTab } from "./ActionsTab.tsx";
 import { type Env, SettingRow } from "./controls.tsx";
@@ -150,7 +150,7 @@ export function Inspector(props: InspectorProps) {
   const pack = WidgetRegistry.packOf(definition.type);
   const named = pack === "core" ? definition.title : `${definition.title} · ${heading(pack)} pack`;
   const kind = props.holds ? `${named} · ${props.holds}` : named;
-  const Icon = widgetIcon(definition.icon);
+  const Icon = outlineIcon(definition.icon);
 
   if (view === "layout") {
     return (

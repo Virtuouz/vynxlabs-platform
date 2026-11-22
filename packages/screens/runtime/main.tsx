@@ -385,10 +385,10 @@ function App() {
               tabs={menu.map((page) => {
                 const Icon = pageIconOf(page.icon);
                 return {
-                id: page.id,
-                label: page.title,
-                ...(Icon ? { icon: <Icon size={14} /> } : {}),
-                content: page.id === open?.id ? drawn : null,
+                  id: page.id,
+                  label: page.title,
+                  ...(Icon ? { icon: <Icon size={14} /> } : {}),
+                  content: page.id === open?.id ? drawn : null,
                 };
               })}
             />

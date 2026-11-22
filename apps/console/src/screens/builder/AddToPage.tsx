@@ -5,13 +5,7 @@ import { useState } from "react";
 import { type Catalog, heading } from "../../kit/inspector/model.ts";
 import { manyOf } from "./records.ts";
 import { offeredOn } from "./registry.ts";
-import {
-  factsOf,
-  matchesWords,
-  previewOf,
-  SUGGESTION_WORDS,
-  wordsOf,
-} from "./selectorData.ts";
+import { factsOf, matchesWords, previewOf, SUGGESTION_WORDS, wordsOf } from "./selectorData.ts";
 import { WidgetDrawing } from "./WidgetDrawing.tsx";
 import { outlineIcon } from "./widgetIcons.ts";
 
@@ -109,9 +103,12 @@ export function AddToPage({
       everything ||
       matchesWords(
         needle,
-        [item.label, item.hint ?? "", suggestions?.table ?? "", SUGGESTION_WORDS[item.key] ?? ""].join(
-          " ",
-        ),
+        [
+          item.label,
+          item.hint ?? "",
+          suggestions?.table ?? "",
+          SUGGESTION_WORDS[item.key] ?? "",
+        ].join(" "),
       ),
   );
   const groups = GROUPS.map((group) => ({
@@ -143,7 +140,9 @@ export function AddToPage({
     const focus = (to: string | undefined) => {
       if (!to) return;
       event.preventDefault();
-      event.currentTarget.querySelector<HTMLElement>(`[data-add-item="${CSS.escape(to)}"]`)?.focus();
+      event.currentTarget
+        .querySelector<HTMLElement>(`[data-add-item="${CSS.escape(to)}"]`)
+        ?.focus();
     };
     if (inSearch) {
       if (event.key === "ArrowDown") focus(grid[0]?.[0]?.id);
@@ -158,9 +157,7 @@ export function AddToPage({
     const to = row + (event.key === "ArrowDown" ? 1 : -1);
     if (to < 0) {
       event.preventDefault();
-      event.currentTarget
-        .querySelector<HTMLElement>("input[name=add-to-page-search]")
-        ?.focus();
+      event.currentTarget.querySelector<HTMLElement>("input[name=add-to-page-search]")?.focus();
       return;
     }
     const next = grid[to];
@@ -243,7 +240,10 @@ export function AddToPage({
     );
   };
 
-  const pair = [group("action", "grid-cols-1 sm:grid-cols-2"), group("organize", "grid-cols-1 sm:grid-cols-2")];
+  const pair = [
+    group("action", "grid-cols-1 sm:grid-cols-2"),
+    group("organize", "grid-cols-1 sm:grid-cols-2"),
+  ];
   const more = shown ? previewOf(shown.type) : undefined;
 
   return (

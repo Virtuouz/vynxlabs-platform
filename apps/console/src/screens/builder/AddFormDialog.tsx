@@ -7,8 +7,8 @@ import {
   askable,
   controlWords,
   defaultPlan,
-  formWidget,
   type FormPlan,
+  formWidget,
   isSystem,
   manyOf,
   oneOf,
@@ -111,7 +111,11 @@ export function AddFormDialog({
             <legend className="mb-2 p-0 text-body-sm font-medium text-ink">
               What should this form do?
             </legend>
-            <div role="radiogroup" aria-label="What should this form do?" className="grid grid-cols-2 gap-2">
+            <div
+              role="radiogroup"
+              aria-label="What should this form do?"
+              className="grid grid-cols-2 gap-2"
+            >
               {MODES.map(({ value, title, icon: Icon }) => (
                 // biome-ignore lint/a11y/useSemanticElements: a card chosen by looking at it
                 <button
@@ -175,7 +179,9 @@ export function AddFormDialog({
                     { value: "modal", label: `Modal: “${plan.title}”` },
                     { value: "page", label: "On this page" },
                   ]}
-                  onChange={(where) => setEdited({ ...plan, where: where === "page" ? "page" : "modal" })}
+                  onChange={(where) =>
+                    setEdited({ ...plan, where: where === "page" ? "page" : "modal" })
+                  }
                 />
                 <SelectField
                   label="After saving"
@@ -185,18 +191,19 @@ export function AddFormDialog({
                     {
                       value: "say",
                       label: `${plan.where === "modal" ? "Close and say" : "Say"} “${
-                        plan.message.trim() || `${oneOf(info.name)} ${mode === "create" ? "created" : "saved"}`
+                        plan.message.trim() ||
+                        `${oneOf(info.name)} ${mode === "create" ? "created" : "saved"}`
                       }”`,
                     },
-                    { value: "nothing", label: plan.where === "modal" ? "Just close" : "Say nothing" },
+                    {
+                      value: "nothing",
+                      label: plan.where === "modal" ? "Just close" : "Say nothing",
+                    },
                   ]}
                   onChange={(value) =>
                     setEdited({
                       ...plan,
-                      message:
-                        value === "nothing"
-                          ? ""
-                          : defaultPlan(info, mode).message,
+                      message: value === "nothing" ? "" : defaultPlan(info, mode).message,
                     })
                   }
                 />
@@ -320,10 +327,7 @@ function Fields({
           );
         })}
         {automatic.map((column) => (
-          <li
-            key={column.name}
-            className="flex items-center gap-2 px-1.5 py-1 text-ink-subtle"
-          >
+          <li key={column.name} className="flex items-center gap-2 px-1.5 py-1 text-ink-subtle">
             <GripVertical aria-hidden="true" size={14} className="shrink-0 text-line" />
             <input type="checkbox" disabled aria-label={heading(column.name)} className="size-4" />
             <span className="text-body-sm">{heading(column.name)}</span>
@@ -361,9 +365,7 @@ function FormPreview({ info, plan }: { info: TableInfo | undefined; plan: FormPl
           type: column.type,
           ...(column.required ? { required: true } : {}),
           ...(column.references ? { references: column.references } : {}),
-          ...(column.type === "enum"
-            ? { values: column.values.map((value) => ({ value })) }
-            : {}),
+          ...(column.type === "enum" ? { values: column.values.map((value) => ({ value })) } : {}),
         })),
       };
       body = (
@@ -382,14 +384,17 @@ function FormPreview({ info, plan }: { info: TableInfo | undefined; plan: FormPl
     }
   }
   return (
-    <section aria-label="Preview" className="flex min-w-0 flex-col gap-3 md:border-l md:border-line md:pl-6">
+    <section
+      aria-label="Preview"
+      className="flex min-w-0 flex-col gap-3 md:border-l md:border-line md:pl-6"
+    >
       <h3 className="m-0 text-label text-ink-subtle uppercase">Preview</h3>
       <div inert className="pointer-events-none">
         {body}
       </div>
       <p className="m-0 text-body-sm text-ink-muted">
-        Required marks and checks come from the table. Labels, help text and sections can be
-        changed after.
+        Required marks and checks come from the table. Labels, help text and sections can be changed
+        after.
       </p>
     </section>
   );

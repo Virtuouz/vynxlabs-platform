@@ -120,7 +120,9 @@ export function RowClickEditor({
   const name = widget.title || manyOf(table);
   const details = detailPagesOf(context.pages, table);
   const opened = openedPage(widget, context.pages);
-  const plainPages = context.pages.filter((page) => kindOf(page) === "page" && page.id !== context.page.id);
+  const plainPages = context.pages.filter(
+    (page) => kindOf(page) === "page" && page.id !== context.page.id,
+  );
   const done = (edit: Edit, label: string) => {
     setWaiting(undefined);
     onApply(edit, label);

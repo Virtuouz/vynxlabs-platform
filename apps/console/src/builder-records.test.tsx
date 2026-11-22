@@ -259,11 +259,11 @@ test("a side sheet is previewed with a sample record, and another can be chosen"
   expect(screen.getByText(/Preview of/).textContent).toBe("Preview of Invoice detail for INV-9340");
 });
 
-test("a table that does nothing on a click is offered Make an Invoice detail, which makes the sheet and the click", async () => {
+test("a table that does nothing on a click can be made to open an Invoice detail, which makes the sheet and the click", async () => {
   await open();
   fireEvent.click(screen.getAllByRole("button", { name: "All invoices" })[0] as HTMLElement);
   const offer = within(await screen.findByRole("region", { name: "When a row is clicked" }));
-  fireEvent.click(await offer.findByRole("button", { name: "Make an Invoice detail" }));
+  fireEvent.click(await offer.findByRole("radio", { name: /Open record detail/ }));
   await saved((body) => pageOf("invoice-detail") !== undefined);
   const sheet = pageOf("invoice-detail");
   expect(sheet).toMatchObject({
@@ -292,7 +292,12 @@ test("a table that does nothing on a click is offered Make an Invoice detail, wh
   });
   // With a detail for the table, the offer is to open it.
   fireEvent.click(screen.getAllByRole("button", { name: "All invoices" })[0] as HTMLElement);
-  expect(screen.queryByRole("region", { name: "When a row is clicked" })).toBeNull();
+  const again = within(await screen.findByRole("region", { name: "When a row is clicked" }));
+  expect(
+    (again.getByRole("radio", { name: /Open record detail/ }) as HTMLInputElement).checked,
+  ).toBe(true);
+  expect(again.getByLabelText("Record detail")).toBeTruthy();
+  expect(again.getByRole("radio", { name: "Side sheet" })).toBeTruthy();
 });
 
 test("Add a form writes the form, the modal it opens in and the button that opens it", async () => {
@@ -357,7 +362,7 @@ test("Add to page suggests what follows from the table the page shows, each corr
     return within(await dialog.findByRole("region", { name: "Suggested for Invoices" }));
   };
   let next = await suggestions();
-  expect(next.getByRole("heading", { name: "Suggested for Invoices" })).toBeTruthy();
+  expect(next.getByRole("heading", { name: "Suggested for this page" })).toBeTruthy();
   expect(next.getByRole("button", { name: /^Invoice detail/ })).toBeTruthy();
   expect(next.getByRole("button", { name: /^New invoice form/ })).toBeTruthy();
   fireEvent.click(next.getByRole("button", { name: /^Mark paid button/ }));
@@ -416,4 +421,48 @@ test("what is written is the same when it is made without the screen", () => {
     kind: "sheet",
     record: { table: "invoices" },
   });
+});
+
+test("the row click editor writes each choice, and Opens as changes the detail's kind", async () => {
+  await open();
+  fireEvent.click(screen.getAllByRole("button", { name: "All invoices" })[0] as HTMLElement);
+  let offer = within(await screen.findByRole("region", { name: "When a row is clicked" }));
+  fireEvent.click(await offer.findByRole("radio", { name: /Open record detail/ }));
+  await saved(() => pageOf("invoice-detail") !== undefined);
+  offer = within(await screen.findByRole("region", { name: "When a row is clicked" }));
+  fireEvent.click(await offer.findByRole("radio", { name: "Modal" }));
+  await saved(() => pageOf("invoice-detail")?.kind === "modal");
+  fireEvent.click(
+    within(await screen.findByRole("region", { name: "When a row is clicked" })).getByRole(
+      "radio",
+      {
+        name: /Do nothing/,
+      },
+    ),
+  );
+  await saved(() => pageOf("money")?.widgets[0]?.on?.rowClick === undefined);
+  expect(pageOf("invoice-detail")?.kind).toBe("modal");
+});
+
+test("Add a form draws the form live from the checked fields, and makes the same body", async () => {
+  await open();
+  fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+  fireEvent.click(
+    await within(await screen.findByRole("dialog", { name: "Add to page" })).findByRole("button", {
+      name: /^Form/,
+    }),
+  );
+  const dialog = within(await screen.findByRole("dialog", { name: "Add a form" }));
+  const preview = within(dialog.getByLabelText("Preview"));
+  await waitFor(() => expect(preview.getAllByText(/Customer/).length).toBeGreaterThan(0));
+  fireEvent.click(dialog.getByRole("checkbox", { name: "Customer" }));
+  await waitFor(() => expect(preview.queryAllByText(/Customer/).length).toBe(0));
+  expect(dialog.getByText(/Required marks and checks come from the table/)).toBeTruthy();
+  fireEvent.click(dialog.getByRole("button", { name: "Create form" }));
+  await saved(() => pageOf("new-invoice") !== undefined);
+  const submit = pageOf("new-invoice")?.widgets[0]?.config?.submit as
+    | { steps: { set?: Record<string, unknown> }[] }
+    | undefined;
+  const set = submit?.steps[0]?.set;
+  expect(Object.keys(set ?? {})).toEqual(["number", "total", "status"]);
 });

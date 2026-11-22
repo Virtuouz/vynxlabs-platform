@@ -92,7 +92,10 @@ export const PREVIEWS: Record<string, Preview> = {
     words: "record open view single item sheet details edit",
     reads: true,
     goodFor: (t) =>
-      pad([`One ${one(t)} with its fields`], ["A customer card", "What was agreed, and what is next"]),
+      pad(
+        [`One ${one(t)} with its fields`],
+        ["A customer card", "What was agreed, and what is next"],
+      ),
   },
   "core/form": {
     drawing: "form",
@@ -134,10 +137,10 @@ export const PREVIEWS: Record<string, Preview> = {
     words: "cross tab matrix grid summary breakdown heatmap",
     reads: true,
     goodFor: (t) =>
-      pad(
-        t?.group && t.group2 ? [`${many(t)} by ${label(t.group)} and ${label(t.group2)}`] : [],
-        ["Visits by vet and month", "Stock by shelf and supplier"],
-      ),
+      pad(t?.group && t.group2 ? [`${many(t)} by ${label(t.group)} and ${label(t.group2)}`] : [], [
+        "Visits by vet and month",
+        "Stock by shelf and supplier",
+      ]),
   },
   "labs/goal": {
     drawing: "goal",
@@ -150,8 +153,7 @@ export const PREVIEWS: Record<string, Preview> = {
     drawing: "button",
     about:
       "One action people press: mark something paid, send a message, run a workflow. It can ask to confirm first.",
-    words:
-      "action press click run pay payment charge send approve confirm mark paid workflow",
+    words: "action press click run pay payment charge send approve confirm mark paid workflow",
     reads: false,
     goodFor: () => ["Mark paid", "Send the invoice", "Approve the request"],
   },
@@ -168,7 +170,11 @@ export const PREVIEWS: Record<string, Preview> = {
     about: "A heading over widgets that belong together, plain or as a card, which can fold away.",
     words: "group heading card container fold collapse title",
     reads: false,
-    goodFor: () => ["The numbers, under one heading", "A card of related charts", "Details that fold"],
+    goodFor: () => [
+      "The numbers, under one heading",
+      "A card of related charts",
+      "Details that fold",
+    ],
   },
   "core/tabs": {
     drawing: "tabs",
@@ -217,9 +223,9 @@ export const SUGGESTION_WORDS: Record<string, string> = {
 };
 
 const FILLER = new Set(
-  (
-    "a an the to of and or for in on at it is be people person users user should can could do does want wants need needs let lets make take show add find something describe my our their them so that this with i we when how what"
-  ).split(" "),
+  "a an the to of and or for in on at it is be people person users user should can could do does want wants need needs let lets make take show add find something describe my our their them so that this with i we when how what".split(
+    " ",
+  ),
 );
 
 /** The words of a phrase that say something: lowercase, without filler, a plural as its singular. */

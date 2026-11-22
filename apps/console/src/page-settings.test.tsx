@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
-import type { Page } from "@volvel/manifest";
+
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import type { Page } from "@volvel/manifest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { PageSettings } from "./screens/builder/PageSettings.tsx";
 

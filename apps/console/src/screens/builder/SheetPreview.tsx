@@ -128,7 +128,12 @@ export function SheetPreviewHost({
   // biome-ignore lint/correctness/useExhaustiveDependencies: `named` is `source` as one value
   const client = useMemo(
     () =>
-      pageClient(root, source.of === "interface" ? { ...source, page: page.id } : source, true, sample.record),
+      pageClient(
+        root,
+        source.of === "interface" ? { ...source, page: page.id } : source,
+        true,
+        sample.record,
+      ),
     [root, named, page.id, sample.record],
   );
   const at = sample.items.findIndex((one) => one.id === sample.record);
@@ -161,7 +166,9 @@ export function SheetPreviewHost({
         />
       ) : (
         <p className="m-0 text-body-sm text-ink-muted">
-          {sample.loading ? "Finding a record to preview with…" : "The table has no rows to preview with."}
+          {sample.loading
+            ? "Finding a record to preview with…"
+            : "The table has no rows to preview with."}
         </p>
       )}
     </SheetPreview>

@@ -66,7 +66,11 @@ export function Tabs({
                 : `-mb-px border-b-2 border-transparent ${dense ? "px-2 text-body-sm" : "px-3"} py-2 font-medium whitespace-nowrap text-ink-muted hover:text-ink data-[active]:border-action data-[active]:text-action data-[disabled]:opacity-50`
             }
           >
-            {tab.icon ? <span aria-hidden="true" className="mr-1.5 inline-flex shrink-0 align-text-bottom">{tab.icon}</span> : null}
+            {tab.icon ? (
+              <span aria-hidden="true" className="mr-1.5 inline-flex shrink-0 align-text-bottom">
+                {tab.icon}
+              </span>
+            ) : null}
             {tab.label}
             {tab.count !== undefined ? (
               <span className="text-meta text-ink-subtle tabular-nums">{tab.count}</span>

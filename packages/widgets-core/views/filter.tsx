@@ -1,15 +1,5 @@
-<<<<<<< HEAD
-
-import { Button, TextField } from "@volvel/ui";
-import { ChevronDown, Search, X } from "@volvel/ui/icons";
-
-=======
-
-import { Button, Popover, SelectField, TextField } from "@volvel/ui";
-import { ListFilter, X } from "@volvel/ui/icons";
-
->>>>>>> c54b5e9 (Phase 28 A8: options for detail, button, action group, section, tabs, filter and text; greyed actions by who can run them; seenBy)
-
+import { Button, Popover, TextField } from "@volvel/ui";
+import { ChevronDown, ListFilter, Search, X } from "@volvel/ui/icons";
 import type { Choice, FilterHost, WidgetViewProps } from "@volvel/widgets";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -389,30 +379,7 @@ export function FilterView({ config, filters: host }: WidgetViewProps<FilterConf
     );
   }
   return (
-<<<<<<< HEAD
     <search aria-label="Filters" className="flex flex-wrap items-end gap-x-3 gap-y-3">
-      {config.filters.map((filter) => {
-        const control: Control = {
-          filter,
-          label: filter.label ?? filter.name,
-          value: valueFor(filter, values),
-          onChange: (next) => host?.set(filter.name, next),
-        };
-        return filter.type === "date_range" ? (
-          <DateRangeControl key={filter.name} {...control} />
-        ) : filter.type === "choice" ? (
-          <ChoiceControl key={filter.name} {...control} host={host} />
-        ) : (
-          <TypedControl key={filter.name} {...control} />
-        );
-      })}
-      {config.reset && differs ? (
-        <Button variant="quiet" onClick={() => host?.reset()}>
-          Clear
-        </Button>
-      ) : null}
-=======
-    <search aria-label="Filters" className="flex flex-wrap items-end gap-x-4 gap-y-3">
       {draw(config.filters)}
       {clear}
     </search>
@@ -438,7 +405,7 @@ function FiltersBehindButton({
 }) {
   const set = others.filter((filter) => norm(valueFor(filter, values)) !== norm(null)).length;
   return (
-    <search aria-label="Filters" className="flex flex-wrap items-end gap-x-4 gap-y-3">
+    <search aria-label="Filters" className="flex flex-wrap items-end gap-x-3 gap-y-3">
       {search}
       {others.length > 0 ? (
         <Popover
@@ -459,7 +426,6 @@ function FiltersBehindButton({
       ) : (
         clear
       )}
->>>>>>> c54b5e9 (Phase 28 A8: options for detail, button, action group, section, tabs, filter and text; greyed actions by who can run them; seenBy)
     </search>
   );
 }

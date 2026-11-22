@@ -52,19 +52,51 @@ export function Tooltip({
 }) {
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Shown by a tap: the finger lifting is not the pointer leaving, so hover's close is ignored.
+  const tapped = useRef(false);
+  const hide = () => {
+    clearTimeout(timer.current);
+    tapped.current = false;
+    setOpen(false);
+  };
   useEffect(() => () => clearTimeout(timer.current), []);
+  // A tap anywhere else puts it away.
+  useEffect(() => {
+    if (!open || !tapped.current) return;
+    const away = () => hide();
+    const soon = setTimeout(
+      () => document.addEventListener("pointerdown", away, { once: true }),
+      50,
+    );
+    return () => {
+      clearTimeout(soon);
+      document.removeEventListener("pointerdown", away);
+    };
+  }, [open]);
   const touch = tapToShow
     ? {
         onPointerUp: (event: { pointerType: string }) => {
           if (event.pointerType !== "touch") return;
           clearTimeout(timer.current);
+          tapped.current = true;
           setOpen(true);
-          timer.current = setTimeout(() => setOpen(false), 4000);
+          timer.current = setTimeout(hide, 5000);
         },
       }
     : {};
   return (
-    <Base.Root {...(tapToShow ? { open, onOpenChange: setOpen } : {})}>
+    <Base.Root
+      {...(tapToShow
+        ? {
+            open,
+            onOpenChange: (next: boolean, details?: { reason?: string }) => {
+              if (!next && tapped.current && details?.reason !== "escape-key") return;
+              if (!next) tapped.current = false;
+              setOpen(next);
+            },
+          }
+        : {})}
+    >
       <Base.Trigger render={children} {...touch} />
       <Base.Portal>
         <Base.Positioner side={side} sideOffset={6} className="layer-popover">

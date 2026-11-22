@@ -211,6 +211,8 @@ export interface Request {
   records?: readonly string[] | undefined;
   /** Its row, when it is among what the widget read: for `{column}` in the text. */
   row?: Row | undefined;
+  /** The table of the record, when the widget does not read one of its own (a sheet's detail). */
+  table?: string | undefined;
   /** What the widget read of its columns and the names references point at: for the confirmation's words. */
   facts?: ConfirmFacts | undefined;
   /** The group a point or cell stands for. */
@@ -328,7 +330,19 @@ export function useActions(host: ActionsHost): {
       const action = actionAt(request.widget, request.at);
       if (!action) return Promise.resolve({ ok: false, message: "That can't be done here." });
       if (action.confirm) {
-        return new Promise((resolve) => setAsking({ request, action, resolve }));
+        // A widget on a sheet or record page has no table of its own: the page's says what its record is.
+        const held = latest.current.pages?.filter(
+          (page) =>
+            page.widgets.includes(request.widget) ||
+            page.widgets.some(
+              (one) => one.id === request.widget.id && one.type === request.widget.type,
+            ),
+        );
+        const table =
+          tableOfWidget(request.widget) ?? held?.find((page) => page.record)?.record?.table;
+        return new Promise((resolve) =>
+          setAsking({ request: { ...request, table }, action, resolve }),
+        );
       }
       return call(request, action, request.inputs ? { ...request.inputs } : undefined).then(
         (): ActOutcome => ({ ok: true }),
@@ -442,7 +456,7 @@ function Confirmation({
           button: confirm.button,
         }
       : undefined,
-    table: tableOfWidget(asking.request.widget),
+    table: tableOfWidget(asking.request.widget) ?? asking.request.table,
     row: asking.request.row,
     facts: asking.request.facts,
   });

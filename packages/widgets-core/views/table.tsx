@@ -14,6 +14,7 @@ import {
   sortedBy,
   totalOf,
 } from "./cells.tsx";
+import { RowsBox } from "./rowsBox.tsx";
 import {
   CANNOT_NOW,
   listensTo,
@@ -374,195 +375,208 @@ export function TableView(props: WithSelected<TableConfig>) {
     <>
       <TableButtons buttons={buttons} props={props} />
       {bar}
-      {/* table-allowed: a widget's rows are drawn by its view, which the page owns; the kit's grid is for editing data */}
-      <table className="w-full border-collapse text-left text-[13.5px]">
-        <thead>
-          <tr>
-            {selecting ? (
-              <th
-                scope="col"
-                className="sticky top-0 w-8 border-b border-line bg-surface px-3 py-2"
-              >
-                <input
-                  type="checkbox"
-                  className={CHECKBOX}
-                  aria-label={rows.more ? "Choose every row shown" : "Choose every row"}
-                  checked={allTicked}
-                  onChange={(event) =>
-                    setTicked(event.currentTarget.checked ? new Set(ordered.map(idOf)) : new Set())
-                  }
-                />
-              </th>
-            ) : null}
-            {shown.map(({ spec, info }) => {
-              const text = headingOf(spec, rows);
-              const sorting = spec.sortable && !building;
-              const on = sorting && sort?.column === spec.column ? sort : undefined;
-              return (
+      <RowsBox>
+        {/* table-allowed: a widget's rows are drawn by its view, which the page owns; the kit's grid is for editing data */}
+        <table className="w-full border-collapse text-left text-[13.5px]">
+          <thead>
+            <tr>
+              {selecting ? (
                 <th
-                  key={spec.column}
                   scope="col"
-                  aria-sort={
-                    on ? (on.descending ? "descending" : "ascending") : sorting ? "none" : undefined
-                  }
-                  style={spec.width === "fixed" ? { width: "10rem", maxWidth: "10rem" } : undefined}
-                  className={`sticky top-0 border-b border-line bg-surface ${edge} py-2 text-meta font-medium whitespace-nowrap text-ink-muted ${
-                    isRight(spec, info) ? "text-right" : ""
-                  }`}
+                  className="sticky top-0 w-8 border-b border-line bg-surface px-3 py-2"
                 >
-                  {building ? (
-                    <button
-                      type="button"
-                      title="Change this column"
-                      className="rounded-inner font-medium text-inherit hover:text-ink"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        // The builder opens this column's settings: `PageView` hands it to `editing.onColumn`.
-                        emit("column", { group: { column: spec.column } });
-                      }}
-                    >
-                      {text}
-                    </button>
-                  ) : (
-                    <>
-                      {sorting ? (
-                        <button
-                          type="button"
-                          title={`Sort by ${text}`}
-                          className="inline-flex items-center gap-1 rounded-inner font-medium text-inherit hover:text-ink focus-visible:outline-2 focus-visible:outline-action"
-                          onClick={() =>
-                            // Ascending, then descending, then as read.
-                            setSort(
-                              !on
-                                ? { column: spec.column, descending: false }
-                                : on.descending
-                                  ? undefined
-                                  : { column: spec.column, descending: true },
-                            )
-                          }
-                        >
-                          {text}
-                          {on ? (
-                            on.descending ? (
-                              <ChevronDown aria-hidden="true" size={14} />
-                            ) : (
-                              <ChevronUp aria-hidden="true" size={14} />
-                            )
-                          ) : null}
-                        </button>
-                      ) : (
-                        text
-                      )}
-                      {info?.description ? (
-                        // What the column holds, as its table's definition says: the kit's grid does the same.
-                        <span className="ml-1 inline-flex align-middle font-normal normal-case">
-                          <Toggletip label={`About ${text}`} title={text}>
-                            {info.description}
-                          </Toggletip>
-                        </span>
-                      ) : null}
-                    </>
-                  )}
+                  <input
+                    type="checkbox"
+                    className={CHECKBOX}
+                    aria-label={rows.more ? "Choose every row shown" : "Choose every row"}
+                    checked={allTicked}
+                    onChange={(event) =>
+                      setTicked(
+                        event.currentTarget.checked ? new Set(ordered.map(idOf)) : new Set(),
+                      )
+                    }
+                  />
                 </th>
-              );
-            })}
-            {actions.length > 0 ? (
-              <th scope="col" className="sticky top-0 border-b border-line bg-surface px-3 py-2">
-                <span className="sr-only">Actions</span>
-              </th>
-            ) : null}
-          </tr>
-        </thead>
-        <tbody>
-          {ordered.map((row, at) => {
-            const id = rowId(row, at);
-            return (
-              <tr
-                key={id}
-                className={`group/row border-b border-line/70 last:border-b-0 ${
-                  config.stripes && at % 2 === 1 ? "bg-sunken/50" : ""
-                } ${pressable ? PRESSABLE : ""}`}
-                // biome-ignore lint/a11y/useKeyWithClickEvents: only a row something listens to is pressed, and that one takes Enter
-                {...press(
-                  pressable,
-                  () => emit("rowClick", { record: id }),
-                  selectedRecord === id,
-                  id,
-                )}
-              >
-                {selecting ? (
-                  <td className={`${edge} ${pad} align-middle`}>
-                    <input
-                      type="checkbox"
-                      className={CHECKBOX}
-                      aria-label={`Choose ${String(row[shown[0]?.spec.column ?? "id"] ?? id)}`}
-                      checked={ticked.has(id)}
-                      onClick={(event) => event.stopPropagation()}
-                      onChange={(event) => tick(id, event.currentTarget.checked)}
-                    />
-                  </td>
-                ) : null}
-                {shown.map(({ spec, info }) => (
-                  <td
+              ) : null}
+              {shown.map(({ spec, info }) => {
+                const text = headingOf(spec, rows);
+                const sorting = spec.sortable && !building;
+                const on = sorting && sort?.column === spec.column ? sort : undefined;
+                return (
+                  <th
                     key={spec.column}
+                    scope="col"
+                    aria-sort={
+                      on
+                        ? on.descending
+                          ? "descending"
+                          : "ascending"
+                        : sorting
+                          ? "none"
+                          : undefined
+                    }
                     style={
                       spec.width === "fixed" ? { width: "10rem", maxWidth: "10rem" } : undefined
                     }
-                    className={`${edge} ${pad} align-middle ${isRight(spec, info) ? "text-right" : ""} ${
-                      spec.width === "fixed" ? "truncate" : ""
-                    } ${
-                      // A number, a date or a code is never broken across lines ("INV-" and "9338").
-                      typeof row[spec.column] === "number" ||
-                      (
-                        typeof row[spec.column] === "string" &&
-                          (row[spec.column] as string).length <= 20
-                      )
-                        ? "whitespace-nowrap"
-                        : ""
+                    className={`sticky top-0 border-b border-line bg-surface ${edge} py-2 text-meta font-medium whitespace-nowrap text-ink-muted ${
+                      isRight(spec, info) ? "text-right" : ""
                     }`}
                   >
-                    {clamped(
-                      row[spec.column],
-                      cellOf(spec, info, row[spec.column], rows, most.get(spec.column)),
+                    {building ? (
+                      <button
+                        type="button"
+                        title="Change this column"
+                        className="rounded-inner font-medium text-inherit hover:text-ink"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          // The builder opens this column's settings: `PageView` hands it to `editing.onColumn`.
+                          emit("column", { group: { column: spec.column } });
+                        }}
+                      >
+                        {text}
+                      </button>
+                    ) : (
+                      <>
+                        {sorting ? (
+                          <button
+                            type="button"
+                            title={`Sort by ${text}`}
+                            className="inline-flex items-center gap-1 rounded-inner font-medium text-inherit hover:text-ink focus-visible:outline-2 focus-visible:outline-action"
+                            onClick={() =>
+                              // Ascending, then descending, then as read.
+                              setSort(
+                                !on
+                                  ? { column: spec.column, descending: false }
+                                  : on.descending
+                                    ? undefined
+                                    : { column: spec.column, descending: true },
+                              )
+                            }
+                          >
+                            {text}
+                            {on ? (
+                              on.descending ? (
+                                <ChevronDown aria-hidden="true" size={14} />
+                              ) : (
+                                <ChevronUp aria-hidden="true" size={14} />
+                              )
+                            ) : null}
+                          </button>
+                        ) : (
+                          text
+                        )}
+                        {info?.description ? (
+                          // What the column holds, as its table's definition says: the kit's grid does the same.
+                          <span className="ml-1 inline-flex align-middle font-normal normal-case">
+                            <Toggletip label={`About ${text}`} title={text}>
+                              {info.description}
+                            </Toggletip>
+                          </span>
+                        ) : null}
+                      </>
                     )}
+                  </th>
+                );
+              })}
+              {actions.length > 0 ? (
+                <th scope="col" className="sticky top-0 border-b border-line bg-surface px-3 py-2">
+                  <span className="sr-only">Actions</span>
+                </th>
+              ) : null}
+            </tr>
+          </thead>
+          <tbody>
+            {ordered.map((row, at) => {
+              const id = rowId(row, at);
+              return (
+                <tr
+                  key={id}
+                  data-box-row=""
+                  className={`group/row border-b border-line/70 last:border-b-0 ${
+                    config.stripes && at % 2 === 1 ? "bg-sunken/50" : ""
+                  } ${pressable ? PRESSABLE : ""}`}
+                  // biome-ignore lint/a11y/useKeyWithClickEvents: only a row something listens to is pressed, and that one takes Enter
+                  {...press(
+                    pressable,
+                    () => emit("rowClick", { record: id }),
+                    selectedRecord === id,
+                    id,
+                  )}
+                >
+                  {selecting ? (
+                    <td className={`${edge} ${pad} align-middle`}>
+                      <input
+                        type="checkbox"
+                        className={CHECKBOX}
+                        aria-label={`Choose ${String(row[shown[0]?.spec.column ?? "id"] ?? id)}`}
+                        checked={ticked.has(id)}
+                        onClick={(event) => event.stopPropagation()}
+                        onChange={(event) => tick(id, event.currentTarget.checked)}
+                      />
+                    </td>
+                  ) : null}
+                  {shown.map(({ spec, info }) => (
+                    <td
+                      key={spec.column}
+                      style={
+                        spec.width === "fixed" ? { width: "10rem", maxWidth: "10rem" } : undefined
+                      }
+                      className={`${edge} ${pad} align-middle ${isRight(spec, info) ? "text-right" : ""} ${
+                        spec.width === "fixed" ? "truncate" : ""
+                      } ${
+                        // A number, a date or a code is never broken across lines ("INV-" and "9338").
+                        typeof row[spec.column] === "number" ||
+                        (
+                          typeof row[spec.column] === "string" &&
+                            (row[spec.column] as string).length <= 20
+                        )
+                          ? "whitespace-nowrap"
+                          : ""
+                      }`}
+                    >
+                      {clamped(
+                        row[spec.column],
+                        cellOf(spec, info, row[spec.column], rows, most.get(spec.column)),
+                      )}
+                    </td>
+                  ))}
+                  {actions.length > 0 ? (
+                    <td className={`${edge} ${pad} text-right align-middle whitespace-nowrap`}>
+                      <RowActionButtons
+                        actions={actions}
+                        row={row}
+                        record={id}
+                        props={props}
+                        always={false}
+                      />
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
+          </tbody>
+          {totals ? (
+            <tfoot>
+              <tr className="border-t border-line-strong font-medium">
+                {selecting ? <td className={`${edge} ${pad}`} /> : null}
+                {shown.map(({ spec, info }, index) => (
+                  <td
+                    key={spec.column}
+                    className={`${edge} ${pad} align-middle ${isRight(spec, info) ? "text-right" : ""}`}
+                  >
+                    {spec.total ? (
+                      <span className="tabular-nums">{totalOf(rows.rows, spec, info)}</span>
+                    ) : index === 0 ? (
+                      <span className="text-ink-muted">Total</span>
+                    ) : null}
                   </td>
                 ))}
-                {actions.length > 0 ? (
-                  <td className={`${edge} ${pad} text-right align-middle whitespace-nowrap`}>
-                    <RowActionButtons
-                      actions={actions}
-                      row={row}
-                      record={id}
-                      props={props}
-                      always={false}
-                    />
-                  </td>
-                ) : null}
+                {actions.length > 0 ? <td /> : null}
               </tr>
-            );
-          })}
-        </tbody>
-        {totals ? (
-          <tfoot>
-            <tr className="border-t border-line-strong font-medium">
-              {selecting ? <td className={`${edge} ${pad}`} /> : null}
-              {shown.map(({ spec, info }, index) => (
-                <td
-                  key={spec.column}
-                  className={`${edge} ${pad} align-middle ${isRight(spec, info) ? "text-right" : ""}`}
-                >
-                  {spec.total ? (
-                    <span className="tabular-nums">{totalOf(rows.rows, spec, info)}</span>
-                  ) : index === 0 ? (
-                    <span className="text-ink-muted">Total</span>
-                  ) : null}
-                </td>
-              ))}
-              {actions.length > 0 ? <td /> : null}
-            </tr>
-          </tfoot>
-        ) : null}
-      </table>
+            </tfoot>
+          ) : null}
+        </table>
+      </RowsBox>
       <ShowMore data={rows} />
     </>
   );

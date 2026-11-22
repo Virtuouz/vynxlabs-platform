@@ -9,6 +9,7 @@ import {
   RowActionButtons,
   type WithSelected,
 } from "./press.tsx";
+import { RowsBox } from "./rowsBox.tsx";
 import { ShowMore } from "./table.tsx";
 
 /** The places of a row, each filled with a column; a place left out takes no space. */
@@ -74,62 +75,65 @@ export function ListView(props: WithSelected<ListConfig>) {
   const cards = config.look === "cards";
   return (
     <>
-      <ul
-        className={
-          cards
-            ? "m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3 p-0"
-            : "m-0 flex list-none flex-col p-0"
-        }
-      >
-        {rows.rows.map((row, at) => {
-          const id = rowId(row, at);
-          const places = placesOf(row, config, rows, title);
-          return (
-            <li
-              key={id}
-              className={`group/row flex min-w-0 items-center gap-3 ${
-                cards
-                  ? "rounded-control border border-line bg-surface p-3"
-                  : "border-b border-line px-1 py-3 last:border-b-0"
-              } ${pressable ? `${PRESSABLE} ${cards ? "data-[selected]:border-action" : ""}` : ""}`}
-              // biome-ignore lint/a11y/useKeyWithClickEvents: only a record something listens to is pressed, and that one takes Enter
-              {...press(
-                pressable,
-                () => emit("rowClick", { record: id }),
-                selectedRecord === id,
-                id,
-              )}
-            >
-              {places.picture}
-              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                {places.title ? (
-                  <strong className="block truncate font-medium">{places.title}</strong>
-                ) : null}
-                {places.subtitle ? (
-                  <span className="truncate text-body-sm text-ink-muted">{places.subtitle}</span>
-                ) : null}
-                {actions.length > 0 ? (
-                  <span className="mt-1 flex">
-                    <RowActionButtons
-                      actions={actions}
-                      row={row}
-                      record={id}
-                      props={props}
-                      always={props.size.narrow}
-                    />
+      <RowsBox>
+        <ul
+          className={
+            cards
+              ? "m-0 grid list-none grid-cols-[repeat(auto-fill,minmax(14rem,1fr))] gap-3 p-0"
+              : "m-0 flex list-none flex-col p-0"
+          }
+        >
+          {rows.rows.map((row, at) => {
+            const id = rowId(row, at);
+            const places = placesOf(row, config, rows, title);
+            return (
+              <li
+                key={id}
+                data-box-row=""
+                className={`group/row flex min-w-0 items-center gap-3 ${
+                  cards
+                    ? "rounded-control border border-line bg-surface p-3"
+                    : "border-b border-line px-1 py-3 last:border-b-0"
+                } ${pressable ? `${PRESSABLE} ${cards ? "data-[selected]:border-action" : ""}` : ""}`}
+                // biome-ignore lint/a11y/useKeyWithClickEvents: only a record something listens to is pressed, and that one takes Enter
+                {...press(
+                  pressable,
+                  () => emit("rowClick", { record: id }),
+                  selectedRecord === id,
+                  id,
+                )}
+              >
+                {places.picture}
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  {places.title ? (
+                    <strong className="block truncate font-medium">{places.title}</strong>
+                  ) : null}
+                  {places.subtitle ? (
+                    <span className="truncate text-body-sm text-ink-muted">{places.subtitle}</span>
+                  ) : null}
+                  {actions.length > 0 ? (
+                    <span className="mt-1 flex">
+                      <RowActionButtons
+                        actions={actions}
+                        row={row}
+                        record={id}
+                        props={props}
+                        always={props.size.narrow}
+                      />
+                    </span>
+                  ) : null}
+                </span>
+                {places.right || places.badge ? (
+                  <span className="flex shrink-0 flex-col items-end gap-1">
+                    {places.right ? <span className="font-medium">{places.right}</span> : null}
+                    {places.badge}
                   </span>
                 ) : null}
-              </span>
-              {places.right || places.badge ? (
-                <span className="flex shrink-0 flex-col items-end gap-1">
-                  {places.right ? <span className="font-medium">{places.right}</span> : null}
-                  {places.badge}
-                </span>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
+              </li>
+            );
+          })}
+        </ul>
+      </RowsBox>
       <ShowMore data={rows} />
     </>
   );

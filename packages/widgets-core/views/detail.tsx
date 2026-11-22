@@ -2,7 +2,13 @@ import { Button, Details } from "@volvel/ui";
 import type { ColumnInfo, RecordData, RowsData, WidgetViewProps } from "@volvel/widgets";
 import { formatOfColumn, moneyText, parseMoney } from "@volvel/widgets";
 import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
-import { type ColumnSpec, cellOf, defaultColumns, SYSTEM_COLUMNS } from "./cells.tsx";
+import {
+  type Tone as BadgeTone,
+  type ColumnSpec,
+  cellOf,
+  defaultColumns,
+  SYSTEM_COLUMNS,
+} from "./cells.tsx";
 import { labelOf } from "./format.ts";
 import { NamedIcon, type Tone, VARIANT } from "./look.tsx";
 import { CANNOT_NOW, useRunning } from "./press.tsx";
@@ -25,6 +31,8 @@ interface DetailConfig {
   /** The big figure under the heading: a column. Left out: the first money field. */
   figure?: string;
   status?: string;
+  /** The tones the status chip gives each value, as the table it was made from has them. */
+  statusBadges?: Record<string, BadgeTone>;
   fields?: DetailField[];
   actions?: DetailAction[];
   /** Tiles across. A number, or the digit as text. */
@@ -403,7 +411,12 @@ export function DetailView({
         </div>
         {status && record[status] !== null && record[status] !== undefined ? (
           <span className="shrink-0">
-            {cellOf({ column: status, as: "badge" }, infoOf(status), record[status], rows)}
+            {cellOf(
+              { column: status, as: "badge", ...(config.statusBadges ? { badges: config.statusBadges } : {}) },
+              infoOf(status),
+              record[status],
+              rows,
+            )}
           </span>
         ) : null}
       </div>

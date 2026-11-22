@@ -906,6 +906,20 @@ export const detail = defineWidget({
           order: 3,
         }),
       },
+      // The tones the status chip gives each value: those of the table the detail was made from.
+      statusBadges: {
+        type: "object",
+        maxProperties: 50,
+        additionalProperties: { enum: TONES },
+        "x-volvel": hint({
+          tab: "display",
+          control: "fields",
+          of: "record",
+          level: "more",
+          label: "Status colours",
+          order: 9,
+        }),
+      },
       fields: {
         type: "array",
         maxItems: 50,
@@ -915,6 +929,9 @@ export const detail = defineWidget({
             column: RESULT_COLUMN,
             label: { type: "string", maxLength: 60 },
             format: FORMAT,
+            // Carried over from the table a detail is made from: a choice drawn as a chip.
+            as: { enum: ["text", "badge"] },
+            badges: { type: "object", maxProperties: 50, additionalProperties: { enum: TONES } },
             section: { type: "string", maxLength: 60 },
             hidden: { type: "boolean" },
           },

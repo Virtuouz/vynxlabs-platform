@@ -113,6 +113,31 @@ function sentence(items: readonly string[], most = 3): string {
   return items.length > most ? `${shown}; and ${items.length - most} more` : shown;
 }
 
+/** Why a widget as it is configured draws nothing useful, when it does not: what to choose to fix it. */
+export function showsNothing(widget: PageWidget): string | undefined {
+  const config = widget.config ?? {};
+  if (widget.type === "core/list") {
+    const placed = ["title", "subtitle", "right", "badge", "picture"].some(
+      (place) => typeof config[place] === "string" && config[place] !== "",
+    );
+    return placed
+      ? undefined
+      : "Nothing is placed: choose what the title, the line under it and the badge show.";
+  }
+  if (widget.type === "core/pivot") {
+    const source = widget.data?.rows?.source;
+    const by = source && "visual" in source ? (source.visual.groupBy?.length ?? 0) : 2;
+    return by >= 2 ? undefined : "Choose the rows and the columns of the grid.";
+  }
+  if (widget.type === "core/detail") {
+    const source = widget.data?.record?.source;
+    return source && ("record" in source || "selected" in source || "own" in source)
+      ? undefined
+      : "Choose where the record comes from.";
+  }
+  return undefined;
+}
+
 /**
  * The readiness check of board 6, as items: what a publish would find wrong, or worth knowing,
  * said before it is done. Pure: the panel reads the workspace and hands it in.
@@ -212,6 +237,19 @@ export function checksFor(input: {
         ? { id: `form:${widget.id}`, state: "fail", text: `${name} form can't save`, detail: why }
         : { id: `form:${widget.id}`, state: "ok", text: `${name} form is valid` },
     );
+  }
+
+  // What shows nothing yet: a List with nothing placed, a Pivot with no grid, a detail with no record.
+  for (const { page, widget } of every) {
+    const why = showsNothing(widget);
+    if (!why) continue;
+    items.push({
+      id: `empty:${page.id}:${widget.id}`,
+      state: "warn",
+      text: `${nameOf(widget, definitionOf(widget.type))} on ${page.title} shows nothing yet`,
+      detail: why,
+      at: { page: page.id, widget: widget.id },
+    });
   }
 
   // Approvals: the flows it lists ask for an approval, and where it is decided.

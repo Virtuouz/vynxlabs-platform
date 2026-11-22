@@ -108,7 +108,9 @@ export function Dialog({
                     {icon}
                   </span>
                 ) : null}
-                <Base.Title className="m-0 truncate text-title font-semibold">{title}</Base.Title>
+                <Base.Title className="m-0 line-clamp-3 min-w-0 text-title font-semibold [overflow-wrap:anywhere]">
+                  {title}
+                </Base.Title>
               </div>
               {/* A way out that can be seen and pressed, beside Esc and the backdrop. */}
               <Base.Close

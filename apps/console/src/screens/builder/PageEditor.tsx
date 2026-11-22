@@ -84,6 +84,7 @@ import {
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
 import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
+import { startingConfigFor } from "./startingConfig.ts";
 import { approvalsSuggestion } from "./selectorData.ts";
 import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
 import { TextOnPage } from "./TextOnPage.tsx";
@@ -355,6 +356,14 @@ export function PageEditor({
         ? { data: defaultInputs(definition, mainTable(widgets, catalog), catalog) }
         : {}),
     };
+    // A List, Pivot or Record detail starts with places and fields from the table the page reads,
+    // written in its own configuration: what the drawer shows is what the page draws.
+    const reads = pageInfo?.page.record?.table ?? mainTable(widgets, catalog);
+    added = startingConfigFor(
+      added,
+      catalog.tables.find((one) => one.name === reads),
+      { widgets, ...(pageInfo ? { kind: pageInfo.page.kind, record: pageInfo.page.record } : {}) },
+    );
     added = onThePagesRecord(added, pageInfo?.page);
     if (added.data && Object.keys(added.data).length === 0) delete added.data;
     for (const filter of filters) added = bindFilter(added, filter, catalog, widgets);

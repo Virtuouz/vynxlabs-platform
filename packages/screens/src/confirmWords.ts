@@ -114,6 +114,6 @@ export function confirmWords(input: ConfirmInput): {
     title,
     text: input.confirm?.text || undefined,
     button,
-    dismiss: /^cancel\b/i.test(button) ? "Go back" : "Cancel",
+    dismiss: /^cancel\b/i.test(button) || /^cancel\b/i.test(label ?? "") ? "Go back" : "Cancel",
   };
 }

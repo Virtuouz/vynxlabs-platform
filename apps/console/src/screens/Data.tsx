@@ -3,6 +3,7 @@ import {
   Button,
   Closing,
   ComboboxField,
+  DateField,
   Dialog,
   EmptyState,
   Grid,
@@ -1112,6 +1113,18 @@ function AddRow({
                 }}
               />
             </label>
+          ) : column.type === "date" || column.type === "timestamp" ? (
+            <DateField
+              key={column.name}
+              name={column.name}
+              label={column.name}
+              value={values[column.name] ?? ""}
+              required={false}
+              {...(column.type === "timestamp" ? { withTime: true, timeZone: "UTC" as const } : {})}
+              hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}${column.type === "timestamp" ? "." : ""}`}
+              error={errors[column.name]}
+              onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
+            />
           ) : column.type === "json" ? (
             <TextAreaField
               key={column.name}

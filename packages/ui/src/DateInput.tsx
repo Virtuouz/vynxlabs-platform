@@ -100,7 +100,6 @@ export function DateInput({
   const wall = trimWall(value, withTime);
   const [text, setText] = useState(() => formatWall(wall, locale, withTime));
   const [own, setProblem] = useState<string | undefined>();
-  const editing = useRef(false);
   const lastSent = useRef(wall);
   const input = useRef<HTMLInputElement>(null);
   const wrapper = useRef<HTMLDivElement>(null);
@@ -119,12 +118,12 @@ export function DateInput({
   );
 
   // A value that comes from outside, such as a Clear button, replaces what was typed. The value
-  // this box just sent does not: the person is still typing in it.
+  // this box itself sent does not: the box already shows what it means.
   useEffect(() => {
-    if (editing.current && wall === lastSent.current) return;
+    if (wall === lastSent.current) return;
     lastSent.current = wall;
     setText(formatWall(wall, locale, withTime));
-    if (!editing.current) say(undefined);
+    say(undefined);
   }, [wall, locale, withTime, say]);
 
   const minWall = trimWall(min, withTime);
@@ -230,19 +229,16 @@ export function DateInput({
           value={text}
           className={compact ? compactBox : box}
           onFocus={(event) => {
-            editing.current = true;
             onFocus?.(event);
           }}
           onChange={(event) => {
             const typed = event.currentTarget.value;
-            editing.current = true;
             setText(typed);
             if (problem) say(undefined);
             // A whole ISO date goes at once: it is what a test or a paste gives.
             if (typed.trim() === "" || WHOLE_ISO.test(typed.trim())) read(typed, false);
           }}
           onBlur={(event) => {
-            editing.current = false;
             read(event.currentTarget.value, true);
             onBlur?.(event);
           }}
@@ -275,6 +271,7 @@ export function DateInput({
             >
               <Base.Popup
                 ref={popup}
+                data-date-picker=""
                 initialFocus={() =>
                   popup.current?.querySelector<HTMLElement>("[data-day][tabindex='0']") ?? true
                 }

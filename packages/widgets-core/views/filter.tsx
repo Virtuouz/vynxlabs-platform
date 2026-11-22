@@ -115,7 +115,9 @@ function DateRangeControl({ filter, label, value, onChange }: Control) {
   };
   return (
     <div className="flex min-w-0 flex-[1_1_9rem] flex-wrap items-center gap-2 @md/cell:flex-none">
-      <div className="min-w-0 flex-1 @md/cell:flex-none">
+      <div
+        className={`min-w-0 flex-1 @md/cell:flex-none ${mode === CUSTOM ? "basis-full @md/cell:basis-auto" : ""}`}
+      >
         <CompactSelect
           name={`filter-${filter.name}`}
           label={label}
@@ -140,7 +142,7 @@ function DateRangeControl({ filter, label, value, onChange }: Control) {
       </div>
       {mode === CUSTOM ? (
         <>
-          <div className="min-w-0 flex-1 @md/cell:w-44 @md/cell:flex-none">
+          <div className="min-w-36 flex-1 @md/cell:w-44 @md/cell:flex-none">
             <DateField
               name={`filter-${filter.name}-from`}
               label="From"
@@ -149,7 +151,7 @@ function DateRangeControl({ filter, label, value, onChange }: Control) {
               onChange={(from) => set({ from, to: days?.to ?? "" })}
             />
           </div>
-          <div className="min-w-0 flex-1 @md/cell:w-44 @md/cell:flex-none">
+          <div className="min-w-36 flex-1 @md/cell:w-44 @md/cell:flex-none">
             <DateField
               name={`filter-${filter.name}-to`}
               label="To"

@@ -528,7 +528,7 @@ export function BreakdownGroup({
       label={env.definition.type === "core/chart" ? "What to chart" : "How it is split"}
       note={help}
     >
-      {groups.map((one, at) => (
+      {groups.map((_one, at) => (
         <BreakdownRow
           // biome-ignore lint/suspicious/noArrayIndexKey: a part of a query has no identity but its place in the list
           key={`breakdown-${at}`}

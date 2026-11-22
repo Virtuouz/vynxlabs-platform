@@ -215,6 +215,16 @@ const managers = await admin.post(`${T}/groups`, {
 for (const email of ["maya.brooks@fernhill.example", "rowan.ellis@fernhill.example"]) {
   await admin.put(`${T}/groups/${managers.id}/members/${members[email]}`);
 }
+// Billing: who may mark an invoice paid besides the practice managers (the Invoice detail's
+// "Mark paid" is limited to both groups, phase 28). Rowan is in both; Devi is only here.
+const billing = await admin.post(`${T}/groups`, {
+  name: "Billing",
+  description: "Mark invoices paid, with the practice managers.",
+});
+const BILLING_MEMBERS = ["rowan.ellis@fernhill.example", "devi.shah@fernhill.example"];
+for (const email of BILLING_MEMBERS) {
+  await admin.put(`${T}/groups/${billing.id}/members/${members[email]}`);
+}
 // Devi deploys to the sandbox and promotes: the developer role writes deployments but not promotions.
 await admin.post(`${T}/bindings`, {
   principalType: "member",
@@ -562,6 +572,7 @@ await draftInSandbox("boards/clinic-visits", "dashboard", {
           { id: "visits", title: "Visits" },
           { id: "clinics", title: "By clinic" },
         ],
+        look: "pills",
       },
     },
     {
@@ -582,7 +593,7 @@ await draftInSandbox("boards/clinic-visits", "dashboard", {
           ],
         },
       },
-      config: { caption: "In the range chosen" },
+      config: { caption: "In the range chosen", compare: true, compareTo: "when", goodWhen: "up" },
     },
     {
       id: "recent",
@@ -612,7 +623,16 @@ await draftInSandbox("boards/clinic-visits", "dashboard", {
           { column: "pet_name", label: "Pet" },
           { column: "clinic" },
           { column: "reason" },
-          { column: "status" },
+          {
+            column: "status",
+            as: "badge",
+            badges: {
+              done: "success",
+              booked: "neutral",
+              checked_in: "attention",
+              cancelled: "neutral",
+            },
+          },
         ],
       },
     },
@@ -645,7 +665,7 @@ await draftInSandbox("boards/clinic-visits", "dashboard", {
           ],
         },
       },
-      config: { mark: "bar" },
+      config: { mark: "bar", values: true, order: "biggest" },
     },
   ],
 });
@@ -662,6 +682,7 @@ await draftInSandbox("screens/front-desk-board", "interface", {
     {
       id: "today",
       title: "Today",
+      icon: "calendar-check",
       widgets: [
         {
           id: "filters",
@@ -704,7 +725,7 @@ await draftInSandbox("screens/front-desk-board", "interface", {
           id: "list",
           type: "core/table",
           title: "Visits",
-          at: { x: 0, y: 5, w: 12, h: 9 },
+          at: { x: 0, y: 5, w: 8, h: 9 },
           data: {
             rows: {
               source: { visual: { table: "appointments", sort: [{ by: "starts_at" }] } },
@@ -721,7 +742,38 @@ await draftInSandbox("screens/front-desk-board", "interface", {
               { column: "pet_name", label: "Pet" },
               { column: "clinic" },
               { column: "reason" },
-              { column: "status" },
+              {
+                column: "status",
+                as: "badge",
+                badges: {
+                  booked: "neutral",
+                  checked_in: "attention",
+                  in_exam: "action",
+                  done: "success",
+                  no_show: "danger",
+                  cancelled: "neutral",
+                },
+              },
+            ],
+          },
+        },
+        {
+          // Follows the row selected in the table beside it ({ selected }): a row click picks it.
+          id: "visit",
+          type: "core/detail",
+          title: "The visit chosen",
+          at: { x: 8, y: 5, w: 4, h: 9 },
+          data: { record: { source: { selected: "list" } } },
+          config: {
+            heading: "pet_name",
+            status: "status",
+            across: 1,
+            fields: [
+              { column: "number", label: "Visit" },
+              { column: "starts_at", label: "When" },
+              { column: "vet" },
+              { column: "reason" },
+              { column: "notes", section: "Notes" },
             ],
           },
         },
@@ -768,6 +820,10 @@ const demo = {
   workspaces: { clinics: prod.id, sandbox: dev.id },
   password: PASSWORD,
   members: PEOPLE.map(({ email, name, about, role }) => ({ email, name, about, role })),
+  groups: {
+    "Practice managers": ["maya.brooks@fernhill.example", "rowan.ellis@fernhill.example"],
+    Billing: BILLING_MEMBERS,
+  },
   locums: {
     count: LOCUMS,
     first: "locum.01@fernhill.example",
@@ -792,3 +848,6 @@ const demo = {
 mkdirSync(join(HERE, ".platform"), { recursive: true });
 writeFileSync(join(HERE, ".platform/demo.json"), `${JSON.stringify(demo, null, 2)}\n`);
 console.log(`\nDone. Sign-ins and addresses are in ${join(HERE, ".platform/demo.json")}`);
+console.log(
+  `Who may mark an invoice paid: Practice managers (Maya Brooks, Rowan Ellis) and Billing (Rowan Ellis, Devi Shah). Everyone else sees "Mark paid" greyed.`,
+);

@@ -64,6 +64,22 @@ const invoiceFilters = () => [
   { filter: "status", column: "status" },
 ];
 
+/** The groups of members who may mark an invoice paid (by their keys). The setup makes both. */
+const BILLING = ["groups/practice-managers", "groups/billing"];
+
+/** An invoice's status, as a chip: paid is done, unpaid wants a look, void is set aside. */
+const INVOICE_BADGES = { paid: "success", unpaid: "attention", void: "neutral" } as const;
+
+/** A visit's status, as a chip. */
+const VISIT_BADGES = {
+  booked: "neutral",
+  checked_in: "attention",
+  in_exam: "action",
+  done: "success",
+  no_show: "danger",
+  cancelled: "neutral",
+} as const;
+
 /** A void invoice is not owed and not invoiced: the totals leave it out. */
 const NOT_VOID = { column: "status", op: "ne" as const, value: "void" };
 
@@ -151,14 +167,15 @@ const openSheet = (page: string) => ({
   rowClick: { steps: [{ do: "open" as const, page, record: "event" as const }] },
 });
 
-/** What an invoice shows, in the order the front desk reads it. */
+/** What an invoice shows, in the order the front desk reads it, in sections two across. */
 const INVOICE_FIELDS = [
-  { column: "clinic" },
-  { column: "client_code", label: "Client" },
-  { column: "total", label: "Total", format: DOLLARS },
-  { column: "issued_on", label: "Issued" },
-  { column: "paid_at", label: "Paid on" },
-  { column: "payment_ref", label: "Payment reference" },
+  { column: "clinic", section: "Invoice" },
+  { column: "client_code", label: "Client", section: "Invoice" },
+  { column: "total", label: "Total", format: DOLLARS, section: "Invoice" },
+  { column: "issued_on", label: "Issued", section: "Invoice" },
+  { column: "paid_at", label: "Paid on", section: "Payment" },
+  { column: "payment_ref", label: "Payment reference", section: "Payment" },
+  { column: "chased_at", label: "Last reminded", section: "Notes" },
 ];
 
 /** The fields of an invoice a form asks for. A column's own rules say what is required. */
@@ -226,6 +243,40 @@ const COUNT_LINE = {
   },
 };
 
+/** Marking an invoice paid, on the record the page was opened on (the sheet) or the row (the table). */
+const markPaid = (record: "this" | "event") => ({
+  when: [{ field: "status", of: record, test: "is" as const, value: "unpaid" }],
+  // Only practice managers and Billing run it, on the server too: others see it greyed.
+  runBy: { groups: BILLING },
+  confirm: {
+    title: "Mark as paid?",
+    text: "Mark {number} as paid?",
+    button: "Mark paid",
+  },
+  steps: [
+    {
+      do: "update" as const,
+      record,
+      set: { status: { value: "paid" }, paid_at: { now: true as const } },
+    },
+    { do: "message" as const, text: "Invoice marked paid", tone: "success" as const },
+  ],
+});
+
+/** Voiding an unpaid invoice, as above. */
+const voidInvoice = (record: "this" | "event") => ({
+  when: [{ field: "status", of: record, test: "is" as const, value: "unpaid" }],
+  confirm: {
+    title: "Void this invoice?",
+    text: "Void {number}? It stops counting as owed, and it can't be paid.",
+    button: "Void",
+  },
+  steps: [
+    { do: "update" as const, record, set: { status: { value: "void" } } },
+    { do: "message" as const, text: "Invoice voided", tone: "success" as const },
+  ],
+});
+
 /** For practice managers, with no code: money, visits and stock across the group. */
 export const performance = defineInterface({
   path: "screens/performance",
@@ -235,6 +286,7 @@ export const performance = defineInterface({
     {
       id: "money",
       title: "Money",
+      icon: "wallet",
       widgets: [
         {
           // The page's bar, set by whoever reads it: every widget bound to one follows it.
@@ -273,7 +325,8 @@ export const performance = defineInterface({
           type: "core/text",
           at: { x: 0, y: 2, w: 12, h: 3 },
           config: {
-            text: ":::alert[In dollars]{type=info}\nEvery amount here is in dollars, as the clinics invoice. Change **Issued** to look at another stretch of time. A void invoice is left out of the totals.\n:::",
+            look: "note",
+            text: "**In dollars.** Every amount here is in dollars, as the clinics invoice. Change **Issued** to look at another stretch of time. A void invoice is left out of the totals.",
           },
         },
         {
@@ -282,7 +335,15 @@ export const performance = defineInterface({
           title: "Invoiced",
           at: { x: 0, y: 5, w: 3, h: 3 },
           data: { value: invoiceValue("invoiced", "sum") },
-          config: { format: DOLLARS, caption: "Issued in the range chosen" },
+          config: {
+            format: DOLLARS,
+            caption: "Issued in the range chosen",
+            compare: true,
+            compareTo: "issued",
+            delta: "percent",
+            goodWhen: "up",
+          },
+          layout: { priority: 3 },
           on: { click: { steps: [{ do: "rows" }] } },
         },
         {
@@ -293,7 +354,15 @@ export const performance = defineInterface({
           data: {
             value: invoiceValue("unpaid", "sum", [{ column: "status", op: "eq", value: "unpaid" }]),
           },
-          config: { format: DOLLARS, caption: "Not yet paid" },
+          config: {
+            format: DOLLARS,
+            caption: "Not yet paid",
+            compare: true,
+            compareTo: "issued",
+            delta: "percent",
+            goodWhen: "down",
+          },
+          layout: { priority: 2 },
           on: { click: { steps: [{ do: "rows" }] } },
         },
         {
@@ -302,7 +371,14 @@ export const performance = defineInterface({
           title: "Average invoice",
           at: { x: 6, y: 5, w: 3, h: 3 },
           data: { value: invoiceValue("average", "avg") },
-          config: { format: DOLLARS },
+          config: {
+            format: DOLLARS,
+            compare: true,
+            compareTo: "issued",
+            delta: "percent",
+            goodWhen: "up",
+          },
+          layout: { priority: 1 },
         },
         {
           id: "goal",
@@ -327,7 +403,13 @@ export const performance = defineInterface({
             },
           },
           // $200,000, kept in cents like the invoices.
-          config: { target: 20000000, format: DOLLARS, label: "of a $200,000 goal" },
+          config: {
+            target: 20000000,
+            format: DOLLARS,
+            label: "of a $200,000 goal",
+            percent: true,
+            reached: "green",
+          },
         },
         {
           id: "by-week",
@@ -335,7 +417,15 @@ export const performance = defineInterface({
           title: "Invoiced by week",
           at: { x: 0, y: 8, w: 8, h: 8 },
           data: invoicesBy({ column: "issued_on", bucket: "week" }),
-          config: { mark: "line", format: DOLLARS },
+          config: {
+            mark: "line",
+            format: DOLLARS,
+            smooth: true,
+            points: true,
+            fillGaps: true,
+            compare: true,
+            compareTo: "issued",
+          },
           on: { pointClick: { steps: [{ do: "rows" }] } },
         },
         {
@@ -344,7 +434,9 @@ export const performance = defineInterface({
           title: "By clinic",
           at: { x: 8, y: 8, w: 4, h: 8 },
           data: invoicesBy({ column: "clinic" }),
-          config: { mark: "bar", format: DOLLARS },
+          // A phone has no room for a second chart: it is left out there (board 6).
+          layout: { narrow: "hide" },
+          config: { mark: "bar", format: DOLLARS, values: true, order: "biggest" },
           on: { pointClick: { steps: [{ do: "narrow", filter: "clinic", from: "clinic" }] } },
         },
         {
@@ -357,26 +449,10 @@ export const performance = defineInterface({
           rules: { showWhen: [{ user: "in", group: "Practice managers" }] },
         },
         {
-          id: "invoice-actions",
-          type: "core/actions",
-          at: { x: 0, y: 19, w: 12, h: 1 },
-          config: {
-            lineUp: "right",
-            actions: [
-              {
-                id: "new-invoice",
-                label: "New invoice",
-                tone: "primary",
-                action: { steps: [{ do: "open", page: "new-invoice" }] },
-              },
-            ],
-          },
-        },
-        {
           id: "list",
           type: "core/table",
           title: "Invoices",
-          at: { x: 0, y: 20, w: 12, h: 10 },
+          at: { x: 0, y: 19, w: 12, h: 10 },
           data: {
             rows: {
               source: {
@@ -387,13 +463,34 @@ export const performance = defineInterface({
           },
           config: {
             pageSize: 25,
+            select: true,
             columns: [
               { column: "number" },
               { column: "clinic" },
               { column: "client_code", label: "Client" },
-              { column: "total", label: "Total", format: DOLLARS },
-              { column: "status" },
+              {
+                column: "total",
+                label: "Total",
+                format: DOLLARS,
+                align: "right",
+                total: true,
+              },
+              { column: "status", as: "badge", badges: { ...INVOICE_BADGES } },
               { column: "issued_on", label: "Issued" },
+            ],
+            // Above the table, on its heading line: no separate Action group is needed.
+            buttons: [
+              {
+                id: "new-invoice",
+                label: "New invoice",
+                tone: "primary",
+                action: { steps: [{ do: "open", page: "new-invoice" }] },
+              },
+            ],
+            // Each acts on its row, and with rows selected, on every one of them.
+            rowActions: [
+              { id: "mark-paid", label: "Mark paid", action: markPaid("event") },
+              { id: "void", label: "Void", tone: "danger", action: voidInvoice("event") },
             ],
           },
           on: openSheet("invoice"),
@@ -403,6 +500,7 @@ export const performance = defineInterface({
     {
       id: "visits",
       title: "Visits",
+      icon: "calendar-days",
       widgets: [
         {
           // The page's bar, set by whoever reads it: every widget bound to one follows it.
@@ -432,6 +530,7 @@ export const performance = defineInterface({
             "How many visits there are, and where they stand, in the range and at the clinics chosen.",
           config: {
             folds: true,
+            look: "card",
           },
         },
         {
@@ -481,6 +580,9 @@ export const performance = defineInterface({
               { id: "by-reason", title: "By reason" },
               { id: "every", title: "Every visit" },
             ],
+            look: "pills",
+            opensFirst: "by-status",
+            remember: true,
           },
         },
         {
@@ -499,7 +601,7 @@ export const performance = defineInterface({
           in: { widget: "views", tab: "by-reason" },
           at: { x: 0, y: 0, w: 12, h: 9 },
           data: visitsBy("reason"),
-          config: { mark: "bar" },
+          config: { mark: "bar", values: true, order: "biggest" },
         },
         {
           id: "list",
@@ -524,7 +626,7 @@ export const performance = defineInterface({
               { column: "pet_name", label: "Pet" },
               { column: "vet" },
               { column: "reason" },
-              { column: "status" },
+              { column: "status", as: "badge", badges: { ...VISIT_BADGES } },
             ],
           },
           on: openSheet("visit"),
@@ -560,6 +662,7 @@ export const performance = defineInterface({
     {
       id: "stock",
       title: "Stock",
+      icon: "package",
       widgets: [
         {
           // The page's bar, set by whoever reads it: every widget bound to one follows it.
@@ -730,6 +833,7 @@ export const performance = defineInterface({
       id: "invoice",
       title: "Invoice detail",
       kind: "sheet",
+      size: "large",
       record: { table: "invoices" },
       widgets: [
         {
@@ -737,25 +841,30 @@ export const performance = defineInterface({
           type: "core/actions",
           at: { x: 0, y: 0, w: 12, h: 1 },
           config: {
+            lineUp: "left",
+            // Mark paid, Send invoice and Edit show; Void is under the ⋯ menu.
+            showUpTo: 3,
             actions: [
               {
                 id: "mark-paid",
                 label: "Mark paid",
                 tone: "primary",
+                icon: "check",
+                action: markPaid("this"),
+              },
+              {
+                id: "send",
+                label: "Send invoice",
+                tone: "default",
+                icon: "send",
+                // Fernhill sends no invoice by email yet, and says so rather than pretend.
                 action: {
-                  when: [{ field: "status", test: "is", value: "unpaid" }],
-                  confirm: {
-                    title: "Mark as paid?",
-                    text: "Mark {number} as paid?",
-                    button: "Mark paid",
-                  },
                   steps: [
                     {
-                      do: "update",
-                      record: "this",
-                      set: { status: { value: "paid" }, paid_at: { now: true } },
+                      do: "message",
+                      text: "Invoices are not sent by email yet. Print it, or tell the owner.",
+                      tone: "info",
                     },
-                    { do: "message", text: "Invoice marked paid", tone: "success" },
                   ],
                 },
               },
@@ -763,24 +872,15 @@ export const performance = defineInterface({
                 id: "edit",
                 label: "Edit",
                 tone: "default",
+                icon: "pencil",
                 action: { steps: [{ do: "open", page: "edit-invoice", record: "this" }] },
               },
               {
                 id: "void",
                 label: "Void",
                 tone: "danger",
-                action: {
-                  when: [{ field: "status", test: "is", value: "unpaid" }],
-                  confirm: {
-                    title: "Void this invoice?",
-                    text: "Void {number}? It stops counting as owed, and it can't be paid.",
-                    button: "Void",
-                  },
-                  steps: [
-                    { do: "update", record: "this", set: { status: { value: "void" } } },
-                    { do: "message", text: "Invoice voided", tone: "success" },
-                  ],
-                },
+                icon: "ban",
+                action: voidInvoice("this"),
               },
             ],
           },
@@ -793,6 +893,7 @@ export const performance = defineInterface({
           config: {
             heading: "number",
             status: "status",
+            across: 2,
             fields: INVOICE_FIELDS,
           },
         },
@@ -924,8 +1025,34 @@ export const myAccount = defineInterface({
   description: "Your pets, your invoices, and asking for a visit.",
   pages: [
     {
+      // The owner's own row of the clients, found by their email: no one else's.
+      id: "details",
+      title: "My details",
+      icon: "user",
+      widgets: [
+        {
+          id: "me",
+          type: "core/detail",
+          title: "Your details",
+          at: { x: 0, y: 0, w: 12, h: 8 },
+          data: { record: { source: { own: { table: "clients", by: "email" } } } },
+          config: {
+            heading: "name",
+            across: 2,
+            fields: [
+              { column: "code", label: "Client code", section: "You" },
+              { column: "email", section: "You" },
+              { column: "phone", section: "You" },
+              { column: "home_clinic", section: "Your clinic" },
+            ],
+          },
+        },
+      ],
+    },
+    {
       id: "pets",
       title: "My pets",
+      icon: "paw-print",
       widgets: [
         {
           id: "pets",
@@ -1009,6 +1136,7 @@ export const myAccount = defineInterface({
     {
       id: "invoices",
       title: "My invoices",
+      icon: "receipt",
       widgets: [
         {
           id: "list",
@@ -1026,8 +1154,8 @@ export const myAccount = defineInterface({
             columns: [
               { column: "number" },
               { column: "clinic" },
-              { column: "total", label: "Total", format: DOLLARS },
-              { column: "status" },
+              { column: "total", label: "Total", format: DOLLARS, align: "right" },
+              { column: "status", as: "badge", badges: { ...INVOICE_BADGES } },
               { column: "issued_on", label: "Issued" },
             ],
           },

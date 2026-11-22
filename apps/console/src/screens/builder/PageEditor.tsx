@@ -823,7 +823,7 @@ export function PageEditor({
           </>
         );
         return scaled && trueWidth !== undefined ? (
-          <ScaledFrame width={trueWidth} handle={sizeHandle}>
+          <ScaledFrame width={trueWidth} held={dragged !== undefined} handle={sizeHandle}>
             {/* A row of the table clicked on the canvas is the record its sheet is previewed with. */}
             <div onClickCapture={clicked} className="relative">
               {framed}

@@ -23,21 +23,23 @@ export function SizeHandle({
   onSize: (size: PageSize, key?: string) => void;
   snap: (pixels: number) => PageSize;
 }) {
-  const start = useRef<{ x: number; width: number } | undefined>(undefined);
+  const start = useRef<{ x: number; width: number; scale: number } | undefined>(undefined);
   const [shown, setShown] = useState<PageSize>();
   const index = PAGE_SIZES.indexOf(size);
   const named = shown ?? size;
   const move = (event: React.PointerEvent<HTMLElement>) => {
     if (!start.current) return;
     // The frame is centred, so its edge travels half as far as the pointer does.
-    const pixels = (start.current.width + 2 * (event.clientX - start.current.x)) / scale;
+    const pixels =
+      (start.current.width + 2 * (event.clientX - start.current.x)) / start.current.scale;
     const next = snap(pixels);
     setShown(next);
     onDrag(Math.max(320, pixels));
   };
   const end = (event: React.PointerEvent<HTMLElement>, keep: boolean) => {
     if (!start.current) return;
-    const pixels = (start.current.width + 2 * (event.clientX - start.current.x)) / scale;
+    const pixels =
+      (start.current.width + 2 * (event.clientX - start.current.x)) / start.current.scale;
     start.current = undefined;
     setShown(undefined);
     onDrag(undefined);
@@ -62,6 +64,8 @@ export function SizeHandle({
           start.current = {
             x: event.clientX,
             width: frame?.getBoundingClientRect().width || SIZE_WIDTH[size] || 720,
+            // The scale it is taken hold of at: the same for the whole drag.
+            scale,
           };
           setShown(size);
           event.currentTarget.setPointerCapture?.(event.pointerId);

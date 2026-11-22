@@ -10,11 +10,14 @@ const HANDLE_ROOM = 24;
  */
 export function ScaledFrame({
   width,
+  held = false,
   children,
   handle,
 }: {
   /** The frame's own width, in pixels. */
   width: number;
+  /** It is being sized by its edge: the scale stays as it was when it was taken hold of. */
+  held?: boolean;
   children: ReactNode;
   handle?: ((scale: number) => ReactNode) | undefined;
 }) {
@@ -44,7 +47,10 @@ export function ScaledFrame({
     watch.observe(frame);
     return () => watch.disconnect();
   }, []);
-  const scale = room !== undefined && room > 0 ? Math.min(1, room / width) : 1;
+  const fits = room !== undefined && room > 0 ? Math.min(1, room / width) : 1;
+  const last = useRef(fits);
+  if (!held) last.current = fits;
+  const scale = last.current;
   const percent = Math.round(scale * 100);
   return (
     <div

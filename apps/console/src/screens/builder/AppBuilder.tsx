@@ -502,7 +502,7 @@ export function AppBuilder({
     banner:
       problems.length > 0 ? (
         <Notice tone="attention">
-          <details>
+          <details open>
             <summary className="cursor-pointer">
               <strong>To fix before it can be published:</strong> {problems.length}{" "}
               {problems.length === 1 ? "thing" : "things"}

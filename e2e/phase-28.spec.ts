@@ -1971,9 +1971,11 @@ async function setNarrow(
   await outline().getByRole("button", { name, exact: true }).click();
   await owner.getByRole("button", { name: `More about ${name}` }).click();
   await owner.getByRole("menuitem", { name: "Layout" }).click();
-  await settings()
-    .getByRole("combobox", { name: "On narrow screens" })
-    .selectOption({ label: how === "Keep" ? "Keep the desktop layout" : how });
+  // Five short words in one row (the drawer is 362px wide): the segment is the word.
+  const word = how === "Full width" ? "Full" : how === "Stack below" ? "Stack" : how;
+  const choice = settings().getByRole("group", { name: "On narrow screens" });
+  await choice.getByText(word, { exact: true }).click();
+  await expect(choice.getByRole("radio", { name: word, exact: true })).toBeChecked();
   await settings().getByRole("button", { name: "Back to settings" }).click();
 }
 
@@ -2007,7 +2009,7 @@ test("POLISH-005: on a phone each widget is automatic or set by hand (hide, full
   await owner.getByRole("button", { name: "More about Alpha" }).click();
   await owner.getByRole("menuitem", { name: "Layout" }).click();
   const pane = await settings().boundingBox();
-  const hide = await settings().getByRole("combobox", { name: "On narrow screens" }).boundingBox();
+  const hide = await settings().getByRole("group", { name: "On narrow screens" }).boundingBox();
   expect(
     pane && hide && hide.x + hide.width <= pane.x + pane.width,
     "the narrow-screens choice is inside the pane",

@@ -139,8 +139,8 @@ export function MarkdownEditor({
   // or a field it cannot find is said, since a reader is shown the word or the path alone.
   const knows = useMarkdownKnowledge();
   const notFound = useMemo(
-    () => (custom === undefined ? unresolved(read, knows) : []),
-    [read, knows, custom],
+    () => (custom === undefined && profile === "page" ? unresolved(read, knows) : []),
+    [read, knows, custom, profile],
   );
   const shownProblems = useMemo(
     () => (notFound.length > 0 ? [...(problems ?? []), ...notFound] : problems),

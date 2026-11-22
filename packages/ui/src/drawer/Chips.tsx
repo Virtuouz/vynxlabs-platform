@@ -57,23 +57,31 @@ export function SentenceChip({
   onEdit,
   onRemove,
   removeLabel = "Remove",
+  wrapEdit,
 }: {
   children: ReactNode;
   onEdit?: () => void;
   onRemove?: () => void;
   /** What the × says to a screen reader: "Remove Status is Unpaid". */
   removeLabel?: string;
+  /** Puts the sentence's button in a `DrawerEditor` as its trigger, so the editor opens beside it. */
+  wrapEdit?: (button: ReactElement) => ReactElement;
 }) {
+  const button = (
+    <button
+      type="button"
+      {...(onEdit ? { onClick: onEdit } : {})}
+      className={`h-full cursor-pointer rounded-l-control pr-1 pl-3 ${focus}`}
+    >
+      {children}
+    </button>
+  );
   return (
     <span className="inline-flex h-7 items-center rounded-control border border-line-strong bg-sunken text-body-sm text-ink">
-      {onEdit ? (
-        <button
-          type="button"
-          onClick={onEdit}
-          className={`h-full cursor-pointer rounded-l-control pr-1 pl-3 ${focus}`}
-        >
-          {children}
-        </button>
+      {wrapEdit ? (
+        wrapEdit(button)
+      ) : onEdit ? (
+        button
       ) : (
         <span className="pr-1 pl-3">{children}</span>
       )}

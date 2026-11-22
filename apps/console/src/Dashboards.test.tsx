@@ -303,10 +303,8 @@ test("someone who holds sql:read is offered SQL as a source, and someone who doe
   await screen.findByLabelText("Held", { selector: "section" });
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.click(screen.getByLabelText("Held", { selector: "section" }));
-  const box = await screen.findByRole("combobox", { name: "Source" });
-  fireEvent.click(box);
-  fireEvent.keyDown(box, { key: "ArrowDown" });
-  expect(await screen.findByRole("option", { name: "SQL written here" })).toBeTruthy();
+  fireEvent.click(await screen.findByRole("button", { name: /^Source/ }));
+  expect(await screen.findByLabelText("SQL written here")).toBeTruthy();
   maySql = false;
   unmount();
   history.replaceState(null, "", "/");
@@ -314,11 +312,9 @@ test("someone who holds sql:read is offered SQL as a source, and someone who doe
   await screen.findByLabelText("Held", { selector: "section" });
   fireEvent.click(screen.getByRole("button", { name: "Edit" }));
   fireEvent.click(screen.getByLabelText("Held", { selector: "section" }));
-  const other = await screen.findByRole("combobox", { name: "Source" });
-  fireEvent.click(other);
-  fireEvent.keyDown(other, { key: "ArrowDown" });
-  await screen.findByRole("option", { name: "Stock" });
-  expect(screen.queryByRole("option", { name: "SQL written here" })).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: /^Source/ }));
+  await screen.findByLabelText("Stock");
+  expect(screen.queryByLabelText("SQL written here")).toBeNull();
 });
 
 test("a dashboard someone else shared, or the workspace keeps, is looked at and offers no way to change it", async () => {

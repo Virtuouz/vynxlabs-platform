@@ -1,44 +1,13 @@
+import { formatValue, type ValueFormat } from "@volvel/widgets";
 import { useId } from "react";
 import { DrawerRow, ToggleRow } from "./Drawer.tsx";
 
-/** How a number is written: the shape of the widget SDK's `ValueFormat`. */
-export interface NumberFormat {
-  style: "number" | "currency" | "percent";
-  /** ISO 4217, for `currency`. Default `USD`. */
-  currency?: string;
-  /** Kept in cents: 4312000 is shown as $43,120.00. */
-  minorUnits?: boolean;
-  decimals?: number;
-  notation?: "compact";
-  /** `false` writes 43120, not 43,120. */
-  grouping?: false;
-}
+/** How a number is written: the widget SDK's `ValueFormat`, which is also what writes it. */
+export type NumberFormat = ValueFormat;
 
-/** Writes a number the way the SDK's `formatValue` does, in US English. */
+/** Writes a number the way every widget does: the SDK's one `formatValue`, in US English. */
 export function sampleOf(value: number, format: NumberFormat): string {
-  const scaled = format.minorUnits ? value / 100 : value;
-  const options: Intl.NumberFormatOptions =
-    format.style === "currency"
-      ? { style: "currency", currency: format.currency ?? "USD" }
-      : format.style === "percent"
-        ? { style: "percent", maximumFractionDigits: 1 }
-        : { maximumFractionDigits: 2 };
-  if (format.grouping === false) options.useGrouping = false;
-  if (format.notation === "compact") {
-    options.notation = "compact";
-    options.maximumFractionDigits = 1;
-  }
-  if (format.decimals !== undefined) {
-    options.minimumFractionDigits = format.decimals;
-    options.maximumFractionDigits = format.decimals;
-  }
-  try {
-    return new Intl.NumberFormat("en-US", options)
-      .format(scaled)
-      .replace(/(\d)([KMBT])$/, (_, digit: string, unit: string) => digit + unit.toLowerCase());
-  } catch {
-    return String(scaled);
-  }
+  return formatValue(value, format) ?? String(value);
 }
 
 type Choice = "money" | "money-whole" | "money-short" | "number" | "percent" | "plain";

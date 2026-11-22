@@ -462,16 +462,18 @@ test("a stat is narrowed to some rows and its number written as dollars from cen
 
   fireEvent.click(await screen.findByLabelText("Owed", { selector: "section" }));
   const settings = within(await screen.findByRole("complementary", { name: "Settings" }));
-  // The value it works out is a sentence: a sum of a column.
-  expect((settings.getByLabelText("What value 1 works out") as HTMLSelectElement).value).toBe(
-    "sum",
-  );
-  expect((settings.getByLabelText("Column value 1 is of") as HTMLSelectElement).value).toBe(
-    "total",
-  );
-  fireEvent.click(settings.getByRole("button", { name: "Add a condition" }));
-  fireEvent.change(settings.getByLabelText("Test of condition 1"), { target: { value: "ne" } });
-  fireEvent.change(settings.getByLabelText("Value of condition 1"), { target: { value: "paid" } });
+  // The value it works out is a sentence on a row: a sum of a column.
+  fireEvent.click(settings.getByRole("button", { name: /Value\s*Sum of Total/ }));
+  const value = within(await screen.findByRole("dialog"));
+  expect((value.getByLabelText("What it works out") as HTMLSelectElement).value).toBe("sum");
+  expect((value.getByLabelText("Column it works on") as HTMLSelectElement).value).toBe("total");
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  fireEvent.click(settings.getByRole("button", { name: "Condition" }));
+  const condition = within(await screen.findByRole("dialog"));
+  fireEvent.change(condition.getByLabelText("Field"), { target: { value: "status" } });
+  fireEvent.click(condition.getByLabelText("is not"));
+  fireEvent.change(condition.getByLabelText("Value"), { target: { value: "paid" } });
+  fireEvent.click(condition.getByRole("button", { name: "Add" }));
 
   fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
   fireEvent.click(settings.getByRole("button", { name: /^Numbers/ }));

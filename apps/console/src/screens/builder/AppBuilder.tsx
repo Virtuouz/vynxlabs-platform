@@ -27,6 +27,7 @@ import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
 import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, movedPage } from "./pageKinds.ts";
+import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
 import type { Started } from "./starters.ts";
 
 export { VIEWPORTS };
@@ -93,32 +94,46 @@ export function AppBuilder({
   /** What people see now: what the draft's changes are counted against. Not there until it is published. */
   const deployed = useLoad<{ body: InterfaceBody }>(`${root}/interfaces/${path}`);
   const { groups } = useGroupKeys(root);
+  /** Someone who may not edit here reads the app as it is published; nothing is changed, saved or published. */
+  const { known, readOnly, why } = useReadOnly(root);
   /** The screen sizes whose hand-made layout the builder has agreed to write, until the page is left. */
   const agreed = useRef(new Set<string>());
   const [restoring, setRestoring] = useState(false);
 
   // What is saved and not deployed, or else what is deployed.
   useEffect(() => {
+    if (!known) return;
     let current = true;
-    api.get<DraftAnswer>(`${root}/drafts/${path}`).then(
-      (draft) => {
+    const published = () =>
+      api.get<{ body: InterfaceBody }>(`${root}/interfaces/${path}`).then(
+        (view) => current && setBody(view.body),
+        (error: ApiError) => current && setMissing(error.message),
+      );
+    if (readOnly) {
+      // The published page, which the person may read; the draft only when nothing is published yet.
+      api.get<{ body: InterfaceBody }>(`${root}/interfaces/${path}`).then(
+        (view) => current && setBody(view.body),
+        () =>
+          api.get<DraftAnswer>(`${root}/drafts/${path}`).then(
+            (draft) => current && setBody(draft.body),
+            (error: ApiError) => current && setMissing(error.message),
+          ),
+      );
+    } else {
+      api.get<DraftAnswer>(`${root}/drafts/${path}`).then((draft) => {
         if (!current) return;
         revision.current = draft.revision;
         setBody(draft.body);
-      },
-      () =>
-        api.get<{ body: InterfaceBody }>(`${root}/interfaces/${path}`).then(
-          (view) => current && setBody(view.body),
-          (error: ApiError) => current && setMissing(error.message),
-        ),
-    );
+      }, published);
+    }
     return () => {
       current = false;
     };
-  }, [root, path]);
+  }, [root, path, known, readOnly]);
 
   const save = useCallback(
     async (next: InterfaceBody) => {
+      if (readOnly) return false;
       setSaving("saving");
       try {
         const saved = await api.put<DraftAnswer>(`${root}/drafts/${path}`, {
@@ -137,7 +152,7 @@ export function AppBuilder({
         return false;
       }
     },
-    [root, path],
+    [root, path, readOnly],
   );
   // A change is saved a moment after the last one, so that typing does not save every letter.
   // ⌘S saves at once.
@@ -161,6 +176,7 @@ export function AppBuilder({
   };
 
   const change = (apply: (draft: InterfaceBody) => void, label = "a change", key?: string) => {
+    if (readOnly) return;
     if (latest.current) history.record(label, key);
     setBody((before) => {
       if (!before) return before;
@@ -172,7 +188,7 @@ export function AppBuilder({
   };
 
   if (missing) return <Notice tone="danger">{missing}</Notice>;
-  if (!body) return <Loading />;
+  if (!body || !known) return <Loading />;
   const page = body.pages.find((candidate) => candidate.id === pageId) ?? body.pages[0];
   const listed = list.data?.items.find((item) => item.path === path);
   const appPath = listed?.app ?? null;
@@ -350,28 +366,41 @@ export function AppBuilder({
     savedWords: hasChanges ? "Saved. Not published yet." : "Published.",
     history,
     saveNow,
-    onRename: (title: string) =>
-      change(
-        (draft) => {
-          draft.title = title;
-        },
-        "renaming the app",
-        "title",
-      ),
-    pill: changes ? <DraftPill count={changes} onOpen={() => void review()} /> : null,
+    onRename: readOnly
+      ? undefined
+      : (title: string) =>
+          change(
+            (draft) => {
+              draft.title = title;
+            },
+            "renaming the app",
+            "title",
+          ),
+    pill: !readOnly && changes ? <DraftPill count={changes} onOpen={() => void review()} /> : null,
     tools: (
       <>
         <DeviceSwitch value={viewport} onChange={setViewport} />
         <ViewAsMenu value={viewAs} groups={groups} onChange={setViewAs} />
       </>
     ),
-    more: (
+    more: readOnly ? null : (
       <PreviewButton
         onOpen={() => void openPreview()}
         note="Opens the draft as people will use it, in a new tab. Actions change this workspace's rows."
       />
     ),
-    primary: (
+    primary: readOnly ? (
+      url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-8 items-center rounded-control border border-line-control px-3 text-body-sm text-ink no-underline hover:bg-sunken"
+        >
+          Open the app
+        </a>
+      ) : null
+    ) : (
       <PublishSplit
         disabled={problems.length > 0 || typeof saving === "object"}
         onPublish={() => void review()}
@@ -402,7 +431,8 @@ export function AppBuilder({
     ),
     notices: (
       <>
-        {appPath === null && list.data ? (
+        {readOnly ? <ReadOnlyLine what="Apps" why={why} /> : null}
+        {!readOnly && appPath === null && list.data ? (
           <Notice
             tone="attention"
             action={
@@ -466,7 +496,8 @@ export function AppBuilder({
           link={link}
           surface="app"
           source={{ of: "interface", path, page: page.id }}
-          draft
+          draft={!readOnly}
+          readOnly={readOnly}
           value={{ widgets: page.widgets }}
           selected={selected}
           onSelect={(id) => {
@@ -502,19 +533,22 @@ export function AppBuilder({
                 const at = draft.pages.findIndex((one) => one.id === next.id);
                 if (at >= 0) draft.pages[at] = next;
               }, label),
-            onRemovePage: body.pages.length > 1 ? removePage : undefined,
+            onRemovePage: !readOnly && body.pages.length > 1 ? removePage : undefined,
           }}
           pages={
             <PagesList
               pages={body.pages}
               current={page.id}
               onChoose={choosePage}
-              onAdd={canAddPage(body.pages) ? () => setAddingPage(true) : undefined}
-              onMove={(id, by) =>
-                change((draft) => {
-                  draft.pages = movedPage(draft.pages, id, by);
-                }, "moving a page")
-              }
+              onAdd={!readOnly && canAddPage(body.pages) ? () => setAddingPage(true) : undefined}
+              {...(readOnly
+                ? {}
+                : {
+                    onMove: (id: string, by: -1 | 1) =>
+                      change((draft) => {
+                        draft.pages = movedPage(draft.pages, id, by);
+                      }, "moving a page"),
+                  })}
             />
           }
           onChange={(next, label, key) =>

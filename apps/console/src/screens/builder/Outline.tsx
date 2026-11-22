@@ -20,6 +20,7 @@ export function Outline({
   onSelect,
   onReorder,
   onSaid,
+  readOnly = false,
 }: {
   widgets: readonly PageWidget[];
   selected: string | undefined;
@@ -28,6 +29,8 @@ export function Outline({
   onReorder: (next: PageWidget[], label: string) => void;
   /** What happened, for a screen reader. */
   onSaid: (words: string) => void;
+  /** Rows are chosen, never moved. */
+  readOnly?: boolean;
 }) {
   const [dragging, setDragging] = useState<string>();
   const [over, setOver] = useState<{ id: string; side: "before" | "after" }>();
@@ -46,14 +49,14 @@ export function Outline({
     return true;
   };
   const keys = (event: KeyboardEvent, one: PageWidget) => {
-    if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+    if (readOnly || !event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
     event.preventDefault();
     const by1 = event.key === "ArrowUp" ? -1 : 1;
     move(one.id, stepped(widgets, one.id, by1), `moving ${nameOf(one)}`);
   };
   const drop = (event: DragEvent, one: PageWidget) => {
     event.preventDefault();
-    if (dragging && over)
+    if (!readOnly && dragging && over)
       move(
         dragging,
         reordered(widgets, dragging, one.id, over.side),
@@ -85,7 +88,7 @@ export function Outline({
     return (
       // biome-ignore lint/a11y/noStaticElementInteractions: the row is a drop target; its button is what is operated
       <div
-        draggable
+        draggable={!readOnly}
         data-outline-row={one.id}
         data-nested={inside ? "" : undefined}
         onDragStart={(event) => {
@@ -121,11 +124,13 @@ export function Outline({
             inside ? "pl-4" : "pl-1"
           }`}
         >
-          <GripVertical
-            aria-hidden="true"
-            size={14}
-            className="shrink-0 cursor-grab text-ink-subtle opacity-60 group-hover:opacity-100"
-          />
+          {readOnly ? null : (
+            <GripVertical
+              aria-hidden="true"
+              size={14}
+              className="shrink-0 cursor-grab text-ink-subtle opacity-60 group-hover:opacity-100"
+            />
+          )}
           <Icon aria-hidden="true" size={14} className="shrink-0 text-ink-muted" />
           <span className="truncate">{nameOf(one)}</span>
         </button>

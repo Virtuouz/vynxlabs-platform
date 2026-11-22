@@ -158,6 +158,7 @@ export function PageEditor({
   layout,
   refreshKey,
   pageInfo,
+  readOnly = false,
 }: {
   root: string;
   /** The workspace's console address, for the links the settings give to other screens. */
@@ -192,13 +193,17 @@ export function PageEditor({
   refreshKey?: number;
   /** For an app's page: its kind, its record and the app's pages. Left out for a dashboard. */
   pageInfo?: PageInfo;
+  /** Someone who may not edit looks at the page: nothing is added, moved or changed, and the drawer is read. */
+  readOnly?: boolean;
 }) {
   const { catalog } = useCatalog(root);
   const { groups: keyed } = useGroupKeys(root);
   const device = (frame?.name ?? "desktop") as "desktop" | "tablet" | "phone";
   // Every change leaves each container as tall as what it holds (phase 27).
-  const onChange: typeof hostChange = (next, label, key) =>
+  const onChange: typeof hostChange = (next, label, key) => {
+    if (readOnly) return;
     hostChange({ ...next, widgets: fitContainers(next.widgets) }, label, key);
+  };
   const [adding, setAdding] = useState(false);
   // A widget chosen in the outline, or one just added at the end of the page, is brought into view.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the count makes it run again once an added widget is drawn
@@ -254,7 +259,7 @@ export function PageEditor({
   const addsTo = resolved(widgets, targetOfSelection(widgets, selected));
 
   // A opens "Add to page" when focus is not in a field (`useShortcut` leaves single keys to the page).
-  useShortcut("add.widget", () => setAdding(true), { enabled: !full && !adding });
+  useShortcut("add.widget", () => setAdding(true), { enabled: !full && !adding && !readOnly });
 
   const put = (next: PageWidget[], label: string, key?: string) =>
     onChange({ widgets: next }, label, key);
@@ -450,28 +455,33 @@ export function PageEditor({
             selected={selected}
             onSelect={onSelect}
             onReorder={(next, label) => put(next, label)}
+            readOnly={readOnly}
             onSaid={setTold}
           />
         )}
       </section>
       {/* Stays in view at the foot of the pane as the outline scrolls behind it. */}
-      <div className="sticky bottom-0 flex shrink-0 flex-col bg-inherit pt-1 pb-1">
-        <Button
-          variant="quiet"
-          disabled={full}
-          aria-label="Add to page"
-          aria-keyshortcuts="A"
-          tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
-          className="w-full shrink-0 justify-center border border-action bg-action-soft"
-          onClick={() => setAdding(true)}
-        >
-          <Plus aria-hidden="true" size={14} /> Add to page <Kbd>A</Kbd>
-        </Button>
-      </div>
-      <p className="m-0 mt-auto hidden shrink-0 px-1 pt-2 text-meta text-ink-muted lg:block">
-        Drag in the outline or on the page to reorder. Alt with the arrow keys moves the chosen
-        widget in the outline.
-      </p>
+      {readOnly ? null : (
+        <div className="sticky bottom-0 flex shrink-0 flex-col bg-inherit pt-1 pb-1">
+          <Button
+            variant="quiet"
+            disabled={full}
+            aria-label="Add to page"
+            aria-keyshortcuts="A"
+            tooltip={full ? `A page holds at most ${MAX_PAGE_WIDGETS} widgets.` : undefined}
+            className="w-full shrink-0 justify-center border border-action bg-action-soft"
+            onClick={() => setAdding(true)}
+          >
+            <Plus aria-hidden="true" size={14} /> Add to page <Kbd>A</Kbd>
+          </Button>
+        </div>
+      )}
+      {readOnly ? null : (
+        <p className="m-0 mt-auto hidden shrink-0 px-1 pt-2 text-meta text-ink-muted lg:block">
+          Drag in the outline or on the page to reorder. Alt with the arrow keys moves the chosen
+          widget in the outline.
+        </p>
+      )}
     </>
   );
 
@@ -561,9 +571,11 @@ export function PageEditor({
                 <EmptyState
                   title="Nothing on this page yet"
                   action={
-                    <Button variant="primary" onClick={() => setAdding(true)}>
-                      <Plus aria-hidden="true" size={16} /> Add to page
-                    </Button>
+                    readOnly ? undefined : (
+                      <Button variant="primary" onClick={() => setAdding(true)}>
+                        <Plus aria-hidden="true" size={16} /> Add to page
+                      </Button>
+                    )
                   }
                 >
                   Add a table, a chart or a number. What you see is drawn from this workspace's
@@ -582,6 +594,7 @@ export function PageEditor({
                   device={device}
                   {...(layout?.viewAs ? { viewAs: layout.viewAs } : {})}
                   editing={{
+                    readOnly,
                     selected,
                     onSelect,
                     onChange: fromCanvas,
@@ -598,10 +611,14 @@ export function PageEditor({
                       setInspectorTab("display");
                       requestColumn(id, column);
                     },
-                    onEditText: (id) => {
-                      onSelect(id);
-                      setWriting(id);
-                    },
+                    ...(readOnly
+                      ? {}
+                      : {
+                          onEditText: (id: string) => {
+                            onSelect(id);
+                            setWriting(id);
+                          },
+                        }),
                     carrying,
                   }}
                 />
@@ -641,7 +658,7 @@ export function PageEditor({
         inspector={
           widget ? (
             <>
-              {pageInfo ? (
+              {pageInfo && !readOnly ? (
                 <ButtonOffers
                   widget={widget}
                   widgets={widgets}
@@ -665,6 +682,7 @@ export function PageEditor({
               <ApprovalFlowsProvider root={root} link={link}>
                 <InspectorHost
                   key={widget.id}
+                  readOnly={readOnly}
                   root={root}
                   client={client}
                   filterValues={filterValues}
@@ -731,15 +749,17 @@ export function PageEditor({
               </ApprovalFlowsProvider>
             </>
           ) : pageInfo ? (
-            <PageSettings
-              key={pageInfo.page.id}
-              page={pageInfo.page}
-              catalog={catalog}
-              mostReadTable={mainTable(widgets, catalog)}
-              onChange={pageInfo.onPage}
-              onRemove={() => pageInfo.onRemovePage?.()}
-              canRemove={pageInfo.onRemovePage !== undefined}
-            />
+            <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
+              <PageSettings
+                key={pageInfo.page.id}
+                page={pageInfo.page}
+                catalog={catalog}
+                mostReadTable={mainTable(widgets, catalog)}
+                onChange={pageInfo.onPage}
+                onRemove={() => pageInfo.onRemovePage?.()}
+                canRemove={pageInfo.onRemovePage !== undefined && !readOnly}
+              />
+            </fieldset>
           ) : (
             <p className="m-0 text-ink-muted">
               Choose a widget on the page to change it, or add one. What you see is drawn from this

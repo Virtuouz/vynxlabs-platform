@@ -62,9 +62,11 @@ import {
   type Box,
   CARRIED,
   type Carrying,
+  focusWidget,
   GRID,
   type HowMoved,
   isControl,
+  neighbourOf,
   type Card as PlaceCard,
   type Placement,
   usePlacement,
@@ -780,7 +782,8 @@ function Cell({
       ) : building && seenByTag(widget.rules, ctx.groupNames) ? (
         <span
           data-seen-by=""
-          className="pointer-events-none absolute top-1 left-1 rounded-inner bg-sunken px-1.5 text-meta text-ink-muted"
+          // On the top edge, as a label on it, so that it is not over the widget's own heading or its chip.
+          className="pointer-events-none absolute top-0 left-3 layer-sticky -translate-y-1/2 rounded-inner border border-line bg-surface px-1.5 text-meta leading-4 text-ink-muted"
         >
           {seenByTag(widget.rules, ctx.groupNames)}
         </span>
@@ -811,7 +814,7 @@ function Cell({
             data-chrome="size"
             className="pointer-events-none absolute top-[calc(100%+4px)] right-2 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta leading-4 whitespace-nowrap text-ink @max-[11rem]/cell:px-1 @max-[11rem]/cell:text-tag"
           >
-            {sizeWords(at)}
+            {narrow ? (span === 2 ? "Full width" : "Half width") : sizeWords(at)}
           </span>
         </>
       ) : null}
@@ -891,8 +894,20 @@ function WidgetGrid({
     )
       return;
     const startY = event.clientY;
-    const done = (up: PointerEvent) => {
+    const stop = () => {
       window.removeEventListener("pointerup", done);
+      window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("keydown", onEscape, true);
+    };
+    // Esc and a cancelled pointer let go of it where it was: nothing is written.
+    const onEscape = (key: KeyboardEvent) => {
+      if (key.key !== "Escape") return;
+      key.preventDefault();
+      key.stopPropagation();
+      stop();
+    };
+    const done = (up: PointerEvent) => {
+      stop();
       if (Math.abs(up.clientY - startY) < 8) return;
       const cells = [...(ref.current?.children ?? [])].filter(
         (node): node is HTMLElement =>
@@ -911,6 +926,8 @@ function WidgetGrid({
       ctx.movePhone(id, before);
     };
     window.addEventListener("pointerup", done);
+    window.addEventListener("pointercancel", stop);
+    window.addEventListener("keydown", onEscape, true);
   };
   const stepOnPhone = (id: string, by: -1 | 1) => {
     const ids = ordered.map((one) => one.id);
@@ -1031,7 +1048,14 @@ function WidgetGrid({
               onPointerDown: (event, how) => {
                 // On a phone a press is a click, or a drag up or down that reorders it.
                 if (narrow && how === "move") return reorderOnPhone(event, widget.id);
-                placement.grab(event, widget.id, stored.at, how, widget.in);
+                placement.grab(
+                  event,
+                  widget.id,
+                  stored.at,
+                  how,
+                  widget.in,
+                  nameOf(widget, entry?.definition),
+                );
               },
               onKeyDown: (event) => {
                 if (!editing || isControl(event.target)) return;
@@ -1303,7 +1327,7 @@ export function PageView({
     const made = [...fitContainers(next, roles, pin ? { pin } : {})];
     if (device !== "tablet") return editing.onChange(made, label);
     // On the tablet a move is the tablet's own place: it is asked about first, and the desktop's stays.
-    const written = intoTablet(given, widgets, made);
+    const written = intoTablet(given, widgets, made, pin);
     const was = new Map(given.map((widget) => [widget.id, JSON.stringify(widget.layout?.tablet)]));
     const byHand = written.some(
       (widget) =>
@@ -1383,8 +1407,10 @@ export function PageView({
   const remove = (id: string) => {
     if (!editing || editing.readOnly) return;
     const label = name(id);
+    const after = neighbourOf(widgets, id);
     change(without(widgets, id), `Removed ${label}`);
     editing.onSelect(undefined);
+    focusWidget(after);
     setTold(`${label} is removed.`);
   };
   const duplicate = (id: string) => {
@@ -1616,7 +1642,7 @@ export function PageView({
           {editing ? "Add a widget to start." : undefined}
         </EmptyState>
       ) : null}
-      <div>
+      <div data-canvas="" tabIndex={editing ? -1 : undefined} className="outline-none">
         <WidgetGrid ctx={ctx} widgets={topLevel(drawn)} gridRef={gridRef} />
         {carrying && !carrying.at ? <Carried carrying={carrying} /> : null}
         <span role="status" className="sr-only">

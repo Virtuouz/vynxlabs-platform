@@ -436,7 +436,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
 
   return (
     <div
-      className={`overflow-auto rounded-panel border border-line bg-surface ${
+      className={`scroll-pt-12 overflow-auto rounded-panel border border-line bg-surface ${
         props.fill ? "min-h-0 flex-1" : "max-h-[70vh]"
       }`}
     >

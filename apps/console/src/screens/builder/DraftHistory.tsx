@@ -1,9 +1,9 @@
 import type { InterfaceBody } from "@volvel/manifest";
 import { Button, Dialog } from "@volvel/ui";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useLoad } from "../../api.ts";
-import { ago } from "../../kit/format.ts";
-import { draftChanges } from "./changes.ts";
+import { ago, day, hm } from "../../kit/format.ts";
+import { draftChanges, savedWords } from "./changes.ts";
 
 interface Kept {
   id: string;
@@ -14,6 +14,12 @@ interface Kept {
   savedById: string | null;
   savedAt: string;
   body: InterfaceBody;
+}
+
+/** When a save was made: the clock time when it is under a day ago, else the date and the time. */
+function when(value: string): string {
+  if (Date.now() - new Date(value).getTime() < 86_400_000) return `${hm(value)} (${ago(value)})`;
+  return `${day(value)} ${hm(value)}`;
 }
 
 /**
@@ -49,6 +55,28 @@ export function DraftHistory({
   const who = (id: string | null) =>
     id ? (members.data?.items.find((one) => one.id === id)?.name ?? "Someone") : "The system";
   const changes = picked ? draftChanges(current, picked.body, true) : [];
+  /** What each save did: the version it put aside against what came after it (the newest, against the draft now). */
+  const did = (at: number) =>
+    savedWords(items[at]?.body ?? current, at === 0 ? current : (items[at - 1]?.body ?? current));
+  // The list is one stop for the keyboard: the arrows move in it, and choose as they go.
+  const rows = useRef<(HTMLButtonElement | null)[]>([]);
+  const walk = (event: React.KeyboardEvent, at: number) => {
+    const to =
+      event.key === "ArrowDown"
+        ? Math.min(items.length - 1, at + 1)
+        : event.key === "ArrowUp"
+          ? Math.max(0, at - 1)
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? items.length - 1
+              : undefined;
+    if (to === undefined) return;
+    event.preventDefault();
+    const next = items[to];
+    if (next) setChosen(next.id);
+    rows.current[to]?.focus();
+  };
 
   return (
     <Dialog
@@ -71,14 +99,19 @@ export function DraftHistory({
       ) : (
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
           <ul
-            aria-label="Earlier drafts"
+            aria-label="Earlier drafts, newest first"
             className="m-0 flex max-h-96 list-none flex-col gap-1 overflow-y-auto p-0"
           >
-            {items.map((one) => (
+            {items.map((one, at) => (
               <li key={one.id}>
                 <button
                   type="button"
+                  ref={(node) => {
+                    rows.current[at] = node;
+                  }}
                   aria-pressed={one.id === picked?.id}
+                  tabIndex={one.id === picked?.id ? 0 : -1}
+                  onKeyDown={(event) => walk(event, at)}
                   onClick={() => setChosen(one.id)}
                   className={`flex w-full cursor-pointer flex-col items-start rounded-control border px-3 py-2 text-left ${
                     one.id === picked?.id
@@ -87,12 +120,12 @@ export function DraftHistory({
                   }`}
                 >
                   <span className="text-body-sm font-medium text-ink">
-                    {ago(one.savedAt)}
+                    {when(one.savedAt)}
                     {one.reason === "set_aside" ? " · set aside" : ""}
+                    <span className="font-normal text-ink-muted"> · {who(one.savedById)}</span>
                   </span>
                   <span className="text-meta text-ink-muted">
-                    Saved by {who(one.savedById)} · {one.body.pages.length}{" "}
-                    {one.body.pages.length === 1 ? "page" : "pages"}
+                    {one.reason === "set_aside" ? "The draft was set aside" : did(at)}
                   </span>
                 </button>
               </li>
@@ -123,8 +156,8 @@ export function DraftHistory({
                   </ul>
                 )}
               </div>
-              <div className="flex justify-end gap-2">
-                <Button onClick={onClose}>Not now</Button>
+              {/* Restore comes right after the list for the keyboard; "Not now" is drawn before it. */}
+              <div className="flex flex-row-reverse justify-start gap-2">
                 <Button
                   variant="primary"
                   disabled={changes.length === 0}
@@ -132,6 +165,7 @@ export function DraftHistory({
                 >
                   Restore
                 </Button>
+                <Button onClick={onClose}>Not now</Button>
               </div>
             </section>
           ) : null}

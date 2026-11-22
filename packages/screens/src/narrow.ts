@@ -54,10 +54,12 @@ export function phoneSpans<T extends Laid & { id: string }>(
 ): Map<string, 1 | 2> {
   const spans = new Map<string, 1 | 2>();
   let open: T | undefined;
+  // "Keep the desktop layout" is the choice to keep its share of the row: alone, it keeps it.
+  const alone = (widget: T): 1 | 2 => (widget.layout?.narrow === "keep" ? 1 : 2);
   for (const widget of ordered) {
     const span = breaks(widget) ? 2 : phoneSpan(widget);
     if (span === 2) {
-      if (open) spans.set(open.id, 2);
+      if (open) spans.set(open.id, alone(open));
       open = undefined;
       spans.set(widget.id, 2);
     } else if (open) {
@@ -68,7 +70,7 @@ export function phoneSpans<T extends Laid & { id: string }>(
       open = widget;
     }
   }
-  if (open) spans.set(open.id, 2);
+  if (open) spans.set(open.id, alone(open));
   return spans;
 }
 
@@ -152,13 +154,62 @@ export function phoneMoved<T extends PageWidget>(
   return next;
 }
 
-/** The widgets as a tablet draws them: each at the place set for it, else the desktop's. */
+/**
+ * The widgets as a tablet draws them: each at the place set for it, else the desktop's, and what
+ * lies on a place set by hand is moved aside (down, as on the desktop) rather than written.
+ */
 export function onTablet<T extends PageWidget>(widgets: readonly T[]): T[] {
-  return widgets.map((widget) =>
+  const drawn = widgets.map((widget) =>
     widget.layout?.tablet && !widget.in
       ? { ...widget, at: { ...widget.layout.tablet.at } }
       : widget,
   );
+  if (!drawn.some((widget) => widget.layout?.tablet && !widget.in)) return drawn;
+  // The page's own grid only: what is in a container is laid out by the container.
+  const top = drawn
+    .filter((widget) => !widget.in)
+    .map((widget) => ({ ...widget, at: { ...widget.at } }));
+  const hand = new Set(top.filter((widget) => widget.layout?.tablet).map((widget) => widget.id));
+  settleAround(top, hand);
+  const placed = new Map(top.map((widget) => [widget.id, widget.at]));
+  return drawn.map((widget) => {
+    const at = placed.get(widget.id);
+    return at && !hand.has(widget.id) && !sameBox(at, widget.at)
+      ? { ...widget, at: { ...at } }
+      : widget;
+  });
+}
+
+/**
+ * `settle` with several widgets held where they are: the rest are pushed down off them, in turn,
+ * and not lifted into holes (what was not moved is not moved for being near what was).
+ */
+function settleAround(widgets: PageWidget[], pinned: ReadonlySet<string>) {
+  const placed = widgets.filter((widget) => pinned.has(widget.id));
+  const rest = widgets
+    .filter((widget) => !pinned.has(widget.id))
+    .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x);
+  const overlap = (a: Box, b: Box) =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  for (const widget of rest) {
+    let y = widget.at.y;
+    for (;;) {
+      const under = placed.find((other) => overlap({ ...widget.at, y }, other.at));
+      if (!under) break;
+      y = under.at.y + under.at.h;
+    }
+    widget.at.y = Math.min(LAST_ROW, y);
+    placed.push(widget);
+  }
+}
+
+/** How many widgets a tablet draws away from the desktop's place for one set by hand, which were not set by hand. */
+export function movedAside(widgets: readonly PageWidget[]): number {
+  const drawn = onTablet(widgets);
+  return drawn.filter((widget, at) => {
+    const own = widgets[at] as PageWidget;
+    return !own.layout?.tablet && !own.in && !sameBox(widget.at, own.at);
+  }).length;
 }
 
 const sameBox = (a: Box, b: Box) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
@@ -172,6 +223,8 @@ export function intoTablet<T extends PageWidget>(
   original: readonly T[],
   drawn: readonly T[],
   next: readonly T[],
+  /** The one the person moved or stretched: only it takes a place of its own; what was pushed aside is drawn aside. */
+  moved?: string,
 ): T[] {
   const was = new Map(original.map((widget) => [widget.id, widget]));
   const shown = new Map(drawn.map((widget) => [widget.id, widget]));
@@ -179,6 +232,10 @@ export function intoTablet<T extends PageWidget>(
     const first = was.get(widget.id);
     const before = shown.get(widget.id);
     if (!first || !before || widget.in) return widget;
+    if (moved !== undefined && widget.id !== moved) {
+      // Moved aside by the one that was moved: drawn aside, and nothing of its own written.
+      return { ...widget, at: { ...first.at } };
+    }
     if (sameBox(widget.at, before.at)) {
       // As drawn: its own place stays what it was, tablet place included.
       return { ...widget, at: { ...first.at } };
@@ -212,5 +269,21 @@ export function backToAutomatic<T extends PageWidget>(
     const { [device]: _gone, ...layout } = widget.layout;
     const { layout: _old, ...rest } = widget;
     return (Object.keys(layout).length > 0 ? { ...rest, layout } : rest) as T;
+  });
+}
+
+/** Every widget without a place of its own for a device: the page is automatic again for it. */
+export function allAutomatic<T extends PageWidget>(
+  widgets: readonly T[],
+  device: "tablet" | "phone",
+): T[] {
+  return widgets.map((widget) => {
+    const layout = widget.layout;
+    if (!layout) return widget;
+    const { [device]: _gone, ...rest } = layout;
+    const kept =
+      device === "phone" ? (({ narrow: _n, priority: _p, ...others }) => others)(rest) : rest;
+    const { layout: _old, ...bare } = widget;
+    return (Object.keys(kept).length > 0 ? { ...bare, layout: kept } : bare) as T;
   });
 }

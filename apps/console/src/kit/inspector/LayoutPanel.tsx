@@ -17,6 +17,7 @@ import type { WidgetDefinition } from "@volvel/widgets";
 import { ChevronLeft } from "lucide-react";
 import { useState } from "react";
 import { clampPlace, settleOnGrid, withText } from "./model.ts";
+import { useTakesFocus } from "./widgets/recordShared.tsx";
 
 export type Device = "tablet" | "phone";
 
@@ -91,6 +92,7 @@ export interface LayoutPanelProps {
 }
 
 export function LayoutPanel(props: LayoutPanelProps) {
+  const back = useTakesFocus<HTMLButtonElement>();
   const { widget, definition, onChange, onChangeWidgets, widgets } = props;
   const { min, max } = definition.layout;
   const at = widget.at;
@@ -187,6 +189,7 @@ export function LayoutPanel(props: LayoutPanelProps) {
       />
       <div>
         <button
+          ref={back}
           type="button"
           onClick={props.onBack}
           className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-control px-1 text-body-sm text-ink-muted outline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"

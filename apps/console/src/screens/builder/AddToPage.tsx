@@ -280,6 +280,9 @@ export function AddToPage({
           className="flex h-14 shrink-0 items-center gap-3 border-line border-b px-4"
           onSubmit={(event) => {
             event.preventDefault();
+            // Nothing typed: what is highlighted (the tile the pointer or focus is on, or else the
+            // first) is what Enter places, not a suggestion that is not.
+            if (typed.trim() === "" && shown) return add(shown);
             // A widget typed by its name is that widget, whatever a suggestion says about it.
             const named = typed.trim().toLowerCase();
             const exact = named
@@ -299,7 +302,10 @@ export function AddToPage({
             aria-label="Find something to add, or describe what people should do"
             placeholder="Find something to add, or describe what people should do"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setLit(undefined);
+              setSearch(event.target.value);
+            }}
             className="h-10 min-w-0 flex-1 border-0 bg-transparent text-emphasis text-ink outline-none focus-visible:outline-none! placeholder:text-ink-muted"
           />
           <Kbd>esc</Kbd>

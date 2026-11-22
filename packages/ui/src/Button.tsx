@@ -9,13 +9,16 @@ import { Tooltip } from "./Tooltip.tsx";
  * "+ Add a step".
  */
 const styles = {
-  primary: "bg-action text-action-ink font-semibold hover:brightness-110",
+  primary:
+    "bg-action text-action-ink font-semibold hover:brightness-110 forced-colors:border-2 forced-colors:border-[ButtonText]",
   secondary: "border border-line-strong bg-transparent text-ink hover:bg-hover",
   quiet: "text-ink hover:bg-hover",
   danger: "border border-danger/50 text-danger hover:bg-danger-soft",
-  "danger-solid": "bg-danger text-action-ink font-semibold hover:brightness-110",
+  "danger-solid":
+    "bg-danger text-action-ink font-semibold hover:brightness-110 forced-colors:border-2 forced-colors:border-[ButtonText]",
   /** Reserved for the one action that changes production. */
-  promote: "bg-attention text-canvas font-semibold hover:brightness-110",
+  promote:
+    "bg-attention text-canvas font-semibold hover:brightness-110 forced-colors:border-2 forced-colors:border-[ButtonText]",
   dashed:
     "border border-dashed border-line-strong bg-transparent text-ink-muted hover:bg-hover hover:text-ink",
 };

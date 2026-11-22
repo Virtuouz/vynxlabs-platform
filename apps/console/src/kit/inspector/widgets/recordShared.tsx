@@ -5,7 +5,7 @@
  */
 import { DrawerGroup, type DrawerIcon, DrawerRow } from "@volvel/ui";
 import { ChevronLeft } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import type { Env } from "../controls.tsx";
 import { ICON_CHOICES as KIT_ICONS } from "../controls.tsx";
 import { withConfig } from "../model.ts";
@@ -21,6 +21,24 @@ export function setConfig(env: Env, name: string, value: unknown, label: string,
   );
 }
 
+/**
+ * For the Back button of a sub-view, which takes the focus when the view opens (a keyboard
+ * reader is not left on a control that has gone) and gives it back to what opened it when it
+ * closes, if that is still there.
+ */
+export function useTakesFocus<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    ref.current?.focus();
+    return () => {
+      const now = document.activeElement;
+      if ((now === document.body || now === null) && opener?.isConnected) opener.focus();
+    };
+  }, []);
+  return ref;
+}
+
 /** The head of a sub-view: "‹ Back" and where you are. */
 export function BackHead({
   onBack,
@@ -31,9 +49,11 @@ export function BackHead({
   title: string;
   kind?: string;
 }) {
+  const back = useTakesFocus<HTMLButtonElement>();
   return (
     <div className="flex items-center gap-2">
       <button
+        ref={back}
         type="button"
         onClick={onBack}
         className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-control px-2 text-body-sm text-ink-muted outline-offset-1 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"

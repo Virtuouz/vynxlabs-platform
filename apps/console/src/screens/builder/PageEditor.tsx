@@ -8,7 +8,7 @@ import {
   type Page,
   type PageWidget,
 } from "@volvel/manifest";
-import { GRID } from "@volvel/screens";
+import { focusWidget, GRID, neighbourOf } from "@volvel/screens";
 import { Button, Closing, EmptyState, edgeShadows, Kbd } from "@volvel/ui";
 import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Plus, X } from "lucide-react";
@@ -72,15 +72,18 @@ import {
 } from "./records.ts";
 import { definitionOf, views } from "./registry.ts";
 import {
+  allAutomatic,
   automaticAt,
   type Box,
   type CarryRequest,
   changedByHand,
   type FilterValues,
+  movedAside,
   PageView,
   placed,
 } from "./renderer.ts";
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
+import { ScaledFrame } from "./ScaledFrame.tsx";
 import { SheetPreviewHost } from "./SheetPreview.tsx";
 import { SizeHandle } from "./SizeHandle.tsx";
 import { approvalsSuggestion } from "./selectorData.ts";
@@ -452,8 +455,10 @@ export function PageEditor({
     const words = removalWords(gone.removed);
     // What a removed Search and filter declared is no longer followed by anything.
     const next = gone.removed.reduce((list, one) => unbindDeclared(list, one), gone.widgets);
+    const after = neighbourOf(widgets, id);
     put(next, `removing ${words}`);
     onSelect(undefined);
+    focusWidget(after);
     notify.success(`Removed ${words}.`, { action: { label: "Undo", onClick: shell.history.undo } });
   };
 
@@ -498,7 +503,17 @@ export function PageEditor({
       .filter((one) => !next.some((other) => other.id === one.id))
       .reduce((list, gone) => unbindDeclared(list, gone), next);
     const { widgets: kept, orphans } = withoutOrphans(kept0);
-    if (orphans.length === 0) return put(kept0, label);
+    if (orphans.length === 0) {
+      // Its own Delete key: no question, and Undo is one press away, said and reachable.
+      const gone = widgets.filter((one) => !next.some((other) => other.id === one.id));
+      put(kept0, label);
+      if (gone.length > 0) {
+        notify.success(`Removed ${removalWords(gone)}.`, {
+          action: { label: "Undo", onClick: shell.history.undo },
+        });
+      }
+      return;
+    }
     const ids = new Set(next.map((one) => one.id));
     const container = widgets.find((one) => !ids.has(one.id) && one.id === orphans[0]?.in?.widget);
     const words = removalWords(container ? [container, ...orphans] : orphans);
@@ -583,6 +598,15 @@ export function PageEditor({
       : kindWidth !== undefined
         ? Math.min(kindWidth, frame?.width ?? kindWidth)
         : frame?.width;
+  // A sheet, a modal or a tablet is drawn at its true width, scaled down to the room there is (and
+  // the scale said), not cut to it: Large, Extra large and Full can then be told from each other.
+  const trueWidth =
+    overlay || device === "tablet"
+      ? dragged !== undefined
+        ? dragged
+        : Math.min(kindWidth ?? window.innerWidth, frame?.width ?? Number.POSITIVE_INFINITY)
+      : undefined;
+  const scaled = trueWidth !== undefined && Number.isFinite(trueWidth);
   // What the renderer is told beyond the data (phase 26): the page's record, and what its steps open.
   const opens = pageInfo
     ? {
@@ -610,181 +634,212 @@ export function PageEditor({
         <SampleBar page={pageInfo.page} sample={sample} onChoose={pageInfo.onRecord} />
       ) : null}
       {device !== "desktop" && !overlay ? (
-        <DeviceBanner device={device} changed={changedByHand(widgets, device)} />
+        <DeviceBanner
+          device={device}
+          changed={changedByHand(widgets, device)}
+          {...(device === "tablet" ? { aside: movedAside(widgets) } : {})}
+          onAutomatic={
+            readOnly
+              ? undefined
+              : () => put(allAutomatic(widgets, device), `making the ${device} layout automatic`)
+          }
+        />
       ) : null}
       {layout?.viewAs ? <ViewAsNote name={layout.viewAs.name} /> : null}
-      <div
-        // A row of the table clicked on the canvas is the record its sheet is previewed with.
-        onClickCapture={(event) => {
+      {(() => {
+        const sizeHandle = (scale: number) =>
+          overlay && pageInfo ? (
+            <SizeHandle
+              size={size}
+              scale={scale}
+              onDrag={setDragged}
+              onSize={(next, key) =>
+                pageInfo.onPage(
+                  withSize(pageInfo.page, next),
+                  `making ${pageInfo.page.title} ${SIZE_NAMES[next].toLowerCase()}`,
+                  key,
+                )
+              }
+              snap={snapSize}
+            />
+          ) : null;
+        const clicked = (event: React.MouseEvent<HTMLElement>) => {
           if (!rowSheet) return;
           const row = (event.target as HTMLElement).closest<HTMLElement>("[data-record]");
           const cell = row?.closest("[data-widget-cell]");
           if (row?.dataset.record && cell?.getAttribute("data-widget-cell") === rowSheet.id) {
             setPicked((before) => ({ id: row.dataset.record as string, n: (before?.n ?? 0) + 1 }));
           }
-        }}
-        className={overlay ? "relative mx-auto" : "relative"}
-        style={overlay && width ? { maxWidth: `${width}px` } : undefined}
-      >
-        {rowSheet && pageInfo && inspectorTab === "actions" && !previewHidden.has(rowSheet.id) ? (
-          <SheetPreviewHost
-            key={rowSheet.page.id}
-            root={root}
-            source={source}
-            page={rowSheet.page}
-            pages={pageInfo.pages}
-            catalog={catalog}
-            pick={picked}
-            onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
-            onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
-          />
-        ) : null}
-        <PhoneFrame
-          on={device === "phone" && !overlay && width !== undefined}
-          title={pageInfo?.page.title ?? ""}
-          width={width ?? 390}
-        >
-          <div
-            data-preview={frame?.name}
-            data-page-kind={kind ?? "page"}
-            data-page-size={overlay ? size : undefined}
-            className={`mx-auto overflow-x-auto ${overlay ? "rounded-overlay border border-line-strong bg-surface px-5 pt-0 pb-8 shadow-modal" : `bg-canvas ${device === "phone" ? "pb-8" : frame ? "rounded-panel border border-line px-3 pt-3 pb-8" : "rounded-panel px-3 pt-3 pb-8"}`} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
-            style={
-              width && !overlay && device !== "phone"
-                ? {
-                    maxWidth: `${width}px`,
-                    ...(device === "tablet" ? { minWidth: `${width}px` } : {}),
-                  }
-                : device === "desktop" && !overlay
-                  ? // The desktop layout is drawn at a desktop's width, scrolled in a narrow canvas, never as the phone's.
-                    { minWidth: `${DESKTOP_MIN}px` }
-                  : undefined
-            }
-          >
-            {/* A side sheet or a modal is drawn as it opens: its title bar and the size it opens at. */}
-            {overlay && pageInfo ? (
-              <div
-                data-overlay-bar=""
-                className="-mx-5 mb-4 flex items-center justify-between gap-3 border-line border-b px-5 py-3"
-              >
-                <span className="min-w-0 truncate text-title font-semibold">
-                  {pageInfo.page.title}
-                </span>
-                <span className="flex shrink-0 items-center gap-3 text-meta text-ink-muted">
-                  <span>
-                    {kind === "modal" ? "Modal" : "Side sheet"} · {SIZE_NAMES[size]}
-                    {SIZE_WIDTH[size] ? ` · ${SIZE_WIDTH[size]}px` : ""}
-                  </span>
-                  <X aria-hidden="true" size={16} />
-                </span>
-              </div>
+        };
+        const framed = (
+          <>
+            {rowSheet &&
+            pageInfo &&
+            inspectorTab === "actions" &&
+            !previewHidden.has(rowSheet.id) ? (
+              <SheetPreviewHost
+                key={rowSheet.page.id}
+                root={root}
+                source={source}
+                page={rowSheet.page}
+                pages={pageInfo.pages}
+                catalog={catalog}
+                pick={picked}
+                onEditLayout={() => pageInfo.onOpen({ page: rowSheet.page.id, as: "page" })}
+                onClose={() => setPreviewHidden((before) => new Set(before).add(rowSheet.id))}
+              />
             ) : null}
-            {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
-            <div
-              data-column-guides=""
-              className={device === "phone" ? undefined : "relative isolate"}
+            <PhoneFrame
+              on={device === "phone" && !overlay && width !== undefined}
+              title={pageInfo?.page.title ?? ""}
+              width={width ?? 390}
             >
-              {device === "phone" ? null : (
-                <>
+              <div
+                data-preview={frame?.name}
+                data-page-kind={kind ?? "page"}
+                data-page-size={overlay ? size : undefined}
+                className={`mx-auto overflow-x-auto ${overlay ? "rounded-overlay border border-line-strong bg-surface px-5 pt-0 pb-8 shadow-modal" : `bg-canvas ${device === "phone" ? "pb-8" : frame ? "rounded-panel border border-line px-3 pt-3 pb-8" : "rounded-panel px-3 pt-3 pb-8"}`} ${dragged === undefined ? "transition-[max-width] motion-slow" : ""}`}
+                style={
+                  width && !overlay && device !== "phone"
+                    ? {
+                        maxWidth: `${width}px`,
+                        ...(device === "tablet" ? { minWidth: `${width}px` } : {}),
+                      }
+                    : device === "desktop" && !overlay
+                      ? // The desktop layout is drawn at a desktop's width, scrolled in a narrow canvas, never as the phone's.
+                        { minWidth: `${DESKTOP_MIN}px` }
+                      : undefined
+                }
+              >
+                {/* A side sheet or a modal is drawn as it opens: its title bar and the size it opens at. */}
+                {overlay && pageInfo ? (
                   <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 -z-10"
-                    style={GUIDE_BANDS}
-                  />
-                  <div
-                    aria-hidden="true"
-                    className="pointer-events-none absolute inset-0 -z-10"
-                    style={GUIDE_LINES}
-                  />
-                </>
-              )}
-              {widgets.length === 0 ? (
-                <EmptyState
-                  title="Nothing on this page yet"
-                  action={
-                    readOnly ? undefined : (
-                      <span className="flex flex-wrap items-center justify-center gap-2">
-                        <Button variant="primary" onClick={() => setAdding(true)}>
-                          <Plus aria-hidden="true" size={16} /> Add to page
-                        </Button>
-                        {starts.map((one) => (
-                          <Button
-                            key={one.key}
-                            variant="secondary"
-                            onClick={() => pickNext(one.key)}
-                          >
-                            {one.label}
-                          </Button>
-                        ))}
+                    data-overlay-bar=""
+                    className="-mx-5 mb-4 flex items-center justify-between gap-3 border-line border-b px-5 py-3"
+                  >
+                    <span className="min-w-0 truncate text-title font-semibold">
+                      {pageInfo.page.title}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-3 text-meta text-ink-muted">
+                      <span>
+                        {kind === "modal" ? "Modal" : "Side sheet"} · {SIZE_NAMES[size]}
+                        {SIZE_WIDTH[size] ? ` · ${SIZE_WIDTH[size]}px` : ""}
                       </span>
-                    )
-                  }
+                      <X aria-hidden="true" size={16} />
+                    </span>
+                  </div>
+                ) : null}
+                {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
+                <div
+                  data-column-guides=""
+                  className={device === "phone" ? undefined : "relative isolate"}
                 >
-                  Add a table, a chart or a number. What you see is drawn from this workspace's
-                  rows, as you may read them.
-                </EmptyState>
-              ) : (
-                <PageView
-                  widgets={widgets}
-                  filters={filters}
-                  registry={views}
-                  client={client}
-                  filterValues={filterValues}
-                  onFilterValues={setFilterValues}
-                  {...(refreshKey !== undefined ? { refreshKey } : {})}
-                  {...opens}
-                  device={device}
-                  {...(overlay && kind ? { overlay: kind as "sheet" | "modal" } : {})}
-                  groupNames={groupNames}
-                  {...(layout?.viewAs ? { viewAs: layout.viewAs } : {})}
-                  editing={{
-                    readOnly,
-                    selected,
-                    onSelect,
-                    onChange: fromCanvas,
-                    ...(layout?.askLayout ? { askLayout: layout.askLayout } : {}),
-                    onRename: (id, title) =>
-                      put(
-                        widgets.map((one) => (one.id === id ? { ...one, title } : one)),
-                        "renaming a widget",
-                        `title:${id}`,
-                      ),
-                    onColumn: (id, column) => {
-                      onSelect(id);
-                      // A heading clicked opens its column in the drawer's Display tab.
-                      setInspectorTab("display");
-                      requestColumn(id, column);
-                    },
-                    ...(readOnly
-                      ? {}
-                      : {
-                          onEditText: (id: string) => {
-                            onSelect(id);
-                            setWriting(id);
-                          },
-                        }),
-                    carrying,
-                  }}
-                />
-              )}
+                  {device === "phone" ? null : (
+                    <>
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 -z-10"
+                        style={GUIDE_BANDS}
+                      />
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute inset-0 -z-10"
+                        style={GUIDE_LINES}
+                      />
+                    </>
+                  )}
+                  {widgets.length === 0 ? (
+                    <EmptyState
+                      title="Nothing on this page yet"
+                      action={
+                        readOnly ? undefined : (
+                          <span className="flex flex-wrap items-center justify-center gap-2">
+                            <Button variant="primary" onClick={() => setAdding(true)}>
+                              <Plus aria-hidden="true" size={16} /> Add to page
+                            </Button>
+                            {starts.map((one) => (
+                              <Button
+                                key={one.key}
+                                variant="secondary"
+                                onClick={() => pickNext(one.key)}
+                              >
+                                {one.label}
+                              </Button>
+                            ))}
+                          </span>
+                        )
+                      }
+                    >
+                      Add a table, a chart or a number. What you see is drawn from this workspace's
+                      rows, as you may read them.
+                    </EmptyState>
+                  ) : (
+                    <PageView
+                      widgets={widgets}
+                      filters={filters}
+                      registry={views}
+                      client={client}
+                      filterValues={filterValues}
+                      onFilterValues={setFilterValues}
+                      {...(refreshKey !== undefined ? { refreshKey } : {})}
+                      {...opens}
+                      device={device}
+                      {...(overlay && kind ? { overlay: kind as "sheet" | "modal" } : {})}
+                      groupNames={groupNames}
+                      {...(layout?.viewAs ? { viewAs: layout.viewAs } : {})}
+                      editing={{
+                        readOnly,
+                        selected,
+                        onSelect,
+                        onChange: fromCanvas,
+                        ...(layout?.askLayout ? { askLayout: layout.askLayout } : {}),
+                        onRename: (id, title) =>
+                          put(
+                            widgets.map((one) => (one.id === id ? { ...one, title } : one)),
+                            "renaming a widget",
+                            `title:${id}`,
+                          ),
+                        onColumn: (id, column) => {
+                          onSelect(id);
+                          // A heading clicked opens its column in the drawer's Display tab.
+                          setInspectorTab("display");
+                          requestColumn(id, column);
+                        },
+                        ...(readOnly
+                          ? {}
+                          : {
+                              onEditText: (id: string) => {
+                                onSelect(id);
+                                setWriting(id);
+                              },
+                            }),
+                        carrying,
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+            </PhoneFrame>
+          </>
+        );
+        return scaled && trueWidth !== undefined ? (
+          <ScaledFrame width={trueWidth} handle={sizeHandle}>
+            {/* A row of the table clicked on the canvas is the record its sheet is previewed with. */}
+            <div onClickCapture={clicked} className="relative">
+              {framed}
             </div>
+          </ScaledFrame>
+        ) : (
+          <div
+            onClickCapture={clicked}
+            className={overlay ? "relative mx-auto" : "relative"}
+            style={overlay && width ? { maxWidth: `${width}px` } : undefined}
+          >
+            {framed}
+            {sizeHandle(1)}
           </div>
-        </PhoneFrame>
-        {overlay && pageInfo ? (
-          <SizeHandle
-            size={size}
-            onDrag={setDragged}
-            onSize={(next, key) =>
-              pageInfo.onPage(
-                withSize(pageInfo.page, next),
-                `making ${pageInfo.page.title} ${SIZE_NAMES[next].toLowerCase()}`,
-                key,
-              )
-            }
-            snap={snapSize}
-          />
-        ) : null}
-      </div>
+        );
+      })()}
     </>
   );
 

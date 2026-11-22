@@ -27,7 +27,7 @@ import { runsActions } from "./outline.ts";
 import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
 import { PublishCheck } from "./PublishCheck.tsx";
-import { canAddPage, movedPage } from "./pageKinds.ts";
+import { canAddPage, inMenu, movedPage } from "./pageKinds.ts";
 import { problemWords } from "./publishCheck.ts";
 import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
 import { syncSheetActions } from "./sheetActions.ts";
@@ -54,7 +54,10 @@ export function AppBuilder({
 }) {
   const [body, setBody] = useState<InterfaceBody>();
   const [missing, setMissing] = useState<string>();
-  const [pageId, setPageId] = useState<string>();
+  // The page being edited is kept in the address (`?page=`), so that a reload opens the same one.
+  const [pageId, setPageId] = useState<string | undefined>(
+    () => new URLSearchParams(window.location.search).get("page") ?? undefined,
+  );
   const [selected, setSelected] = useState<string>();
   /** The page's own settings are showing in the inspector (a page was chosen, not a widget). */
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -116,6 +119,7 @@ export function AppBuilder({
       (draft) => {
         if (!current) return;
         revision.current = draft.revision;
+        setProblems(draft.problems ?? []);
         setBody(draft.body);
       },
       () => current && setNoDraft(true),
@@ -200,6 +204,19 @@ export function AppBuilder({
     });
   };
 
+  const ids = body?.pages.map((one) => one.id).join(",");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `ids` stands for the pages
+  useEffect(() => {
+    const first = body?.pages[0]?.id;
+    if (!first) return;
+    const here = body?.pages.some((one) => one.id === pageId) ? pageId : first;
+    const url = new URL(window.location.href);
+    if (here === first) url.searchParams.delete("page");
+    else url.searchParams.set("page", here as string);
+    if (url.href !== window.location.href)
+      window.history.replaceState(window.history.state, "", url);
+  }, [pageId, ids]);
+
   if (missing) return <Notice tone="danger">{missing}</Notice>;
   if (!body || !known) return <BuilderSkeleton />;
   const page = body.pages.find((candidate) => candidate.id === pageId) ?? body.pages[0];
@@ -232,7 +249,9 @@ export function AppBuilder({
       tab?.close();
       return;
     }
-    const address = `${link}/screens/${path}/preview`;
+    // The page being edited, when it is one the app's menu has; the others open on a record.
+    const editing = page && inMenu(page) && page.id !== body.pages[0]?.id ? `/${page.id}` : "";
+    const address = `${link}/screens/${path}/preview${editing}`;
     if (tab) tab.location.href = address;
     else window.open(address, "_blank");
   };

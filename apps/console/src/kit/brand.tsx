@@ -84,7 +84,7 @@ export function BrandMark({
   return (
     <span
       {...(decorative ? { "aria-hidden": true } : { role: "img", "aria-label": brand.productName })}
-      className={`vx-port flex ${box} shrink-0 items-center justify-center bg-action font-mono text-label font-bold tracking-tight text-action-ink`}
+      className={`vx-port flex ${box} shrink-0 items-center justify-center bg-action font-mono text-label font-bold tracking-tight text-action-ink forced-colors:forced-color-adjust-none`}
     >
       {monogram(brand.productName)}
     </span>

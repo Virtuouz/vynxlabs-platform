@@ -261,7 +261,7 @@ export function PublishSplit({
   // Both panels hang from the whole split button, their right edges at its right edge (board 6).
   const whole = useRef<HTMLSpanElement>(null);
   const item =
-    "flex w-full items-center rounded-inner px-3 py-1.5 text-left text-body-sm hover:bg-action-soft focus-visible:bg-action-soft aria-disabled:pointer-events-none aria-disabled:opacity-50";
+    "flex w-full items-center rounded-inner px-3 py-1.5 text-left text-body-sm hover:bg-action-soft focus-visible:bg-action-soft disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 forced-colors:disabled:text-[GrayText]";
   return (
     <span ref={whole} className="inline-flex">
       {check ? (

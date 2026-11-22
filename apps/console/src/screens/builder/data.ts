@@ -30,3 +30,14 @@ export const slug = (text: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
+
+/**
+ * The same, as it is typed into an address field: a dash typed at the end stays, or "x-y" could
+ * never be written. It is made a whole `slug` when the field is submitted.
+ */
+export const slugTyping = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .slice(0, 40);

@@ -96,6 +96,8 @@ export interface Placement {
     how: HowMoved,
     /** The container it is in; left out for a widget on the page's own grid. */
     from?: WidgetIn,
+    /** What it is called, for what is said when it lands or is put back. */
+    name?: string,
   ) => void;
   /**
    * Carry something onto the page from where the pointer is now, until it is let go:
@@ -227,8 +229,11 @@ export function usePlacement({
     const node = on;
     if (!node) return undefined;
     const box = node.getBoundingClientRect();
-    const column = (box.width + GRID.gap) / GRID.columns;
-    const row = GRID.row + GRID.gap;
+    // A grid drawn scaled down (a Large sheet in a narrow canvas) is smaller on the screen than
+    // in its own pixels: a cell is that much smaller too.
+    const k = node.offsetWidth > 0 ? box.width / node.offsetWidth : 1;
+    const column = (box.width + GRID.gap * k) / GRID.columns;
+    const row = (GRID.row + GRID.gap) * k;
     return {
       x: (point.x - box.left) / column,
       y: (point.y - box.top) / row,
@@ -277,7 +282,7 @@ export function usePlacement({
     return undefined;
   };
 
-  const grab: Placement["grab"] = (event, id, own, how, origin) => {
+  const grab: Placement["grab"] = (event, id, own, how, origin, name = "The widget") => {
     const node = grid.current;
     if (!onMove || !node || event.button !== 0) return;
     // A press on a button, a link or a field is that control's, not the start of a drag.
@@ -347,21 +352,46 @@ export function usePlacement({
     const end = () => {
       window.removeEventListener("pointermove", follow);
       window.removeEventListener("pointerup", drop);
-      window.removeEventListener("pointercancel", drop);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("blur", cancel);
+      window.removeEventListener("keydown", onEscape, true);
       stopScrolling?.();
       ending.current = undefined;
       setHeld(undefined);
     };
     const drop = () => {
       end();
-      if (dragging && (!same(latest, own) || !sameIn(latestIn, origin)))
+      if (dragging && (!same(latest, own) || !sameIn(latestIn, origin))) {
         onMove(id, latest, "pointer", how, latestIn);
+        setSaid(
+          how === "stretch"
+            ? `${name} is ${latest.w} wide and ${latest.h} tall.`
+            : `${name} moved to column ${latest.x + 1}, row ${latest.y + 1}.`,
+        );
+      }
+    };
+    // Esc, a cancelled pointer and a window that loses the pointer put everything back.
+    const cancel = () => {
+      const was = dragging;
+      end();
+      if (was)
+        setSaid(
+          `${how === "stretch" ? "Resize" : "Move"} cancelled. ${name} is back where it was.`,
+        );
+    };
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !dragging) return;
+      event.preventDefault();
+      event.stopPropagation();
+      cancel();
     };
     if (how === "stretch") stopScrolling = scrollAtEdges(node, () => pointer, place);
     ending.current = end;
     window.addEventListener("pointermove", follow);
     window.addEventListener("pointerup", drop);
-    window.addEventListener("pointercancel", drop);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("blur", cancel);
+    window.addEventListener("keydown", onEscape, true);
   };
 
   const carry: Placement["carry"] = (card, from, onDrop, how) => {
@@ -451,7 +481,7 @@ export function usePlacement({
       setSaid(
         event.shiftKey
           ? `${name} is ${next.w} wide and ${next.h} tall.`
-          : `${name} is at column ${next.x + 1}, row ${next.y + 1}.`,
+          : `${name} moved to column ${next.x + 1}, row ${next.y + 1}.`,
       );
     },
   });
@@ -466,4 +496,29 @@ export function usePlacement({
     keys,
     said,
   };
+}
+
+/**
+ * Who should have focus when `id` is removed: the widget after it in the same grid (reading
+ * order), else the one before, else nothing, which is the canvas.
+ */
+export function neighbourOf(
+  widgets: readonly { id: string; at: Box; in?: WidgetIn | undefined }[],
+  id: string,
+): string | undefined {
+  const own = widgets.find((one) => one.id === id);
+  if (!own) return undefined;
+  const around = widgets
+    .filter((one) => sameIn(one.in, own.in))
+    .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x);
+  const at = around.findIndex((one) => one.id === id);
+  return (around[at + 1] ?? around[at - 1])?.id;
+}
+
+/** Puts focus on a widget (once it is drawn), or on the canvas when there is none. */
+export function focusWidget(id: string | undefined) {
+  requestAnimationFrame(() => {
+    const found = id ? document.querySelector<HTMLElement>(`[data-widget-cell="${id}"]`) : null;
+    (found ?? document.querySelector<HTMLElement>("[data-canvas]"))?.focus({ preventScroll: true });
+  });
 }

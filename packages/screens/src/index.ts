@@ -41,11 +41,13 @@ export {
   without,
 } from "./layout.ts";
 export {
+  allAutomatic,
   automaticAt,
   backToAutomatic,
   changedByHand,
   type Device,
   hiddenOnPhone,
+  movedAside,
   onTablet,
   phoneMoved,
   phoneOrder,
@@ -70,7 +72,9 @@ export {
   CARRIED,
   type Card,
   type Carrying,
+  focusWidget,
   GRID,
+  neighbourOf,
   type Placement,
   usePlacement,
 } from "./placement.ts";

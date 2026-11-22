@@ -294,6 +294,23 @@ test("Add to page opens with what the page lacks, above the categories, and the 
   expect(document.activeElement).toBe(field);
 });
 
+test("Enter in the empty picker places what is highlighted, not the first suggestion", async () => {
+  await open();
+  const { dialog } = await suggestions();
+  const field = dialog.getByLabelText(/^Find something to add/);
+  const lit = dialog
+    .getAllByRole("button")
+    .find((one) => one.getAttribute("aria-current") === "true") as HTMLElement;
+  expect(lit).toBeTruthy();
+  const title = lit.querySelector("span span")?.textContent ?? "";
+  const before = money0().length;
+  fireEvent.submit(field.closest("form") as HTMLElement);
+  await saved((body) => (body.pages[0]?.widgets ?? []).length === before + 1);
+  // A suggestion would have added a search bar, a form or a section: it added the highlighted widget.
+  expect(money0().some((one) => one.type === "core/filter")).toBe(false);
+  expect(title).not.toBe("");
+});
+
 test("Search invoices puts a search bar at the top, bound to the widgets of the table on its text columns", async () => {
   await open();
   const { group } = await suggestions();

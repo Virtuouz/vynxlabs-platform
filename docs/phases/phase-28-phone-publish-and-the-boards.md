@@ -419,3 +419,23 @@ On 2026-11-22 the owner looked at the builder, found it "looking and functioning
 Found in our own walk and fixed: shrinking a tall widget at the end of a page ran away, because the page got shorter under the pointer (it keeps its height while something is held); a problem the console and the server both found was listed twice.
 
 **Walked:** `e2e/phase-28-canvas.spec.ts` (4) and `e2e/phase-28-look-inspector.spec.ts` (13) measure each frame of real drags: where the widget is against the pointer, blank charts, scroll bars, reads, rows that jump.
+
+### The example app
+
+**Clinic operations** (`examples/fernhill/src/operations.ts`) is the app the owner asked for: 17 pages (six in the menu, a record page, sheets and modals of every size), all fifteen widgets in their forms, every action step, the rules, and layouts set for a tablet and a phone. Its README section says where each feature is shown and what is left out, with the reason. A test fails when a widget, a kind of page, a size or a chart type is not used in it.
+
+Building and walking it found seven faults, all fixed:
+
+| What | What was done |
+|---|---|
+| A tablet's layout was drawn in the builder and never served | A served page with less than 58rem of room, and more than a phone's, is laid out as its tablet's. Sheets and modals are not |
+| After a script or workflow an action starts, the page kept what it showed | The answer says something was started, and the page reads again 1, 3 and 8 seconds after |
+| A widget that follows none of the page's filters said "Nothing matches the filters" when empty | Only one that follows a filter in use says so and offers to clear it |
+| A date and time wrapped onto four lines | Dates are one line, as numbers and codes are |
+| A record page's Back always named the first page | It goes back to the page it was opened from |
+| A detail that follows a row said "There is nothing here for you yet" when none was chosen | It asks for a row to be chosen, and says in which table |
+| The "Only …" tag covered a narrow widget's heading | It is one line on the edge, cut to the widget's width |
+
+The suites found one more, older than this phase: "the rows behind a number", opened again right after a filter changed, showed the rows of before. It reads again each time it opens.
+
+**Walked:** served, the six menu pages at 1440 dark, 768 light and 390 dark (measured for overlaps and sideways scroll at all three; looked at: Today and Money at 1440, Visits at 768); in the builder, Today at 1440. Not walked: the record page, sheets and modals on this last build, and the builder at 768 and 390.

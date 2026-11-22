@@ -48,7 +48,7 @@ export function DotBadge({
   const tinted = tone === undefined && color !== undefined;
   return (
     <span
-      className={`inline-flex h-[22px] items-center gap-[5px] rounded-full px-2 text-meta font-medium whitespace-nowrap ${
+      className={`inline-flex h-[22px] items-center gap-[5px] rounded-full px-2 text-meta font-medium whitespace-nowrap forced-colors:border forced-colors:border-[CanvasText] ${
         tinted ? "text-ink" : TONE_CLASS[tone ?? "neutral"]
       }`}
       style={

@@ -62,8 +62,8 @@ export function Tabs({
             disabled={tab.disabled === true}
             className={
               pills
-                ? "inline-flex h-7 items-center justify-center gap-1.5 rounded-inner px-2 text-body-sm font-medium whitespace-nowrap text-ink-muted hover:text-ink data-[active]:bg-raised data-[active]:text-ink data-[active]:shadow-[0_0_0_1px_var(--vx-line-strong)] data-[disabled]:opacity-50"
-                : `-mb-px border-b-2 border-transparent ${dense ? "px-2 text-body-sm" : "px-3"} py-2 font-medium whitespace-nowrap text-ink-muted hover:text-ink data-[active]:border-action data-[active]:text-action data-[disabled]:opacity-50`
+                ? "inline-flex h-7 items-center justify-center gap-1.5 rounded-inner px-2 text-body-sm font-medium whitespace-nowrap text-ink-muted hover:text-ink data-[active]:bg-raised data-[active]:text-ink data-[active]:shadow-[0_0_0_1px_var(--vx-line-strong)] forced-colors:data-[active]:underline forced-colors:data-[active]:underline-offset-4 data-[disabled]:opacity-50"
+                : `-mb-px border-b-2 border-transparent ${dense ? "px-2 text-body-sm" : "px-3"} py-2 font-medium whitespace-nowrap text-ink-muted hover:text-ink data-[active]:border-action data-[active]:text-action forced-colors:data-[active]:border-[Highlight] forced-colors:data-[active]:underline forced-colors:data-[active]:underline-offset-4 data-[disabled]:opacity-50`
             }
           >
             {tab.icon ? (

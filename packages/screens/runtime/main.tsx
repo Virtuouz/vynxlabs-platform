@@ -266,7 +266,7 @@ function App() {
           />
         </GlossaryProvider>
       ) : problem ? null : (
-        <AppSkeleton />
+        <AppSkeleton {...(context.app.pages ? { pages: context.app.pages } : {})} />
       )}
     </div>
   );

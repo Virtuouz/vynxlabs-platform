@@ -1,8 +1,9 @@
 import { Button, Details } from "@volvel/ui";
 import type { ColumnInfo, RecordData, RowsData, WidgetViewProps } from "@volvel/widgets";
-import type { ReactNode } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
 import { type ColumnSpec, cellOf, SYSTEM_COLUMNS } from "./cells.tsx";
 import { labelOf } from "./format.ts";
+import { NamedIcon, type Tone, VARIANT } from "./look.tsx";
 import { CANNOT_NOW, useRunning } from "./press.tsx";
 
 interface DetailField extends ColumnSpec {
@@ -13,7 +14,8 @@ interface DetailField extends ColumnSpec {
 interface DetailAction {
   id: string;
   label: string;
-  tone?: "primary" | "default" | "danger";
+  tone?: Tone;
+  icon?: string;
   action: unknown;
 }
 
@@ -22,14 +24,26 @@ interface DetailConfig {
   status?: string;
   fields?: DetailField[];
   actions?: DetailAction[];
+  /** Tiles across. A number, or the digit as text. */
+  across?: 1 | 2 | 3 | "1" | "2" | "3";
+  /** Fields are edited in place: a click opens an editor, Enter saves through `config/edit`. */
+  edit?: boolean;
 }
 
 /** What the host may add to a record: the name each reference points at, as a table's rows have. */
 type NamedRecord = RecordData & { names?: RowsData["names"] };
 
-const VARIANT = { primary: "primary", default: "secondary", danger: "danger-solid" } as const;
-
 const SHORT_TEXT = 80;
+
+/** Tiles across, by the width of the widget's own cell: one on a phone, then as many as asked. */
+const GRID = {
+  1: "grid-cols-1",
+  2: "grid-cols-1 @[28rem]/cell:grid-cols-2",
+  3: "grid-cols-1 @[24rem]/cell:grid-cols-2 @[40rem]/cell:grid-cols-3",
+} as const;
+
+/** What a column holds that an editor here can't: never edited in place. */
+const NOT_EDITABLE = new Set(["json", "uuid", "timestamp"]);
 
 /** A date as a person reads it: "Nov 20, 2026". Anything else says itself. */
 function dateOf(value: unknown): string {
@@ -78,7 +92,136 @@ function sectionsOf(fields: readonly DetailField[]): { name: string; fields: Det
   return out;
 }
 
-/** One record: a heading and its status, what can be done with it, and its fields. */
+const CONTROL =
+  "min-h-control w-full rounded-control border border-line-control bg-surface px-2 text-ink focus-visible:outline-2 focus-visible:outline-action";
+
+/**
+ * The editor of one field, by its column's type. Enter saves (Shift+Enter is a new line in
+ * long text), Escape cancels; what the server says is wrong is said under the field.
+ */
+function FieldEditor({
+  column,
+  info,
+  value,
+  label,
+  choices,
+  save,
+  stop,
+}: {
+  column: string;
+  info: ColumnInfo | undefined;
+  value: unknown;
+  label: string;
+  choices: WidgetViewProps["choices"];
+  save: (value: unknown) => Promise<string | undefined>;
+  stop: () => void;
+}) {
+  const type = info?.type ?? "text";
+  const [draft, setDraft] = useState(value === null || value === undefined ? "" : String(value));
+  const [problem, setProblem] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  const [offered, setOffered] = useState<readonly { value: string; label: string }[]>([]);
+  useEffect(() => {
+    if (type === "reference" && choices) void choices("record", column, "").then(setOffered);
+  }, [type, choices, column]);
+
+  const commit = async () => {
+    if (saving) return;
+    const parsed: unknown =
+      draft === ""
+        ? null
+        : type === "number" || type === "integer"
+          ? Number(draft)
+          : type === "boolean"
+            ? draft === "true"
+            : draft;
+    setSaving(true);
+    const failed = await save(parsed);
+    setSaving(false);
+    if (failed === undefined) stop();
+    else setProblem(failed || "It could not be saved.");
+  };
+  const keys = (event: KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      stop();
+    } else if (event.key === "Enter" && !(event.shiftKey && type === "text")) {
+      event.preventDefault();
+      void commit();
+    }
+  };
+  const common = {
+    "aria-label": label,
+    "aria-invalid": problem ? true : undefined,
+    "aria-busy": saving || undefined,
+    disabled: saving,
+    onKeyDown: keys,
+    className: CONTROL,
+  };
+  const listed =
+    type === "enum"
+      ? (info?.values ?? []).map((one) => ({ value: one.value, label: one.label ?? one.value }))
+      : type === "boolean"
+        ? [
+            { value: "true", label: "Yes" },
+            { value: "false", label: "No" },
+          ]
+        : offered;
+  const control =
+    type === "enum" || type === "boolean" || type === "reference" ? (
+      <select
+        {...common}
+        // biome-ignore lint/a11y/noAutofocus: opened by the person's own click, the editor takes the keys
+        autoFocus
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      >
+        <option value="">Not set</option>
+        {listed.map((one) => (
+          <option key={one.value} value={one.value}>
+            {one.label}
+          </option>
+        ))}
+      </select>
+    ) : typeof value === "string" && value.includes("\n") ? (
+      <textarea
+        {...common}
+        // biome-ignore lint/a11y/noAutofocus: opened by the person's own click, the editor takes the keys
+        autoFocus
+        rows={3}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+    ) : (
+      <input
+        {...common}
+        // biome-ignore lint/a11y/noAutofocus: opened by the person's own click, the editor takes the keys
+        autoFocus
+        type={
+          type === "number" || type === "integer" ? "number" : type === "date" ? "date" : "text"
+        }
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
+    );
+  return (
+    <div className="flex flex-col gap-1">
+      {control}
+      {problem ? (
+        <p role="alert" className="m-0 text-meta text-danger">
+          {problem}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * One record: its heading (the number, large, in the code face) with its status, what can be
+ * done with it, and its fields as tiles, 1, 2 or 3 across, under their section headings. With
+ * `edit`, a click on a tile edits that field in place.
+ */
 export function DetailView({
   config,
   data,
@@ -86,8 +229,11 @@ export function DetailView({
   act,
   can,
   why,
+  choices,
 }: WidgetViewProps<DetailConfig>) {
   const { running, run } = useRunning();
+  // Which field is being edited in place.
+  const [editing, setEditing] = useState<string>();
   const input = data.record as NamedRecord | undefined;
   if (input?.shape !== "record") return null;
   const record = input.record;
@@ -113,26 +259,77 @@ export function DetailView({
   const heading = config.heading ?? first;
   const status = config.status;
   const actions = config.actions ?? [];
+  const wanted = Number(config.across);
+  const across: 1 | 2 | 3 = wanted === 1 || wanted === 3 ? wanted : 2;
+  const editable = config.edit === true && !building && act !== undefined;
+  const canEdit = (column: string) =>
+    editable && !SYSTEM_COLUMNS.has(column) && !NOT_EDITABLE.has(infoOf(column)?.type ?? "text");
+  const saveField = async (column: string, value: unknown): Promise<string | undefined> => {
+    const outcome = await act?.("config/edit", { record: id, inputs: { [column]: value } });
+    if (!outcome || outcome.ok) return undefined;
+    if ("cancelled" in outcome) return "";
+    return outcome.fields?.[column] ?? outcome.message;
+  };
 
-  const draw = (field: DetailField) => (
-    <div key={field.column} className="flex min-w-0 flex-col gap-0.5">
-      <dt className="text-body-sm text-ink-muted">
-        {field.label ?? labelOf(input.columns, field.column)}
-      </dt>
-      <dd className="m-0 min-w-0 break-words">
-        {showField(field, infoOf(field.column), record[field.column], rows)}
-      </dd>
-    </div>
-  );
+  const draw = (field: DetailField) => {
+    const label = field.label ?? labelOf(input.columns, field.column);
+    const open = editing === field.column;
+    const pressable = canEdit(field.column) && !open;
+    return (
+      <div
+        key={field.column}
+        data-field={field.column}
+        className={`flex min-w-0 flex-col gap-0.5 rounded-control border border-line bg-surface p-3 ${
+          pressable
+            ? "cursor-text hover:bg-sunken focus-visible:outline-2 focus-visible:outline-action"
+            : ""
+        }`}
+        {...(pressable
+          ? {
+              role: "button",
+              tabIndex: 0,
+              "aria-label": `Edit ${label}`,
+              onClick: () => setEditing(field.column),
+              onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+                if (
+                  event.target === event.currentTarget &&
+                  (event.key === "Enter" || event.key === " ")
+                ) {
+                  event.preventDefault();
+                  setEditing(field.column);
+                }
+              },
+            }
+          : {})}
+      >
+        <dt className="text-meta text-ink-muted">{label}</dt>
+        <dd className="m-0 min-w-0 break-words">
+          {open ? (
+            <FieldEditor
+              column={field.column}
+              info={infoOf(field.column)}
+              value={record[field.column]}
+              label={label}
+              choices={choices}
+              save={(value) => saveField(field.column, value)}
+              stop={() => setEditing(undefined)}
+            />
+          ) : (
+            showField(field, infoOf(field.column), record[field.column], rows)
+          )}
+        </dd>
+      </div>
+    );
+  };
   const group = (list: readonly DetailField[]) => (
-    <dl className="m-0 grid grid-cols-1 gap-4 @[28rem]/cell:grid-cols-2">{list.map(draw)}</dl>
+    <dl className={`m-0 grid gap-3 ${GRID[across]}`}>{list.map(draw)}</dl>
   );
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {heading ? (
-          <h3 className="m-0 min-w-0 break-words text-display font-semibold">
+          <h3 className="m-0 min-w-0 break-words font-mono text-display font-semibold">
             {cellOf({ column: heading }, infoOf(heading), record[heading], rows)}
           </h3>
         ) : null}
@@ -154,6 +351,7 @@ export function DetailView({
                 tooltip={!allowed && !building ? (why?.(where, record) ?? CANNOT_NOW) : undefined}
                 onClick={() => void run(item.id, () => act?.(where, { record: id }))}
               >
+                <NamedIcon name={item.icon} />
                 {item.label}
               </Button>
             );
@@ -161,18 +359,19 @@ export function DetailView({
         </div>
       ) : null}
       {sectionsOf(shown).map((section) => (
-        <section
-          key={section.name}
-          className="flex flex-col gap-3 rounded-control border border-line bg-surface p-4"
-        >
+        <section key={section.name} className="flex flex-col gap-2">
           {section.name ? (
-            <h4 className="m-0 text-body-sm font-medium text-ink-muted">{section.name}</h4>
+            <h4 className="m-0 text-meta font-semibold tracking-wide text-ink-muted uppercase">
+              {section.name}
+            </h4>
           ) : null}
           {group(section.fields)}
         </section>
       ))}
       {hidden.length > 0 ? (
-        <Details summary={`Show another field (${hidden.length} hidden)`}>{group(hidden)}</Details>
+        <Details summary={`+ Show another field (${hidden.length} hidden)`}>
+          {group(hidden)}
+        </Details>
       ) : null}
     </div>
   );

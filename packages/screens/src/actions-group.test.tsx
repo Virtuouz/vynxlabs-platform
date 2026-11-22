@@ -18,14 +18,14 @@ const steps = [{ do: "message" as const, text: "Done" }];
 
 const group = (
   actions: { id: string; label: string; tone?: string; when?: unknown[] }[],
-  align?: "start" | "end",
+  align?: "left" | "right",
 ): PageWidget =>
   ({
     id: "group",
     type: "core/actions",
     at: { x: 0, y: 0, w: 12, h: 1 },
     config: {
-      ...(align ? { align } : {}),
+      ...(align ? { lineUp: align } : {}),
       actions: actions.map(({ id, label, tone, when }) => ({
         id,
         label,
@@ -157,11 +157,11 @@ describe("Action group", () => {
     );
   });
 
-  test("it is aligned to the start or the end", async () => {
-    const { rerender } = render(<Page client={clientOf()} widgets={[group(THREE, "end")]} />);
+  test("it lines up left or right", async () => {
+    const { rerender } = render(<Page client={clientOf()} widgets={[group(THREE, "right")]} />);
     await screen.findByRole("button", { name: "Send" });
     expect(document.querySelector("[data-actions]")?.className).toContain("justify-end");
-    rerender(<Page client={clientOf()} widgets={[group(THREE, "start")]} />);
+    rerender(<Page client={clientOf()} widgets={[group(THREE, "left")]} />);
     expect(document.querySelector("[data-actions]")?.className).toContain("justify-start");
   });
 

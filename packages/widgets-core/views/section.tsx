@@ -18,7 +18,7 @@ export function SectionView({
   building,
   emit,
   title,
-}: WidgetViewProps<{ folds?: boolean; folded?: boolean }>) {
+}: WidgetViewProps<{ folds?: boolean; folded?: boolean; look?: "plain" | "card" }>) {
   const folds = config.folds === true;
   const folded = folds && config.folded === true;
   const body = useId();
@@ -37,7 +37,10 @@ export function SectionView({
     return () => clearTimeout(wait);
   }, [folded]);
   return (
-    <div className="flex flex-col">
+    <div
+      data-look={config.look === "card" ? "card" : "plain"}
+      className={`flex flex-col ${config.look === "card" ? "rounded-control border border-line bg-surface p-3" : ""}`}
+    >
       {folds ? (
         // On the heading's row, at its end: the cell is what it is placed against.
         <button

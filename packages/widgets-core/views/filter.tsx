@@ -1,7 +1,7 @@
-import { Button, TextField } from "@volvel/ui";
-import { ChevronDown, Search, X } from "@volvel/ui/icons";
+import { Button, Popover, TextField } from "@volvel/ui";
+import { ChevronDown, ListFilter, Search, X } from "@volvel/ui/icons";
 import type { Choice, FilterHost, WidgetViewProps } from "@volvel/widgets";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import {
   type DateRange,
   isRelative,
@@ -27,6 +27,8 @@ export interface FilterSpec {
 interface FilterConfig {
   filters: FilterSpec[];
   reset?: boolean;
+  /** Where the filters sit: in a row (the default), or behind a "Filters \u00b7 n" button. */
+  sit?: "row" | "button";
 }
 
 const ALL = "all";
@@ -342,28 +344,88 @@ export function FilterView({ config, filters: host }: WidgetViewProps<FilterConf
     (filter) => norm(valueFor(filter, values)) !== norm(filter.default),
   );
   if (config.filters.length === 0) return null;
+  const draw = (list: readonly FilterSpec[]) =>
+    list.map((filter) => {
+      const control: Control = {
+        filter,
+        label: filter.label ?? filter.name,
+        value: valueFor(filter, values),
+        onChange: (next) => host?.set(filter.name, next),
+      };
+      return filter.type === "date_range" ? (
+        <DateRangeControl key={filter.name} {...control} />
+      ) : filter.type === "choice" ? (
+        <ChoiceControl key={filter.name} {...control} host={host} />
+      ) : (
+        <TypedControl key={filter.name} {...control} />
+      );
+    });
+  const clear =
+    config.reset && differs ? (
+      <Button variant="quiet" onClick={() => host?.reset()}>
+        Clear
+      </Button>
+    ) : null;
+  if (config.sit === "button") {
+    return (
+      <FiltersBehindButton
+        search={draw(config.filters.filter((filter) => filter.type === "search"))}
+        others={config.filters.filter((filter) => filter.type !== "search")}
+        values={values}
+        clear={clear}
+      >
+        {draw(config.filters.filter((filter) => filter.type !== "search"))}
+      </FiltersBehindButton>
+    );
+  }
   return (
     <search aria-label="Filters" className="flex flex-wrap items-end gap-x-3 gap-y-3">
-      {config.filters.map((filter) => {
-        const control: Control = {
-          filter,
-          label: filter.label ?? filter.name,
-          value: valueFor(filter, values),
-          onChange: (next) => host?.set(filter.name, next),
-        };
-        return filter.type === "date_range" ? (
-          <DateRangeControl key={filter.name} {...control} />
-        ) : filter.type === "choice" ? (
-          <ChoiceControl key={filter.name} {...control} host={host} />
-        ) : (
-          <TypedControl key={filter.name} {...control} />
-        );
-      })}
-      {config.reset && differs ? (
-        <Button variant="quiet" onClick={() => host?.reset()}>
-          Clear
-        </Button>
-      ) : null}
+      {draw(config.filters)}
+      {clear}
+    </search>
+  );
+}
+
+/**
+ * `sit: "button"`: the search box stays in the row; every other filter is in a popover behind
+ * a "Filters \u00b7 n" button, n being how many of them are set.
+ */
+function FiltersBehindButton({
+  search,
+  others,
+  values,
+  clear,
+  children,
+}: {
+  search: ReactNode;
+  others: readonly FilterSpec[];
+  values: Readonly<Record<string, unknown>>;
+  clear: ReactNode;
+  children: ReactNode;
+}) {
+  const set = others.filter((filter) => norm(valueFor(filter, values)) !== norm(null)).length;
+  return (
+    <search aria-label="Filters" className="flex flex-wrap items-end gap-x-3 gap-y-3">
+      {search}
+      {others.length > 0 ? (
+        <Popover
+          title="Filters"
+          align="start"
+          trigger={
+            <Button variant="secondary" data-filters-button="">
+              <ListFilter aria-hidden="true" size={16} />
+              {set > 0 ? `Filters \u00b7 ${set}` : "Filters"}
+            </Button>
+          }
+        >
+          <div className="flex w-72 max-w-full flex-col gap-3">
+            {children}
+            {clear}
+          </div>
+        </Popover>
+      ) : (
+        clear
+      )}
     </search>
   );
 }

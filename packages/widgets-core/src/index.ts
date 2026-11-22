@@ -12,6 +12,19 @@ const FORMAT = FORMAT_SCHEMA;
 
 const RESULT_COLUMN = { type: "string", minLength: 1, maxLength: 130 } as const;
 
+/** The nine places a control may take in its cell, by row then column. */
+const PLACES = [
+  "top-left",
+  "top-center",
+  "top-right",
+  "middle-left",
+  "middle-center",
+  "middle-right",
+  "bottom-left",
+  "bottom-center",
+  "bottom-right",
+] as const;
+
 /** Many rows, dense and sortable. */
 export const table = defineWidget({
   type: "core/table",
@@ -672,10 +685,21 @@ export const text = defineWidget({
           order: 1,
         }),
       },
+      look: {
+        enum: ["plain", "note", "warning", "tip"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Style",
+          control: "tiles",
+          label: "Style",
+          choices: { plain: "Plain", note: "Note", warning: "Warning", tip: "Tip" },
+          order: 0,
+        }),
+      },
     },
     additionalProperties: false,
   },
-  defaults: { text: "" },
+  defaults: { text: "", look: "plain" },
   events: {},
   layout: { min: { w: 2, h: 1 }, default: { w: 6, h: 2 }, phone: "stack" },
 });
@@ -697,23 +721,62 @@ export const button = defineWidget({
         type: "string",
         minLength: 1,
         maxLength: 40,
-        "x-volvel": hint({ tab: "display", control: "text", label: "It says", order: 1 }),
-      },
-      tone: {
-        enum: ["primary", "default", "danger"],
         "x-volvel": hint({
           tab: "display",
-          control: "segmented",
-          label: "It looks",
-          choices: { primary: "Main", default: "Plain", danger: "Careful" },
+          group: "Label",
+          control: "text",
+          label: "Says",
+          order: 1,
+        }),
+      },
+      icon: {
+        type: "string",
+        maxLength: 40,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Label",
+          control: "icon",
+          label: "Icon",
           order: 2,
+        }),
+      },
+      tone: {
+        enum: ["primary", "default", "quiet", "danger"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Style",
+          control: "tiles",
+          label: "Style",
+          choices: { primary: "Main", default: "Normal", quiet: "Quiet", danger: "Danger" },
+          order: 3,
+        }),
+      },
+      full: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          group: "Style",
+          control: "switch",
+          label: "Full width",
+          order: 4,
+        }),
+      },
+      place: {
+        enum: PLACES,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Style",
+          control: "position",
+          label: "Place in its cell",
+          help: "Where the button sits when its cell is bigger than it.",
+          order: 5,
         }),
       },
     },
     required: ["label"],
     additionalProperties: false,
   },
-  defaults: { label: "Do it", tone: "primary" },
+  defaults: { label: "Do it", tone: "primary", place: "middle-left" },
   events: { click: { gives: "nothing", label: "When clicked" } },
   layout: {
     min: { w: 2, h: 1 },
@@ -779,9 +842,32 @@ export const detail = defineWidget({
           tab: "display",
           control: "fields",
           of: "record",
+          group: "Fields",
           label: "Fields",
           help: "Drag to change the order. A section starts a new group.",
           order: 3,
+        }),
+      },
+      across: {
+        enum: [1, 2, 3],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "segmented",
+          label: "Fields across",
+          choices: { "1": "1", "2": "2", "3": "3" },
+          order: 4,
+        }),
+      },
+      edit: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "switch",
+          label: "Let people edit fields in place",
+          help: "Otherwise editing goes through the Edit button.",
+          order: 5,
         }),
       },
       actions: {
@@ -792,7 +878,8 @@ export const detail = defineWidget({
           properties: {
             id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,39}$" },
             label: { type: "string", minLength: 1, maxLength: 40 },
-            tone: { enum: ["primary", "default", "danger"] },
+            tone: { enum: ["primary", "default", "quiet", "danger"] },
+            icon: { type: "string", maxLength: 40 },
             action: { type: "object" },
           },
           required: ["id", "label", "action"],
@@ -809,6 +896,7 @@ export const detail = defineWidget({
     },
     additionalProperties: false,
   },
+  defaults: { across: 2 },
   events: {},
   layout: { min: { w: 3, h: 4 }, default: { w: 6, h: 8 }, phone: "stack" },
 });
@@ -910,12 +998,24 @@ export const section = defineWidget({
   config: {
     type: "object",
     properties: {
+      look: {
+        enum: ["plain", "card"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "segmented",
+          label: "Style",
+          choices: { plain: "Plain", card: "Card" },
+          order: 1,
+        }),
+      },
       folds: {
         type: "boolean",
         "x-volvel": hint({
           tab: "display",
+          group: "Look",
           control: "switch",
-          label: "Can be folded",
+          label: "Can be collapsed",
           help: "Whoever reads the page may fold it away. A reload keeps it as they left it.",
           order: 2,
         }),
@@ -933,7 +1033,7 @@ export const section = defineWidget({
     },
     additionalProperties: false,
   },
-  defaults: { folds: false },
+  defaults: { folds: false, look: "plain" },
   events: {},
   layout: { min: { w: 3, h: 2 }, default: { w: 12, h: 6 }, phone: "stack" },
 });
@@ -969,8 +1069,43 @@ export const tabs = defineWidget({
           tab: "display",
           control: "tabs",
           label: "Tabs",
+          group: "Tabs",
           help: "Each tab holds its own widgets. Drag a widget onto a tab to put it there.",
           order: 1,
+        }),
+      },
+      opensFirst: {
+        type: "string",
+        pattern: ID,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Tabs",
+          control: "text",
+          label: "Opens first",
+          help: "The id of the tab that opens when the address and memory say nothing.",
+          order: 2,
+        }),
+      },
+      look: {
+        enum: ["underline", "pills"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "segmented",
+          label: "Style",
+          choices: { underline: "Underline", pills: "Pills" },
+          order: 3,
+        }),
+      },
+      remember: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "switch",
+          label: "Remember the last tab",
+          help: "Per person, on this device.",
+          order: 4,
         }),
       },
     },
@@ -982,6 +1117,7 @@ export const tabs = defineWidget({
       { id: "first", title: "First" },
       { id: "second", title: "Second" },
     ],
+    look: "underline",
   },
   events: {},
   layout: { min: { w: 4, h: 3 }, default: { w: 12, h: 8 }, phone: "stack" },
@@ -1013,9 +1149,21 @@ export const filter = defineWidget({
         "x-volvel": hint({
           tab: "data",
           control: "pageFilters",
+          group: "Filters",
           label: "Filters",
           help: "A search box, or a filter by a column. Widgets whose table has the column follow it.",
           order: 1,
+        }),
+      },
+      sit: {
+        enum: ["row", "button"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "segmented",
+          label: "Filters sit",
+          choices: { row: "In a row", button: "Behind a button" },
+          order: 0,
         }),
       },
       reset: {
@@ -1032,7 +1180,11 @@ export const filter = defineWidget({
     required: ["filters"],
     additionalProperties: false,
   },
-  defaults: { filters: [{ name: "search", type: "search", label: "Search" }], reset: true },
+  defaults: {
+    filters: [{ name: "search", type: "search", label: "Search" }],
+    reset: true,
+    sit: "row",
+  },
   events: {},
   layout: {
     min: { w: 3, h: 1 },
@@ -1065,7 +1217,8 @@ export const actions = defineWidget({
           properties: {
             id: { type: "string", pattern: ID },
             label: { type: "string", minLength: 1, maxLength: 40 },
-            tone: { enum: ["primary", "default", "danger"] },
+            tone: { enum: ["primary", "default", "quiet", "danger"] },
+            icon: { type: "string", maxLength: 40 },
             action: { type: "object" },
           },
           required: ["id", "label", "action"],
@@ -1073,20 +1226,45 @@ export const actions = defineWidget({
         },
         "x-volvel": hint({
           tab: "actions",
+          group: "Buttons",
           control: "actions",
           label: "Buttons",
           help: "In order; the first is the main one. Each says when it may be pressed.",
           order: 1,
         }),
       },
-      align: {
-        enum: ["start", "end"],
+      lineUp: {
+        enum: ["left", "right", "spread"],
         "x-volvel": hint({
           tab: "display",
+          group: "Look",
           control: "segmented",
-          label: "Placed",
-          choices: { start: "At the start", end: "At the end" },
+          label: "Line up",
+          choices: { left: "Left", right: "Right", spread: "Spread" },
           order: 1,
+        }),
+      },
+      showUpTo: {
+        type: "integer",
+        minimum: 1,
+        maximum: 8,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "number",
+          label: "Show up to",
+          help: "This many buttons, the rest in a \u22ef menu.",
+          order: 2,
+        }),
+      },
+      place: {
+        enum: PLACES,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "position",
+          label: "Place in its cell",
+          order: 3,
         }),
       },
     },
@@ -1102,7 +1280,9 @@ export const actions = defineWidget({
         action: { steps: [{ do: "message", text: "Done" }] },
       },
     ],
-    align: "start",
+    lineUp: "left",
+    showUpTo: 3,
+    place: "middle-left",
   },
   events: {},
   layout: {

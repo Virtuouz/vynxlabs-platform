@@ -20,10 +20,14 @@ import {
   actionAt,
   groupOf,
   holds,
+  mayRun,
   type NavigateTo,
   type Request,
   recordOf,
+  seenByTag,
+  seenByUser,
   useActions,
+  whyNotRun,
 } from "./actions.tsx";
 import { Frame, nameOf } from "./Frame.tsx";
 import { useFilterHost } from "./filterHost.ts";
@@ -47,6 +51,7 @@ import {
   type Placement,
   usePlacement,
 } from "./placement.ts";
+import { recallTab, rememberTab } from "./tabMemory.ts";
 import type { FilterValues, PageDataClient, ViewEntry, ViewRegistry } from "./types.ts";
 import { useWidgetData } from "./useWidgetData.ts";
 
@@ -479,6 +484,7 @@ function Cell({
                       }),
                   })}
               can={(at, row) =>
+                (building || mayRun(actionAt(widget, at), user)) &&
                 holds(
                   actionAt(widget, at)?.when,
                   { this: record ? thisRow : null, event: row },
@@ -486,6 +492,8 @@ function Cell({
                 )
               }
               why={(at, row) => {
+                const denied = building ? undefined : whyNotRun(actionAt(widget, at), user);
+                if (denied) return denied;
                 const when = actionAt(widget, at)?.when;
                 const records = { this: record ? thisRow : null, event: row };
                 const failing = (when ?? []).filter((one) => !holds([one], records, user));
@@ -510,6 +518,14 @@ function Cell({
       </Frame>
       {fade ? (
         <p className="m-0 px-3 pb-2 text-meta text-ink-muted">Shown only when {fade}</p>
+      ) : null}
+      {building && seenByTag(widget.rules) ? (
+        <span
+          data-seen-by=""
+          className="pointer-events-none absolute top-1 left-1 rounded-inner bg-sunken px-1.5 text-meta text-ink-muted"
+        >
+          {seenByTag(widget.rules)}
+        </span>
       ) : null}
       {building && narrow && hiddenOnPhones ? (
         <span className="absolute top-2 right-2 text-meta text-ink-muted">Hidden on phones</span>
@@ -638,6 +654,7 @@ function WidgetGrid({
         // Served, a widget whose conditions do not hold is not drawn; building, it is drawn faded and says when.
         const showWhen = widget.rules?.showWhen;
         if (!editing && !ctx.shownNow(showWhen)) return null;
+        if (!editing && !seenByUser(widget.rules, ctx.user)) return null;
         const fade =
           editing && showWhen && showWhen.length > 0
             ? showWhen
@@ -789,13 +806,22 @@ export function PageView({
   const tabsNow = !editing && tabHost ? tabHost.open : openTabs;
   const openTab = (container: PageWidget) => {
     const ids = tabsOf(container).map((tab) => tab.id);
+    // The address (or, building, the builder's choice) wins; then the last tab this person had
+    // here on this device (`remember`), then `opensFirst`, then the first.
     const wanted = tabsNow[container.id];
-    return wanted !== undefined && ids.includes(wanted) ? wanted : ids[0];
+    if (wanted !== undefined && ids.includes(wanted)) return wanted;
+    const config = container.config as { remember?: boolean; opensFirst?: string } | undefined;
+    const last = !editing && config?.remember ? recallTab(user?.id, container.id) : undefined;
+    for (const one of [last, config?.opensFirst])
+      if (one !== undefined && ids.includes(one)) return one;
+    return ids[0];
   };
-  const chooseTab = (container: string, tab: string) =>
-    !editing && tabHost
-      ? tabHost.choose(container, tab)
-      : setOpenTabs((now) => ({ ...now, [container]: tab }));
+  const chooseTab = (container: string, tab: string) => {
+    if (!editing && byId.get(container)?.config?.remember === true)
+      rememberTab(user?.id, container, tab);
+    if (!editing && tabHost) tabHost.choose(container, tab);
+    else setOpenTabs((now) => ({ ...now, [container]: tab }));
+  };
   // Choosing a widget in a tab that is not open opens that tab; so does the chosen widget being
   // moved onto one (⋯ › Move to), so that it is still in sight.
   const selectedId = editing?.selected;

@@ -40,7 +40,7 @@ export function DrawerHeader({
           aria-hidden="true"
           className="grid size-9 shrink-0 place-items-center rounded-control border border-line bg-action-soft text-action"
         >
-          <Icon size={18} />
+          <Icon size={16} />
         </span>
       ) : null}
       <div className="min-w-0 flex-1">
@@ -128,7 +128,7 @@ export function DrawerTabs({
             onClick={() => onChange(tab.id)}
             onKeyDown={(event) => move(event, at)}
             className={`inline-flex h-8 min-w-0 flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-inner px-2 text-body-sm font-medium outline-offset-1 focus-visible:outline-2 focus-visible:outline-focus ${
-              on ? "bg-raised text-ink shadow-sm ring-1 ring-line" : "text-ink-muted hover:text-ink"
+              on ? "bg-raised text-ink ring-1 ring-line" : "text-ink-muted hover:text-ink"
             }`}
           >
             {tab.label}
@@ -205,7 +205,7 @@ export function DrawerGroup({
 /** Free content in a group, padded as a row is: chips, a sentence, a preview. */
 export function DrawerBlock({ children, label }: { children: ReactNode; label?: string }) {
   return (
-    <div className="flex flex-col gap-2 px-3 py-2.5">
+    <div className="flex flex-col gap-2 px-3 py-3">
       {label ? <p className="m-0 text-body-sm text-ink-muted">{label}</p> : null}
       {children}
     </div>
@@ -259,7 +259,7 @@ export function DrawerRow({
     <>
       <span className="w-24 shrink-0 text-ink-muted">{label}</span>
       <span className="flex min-w-0 flex-1 items-center gap-2">
-        {Icon ? <Icon size={15} aria-hidden className="shrink-0 text-ink-muted" /> : null}
+        {Icon ? <Icon size={14} aria-hidden className="shrink-0 text-ink-muted" /> : null}
         <span className={`min-w-0 truncate ${mono ? "font-mono text-action" : ""}`}>
           {value ?? <span className="text-ink-muted">Not set</span>}
         </span>
@@ -356,7 +356,7 @@ export function DrawerEditor({
           className="layer-popover"
         >
           <Popover.Popup className="flex max-h-[min(34rem,var(--available-height))] w-[22rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-panel border border-line bg-raised text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:opacity-0">
-            <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2.5">
+            <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-3">
               <Popover.Title className="m-0 text-body-sm font-semibold">{title}</Popover.Title>
               <Popover.Close
                 aria-label={`Close ${title}`}
@@ -409,13 +409,13 @@ export function DrawerSwitch({
       {...(describedBy ? { "aria-describedby": describedBy } : {})}
       {...(label ? { "aria-label": label } : {})}
       onClick={() => onChange(!checked)}
-      className={`relative h-5 w-9 shrink-0 cursor-pointer rounded-full border outline-offset-2 transition-colors focus-visible:outline-2 focus-visible:outline-focus ${
+      className={`relative h-5 w-9 shrink-0 cursor-pointer rounded-full border outline-offset-2 transition-colors motion-fast focus-visible:outline-2 focus-visible:outline-focus ${
         checked ? "border-action bg-action" : "border-line-control bg-sunken"
       }`}
     >
       <span
         aria-hidden="true"
-        className={`absolute top-0.5 left-0.5 size-3.5 rounded-full transition-[translate] ${
+        className={`absolute top-0.5 left-0.5 size-3.5 rounded-full transition-[translate] motion-fast ${
           checked ? "translate-x-4 bg-action-ink" : "bg-ink-muted"
         }`}
       />
@@ -438,7 +438,7 @@ export function ToggleRow({
   const id = useId();
   const helpId = `${id}-help`;
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 px-3 py-3">
       <div className="min-w-0">
         <p id={id} className="m-0 text-body-sm text-ink">
           {label}

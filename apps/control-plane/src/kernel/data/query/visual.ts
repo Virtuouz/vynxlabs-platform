@@ -1,10 +1,13 @@
 import {
+  conditionProblem,
   groupName,
+  type LastValue,
   VISUAL_BUCKETS,
   VISUAL_FUNCTIONS,
   type VisualCondition,
   type VisualQuery,
 } from "@volvel/manifest";
+import { dayAfter, lastRange } from "./filters.js";
 
 /**
  * Writes the SQL of a query built from menus. What it writes is one SELECT
@@ -73,6 +76,8 @@ export function compileVisual(
   catalog: VisualCatalog,
   /** Conditions added by the dashboard's filters. */
   extra: ExtraCondition[] = [],
+  /** What "today" is for a `last` condition; days are counted in UTC, as a page's relative ranges are. */
+  today: Date = new Date(),
 ): CompiledVisual {
   const base = catalog.get(query.table);
   if (!base) {
@@ -145,6 +150,19 @@ export function compileVisual(
         throw new VisualRefused(`${path}/value`, `"contains" needs text to look for`);
       }
       return `${at.sql}::text ilike ${bind(`%${one.value.replace(/[\\%_]/g, "\\$&")}%`)}`;
+    }
+    if (one.op === "last" || one.op === "between") {
+      const problem = conditionProblem(one, at.type);
+      if (problem) throw new VisualRefused(`${path}/value`, problem);
+      if (one.op === "last") {
+        const { count, unit } = one.value as LastValue;
+        const range = lastRange(count, unit, today);
+        return `(${at.sql} >= ${bind(range.from)}::date and ${at.sql} < ${bind(dayAfter(range.to))}::date)`;
+      }
+      const [from, to] = one.value as [string | number, string | number];
+      if (typeof from === "number")
+        return `(${at.sql} >= ${bind(from)} and ${at.sql} <= ${bind(to)})`;
+      return `(${at.sql} >= ${bind(from)}::date and ${at.sql} < ${bind(dayAfter(to as string))}::date)`;
     }
     if (at.type === "json" || at.type === "file" || at.type === "enum_list") {
       throw new VisualRefused(

@@ -757,6 +757,75 @@ describe("queries built from menus", () => {
     expect(rowsOf(monthly.body)).toEqual([{ due_quarter: "2026-10-01", devices: 3 }]);
   });
 
+  test("a date is asked for as the last days, or between two days, the last day included whole", async () => {
+    const fees = async (filters: object[]) => {
+      const answer = await visual(alice, {
+        table: "lending/loans",
+        columns: ["fee"],
+        filters,
+        sort: [{ by: "fee" }],
+      });
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      return rowsOf(answer.body).map((row: { fee: number }) => row.fee);
+    };
+    // A date column: due on 2026-10-20, 11-01, 11-10 and 12-01.
+    expect(
+      await fees([{ column: "due", op: "between", value: ["2026-11-01", "2026-11-10"] }]),
+    ).toEqual([5, 30]);
+    expect(
+      await fees([{ column: "due", op: "between", value: ["2026-11-02", "2026-11-09"] }]),
+    ).toEqual([]);
+    expect(
+      await fees([{ column: "due", op: "between", value: ["2026-10-20", "2026-10-20"] }]),
+    ).toEqual([40]);
+    expect(await fees([{ column: "fee", op: "between", value: [10, 30] }])).toEqual([10, 30]);
+    // A time: every loan was made today, so the whole of today holds them all.
+    const today = new Date().toISOString().slice(0, 10);
+    const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+    expect(await fees([{ column: "created_at", op: "between", value: [today, today] }])).toEqual([
+      5, 10, 30, 40,
+    ]);
+    expect(
+      await fees([{ column: "created_at", op: "between", value: [yesterday, yesterday] }]),
+    ).toEqual([]);
+    expect(
+      await fees([{ column: "created_at", op: "last", value: { count: 1, unit: "day" } }]),
+    ).toEqual([5, 10, 30, 40]);
+    expect(
+      await fees([{ column: "created_at", op: "last", value: { count: 1, unit: "week" } }]),
+    ).toEqual([5, 10, 30, 40]);
+    // Dues are all in 2026-10 to 12, which is not the last day, and the last year may not reach to 12-01.
+    expect(await fees([{ column: "due", op: "last", value: { count: 1, unit: "day" } }])).toEqual(
+      [],
+    );
+    expect(
+      await fees([
+        { column: "due", op: "last", value: { count: 1000, unit: "year" } },
+        { column: "fee", op: "gt", value: 20 },
+      ]),
+    ).toEqual([30, 40]);
+    // Through a joined table.
+    const joined = await visual(alice, {
+      table: "lending/loans",
+      joins: ["device"],
+      columns: ["fee"],
+      filters: [{ column: "device.created_at", op: "last", value: { count: 1, unit: "day" } }],
+    });
+    expect(joined.status, JSON.stringify(joined.body)).toBe(200);
+    expect(joined.body.rows).toHaveLength(4);
+    // What is not a day or a count is refused, and it matches nothing.
+    for (const filter of [
+      { column: "due", op: "last", value: { count: 0, unit: "day" } },
+      { column: "due", op: "last", value: "30 days" },
+      { column: "fee", op: "last", value: { count: 3, unit: "day" } },
+      { column: "due", op: "between", value: ["2026-11-01"] },
+      { column: "due", op: "between", value: ["2026-11-01", "soon' or '1'='1"] },
+      { column: "note", op: "between", value: [1, 2] },
+    ]) {
+      expect((await visual(alice, { table: "lending/loans", filters: [filter] })).status).toBe(400);
+    }
+  });
+
   test("it needs no permission to write SQL, and is held to each table and each table's rows like any query", async () => {
     // Frank reads rows and may not write SQL: he owns no loan, so he is given none.
     const franks = await visual(frank.client, feesByDevice);

@@ -74,6 +74,8 @@ export const TEST_WORDS: Record<VisualOperator, string> = {
   contains: "contains",
   is_null: "is empty",
   not_null: "is not empty",
+  last: "is in the last",
+  between: "is between",
 };
 
 /** What was typed for a value, as a query takes it: a number where it reads as one, a list for "is one of". */

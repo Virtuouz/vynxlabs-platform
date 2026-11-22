@@ -78,6 +78,28 @@ export function relativeRange(
   }
 }
 
+/**
+ * The days "the last `count` `unit`s" stands for, as of `today` (UTC): counted back from today,
+ * today included, so the last 30 days is today and the 29 before it. Months, quarters and years
+ * count back by calendar (a month ago from the 31st is the end of the shorter month).
+ */
+export function lastRange(
+  count: number,
+  unit: "day" | "week" | "month" | "quarter" | "year",
+  today = new Date(),
+): { from: string; to: string } {
+  const to = dayOf(today);
+  if (unit === "day" || unit === "week") {
+    return { from: dayShifted(to, -(count * (unit === "week" ? 7 : 1) - 1)), to };
+  }
+  const months = count * (unit === "year" ? 12 : unit === "quarter" ? 3 : 1);
+  const year = today.getUTCFullYear();
+  const month = today.getUTCMonth() - months;
+  const lastOfTarget = utc(year, month + 1, 0).getUTCDate();
+  const back = utc(year, month, Math.min(today.getUTCDate(), lastOfTarget));
+  return { from: dayShifted(dayOf(back), 1), to };
+}
+
 /** A range of days as it was set: both ends, or one end, or nothing when it is not a range. */
 export function rangeOf(value: unknown): { from?: string; to?: string } | undefined {
   if (typeof value !== "object" || value === null) return undefined;

@@ -1,8 +1,10 @@
 import {
+  conditionProblem,
   type DataInput,
   displayGuess,
   enumColor,
   groupName,
+  type LastValue,
   type PageFilter,
   type PageWidget,
   type VisualCondition,
@@ -23,7 +25,15 @@ import {
   withData,
 } from "../rows.js";
 import { openSource, sourceTable } from "../sources.js";
-import { dayAfter, type FilterValues, isDay, previousRange, rangeOf, wordsOf } from "./filters.js";
+import {
+  dayAfter,
+  type FilterValues,
+  isDay,
+  lastRange,
+  previousRange,
+  rangeOf,
+  wordsOf,
+} from "./filters.js";
 import { QueryRefused } from "./parse.js";
 import { checkFor, QUERY_ROWS, type QueryResult, refusal, runQuery } from "./run.js";
 import {
@@ -457,15 +467,44 @@ export async function readWidget(
     const conditions: Filter[] = [
       ...(visual.filters ?? []),
       ...extra.filter((one): one is VisualCondition => !("search" in one)),
-    ].map((one) =>
-      one.op === "not_null"
-        ? { column: one.column, op: "is_null", value: false }
-        : {
-            column: one.column,
-            op: one.op,
-            ...(one.value !== undefined ? { value: one.value } : {}),
-          },
-    );
+    ].flatMap((one, index): Filter[] => {
+      if (one.op === "not_null") return [{ column: one.column, op: "is_null", value: false }];
+      if (one.op === "last" || one.op === "between") {
+        // Written as the two ends it stands for; the end day is whole, as a page's date range reads it.
+        const type = target.columns.find((column) => column.name === one.column)?.type;
+        if (!type) throw badRequest(`${target.name} has no column "${one.column}".`);
+        const problem = conditionProblem(one, type);
+        if (problem)
+          throw badRequest("The condition is not valid.", [
+            { path: `/filters/${index}/value`, message: problem },
+          ]);
+        if (one.op === "between" && typeof (one.value as unknown[])[0] === "number") {
+          const [from, to] = one.value as number[];
+          return [
+            { column: one.column, op: "gte", value: from },
+            { column: one.column, op: "lte", value: to },
+          ];
+        }
+        const range =
+          one.op === "last"
+            ? lastRange((one.value as LastValue).count, (one.value as LastValue).unit)
+            : {
+                from: (one.value as string[])[0] as string,
+                to: (one.value as string[])[1] as string,
+              };
+        return [
+          { column: one.column, op: "gte", value: range.from },
+          { column: one.column, op: "lt", value: dayAfter(range.to) },
+        ];
+      }
+      return [
+        {
+          column: one.column,
+          op: one.op,
+          ...(one.value !== undefined ? { value: one.value } : {}),
+        },
+      ];
+    });
     // A search is each word found in one of its columns: an "or" of "contains" for each word.
     for (const one of extra) {
       if (!("search" in one)) continue;

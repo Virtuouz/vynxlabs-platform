@@ -110,6 +110,19 @@ const recordWidgets = [
     ],
   }),
   button("remove", 6, { steps: [{ do: "delete", record: "this" }] }),
+  // Who can run it (phase 28): by the key of an end-user or member group.
+  button("gated", 8, {
+    runBy: { groups: ["finance", "managers"] },
+    steps: [{ do: "update", record: "this", set: { note: { value: "gated" } } }],
+  }),
+  button("gone", 9, {
+    runBy: { groups: ["vanished"] },
+    steps: [{ do: "update", record: "this", set: { note: { value: "gone" } } }],
+  }),
+  button("other", 10, {
+    runBy: { groups: ["sales", "managers", "admins"] },
+    steps: [{ do: "update", record: "this", set: { note: { value: "other" } } }],
+  }),
   button("stamp", 7, {
     steps: [{ do: "update", record: "this", set: { paid_on: { now: true } } }],
   }),
@@ -145,6 +158,7 @@ const screen = {
                   ],
                 },
               },
+              { id: "peek", label: "Peek", action: { steps: [{ do: "rows" }] } },
             ],
           },
         },
@@ -833,5 +847,213 @@ describe("a dashboard", () => {
     );
     expect(refused.status).toBe(400);
     expect((await rowOf(id)).status).toBe("open");
+  });
+});
+
+describe("who can run it", () => {
+  test("a member of a named group may, and so may an end user of one; the API too", async () => {
+    // Ivy is in the end-user group "finance"; Jon is in "sales".
+    const id = await invoice();
+    const done = await press(ivy, "gated", id);
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect((await rowOf(id)).note).toBe("gated");
+    // Jon is in "sales", which the action does not name.
+    const other = await invoice({ team: "sales" });
+    const refused = await press(jon, "gated", other);
+    expect(refused.status).toBe(403);
+    expect(JSON.stringify(refused.body)).toContain("Only finance and managers can do this.");
+    expect((await rowOf(other)).note ?? null).toBeNull();
+  });
+
+  test("a member of a member group runs it, and one outside every group is refused", async () => {
+    const managers = await alice.post(`/tenants/${tenant}/groups`, { name: "managers" });
+    expect(managers.status, JSON.stringify(managers.body)).toBe(201);
+    const id = await invoice();
+    // Alice is not in "managers" yet.
+    const before = await press(alice, "gated", id);
+    expect(before.status).toBe(403);
+    const me = (
+      await t.db
+        .selectFrom("member")
+        .select("id")
+        .where("email", "=", "alice@acme.example")
+        .execute()
+    )[0]?.id;
+    const put = await alice.put(`/tenants/${tenant}/groups/${managers.body.id}/members/${me}`);
+    expect(put.status, JSON.stringify(put.body)).toBeLessThan(300);
+    const after = await press(alice, "gated", id);
+    expect(after.status, JSON.stringify(after.body)).toBe(200);
+    expect((await rowOf(id)).note).toBe("gated");
+  });
+
+  test("a group that no longer exists matches nobody, and is named by its key", async () => {
+    const id = await invoice();
+    for (const who of [ivy, alice]) {
+      const refused = await press(who, "gone", id);
+      expect(refused.status).toBe(403);
+      expect(JSON.stringify(refused.body)).toContain("Only vanished can do this.");
+    }
+    expect((await rowOf(id)).note ?? null).toBeNull();
+    // Three groups are joined "A, B and C", by their titles.
+    const three = await press(ivy, "other", id);
+    expect(three.status).toBe(403);
+    expect(JSON.stringify(three.body)).toContain("Only sales, managers and admins can do this.");
+  });
+
+  test("it only narrows: a member of the group still meets the row policy", async () => {
+    const hidden = await invoice({ team: "sales" });
+    expect((await press(ivy, "gated", hidden)).status).toBe(404);
+    // An action with no groups is as before.
+    expect((await press(ivy, "pay", await invoice())).status).toBe(200);
+  });
+});
+
+describe("one action on several rows", () => {
+  const many = (who: Who, events: string[], more: object = {}) =>
+    act(who, {
+      page: "main",
+      widget: "list",
+      at: "config/rowActions/0/action",
+      records: { events },
+      ...more,
+    });
+
+  test("runs once per row in one transaction, and says how many", async () => {
+    const ids = [await invoice(), await invoice(), await invoice()];
+    const done = await many(ivy, ids);
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(done.body.changed).toBe(3);
+    for (const id of ids) expect((await rowOf(id)).status).toBe("paid");
+    const audit = await alice.get(`/tenants/${tenant}/audit?action=page_action.update&limit=3`);
+    expect(audit.body.items.map((one: Any) => one.targetId).sort()).toEqual([...ids].sort());
+  });
+
+  test("one row that can't refuses all and changes none", async () => {
+    const ok = await invoice();
+    const paid = await invoice({ status: "paid" });
+    const refused = await many(ivy, [ok, paid]);
+    expect(refused.status).toBe(403);
+    expect(JSON.stringify(refused.body)).toContain("It can't be done now");
+    expect((await rowOf(ok)).status).toBe("open");
+    // A row the caller's policy hides is not there, and the rest stay as they were.
+    const hidden = await invoice({ team: "sales" });
+    const none = await many(ivy, [ok, hidden]);
+    expect(none.status).toBe(404);
+    expect((await rowOf(ok)).status).toBe("open");
+    expect((await rowOf(hidden)).status).toBe("open");
+  });
+
+  test("the numbers are held: 1 to 200, never with `event`, no `rows` or `narrow` step", async () => {
+    const id = await invoice();
+    expect((await many(ivy, [])).status).toBe(400);
+    expect(
+      (
+        await many(
+          ivy,
+          Array.from({ length: 201 }, (_, n) => `${n}`),
+        )
+      ).status,
+    ).toBe(400);
+    expect((await many(ivy, [id, id])).status).toBe(400);
+    const both = await act(ivy, {
+      page: "main",
+      widget: "list",
+      at: "config/rowActions/0/action",
+      records: { event: id, events: [id] },
+    });
+    expect(both.status).toBe(400);
+    // A step that shows rows can't be done for several at once, but can for one.
+    const peek = (events: string[]) =>
+      act(ivy, {
+        page: "main",
+        widget: "list",
+        at: "config/rowActions/1/action",
+        records: { events },
+      });
+    expect((await peek([id, await invoice()])).status).toBe(400);
+    expect((await peek([id])).status).toBe(200);
+    expect((await rowOf(id)).status).toBe("open");
+  });
+
+  test("who can run it is checked before any row is read", async () => {
+    const id = await invoice();
+    // Jon's row policy hides this row, yet he is told about his group first.
+    const none = await act(jon, {
+      page: "inv",
+      widget: "gated",
+      at: "on/click",
+      records: { this: id },
+    });
+    // Jon is refused for his group before his row policy is asked: 403, not 404.
+    expect(none.status).toBe(403);
+  });
+});
+
+describe("edit in place of a record detail", () => {
+  /** A detail that lets people edit what it shows, put in the stored page. */
+  beforeAll(async () => {
+    const row = await t.db
+      .selectFrom("resource")
+      .select(["id", "body"])
+      .where("kind", "=", "interface")
+      .where("path", "=", "screens/invoices")
+      .executeTakeFirstOrThrow();
+    const body = row.body as unknown as { pages: { id: string; widgets: object[] }[] };
+    body.pages
+      .find((page) => page.id === "inv")
+      ?.widgets.push({
+        id: "info",
+        type: "core/detail",
+        at: { x: 0, y: 8, w: 6, h: 6 },
+        data: { record: { source: { record: "this" } } },
+        config: {
+          edit: true,
+          fields: [{ column: "number" }, { column: "total" }, { column: "status", hidden: true }],
+        },
+      });
+    await t.db
+      .updateTable("resource")
+      .set({ body: JSON.stringify(body) })
+      .where("id", "=", row.id)
+      .execute();
+  });
+  const edit = (who: Who, id: string, inputs: object) =>
+    act(who, { widget: "info", at: "config/edit", records: { this: id }, inputs });
+
+  test("updates the columns the detail shows, on its record, audited", async () => {
+    const id = await invoice();
+    const done = await edit(ivy, id, { total: 55, number: "INV-EDIT" });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(await rowOf(id)).toMatchObject({ total: 55, number: "INV-EDIT", status: "open" });
+    const audit = await alice.get(`/tenants/${tenant}/audit?action=page_action.update`);
+    expect(audit.body.items[0]).toMatchObject({
+      targetId: id,
+      details: { fields: expect.arrayContaining(["total", "number"]), action: "config/edit" },
+    });
+  });
+
+  test("refuses a column it does not show, or hides, and a value of the wrong type", async () => {
+    const id = await invoice();
+    const hidden = await edit(ivy, id, { status: "paid" });
+    expect(hidden.status).toBe(400);
+    expect(hidden.body.errors).toEqual([expect.objectContaining({ path: "/inputs/status" })]);
+    expect((await edit(ivy, id, { team: "sales" })).status).toBe(400);
+    expect((await edit(ivy, id, { total: "lots" })).status).toBe(400);
+    expect(await rowOf(id)).toMatchObject({ status: "open", team: "finance", total: 10 });
+  });
+
+  test("works on the caller's own rows only, and on a detail that allows it", async () => {
+    const id = await invoice({ team: "sales" });
+    expect((await edit(ivy, id, { total: 1 })).status).toBe(404);
+    expect((await edit(ivy, "nope", { total: 1 })).status).toBe(404);
+    const noEdit = await act(ivy, {
+      widget: "pay",
+      at: "config/edit",
+      records: { this: id },
+      inputs: { total: 1 },
+    });
+    expect(noEdit.status).toBe(404);
+    expect((await edit(ivy, await invoice(), {})).status).toBe(400);
+    expect((await rowOf(id)).total).toBe(10);
   });
 });

@@ -112,10 +112,16 @@ function missingTables(
   const check = (widgets: DashboardBody["widgets"], at: string) =>
     widgets.forEach((widget, index) => {
       for (const [name, input] of Object.entries(widget.data ?? {})) {
-        const table = "visual" in input.source ? input.source.visual.table : undefined;
+        const own = "own" in input.source;
+        const table =
+          "visual" in input.source
+            ? input.source.visual.table
+            : "own" in input.source
+              ? input.source.own.table
+              : undefined;
         if (table !== undefined && !tables.has(table) && !inSource(table)) {
           problems.push({
-            path: `${at}/widgets/${index}/data/${name}/source/visual/table`,
+            path: `${at}/widgets/${index}/data/${name}/source/${own ? "own" : "visual"}/table`,
             message: `there is no table "${table}" in this workspace`,
           });
         }

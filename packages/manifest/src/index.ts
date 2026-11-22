@@ -83,6 +83,7 @@ export {
   type FormTrigger,
   readFormAnswer,
 } from "./form.js";
+export * from "./groups.js";
 export {
   appKind,
   BUILTIN_CONNECTORS,

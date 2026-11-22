@@ -90,6 +90,13 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   'With `input`: for a summary of a table, the rows behind one group, as JSON by the group\'s name, e.g. {"team":"finance"}. The rows are read with the same filters and the page\'s filters, and answered as a `rows` input.',
               }),
             ),
+            chosen: Type.Optional(
+              Type.String({
+                maxLength: 4000,
+                description:
+                  'The rows chosen in the page\'s tables and lists, as JSON by widget ID: {"list":"<record id>"}. It feeds a `{ selected: "<widget id>" }` source, read as the caller reads that table; with none chosen the input is empty and says "Choose a row in <Table>".',
+              }),
+            ),
             draft: Type.Optional(Type.String({ maxLength: 5 })),
           }),
           response: {
@@ -125,6 +132,20 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
         }
         if (query.record !== undefined && !UUID.test(query.record)) throw notFound("The record");
+        let chosen: Record<string, string> | undefined;
+        if (query.chosen !== undefined) {
+          try {
+            const parsed: unknown = JSON.parse(query.chosen);
+            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw 0;
+            chosen = Object.fromEntries(
+              Object.entries(parsed).filter(
+                (pair): pair is [string, string] => typeof pair[1] === "string",
+              ),
+            );
+          } catch {
+            throw badRequest("`chosen` must be a JSON object, by the widgets' IDs.");
+          }
+        }
         const { at, surface, filters, widgets, follow, recordTable } = await locate(
           ctx,
           params,
@@ -148,6 +169,8 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ...(recordTable !== undefined ? { recordTable } : {}),
           ...(query.record !== undefined ? { record: query.record } : {}),
           ...(behind ? { behind } : {}),
+          ...(chosen ? { chosen } : {}),
+          widgets,
         });
         return { inputs: inputs as unknown as Record<string, Record<string, unknown>> };
       },

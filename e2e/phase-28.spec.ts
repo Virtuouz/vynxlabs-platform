@@ -1598,7 +1598,7 @@ test('POLISH-004: Conditions: a date is "in the last…" or "between", a choice 
   for (const value of ["paid", "unpaid", "void"]) {
     await expect(
       group.getByRole("checkbox", {
-        name: new RegExp(`^${value} ${Number(really[value]).toLocaleString("en-US")} rows$`, "i"),
+        name: new RegExp(`^${value} ${Number(really[value]).toLocaleString("en-US")} rows?$`, "i"),
       }),
       `${value} has ${really[value]} rows`,
     ).toBeVisible();
@@ -2353,6 +2353,8 @@ test("Acceptance, invoices: a table of invoices, a click that opens the record, 
     })
     .toBe("hilltop");
   await expect(sheet.getByRole("alert"), "no error is shown").toHaveCount(0);
+  // Its own clinic again: what the other walks count by clinic is theirs.
+  await ok(owner, "PATCH", `${W}/row/${made.a?.id}/invoices`, { clinic: "northside" });
   // Back to the table, as a person would open it again.
   await openServed(owner, "invoices");
 

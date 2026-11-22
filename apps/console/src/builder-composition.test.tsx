@@ -628,7 +628,7 @@ test("the page starters make valid pages: a list with its sheet and form, and a 
 
 test("+ Page starts a list of a table in one step, opens it, and Undo takes all of it back", async () => {
   await open();
-  fireEvent.click(screen.getByRole("button", { name: "Page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a page" }));
   const dialog = within(await screen.findByRole("dialog", { name: "Add a page" }));
   fireEvent.click(await dialog.findByRole("radio", { name: /A list of Invoices/ }));
   expect((dialog.getByLabelText("Name of the page") as HTMLInputElement).value).toBe("Invoices");
@@ -654,7 +654,7 @@ test("+ Page starts a list of a table in one step, opens it, and Undo takes all 
 
 test("+ Page starts a record page on a table, with the rows that refer to it", async () => {
   await open();
-  fireEvent.click(screen.getByRole("button", { name: "Page" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add a page" }));
   const dialog = within(await screen.findByRole("dialog", { name: "Add a page" }));
   fireEvent.click(await dialog.findByRole("radio", { name: /An Invoice record page/ }));
   await waitFor(() =>

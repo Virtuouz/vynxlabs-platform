@@ -118,8 +118,10 @@ test("the outline lists what a container holds under it, by tab", async () => {
   expect(names).toEqual(["Orders", "First", "Second", "Views", "Status notes", "Loose note"]);
   // A Tabs' tabs are headings over what is in them, and a child is indented.
   expect(list.getByText("By status")).toBeTruthy();
-  expect(list.getByRole("button", { name: "First" }).className).toContain("pl-5");
-  expect(list.getByRole("button", { name: "Orders" }).className).toContain("pl-2");
+  const nested = (name: string) =>
+    list.getByRole("button", { name }).closest("[data-outline-row]")?.hasAttribute("data-nested");
+  expect(nested("First")).toBe(true);
+  expect(nested("Orders")).toBe(false);
   // Choosing a child chooses it.
   choose("Status notes");
   expect(await screen.findByRole("heading", { name: "Status notes", level: 2 })).toBeTruthy();

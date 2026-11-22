@@ -80,9 +80,21 @@ let chord: { first: string; at: number } | undefined;
 let listening = false;
 const CHORD_MS = 1000;
 
+/** Whether this key is the second step of a chord begun a moment ago: it is the chord's, whatever binds the key alone. */
+const completesChord = (event: KeyboardEvent) =>
+  chord !== undefined &&
+  Date.now() - chord.at < CHORD_MS &&
+  bindings.some((binding) =>
+    SHORTCUTS[binding.id].keys.some((combo) => {
+      const steps = combo.split(" ");
+      return steps.length === 2 && steps[0] === chord?.first && pressed(event, steps[1] as string);
+    }),
+  );
+
 function dispatch(event: KeyboardEvent) {
   if (event.defaultPrevented || event.isComposing) return;
   const typing = isTyping(event.target);
+  const secondOfChord = completesChord(event);
   const singles = singleKeysOn();
   // The binding made last wins: a dialog's over the page's.
   for (let index = bindings.length - 1; index >= 0; index -= 1) {
@@ -90,7 +102,7 @@ function dispatch(event: KeyboardEvent) {
     const shortcut = SHORTCUTS[binding.id];
     for (const combo of shortcut.keys) {
       const single = isSingle(combo);
-      if (single && (typing || !singles)) continue;
+      if (single && (typing || !singles || (secondOfChord && !combo.includes(" ")))) continue;
       if (!single && typing && shortcut.notInFields) continue;
       const steps = combo.split(" ");
       if (steps.length === 2) {

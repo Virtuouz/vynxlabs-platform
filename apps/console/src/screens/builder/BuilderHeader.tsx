@@ -1,0 +1,301 @@
+import { Button, Menu, Popover, Tooltip } from "@volvel/ui";
+import { ChevronDown, Eye, Monitor, Pencil, Play, Smartphone, Tablet } from "lucide-react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+
+/** The sizes the preview can be drawn at. */
+export const VIEWPORTS = {
+  desktop: { label: "Desktop", width: undefined, icon: Monitor },
+  tablet: { label: "Tablet", width: 768, icon: Tablet },
+  phone: { label: "Phone", width: 390, icon: Smartphone },
+} as const;
+
+/** Who the page is drawn as. "Me" is the maker; a group is one of the app's groups. */
+export type ViewAs = { as: "me" } | { as: "group"; group: string };
+export const VIEW_AS_ME: ViewAs = { as: "me" };
+export const viewAsWords = (view: ViewAs) => (view.as === "me" ? "Me" : view.group);
+
+/** The name being typed, where the name stood. Enter keeps it, Escape and leaving the field are told which. */
+export function RenameField({
+  title,
+  onDone,
+}: {
+  title: string;
+  /** `undefined` leaves the name as it was. */
+  onDone: (next: string | undefined) => void;
+}) {
+  const [draft, setDraft] = useState(title);
+  const field = useRef<HTMLInputElement>(null);
+  useEffect(() => field.current?.select(), []);
+  const finish = (keep: boolean) => {
+    const next = draft.trim();
+    onDone(keep && next !== "" && next !== title ? next : undefined);
+  };
+  return (
+    <input
+      ref={field}
+      aria-label="Name of the app"
+      value={draft}
+      maxLength={200}
+      size={Math.max(12, Math.min(draft.length + 2, 40))}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => finish(true)}
+      onKeyDown={(event) => {
+        // Enter and Escape are the name's own; every other key goes on to the page's shortcuts.
+        if (event.key === "Enter") {
+          event.stopPropagation();
+          finish(true);
+        }
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          finish(false);
+        }
+      }}
+      className="h-9 min-w-0 max-w-full rounded-control border border-action bg-surface px-2 font-[inherit] text-[length:inherit]"
+    />
+  );
+}
+
+/** The pencil beside the name: it renames the app where the name stands. */
+export function RenameButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      size="small"
+      variant="quiet"
+      aria-label="Rename the app"
+      tooltip="Rename the app"
+      onClick={onClick}
+    >
+      <Pencil aria-hidden="true" size={14} />
+    </Button>
+  );
+}
+
+/** "3 draft changes": what the draft changes against what people see. It opens the review of them. */
+export function DraftPill({ count, onOpen }: { count: number; onOpen: () => void }) {
+  if (count === 0) return null;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="inline-flex h-7 items-center gap-1.5 rounded-full border border-attention bg-attention-soft px-3 text-meta text-ink hover:brightness-95"
+    >
+      <span aria-hidden="true" className="size-1.5 rounded-full bg-attention" />
+      {count} draft {count === 1 ? "change" : "changes"}
+    </button>
+  );
+}
+
+/** Desktop, Tablet and Phone: the size the page is drawn at. */
+export function DeviceSwitch({
+  value,
+  onChange,
+}: {
+  value: keyof typeof VIEWPORTS;
+  onChange: (next: keyof typeof VIEWPORTS) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Screen size"
+      className="flex rounded-control border border-line p-0.5"
+    >
+      {(Object.keys(VIEWPORTS) as (keyof typeof VIEWPORTS)[]).map((one) => {
+        const Icon = VIEWPORTS[one].icon;
+        return (
+          // biome-ignore lint/a11y/useSemanticElements: a segmented control of toggle buttons
+          <button
+            key={one}
+            type="button"
+            role="radio"
+            aria-checked={value === one}
+            aria-label={VIEWPORTS[one].label}
+            onClick={() => onChange(one)}
+            className={`flex h-7 items-center gap-1.5 rounded-inner px-3 text-meta ${
+              value === one ? "bg-selected text-ink" : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            <Icon aria-hidden="true" size={14} />
+            <span className="max-xl:sr-only">{VIEWPORTS[one].label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** "View as Me ▾": who the page is drawn as. It records the choice; what is drawn for a group follows from it. */
+export function ViewAsMenu({
+  value,
+  groups,
+  onChange,
+}: {
+  value: ViewAs;
+  groups: readonly string[];
+  onChange: (next: ViewAs) => void;
+}) {
+  return (
+    <Menu
+      ariaLabel={`View as ${viewAsWords(value)}`}
+      align="end"
+      triggerClassName="flex h-8 items-center gap-1.5 rounded-control border border-line-control px-3 text-body-sm hover:bg-sunken"
+      label={
+        <>
+          <Eye aria-hidden="true" size={14} className="text-ink-muted" />
+          <span className="text-ink-muted max-xl:sr-only">View as</span>
+          <span className="font-medium">{viewAsWords(value)}</span>
+          <ChevronDown aria-hidden="true" size={14} className="text-ink-muted" />
+        </>
+      }
+      items={[
+        {
+          label: "Me",
+          current: value.as === "me",
+          onSelect: () => onChange(VIEW_AS_ME),
+        },
+        ...groups.map((group, at) => ({
+          label: group,
+          current: value.as === "group" && value.group === group,
+          separated: at === 0,
+          onSelect: () => onChange({ as: "group", group }),
+        })),
+      ]}
+    />
+  );
+}
+
+/** "▷ Preview": the app as people see it, in a new tab. */
+export function PreviewButton({ href, note }: { href: string | undefined; note: string }) {
+  if (!href) {
+    return (
+      <Button
+        disabled
+        tooltip="Publish once, and the app can be previewed here."
+        aria-label="Preview"
+      >
+        <Play aria-hidden="true" size={14} /> Preview
+      </Button>
+    );
+  }
+  return (
+    <Tooltip label={note}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex h-control items-center justify-center gap-2 rounded-control border border-line-control bg-surface px-3 font-medium whitespace-nowrap text-ink no-underline hover:bg-sunken"
+      >
+        <Play aria-hidden="true" size={14} /> Preview
+      </a>
+    </Tooltip>
+  );
+}
+
+/**
+ * Publish as a split button: the main part is the step itself (it opens the check of what would be
+ * published); the arrow holds "Publish", "Open the published app" and, later, "Restore an earlier
+ * draft" (off until draft history is built).
+ */
+export function PublishSplit({
+  disabled,
+  onPublish,
+  openHref,
+  restore,
+}: {
+  disabled: boolean;
+  onPublish: () => void;
+  /** The published app's address; the item is off while there is none. */
+  openHref: string | undefined;
+  /** Wired when draft history exists; until then the item is off. */
+  restore?: (() => void) | undefined;
+}) {
+  const [open, setOpen] = useState(false);
+  const item =
+    "flex w-full items-center rounded-inner px-3 py-1.5 text-left text-body-sm hover:bg-action-soft focus-visible:bg-action-soft aria-disabled:pointer-events-none aria-disabled:opacity-50";
+  return (
+    <span className="inline-flex">
+      <Button variant="primary" disabled={disabled} className="rounded-r-none" onClick={onPublish}>
+        Publish
+      </Button>
+      <Popover
+        open={open}
+        onOpenChange={setOpen}
+        title="More ways to publish"
+        titleHidden
+        align="end"
+        wide
+        trigger={
+          <Button
+            variant="primary"
+            aria-label="More ways to publish"
+            className="rounded-l-none border-l border-action-ink/30 px-2"
+          >
+            <ChevronDown aria-hidden="true" size={14} />
+          </Button>
+        }
+      >
+        <div role="menu" aria-label="Publish" className="flex flex-col p-1">
+          <button
+            type="button"
+            role="menuitem"
+            disabled={disabled}
+            className={item}
+            onClick={() => {
+              setOpen(false);
+              onPublish();
+            }}
+          >
+            Publish
+          </button>
+          {openHref ? (
+            <a
+              role="menuitem"
+              href={openHref}
+              target="_blank"
+              rel="noreferrer"
+              className={`${item} text-ink no-underline`}
+              onClick={() => setOpen(false)}
+            >
+              Open the published app
+            </a>
+          ) : (
+            <MenuItemOff tooltip="Publish once, and the app has an address.">
+              Open the published app
+            </MenuItemOff>
+          )}
+          {restore ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={item}
+              onClick={() => {
+                setOpen(false);
+                restore();
+              }}
+            >
+              Restore an earlier draft
+            </button>
+          ) : (
+            <MenuItemOff tooltip="In this phase">Restore an earlier draft</MenuItemOff>
+          )}
+        </div>
+      </Popover>
+    </span>
+  );
+}
+
+/** A menu item that is off, and says why when it is pointed at or focused. */
+function MenuItemOff({ tooltip, children }: { tooltip: string; children: ReactNode }) {
+  return (
+    <Tooltip label={tooltip} side="left">
+      <button
+        type="button"
+        role="menuitem"
+        aria-disabled="true"
+        className="flex w-full items-center rounded-inner px-3 py-1.5 text-left text-body-sm opacity-50"
+        onClick={(event) => event.preventDefault()}
+      >
+        {children}
+      </button>
+    </Tooltip>
+  );
+}

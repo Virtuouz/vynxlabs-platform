@@ -1,11 +1,12 @@
 import { Panel, SideSheet, useLast } from "@volvel/ui";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useShortcut } from "../../kit/keys.ts";
 import { useWide, WIDE } from "../../kit/layout.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { SplitPane } from "../../kit/SplitPane.tsx";
 import { UndoRedo } from "../../kit/UndoRedo.tsx";
 import { useNavigationGuard } from "../../router.tsx";
+import { RenameButton, RenameField } from "./BuilderHeader.tsx";
 
 /** How a change stands: saved, about to be, being saved, or not saved and why. */
 export type Saving = "saved" | "waiting" | "saving" | { failed: string };
@@ -33,6 +34,9 @@ export function savingWords(saving: Saving, saved: string): string {
  */
 export function EditorShell({
   title,
+  onRename,
+  pill,
+  tools,
   saving,
   savedWords,
   history,
@@ -48,6 +52,12 @@ export function EditorShell({
   saveNow,
 }: {
   title: string;
+  /** Renames in place, with a pencil beside the name. Left out where the name is not changed here. */
+  onRename?: ((title: string) => void) | undefined;
+  /** Beside the name: "3 draft changes". */
+  pill?: ReactNode;
+  /** In the row's right-hand group, before undo: the screen sizes, who it is viewed as. */
+  tools?: ReactNode;
   saving: Saving;
   /** What "saved" means here: "Saved. Not published yet." */
   savedWords: string;
@@ -74,6 +84,7 @@ export function EditorShell({
   inspectorOpen: boolean;
   onCloseInspector: () => void;
 }) {
+  const [renaming, setRenaming] = useState(false);
   useNavigationGuard(saving !== "saved", "A change is not saved yet.");
   const docked = useWide(WIDE.panel);
   // The sheet keeps showing what it showed while it closes.
@@ -85,23 +96,41 @@ export function EditorShell({
 
   return (
     <section className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* One row under the breadcrumbs (board 1): the name and what is waiting on the left; the size, who it is seen as, undo, preview and publish on the right. */}
       <PageHeader
         compact
-        title={title}
+        title={
+          renaming && onRename ? (
+            <RenameField
+              title={title}
+              onDone={(next) => {
+                setRenaming(false);
+                if (next) onRename(next);
+              }}
+            />
+          ) : (
+            title
+          )
+        }
         state={
-          <span
-            role="status"
-            className={`text-body-sm ${typeof saving === "object" ? "text-danger" : "text-ink-muted"}`}
-          >
-            {savingWords(saving, savedWords)}
-          </span>
+          <>
+            {onRename && !renaming ? <RenameButton onClick={() => setRenaming(true)} /> : null}
+            {pill}
+            <span
+              role="status"
+              className={`text-body-sm max-xl:sr-only ${typeof saving === "object" ? "text-danger" : "text-ink-muted"}`}
+            >
+              {savingWords(saving, savedWords)}
+            </span>
+          </>
         }
         actions={
-          <span className="flex flex-wrap items-center gap-2">
+          <>
+            {tools}
             <UndoRedo history={history} />
             {more}
             {primary}
-          </span>
+          </>
         }
         after={after}
       />
@@ -109,7 +138,7 @@ export function EditorShell({
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:items-start">
         <nav
           aria-label="On this page"
-          className="flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-40 lg:overflow-y-auto"
+          className="flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-60 lg:overflow-y-auto lg:border-r lg:border-line lg:pr-3"
         >
           {outline}
         </nav>

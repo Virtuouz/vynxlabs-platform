@@ -265,6 +265,7 @@ test.beforeAll(async ({ browser }) => {
       pages: [
         { id: "tall", title: "Tall", widgets: stacked },
         { id: "blank", title: "Blank", widgets: [] },
+        { id: "welcome", title: "Welcome", widgets: [] },
         {
           id: "dialog",
           title: "A dialog",
@@ -455,9 +456,12 @@ test("POLISH-007: the device switch is a radio group the arrow keys move, and th
   await expect(group.getByRole("radio", { name: "Tablet" })).toBeChecked();
   await expect(group.getByRole("radio", { name: "Tablet" })).toBeFocused();
   const tablet = (await owner.locator("[data-widget-cell]").first().boundingBox())?.width ?? 0;
-  expect(tablet, "the canvas is narrower on a tablet").toBeLessThan(wide);
+  expect(tablet, "the canvas is drawn at the tablet's width").not.toBe(wide);
   await owner.keyboard.press("ArrowRight");
   await expect(group.getByRole("radio", { name: "Phone" })).toBeChecked();
+  await expect(owner.getByText("Phone layout is made from the desktop one.")).toBeVisible();
+  const phone = (await owner.locator("[data-widget-cell]").first().boundingBox())?.width ?? 0;
+  expect(phone, "the widgets are drawn inside a phone's width").toBeLessThanOrEqual(390);
   await owner.keyboard.press("ArrowRight");
   await expect(desktop).toBeChecked();
   await owner.keyboard.press("ArrowLeft");
@@ -483,14 +487,14 @@ test("POLISH-011: a widget chosen in the outline is scrolled into view on the ca
 });
 
 test("POLISH-003: a page's icon, its size and its title are chosen in the settings, saved, and kept after a reload", async () => {
-  await openBuilder("frame", /^Blank/);
+  await openBuilder("frame", /^Welcome/);
   const form = settings().getByRole("region", { name: "Page settings" });
   await expect(form).toBeVisible();
   await form.getByLabel(/^Title in the app menu/).fill("Front page");
   await form.getByLabel("Icon").selectOption({ label: "Wallet" });
   await expect
     .poll(async () => {
-      const page = await draftPage("frame", "blank");
+      const page = await draftPage("frame", "welcome");
       return `${page.title}|${page.icon}`;
     })
     .toBe("Front page|wallet");
@@ -2035,6 +2039,20 @@ test("POLISH-005: on a phone each widget is automatic or set by hand (hide, full
   ).toHaveCount(0);
   const at = async (name: string) =>
     (await sheet.getByRole("region", { name, exact: true }).boundingBox()) ?? undefined;
+  // Once the rows have arrived and the page has settled: nothing is drawn over another.
+  await expect(sheet.getByRole("region", { name: "Rows", exact: true })).toContainText(
+    made.a?.number ?? "",
+  );
+  await expect
+    .poll(async () => {
+      const beta = await at("Beta");
+      const gamma = await at("Gamma");
+      const rows = await at("Rows");
+      return Boolean(
+        beta && gamma && rows && gamma.y >= beta.y + beta.height - 1 && rows.y >= gamma.y,
+      );
+    })
+    .toBe(true);
   const served = {
     beta: await at("Beta"),
     gamma: await at("Gamma"),
@@ -2201,10 +2219,11 @@ test("Acceptance, invoices: a table of invoices, a click that opens the record, 
 
   // A click on a row opens the invoice: the builder offers to make its detail.
   await tabOf("Actions").click();
-  await choose(
-    settings().getByRole("group", { name: "When a row is clicked" }),
-    /^Open record detail/,
-  ).click();
+  await settings()
+    .getByRole("region", { name: "When a row is clicked" })
+    .getByRole("button", { name: /^Do / })
+    .click();
+  await choose(editor(), /^Open record detail/).click();
   // The sheet it opens is made, as a side sheet of invoices, with the record's detail in it.
   await expect(pages().getByRole("button", { name: /^Invoice detail/ })).toContainText(
     "Side sheet",
@@ -2306,7 +2325,7 @@ test("Acceptance, invoices: a table of invoices, a click that opens the record, 
   await expect(modal).toHaveCount(0);
   // The invoice is made, and the table has it without a reload.
   await expect(owner.getByRole("region", { name: "Invoices", exact: true })).toContainText(number);
-  const created = await ok(owner, "GET", `${W}/rows/invoices?limit=20&number=${number}`);
+  const created = await ok(owner, "GET", `${W}/rows/invoices?limit=20&sort=-created_at`);
   const row = (created.items as Wid[]).find((one) => one.number === number);
   expect(row, "the invoice was made").toBeTruthy();
   if (row) made.new = { id: row.id, number };

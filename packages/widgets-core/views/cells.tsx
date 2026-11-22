@@ -112,12 +112,25 @@ export const SYSTEM_COLUMNS = new Set(["id", "created_at", "updated_at"]);
 export const isDefaultColumn = (column: { name: string; type: string }): boolean =>
   !SYSTEM_COLUMNS.has(column.name) && column.type !== "json";
 
-/** The names that say what a row is, most telling first. */
-const IDENTIFYING = ["name", "title", "number", "code", "reference", "ref", "label", "subject"];
+/** The names that say what a row is, then where it stands and when, most telling first. */
+const IDENTIFYING = [
+  "name",
+  "title",
+  "number",
+  "code",
+  "reference",
+  "ref",
+  "label",
+  "subject",
+  "status",
+  "starts_at",
+  "date",
+  "due_on",
+];
 
 /**
- * The columns a widget draws when it names none: the default ones, with the column that says
- * what a row is (its name, title or number) first, and the rest as the table has them.
+ * The columns a widget draws when it names none: the default ones, with the columns that say
+ * what a row is (its name, title or number), where it stands and when first, and the rest as the table has them.
  */
 export function defaultColumns<T extends { name: string; type: string }>(
   columns: readonly T[],

@@ -12,10 +12,12 @@ describe("the columns a widget draws when it names none", () => {
       col("clinic"),
       col("lines", "json"),
       col("number"),
+      col("status"),
       col("total", "integer"),
     ];
     expect(defaultColumns(columns).map((one) => one.name)).toEqual([
       "number",
+      "status",
       "appointment",
       "clinic",
       "total",

@@ -981,6 +981,8 @@ export function PageEditor({
                 onChange={pageInfo.onPage}
                 onRemove={() => pageInfo.onRemovePage?.()}
                 canRemove={pageInfo.onRemovePage !== undefined && !readOnly}
+                root={root}
+                link={link}
               />
             </fieldset>
           ) : (

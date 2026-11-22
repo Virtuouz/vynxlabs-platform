@@ -19,6 +19,8 @@ const show = (page: Page) => {
       onChange={onChange}
       onRemove={() => undefined}
       canRemove
+      root="/tenants/t/workspaces/w"
+      link="/t/t/w/w"
     />,
   );
   return onChange;

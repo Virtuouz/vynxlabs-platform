@@ -30,6 +30,8 @@ export class HttpError extends Error {
 export const notFound = (what: string) => new HttpError(404, "not_found", `${what} was not found.`);
 export const forbidden = (permission: string) =>
   new HttpError(403, "forbidden", `This needs the ${permission} permission.`);
+/** A 403 whose reason is a whole sentence, for what is not one permission's name. */
+export const forbiddenBecause = (sentence: string) => new HttpError(403, "forbidden", sentence);
 export const unauthenticated = (detail = "Sign in or send an API key.") =>
   new HttpError(401, "unauthenticated", detail);
 export const badRequest = (detail: string, issues?: { path: string; message: string }[]) =>

@@ -147,6 +147,8 @@ export interface PageViewProps {
      * told where it landed, or nothing when it was let go off the page or Esc was pressed.
      */
     carrying?: CarryRequest | undefined;
+    /** Someone who may not edit looks at the page: widgets are chosen, never moved, stretched, renamed or removed. */
+    readOnly?: boolean;
   };
 }
 
@@ -427,7 +429,7 @@ function Cell({
         row: id ? lookup(id) : undefined,
         group: groupOf(payload),
         input: groupInput,
-        among: amongIds(),
+        ...amongOf(),
       });
     }
     onEvent?.(widget.id, event, payload);
@@ -445,6 +447,32 @@ function Cell({
     (thisRow?.id === id ? thisRow : undefined);
   const amongIds = () =>
     rowsRead?.rows.map((row) => row.id).filter((id): id is string => typeof id === "string");
+  const rowsInput = Object.entries(reading.read ?? {}).find(
+    ([, wire]) => wire.shape === "rows",
+  )?.[0];
+  /** The list a row was clicked in: its ids, how many rows there are in all, and how to read the ones not loaded yet. */
+  const amongOf = () => {
+    const ids = amongIds();
+    if (!ids) return {};
+    let cursor = rowsRead?.next;
+    const input = rowsInput;
+    return {
+      among: ids,
+      ...(rowsRead?.total !== undefined ? { amongTotal: rowsRead.total } : {}),
+      ...(cursor !== undefined && input !== undefined
+        ? {
+            amongMore: async () => {
+              if (cursor === undefined) return [];
+              const more = await reading.readAfter(input, cursor);
+              cursor = more?.next;
+              return (more?.rows ?? [])
+                .map((row) => row.id)
+                .filter((id): id is string => typeof id === "string");
+            },
+          }
+        : {}),
+    };
+  };
   // The summary input a clicked group belongs to: the rows behind it are read for that input.
   const groupInput = Object.entries(definition?.data ?? {}).find(
     ([, declared]) => declared.shape === "summary",
@@ -512,7 +540,11 @@ function Cell({
       className={`@container/cell relative flex min-h-0 min-w-0 flex-col ${calloutEdge(widget.type, widget.config)} ${span === 2 ? "col-span-2" : ""} @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
         selected ? "ring-2 ring-action" : building ? "hover:ring-1 hover:ring-action/40" : ""
       } ${fade || away ? "opacity-60" : ""} ${hiddenFor ? "opacity-40" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
-        building ? "cursor-grab touch-pan-y select-none active:cursor-grabbing" : ""
+        building
+          ? editing?.readOnly
+            ? "cursor-default select-none"
+            : "cursor-grab touch-pan-y select-none active:cursor-grabbing"
+          : ""
       }`}
       {...(building
         ? {
@@ -551,7 +583,9 @@ function Cell({
         reading={reading}
         selected={selected}
         building={building}
-        onRename={editing ? (title) => editing.onRename(widget.id, title) : undefined}
+        onRename={
+          editing && !editing.readOnly ? (title) => editing.onRename(widget.id, title) : undefined
+        }
         tabbable={!narrow}
         container={container}
         opens={opens}
@@ -569,7 +603,7 @@ function Cell({
           </p>
         ) : View ? (
           <Measured
-            on={entry?.definition.role === "filters"}
+            on={entry?.definition.role === "filters" || entry?.definition.role === "container"}
             onSize={(pixels) => ctx.measured(widget.id, pixels)}
           >
             <View
@@ -615,7 +649,7 @@ function Cell({
                               : undefined,
                         input: groupInput,
                         inputs: given?.inputs,
-                        among: amongIds(),
+                        ...amongOf(),
                       }),
                   })}
               can={(at, row) =>
@@ -683,7 +717,7 @@ function Cell({
           {seenByTag(widget.rules)}
         </span>
       ) : null}
-      {selected || held ? (
+      {(selected || held) && !editing?.readOnly ? (
         <>
           <span
             aria-hidden="true"
@@ -707,7 +741,7 @@ function Cell({
           <span
             aria-hidden="true"
             data-chrome="size"
-            className="pointer-events-none absolute right-2 -bottom-8 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta text-ink"
+            className="pointer-events-none absolute top-[calc(100%+4px)] right-2 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta leading-4 whitespace-nowrap text-ink @max-[11rem]/cell:px-1 @max-[11rem]/cell:text-tag"
           >
             {sizeWords(at)}
           </span>
@@ -778,7 +812,14 @@ function WidgetGrid({
   // A press on a widget on the phone, dragged up or down and let go, reads it before the one it
   // was let go above (or last): written as the phone's own place, once it is asked about.
   const reorderOnPhone = (event: React.PointerEvent<HTMLElement>, id: string) => {
-    if (event.pointerType !== "mouse" || event.button !== 0 || inner || !editing) return;
+    if (
+      event.pointerType !== "mouse" ||
+      event.button !== 0 ||
+      inner ||
+      !editing ||
+      editing.readOnly
+    )
+      return;
     const startY = event.clientY;
     const done = (up: PointerEvent) => {
       window.removeEventListener("pointerup", done);
@@ -1115,7 +1156,7 @@ export function PageView({
   const gridRef = useRef<HTMLDivElement>(null);
   // Every change the page makes to its widgets: containers kept as tall as what they hold.
   const change = (next: PageWidget[], label: string, pin?: string) => {
-    if (!editing) return;
+    if (!editing || editing.readOnly) return;
     const made = [...fitContainers(next, roles, pin ? { pin } : {})];
     if (device !== "tablet") return editing.onChange(made, label);
     // On the tablet a move is the tablet's own place: it is asked about first, and the desktop's stays.
@@ -1131,7 +1172,7 @@ export function PageView({
   };
   /** On the phone: the widget is read before another, or last. Asked about first, and marked as changed by hand. */
   const movePhone = (id: string, before: string | undefined) => {
-    if (!editing) return;
+    if (!editing || editing.readOnly) return;
     const apply = () =>
       editing.onChange(phoneMoved(given, id, before), `Moved ${name(id)} on the phone`);
     if (!editing.askLayout) return apply();
@@ -1180,30 +1221,31 @@ export function PageView({
     onOpen: (into) => {
       if (into.tab) chooseTab(into.widget, into.tab);
     },
-    onMove: editing
-      ? (id, at, _by, how, into) => {
-          const was = byId.get(id)?.in;
-          const next = putAt(widgets, id, at, into, roles);
-          const where =
-            gridKey(was) === gridKey(into)
-              ? ""
-              : into
-                ? ` into ${name(into.widget)}`
-                : ` out of ${name(was?.widget ?? "")}`;
-          change(next, `${how === "move" ? "Moved" : "Resized"} ${name(id)}${where}`, id);
-        }
-      : undefined,
+    onMove:
+      editing && !editing.readOnly
+        ? (id, at, _by, how, into) => {
+            const was = byId.get(id)?.in;
+            const next = putAt(widgets, id, at, into, roles);
+            const where =
+              gridKey(was) === gridKey(into)
+                ? ""
+                : into
+                  ? ` into ${name(into.widget)}`
+                  : ` out of ${name(was?.widget ?? "")}`;
+            change(next, `${how === "move" ? "Moved" : "Resized"} ${name(id)}${where}`, id);
+          }
+        : undefined,
   });
 
   const remove = (id: string) => {
-    if (!editing) return;
+    if (!editing || editing.readOnly) return;
     const label = name(id);
     change(without(widgets, id), `Removed ${label}`);
     editing.onSelect(undefined);
     setTold(`${label} is removed.`);
   };
   const duplicate = (id: string) => {
-    if (!editing) return;
+    if (!editing || editing.readOnly) return;
     const made = duplicated(widgets, id);
     if (!made) return;
     change(made.widgets, `Duplicated ${name(id)}`);
@@ -1407,7 +1449,7 @@ function Landing({ card, at }: { card: PlaceCard; at: Box }) {
     >
       <span className="truncate font-semibold text-ink">{card.title}</span>
       <span className="text-body-sm text-ink-muted">{card.kind}</span>
-      <span className="pointer-events-none absolute right-2 -bottom-8 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta text-ink">
+      <span className="pointer-events-none absolute top-[calc(100%+4px)] right-2 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta leading-4 whitespace-nowrap text-ink @max-[11rem]/cell:px-1 @max-[11rem]/cell:text-tag">
         {sizeWords(at)}
       </span>
     </div>

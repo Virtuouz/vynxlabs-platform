@@ -7,9 +7,108 @@
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="apple-touch-icon" href="/api/v1/instance/branding/icons/180" />
     <link rel="manifest" href="/site.webmanifest" />
+    <script>
+      // The theme a person chose is on the page before anything is drawn, so the first paint is not the other one.
+      try {
+        var t = JSON.parse(localStorage.getItem("vx-pref:theme") || "null");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
+    <script>
+      // What an address is certain to ask for is asked for now, while the scripts arrive: who is
+      // signed in, the workspace's counts, and for an app's builder the app and its drafts. A
+      // screen takes the answer when it asks (`api.ts`), once. A failed one is asked again then.
+      (function () {
+        var at = /^\/t\/([^/]+)(?:\/workspaces\/([^/]+)(?:\/([^?#]*))?)?/.exec(location.pathname);
+        if (!at) return;
+        var early = (window.__vxEarly = {});
+        var ask = function (path) {
+          early[path] = fetch("/api/v1" + path, { credentials: "same-origin" });
+          early[path].catch(function () {
+            delete early[path];
+          });
+          setTimeout(function () {
+            delete early[path];
+          }, 30000);
+        };
+        ask("/me");
+        ask("/me/preferences");
+        ask("/instance/branding");
+        ask("/tenants/" + at[1] + "/workspaces");
+        ask("/tenants/" + at[1] + "/summary");
+        if (!at[2]) return;
+        var root = "/tenants/" + at[1] + "/workspaces/" + at[2];
+        ask(root);
+        ask(root + "/terms");
+        ask(root + "/summary");
+        var built = /^screens\/(.+?)\/?$/.exec(at[3] || "");
+        if (built && !/\/preview$/.test(built[1])) {
+          var path = built[1];
+          ["interfaces", "drafts", "apps", "group-keys", "interfaces/" + path, "drafts/" + path].forEach(function (read) {
+            ask(root + "/" + read);
+          });
+        }
+      })();
+    </script>
+    <style>
+      /*
+       * What is drawn before any script has arrived: the console's frame (the rail, the bar, a left
+       * pane, the page and a right pane) as quiet blocks. React replaces it when it starts. Plain CSS
+       * on purpose: nothing here waits for the stylesheet.
+       */
+      html { background: #f3f5f8; }
+      html[data-theme="dark"] { background: #0e1218; }
+      @media (prefers-color-scheme: dark) { html:not([data-theme="light"]) { background: #0e1218; } }
+      body { margin: 0; }
+      #boot { --b: #e3e8ee; --l: #dde3ea; display: flex; height: 100vh; background: transparent; }
+      html[data-theme="dark"] #boot { --b: #1a212a; --l: #1f2731; }
+      @media (prefers-color-scheme: dark) { html:not([data-theme="light"]) #boot { --b: #1a212a; --l: #1f2731; } }
+      #boot i { display: block; background: var(--b); border-radius: 6px; }
+      #boot .rail { width: 64px; flex: none; border-right: 1px solid var(--l); padding: 12px 14px; box-sizing: border-box; display: flex; flex-direction: column; gap: 22px; }
+      #boot .rail i { height: 36px; }
+      #boot .col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      #boot .bar { height: 47px; flex: none; border-bottom: 1px solid var(--l); display: flex; align-items: center; gap: 12px; padding: 0 16px; }
+      #boot .bar i { height: 14px; width: 120px; }
+      #boot .bar i:last-child { margin-left: auto; width: 220px; height: 26px; }
+      #boot .work { flex: 1; display: flex; min-height: 0; }
+      #boot .pane { width: 232px; flex: none; border-right: 1px solid var(--l); padding: 16px 12px; display: flex; flex-direction: column; gap: 10px; }
+      #boot .pane i { height: 20px; }
+      #boot .pane i:nth-child(3n) { width: 70%; }
+      #boot .page { flex: 1; min-width: 0; padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+      #boot .page .head { height: 32px; width: 280px; }
+      #boot .page .row { display: flex; gap: 12px; }
+      #boot .page .row i { flex: 1; height: 110px; }
+      #boot .page .wide { height: 260px; }
+      #boot .side { width: 340px; flex: none; border-left: 1px solid var(--l); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+      #boot .side i { height: 28px; }
+      #boot .side i:first-child { height: 40px; }
+      @media (max-width: 1100px) { #boot .side { display: none; } }
+      @media (max-width: 900px) { #boot .pane { display: none; } }
+      @media (max-width: 640px) { #boot .rail { display: none; } #boot .page .row i:nth-child(n+3) { display: none; } }
+      @media (prefers-reduced-motion: no-preference) {
+        #boot i { animation: boot-pulse 1.6s ease-in-out infinite; }
+        @keyframes boot-pulse { 50% { opacity: 0.55; } }
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div id="boot" role="status" aria-label="Loading">
+        <div class="rail"><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="col">
+          <div class="bar"><i></i><i></i><i></i><i></i></div>
+          <div class="work">
+            <div class="pane"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="page">
+              <i class="head"></i>
+              <div class="row"><i></i><i></i><i></i><i></i></div>
+              <i class="wide"></i>
+            </div>
+            <div class="side"><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

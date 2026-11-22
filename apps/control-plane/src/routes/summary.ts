@@ -51,6 +51,17 @@ const WorkspaceSummary = Type.Object({
     }),
   ),
   workersOnline: Type.Optional(Count),
+  mayAuthor: Type.Boolean({
+    description:
+      "Whether the caller may edit what is built here: an app, a page or a dashboard. False in production, and for someone with neither resource:write nor interface:write.",
+  }),
+  authorBlockedBy: Type.Union(
+    [Type.Literal("production"), Type.Literal("permission"), Type.Null()],
+    {
+      description:
+        "Why `mayAuthor` is false: this is a production workspace (changes arrive by promotion), or the caller lacks resource:write and interface:write.",
+    },
+  ),
 });
 
 const TenantSummary = Type.Object({
@@ -102,7 +113,7 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         await findWorkspace(kernel, params.t, params.w);
         const workspace = await db
           .selectFrom("workspace")
-          .select(["active_bundle_id", "linked_workspace_id"])
+          .select(["active_bundle_id", "linked_workspace_id", "type"])
           .where("id", "=", params.w)
           .executeTakeFirstOrThrow();
         const at = { tenantId: params.t, workspaceId: params.w };
@@ -111,6 +122,8 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
         const [
           readResources,
+          writeResources,
+          writeInterfaces,
           readRuns,
           readFlowRuns,
           readConnections,
@@ -119,6 +132,8 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           readWorkers,
         ] = await Promise.all([
           may("resource:read"),
+          may("resource:write"),
+          may("interface:write"),
           may("run:read"),
           may("flow_run:read"),
           may("connection:read"),
@@ -273,6 +288,13 @@ export function summaryRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           flows,
           everRan,
           workersOnline,
+          mayAuthor: workspace.type === "dev" && (writeResources || writeInterfaces),
+          authorBlockedBy:
+            workspace.type !== "dev"
+              ? ("production" as const)
+              : writeResources || writeInterfaces
+                ? null
+                : ("permission" as const),
           drafts,
           failedRuns: { count: failed, since: since.toISOString() },
           unboundConnections: unbound,

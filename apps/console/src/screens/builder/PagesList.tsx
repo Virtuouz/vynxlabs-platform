@@ -31,7 +31,8 @@ export function PagesList({
   onChoose: (id: string) => void;
   /** Absent when the app holds as many pages as it may. */
   onAdd: (() => void) | undefined;
-  onMove: (id: string, by: -1 | 1) => void;
+  /** Left out when the pages may not be reordered (read only). */
+  onMove?: ((id: string, by: -1 | 1) => void) | undefined;
 }) {
   const flip = useFlip<HTMLUListElement>(pages.map((one) => one.id).join(","));
   return (
@@ -82,7 +83,7 @@ export function PagesList({
                   {KIND_NAMES[kind]}
                 </span>
               </button>
-              {pages.length > 1 ? (
+              {pages.length > 1 && onMove ? (
                 <span
                   className={`absolute inset-y-0 right-0.5 flex items-center rounded-inner opacity-0 group-has-[:focus-visible]:opacity-100 group-hover:opacity-100 ${
                     here ? "max-lg:opacity-100" : ""

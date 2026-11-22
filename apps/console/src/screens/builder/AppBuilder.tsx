@@ -6,7 +6,6 @@ import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { ago } from "../../kit/format.ts";
 import { useHistory } from "../../kit/history.ts";
 import { heading } from "../../kit/inspector/model.ts";
-import { Loading } from "../../kit/LoadState.tsx";
 import {
   DeviceSwitch,
   DraftPill,
@@ -17,6 +16,7 @@ import {
   type ViewAs,
   ViewAsMenu,
 } from "./BuilderHeader.tsx";
+import { BuilderSkeleton } from "./BuilderSkeleton.tsx";
 import { draftChangeCount } from "./changes.ts";
 import { DraftHistory } from "./DraftHistory.tsx";
 import { type DraftAnswer, type Listed, slug } from "./data.ts";
@@ -27,6 +27,7 @@ import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
 import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, movedPage } from "./pageKinds.ts";
+import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
 import type { Started } from "./starters.ts";
 
 export { VIEWPORTS };
@@ -93,12 +94,18 @@ export function AppBuilder({
   /** What people see now: what the draft's changes are counted against. Not there until it is published. */
   const deployed = useLoad<{ body: InterfaceBody }>(`${root}/interfaces/${path}`);
   const { groups } = useGroupKeys(root);
+  /** Someone who may not edit here reads the app as it is published; nothing is changed, saved or published. */
+  const { known, readOnly, why } = useReadOnly(root);
   /** The screen sizes whose hand-made layout the builder has agreed to write, until the page is left. */
   const agreed = useRef(new Set<string>());
   const [restoring, setRestoring] = useState(false);
 
-  // What is saved and not deployed, or else what is deployed.
+  // What is saved and not deployed, or else what is deployed. Someone who may not edit reads what
+  // is deployed (the draft only when nothing is deployed yet). The deployed page is read once, by
+  // `deployed`, and this takes it from there.
+  const [noDraft, setNoDraft] = useState(false);
   useEffect(() => {
+    if (!known || readOnly) return;
     let current = true;
     api.get<DraftAnswer>(`${root}/drafts/${path}`).then(
       (draft) => {
@@ -106,19 +113,35 @@ export function AppBuilder({
         revision.current = draft.revision;
         setBody(draft.body);
       },
-      () =>
-        api.get<{ body: InterfaceBody }>(`${root}/interfaces/${path}`).then(
-          (view) => current && setBody(view.body),
-          (error: ApiError) => current && setMissing(error.message),
-        ),
+      () => current && setNoDraft(true),
     );
     return () => {
       current = false;
     };
-  }, [root, path]);
+  }, [root, path, known, readOnly]);
+  useEffect(() => {
+    if (!known || body || !(readOnly || noDraft)) return;
+    if (deployed.data) {
+      setBody(deployed.data.body);
+    } else if (deployed.error) {
+      if (!readOnly) {
+        setMissing(deployed.error.message);
+        return;
+      }
+      let current = true;
+      api.get<DraftAnswer>(`${root}/drafts/${path}`).then(
+        (draft) => current && setBody(draft.body),
+        (error: ApiError) => current && setMissing(error.message),
+      );
+      return () => {
+        current = false;
+      };
+    }
+  }, [known, body, readOnly, noDraft, deployed.data, deployed.error, root, path]);
 
   const save = useCallback(
     async (next: InterfaceBody) => {
+      if (readOnly) return false;
       setSaving("saving");
       try {
         const saved = await api.put<DraftAnswer>(`${root}/drafts/${path}`, {
@@ -137,7 +160,7 @@ export function AppBuilder({
         return false;
       }
     },
-    [root, path],
+    [root, path, readOnly],
   );
   // A change is saved a moment after the last one, so that typing does not save every letter.
   // ⌘S saves at once.
@@ -161,6 +184,7 @@ export function AppBuilder({
   };
 
   const change = (apply: (draft: InterfaceBody) => void, label = "a change", key?: string) => {
+    if (readOnly) return;
     if (latest.current) history.record(label, key);
     setBody((before) => {
       if (!before) return before;
@@ -172,7 +196,7 @@ export function AppBuilder({
   };
 
   if (missing) return <Notice tone="danger">{missing}</Notice>;
-  if (!body) return <Loading />;
+  if (!body || !known) return <BuilderSkeleton />;
   const page = body.pages.find((candidate) => candidate.id === pageId) ?? body.pages[0];
   const listed = list.data?.items.find((item) => item.path === path);
   const appPath = listed?.app ?? null;
@@ -350,17 +374,19 @@ export function AppBuilder({
     savedWords: hasChanges ? "Saved. Not published yet." : "Published.",
     history,
     saveNow,
-    onRename: (title: string) =>
-      change(
-        (draft) => {
-          draft.title = title;
-        },
-        "renaming the app",
-        "title",
-      ),
+    onRename: readOnly
+      ? undefined
+      : (title: string) =>
+          change(
+            (draft) => {
+              draft.title = title;
+            },
+            "renaming the app",
+            "title",
+          ),
     // Beside the name whenever something is waiting; with the count once it is known. Nothing waiting is quiet words ("Published.").
     pill:
-      changes || (changes === undefined && hasChanges) ? (
+      !readOnly && (changes || (changes === undefined && hasChanges)) ? (
         <DraftPill count={changes} onOpen={() => void review()} />
       ) : null,
     tools: (
@@ -369,13 +395,24 @@ export function AppBuilder({
         <ViewAsMenu value={viewAs} groups={groups} onChange={setViewAs} />
       </>
     ),
-    more: (
+    more: readOnly ? null : (
       <PreviewButton
         onOpen={() => void openPreview()}
         note="Opens the draft as people will use it, in a new tab. Actions change this workspace's rows."
       />
     ),
-    primary: (
+    primary: readOnly ? (
+      url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-8 items-center rounded-control border border-line-control px-3 text-body-sm text-ink no-underline hover:bg-sunken"
+        >
+          Open the app
+        </a>
+      ) : null
+    ) : (
       <PublishSplit
         disabled={problems.length > 0 || typeof saving === "object"}
         onPublish={() => void review()}
@@ -406,7 +443,8 @@ export function AppBuilder({
     ),
     notices: (
       <>
-        {appPath === null && list.data ? (
+        {readOnly ? <ReadOnlyLine what="Apps" why={why} /> : null}
+        {!readOnly && appPath === null && list.data ? (
           <Notice
             tone="attention"
             action={
@@ -470,7 +508,8 @@ export function AppBuilder({
           link={link}
           surface="app"
           source={{ of: "interface", path, page: page.id }}
-          draft
+          draft={!readOnly}
+          readOnly={readOnly}
           value={{ widgets: page.widgets }}
           selected={selected}
           onSelect={(id) => {
@@ -506,19 +545,22 @@ export function AppBuilder({
                 const at = draft.pages.findIndex((one) => one.id === next.id);
                 if (at >= 0) draft.pages[at] = next;
               }, label),
-            onRemovePage: body.pages.length > 1 ? removePage : undefined,
+            onRemovePage: !readOnly && body.pages.length > 1 ? removePage : undefined,
           }}
           pages={
             <PagesList
               pages={body.pages}
               current={page.id}
               onChoose={choosePage}
-              onAdd={canAddPage(body.pages) ? () => setAddingPage(true) : undefined}
-              onMove={(id, by) =>
-                change((draft) => {
-                  draft.pages = movedPage(draft.pages, id, by);
-                }, "moving a page")
-              }
+              onAdd={!readOnly && canAddPage(body.pages) ? () => setAddingPage(true) : undefined}
+              {...(readOnly
+                ? {}
+                : {
+                    onMove: (id: string, by: -1 | 1) =>
+                      change((draft) => {
+                        draft.pages = movedPage(draft.pages, id, by);
+                      }, "moving a page"),
+                  })}
             />
           }
           onChange={(next, label, key) =>

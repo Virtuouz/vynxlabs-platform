@@ -880,11 +880,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const generated = typeof body.interface === "string" || documents;
     // An app written as code runs only at an address of its own, never where the console's
     // sign-in is, unless the operator knowingly allowed it (decision 0001).
-    if (
-      !generated &&
-      place.kind === "main" &&
-      !kernel.hosts.runsCodeApps(place)
-    ) {
+    if (!generated && place.kind === "main" && !kernel.hosts.runsCodeApps(place)) {
       return html(
         reply,
         503,
@@ -1037,6 +1033,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       HASHED_NAME.test(asset.path) ? "private, max-age=31536000, immutable" : "private, no-cache",
     );
     if (request.headers["if-none-match"] === etag) return reply.code(304).send();
+    // The platform's own files are kept compressed too: the best one the browser takes is sent.
+    const packed = runtime?.get(asset.path);
+    const accepts = String(request.headers["accept-encoding"] ?? "");
+    if (packed?.br && /\bbr\b/.test(accepts)) {
+      reply.header("content-encoding", "br").header("vary", "accept-encoding");
+      return reply.code(200).header("content-type", asset.contentType).send(packed.br);
+    }
+    if (packed?.gzip && /\bgzip\b/.test(accepts)) {
+      reply.header("content-encoding", "gzip").header("vary", "accept-encoding");
+      return reply.code(200).header("content-type", asset.contentType).send(packed.gzip);
+    }
     return reply.code(200).header("content-type", asset.contentType).send(content);
   }
 

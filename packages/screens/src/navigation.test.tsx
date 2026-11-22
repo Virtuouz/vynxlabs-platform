@@ -52,7 +52,14 @@ describe("the address", () => {
 
 describe("stepping", () => {
   test("says where the record is among the list, and what is on either side", () => {
-    expect(steppingOf(["a", "b", "c"], "b")).toEqual({ at: 2, total: 3, previous: "a", next: "c" });
+    expect(steppingOf(["a", "b", "c"], "b")).toEqual({
+      at: 2,
+      total: 3,
+      partial: false,
+      previous: "a",
+      next: "c",
+      hasNext: true,
+    });
     expect(steppingOf(["a", "b", "c"], "a")?.previous).toBeUndefined();
     expect(steppingOf(["a", "b", "c"], "c")?.next).toBeUndefined();
     expect(steppingOf(["a"], "z")).toBeUndefined();
@@ -137,6 +144,50 @@ describe("moving through the app", () => {
     await back();
     expect(where()).toBe("/apps/clinic/invoices");
     expect(screen.queryByText(/ of 3/)).toBeNull();
+  });
+
+  test("the count is the real total, and Next past the loaded rows reads the next ones", async () => {
+    let reads = 0;
+    render(<Host />);
+    await go({ page: "invoices", as: "page" });
+    await go({
+      page: "invoice",
+      record: "b",
+      as: "sheet",
+      among: ["a", "b"],
+      amongTotal: 2750,
+      amongMore: async () => {
+        reads += 1;
+        return reads === 1 ? ["c", "d"] : [];
+      },
+    });
+    expect(screen.getByText("2 of 2,750")).toBeTruthy();
+    // The last loaded row: Next is still on, because there are more rows.
+    expect(screen.getByRole("button", { name: "Next" }).hasAttribute("disabled")).toBe(false);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    });
+    expect(where()).toBe("/apps/clinic/invoices?sheet=invoice&record=c");
+    expect(screen.getByText("3 of 2,750")).toBeTruthy();
+    expect(reads).toBe(1);
+  });
+
+  test("when the total is not known it says so, and Next with nothing more turns off", async () => {
+    render(<Host />);
+    await go({ page: "invoices", as: "page" });
+    await go({
+      page: "invoice",
+      record: "a",
+      as: "sheet",
+      among: ["a"],
+      amongMore: async () => [],
+    });
+    expect(screen.getByText("1 of 1 or more")).toBeTruthy();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    });
+    expect(screen.getByText("1 of 1")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next" }).hasAttribute("disabled")).toBe(true);
   });
 
   test("a sheet opened by a shared link has no list to step through", async () => {

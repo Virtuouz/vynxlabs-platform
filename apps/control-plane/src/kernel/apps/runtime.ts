@@ -2,6 +2,14 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
+import { promisify } from "node:util";
+import { brotliCompress, constants, gzip } from "node:zlib";
+
+const brotli = promisify(brotliCompress);
+const gzipped = promisify(gzip);
+/** What is worth compressing: text, once, when the files are read, never while a request waits. */
+const COMPRESSIBLE = new Set(["js", "mjs", "css", "json", "svg", "txt", "map"]);
+const MIN_COMPRESSED = 1024;
 
 const TYPES: Record<string, string> = {
   html: "text/html; charset=utf-8",
@@ -22,6 +30,9 @@ export interface RuntimeFile {
   path: string;
   sha256: string;
   contentType: string;
+  /** The same bytes compressed, for a browser that takes them. Left out for what does not compress. */
+  br?: Buffer;
+  gzip?: Buffer;
 }
 
 /**
@@ -60,12 +71,25 @@ export class RuntimeFiles {
         else if (entry.isFile() && found.size < MAX_FILES) {
           const content = await readFile(full);
           const path = relative(root, full).split(sep).join("/");
+          const extension = entry.name.split(".").pop()?.toLowerCase() ?? "";
+          const packed =
+            COMPRESSIBLE.has(extension) && content.length >= MIN_COMPRESSED
+              ? {
+                  br: await brotli(content, {
+                    params: {
+                      [constants.BROTLI_PARAM_QUALITY]: 9,
+                      [constants.BROTLI_PARAM_SIZE_HINT]: content.length,
+                    },
+                  }),
+                  gzip: await gzipped(content, { level: 9 }),
+                }
+              : {};
           found.set(path, {
             path,
             sha256: createHash("sha256").update(content).digest("hex"),
-            contentType:
-              TYPES[entry.name.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream",
+            contentType: TYPES[extension] ?? "application/octet-stream",
             content,
+            ...packed,
           });
         }
       }

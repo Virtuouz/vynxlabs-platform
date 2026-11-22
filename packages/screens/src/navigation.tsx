@@ -116,24 +116,43 @@ const read = (base: string): Address =>
 export interface Stepping {
   /** 1-based place in the list. */
   at: number;
+  /** How many rows there are in all when the server said, else how many were loaded. */
   total: number;
+  /** Whether `total` is only what was loaded: there are more rows that nobody has counted. */
+  partial: boolean;
   previous: string | undefined;
+  /** The next record, if it is loaded; stepping past the last loaded one reads more. */
   next: string | undefined;
+  /** Whether there is a next row, loaded or not. */
+  hasNext: boolean;
+  /** Reading the next rows. */
+  loading?: boolean;
+}
+
+/** The list a sheet was opened from: the ids of its rows as far as they are loaded, how many there are in all, and how to read on. */
+export interface Among {
+  ids: readonly string[];
+  total?: number | undefined;
+  more?: (() => Promise<readonly string[]>) | undefined;
 }
 
 /** The place of a record among the list it was opened from; nothing when it is not in it. */
 export function steppingOf(
-  among: readonly string[] | undefined,
+  among: Among | readonly string[] | undefined,
   record: string | undefined,
 ): Stepping | undefined {
   if (!among || !record) return undefined;
-  const index = among.indexOf(record);
+  const list: Among = Array.isArray(among) ? { ids: among as readonly string[] } : (among as Among);
+  const index = list.ids.indexOf(record);
   if (index < 0) return undefined;
+  const known = list.total !== undefined && list.total >= list.ids.length;
   return {
     at: index + 1,
-    total: among.length,
-    previous: among[index - 1],
-    next: among[index + 1],
+    total: known ? (list.total as number) : list.ids.length,
+    partial: !known && list.more !== undefined,
+    previous: list.ids[index - 1],
+    next: list.ids[index + 1],
+    hasNext: list.ids[index + 1] !== undefined || list.more !== undefined,
   };
 }
 
@@ -145,7 +164,8 @@ export function steppingOf(
 export function useAddress(base: string) {
   const [address, setAddress] = useState<Address>(() => read(base));
   // The list a sheet was opened from, by id. Only in memory: a shared link has none.
-  const [among, setAmong] = useState<readonly string[]>();
+  const [among, setAmong] = useState<Among>();
+  const [reading, setReading] = useState(false);
   const current = useRef(address);
   current.current = address;
 
@@ -214,7 +234,13 @@ export function useAddress(base: string) {
         return;
       }
       const already = now.sheet !== undefined || now.modal !== undefined;
-      if (to.as === "sheet") setAmong(to.among && to.among.length > 0 ? to.among : undefined);
+      if (to.as === "sheet") {
+        setAmong(
+          to.among && to.among.length > 0
+            ? { ids: to.among, total: to.amongTotal, more: to.amongMore }
+            : undefined,
+        );
+      }
       show(
         { ...under, ...(to.as === "sheet" ? { sheet: over } : { modal: over }) },
         already ? "replace" : "push",
@@ -233,28 +259,66 @@ export function useAddress(base: string) {
     [show],
   );
 
-  const stepping = useMemo(() => steppingOf(among, address.sheet?.record), [among, address.sheet]);
-  /** Moves the open sheet to the record before or after it in its list. */
+  const stepping = useMemo(() => {
+    const place = steppingOf(among, address.sheet?.record);
+    return place ? { ...place, loading: reading } : undefined;
+  }, [among, address.sheet, reading]);
+  /**
+   * Moves the open sheet to the record before or after it in its list. Past the last row loaded,
+   * the next rows are read first (once), and the sheet goes to the first of them.
+   */
   const step = useCallback(
-    (by: "previous" | "next") => {
+    async (by: "previous" | "next") => {
       const now: Address = { ...current.current, own: ownParams(window.location.search) };
       const place = steppingOf(among, now.sheet?.record);
-      const record = place?.[by];
-      if (!now.sheet || !record) return;
-      show({ ...now, sheet: { page: now.sheet.page, record } }, "replace", true);
+      let record = place?.[by];
+      if (!now.sheet) return;
+      if (!record && by === "next" && among?.more && !reading) {
+        setReading(true);
+        try {
+          const more = await among.more();
+          if (more.length === 0) {
+            // Nothing more after all: the count is what was loaded.
+            setAmong({ ids: among.ids, total: among.ids.length });
+            return;
+          }
+          const ids = [...among.ids, ...more.filter((id) => !among.ids.includes(id))];
+          setAmong({ ids, total: among.total, more: among.more });
+          record = more[0];
+        } catch {
+          return;
+        } finally {
+          setReading(false);
+        }
+      }
+      // The address may have moved while the rows were read.
+      if (!record || current.current.sheet?.record !== now.sheet.record) return;
+      show(
+        {
+          ...current.current,
+          ...(now.own ? { own: now.own } : {}),
+          sheet: { page: now.sheet.page, record },
+        },
+        "replace",
+        true,
+      );
     },
-    [among, show],
+    [among, reading, show],
   );
   return { address, go, stepping, step, choose };
 }
 
-/** "2 of 236", with Previous and Next: a sheet opened from a list steps through it. */
+/**
+ * "2 of 236", with Previous and Next: a sheet opened from a list steps through it. The count is the
+ * real total when the server said it; when only the loaded rows are known and there are more it
+ * says so ("2 of 100 or more"); Next past the loaded rows reads the next ones.
+ */
 export function Stepper({
   stepping,
   onStep,
 }: {
   stepping: Stepping;
-  onStep(by: "previous" | "next"): void;
+  onStep(by: "previous" | "next"): void | Promise<void>;
 }) {
   return (
     <nav aria-label="Rows" className="mr-auto flex items-center gap-2">
@@ -267,13 +331,14 @@ export function Stepper({
         Previous
       </Button>
       <span className="text-body-sm text-ink-muted tabular-nums" aria-live="polite">
-        {stepping.at} of {stepping.total}
+        {stepping.at} of {stepping.total.toLocaleString("en-US")}
+        {stepping.partial ? " or more" : ""}
       </span>
       <Button
         size="small"
         variant="quiet"
-        disabled={stepping.next === undefined}
-        onClick={() => onStep("next")}
+        disabled={!stepping.hasNext || stepping.loading === true}
+        onClick={() => void onStep("next")}
       >
         Next
       </Button>

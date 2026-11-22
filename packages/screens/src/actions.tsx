@@ -38,6 +38,10 @@ export type NavigateTo =
       as: "page" | "sheet" | "modal";
       /** For a sheet opened from a list of rows: the ids of that list, in order, so the sheet can step through it. */
       among?: readonly string[];
+      /** How many rows that list has in all, when the server said. */
+      amongTotal?: number;
+      /** Reads the ids that follow the list, once: for stepping past the rows loaded. Absent when there are no more. */
+      amongMore?: () => Promise<readonly string[]>;
     }
   | { close: true };
 
@@ -206,6 +210,8 @@ export interface Request {
   inputs?: Readonly<Record<string, unknown>> | undefined;
   /** The ids of the list a row was clicked in. */
   among?: readonly string[] | undefined;
+  amongTotal?: number | undefined;
+  amongMore?: (() => Promise<readonly string[]>) | undefined;
 }
 
 interface Asking {
@@ -276,6 +282,8 @@ export function useActions(host: ActionsHost): {
             ...(record ? { record } : {}),
             as: kind === "sheet" || kind === "modal" ? kind : "page",
             ...(request.among ? { among: request.among } : {}),
+            ...(request.amongTotal !== undefined ? { amongTotal: request.amongTotal } : {}),
+            ...(request.amongMore ? { amongMore: request.amongMore } : {}),
           });
         } else if (step.do === "close") {
           now.onNavigate?.({ close: true });

@@ -97,6 +97,7 @@ describe("a widget that found nothing", () => {
           more: undefined,
           retry: () => {},
           all: async () => undefined,
+          readAfter: async () => undefined,
           read: undefined,
         }}
         selected={false}

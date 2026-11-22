@@ -3,7 +3,7 @@ import type { PageWidget } from "@volvel/manifest";
 import { DEFAULT_PRODUCT_NAME } from "../../routes/branding.js";
 import type { Db, Principal } from "../audit.js";
 import { check } from "../authorize.js";
-import { badRequest, conflict, forbidden, HttpError, notFound } from "../errors.js";
+import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../errors.js";
 import { redact } from "../execution/redact.js";
 import { approversOf, approverTitles, describeApprovers, isApprover } from "../flows/approvers.js";
 import { decideApproval, kickFlow } from "../flows/engine.js";
@@ -490,8 +490,8 @@ export async function decideFromPage(
 
   const standing = await approvalStanding(db, ctx.principal, at);
   if (!standing?.write || !standing.read) {
-    throw forbidden(
-      "the approval:read and approval:write permissions, as a member of this workspace",
+    throw forbiddenBecause(
+      "This needs the approval:read and approval:write permissions, as a member of this workspace.",
     );
   }
   if (!(await seenBy(kernel, widget, at.tenantId, standing.memberId, draft))) {

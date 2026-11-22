@@ -5,7 +5,7 @@ import { readWidget } from "../kernel/data/query/inputs.js";
 import { runQuery } from "../kernel/data/query/run.js";
 import { workspaceCatalog, writeVisual } from "../kernel/data/query/widget.js";
 import { scopeFor } from "../kernel/data/rows.js";
-import { badRequest, forbidden, notFound } from "../kernel/errors.js";
+import { badRequest, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { locatePage, UUID } from "../kernel/pages/locate.js";
@@ -243,7 +243,9 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           resourceId: table.resourceId ?? undefined,
         });
         if (!allowed) {
-          throw forbidden(`the data:read permission on the table "${table.name}"`);
+          throw forbiddenBecause(
+            `This needs the data:read permission on the table "${table.name}".`,
+          );
         }
         const enumValues = column.options?.values;
         if (enumValues && enumValues.length > 0) {

@@ -319,6 +319,21 @@ describe("a container's height", () => {
     // Nothing to do: the same list.
     expect(fitContainers(fitted, roles)).toBe(fitted);
   });
+
+  test("a container grows to what it draws: what its widgets need when they wrap holds it open", () => {
+    const list = [
+      section({}, box(0, 0, 12, 9)),
+      text("note", "n", box(0, 0, 6, 3), { widget: "sec" }),
+      text("below", "b", box(0, 9, 6, 2)),
+    ];
+    // Its own widgets say it is four rows; drawn on a narrow page they need ten.
+    const grown = fitContainers(list, roles, { least: (id) => (id === "sec" ? 10 : undefined) });
+    expect(grown.find((one) => one.id === "sec")?.at.h).toBe(10);
+    expect(grown.find((one) => one.id === "below")?.at.y).toBe(10);
+    // Needing less than what it holds changes nothing.
+    const same = fitContainers(list, roles, { least: () => 2 });
+    expect(same.find((one) => one.id === "sec")?.at.h).toBe(4);
+  });
 });
 
 describe("moving widgets into, within and out of containers", () => {

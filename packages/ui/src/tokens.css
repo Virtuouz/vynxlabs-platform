@@ -399,3 +399,26 @@ input[type="radio"]:not(.sr-only):disabled {
   opacity: 0.5;
   cursor: default;
 }
+
+/*
+ * Forced colors (Windows high contrast) removes every background, so what is chosen cannot be told
+ * by its fill. Whatever says it is chosen (a page, a tab, a device, a tile, a chip, the app's page
+ * tabs) is outlined in the system's highlight colour, once, here, for everything in the kit. A
+ * focused one keeps its focus ring.
+ */
+@media (forced-colors: active) {
+  :is(
+    [aria-current="page"],
+    [aria-current="true"],
+    [aria-selected="true"],
+    [aria-pressed="true"],
+    [aria-checked="true"],
+    [data-selected],
+    [data-state="on"],
+    [data-state="active"],
+    [data-state="checked"]
+  ):not(:focus-visible, input, svg) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+}

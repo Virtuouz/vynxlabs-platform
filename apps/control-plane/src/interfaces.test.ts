@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -132,6 +133,7 @@ function browser(app: TestApp = t) {
     url: string,
     form?: Record<string, string>,
     json?: object,
+    more: Record<string, string> = {},
   ) => {
     const cookie = [...jar].map(([name, value]) => `${name}=${value}`).join("; ");
     const response = await app.app.inject({
@@ -139,6 +141,7 @@ function browser(app: TestApp = t) {
       url,
       headers: {
         host: MAIN,
+        ...more,
         ...(cookie ? { cookie } : {}),
         ...(form
           ? { origin: `http://${MAIN}`, "content-type": "application/x-www-form-urlencoded" }
@@ -156,10 +159,16 @@ function browser(app: TestApp = t) {
     let body: Any = response.body;
     if ((response.headers["content-type"] ?? "").toString().includes("json"))
       body = response.json();
-    return { status: response.statusCode, body, headers: response.headers };
+    return {
+      status: response.statusCode,
+      body,
+      headers: response.headers,
+      bytes: response.rawPayload,
+    };
   };
   return {
-    get: (url: string) => call("GET", url),
+    get: (url: string, more?: Record<string, string>) =>
+      call("GET", url, undefined, undefined, more),
     form: (url: string, form: Record<string, string>) => call("POST", url, form),
     post: (url: string, json: object) => call("POST", url, undefined, json),
   };
@@ -192,6 +201,10 @@ beforeAll(async () => {
     '<!doctype html><html><head><title>App</title></head><body><div id="app"></div><script type="module" src="./assets/runtime-4be1c09a.js"></script></body></html>',
   );
   writeFileSync(join(runtime, "assets/runtime-4be1c09a.js"), 'console.log("runtime");');
+  writeFileSync(
+    join(runtime, "assets/big-1a2b3c4d.js"),
+    'console.log("a long script");\n'.repeat(400),
+  );
 
   t = await startTestApp({ config: { screensDir: runtime } });
   roles = Object.fromEntries(
@@ -275,6 +288,25 @@ describe("an app that serves an interface", () => {
     expect(script.headers["content-type"]).toContain("text/javascript");
     expect(script.body).toBe('console.log("runtime");');
     expect(script.headers["cache-control"]).toContain("immutable");
+    // The platform's own scripts are sent compressed to a browser that takes it, and as they are to one that does not.
+    const text = 'console.log("a long script");\n'.repeat(400);
+    const bigAddress = "/apps/acme/main/billing/assets/big-1a2b3c4d.js";
+    const asked = async (encoding: string) => {
+      const got = await ivy.browser.get(bigAddress, { "accept-encoding": encoding });
+      return got;
+    };
+    const packed = await asked("gzip, br");
+    expect(packed.status).toBe(200);
+    expect(packed.headers["content-encoding"]).toBe("br");
+    expect(packed.headers.vary).toContain("accept-encoding");
+    expect(brotliDecompressSync(packed.bytes).toString()).toBe(text);
+    expect(packed.bytes.length).toBeLessThan(text.length / 10);
+    const zipped = await asked("gzip");
+    expect(zipped.headers["content-encoding"]).toBe("gzip");
+    expect(gunzipSync(zipped.bytes).toString()).toBe(text);
+    const plain = await asked("identity");
+    expect(plain.headers["content-encoding"]).toBeUndefined();
+    expect(plain.body).toBe(text);
     // An address that names no file is a screen of the app.
     expect((await ivy.browser.get("/apps/acme/main/billing/main")).body).toContain('id="app"');
     expect((await ivy.browser.get("/apps/acme/main/billing/assets/nope.js")).status).toBe(404);

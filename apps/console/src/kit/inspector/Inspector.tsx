@@ -109,6 +109,8 @@ export interface InspectorProps {
   onSelect?: ((id: string) => void) | undefined;
   /** "When a row is clicked" as the builder draws it, for a table or a list. */
   rowClickEditor?: ReactNode;
+  /** Someone who may not edit reads the drawer: its settings are shown, none can be changed. */
+  readOnly?: boolean;
   /** ⋯ › Layout: what a device's automatic place is now, for "Custom" to start from. */
   automaticAt?: (widget: PageWidget, device: Device) => PageWidget["at"];
 }
@@ -231,43 +233,45 @@ export function Inspector(props: InspectorProps) {
         name={name}
         kind={kind}
         menu={
-          <span ref={menu}>
-            <Menu
-              ariaLabel={`More about ${name}`}
-              align="end"
-              triggerClassName="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control border border-line-control hover:bg-sunken"
-              label={<Ellipsis aria-hidden="true" size={16} />}
-              items={[
-                {
-                  label: "Layout",
-                  icon: <LayoutGrid aria-hidden="true" size={14} />,
-                  onSelect: () => setView("layout"),
-                },
-                {
-                  label: "Duplicate",
-                  icon: <Copy aria-hidden="true" size={14} />,
-                  keys: formatCombo("Mod+d"),
-                  onSelect: props.onDuplicate,
-                },
-                ...(props.places && props.places.length > 0 && props.onMove
-                  ? [
-                      {
-                        label: "Move to…",
-                        icon: <CornerDownRight aria-hidden="true" size={14} />,
-                        onSelect: () => setMoving(true),
-                      },
-                    ]
-                  : []),
-                {
-                  label: "Remove",
-                  icon: <Trash2 aria-hidden="true" size={14} />,
-                  danger: true,
-                  separated: true,
-                  onSelect: props.onRemove,
-                },
-              ]}
-            />
-          </span>
+          props.readOnly ? undefined : (
+            <span ref={menu}>
+              <Menu
+                ariaLabel={`More about ${name}`}
+                align="end"
+                triggerClassName="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control border border-line-control hover:bg-sunken"
+                label={<Ellipsis aria-hidden="true" size={16} />}
+                items={[
+                  {
+                    label: "Layout",
+                    icon: <LayoutGrid aria-hidden="true" size={14} />,
+                    onSelect: () => setView("layout"),
+                  },
+                  {
+                    label: "Duplicate",
+                    icon: <Copy aria-hidden="true" size={14} />,
+                    keys: formatCombo("Mod+d"),
+                    onSelect: props.onDuplicate,
+                  },
+                  ...(props.places && props.places.length > 0 && props.onMove
+                    ? [
+                        {
+                          label: "Move to…",
+                          icon: <CornerDownRight aria-hidden="true" size={14} />,
+                          onSelect: () => setMoving(true),
+                        },
+                      ]
+                    : []),
+                  {
+                    label: "Remove",
+                    icon: <Trash2 aria-hidden="true" size={14} />,
+                    danger: true,
+                    separated: true,
+                    onSelect: props.onRemove,
+                  },
+                ]}
+              />
+            </span>
+          )
         }
       />
       {props.places && props.onMove ? (
@@ -291,12 +295,14 @@ export function Inspector(props: InspectorProps) {
         }))}
       />
       <DrawerPanel idPrefix={prefix} tab={current}>
-        <TabBody
-          tab={current}
-          env={env}
-          rowRules={props.rowRules}
-          onOpenRules={() => setTab("rules")}
-        />
+        <fieldset disabled={props.readOnly} className="m-0 min-w-0 border-0 p-0">
+          <TabBody
+            tab={current}
+            env={env}
+            rowRules={props.rowRules}
+            onOpenRules={() => setTab("rules")}
+          />
+        </fieldset>
       </DrawerPanel>
     </div>
   );

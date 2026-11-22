@@ -177,6 +177,23 @@ describe("a workspace's summary", () => {
   });
 });
 
+describe("who may edit what is built here", () => {
+  test("a tenant admin may in a dev workspace and not in production; a viewer may in neither", async () => {
+    const mine = await alice.get(`${ws()}/summary`);
+    expect(mine.body).toMatchObject({ mayAuthor: true, authorBlockedBy: null });
+    const inProduction = await alice.get(`${ws(prod)}/summary`);
+    expect(inProduction.body).toMatchObject({ mayAuthor: false, authorBlockedBy: "production" });
+    const viewer = await member("vera@acme.example", "viewer", { workspaceId: dev });
+    const theirs = await viewer.get(`${ws()}/summary`);
+    expect(theirs.status, JSON.stringify(theirs.body)).toBe(200);
+    expect(theirs.body).toMatchObject({ mayAuthor: false, authorBlockedBy: "permission" });
+    // Their draft read is refused in a sentence, not a phrase.
+    const draft = await viewer.get(`${ws()}/interfaces/none?draft=1`);
+    expect(draft.status).toBe(403);
+    expect(draft.body.detail).not.toMatch(/needs the to /);
+  });
+});
+
 describe("who uses what", () => {
   test("a connection is used by the script that declares it", async () => {
     const found = await alice.get(`${ws()}/references?kind=connection&name=erp`);
@@ -327,7 +344,7 @@ describe("a tenant's summary", () => {
       domainsToFix: 0,
       workersOnline: 0,
       operatorAccessActive: 0,
-      members: 2,
+      members: 3,
     });
   });
 });

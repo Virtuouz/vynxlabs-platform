@@ -17,6 +17,11 @@ export interface Reading {
    * page shows is a page of them. Resolves to what was read when nothing is waiting.
    */
   all: () => Promise<Readonly<Record<string, WireData>> | undefined>;
+  /** The page of a rows input after a cursor, without drawing it: for stepping past what is shown. */
+  readAfter: (
+    input: string,
+    cursor: string,
+  ) => Promise<{ rows: Record<string, unknown>[]; next?: string } | undefined>;
   /** Reads again. */
   retry: () => void;
   /** Each input as it was read: for the frame's Download, and its notices. */
@@ -216,6 +221,27 @@ export function useWidgetData({
     return whole;
   }, [client, inputs, asked]);
 
+  /**
+   * The rows after a cursor, for whoever steps past the ones loaded (a sheet's Next): read as the
+   * table reads them (same filters, rows chosen and order), and not added to what the widget shows.
+   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `asked` stands for the filters, order and widget
+  const readAfter = useCallback(
+    async (input: string, cursor: string) => {
+      const read = await client.read(widget.id, filterValues, {
+        input,
+        cursor,
+        ...(chosen ? { chosen } : {}),
+        ...(sortOf ? { sort: sortOf } : {}),
+      });
+      const next = read.inputs[input];
+      return next?.shape === "rows"
+        ? { rows: next.rows, ...(next.next !== undefined ? { next: next.next } : {}) }
+        : undefined;
+    },
+    [client, asked],
+  );
+
   const retry = useCallback(() => setAttempt((count) => count + 1), []);
   const retryMore = () => {
     const wire = more.input ? inputs?.[more.input] : undefined;
@@ -243,6 +269,7 @@ export function useWidgetData({
         : undefined,
     retry,
     all,
+    readAfter,
     read: inputs,
   };
 }

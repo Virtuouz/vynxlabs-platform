@@ -23,7 +23,7 @@ import {
   withData,
 } from "../kernel/data/rows.js";
 import { openSource, sourceFailure, sourceTable } from "../kernel/data/sources.js";
-import { badRequest, forbidden, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, forbidden, forbiddenBecause, HttpError, notFound } from "../kernel/errors.js";
 import { readConnection, readGroupMember } from "../kernel/execution/bindings.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { accessToken, isOAuthSettings } from "../kernel/execution/oauth.js";
@@ -427,7 +427,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           (task.kind !== "deliver" && task.kind !== "test-connection") ||
           typeof path !== "string"
         ) {
-          throw forbidden("a task about a connection");
+          throw forbiddenBecause("This task is not about a connection, so it may not ask for one.");
         }
         return boundConnection(
           task.tenant_id,
@@ -573,7 +573,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ worker, params, query }) => {
         const { run, body } = await pinned(worker, params.id, query.attempt);
         if (!body.uses.secrets.includes(params.name)) {
-          throw forbidden(`a declared use of the secret "${params.name}"`);
+          throw forbiddenBecause(`This needs a declared use of the secret "${params.name}".`);
         }
         const value = await revealSecret(db, kernel.vault, {
           tenantId: run.tenant_id,
@@ -601,7 +601,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const path = params["*"];
         const { run, body } = await pinned(worker, params.id, query.attempt);
         if (!body.uses.variables.includes(path)) {
-          throw forbidden(`a declared use of the variable "${path}"`);
+          throw forbiddenBecause(`This needs a declared use of the variable "${path}".`);
         }
         // The script names it as its bundle did. Its value is kept where it is now.
         const now = await pathNow(db, run.workspace_id, path, "variable");
@@ -648,7 +648,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const path = params["*"];
         const { run, may } = await pinned(worker, params.id, query.attempt);
         if (!may.connection(path)) {
-          throw forbidden(`a declared use of the connection "${path}"`);
+          throw forbiddenBecause(`This needs a declared use of the connection "${path}".`);
         }
         return boundConnection(
           run.tenant_id,
@@ -667,7 +667,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     ) => {
       const { run, body } = await pinned(worker, runId, attempt);
       if (!(body.uses.connectionGroups ?? []).includes(path)) {
-        throw forbidden(`a declared use of the connection group "${path}"`);
+        throw forbiddenBecause(`This needs a declared use of the connection group "${path}".`);
       }
       const now = await pathNow(db, run.workspace_id, path, "connection_group");
       const definition = await db
@@ -773,7 +773,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ worker, params, body }) => {
         const { run, may } = await pinned(worker, params.id, body.attempt);
         if (!may.event(body.event)) {
-          throw forbidden(`a declared use of the event "${body.event}"`);
+          throw forbiddenBecause(`This needs a declared use of the event "${body.event}".`);
         }
         const published = await db.transaction().execute((trx) =>
           publishEvent(kernel, trx, {
@@ -924,7 +924,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (body.source !== undefined) {
           const path = body.source;
           if (!(script.uses.sources ?? []).includes(path)) {
-            throw forbidden(`a declared use of the data source "${path}"`);
+            throw forbiddenBecause(`This needs a declared use of the data source "${path}".`);
           }
           try {
             const now = await pathNow(db, run.workspace_id, path, "data_source");
@@ -939,7 +939,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
 
         if (!may.table(body.table)) {
-          throw forbidden(`a declared use of the table "${body.table}"`);
+          throw forbiddenBecause(`This needs a declared use of the table "${body.table}".`);
         }
         const target = await describeTable(
           (await kernel.data.forTenant(run.tenant_id)).owner,

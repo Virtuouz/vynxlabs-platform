@@ -47,6 +47,7 @@ export function TilePicker<Value extends string>({
           return (
             <label
               key={option.value}
+              data-selected={on ? "" : undefined}
               className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-control border px-2 py-2 text-center text-body-sm ${ring} ${
                 option.disabled
                   ? "cursor-default border-dashed border-line text-ink-muted opacity-60"

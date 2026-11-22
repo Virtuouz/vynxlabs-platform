@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId } from "@volvel/db";
 import { Type } from "typebox";
-import { badRequest, conflict, forbidden, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { AnyObject, Id, iso, NoContent, Time } from "./shared.js";
@@ -39,7 +39,9 @@ const ViewName = Type.String({ minLength: 1, maxLength: 80 });
 /** Only a member keeps preferences: an API key or a service account has none. */
 function memberOf(ctx: RequestContext): string {
   if (ctx.principal.type !== "member" || !ctx.principal.id) {
-    throw forbidden("a member's own sign-in");
+    throw forbiddenBecause(
+      "Preferences belong to a member, so this needs that member's own sign-in.",
+    );
   }
   return ctx.principal.id;
 }

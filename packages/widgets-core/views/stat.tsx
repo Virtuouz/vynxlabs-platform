@@ -70,29 +70,40 @@ export function StatView(props: WidgetViewProps<StatConfig>) {
       >
         {formatNumber(value, config.format)}
       </span>
-      {against ? (
-        <span className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[12.5px] text-ink-muted">
-          {nothingBefore ? (
-            <span aria-hidden="true">Nothing in the period before</span>
-          ) : (
-            <>
-              <span
-                className={`inline-flex items-center gap-0.5 font-medium tabular-nums ${
-                  good === undefined ? "" : good ? "text-success" : "text-danger"
-                }`}
-              >
-                <Mark aria-hidden="true" size={14} />
-                <span aria-hidden="true">{against.short}</span>
-              </span>
-              <span aria-hidden="true">
-                {against.direction === "same"
+      {against || caption ? (
+        // One line, as the boards draw it: the change, then the caption. The caption wins the
+        // room; with none, the period is named there. The whole sentence is the tooltip.
+        <span
+          title={against?.text}
+          className="mt-1 flex min-w-0 items-center gap-x-1.5 text-[12.5px] text-ink-muted"
+        >
+          {against && !nothingBefore ? (
+            <span
+              className={`inline-flex shrink-0 items-center gap-0.5 font-medium tabular-nums ${
+                good === undefined ? "" : good ? "text-success" : "text-danger"
+              }`}
+            >
+              <Mark aria-hidden="true" size={14} />
+              <span aria-hidden="true">{against.short}</span>
+            </span>
+          ) : null}
+          <span
+            aria-hidden={against ? "true" : undefined}
+            className="min-w-0 truncate"
+            title={caption ?? undefined}
+          >
+            {caption ||
+              (nothingBefore
+                ? "Nothing in the period before"
+                : against?.direction === "same"
                   ? "same as the period before"
-                  : "vs the period before"}
-              </span>
-            </>
-          )}
-          {/* The sentence is read aloud here, once; the line above is its short form to look at. */}
-          <span className="sr-only">{against.text}</span>
+                  : "vs the period before")}
+          </span>
+          {against ? (
+            <span className="sr-only">
+              {caption ? against.text + ". " + caption : against.text}
+            </span>
+          ) : null}
         </span>
       ) : null}
       {line.length > 1 ? (
@@ -102,7 +113,6 @@ export function StatView(props: WidgetViewProps<StatConfig>) {
           className="my-1 text-action"
         />
       ) : null}
-      {caption ? <span className="mt-0.5 text-meta text-ink-muted">{caption}</span> : null}
     </div>
   );
 }

@@ -4,6 +4,7 @@
  */
 import type { DataInput, WidgetSource } from "@volvel/manifest";
 import { DrawerBlock, RadioCards, SegmentedControl, SelectField, ToggleRow } from "@volvel/ui";
+import { columnOptions } from "../controls.tsx";
 import { heading, withInput } from "../model.ts";
 import { FieldsList } from "./fieldsList.tsx";
 import { type Env, Group, LabelledBlock, setConfig } from "./recordShared.tsx";
@@ -139,6 +140,18 @@ export function DetailDisplaySection({ env }: { env: Env }) {
     <>
       <FieldsList env={env} kind="detail" />
       <Group label="Look">
+        <SelectField
+          name={`${env.widget.id}-figure`}
+          label="Big figure"
+          value={typeof env.config.figure === "string" ? env.config.figure : ""}
+          options={[
+            { value: "", label: "The first money field" },
+            ...columnOptions(env, "record", ["number", "integer"]),
+          ]}
+          onChange={(next) =>
+            setConfig(env, "figure", next === "" ? undefined : next, "big figure")
+          }
+        />
         <LabelledBlock label="Fields across">
           <SegmentedControl<"1" | "2" | "3">
             label="Fields across"

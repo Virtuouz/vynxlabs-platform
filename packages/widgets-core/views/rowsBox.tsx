@@ -23,7 +23,7 @@ export function endBetweenRows(
  * Rows say so with `data-box-row`. The room is what the widget's body has left over after what
  * else it holds (the buttons above, a "Show more" below).
  */
-export function RowsBox({ children }: { children: ReactNode }) {
+export function RowsBox({ label, children }: { label: string; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   const fit = useCallback(() => {
     const node = box.current;
@@ -31,6 +31,9 @@ export function RowsBox({ children }: { children: ReactNode }) {
     if (!node || !body) return;
     node.style.height = "";
     node.style.overflowY = "";
+    node.removeAttribute("tabindex");
+    node.removeAttribute("role");
+    node.removeAttribute("aria-label");
     const others = body.scrollHeight - node.offsetHeight;
     const room = body.clientHeight - others;
     const top = node.getBoundingClientRect().top - node.scrollTop;
@@ -41,8 +44,12 @@ export function RowsBox({ children }: { children: ReactNode }) {
     if (height !== undefined) {
       node.style.height = `${height}px`;
       node.style.overflowY = "auto";
+      // What scrolls is a stop for the keyboard (the arrow keys scroll it), and is named.
+      node.tabIndex = 0;
+      node.setAttribute("role", "region");
+      node.setAttribute("aria-label", label);
     }
-  }, []);
+  }, [label]);
   useEffect(() => {
     const node = box.current;
     const body = node?.parentElement;
@@ -54,7 +61,10 @@ export function RowsBox({ children }: { children: ReactNode }) {
   // Rows came, went or changed height: ended again between rows.
   useEffect(fit);
   return (
-    <div ref={box} className="min-w-0 shrink-0">
+    <div
+      ref={box}
+      className="min-w-0 shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
+    >
       {children}
     </div>
   );

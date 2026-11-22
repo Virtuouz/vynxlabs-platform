@@ -375,7 +375,7 @@ export function TableView(props: WithSelected<TableConfig>) {
     <>
       <TableButtons buttons={buttons} props={props} />
       {bar}
-      <RowsBox>
+      <RowsBox label={`${props.title ?? "Rows"} rows`}>
         {/* table-allowed: a widget's rows are drawn by its view, which the page owns; the kit's grid is for editing data */}
         <table className="w-full border-collapse text-left text-[13.5px]">
           <thead>

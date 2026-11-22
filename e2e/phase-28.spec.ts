@@ -865,7 +865,9 @@ test("POLISH-004: Pivot: a measure, rows and columns are written, drawn as a gri
         .getByRole("cell")
         .allTextContents()
     ).map((one) => one.trim());
-  expect(await cells("northside")).toEqual(expect.arrayContaining(["1"]));
+  // The grid is drawn at once now (a new Pivot starts with two breakdowns), so the walk's own
+  // counts are waited for, not read at the first sight of the row.
+  await expect.poll(() => cells("northside")).toEqual(expect.arrayContaining(["1"]));
   await tabOf("Display").click();
   await flip("Shade cells by size").check();
   const saved = (await settle("charts", "blank", added.id, (one) =>
@@ -2371,7 +2373,8 @@ test("Acceptance, invoices: a table of invoices, a click that opens the record, 
   await modal.getByRole("textbox", { name: "Number" }).fill(number);
   await modal.getByRole("textbox", { name: "Client code" }).fill(`CZ${stamp.toUpperCase()}NEW`);
   await modal.getByRole("textbox", { name: "Clinic" }).fill("northside");
-  await modal.getByRole("spinbutton", { name: "Total" }).fill("4200");
+  // Money kept in cents is typed as money: 42.00 is the 4200 cents the row keeps.
+  await modal.getByRole("textbox", { name: "Total" }).fill("42.00");
   await modal.getByRole("textbox", { name: "Status" }).fill("unpaid");
   await modal.getByLabel("Issued on").fill(day(0));
   await modal.getByRole("button", { name: "Create invoice" }).click();

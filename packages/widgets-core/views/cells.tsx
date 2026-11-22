@@ -139,9 +139,14 @@ const IDENTIFYING = [
 export function defaultColumns<T extends { name: string; type: string }>(
   columns: readonly T[],
 ): T[] {
+  // What a row is about is named in a column of its own (`pet_name`, `client_name`): after the
+  // columns that name the row itself, before the status and the date.
+  const about = IDENTIFYING.indexOf("reference") - 0.5;
   const rank = (column: T) => {
-    const at = IDENTIFYING.indexOf(column.name.toLowerCase());
-    return at === -1 ? IDENTIFYING.length : at;
+    const name = column.name.toLowerCase();
+    const at = IDENTIFYING.indexOf(name);
+    if (at !== -1) return at;
+    return /_(name|title)$/.test(name) ? about : IDENTIFYING.length;
   };
   return columns
     .filter(isDefaultColumn)

@@ -75,7 +75,7 @@ export function ListView(props: WithSelected<ListConfig>) {
   const cards = config.look === "cards";
   return (
     <>
-      <RowsBox>
+      <RowsBox label={`${props.title ?? "Rows"} rows`}>
         <ul
           className={
             cards

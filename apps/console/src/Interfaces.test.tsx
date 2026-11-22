@@ -267,7 +267,10 @@ test("widgets are added and removed, and what is wrong is said before anything c
   fireEvent.click(await settings.findByRole("tab", { name: /^Display/ }));
   // The heading says what the title is now: written in place, on the chart's drawer.
   expect(await settings.findByRole("textbox", { name: "Title" })).toBeTruthy();
-  await screen.findByText("Chart on Sales: a chart needs a shape.", undefined, { timeout: 4000 });
+  // What is wrong is counted beside the name, and listed when it is opened.
+  fireEvent.click(await screen.findByRole("button", { name: "1 to fix" }, { timeout: 4000 }));
+  expect(await screen.findByText("Chart on Sales: a chart needs a shape.")).toBeTruthy();
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
   expect((screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement).disabled).toBe(
     true,
   );

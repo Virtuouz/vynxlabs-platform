@@ -1068,11 +1068,13 @@ test("POLISH-004: Action group: its buttons are rows with their own settings, li
   );
   // A button with nothing to do keeps the page from being published, and the page says why in
   // its own words, not in the schema's.
-  await expect(owner.getByText(/To fix before it can be published/)).toBeVisible();
+  await owner.getByRole("button", { name: /to fix$/ }).click();
+  await expect(owner.getByText(/has no steps yet/).first()).toBeVisible();
   await expect(
     owner.getByText(/must NOT have fewer than/),
     "the reason is in words, not the schema's",
   ).toHaveCount(0);
+  await owner.keyboard.press("Escape");
   await choose(settings().getByRole("group", { name: "Line up" }), "Spread").click();
   const saved = (await settle("layout", "blank", added.id, (one) =>
     one.config?.lineUp === "spread" ? one : undefined,
@@ -1410,8 +1412,9 @@ test("POLISH-010: the publish check blocks what cannot work, says why, passes on
   await expect(draftPill()).toBeVisible();
   // A chart with nothing to read cannot be saved as it is: Publish is off, and the page says why.
   await expect(publishButton().first()).toBeDisabled();
-  await expect(owner.getByText(/To fix before it can be published/)).toBeVisible();
+  await owner.getByRole("button", { name: /to fix$/ }).click();
   await expect(owner.getByText(/Chart needs a source to show/)).toBeVisible();
+  await owner.keyboard.press("Escape");
   // Fixed: it reads the invoices. Now every check passes and the changes are listed.
   await chooseSource("Invoices");
   // A row action with no steps is another thing the check stops: its action is not complete.

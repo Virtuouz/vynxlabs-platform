@@ -1,5 +1,14 @@
 import { Button, Menu, Popover, Tooltip } from "@volvel/ui";
-import { ChevronDown, Eye, Monitor, Pencil, Play, Smartphone, Tablet } from "lucide-react";
+import {
+  ChevronDown,
+  Eye,
+  Monitor,
+  Pencil,
+  Play,
+  Smartphone,
+  Tablet,
+  TriangleAlert,
+} from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
 /** The sizes the preview can be drawn at. */
@@ -84,6 +93,34 @@ export function DraftPill({ count, onOpen }: { count: number | undefined; onOpen
         ? "Draft changes"
         : `${count} draft ${count === 1 ? "change" : "changes"}`}
     </button>
+  );
+}
+
+/**
+ * "2 to fix": what keeps the app from being published, beside its name, as a pill that opens the
+ * list. The workbench does not move, and nothing is covered, when something needs fixing.
+ */
+export function FixPill({ words }: { words: readonly string[] }) {
+  if (words.length === 0) return null;
+  return (
+    <Popover
+      title="To fix before it can be published"
+      trigger={
+        <button
+          type="button"
+          className="inline-flex h-7 items-center gap-1.5 rounded-full border border-danger bg-danger-soft px-3 text-meta text-ink hover:brightness-95"
+        >
+          <TriangleAlert aria-hidden="true" size={14} className="text-danger" />
+          {words.length} to fix
+        </button>
+      }
+    >
+      <ul className="m-0 flex list-none flex-col gap-2 p-0 text-body-sm">
+        {words.map((one) => (
+          <li key={one}>{one}</li>
+        ))}
+      </ul>
+    </Popover>
   );
 }
 

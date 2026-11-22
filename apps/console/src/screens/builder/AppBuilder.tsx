@@ -9,6 +9,7 @@ import { heading } from "../../kit/inspector/model.ts";
 import {
   DeviceSwitch,
   DraftPill,
+  FixPill,
   PreviewButton,
   PublishSplit,
   VIEW_AS_ME,
@@ -391,10 +392,16 @@ export function AppBuilder({
             "title",
           ),
     // Beside the name whenever something is waiting; with the count once it is known. Nothing waiting is quiet words ("Published.").
-    pill:
-      !readOnly && (changes || (changes === undefined && hasChanges)) ? (
-        <DraftPill count={changes} onOpen={() => void review()} />
-      ) : null,
+    pill: readOnly ? null : (
+      <span className="inline-flex items-center gap-1.5">
+        {changes || (changes === undefined && hasChanges) ? (
+          <span className="max-md:hidden">
+            <DraftPill count={changes} onOpen={() => void review()} />
+          </span>
+        ) : null}
+        <FixPill words={problems.map((problem) => `${problemWords(problem, body)}.`)} />
+      </span>
+    ),
     tools: (
       <>
         <DeviceSwitch value={viewport} onChange={setViewport} />
@@ -497,24 +504,6 @@ export function AppBuilder({
         ) : null}
       </>
     ),
-    // Over the top of the panes, not between them and the toolbar: the workbench does not move
-    // when something needs fixing.
-    banner:
-      problems.length > 0 ? (
-        <Notice tone="attention">
-          <details open>
-            <summary className="cursor-pointer">
-              <strong>To fix before it can be published:</strong> {problems.length}{" "}
-              {problems.length === 1 ? "thing" : "things"}
-            </summary>
-            <ul className="mt-1 mb-0 pl-5">
-              {problems.map((problem) => (
-                <li key={`${problem.path} ${problem.message}`}>{problemWords(problem, body)}.</li>
-              ))}
-            </ul>
-          </details>
-        </Notice>
-      ) : null,
   };
 
   return (

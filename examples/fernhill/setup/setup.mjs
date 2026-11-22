@@ -835,6 +835,7 @@ const demo = {
     frontDesk: `${URL_}/apps/${SLUG}/clinics/front-desk/`,
     petPortal: `${URL_}/apps/${SLUG}/clinics/pet-portal/`,
     performance: `${URL_}/apps/${SLUG}/clinics/performance/`,
+    operations: `${URL_}/apps/${SLUG}/clinics/operations/`,
     portal: `${URL_}/portal/${SLUG}/`,
     oneHostname: `${URL_.replace("localhost", "fernhill.localhost")}/`,
   },

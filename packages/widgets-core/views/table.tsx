@@ -526,6 +526,8 @@ export function TableView(props: WithSelected<TableConfig>) {
                       } ${
                         // A number, a date or a code is never broken across lines ("INV-" and "9338").
                         typeof row[spec.column] === "number" ||
+                        info?.type === "timestamp" ||
+                        info?.type === "date" ||
                         (
                           typeof row[spec.column] === "string" &&
                             (row[spec.column] as string).length <= 20

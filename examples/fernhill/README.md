@@ -129,7 +129,7 @@ The app is one `defineInterface` in `src/operations.ts`: 6 pages in the menu and
 | Text, every look: plain, note, warning, tip | Callbacks (plain), Money (note), the Hilltop, invoice and pet banners (warning), Today (tip) |
 | Markdown components: alert, steps, tabs, details, term, kbd, field | Money (an alert for managers, `:term` for status), Today (steps and kbd in the tip; "About this app": tabs, a fold, `::field`) |
 | Button: `tone`, `icon`, `full`, `place` | Callbacks (Add a callback, main, right), Pet (Take a visit request, full) |
-| Action group: `lineUp` left / right / spread, `showUpTo` with the rest under ⋯, `place`, icons, tones | Today (spread, four buttons, one under ⋯), Stock (right), Invoice and Visit sheets (left) |
+| Action group: `lineUp` left / right, `showUpTo` with the rest under ⋯, `place`, icons, tones | Today (left, four buttons, one under ⋯), Stock (right), Invoice and Visit sheets (left) |
 | Record detail: `heading`, `status`, `statusBadges`, `figure`, sections, `across` 1 / 2 / 3, `edit` in place, `actions` | Invoice sheet (figure, badges), Visit sheet, Pet (3 across, edit in place), Callbacks (the chosen row, with its own action), Owner (1 across) |
 | Form, create and edit: sections, `help`, `required`, `initial` today and a fixed value, `submitLabel`, a submit with steps | New invoice, Edit invoice, Take a visit request (today, required), Add a callback (a fixed value), Pet ("Update the record") |
 | Section: `look` card and plain, `folds`, `folded`, a subtitle | Today (Right now, card, folds), Stock (Orders to VetSupply, starts folded) |
@@ -175,6 +175,7 @@ The app is one `defineInterface` in `src/operations.ts`: 6 pages in the menu and
 
 ### Left out, and why
 
+- Action group `lineUp: "spread"`: across a page twelve columns wide its buttons are too far apart to read as one toolbar.
 - **Form steps (a wizard).** The Form widget has no steps: sections are its only grouping.
 - **`initial: me`** (a field starting as the person filling it in). It needs a text column that holds a person, and no Fernhill table has one. Adding a column only to show it was not worth it.
 - **The `own` source** (the user's own row, by email). It is for end users, and this app is for members, who are not clients. `screens/my-account` ("My details") uses it.

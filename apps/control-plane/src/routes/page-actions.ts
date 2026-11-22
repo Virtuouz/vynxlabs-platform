@@ -65,6 +65,9 @@ export function pageActionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               made: Type.Optional(Type.Object({ table: Type.String(), id: Type.String() })),
               message: Type.Optional(Type.String()),
               changed: Type.Optional(Type.Integer()),
+              started: Type.Optional(
+                Type.Integer({ description: "How many scripts and workflows it started." }),
+              ),
             }),
           },
         },

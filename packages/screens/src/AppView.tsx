@@ -1,7 +1,7 @@
 import type { ActingUser, Page } from "@volvel/manifest";
 import { filtersOf } from "@volvel/manifest/parts";
 import { Button, Closing, Dialog, pageIconOf, SideSheet, Tabs } from "@volvel/ui";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useRef, useState } from "react";
 import type { NavigateTo } from "./actions.tsx";
 import { filtersFromSearch, searchWithFilters } from "./filterAddress.ts";
 import { overlayWidth } from "./layout.ts";
@@ -157,6 +157,10 @@ export function AppView({
     />
   );
   const drawn = open ? draw(open, open.kind === "record" ? address.record : undefined) : null;
+  // A record page goes back to the page of the menu it was opened from; by a link, to the first.
+  const cameFrom = useRef<string>(undefined);
+  if (open && inMenu(open)) cameFrom.current = open.id;
+  const back = menu.find((one) => one.id === cameFrom.current) ?? menu[0];
   const sheet = address.sheet ? pages.find((one) => one.id === address.sheet?.page) : undefined;
   const modal = address.modal ? pages.find((one) => one.id === address.modal?.page) : undefined;
   return (
@@ -166,14 +170,14 @@ export function AppView({
       ) : open && !inMenu(open) ? (
         // A record page is not in the menu: it is a page of its own, with a way back to the menu.
         <>
-          {menu[0] ? (
+          {back ? (
             <div>
               <Button
                 size="small"
                 variant="quiet"
-                onClick={() => go({ page: menu[0]?.id ?? "", as: "page" })}
+                onClick={() => go({ page: back.id, as: "page" })}
               >
-                Back to {menu[0].title}
+                Back to {back.title}
               </Button>
             </div>
           ) : null}

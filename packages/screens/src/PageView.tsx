@@ -184,6 +184,8 @@ type Editing = NonNullable<PageViewProps["editing"]>;
 
 /** The room a page is given, below which its widgets stack in reading order: 42rem, as the stylesheet says. */
 const NARROW_REM = 42;
+/** The room below which a served page is laid out as its tablet's: a tablet held upright, and no laptop. */
+const TABLET_REM = 58;
 /** A container with less room than this stacks what it holds, whatever the page does (Tailwind's `@md`). */
 const INNER_NARROW_REM = 28;
 
@@ -224,6 +226,8 @@ interface GridContext {
   emptyMessage: string;
   /** A way out of the filters that leave nothing, when some narrow what is read. */
   offer: { label: string; run: () => void } | undefined;
+  /** The filters that hold a value now, by name. */
+  holding: ReadonlySet<string>;
   /** Where each widget that is empty is drawn, so that the page makes its offer once. */
   emptied: ReadonlySet<string>;
   /** The widget that is empty now and is first on the page. */
@@ -422,6 +426,10 @@ function Cell({
   const chosenAsked = Object.fromEntries(
     follows.flatMap((id) => (ctx.chosen[id] !== undefined ? [[id, ctx.chosen[id]]] : [])),
   ) as Record<string, string>;
+  // Filters it does not follow are not why it is empty.
+  const filtered = Object.values(widget.data ?? {}).some((given) =>
+    given.filters?.some((one) => ctx.holding.has(one.filter)),
+  );
   const reading = useWidgetData({
     client,
     widget,
@@ -432,12 +440,14 @@ function Cell({
     // A table says what it says when empty, in the words its maker chose; filters that narrow
     // what it reads are said first (what was searched for, or the filters).
     emptyMessage:
-      !ctx.offer &&
+      !(ctx.offer && filtered) &&
       widget.type === "core/table" &&
       typeof widget.config?.empty === "string" &&
       widget.config.empty
         ? widget.config.empty
-        : emptyMessage,
+        : filtered
+          ? emptyMessage
+          : "There is nothing here yet.",
     chosen: Object.keys(chosenAsked).length > 0 ? chosenAsked : undefined,
     kept: ctx.kept,
   });
@@ -497,6 +507,11 @@ function Cell({
   // A record the widget read (a Record detail's) is found too, and the page's own record:
   // a confirmation names what it is about ("Mark INV-9339 as paid?").
   const recordRead = Object.values(reading.read ?? {}).find((wire) => wire.shape === "record");
+  // It follows the row chosen in a table, and none is.
+  const unchosen =
+    recordRead?.shape === "record" && recordRead.record === null
+      ? follows.find((id) => ctx.chosen[id] === undefined)
+      : undefined;
   const lookup = (id: string) =>
     rowsRead?.rows.find((row) => row.id === id) ??
     (recordRead?.shape === "record" && recordRead.record?.id === id
@@ -651,9 +666,9 @@ function Cell({
         container={container}
         flat={flat}
         opens={opens}
-        offer={ctx.offerAt === widget.id ? ctx.offer : undefined}
-        quiet={ctx.emptied.size > 1 && ctx.offerAt !== widget.id}
-        onEmpty={(empty) => ctx.reportEmpty(widget.id, empty)}
+        offer={ctx.offerAt === widget.id && filtered ? ctx.offer : undefined}
+        quiet={filtered && ctx.emptied.size > 1 && ctx.offerAt !== widget.id}
+        onEmpty={(empty) => ctx.reportEmpty(widget.id, empty && filtered)}
       >
         {noRecord ? (
           <p className="m-0 text-ink-muted">
@@ -664,6 +679,10 @@ function Cell({
         ) : waiting ? (
           <p className="m-0 text-ink-muted">
             {building ? "Choose what it shows in Data." : "Nothing is set up here yet."}
+          </p>
+        ) : unchosen !== undefined ? (
+          <p className="m-0 text-ink-muted">
+            {`Choose a row in ${ctx.nameOf(unchosen)} to see it here.`}
           </p>
         ) : View ? (
           <Measured
@@ -790,7 +809,8 @@ function Cell({
         <span
           data-seen-by=""
           // On the top edge, as a label on it, so that it is not over the widget's own heading or its chip.
-          className="pointer-events-none absolute top-0 left-3 layer-sticky -translate-y-1/2 rounded-inner border border-line bg-surface px-1.5 text-meta leading-4 text-ink-muted"
+          className="pointer-events-none absolute top-0 left-3 layer-sticky max-w-[calc(100%-1.5rem)] -translate-y-1/2 truncate rounded-inner border border-line bg-surface px-1.5 text-meta leading-4 text-ink-muted"
+          title={seenByTag(widget.rules, ctx.groupNames)}
         >
           {seenByTag(widget.rules, ctx.groupNames)}
         </span>
@@ -1178,7 +1198,13 @@ export function PageView({
   editing,
 }: PageViewProps) {
   // The tablet draws each widget where its own layout puts it; what is changed there is written back as that layout.
-  const widgets = useMemo(() => (device === "tablet" ? onTablet(given) : given), [given, device]);
+  // Served, the page is a tablet's while it has a tablet's room; a sheet or a modal is not a screen.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const narrow = useNarrow(gridRef);
+  const tabletRoom = useNarrow(gridRef, TABLET_REM);
+  const asTablet =
+    device === "tablet" || (device === undefined && !editing && !over && tabletRoom && !narrow);
+  const widgets = useMemo(() => (asTablet ? onTablet(given) : given), [given, asTablet]);
   // Building as a group: who the page is judged for. Rows are still the builder's.
   const viewUser = useMemo<ActingUser | undefined>(
     () =>
@@ -1346,7 +1372,6 @@ export function PageView({
     kept.current = new Map();
   }
 
-  const gridRef = useRef<HTMLDivElement>(null);
   // Every change the page makes to its widgets: containers kept as tall as what they hold.
   const change = (next: PageWidget[], label: string, pin?: string) => {
     if (!editing || editing.readOnly) return;
@@ -1478,8 +1503,6 @@ export function PageView({
     editing.onSelect(made.copy.id);
     setTold(`${name(id)} is copied.`);
   };
-
-  const narrow = useNarrow(gridRef);
 
   // Where everything is drawn: while something is held or carried, where it would all be
   // if it were let go now, so what is in the way is seen to move aside as it travels. What is
@@ -1686,6 +1709,7 @@ export function PageView({
     refreshKey: refreshKey + ran,
     emptyMessage,
     offer,
+    holding: new Set(filters.filter(holding).map((one) => one.name)),
     emptied,
     offerAt,
     reportEmpty: (id, empty) =>

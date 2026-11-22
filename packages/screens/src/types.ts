@@ -62,6 +62,8 @@ export interface ActResponse {
   client: Step[];
   made?: { table: string; id: string };
   message?: string;
+  /** How many scripts and workflows it started: what they change comes after the answer. */
+  started?: number;
 }
 
 /**

@@ -122,6 +122,16 @@ const table: PageWidget = {
     ],
   },
 };
+/** The table, following the page's filters. */
+const following: PageWidget = {
+  ...table,
+  data: {
+    rows: {
+      source: { visual: { table: "invoices" } },
+      filters: ["q", "range", "month"].map((filter) => ({ filter, column: "number" })),
+    },
+  },
+};
 
 /** A client that answers each widget from a table of wire data, and remembers what it was asked. */
 function clientOf(
@@ -466,11 +476,25 @@ describe("the frame", () => {
     // One that holds a value does, and the person is offered to take it off.
     const filters: PageFilter[] = [{ name: "q", type: "text", label: "Search", default: "zzz" }];
     render(
-      <Page client={clientOf({ invoices: { rows: none } })} widgets={[table]} filters={filters} />,
+      <Page
+        client={clientOf({ invoices: { rows: none } })}
+        widgets={[following]}
+        filters={filters}
+      />,
     );
     expect(await screen.findByText("Nothing matches the filters.")).toBeTruthy();
     // They are how they start: what is left is to take them off.
     expect(await screen.findByRole("button", { name: "Show everything" })).toBeTruthy();
+  });
+
+  test("a widget that follows none of the filters is not empty because of them", async () => {
+    const none: WireData = patched(rowsInput, { rows: [] });
+    const filters: PageFilter[] = [{ name: "q", type: "text", label: "Search", default: "zzz" }];
+    render(
+      <Page client={clientOf({ invoices: { rows: none } })} widgets={[table]} filters={filters} />,
+    );
+    expect(await screen.findByText("There is nothing here yet.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show everything" })).toBeNull();
   });
 
   test("an empty search says the words searched; Clear filters puts back how the page starts", async () => {
@@ -492,7 +516,7 @@ describe("the frame", () => {
             seen.push(next);
             setValues(next);
           }}
-          widgets={[table]}
+          widgets={[following]}
         />
       );
     };
@@ -519,7 +543,7 @@ describe("the frame", () => {
         onFilterValues={(next) => {
           latest = next;
         }}
-        widgets={[table]}
+        widgets={[following]}
       />,
     );
     fireEvent.click(await screen.findByRole("button", { name: "Clear filters" }));

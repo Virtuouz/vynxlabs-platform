@@ -1,6 +1,7 @@
 import {
   type CSSProperties,
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
   type RefObject,
   useCallback,
@@ -62,6 +63,7 @@ export interface UseSortable<E extends HTMLElement = HTMLUListElement> {
     onPointerMove: (event: PointerEvent<HTMLElement>) => void;
     onPointerUp: (event: PointerEvent<HTMLElement>) => void;
     onPointerCancel: (event: PointerEvent<HTMLElement>) => void;
+    onClickCapture: (event: MouseEvent<HTMLElement>) => void;
     onKeyDown: (event: KeyboardEvent) => void;
     style: CSSProperties;
   };
@@ -110,6 +112,7 @@ export function useSortable<E extends HTMLElement = HTMLUListElement>({
     startScroll: 0,
     scroller: undefined as Element | undefined,
   });
+  const pressedAt = useRef(0);
   const refocus = useRef<{ id: string; handle: boolean } | undefined>(undefined);
   const frame = useRef(0);
   const dragRef = useRef<Drag | undefined>(undefined);
@@ -363,13 +366,22 @@ export function useSortable<E extends HTMLElement = HTMLUListElement>({
     },
     handle: (id) => ({
       "data-handle": "" as const,
-      onPointerDown: (event) => start(event, id),
+      onPointerDown: (event) => {
+        pressedAt.current = event.clientY;
+        start(event, id);
+      },
       onPointerMove: over,
       onPointerUp: (event) => {
         event.currentTarget.releasePointerCapture?.(event.pointerId);
         finish("place");
       },
       onPointerCancel: () => finish("back"),
+      // A drag that ends over its handle is not a press of it.
+      onClickCapture: (event) => {
+        if (Math.abs(event.clientY - pressedAt.current) < 4) return;
+        event.preventDefault();
+        event.stopPropagation();
+      },
       onKeyDown: (event) => nudge(event, id, true),
       style: { touchAction: "none", userSelect: "none" },
     }),

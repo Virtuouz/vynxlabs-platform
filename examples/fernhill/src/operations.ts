@@ -432,9 +432,9 @@ export const operations = defineInterface({
           type: "core/actions",
           at: at(0, 13, 12, 1),
           config: {
-            lineUp: "spread",
+            lineUp: "left",
             showUpTo: 3,
-            place: "middle-center",
+            place: "middle-left",
             actions: [
               {
                 id: "day-sheet",
@@ -592,7 +592,7 @@ export const operations = defineInterface({
           id: "about",
           type: "core/text",
           title: "About this app",
-          at: at(0, 29, 12, 6),
+          at: at(0, 29, 12, 4),
           config: {
             text: ':::tabs\n::::tab{label="For managers"}\nMoney shows what is invoiced and unpaid. **Stock** has the orders waiting for you. Press :term[status]{table=invoices column=status} on an invoice to see what it means.\n::::\n::::tab{label="For the front desk"}\nCheck visits in from **Today**. Booking is done in the Front desk app.\n::::\n:::\n\n:::details{summary="What does a column\'s type mean?"}\n::field{path=table.columns.*.type}\n:::',
           },

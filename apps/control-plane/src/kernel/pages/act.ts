@@ -651,6 +651,7 @@ export async function runAction(
     client,
     ...(events ? { changed: changes.length === 0 ? 0 : rounds.length } : {}),
     ...(made ? { made } : {}),
+    ...(starts.length > 0 ? { started: starts.length } : {}),
     ...(!said && action.done ? { message: action.done } : {}),
   };
 }

@@ -274,6 +274,13 @@ export function useActions(host: ActionsHost): {
   // Whether the address has been told of the question that is open: the address leaving it
   // (Back) then closes it, as a sheet is closed.
   const told = useRef<string | undefined>(undefined);
+  const later = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(
+    () => () => {
+      for (const timer of later.current) clearTimeout(timer);
+    },
+    [],
+  );
   const toasted = useRef(toast);
   toasted.current = toast;
 
@@ -334,6 +341,11 @@ export function useActions(host: ActionsHost): {
       const closing = response.message ?? action.done;
       if (!said && closing) say(closing);
       now.refresh();
+      // A script or a workflow is started and not waited for: what it changes is read as it lands.
+      if (response.started) {
+        for (const wait of AFTER_A_START)
+          later.current.push(setTimeout(() => latest.current.refresh(), wait));
+      }
     },
     [say],
   );
@@ -569,6 +581,9 @@ const groupWords = (group: Row) =>
   Object.entries(group)
     .map(([, value]) => String(value ?? "none"))
     .join(", ");
+
+/** When the page reads again after an action started something, in milliseconds. */
+const AFTER_A_START = [1_000, 3_000, 8_000];
 
 /** The rows behind one number or point, in a side sheet, drawn by the registry's table. */
 function RowsBehind({

@@ -170,6 +170,7 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ...(query.record !== undefined ? { record: query.record } : {}),
           ...(behind ? { behind } : {}),
           ...(chosen ? { chosen } : {}),
+          ...(query.draft === "1" || query.draft === "true" ? { draft: true } : {}),
           widgets,
         });
         return { inputs: inputs as unknown as Record<string, Record<string, unknown>> };

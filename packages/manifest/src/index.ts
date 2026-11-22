@@ -194,6 +194,8 @@ export {
   type WidgetLayout,
   type WidgetPlace,
   type WidgetSource,
+  flowsWithoutApprovals,
+  widgetFlows,
   widgetQueries,
   widgetRegistry,
   widgetTables,

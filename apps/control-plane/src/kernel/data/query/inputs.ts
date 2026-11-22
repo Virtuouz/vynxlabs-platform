@@ -15,6 +15,7 @@ import type { ColumnInfo, DataInputDeclaration } from "@volvel/widgets";
 import { badRequest, forbidden, HttpError, notFound } from "../../errors.js";
 import type { RequestContext } from "../../http.js";
 import type { Kernel } from "../../kernel.js";
+import { type ApprovalsWire, readApprovals } from "../../pages/approvals.js";
 import { principalEmail } from "../../pages/who.js";
 import {
   describeTable,
@@ -76,6 +77,7 @@ export type WireData =
       trend?: { at: string; value: number }[];
       followed?: { names: string; now: string };
     }
+  | ApprovalsWire
   | {
       shape: "record";
       columns: ColumnInfo[];
@@ -116,6 +118,8 @@ export interface ReadRequest {
   widgets?: readonly PageWidget[];
   /** The row chosen in each table or list of the page, by the widget's ID: a record id. */
   chosen?: Record<string, string>;
+  /** The page is read as a draft, by someone who may edit it. */
+  draft?: boolean;
 }
 
 /** A condition no row meets: no row has an empty `id`. */
@@ -575,6 +579,19 @@ export async function readWidget(
     if ("sql" in input.source && request.surface === "app") {
       throw badRequest("SQL is written on dashboards, not on an app's page.");
     }
+    // The approvals of the workspace's flows: not a table. Read for a member, by their own standing.
+    if ("approvals" in input.source) {
+      if (declared.shape !== "approvals") {
+        throw badRequest(`${definition.title} takes no approvals as "${name}".`);
+      }
+      if (request.surface !== "app") throw badRequest("Approvals are decided in an app.");
+      out[name] = await readApprovals(kernel, ctx, {
+        at,
+        widget,
+        draft: request.draft === true,
+      });
+      continue;
+    }
     // The record the page is open on, as a table to read.
     const ofThisRecord = "record" in input.source;
     let recordId = request.record;
@@ -818,6 +835,7 @@ export async function readWidget(
       }
       continue;
     }
+    if (declared.shape === "approvals") throw badRequest("An approvals input has no table to read.");
     const asked = await inputQuery(kernel, at, input, page, { shape: declared.shape });
     const size = declared.shape === "record" ? 1 : ROWS_PAGE;
     const result = await run(asked, { limit: size, offset }).catch((error) => {

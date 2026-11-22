@@ -41,11 +41,13 @@ export {
   without,
 } from "./layout.ts";
 export {
+  allAutomatic,
   automaticAt,
   backToAutomatic,
   changedByHand,
   type Device,
   hiddenOnPhone,
+  movedAside,
   onTablet,
   phoneMoved,
   phoneOrder,

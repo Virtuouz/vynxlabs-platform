@@ -73,11 +73,13 @@ import {
 } from "./records.ts";
 import { definitionOf, views } from "./registry.ts";
 import {
+  allAutomatic,
   automaticAt,
   type Box,
   type CarryRequest,
   changedByHand,
   type FilterValues,
+  movedAside,
   PageView,
   placed,
 } from "./renderer.ts";
@@ -620,7 +622,16 @@ export function PageEditor({
         <SampleBar page={pageInfo.page} sample={sample} onChoose={pageInfo.onRecord} />
       ) : null}
       {device !== "desktop" && !overlay ? (
-        <DeviceBanner device={device} changed={changedByHand(widgets, device)} />
+        <DeviceBanner
+          device={device}
+          changed={changedByHand(widgets, device)}
+          {...(device === "tablet" ? { aside: movedAside(widgets) } : {})}
+          onAutomatic={
+            readOnly
+              ? undefined
+              : () => put(allAutomatic(widgets, device), `making the ${device} layout automatic`)
+          }
+        />
       ) : null}
       {layout?.viewAs ? <ViewAsNote name={layout.viewAs.name} /> : null}
       {(() => {

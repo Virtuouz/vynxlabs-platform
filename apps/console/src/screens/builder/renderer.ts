@@ -14,9 +14,11 @@ export type {
   WireData,
 } from "@volvel/screens";
 export {
+  allAutomatic,
   automaticAt,
   changedByHand,
   fitContainers,
+  movedAside,
   PageView,
   placed,
   viewRegistry,

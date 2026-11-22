@@ -5,10 +5,12 @@ import type { PageWidget } from "@volvel/manifest";
 import { corePack } from "@volvel/widgets-core/views";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
+  allAutomatic,
   backToAutomatic,
   changedByHand,
   hiddenOnPhone,
   intoTablet,
+  movedAside,
   onTablet,
   phoneMoved,
   phoneOrder,
@@ -119,6 +121,50 @@ describe("the rules a phone follows", () => {
     // Not moved: as it was, tablet place and all.
     expect(written[1]?.at).toEqual(own.at);
     expect(written[1]?.layout?.tablet?.at).toEqual(box(6, 2, 6, 2));
+  });
+});
+
+describe("one drag on the tablet", () => {
+  const a = note("a", box(0, 0, 4, 2));
+  const b = note("b", box(4, 0, 4, 2));
+  const c = note("c", box(8, 0, 4, 2));
+
+  test("only the widget that was moved is by hand; what lay in its way is drawn aside, not written", () => {
+    const drawn = onTablet([a, b, c]);
+    // `a` is dragged onto `b`'s place, and the page made room by pushing `b` down.
+    const after = drawn.map((w) =>
+      w.id === "a"
+        ? { ...w, at: box(4, 0, 4, 2) }
+        : w.id === "b"
+          ? { ...w, at: box(4, 2, 4, 2) }
+          : w,
+    );
+    const written = intoTablet([a, b, c], drawn, after, "a");
+    expect(changedByHand(written, "tablet")).toBe(1);
+    expect(written[0]?.layout?.tablet?.at).toEqual(box(4, 0, 4, 2));
+    expect(written[1]?.layout).toBeUndefined();
+    // Drawn again, `b` is pushed off `a` for lying on it, and that is said as moved aside.
+    expect(onTablet(written)[1]?.at).toEqual(box(4, 2, 4, 2));
+    expect(movedAside(written)).toBe(1);
+    // Automatic on the dragged one puts everything back.
+    const back = backToAutomatic(written, "a", "tablet");
+    expect(changedByHand(back, "tablet")).toBe(0);
+    expect(movedAside(back)).toBe(0);
+    expect(onTablet(back).map((w) => w.at)).toEqual([a.at, b.at, c.at]);
+  });
+
+  test("All automatic takes back every place of its own on the device", () => {
+    const set = [
+      { ...a, layout: { tablet: { at: box(0, 4, 4, 2) } } },
+      { ...b, layout: { phone: { at: box(0, 1, 12, 2) }, narrow: "hide" as const, priority: 2 } },
+      c,
+    ];
+    expect(changedByHand(allAutomatic(set, "tablet"), "tablet")).toBe(0);
+    const phone = allAutomatic(set, "phone");
+    expect(changedByHand(phone, "phone")).toBe(0);
+    expect(phone[1]?.layout).toBeUndefined();
+    // The tablet's place is not the phone's to take back.
+    expect(phone[0]?.layout?.tablet).toBeDefined();
   });
 });
 
@@ -240,6 +286,14 @@ describe("what narrow screens do with a widget", () => {
   test("a small widget alone in its row takes the whole row", () => {
     const spans = phoneSpans(phoneOrder([a, b, c, wide]));
     expect([a, b, c, wide].map((one) => spans.get(one.id))).toEqual([1, 1, 2, 2]);
+  });
+
+  test("Keep keeps its half of the row even when it is alone in it", () => {
+    const kept = { ...a, layout: { narrow: "keep" as const } };
+    const spans = phoneSpans(phoneOrder([kept, wide]));
+    expect(spans.get("a")).toBe(1);
+    // Left automatic, the same widget takes the row.
+    expect(phoneSpans(phoneOrder([a, wide])).get("a")).toBe(2);
   });
 
   test("Keep keeps half a row, Full width and Stack below take the row", () => {

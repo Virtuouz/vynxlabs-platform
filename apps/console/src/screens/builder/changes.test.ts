@@ -39,9 +39,7 @@ test("a save is told by what it did: added, moved, resized, in a few words", () 
   const stat = { id: "s", type: "core/stat", title: "Stat", at: at(0, 5) };
   expect(savedWords(body(table(at(0, 0))), body(table(at(0, 0)), stat))).toBe("Added stat");
   expect(savedWords(body(table(at(0, 0))), body(table(at(4, 0))))).toBe("Moved table");
-  expect(savedWords(body(table(at(0, 0))), body(table(at(0, 0, 5, 3))))).toBe(
-    "Resized table",
-  );
+  expect(savedWords(body(table(at(0, 0))), body(table(at(0, 0, 5, 3))))).toBe("Resized table");
   expect(savedWords(body(table(at(0, 0))), body(table(at(0, 0))))).toBe("No change to the pages");
   expect(savedWords(body(table(at(0, 0))), body(table(at(4, 0)), stat))).toBe(
     "Moved table, added stat",

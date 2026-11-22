@@ -771,7 +771,7 @@ function Cell({
             data-chrome="size"
             className="pointer-events-none absolute top-[calc(100%+4px)] right-2 layer-sticky rounded-inner border border-line-strong bg-raised px-2 py-0.5 font-mono text-meta leading-4 whitespace-nowrap text-ink @max-[11rem]/cell:px-1 @max-[11rem]/cell:text-tag"
           >
-            {sizeWords(at)}
+            {narrow ? (span === 2 ? "Full width" : "Half width") : sizeWords(at)}
           </span>
         </>
       ) : null}
@@ -1231,7 +1231,7 @@ export function PageView({
     const made = [...fitContainers(next, roles, pin ? { pin } : {})];
     if (device !== "tablet") return editing.onChange(made, label);
     // On the tablet a move is the tablet's own place: it is asked about first, and the desktop's stays.
-    const written = intoTablet(given, widgets, made);
+    const written = intoTablet(given, widgets, made, pin);
     const was = new Map(given.map((widget) => [widget.id, JSON.stringify(widget.layout?.tablet)]));
     const byHand = written.some(
       (widget) =>

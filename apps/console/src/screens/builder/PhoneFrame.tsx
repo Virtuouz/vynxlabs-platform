@@ -5,7 +5,20 @@ import type { ReactNode } from "react";
  * "Phone layout is made from the desktop one. 1 widget changed by hand." (board 6). The tablet's
  * says the same of the tablet. Counts the widgets with a place of their own for that device.
  */
-export function DeviceBanner({ device, changed }: { device: "tablet" | "phone"; changed: number }) {
+export function DeviceBanner({
+  device,
+  changed,
+  aside = 0,
+  onAutomatic,
+}: {
+  device: "tablet" | "phone";
+  /** The widgets with a place of their own for the device. */
+  changed: number;
+  /** The widgets drawn away from where they are on the desktop only to make room for those. */
+  aside?: number;
+  /** "All automatic": every place of its own is taken back. */
+  onAutomatic?: (() => void) | undefined;
+}) {
   return (
     <p
       data-device-banner={device}
@@ -20,10 +33,20 @@ export function DeviceBanner({ device, changed }: { device: "tablet" | "phone"; 
             <strong className="font-medium text-ink">
               {changed} {changed === 1 ? "widget" : "widgets"} changed
             </strong>{" "}
-            by hand.
+            by hand
+            {aside > 0 ? ` and ${aside} moved aside` : ""}.
           </>
         ) : null}
       </span>
+      {changed > 0 && onAutomatic ? (
+        <button
+          type="button"
+          onClick={onAutomatic}
+          className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-meta text-action underline outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus"
+        >
+          All automatic
+        </button>
+      ) : null}
     </p>
   );
 }

@@ -617,7 +617,7 @@ export function RunsWorkbench({
           compact
           title="Runs"
           state={
-            <p className="m-0 min-w-0 max-w-xl flex-1 truncate text-meta text-ink-muted">
+            <p className="m-0 min-w-64 max-w-xl truncate text-meta text-ink-muted">
               Scripts and flows that ran here; a flow's steps are part of its run.
               {list.data?.keptDays
                 ? ` Kept ${list.data.keptDays} day${list.data.keptDays === 1 ? "" : "s"}.`

@@ -208,7 +208,15 @@ export function ActionRules({
             onChange={(next) => {
               if (next === "always") onChange(without("when"));
               else if (!action.when) {
-                onChange({ ...action, when: [firstCondition(ctx, given.map((one) => groupKey(one.path)))] });
+                onChange({
+                  ...action,
+                  when: [
+                    firstCondition(
+                      ctx,
+                      given.map((one) => groupKey(one.path)),
+                    ),
+                  ],
+                });
               }
             }}
           />
@@ -310,7 +318,15 @@ export function RulesTab({
             value={showWhen ? "when" : "always"}
             onChange={(next) => {
               if (next === "always") setRules({ showWhen: undefined });
-              else if (!showWhen) setRules({ showWhen: [firstCondition(ctx, given.map((one) => groupKey(one.path)))] });
+              else if (!showWhen)
+                setRules({
+                  showWhen: [
+                    firstCondition(
+                      ctx,
+                      given.map((one) => groupKey(one.path)),
+                    ),
+                  ],
+                });
             }}
           />
           {showWhen ? (

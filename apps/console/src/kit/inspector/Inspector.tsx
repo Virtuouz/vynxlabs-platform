@@ -33,9 +33,16 @@ import { formatCombo } from "../keys.ts";
 import { ActionsTab, RulesSummary } from "./ActionsTab.tsx";
 import "./widgets/registerAll.ts";
 import { type Env, SettingRow } from "./controls.tsx";
-import { drawersFor, headingIsFields, headingPlace, hiddenData, hiddenSettings, tabLabelFor } from "./custom.ts";
+import {
+  drawersFor,
+  headingIsFields,
+  headingPlace,
+  hiddenData,
+  hiddenSettings,
+  tabLabelFor,
+} from "./custom.ts";
 import { DataControl } from "./dataControls.tsx";
-import { hasHeading, HeadingGroup } from "./heading.tsx";
+import { HeadingGroup, hasHeading } from "./heading.tsx";
 import { type Device, LayoutPanel } from "./LayoutPanel.tsx";
 import { type MovePlace, MoveTo } from "./MoveTo.tsx";
 import {

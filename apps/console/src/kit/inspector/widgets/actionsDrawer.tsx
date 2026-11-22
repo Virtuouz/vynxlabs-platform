@@ -19,10 +19,9 @@ import {
 } from "@volvel/ui";
 import { Ellipsis } from "lucide-react";
 import { useState } from "react";
-import { actionContext, ActionEditor } from "../actionControls.tsx";
-import { ActionRules } from "../RulesTab.tsx";
-import { ConditionsEditor } from "../conditions.tsx";
+import { ActionEditor } from "../actionControls.tsx";
 import { uniqueName } from "../model.ts";
+import { ActionRules } from "../RulesTab.tsx";
 import { ButtonLabelGroup, ToneTiles } from "./buttonDrawer.tsx";
 import {
   BackHead,
@@ -161,7 +160,11 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
               id={`${prefix}-rules`}
               action={action}
               onChange={(next, key) =>
-                replace({ ...current, action: next }, "who can run a button", key ? "rules" : undefined)
+                replace(
+                  { ...current, action: next },
+                  "who can run a button",
+                  key ? "rules" : undefined,
+                )
               }
             />
           ) : null}

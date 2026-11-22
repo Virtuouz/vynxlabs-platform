@@ -46,10 +46,16 @@ export function columnsByGrouping(
   columns: readonly CatalogColumn[],
   tableRows?: number,
 ): (CatalogColumn & Groupability)[] {
-  return columns
-    .map((column, at) => ({ column, at, ...groupability(column, tableRows) }))
-    .sort((a, b) => a.rank - b.rank || a.at - b.at)
-    .map(({ column, rank, hint }) => ({ ...column, rank, hint }));
+  return (
+    columns
+      .map((column, at) => ({ column, at, ...groupability(column, tableRows) }))
+      // Among those that group equally well, the fewest values first.
+      .sort(
+        (a, b) =>
+          a.rank - b.rank || (a.column.distinct ?? 0) - (b.column.distinct ?? 0) || a.at - b.at,
+      )
+      .map(({ column, rank, hint }) => ({ ...column, rank, hint }))
+  );
 }
 
 /** A number from the widget's own rows, to show a format with: the first the named columns hold. */

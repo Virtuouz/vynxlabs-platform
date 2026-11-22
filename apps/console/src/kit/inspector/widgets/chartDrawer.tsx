@@ -32,7 +32,6 @@ import {
   Palette,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import type { Env } from "../controls.tsx";
 import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
 import { heading } from "../model.ts";
 import {

@@ -265,8 +265,8 @@ test("widgets are added and removed, and what is wrong is said before anything c
   // The new widget is the one being changed.
   const settings = within(screen.getByRole("complementary", { name: "Settings" }));
   fireEvent.click(await settings.findByRole("tab", { name: /^Display/ }));
-  // The title row says what it is now.
-  expect((await settings.findByRole("button", { name: /^Title/ })).textContent).toContain("Chart");
+  // The heading says what the title is now: written in place, on the chart's drawer.
+  expect(await settings.findByRole("textbox", { name: "Title" })).toBeTruthy();
   await screen.findByText("Sales › Chart: a chart needs a shape.", undefined, { timeout: 4000 });
   expect((screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement).disabled).toBe(
     true,
@@ -478,10 +478,9 @@ test("a stat is narrowed to some rows and its number written as dollars from cen
   fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
   fireEvent.click(settings.getByRole("button", { name: /^Numbers/ }));
   const editor = within(await screen.findByRole("dialog"));
-  fireEvent.click(editor.getByRole("button", { name: /As it comes/ }));
-  fireEvent.change(editor.getByLabelText("Written as"), { target: { value: "currency" } });
-  fireEvent.click(await editor.findByLabelText("Kept in cents"));
-  expect(await editor.findByText("Shown as $43,120.00")).toBeTruthy();
+  fireEvent.click(editor.getByRole("radio", { name: /^Money \$43,120/ }));
+  fireEvent.click(await editor.findByRole("switch", { name: "Stored in cents" }));
+  expect(await editor.findByText(/shown as \$43,120\.00/)).toBeTruthy();
 
   await waitFor(
     () =>

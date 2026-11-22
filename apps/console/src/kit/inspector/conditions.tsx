@@ -18,7 +18,6 @@ import {
   SelectField,
 } from "@volvel/ui";
 import { X } from "lucide-react";
-import { type GroupChoice, groupKey } from "./timelineModel.ts";
 import { type ReactNode, useState } from "react";
 import {
   type ActionContext,
@@ -31,7 +30,7 @@ import {
   tableOfRef,
 } from "./actionModel.ts";
 import { heading } from "./model.ts";
-import { operatorsFor } from "./timelineModel.ts";
+import { type GroupChoice, groupKey, operatorsFor } from "./timelineModel.ts";
 
 type ChoiceValues = { value: string; label?: string }[] | undefined;
 

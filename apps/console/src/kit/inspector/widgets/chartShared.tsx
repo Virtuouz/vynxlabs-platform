@@ -6,31 +6,20 @@
  */
 import type { DataInput, PageFilter, PageWidget, VisualQuery } from "@volvel/manifest";
 import { groupName } from "@volvel/manifest";
-import {
-  DrawerRow,
-  NumberField,
-  NumberFormatRow,
-  SelectField,
-  TextField,
-  ToggleRow,
-} from "@volvel/ui";
+import { DrawerRow, NumberField, NumberFormatRow, ToggleRow } from "@volvel/ui";
 import type { ColumnInfo, SummaryData } from "@volvel/widgets";
-import { MEASURE_FUNCTIONS, MEASURE_WORDS } from "@volvel/widgets";
-import { Calendar, Hash, List, Type } from "lucide-react";
+import { Hash } from "lucide-react";
 import { type ComponentType, createContext, type ReactNode, useContext } from "react";
 import type { Env } from "../controls.tsx";
 import { sampleValue } from "../grouping.ts";
 import type { CatalogColumn } from "../model.ts";
 import {
   heading,
-  measureName,
-  renamedResult,
   tidyVisual,
   visualOf,
   withConfig,
   withInput,
   withSystemColumns,
-  withText,
 } from "../model.ts";
 
 /** What the real rows say, when the host has read them. Every part is optional: a section draws a sample without. */

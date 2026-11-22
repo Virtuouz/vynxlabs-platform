@@ -41,8 +41,7 @@ export function DataControl({
 }) {
   const rows = rowsPartsOf(dataParts(env.definition), input);
   switch (control) {
-    case "source":
-      // Source, the filters followed, conditions, sort and limit are one group.
+    case "source": // Source, the filters followed, conditions, sort and limit are one group.
       {
         const show = {
           source: rows.source && !hide?.has("source"),

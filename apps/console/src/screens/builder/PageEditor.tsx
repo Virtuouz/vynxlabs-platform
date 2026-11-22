@@ -25,6 +25,7 @@ import {
   settleOnGrid,
   unbindDeclared,
 } from "../../kit/inspector/model.ts";
+import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
 import { useShortcut } from "../../kit/keys.ts";
 import { EditOnPage } from "../../kit/markdown/onThePage.ts";
 import { AddFormDialog } from "./AddFormDialog.tsx";
@@ -55,7 +56,6 @@ import { Outline } from "./Outline.tsx";
 import { PageSettings } from "./PageSettings.tsx";
 import { DeviceBanner, PhoneFrame, ViewAsNote } from "./PhoneFrame.tsx";
 import { SIZE_NAMES, SIZE_WIDTH, sizeOf, snapSize, withSize } from "./pageKinds.ts";
-import { requestColumn } from "../../kit/inspector/widgets/columnRequest.ts";
 import { choiceOf, openedPage, RowClickEditor } from "./RowClickEditor.tsx";
 import {
   type Edit,
@@ -635,7 +635,9 @@ export function PageEditor({
                           context={context}
                           onApply={apply}
                           {...(pageInfo.onSetPage ? { onSetPage: pageInfo.onSetPage } : {})}
-                          onEditLayout={(opened) => pageInfo.onOpen({ page: opened.id, as: "page" })}
+                          onEditLayout={(opened) =>
+                            pageInfo.onOpen({ page: opened.id, as: "page" })
+                          }
                         />
                       ),
                     }

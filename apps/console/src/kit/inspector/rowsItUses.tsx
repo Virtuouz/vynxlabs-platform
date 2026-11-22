@@ -34,6 +34,7 @@ import {
 import { Code2, Database, Plus, Table2 } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Loading } from "../LoadState.tsx";
+import { useColumnValues } from "./catalog.ts";
 import {
   conditionColumns,
   fromEditor,
@@ -43,7 +44,6 @@ import {
   spokenType,
   toEditor,
 } from "./conditionWords.ts";
-import { useColumnValues } from "./catalog.ts";
 import type { Env } from "./controls.tsx";
 import {
   bindFilter,

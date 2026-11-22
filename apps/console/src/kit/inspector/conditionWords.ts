@@ -50,10 +50,10 @@ export const shownValue = (value: unknown): string =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? lastWords(value as { count?: number; unit?: string })
     : Array.isArray(value)
-    ? value.join(", ")
-    : value === undefined || value === null
-      ? ""
-      : String(value);
+      ? value.join(", ")
+      : value === undefined || value === null
+        ? ""
+        : String(value);
 
 const NONE = { input: "none" } as const;
 const empties: ConditionOperator[] = [
@@ -183,7 +183,9 @@ export function fromEditor(value: ConditionValue): VisualCondition[] {
   if (op === "is_null" || op === "not_null") return [{ column: value.field, op }];
   const raw = value.value;
   if (op === "last" || op === "between") {
-    return raw === undefined ? [{ column: value.field, op }] : [{ column: value.field, op, value: raw as never }];
+    return raw === undefined
+      ? [{ column: value.field, op }]
+      : [{ column: value.field, op, value: raw as never }];
   }
   if (Array.isArray(raw)) {
     if (op === "ne") return raw.map((one) => ({ column: value.field, op, value: one }));

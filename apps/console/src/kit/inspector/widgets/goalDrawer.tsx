@@ -14,7 +14,6 @@ import {
 import { formatNumber, type SummaryData } from "@volvel/widgets";
 import { labsPack } from "@volvel/widgets-labs/views";
 import { Calendar, Target } from "lucide-react";
-import type { Env } from "../controls.tsx";
 import { HeadingGroup } from "../heading.tsx";
 import { MeasureRow } from "../measureControls.tsx";
 import { bindFilter, heading, measureName, unbindFilter } from "../model.ts";
@@ -234,16 +233,14 @@ function OverRow({ env }: SectionProps) {
 
 export function GoalData({ env, data }: SectionProps) {
   return (
-    <>
-      <DrawerGroup
-        label="Progress"
-        note="The goal can be a fixed amount or come from a column, such as a monthly target table."
-      >
-        <MeasureRow env={env} input="value" at={0} label="Value" />
-        <GoalRow env={env} />
-        <OverRow env={env} />
-      </DrawerGroup>
-    </>
+    <DrawerGroup
+      label="Progress"
+      note="The goal can be a fixed amount or come from a column, such as a monthly target table."
+    >
+      <MeasureRow env={env} input="value" at={0} label="Value" />
+      <GoalRow env={env} />
+      <OverRow env={env} />
+    </DrawerGroup>
   );
 }
 

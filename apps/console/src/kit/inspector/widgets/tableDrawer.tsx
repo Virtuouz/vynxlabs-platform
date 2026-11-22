@@ -19,11 +19,11 @@ import {
 import { ListOrdered, Trash2, Type, Zap } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ActionControl } from "../actionControls.tsx";
-import { ActionRules } from "../RulesTab.tsx";
 import type { Action } from "../actionModel.ts";
 import { conditionSentence } from "../actionModel.ts";
 import type { Env } from "../controls.tsx";
 import { configSettings, heading, uniqueName, withConfig } from "../model.ts";
+import { ActionRules } from "../RulesTab.tsx";
 import { AnchoredColumnEditor, CanvasColumnEditor } from "./ColumnEditor.tsx";
 import {
   type ColumnSetting,
@@ -429,10 +429,7 @@ export function rowClickWords(widget: PageWidget, env: Pick<Env, "pages">) {
  * has today (the action editor, and the offer to make a detail when nothing happens yet); pass
  * `rowClickEditor` to draw another in its place.
  */
-export function TableRowClickSection({
-  env,
-  bare,
-}: TableSectionProps) {
+export function TableRowClickSection({ env, bare }: TableSectionProps) {
   // The builder's editor (board 3): radio cards, the detail chosen, "Opens as".
   if (env.rowClickEditor) {
     return (

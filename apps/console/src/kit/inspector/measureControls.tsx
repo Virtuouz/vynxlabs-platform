@@ -325,7 +325,10 @@ export function BreakdownEditor({
   onChange,
   fillGaps,
   onRemove,
+  none,
 }: {
+  /** What a breakdown that is taken away reads as ("Nothing"): a first choice in the list, for one that may be left out. */
+  none?: string;
   breakdown: BreakdownValue | undefined;
   columns: readonly CatalogColumn[];
   /** How many rows the table has, when known: a column that differs in every row says so. */
@@ -349,6 +352,16 @@ export function BreakdownEditor({
   );
   return (
     <div className="flex flex-col gap-3">
+      {none !== undefined ? (
+        <ChoiceList
+          label={`${none}: no breakdown here`}
+          value={breakdown ? undefined : "none"}
+          options={[{ value: "none", label: none }]}
+          onChange={() => {
+            if (breakdown) onRemove?.();
+          }}
+        />
+      ) : null}
       {ordered.length > 6 ? (
         <div className="relative">
           <Search
@@ -469,7 +482,10 @@ export function BreakdownRow({
   const groups = visual.groupBy ?? [];
   const one = groups[at];
   if (!one && (none === undefined || at > groups.length)) return null;
-  const columns = columnsOf(env, visual);
+  const every = columnsOf(env, visual);
+  // The columns another breakdown already uses are not offered again.
+  const used = groups.filter((_, index) => index !== at).map((g) => g.column);
+  const columns = every.filter((c) => !used.includes(c.name));
   const column = columns.find((c) => c.name === one?.column);
   const table = env.catalog.tables.find((t) => t.name === visual.table);
   const hasGapSetting = "fillGaps" in env.definition.config.properties;
@@ -478,13 +494,7 @@ export function BreakdownRow({
     const entry = { column: next.column, ...(next.bucket ? { bucket: next.bucket } : {}) };
     const groupBy = one ? groups.map((g, index) => (index === at ? entry : g)) : [...groups, entry];
     const renamed = one
-      ? renameIn(
-          env,
-          input,
-          { ...visual, groupBy },
-          groupName(one),
-          groupName(groupBy[at] ?? one),
-        )
+      ? renameIn(env, input, { ...visual, groupBy }, groupName(one), groupName(groupBy[at] ?? one))
       : { visual: { ...visual, groupBy }, widget: env.widget };
     const widget = after
       ? after(
@@ -517,6 +527,7 @@ export function BreakdownRow({
           columns={columns}
           rows={table?.rows}
           onChange={change}
+          {...(none === undefined ? {} : { none })}
           {...(hasGapSetting && at === 0
             ? {
                 fillGaps: {

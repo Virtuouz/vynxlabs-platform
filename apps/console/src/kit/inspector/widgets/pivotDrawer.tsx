@@ -3,8 +3,8 @@
  * of the grid. Display: its heading, how numbers look, shading, and the totals.
  */
 import { DrawerBlock, DrawerGroup } from "@volvel/ui";
-import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
 import { shadeOf } from "@volvel/widgets-core/views";
+import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
 import {
   ConfigToggle,
   type DrawerData,
@@ -111,23 +111,21 @@ export function PivotData({ env, data }: SectionProps) {
 export function PivotDisplay({ env }: SectionProps) {
   const legacy = env.config.totals as boolean | undefined;
   return (
-    <>
-      <DrawerGroup label="Look">
-        <NumbersRow env={env} sample={1234} />
-        <ConfigToggle env={env} name="shade" label="Shade cells by size" />
-        <ConfigToggle
-          env={env}
-          name="rowTotals"
-          label="Total for each row"
-          on={(env.config.rowTotals as boolean | undefined) ?? legacy ?? true}
-        />
-        <ConfigToggle
-          env={env}
-          name="columnTotals"
-          label="Total for each column"
-          on={(env.config.columnTotals as boolean | undefined) ?? legacy ?? true}
-        />
-      </DrawerGroup>
-    </>
+    <DrawerGroup label="Look">
+      <NumbersRow env={env} sample={1234} />
+      <ConfigToggle env={env} name="shade" label="Shade cells by size" />
+      <ConfigToggle
+        env={env}
+        name="rowTotals"
+        label="Total for each row"
+        on={(env.config.rowTotals as boolean | undefined) ?? legacy ?? true}
+      />
+      <ConfigToggle
+        env={env}
+        name="columnTotals"
+        label="Total for each column"
+        on={(env.config.columnTotals as boolean | undefined) ?? legacy ?? true}
+      />
+    </DrawerGroup>
   );
 }

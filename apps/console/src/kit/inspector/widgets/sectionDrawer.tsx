@@ -6,15 +6,12 @@
 import { childrenOf, type PageWidget } from "@volvel/manifest";
 import {
   DrawerBlock,
-  DrawerRow,
   SegmentedControl,
   type SortableItem,
   SortableRows,
-  TextField,
   ToggleRow,
 } from "@volvel/ui";
-import { Type } from "lucide-react";
-import { heading, withText } from "../model.ts";
+import { heading } from "../model.ts";
 import { type Env, Group, LabelledBlock, reorderBy, setConfig } from "./recordShared.tsx";
 
 /** "core/stat" is a "Stat". */
@@ -84,7 +81,9 @@ export function SectionDisplaySection({
                 "reordering what the section holds",
               )
             }
-            {...(onSelectWidget ?? env.select ? { onOpen: (onSelectWidget ?? env.select) as (id: string) => void } : {})}
+            {...((onSelectWidget ?? env.select)
+              ? { onOpen: (onSelectWidget ?? env.select) as (id: string) => void }
+              : {})}
           />
         ) : (
           <DrawerBlock>
@@ -113,7 +112,9 @@ export function SectionDisplaySection({
           <ToggleRow
             label="Starts folded"
             checked={env.config.folded === true}
-            onChange={(next) => setConfig(env, "folded", next ? true : undefined, "starting folded")}
+            onChange={(next) =>
+              setConfig(env, "folded", next ? true : undefined, "starting folded")
+            }
           />
         ) : null}
       </Group>

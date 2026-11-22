@@ -111,7 +111,13 @@ export function HeadingGroup({
   return (
     <DrawerGroup label="Heading" note="Also editable by clicking the title on the page.">
       {field("Title", widget.title ?? "", "A name for it", 100, writeTitle)}
-      {field("Caption", caption ?? "", "What the numbers are, or what to notice", 200, writeCaption)}
+      {field(
+        "Caption",
+        caption ?? "",
+        "What the numbers are, or what to notice",
+        200,
+        writeCaption,
+      )}
     </DrawerGroup>
   );
 }

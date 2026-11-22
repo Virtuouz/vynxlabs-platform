@@ -286,9 +286,7 @@ function LastInput({
           value={now.count === undefined ? "" : String(now.count)}
           onChange={(event) =>
             onChange(
-              event.target.value === ""
-                ? undefined
-                : { count: Number(event.target.value), unit },
+              event.target.value === "" ? undefined : { count: Number(event.target.value), unit },
             )
           }
           className={`${control} w-full`}

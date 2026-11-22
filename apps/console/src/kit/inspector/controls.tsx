@@ -56,19 +56,19 @@ import {
 } from "@volvel/ui/icons";
 import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Pencil } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import type { ReactNode } from "react";
 import { MarkdownEditor } from "../markdown/MarkdownEditor.tsx";
 import { useEditOnPage } from "../markdown/onThePage.ts";
 import { ActionControl, ActionsControl } from "./actionControls.tsx";
-import { useChosenGroups } from "./groupChoices.tsx";
-import { type GroupChoice, groupName } from "./timelineModel.ts";
 import { settingControlFor, tilePreviewFor } from "./custom.ts";
 import { DataControl, FormatRow } from "./dataControls.tsx";
 import { FieldsControl, PageControl } from "./fieldsControl.tsx";
 import { FiltersControl } from "./filtersControl.tsx";
+import { useChosenGroups } from "./groupChoices.tsx";
 import type { Catalog, ConfigSetting, FlowChoice, ScriptChoice, TabFate } from "./model.ts";
 import { heading, resultNames, visualOf, withConfig, withSystemColumns } from "./model.ts";
 import { TabsControl } from "./tabsControl.tsx";
+import { type GroupChoice, groupName } from "./timelineModel.ts";
 
 /** What every control is given: the widget, its definition, and how to write it. */
 export interface Env {
@@ -821,6 +821,7 @@ function GroupsControl({
 /** The control inline, in the group, not behind a row: its own shape asks for the room. */
 const INLINE = new Set([
   "switch",
+  "format",
   "tiles",
   "segmented",
   "position",

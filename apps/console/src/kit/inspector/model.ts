@@ -7,8 +7,6 @@ import { placed, without } from "@volvel/screens";
  */
 
 import {
-  childrenOf,
-  containerHeight,
   type DataInput,
   displayGuess,
   FILTER_WIDGET,

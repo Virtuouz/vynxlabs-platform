@@ -264,8 +264,9 @@ test("widgets are added and removed, and what is wrong is said before anything c
   await addChart();
   // The new widget is the one being changed.
   const settings = within(screen.getByRole("complementary", { name: "Settings" }));
-  fireEvent.click(await settings.findByRole("tab", { name: "Display" }));
-  expect(((await settings.findByLabelText("Title")) as HTMLInputElement).value).toBe("Chart");
+  fireEvent.click(await settings.findByRole("tab", { name: /^Display/ }));
+  // The title row says what it is now.
+  expect((await settings.findByRole("button", { name: /^Title/ })).textContent).toContain("Chart");
   await screen.findByText("Sales › Chart: a chart needs a shape.", undefined, { timeout: 4000 });
   expect((screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement).disabled).toBe(
     true,
@@ -472,11 +473,13 @@ test("a stat is narrowed to some rows and its number written as dollars from cen
   fireEvent.change(settings.getByLabelText("Test of condition 1"), { target: { value: "ne" } });
   fireEvent.change(settings.getByLabelText("Value of condition 1"), { target: { value: "paid" } });
 
-  fireEvent.click(settings.getByRole("tab", { name: "Display" }));
-  fireEvent.click(settings.getByRole("button", { name: /As it comes/ }));
-  fireEvent.change(settings.getByLabelText("Written as"), { target: { value: "currency" } });
-  fireEvent.click(await settings.findByLabelText("Kept in cents"));
-  expect(await settings.findByText("Shown as $43,120.00")).toBeTruthy();
+  fireEvent.click(settings.getByRole("tab", { name: /^Display/ }));
+  fireEvent.click(settings.getByRole("button", { name: /^Numbers/ }));
+  const editor = within(await screen.findByRole("dialog"));
+  fireEvent.click(editor.getByRole("button", { name: /As it comes/ }));
+  fireEvent.change(editor.getByLabelText("Written as"), { target: { value: "currency" } });
+  fireEvent.click(await editor.findByLabelText("Kept in cents"));
+  expect(await editor.findByText("Shown as $43,120.00")).toBeTruthy();
 
   await waitFor(
     () =>

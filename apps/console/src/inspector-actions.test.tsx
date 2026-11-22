@@ -80,7 +80,8 @@ function add(name: string) {
 }
 const last = () => written.at(-1) as PageWidget;
 const fieldsOf = () => (last().config?.fields ?? []) as { column: string }[];
-const tab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }));
+const tab = (name: string) =>
+  fireEvent.click(screen.getByRole("tab", { name: new RegExp(`^${name}`) }));
 
 const pressMe: PageWidget = {
   id: "mark-paid",

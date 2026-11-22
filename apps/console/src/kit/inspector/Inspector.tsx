@@ -3,13 +3,25 @@
  * definition (`@volvel/widgets`) and from nothing else. It knows no widget
  * type by name, so a pack's widget has settings the day it is registered.
  *
- * A header with the widget's title and kind and a ⋯ menu (Layout, Duplicate,
- * Move to, Remove); then the tabs its definition has (Data, Display, Actions, Rules),
- * each showing its main settings and one "More … options" disclosure, never
- * deeper (08, S9 §inspector).
+ * Board 8's drawer, for every widget: a header (the type's icon tile, the name, the kind, a ⋯
+ * menu: Layout, Duplicate, Move to, Remove); the tabs its definition has, with a dot on a tab that
+ * has something set; and in a tab, groups of rows, each row showing its value and opening a small
+ * editor. What a widget type adds of its own is registered in `custom.ts`. Size and position are
+ * not a tab: ⋯ › Layout (`LayoutPanel.tsx`).
  */
 import type { Page, PageFilter, PageWidget } from "@volvel/manifest";
-import { Button, Details, Menu, NumberField, SegmentedControl, Tabs, TextField } from "@volvel/ui";
+import {
+  Button,
+  Details,
+  DrawerBlock,
+  DrawerGroup,
+  DrawerHeader,
+  DrawerPanel,
+  DrawerRow,
+  DrawerTabs,
+  Menu,
+  TextField,
+} from "@volvel/ui";
 import {
   type Surface,
   TAB_TITLES,
@@ -17,20 +29,19 @@ import {
   type WidgetDefinition,
   WidgetRegistry,
 } from "@volvel/widgets";
-import { ArrowLeft, Copy, CornerDownRight, Ellipsis, LayoutGrid, Trash2 } from "lucide-react";
-import { type ReactNode, useState } from "react";
-import { Link } from "../../router.tsx";
+import { Copy, CornerDownRight, Ellipsis, LayoutGrid, Trash2 } from "lucide-react";
+import { Fragment, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { widgetIcon } from "../../screens/builder/AddToPage.tsx";
 import { formatCombo } from "../keys.ts";
-import { ActionEditor, actionContext } from "./actionControls.tsx";
-import { type Action, type Condition, conditionSentence, firstCondition } from "./actionModel.ts";
-import { ConditionsEditor } from "./conditions.tsx";
-import { ConfigControl, type Env } from "./controls.tsx";
+import { ActionsTab } from "./ActionsTab.tsx";
+import { type Env, SettingRow } from "./controls.tsx";
+import { drawersFor, hiddenSettings, tabLabelFor } from "./custom.ts";
 import { DataControl } from "./dataControls.tsx";
+import { type Device, LayoutPanel } from "./LayoutPanel.tsx";
 import { type MovePlace, MoveTo } from "./MoveTo.tsx";
 import {
   type Catalog,
   type ConfigSetting,
-  clampPlace,
   configOf,
   configSettings,
   type DataPart,
@@ -40,11 +51,10 @@ import {
   isShown,
   type ScriptChoice,
   type TabFate,
-  tabCount,
   tabsOf,
-  visualOf,
   withText,
 } from "./model.ts";
+import { RulesTab } from "./RulesTab.tsx";
 
 export interface InspectorProps {
   widget: PageWidget;
@@ -76,6 +86,8 @@ export interface InspectorProps {
   scripts?: readonly ScriptChoice[];
   /** The names of the groups of members, for "the current user is in …". */
   groups?: readonly string[];
+  /** The names of the end-user groups, for the `groups` control. */
+  endUserGroups?: readonly string[];
   /** Every widget of the page, this one included: a filter followed or a tab removed reaches the others. */
   widgets?: readonly PageWidget[];
   /** Writes the page's widgets as they should now be, for a change that reaches more than this widget. */
@@ -86,6 +98,8 @@ export interface InspectorProps {
   onAddFilters?: () => void;
   /** Removes a tab of this container with what it held moved or removed; the container editor's own, when it has one. */
   onRemoveTab?: (tab: string, fate: TabFate) => void;
+  /** ⋯ › Layout: what a device's automatic place is now, for "Custom" to start from. */
+  automaticAt?: (widget: PageWidget, device: Device) => PageWidget["at"];
 }
 
 const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
@@ -95,11 +109,26 @@ function aboutMore(labels: readonly string[]): string {
   return labels.map((label, at) => (at === 0 ? label : lower(label))).join(", ");
 }
 
+/** What a tab is called for this widget: "Content" for a Text, else the usual. */
+const tabName = (type: string, tab: Tab) => tabLabelFor(type, tab) ?? TAB_TITLES[tab];
+
 export function Inspector(props: InspectorProps) {
   const { widget, definition } = props;
   const [view, setView] = useState<"settings" | "layout">("settings");
   const [moving, setMoving] = useState(false);
+  const [tab, setTab] = useState<Tab>("data");
+  const prefix = useId();
+  const menu = useRef<HTMLSpanElement>(null);
+  const cameBack = useRef(false);
   const name = widget.title || definition?.title || widget.id;
+
+  // Coming back from Layout, focus goes back to the ⋯ it was opened from.
+  useEffect(() => {
+    if (view === "settings" && cameBack.current) {
+      cameBack.current = false;
+      menu.current?.querySelector<HTMLElement>("button")?.focus();
+    }
+  }, [view]);
 
   if (!definition) {
     return (
@@ -121,14 +150,23 @@ export function Inspector(props: InspectorProps) {
   const pack = WidgetRegistry.packOf(definition.type);
   const named = pack === "core" ? definition.title : `${definition.title} · ${heading(pack)} pack`;
   const kind = props.holds ? `${named} · ${props.holds}` : named;
+  const Icon = widgetIcon(definition.icon);
 
   if (view === "layout") {
     return (
       <LayoutPanel
-        {...props}
+        widget={widget}
         definition={definition}
+        icon={Icon}
         kind={definition.title}
-        onBack={() => setView("settings")}
+        onBack={() => {
+          cameBack.current = true;
+          setView("settings");
+        }}
+        onChange={props.onChange}
+        widgets={props.widgets}
+        onChangeWidgets={props.onChangeWidgets}
+        automaticAt={props.automaticAt}
       />
     );
   }
@@ -148,6 +186,7 @@ export function Inspector(props: InspectorProps) {
     flows: props.flows ?? [],
     scripts: props.scripts ?? [],
     groups: props.groups ?? [],
+    endUserGroups: props.endUserGroups,
     widgets: props.widgets ?? [widget, ...(props.neighbours ?? [])],
     writeAll:
       props.onChangeWidgets ??
@@ -160,50 +199,54 @@ export function Inspector(props: InspectorProps) {
     onRemoveTab: props.onRemoveTab,
   };
   const tabs = tabsOf(definition);
+  const current = tabs.includes(tab) ? tab : (tabs[0] ?? "display");
 
   return (
-    <div className="flex min-w-0 flex-col gap-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col">
-          <h2 className="m-0 truncate text-title">{name}</h2>
-          <p className="m-0 text-meta text-ink-muted">{kind}</p>
-        </div>
-        <Menu
-          ariaLabel={`More about ${name}`}
-          align="end"
-          triggerClassName="inline-flex size-8 shrink-0 items-center justify-center rounded-control border border-line-control hover:bg-sunken"
-          label={<Ellipsis aria-hidden="true" size={16} />}
-          items={[
-            {
-              label: "Layout",
-              icon: <LayoutGrid aria-hidden="true" size={14} />,
-              onSelect: () => setView("layout"),
-            },
-            {
-              label: "Duplicate",
-              icon: <Copy aria-hidden="true" size={14} />,
-              keys: formatCombo("Mod+d"),
-              onSelect: props.onDuplicate,
-            },
-            ...(props.places && props.places.length > 0 && props.onMove
-              ? [
-                  {
-                    label: "Move to…",
-                    icon: <CornerDownRight aria-hidden="true" size={14} />,
-                    onSelect: () => setMoving(true),
-                  },
-                ]
-              : []),
-            {
-              label: "Remove",
-              icon: <Trash2 aria-hidden="true" size={14} />,
-              danger: true,
-              separated: true,
-              onSelect: props.onRemove,
-            },
-          ]}
-        />
-      </div>
+    <div className="flex min-w-0 flex-col gap-4">
+      <DrawerHeader
+        icon={Icon}
+        name={name}
+        kind={kind}
+        menu={
+          <span ref={menu}>
+            <Menu
+              ariaLabel={`More about ${name}`}
+              align="end"
+              triggerClassName="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-control border border-line-control hover:bg-sunken"
+              label={<Ellipsis aria-hidden="true" size={16} />}
+              items={[
+                {
+                  label: "Layout",
+                  icon: <LayoutGrid aria-hidden="true" size={14} />,
+                  onSelect: () => setView("layout"),
+                },
+                {
+                  label: "Duplicate",
+                  icon: <Copy aria-hidden="true" size={14} />,
+                  keys: formatCombo("Mod+d"),
+                  onSelect: props.onDuplicate,
+                },
+                ...(props.places && props.places.length > 0 && props.onMove
+                  ? [
+                      {
+                        label: "Move to…",
+                        icon: <CornerDownRight aria-hidden="true" size={14} />,
+                        onSelect: () => setMoving(true),
+                      },
+                    ]
+                  : []),
+                {
+                  label: "Remove",
+                  icon: <Trash2 aria-hidden="true" size={14} />,
+                  danger: true,
+                  separated: true,
+                  onSelect: props.onRemove,
+                },
+              ]}
+            />
+          </span>
+        }
+      />
       {props.places && props.onMove ? (
         <MoveTo
           open={moving}
@@ -213,31 +256,73 @@ export function Inspector(props: InspectorProps) {
           onChoose={props.onMove}
         />
       ) : null}
-      <Tabs
-        dense
+      <DrawerTabs
+        idPrefix={prefix}
         label={`Settings of ${name}`}
-        tabs={tabs.map((tab) => {
-          const count = tabCount(definition, widget, tab);
-          return {
-            id: tab,
-            label: count ? `${TAB_TITLES[tab]} (${count})` : TAB_TITLES[tab],
-            content: <TabBody tab={tab} env={env} rowRules={props.rowRules} />,
-          };
-        })}
+        value={current}
+        onChange={(next) => setTab(next as Tab)}
+        tabs={tabs.map((one) => ({
+          id: one,
+          label: tabName(definition.type, one),
+          dot: tabHasSettings(env, one),
+        }))}
       />
-      <p className="m-0 flex items-start gap-2 rounded-control border border-line p-3 text-body-sm text-ink-muted">
-        <LayoutGrid aria-hidden="true" size={14} className="mt-0.5 shrink-0" />
-        <span>
-          Size and position live on the page. Drag, or press the arrow keys.{" "}
-          <strong className="font-medium text-ink">⋯ › Layout</strong> for exact values.
-        </span>
-      </p>
+      <DrawerPanel idPrefix={prefix} tab={current}>
+        <TabBody tab={current} env={env} rowRules={props.rowRules} />
+      </DrawerPanel>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
+// The dot on a tab
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** Whether a tab has something set: a setting that is not its default, data bound, an action, a rule. */
+export function tabHasSettings(env: Env, tab: Tab): boolean {
+  const { definition, widget } = env;
+  if (drawersFor(definition.type, tab).some((one) => one.dot?.(env))) return true;
+  const changed = configSettings(definition, tab).some(({ name, schema }) => {
+    const set = widget.config?.[name];
+    if (set === undefined) return false;
+    return !same(set, definition.defaults?.[name] ?? schema.default);
+  });
+  if (changed) return true;
+  switch (tab) {
+    case "data":
+      return Object.values(widget.data ?? {}).some(
+        (input) => "visual" in input.source || Object.keys(input.source).length > 0,
+      );
+    case "display":
+      return Boolean(widget.title || widget.subtitle);
+    case "actions":
+      return Object.keys(widget.on ?? {}).length > 0;
+    case "rules":
+      return Object.values(widget.rules ?? {}).some(
+        (one) => one !== undefined && (!Array.isArray(one) || one.length > 0),
+      );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // One tab
+
+interface Item {
+  key: string;
+  order: number;
+  node: ReactNode;
+  more?: string | undefined;
+}
+interface Group {
+  label: string;
+  items: Item[];
+  note?: ReactNode;
+  aside?: ReactNode;
+}
+
+const called = (value: ReactNode | ((env: Env) => ReactNode) | undefined, env: Env) =>
+  typeof value === "function" ? value(env) : value;
 
 function TabBody({
   tab,
@@ -252,103 +337,168 @@ function TabBody({
   if (tab === "rules") return <RulesTab env={env} rowRules={rowRules} />;
 
   const { definition } = env;
-  const settings = configSettings(definition, tab).filter((one) => isShown(one.hint, env.config));
-  const parts = tab === "data" ? dataParts(definition) : [];
-  const main: ReactNode[] = [];
+  const groups = new Map<string, Group>();
   const more: ReactNode[] = [];
   const moreLabels: string[] = [];
+  const add = (label: string, item: Item) => {
+    const group = groups.get(label) ?? { label, items: [] };
+    group.items.push(item);
+    groups.set(label, group);
+  };
+
+  // The data inputs' controls, in the order the definition gives. A widget with several inputs
+  // says which is which: each input is a group.
   const inputs = Object.keys(definition.data);
-
-  const drawPart = (part: DataPart) => (
-    <DataControl
-      key={`${part.input}:${part.control}`}
-      env={env}
-      input={part.input}
-      control={part.control}
-      label={part.label}
-      help={part.help}
-    />
-  );
-  const drawSetting = (setting: ConfigSetting) => (
-    <ConfigControl key={setting.name} env={env} setting={setting} />
-  );
-
-  // A widget with several data inputs says which is which.
-  for (const input of inputs) {
-    const mine = parts.filter((one) => one.input === input);
-    const named = definition.data[input]?.label;
-    if (mine.length === 0) continue;
-    if (inputs.length > 1) {
-      main.push(
-        <h3 key={`h-${input}`} className="m-0 text-label text-ink-subtle uppercase">
-          {named ?? heading(input)}
-        </h3>,
-      );
-    }
-    for (const part of mine) {
-      if (part.level === "main") main.push(drawPart(part));
-      else {
-        more.push(drawPart(part));
-        moreLabels.push(part.label);
-      }
-    }
-  }
-  if (tab === "display") {
-    main.push(
-      <TextField
-        key="title"
-        name={`${env.widget.id}-title`}
-        label="Title"
-        hint={
-          env.definition.layout.frame === "none"
-            ? "What it is called in the outline. It isn't drawn on the page."
-            : "Or click the title on the page."
-        }
-        required={false}
-        maxLength={100}
-        value={env.widget.title ?? ""}
-        onChange={(text) =>
-          env.write(
-            withText(env.widget, "title", text),
-            "renaming the widget",
-            `title:${env.widget.id}`,
-          )
-        }
-      />,
-      <TextField
-        key="subtitle"
-        name={`${env.widget.id}-subtitle`}
-        label="A line under the title"
-        hint="What the numbers are, or what to notice."
-        required={false}
-        maxLength={200}
-        value={env.widget.subtitle ?? ""}
-        onChange={(text) =>
-          env.write(
-            withText(env.widget, "subtitle", text),
-            "changing the line under the title",
-            `subtitle:${env.widget.id}`,
-          )
-        }
-      />,
+  const parts = tab === "data" ? dataParts(definition) : [];
+  parts.forEach((part: DataPart, at) => {
+    const node = (
+      <DrawerBlock key={`${part.input}:${part.control}`}>
+        <DataControl
+          env={env}
+          input={part.input}
+          control={part.control}
+          label={part.label}
+          help={part.help}
+        />
+      </DrawerBlock>
     );
-  }
-  for (const setting of settings) {
-    if ((setting.hint.level ?? "main") === "main") main.push(drawSetting(setting));
-    else {
-      more.push(drawSetting(setting));
-      moreLabels.push(setting.hint.label);
+    if (part.level !== "main") {
+      more.push(node);
+      moreLabels.push(part.label);
+      return;
     }
+    const label =
+      inputs.length > 1 ? (definition.data[part.input]?.label ?? heading(part.input)) : "Data";
+    add(label, { key: `${part.input}:${part.control}`, order: at - parts.length, node });
+  });
+
+  if (tab === "display") {
+    add("Title", {
+      key: "title",
+      order: -2000,
+      node: (
+        <DrawerRow
+          key="title"
+          label="Title"
+          value={env.widget.title || undefined}
+          editorTitle="Title"
+          editor={
+            <TextField
+              name={`${env.widget.id}-title`}
+              label="Title"
+              hint={
+                definition.layout.frame === "none"
+                  ? "What it is called in the outline. It isn't drawn on the page."
+                  : "Or click the title on the page."
+              }
+              required={false}
+              maxLength={100}
+              value={env.widget.title ?? ""}
+              onChange={(text) =>
+                env.write(
+                  withText(env.widget, "title", text),
+                  "renaming the widget",
+                  `title:${env.widget.id}`,
+                )
+              }
+            />
+          }
+        />
+      ),
+    });
+    add("Title", {
+      key: "subtitle",
+      order: -1999,
+      node: (
+        <DrawerRow
+          key="subtitle"
+          label="Under it"
+          value={env.widget.subtitle || undefined}
+          editorTitle="A line under the title"
+          editor={
+            <TextField
+              name={`${env.widget.id}-subtitle`}
+              label="A line under the title"
+              hint="What the numbers are, or what to notice."
+              required={false}
+              maxLength={200}
+              value={env.widget.subtitle ?? ""}
+              onChange={(text) =>
+                env.write(
+                  withText(env.widget, "subtitle", text),
+                  "changing the line under the title",
+                  `subtitle:${env.widget.id}`,
+                )
+              }
+            />
+          }
+        />
+      ),
+    });
   }
+
+  // The settings, each in the group its hint names, or one named by the tab.
+  const hidden = hiddenSettings(definition.type, tab);
+  const settings = configSettings(definition, tab).filter(
+    (one) => isShown(one.hint, env.config) && !hidden.has(one.name),
+  );
+  const own = tabName(definition.type, tab);
+  settings.forEach((setting: ConfigSetting, at) => {
+    const node = <SettingRow key={setting.name} env={env} setting={setting} />;
+    if ((setting.hint.level ?? "main") !== "main") {
+      more.push(node);
+      moreLabels.push(setting.hint.label);
+      return;
+    }
+    add(setting.hint.group ?? own, {
+      key: setting.name,
+      order: setting.hint.order ?? 1000 + at / 1000,
+      node,
+    });
+  });
+
+  // What the widget's own drawer pieces add.
+  drawersFor(definition.type, tab).forEach((piece, at) => {
+    if (piece.when && !piece.when(env)) return;
+    const group = groups.get(piece.group) ?? { label: piece.group, items: [] };
+    group.items.push({
+      key: `custom:${at}`,
+      order: piece.order ?? 1000 + at / 1000,
+      node: piece.render(env),
+    });
+    const note = called(piece.note, env);
+    const aside = called(piece.aside, env);
+    if (note !== undefined) group.note = note;
+    if (aside !== undefined) group.aside = aside;
+    groups.set(piece.group, group);
+  });
+
+  const ordered = [...groups.values()]
+    .map((group) => ({
+      ...group,
+      items: [...group.items].sort((a, b) => a.order - b.order),
+    }))
+    .sort((a, b) => (a.items[0]?.order ?? 0) - (b.items[0]?.order ?? 0));
 
   return (
-    <div className="flex flex-col gap-4">
-      {main}
+    <>
+      {ordered.map((group) => (
+        <DrawerGroup
+          key={group.label}
+          label={group.label}
+          {...(group.note ? { note: group.note } : {})}
+          {...(group.aside ? { aside: group.aside } : {})}
+        >
+          {group.items.map((item) => (
+            <Fragment key={item.key}>{item.node}</Fragment>
+          ))}
+        </DrawerGroup>
+      ))}
       {more.length > 0 ? (
         <Details
           summary={
             <>
-              More {TAB_TITLES[tab].toLowerCase()} options{" "}
+              More {own.toLowerCase()} options{" "}
               <span className="font-normal text-body-sm text-ink-muted">
                 {aboutMore(moreLabels)}
               </span>
@@ -358,207 +508,6 @@ function TabBody({
           <div className="flex flex-col gap-4 pt-1">{more}</div>
         </Details>
       ) : null}
-    </div>
-  );
-}
-
-function ActionsTab({ env }: { env: Env }) {
-  const events = Object.entries(env.definition.events);
-  const settings = configSettings(env.definition, "actions").filter((one) =>
-    isShown(one.hint, env.config),
-  );
-  const setEvent = (name: string, action: Action | undefined, key?: string) => {
-    const on = { ...(env.widget.on ?? {}) };
-    if (action) on[name] = action;
-    else delete on[name];
-    const { on: _before, ...rest } = env.widget;
-    env.write(
-      Object.keys(on).length > 0 ? { ...rest, on } : rest,
-      "changing what it does",
-      key ? `on:${env.widget.id}:${name}` : undefined,
-    );
-  };
-  return (
-    <div className="flex flex-col gap-4">
-      {events.map(([name, event]) => (
-        <ActionEditor
-          key={name}
-          env={env}
-          id={`${env.widget.id}-on-${name}`}
-          heading={event.label}
-          action={env.widget.on?.[name]}
-          onChange={(next, key) => setEvent(name, next, key)}
-        />
-      ))}
-      {settings.map((setting) => (
-        <ConfigControl key={setting.name} env={env} setting={setting} />
-      ))}
-    </div>
-  );
-}
-
-function RulesTab({ env, rowRules }: { env: Env; rowRules: InspectorProps["rowRules"] }) {
-  const tables = [
-    ...new Set(
-      Object.values(env.widget.data ?? {}).flatMap((input) => {
-        const visual = visualOf(input);
-        return visual?.table ? [visual.table] : [];
-      }),
-    ),
-  ];
-  const noun = env.surface === "app" ? "app" : "dashboard";
-  // A widget's own rules can read the record its page is open on, and no clicked one.
-  const ctx = { ...actionContext(env), eventTable: undefined, defaultRef: "this" as const };
-  const showWhen = env.widget.rules?.showWhen;
-  const setShowWhen = (next: Condition[] | undefined, key?: string) => {
-    const { rules: _before, ...rest } = env.widget;
-    env.write(
-      next && next.length > 0
-        ? { ...rest, rules: { ...(env.widget.rules ?? {}), showWhen: next } }
-        : rest,
-      "changing when it is shown",
-      key ? `showWhen:${env.widget.id}` : undefined,
-    );
-  };
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <span className="text-body-sm font-medium text-ink">Show this widget</span>
-        <div>
-          <SegmentedControl
-            label="Show this widget"
-            options={[
-              { value: "always", label: "Always" },
-              { value: "when", label: "Only when …" },
-            ]}
-            value={showWhen ? "when" : "always"}
-            onChange={(next) => {
-              if (next === "always") setShowWhen(undefined);
-              else if (!showWhen) setShowWhen([firstCondition(ctx, env.groups)]);
-            }}
-          />
-        </div>
-        {showWhen ? (
-          <>
-            <ConditionsEditor
-              id={`${env.widget.id}-show`}
-              noun="rule"
-              conditions={showWhen}
-              ctx={ctx}
-              groups={env.groups}
-              onChange={(next, key) => setShowWhen(next, key)}
-            />
-            <p className="m-0 text-body-sm text-ink-muted">
-              Shown only when {showWhen.map((one) => conditionSentence(one)).join(" and ")}.
-            </p>
-          </>
-        ) : null}
-      </div>
-      <div className="flex flex-col gap-1">
-        <span className="text-body-sm font-medium text-ink">Who can see it</span>
-        <p className="m-0 flex h-control items-center rounded-control border border-line px-3 text-ink-muted">
-          Everyone who can open the {noun}
-        </p>
-      </div>
-      <p className="m-0 flex flex-col gap-1 rounded-control border border-line p-3 text-body-sm text-ink-muted">
-        <span>
-          Hiding a widget isn’t security. What rows each person receives is decided by{" "}
-          {tables.length === 0 ? (
-            "the row rules of the tables it reads."
-          ) : (
-            <>the {tables.map((table) => heading(table)).join(" and ")} row rules.</>
-          )}
-        </span>
-        {rowRules
-          ? tables.map((table) => (
-              <Link
-                key={table}
-                to={rowRules(table)}
-                className="text-action underline underline-offset-2"
-              >
-                Open row rules{tables.length > 1 ? ` for ${heading(table)}` : ""}
-              </Link>
-            ))
-          : null}
-      </p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Layout: exact numbers, for keyboards
-
-function LayoutPanel({
-  widget,
-  definition,
-  kind,
-  onChange,
-  onBack,
-}: InspectorProps & { definition: WidgetDefinition; kind: string; onBack: () => void }) {
-  const { min, max } = definition.layout;
-  const at = widget.at;
-  const set = (patch: Partial<typeof at>) =>
-    onChange(
-      { ...widget, at: clampPlace(definition, { ...at, ...patch }) },
-      "placing the widget",
-      `layout:${widget.id}`,
-    );
-  const columns = 12;
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-2">
-        <div>
-          <Button size="small" variant="quiet" onClick={onBack}>
-            <ArrowLeft aria-hidden="true" size={14} /> Back to settings
-          </Button>
-        </div>
-        <h2 className="m-0 text-title">{widget.title || kind} · Layout</h2>
-      </div>
-      <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0">
-        <legend className="p-0 text-body-sm font-medium text-ink">Position on the page</legend>
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField
-            name={`${widget.id}-column`}
-            label="Column"
-            min={1}
-            max={columns - at.w + 1}
-            step={1}
-            value={at.x + 1}
-            onChange={(n) => n !== undefined && set({ x: n - 1 })}
-          />
-          <NumberField
-            name={`${widget.id}-row`}
-            label="Row"
-            min={1}
-            step={1}
-            value={at.y + 1}
-            onChange={(n) => n !== undefined && set({ y: n - 1 })}
-          />
-          <NumberField
-            name={`${widget.id}-width`}
-            label="Width"
-            min={min.w}
-            max={Math.min(max?.w ?? columns, columns)}
-            step={1}
-            value={at.w}
-            onChange={(n) => n !== undefined && set({ w: n })}
-          />
-          <NumberField
-            name={`${widget.id}-height`}
-            label="Height"
-            min={min.h}
-            max={max?.h ?? 40}
-            step={1}
-            value={at.h}
-            onChange={(n) => n !== undefined && set({ h: n })}
-          />
-        </div>
-        <p className="m-0 text-body-sm text-ink-muted">
-          For keyboards and exact placement. Usually you drag. A {definition.title.toLowerCase()} is{" "}
-          {min.w} to {Math.min(max?.w ?? columns, columns)} wide and {min.h} to {max?.h ?? 40} high,
-          on twelve columns.
-        </p>
-      </fieldset>
-    </div>
+    </>
   );
 }

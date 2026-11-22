@@ -366,6 +366,15 @@ export interface RowsData {
   rows: readonly Record<string, unknown>[];
   /** Asks for the next page, when there is one. */
   more?: () => void;
+  /** With a next page: how many rows there are in all, as the filters leave them. */
+  total?: number;
+  /**
+   * A table's rows in the order of one column, read from the server over all its rows, not the
+   * page's. Left out when every row is here already and the view may sort them itself.
+   */
+  sortBy?: (sort: { column: string; descending: boolean } | undefined) => void;
+  /** The order the rows were read in, when `sortBy` set one. */
+  sorted?: { column: string; descending: boolean };
   /** For a reference column: the name of the row each id points to. */
   names?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }

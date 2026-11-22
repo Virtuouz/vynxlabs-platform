@@ -8,6 +8,7 @@ import { StrictMode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ActionError,
+  AppSkeleton,
   AppView,
   inMenu,
   type PageDataClient,
@@ -54,6 +55,8 @@ function clientFor(path: string, page: string, record?: string): PageDataClient 
       query.set("filters", JSON.stringify(filters));
       if (options.input) query.set("input", options.input);
       if (options.cursor) query.set("cursor", options.cursor);
+      if (options.sort) query.set("sort", options.sort);
+      if (options.size) query.set("size", String(options.size));
       if (options.chosen && Object.keys(options.chosen).length > 0) {
         query.set("chosen", JSON.stringify(options.chosen));
       }
@@ -260,7 +263,7 @@ function App() {
           />
         </GlossaryProvider>
       ) : problem ? null : (
-        <p className="m-0 text-ink-muted">Loading…</p>
+        <AppSkeleton />
       )}
     </div>
   );

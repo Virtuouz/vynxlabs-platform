@@ -1,6 +1,7 @@
 import { formatDay, type SummaryData, type WidgetViewProps } from "@volvel/widgets";
 import { formatNumber, labelOf, numberOf, type ValueFormat } from "./format.ts";
 import { listensTo, PRESSABLE, press } from "./press.tsx";
+import { ScrollsSideways } from "./scrolls.tsx";
 
 interface PivotConfig {
   format?: ValueFormat;
@@ -28,6 +29,9 @@ interface Turned {
   rows: { headers: string[]; cells: (number | null)[]; total: number | null }[];
   totals: { cells: (number | null)[]; total: number | null };
 }
+
+/** The first row heading stays in view when the grid is scrolled sideways. */
+const STUCK = "sticky left-0 bg-surface";
 
 const SEPARATOR = "\u0001";
 const shown = (value: unknown) => (value === null || value === undefined ? "—" : String(value));
@@ -103,7 +107,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
     return { group };
   };
   return (
-    <div className="overflow-auto">
+    <ScrollsSideways label={`${heading} by ${summary.breakdowns.map((name) => labelOf(summary.columns, name)).join(" and ")}, scrolls sideways`}>
       {/* table-allowed: a pivot heads its rows and its columns alike, which a list of rows does not */}
       <table className="w-full border-separate border-spacing-1 text-body-sm">
         <caption className="sr-only">
@@ -112,11 +116,11 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
         </caption>
         <thead>
           <tr>
-            {turned.rowNames.map((name) => (
+            {turned.rowNames.map((name, at) => (
               <th
                 key={name}
                 scope="col"
-                className="px-2.5 py-1.5 text-left text-meta font-medium whitespace-nowrap text-ink-muted"
+                className={`px-2.5 py-1.5 text-left text-meta font-medium whitespace-nowrap text-ink-muted ${at === 0 ? STUCK : ""}`}
               >
                 {labelOf(summary.columns, name)}
               </th>
@@ -140,7 +144,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
                 <th
                   key={turned.rowNames[at]}
                   scope="row"
-                  className="px-2.5 py-1.5 text-left font-normal whitespace-nowrap"
+                  className={`px-2.5 py-1.5 text-left font-normal whitespace-nowrap ${at === 0 ? STUCK : ""}`}
                 >
                   {formatDay(header) ?? header}
                 </th>
@@ -184,7 +188,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
               <th
                 scope="row"
                 colSpan={Math.max(1, turned.rowNames.length)}
-                className="px-2.5 py-1.5 text-left font-semibold"
+                className={`px-2.5 py-1.5 text-left font-semibold ${STUCK}`}
               >
                 Total
               </th>
@@ -205,6 +209,6 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
           </tfoot>
         ) : null}
       </table>
-    </div>
+    </ScrollsSideways>
   );
 }

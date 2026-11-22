@@ -50,13 +50,23 @@ export function EmptyState({
   title,
   children,
   action,
+  inCard,
 }: {
   title: string;
   children?: ReactNode;
   action?: ReactNode;
+  /** In a card that is already a box (a widget's): no box of its own, and centred in the room the card has. */
+  inCard?: boolean;
 }) {
   return (
-    <div data-empty-state="" className="rounded-panel border border-dashed border-line px-5 py-8">
+    <div
+      data-empty-state=""
+      className={
+        inCard
+          ? "flex min-h-32 flex-1 flex-col items-center justify-center px-3 py-6 text-center"
+          : "rounded-panel border border-dashed border-line px-5 py-8"
+      }
+    >
       <p className="m-0 font-medium">{title}</p>
       {children ? <p className="mt-1 mb-0 max-w-measure text-ink-muted">{children}</p> : null}
       {action ? <div className="mt-4">{action}</div> : null}

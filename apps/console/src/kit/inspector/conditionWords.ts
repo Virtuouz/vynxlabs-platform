@@ -5,7 +5,7 @@
  */
 import type { VisualCondition, VisualOperator } from "@volvel/manifest";
 import type { ConditionColumn, ConditionOperator, ConditionValue } from "@volvel/ui";
-import { type CatalogColumn, choiceWords, heading } from "./model.ts";
+import { type CatalogColumn, choiceWords, heading, isChoiceLike } from "./model.ts";
 import { iconOfType, NUMERIC, TEMPORAL } from "./queryParts.tsx";
 
 /** What a condition's test is called in a sentence, whatever the column. */
@@ -123,7 +123,7 @@ export function conditionColumns(columns: readonly CatalogColumn[]): ConditionCo
 
 /** A value a choice column holds, as people say it ("Paid"); any other value as it is. */
 function choiceValue(value: unknown, column: CatalogColumn | undefined): string {
-  if (spokenType(column) !== "choice") return shownValue(value);
+  if (!isChoiceLike(column)) return shownValue(value);
   const say = (one: unknown) => choiceWords(column, String(one));
   return Array.isArray(value) ? value.map(say).join(", ") : say(value);
 }

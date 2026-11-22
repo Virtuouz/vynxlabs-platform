@@ -81,6 +81,20 @@ export function withSystemColumns(columns: CatalogColumn[]): CatalogColumn[] {
  * with its first letter raised (`paid` is "Paid", `no_show` is "No show"). One word for it
  * wherever a drawer lists or says a choice.
  */
+/** Whether a column holds a few named things: a choice, a yes or no, or text the server counted to a dozen values. */
+export function isChoiceLike(column: CatalogColumn | undefined): boolean {
+  if (!column) return false;
+  return (
+    column.type === "enum" ||
+    column.type === "boolean" ||
+    (column.values?.length ?? 0) > 0 ||
+    (column.type === "text" &&
+      column.distinct !== undefined &&
+      column.distinct > 1 &&
+      column.distinct <= 12)
+  );
+}
+
 export function choiceWords(column: CatalogColumn | undefined, value: string): string {
   const given = column?.values?.find((one) => one.value === value)?.label;
   return given ?? heading(value);

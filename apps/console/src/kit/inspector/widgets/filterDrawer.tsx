@@ -348,7 +348,7 @@ export function FilterDisplaySection({ env }: { env: Env }) {
           />
         </LabelledBlock>
         <ToggleRow
-          label="Offer \u201cClear\u201d"
+          label="Offer “Clear”"
           help="A button that puts every filter here back to how it starts."
           checked={env.config.reset === true}
           onChange={(next) => setConfig(env, "reset", next ? true : undefined, "the Clear button")}

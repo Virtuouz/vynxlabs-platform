@@ -50,7 +50,7 @@ piece("core/detail", "data", DetailDataSection, {
   dot: (env) => env.widget.data?.record !== undefined,
 });
 piece("core/detail", "display", DetailDisplaySection, {
-  hides: ["fields", "across", "edit"],
+  hides: ["fields", "across", "edit", "heading", "status"],
   headingLast: true,
 });
 piece("core/form", "display", FormDisplaySection, {

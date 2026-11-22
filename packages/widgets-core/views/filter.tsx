@@ -1,4 +1,4 @@
-import { Button, Popover, TextField } from "@volvel/ui";
+import { Button, DateField, Popover } from "@volvel/ui";
 import { ChevronDown, ListFilter, Search, X } from "@volvel/ui/icons";
 import type { Choice, FilterHost, WidgetViewProps } from "@volvel/widgets";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
@@ -140,21 +140,19 @@ function DateRangeControl({ filter, label, value, onChange }: Control) {
       </div>
       {mode === CUSTOM ? (
         <>
-          <div className="min-w-0 flex-1 @md/cell:w-40 @md/cell:flex-none">
-            <TextField
+          <div className="min-w-0 flex-1 @md/cell:w-44 @md/cell:flex-none">
+            <DateField
               name={`filter-${filter.name}-from`}
               label="From"
-              type="date"
               value={days?.from ?? ""}
               error={problem}
               onChange={(from) => set({ from, to: days?.to ?? "" })}
             />
           </div>
-          <div className="min-w-0 flex-1 @md/cell:w-40 @md/cell:flex-none">
-            <TextField
+          <div className="min-w-0 flex-1 @md/cell:w-44 @md/cell:flex-none">
+            <DateField
               name={`filter-${filter.name}-to`}
               label="To"
-              type="date"
               value={days?.to ?? ""}
               onChange={(to) => set({ from: days?.from ?? "", to })}
             />

@@ -160,7 +160,7 @@ describe("the kit for apps", () => {
       />,
     );
     const input = screen.getByLabelText("Starts") as HTMLInputElement;
-    expect(input.value).toBe("2026-11-17T10:00");
+    expect(input.value).toBe("Nov 17, 2026, 10:00 AM");
     expect(screen.getByText("Clinic time. Times are in UTC.")).toBeTruthy();
     fireEvent.change(input, { target: { value: "2026-11-17T14:20" } });
     expect(onChange).toHaveBeenCalledWith("2026-11-17T14:20:00.000Z");

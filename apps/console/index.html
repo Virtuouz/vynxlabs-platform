@@ -44,7 +44,7 @@
         ask(root + "/summary");
         var built = /^screens\/(.+?)\/?$/.exec(at[3] || "");
         if (built && !/\/preview$/.test(built[1])) {
-          var path = "screens/" + built[1];
+          var path = built[1];
           ["interfaces", "drafts", "apps", "group-keys", "interfaces/" + path, "drafts/" + path].forEach(function (read) {
             ask(root + "/" + read);
           });

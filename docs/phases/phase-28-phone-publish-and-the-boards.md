@@ -200,7 +200,12 @@ The owner replaced the file on 2026-11-22 with nineteen boards. Boards 7 to 19 d
 - New record sources: `{ selected: "<table or list id>" }` (the row chosen in it, on an app page) and `{ own: { table, by } }` (the current user's own row, where the column `by` holds their email).
 - `Page.size` takes `small`, `medium`, `large`, `xlarge` or `full`, for a sheet or a modal; left out, it is medium.
 - `Page.icon` names an icon of the kit's set.
-- `PageWidget.layout` holds `{ tablet?: {at}, phone?: {at}, narrow?: "full" | "stack" | "hide", priority? }`. Leaving out tablet or phone means automatic.
+- `PageWidget.layout` holds `{ tablet?: {at}, phone?: {at}, narrow?: "keep" | "full" | "stack" | "hide", priority? }`. Leaving out tablet or phone means automatic. On a phone:
+  - left out, a small widget (a quarter of the row or less) shares a row and anything else takes one;
+  - `keep` holds half a row if it held half or less on the desktop;
+  - `full` takes a row where it comes;
+  - `stack` takes a row, read after everything not stacked;
+  - `hide` leaves it out.
 
 **In the SDK (built in M1):**
 - `InspectorHint.group` names the group of rows a setting is drawn in.
@@ -242,6 +247,15 @@ The owner replaced the file on 2026-11-22 with nineteen boards. Boards 7 to 19 d
 - **`core/text`:** `look` (`plain`, `note`, `warning` or `tip`).
 - **`labs/goal`:** `goalFrom` (a column, instead of a fixed amount) and `reached` (`green` or nothing).
 
+**Added while building:**
+- **Conditions:** the operators `last` (`{ count, unit }`) and `between` (`[from, to]`).
+- **Reads for the builder:** `GET …/column-values` (a column's values and how many rows have each, as the caller may read them), `GET …/column-counts`, and `GET …/group-keys`. Counts look at 50,000 rows at most and say so.
+- **`core/form`:** a field may start with today, the person filling it in, or a fixed value (`initial`).
+- **`core/detail`:** `figure`, the big figure under the record's number.
+- **`core/approvals`:** decision 0007.
+- **In the kit:** a date field with a calendar, typed or picked, in the person's own language.
+- **The builder's Preview** opens the draft, at an address of its own in the console.
+
 **Wave A** builds the foundations and what is drawn: tokens and type, the drawer kit, the builder's frame, the server, the views, and the Markdown editor. **Wave B** builds on them: the drawers of every widget, the shared tabs, the selector and dialogs, and the phone and publish work.
 
 ## Owner decisions
@@ -256,7 +270,21 @@ Answered by the owner on 2026-11-22.
 | 4 | Scope | **One phase 28:** the builder as boards 1 to 5 and 7 to 19 draw it, with every capability they show, then board 6 and the roadmap's phone layout, publish check, View as, draft history and the acceptance walk-throughs. The boards come first, then the phone and publish work, built on the new components. |
 | 5 | "Describe what people should do" | **Words are matched, with no AI.** Titles, descriptions, each widget's "Good for" examples and the suggestions are searched. Nothing leaves the instance. |
 | 6 | Documentation | Not part of this phase. The docs redesign was raised as an example of the same pattern, and was fixed before. |
+| 7 | Approvals | **Build an Approvals widget**, "inspired by the redesigned components" (the walk-through had no widget to walk). No board draws one: it takes its parts from boards 3, 8, 9, 12, 13 and 16. |
 
 ## Milestones
 
-To be written when the phase starts.
+| # | Milestone | Built by |
+|---|---|---|
+| M1 | The contract: who may run and see, sizes, icons, phone layout, the sources, and the controls | `faa5284` |
+| M2 | The kit: Geist, the boards' palette and density, the drawer's parts, the date field | A1, A2, G1 |
+| M3 | The builder's frame: one header row, the panes, the outline, the canvas and its selection | A3, A4, D2 |
+| M4 | The server: who may run an action, several rows at once, editing in place, the date conditions, the counts | A5, C1 |
+| M5 | The widgets as the boards draw them | A6, A7, A8, A9, D4 |
+| M6 | One inspector: the shell, the shared Data parts, Actions and Rules, and each widget's own | B1 to B6, D1 |
+| M7 | The selector, the page inspector, row click with its sheet preview, Add a form, the draft preview | B7, D2 |
+| M8 | Phone and tablet, the publish check, View as, draft history | B8, D3 |
+| M9 | Fernhill, the guides and the changelog | B9 |
+| M10 | Approvals on a page (decision 0007) | E1 |
+| M11 | The walk against the nineteen boards, and the browser tests | F1 to F3, H1, J1 to J3 |
+

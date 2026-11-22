@@ -291,7 +291,10 @@ export function ChartData({ env, data }: SectionProps) {
   const dated = first?.type !== undefined && TEMPORAL.has(first.type);
   const noun = first ? (dated ? (first.bucket ?? "day") : lower(first.column)) : "rows";
   const shown = figures(query, data, dated ? undefined : env.config.order);
-  const words = readsAs(query, env.config, shown.count);
+  // What the chart draws is counted: its own rows when they are read, else how many values the
+  // column has, when that is known; a made-up sample says nothing of how many there are.
+  const known = first && !dated ? data?.counts?.[first.column] : undefined;
+  const words = readsAs(query, env.config, shown.real ? shown.count : known);
   const kind = kindOf(env.config);
   const order = (env.config.order as string | undefined) ?? "came";
 

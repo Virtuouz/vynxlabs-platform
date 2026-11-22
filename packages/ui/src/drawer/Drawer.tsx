@@ -484,7 +484,9 @@ export function ToggleRow({
   const helpId = `${id}-help`;
   return (
     <div className="flex items-center justify-between gap-3 px-3 py-3">
-      <div className="min-w-0">
+      {/* The words are part of the switch: a press on them turns it (the keyboard has the switch itself). */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: the switch beside it is the keyboard's control */}
+      <div className="min-w-0 cursor-pointer" onClick={() => onChange(!checked)}>
         <p id={id} className="m-0 text-body-sm text-ink">
           {label}
         </p>

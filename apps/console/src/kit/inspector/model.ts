@@ -28,6 +28,7 @@ import {
   type WidgetDefinition,
 } from "@volvel/widgets";
 import { DEFAULT_COLUMNS, defaultColumns, SYSTEM_COLUMNS } from "@volvel/widgets-core/views";
+import { moneyFormatOf } from "@volvel/widgets";
 import { drawersFor } from "./custom.ts";
 
 /** A column of a table, as the workspace's schema says. */
@@ -842,3 +843,40 @@ export function widgetName(
 
 /** A page's title inside a sentence: a leading "The" is not a capital there ("Open the visit chosen"). */
 export const named = (title: string): string => title.replace(/^The /, "the ");
+
+const VALUE_FUNCTIONS = new Set(["sum", "avg", "min", "max"]);
+
+/** The column the widget's values are worked out from, with the table it is read from: what the first value measures. */
+function measuredColumn(widget: PageWidget): { table: string; column: string } | undefined {
+  for (const input of Object.values(widget.data ?? {})) {
+    const visual = visualOf(input);
+    const measure = visual?.measures?.find((one) => VALUE_FUNCTIONS.has(one.fn) && one.column);
+    if (visual && measure?.column) return { table: visual.table, column: measure.column };
+  }
+  return undefined;
+}
+
+/**
+ * A Stat, Chart, Pivot or Goal that is given a column the table knows as money (its definition
+ * says "in cents", "in dollars") starts with the money format (`moneyFormatOf`, the one rule
+ * shared with the table, list and form), when it has no format of its own. Only when the column
+ * measured changed, so a format the person took off ("Plain") stays off. The one place the
+ * builder and the dashboard editor both write through.
+ */
+export function withMoneyStart(
+  before: PageWidget,
+  next: PageWidget,
+  definition: WidgetDefinition | undefined,
+  catalog: Catalog,
+): PageWidget {
+  if (!definition || !("format" in definition.config.properties)) return next;
+  if (next.config?.format !== undefined) return next;
+  const now = measuredColumn(next);
+  const was = measuredColumn(before);
+  if (!now || (was && was.table === now.table && was.column === now.column)) return next;
+  const column = catalog.tables
+    .find((one) => one.name === now.table)
+    ?.columns.find((one) => one.name === now.column);
+  const format = moneyFormatOf(column);
+  return format ? withConfig(next, "format", format) : next;
+}

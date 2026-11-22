@@ -2,9 +2,11 @@
  * Record detail's drawer (board 16): Data is one choice, where the record comes from; Display
  * is the fields in sections and how they are laid out. Actions and Rules are the shared tabs.
  */
+
 import type { DataInput, WidgetSource } from "@volvel/manifest";
 import { DrawerBlock, RadioCards, SegmentedControl, SelectField, ToggleRow } from "@volvel/ui";
-import { heading, withInput } from "../model.ts";
+import { SettingRow } from "../controls.tsx";
+import { configSettings, heading, withInput } from "../model.ts";
 import { FieldsList } from "./fieldsList.tsx";
 import { type Env, Group, LabelledBlock, setConfig } from "./recordShared.tsx";
 
@@ -135,9 +137,23 @@ export function DetailDataSection({ env }: { env: Env }) {
 
 export function DetailDisplaySection({ env }: { env: Env }) {
   const across = typeof env.config.across === "number" ? env.config.across : 2;
+  // Which column names the record, and which is its status: two rows of their own.
+  const named = configSettings(env.definition, "display").filter(
+    (one) => one.name === "heading" || one.name === "status",
+  );
   return (
     <>
       <FieldsList env={env} kind="detail" />
+      {named.length > 0 ? (
+        <Group
+          label="Record header"
+          note="The column that names the record, and the one drawn as its status."
+        >
+          {named.map((setting) => (
+            <SettingRow key={setting.name} env={env} setting={setting} />
+          ))}
+        </Group>
+      ) : null}
       <Group label="Look">
         <LabelledBlock label="Fields across">
           <SegmentedControl<"1" | "2" | "3">

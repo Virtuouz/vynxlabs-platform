@@ -38,7 +38,7 @@ export interface CatalogColumn {
   /** The count above is a floor: the column has more values than the server counts. */
   distinctMore?: boolean;
   /** A choice column's values, with how many rows each has, when the schema says. */
-  values?: { value: string; count?: number }[];
+  values?: { value: string; count?: number; label?: string; color?: string }[];
 }
 export interface CatalogTable {
   name: string;
@@ -75,6 +75,30 @@ const SYSTEM: CatalogColumn[] = [
 export function withSystemColumns(columns: CatalogColumn[]): CatalogColumn[] {
   const have = new Set(columns.map((column) => column.name));
   return [...SYSTEM.filter((column) => !have.has(column.name)), ...columns];
+}
+
+/**
+ * What a choice is called to people: the label the table's definition gives it, else the value
+ * with its first letter raised (`paid` is "Paid", `no_show` is "No show"). One word for it
+ * wherever a drawer lists or says a choice.
+ */
+/** Whether a column holds a few named things: a choice, a yes or no, or text the server counted to a dozen values. */
+export function isChoiceLike(column: CatalogColumn | undefined): boolean {
+  if (!column) return false;
+  return (
+    column.type === "enum" ||
+    column.type === "boolean" ||
+    (column.values?.length ?? 0) > 0 ||
+    (column.type === "text" &&
+      column.distinct !== undefined &&
+      column.distinct > 1 &&
+      column.distinct <= 12)
+  );
+}
+
+export function choiceWords(column: CatalogColumn | undefined, value: string): string {
+  const given = column?.values?.find((one) => one.value === value)?.label;
+  return given ?? heading(value);
 }
 
 /** A column's name as a heading: `customer_id` as "Customer id". */

@@ -69,7 +69,7 @@ import type { Env } from "./controls.tsx";
 import { type ConfigSetting, heading, resultNames, visualOf, withSystemColumns } from "./model.ts";
 import { StepTimeline, type TimelineItem } from "./stepTimeline.tsx";
 import { TokenText } from "./TokenText.tsx";
-import { stepSummary, valueChipWords } from "./timelineModel.ts";
+import { parseTokens, stepSummary, valueChipWords } from "./timelineModel.ts";
 
 /** The icon of each kind of step, on the timeline's rail. */
 export const STEP_ICONS: Record<
@@ -848,6 +848,74 @@ const KIND_WORDS = {
 // The editor
 
 /** A step's key in the timeline: it stays with its step while the list is put in order. */
+/** A confirmation's words with its fields as chips: `Mark [Number] as paid?`. */
+function TokenSentence({
+  text,
+  fields,
+}: {
+  text: string;
+  fields: readonly { name: string; label: string }[];
+}) {
+  return (
+    <span className="leading-7">
+      {parseTokens(text).map((part, at) =>
+        "field" in part ? (
+          <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: parts are written in order and never reordered
+            key={at}
+            className="mx-0.5 inline-flex h-6 items-center rounded-control border border-action bg-action-soft px-2 text-action"
+          >
+            {fields.find((one) => one.name === part.field)?.label ?? heading(part.field)}
+          </span>
+        ) : (
+          // biome-ignore lint/suspicious/noArrayIndexKey: parts are written in order and never reordered
+          <span key={at}>{part.text}</span>
+        ),
+      )}
+    </span>
+  );
+}
+
+/** The fields a confirmation may name, with their words. */
+function confirmFields(ctx: ActionContext) {
+  const table = tableOfRef(ctx, ctx.defaultRef) ?? ctx.thisTable ?? ctx.eventTable;
+  return settableColumns(ctx.columnsOf(table)).map((column) => ({
+    name: column.name,
+    label: heading(column.name),
+  }));
+}
+
+/**
+ * A step as one sentence (board 9). A record update already is chips ("[Status] becomes [Paid]").
+ * A workflow, script, page or removal is one chip that opens its small editor. The rest is words,
+ * and the card opens on a click to show what the words do not reach.
+ */
+function sentenceOf(
+  step: Step,
+  parts: { title: string; body: ReactNode },
+  summary: string,
+  n: number,
+): { sentence: ReactNode; more: boolean } {
+  switch (step.do) {
+    case "update":
+      return { sentence: parts.body, more: false };
+    case "flow":
+    case "script":
+    case "open":
+    case "delete":
+      return {
+        sentence: (
+          <ChipEditor title={parts.title} chip={summary} label={`Change step ${n}: ${summary}`}>
+            {parts.body}
+          </ChipEditor>
+        ),
+        more: false,
+      };
+    default:
+      return { sentence: <span>{summary}</span>, more: true };
+  }
+}
+
 function useStepKeys(count: number) {
   const keys = useRef<string[]>([]);
   const counter = useRef(0);
@@ -864,7 +932,7 @@ export function ActionEditor({
   heading: when,
   action,
   onChange,
-  startCollapsed = false,
+  startCollapsed = true,
   trigger,
 }: {
   env: Env;
@@ -873,7 +941,7 @@ export function ActionEditor({
   heading: string;
   action: Action | undefined;
   onChange: (next: Action | undefined, key?: string) => void;
-  /** Steps that are already there are drawn as one line each (a row action's, a button's in a group). */
+  /** Steps that are already there are drawn closed, as their sentence; a step added opens by itself. */
   startCollapsed?: boolean;
   /** Left of the trigger line. Default: a bolt. */
   trigger?: ReactNode;
@@ -923,6 +991,8 @@ export function ActionEditor({
             summary: `Ask: ${current.confirm.title}`,
             icon: MessageSquare,
             fixed: true,
+            more: true,
+            sentence: <TokenSentence text={current.confirm.title} fields={confirmFields(ctx)} />,
             body: (
               <ConfirmBody
                 id={id}
@@ -965,6 +1035,12 @@ export function ActionEditor({
         summary: stepSummary(step, ctx, env.pages),
         icon: STEP_ICONS[step.do],
         body: parts.body,
+        ...sentenceOf(
+          step,
+          parts,
+          stepSummary(step, ctx, env.pages),
+          at + 1 + (current.confirm ? 1 : 0),
+        ),
         onRemove: () => {
           stepKeys.keys.current = stepKeys.keys.current.filter((_, index) => index !== at);
           put(
@@ -986,7 +1062,8 @@ export function ActionEditor({
         {when}
       </p>
       {count === 0 ? <p className="m-0 text-body-sm text-ink-muted">Nothing yet.</p> : null}
-      {count > 0 ? (
+      {/* Always drawn, so the first step added is a new card (it opens), not one that was there. */}
+      {count >= 0 ? (
         <StepTimeline
           label={`Steps of ${when.toLowerCase()}`}
           items={timeline}

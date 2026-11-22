@@ -2,7 +2,16 @@ import { useLoad } from "../../api.ts";
 import { type Catalog, EMPTY_CATALOG, type FlowChoice, type ScriptChoice } from "./model.ts";
 
 interface Schema {
-  tables: { name: string; columns: { name: string; type: string; references: string | null }[] }[];
+  tables: {
+    name: string;
+    columns: {
+      name: string;
+      type: string;
+      references: string | null;
+      /** A choice column's values, with the labels the table's definition gives them. */
+      values?: { value: string; label?: string; color?: string }[];
+    }[];
+  }[];
   /** Whether whoever is here holds `sql:read`. */
   maySql: boolean;
 }

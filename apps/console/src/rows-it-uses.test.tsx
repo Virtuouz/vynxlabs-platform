@@ -124,17 +124,17 @@ test("a choice column's values are chosen, several make an array, and the chip s
   let editor = await dialog();
   // Each value is offered with how many rows have it.
   expect(editor.getByText("1,204 rows")).toBeTruthy();
-  fireEvent.click(editor.getByLabelText(/^void/));
+  fireEvent.click(editor.getByLabelText(/^Void/));
   fireEvent.click(editor.getByRole("button", { name: "Add" }));
   expect(last().filters).toEqual([{ column: "status", op: "eq", value: "void" }]);
-  expect(panel().getByRole("button", { name: "Status is void" })).toBeTruthy();
+  expect(panel().getByRole("button", { name: "Status is Void" })).toBeTruthy();
 
   // Editing it writes as it goes: two values are "is one of".
-  fireEvent.click(panel().getByRole("button", { name: "Status is void" }));
+  fireEvent.click(panel().getByRole("button", { name: "Status is Void" }));
   editor = await dialog();
-  fireEvent.click(editor.getByLabelText(/^paid/));
+  fireEvent.click(editor.getByLabelText(/^Paid/));
   expect(last().filters).toEqual([{ column: "status", op: "in", value: ["void", "paid"] }]);
-  expect(panel().getByRole("button", { name: "Status is void, paid" })).toBeTruthy();
+  expect(panel().getByRole("button", { name: "Status is Void, Paid" })).toBeTruthy();
 });
 
 test("a condition is removed by its ×", async () => {
@@ -154,7 +154,7 @@ test("a condition is removed by its ×", async () => {
   };
   show(<Harness start={start} definition={list as never} />);
   expect(panel().getByRole("button", { name: "Total is more than 100" })).toBeTruthy();
-  fireEvent.click(panel().getByRole("button", { name: "Remove Status is not void" }));
+  fireEvent.click(panel().getByRole("button", { name: "Remove Status is not Void" }));
   expect(last().filters).toEqual([{ column: "total", op: "gt", value: 100 }]);
   fireEvent.click(panel().getByRole("button", { name: "Remove Total is more than 100" }));
   expect(last().filters).toBeUndefined();

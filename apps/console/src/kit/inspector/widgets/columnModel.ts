@@ -38,6 +38,8 @@ export interface ColumnFacts {
   type: string;
   /** For a choice column: the values it can hold. */
   choices: readonly string[];
+  /** What each choice is called, where the table's definition says. */
+  labels?: Readonly<Record<string, string>>;
 }
 
 /** A column's facts, from the catalog's table, the table's definition if loaded, and the rows. */
@@ -58,10 +60,14 @@ export function factsOf(
       return typeof value === "string" && value !== "" ? [value] : [];
     });
     const choices = detailed?.values.length ? detailed.values : [...new Set(seen)];
+    const labels = Object.fromEntries(
+      (known?.values ?? []).flatMap((one) => (one.label ? [[one.value, one.label]] : [])),
+    );
     return {
       name,
       type: detailed?.type ?? known?.type ?? "text",
       choices: choices.slice(0, 50),
+      ...(Object.keys(labels).length > 0 ? { labels } : {}),
     };
   });
 }

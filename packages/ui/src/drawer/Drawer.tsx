@@ -335,6 +335,7 @@ export function DrawerEditor({
   onOpenChange,
   onDone,
   side = "right",
+  boundary,
 }: {
   /** The element that opens it: a button. */
   trigger: ReactElement;
@@ -347,6 +348,8 @@ export function DrawerEditor({
   /** Runs when "Done" is pressed, before it closes. */
   onDone?: () => void;
   side?: "left" | "right" | "bottom";
+  /** An element it stays inside (the canvas, so it never covers the settings or the header). */
+  boundary?: Element | null | undefined;
 }) {
   const controlled = open === undefined ? {} : { open };
   return (
@@ -361,6 +364,7 @@ export function DrawerEditor({
           align="start"
           sideOffset={8}
           collisionPadding={8}
+          {...(boundary ? { collisionBoundary: boundary } : {})}
           className="layer-popover"
         >
           <Popover.Popup className="flex max-h-[min(34rem,var(--available-height))] w-[22rem] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-panel border border-line bg-raised text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:opacity-0">

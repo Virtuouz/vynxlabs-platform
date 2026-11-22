@@ -24,6 +24,14 @@ export interface TimelineItem {
   icon: ComponentType<{ size?: number; "aria-hidden"?: boolean | "true" }>;
   /** The card's inside, drawn only while it is open. */
   body: ReactNode;
+  /**
+   * The step written as one sentence, drawn under its name whether the card is open or not
+   * ("Set [Clinic] to the clicked [clinic]"): chips that open small editors, or plain words.
+   * Left out, the card is one line when closed and the form when open.
+   */
+  sentence?: ReactNode;
+  /** With a sentence: the card opens on a click to show `body`, for what the chips do not reach. */
+  more?: boolean;
   /** Whether it may be put in another place. The confirmation may not. */
   fixed?: boolean;
   onRemove: () => void;
@@ -35,13 +43,13 @@ export function StepTimeline({
   items,
   onReorder,
   label,
-  startCollapsed = false,
+  startCollapsed = true,
 }: {
   items: readonly TimelineItem[];
   /** The keys of the movable cards in their new order. */
   onReorder: (keys: string[]) => void;
   label: string;
-  /** Cards that are there at first are drawn as one line. */
+  /** Cards that are there at first are drawn closed; a card added later opens by itself. */
   startCollapsed?: boolean;
 }) {
   const [closed, setClosed] = useState<ReadonlySet<string>>(
@@ -157,48 +165,64 @@ export function StepTimeline({
               </div>
               {/* panel-allowed: a step is a card on the rail, a box by design */}
               <div
-                className={`mb-2 min-w-0 flex-1 rounded-panel border border-line bg-surface ${
+                className={`group mb-2 min-w-0 flex-1 rounded-panel border border-line bg-surface ${
                   dragging ? "bg-raised shadow-drag" : ""
                 }`}
               >
                 <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    aria-expanded={open}
-                    aria-label={`${open ? "Collapse" : "Expand"} step ${n}: ${item.title}`}
-                    onClick={() => toggle(item.key)}
-                    className={`flex min-h-9 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-panel px-3 text-left text-body-sm ${focus}`}
-                  >
-                    {open ? (
-                      <ChevronDown
-                        aria-hidden="true"
-                        size={14}
-                        className="shrink-0 text-ink-muted"
-                      />
-                    ) : (
-                      <ChevronRight
-                        aria-hidden="true"
-                        size={14}
-                        className="shrink-0 text-ink-muted"
-                      />
-                    )}
-                    <span className="sr-only">Step {n}: </span>
-                    {open ? (
-                      <span className="min-w-0 truncate">
-                        <span aria-hidden="true" className="mr-2 text-ink-muted">
-                          {n}
-                        </span>
-                        <span className="font-semibold text-ink">{item.title}</span>
+                  {item.sentence !== undefined ? (
+                    <button
+                      type="button"
+                      aria-expanded={item.more ? open : undefined}
+                      aria-label={`Step ${n}: ${item.title}${item.more ? (open ? ", close it" : ", open it") : ""}`}
+                      disabled={!item.more}
+                      onClick={() => toggle(item.key)}
+                      className={`flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-panel px-3 text-left text-body-sm disabled:cursor-default ${item.more ? "cursor-pointer" : ""} ${focus}`}
+                    >
+                      <span aria-hidden="true" className="text-ink-muted">
+                        {n}
                       </span>
-                    ) : (
-                      <span className="min-w-0 truncate text-ink">
-                        <span aria-hidden="true" className="text-ink-muted">
-                          {n} ·{" "}
+                      <span className="min-w-0 truncate font-semibold text-ink">{item.title}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      aria-label={`${open ? "Collapse" : "Expand"} step ${n}: ${item.title}`}
+                      onClick={() => toggle(item.key)}
+                      className={`flex min-h-9 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-panel px-3 text-left text-body-sm ${focus}`}
+                    >
+                      {open ? (
+                        <ChevronDown
+                          aria-hidden="true"
+                          size={14}
+                          className="shrink-0 text-ink-muted"
+                        />
+                      ) : (
+                        <ChevronRight
+                          aria-hidden="true"
+                          size={14}
+                          className="shrink-0 text-ink-muted"
+                        />
+                      )}
+                      <span className="sr-only">Step {n}: </span>
+                      {open ? (
+                        <span className="min-w-0 truncate">
+                          <span aria-hidden="true" className="mr-2 text-ink-muted">
+                            {n}
+                          </span>
+                          <span className="font-semibold text-ink">{item.title}</span>
                         </span>
-                        {item.summary}
-                      </span>
-                    )}
-                  </button>
+                      ) : (
+                        <span className="min-w-0 truncate text-ink">
+                          <span aria-hidden="true" className="text-ink-muted">
+                            {n} ·{" "}
+                          </span>
+                          {item.summary}
+                        </span>
+                      )}
+                    </button>
+                  )}
                   {item.fixed ? null : (
                     <button
                       type="button"
@@ -214,16 +238,22 @@ export function StepTimeline({
                       <GripVertical aria-hidden="true" size={14} />
                     </button>
                   )}
+                  {/* Remove is not always drawn: it shows while the card is pointed at or has focus. */}
                   <button
                     type="button"
                     aria-label={`Remove step ${n}`}
                     onClick={item.onRemove}
-                    className={`mr-1 grid size-7 shrink-0 cursor-pointer place-items-center rounded-inner text-ink-muted hover:text-ink ${focus}`}
+                    className={`mr-1 grid size-7 shrink-0 cursor-pointer place-items-center rounded-inner text-ink-muted opacity-0 hover:text-ink focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100 ${focus}`}
                   >
                     <X aria-hidden="true" size={14} />
                   </button>
                 </div>
-                {open ? <div className="flex flex-col gap-2 px-3 pb-3">{item.body}</div> : null}
+                {item.sentence !== undefined ? (
+                  <div className="px-3 pb-3 text-body-sm text-ink">{item.sentence}</div>
+                ) : null}
+                {open && (item.sentence === undefined || item.more) ? (
+                  <div className="flex flex-col gap-2 px-3 pb-3">{item.body}</div>
+                ) : null}
               </div>
             </li>
           );

@@ -1,5 +1,6 @@
 import { ChevronRight, Eye, EyeOff, GripVertical } from "lucide-react";
 import {
+  type ComponentType,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
@@ -17,6 +18,8 @@ export interface SortableItem {
   value?: ReactNode;
   /** With an eye toggle: hidden. */
   hidden?: boolean;
+  /** Before the label: the kind of thing the row is. */
+  icon?: ComponentType<{ size?: number; className?: string; "aria-hidden"?: boolean | "true" }>;
 }
 
 const focus = "outline-offset-[-2px] focus-visible:outline-2 focus-visible:outline-focus";
@@ -176,6 +179,9 @@ export function SortableRows({
                   onOpen ? "cursor-pointer hover:bg-selected" : ""
                 } ${item.hidden ? "text-ink-muted" : "text-ink"} ${focus}`}
               >
+                {item.icon ? (
+                  <item.icon aria-hidden size={14} className="shrink-0 text-ink-muted" />
+                ) : null}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{item.label}</span>
                   {item.sub ? (

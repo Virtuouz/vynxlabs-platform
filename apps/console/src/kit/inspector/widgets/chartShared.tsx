@@ -324,7 +324,7 @@ export function NumbersRow({ env, sample: given }: { env: Env; sample?: number }
   return (
     <NumberFormatRow
       value={format}
-      {...(sample === undefined ? {} : { sample })}
+      {...(sample === undefined ? {} : { sample: format?.minorUnits ? sample / 100 : sample })}
       icon={Hash}
       onChange={(next) => set("format", next, "changing how numbers are written")}
     />

@@ -228,7 +228,16 @@ export function TableLookSection({ env, bare }: TableSectionProps) {
       <DrawerRow
         label="When empty"
         icon={Type}
-        value={empty ? `“${empty}”` : undefined}
+        // Unset, it says what the page says for it: the words the view draws (`PageView`).
+        value={
+          empty ? (
+            `“${empty}”`
+          ) : (
+            <span className="text-ink-muted">
+              {`“${env.filters.length > 0 ? "Nothing matches the filters." : "There is nothing here yet."}”`}
+            </span>
+          )
+        }
         editorTitle="When empty"
         editor={
           <TextField
@@ -237,6 +246,9 @@ export function TableLookSection({ env, bare }: TableSectionProps) {
             required={false}
             maxLength={200}
             value={empty}
+            placeholder={
+              env.filters.length > 0 ? "Nothing matches the filters." : "There is nothing here yet."
+            }
             hint="Shown when there are no rows."
             onChange={(text) => put("empty", text, "changing what an empty table says")}
           />
@@ -430,20 +442,12 @@ export function rowClickWords(widget: PageWidget, env: Pick<Env, "pages">) {
  * `rowClickEditor` to draw another in its place.
  */
 export function TableRowClickSection({ env, bare }: TableSectionProps) {
-  // The builder's editor (board 3): radio cards, the detail chosen, "Opens as".
-  if (env.rowClickEditor) {
-    return (
-      <Section bare={bare} label="When a row is clicked">
-        <DrawerBlock>
-          {/* The group's own heading says it; the editor's is for where it stands alone. */}
-          <div className="[&_h3]:sr-only">{env.rowClickEditor}</div>
-        </DrawerBlock>
-      </Section>
-    );
-  }
   const click = env.widget.on?.rowClick;
   const { does, opensAs } = rowClickWords(env.widget, env);
-  const editor = (
+  // The builder's editor (board 3: radio cards, the detail chosen, "Opens as") is what each row opens.
+  const editor = env.rowClickEditor ? (
+    <div className="[&_h3]:sr-only">{env.rowClickEditor}</div>
+  ) : (
     <div className="flex flex-col gap-3">
       <ActionControl
         env={env}
@@ -477,10 +481,14 @@ export function TableRowClickSection({ env, bare }: TableSectionProps) {
         value={opensAs}
         editorTitle="Opens as"
         editor={
-          <p className="m-0 text-body-sm text-ink-muted">
-            A page that opens on the row clicked is opened as a side sheet, a full page or a modal,
-            as its page is set.
-          </p>
+          env.rowClickEditor ? (
+            <div className="[&_h3]:sr-only">{env.rowClickEditor}</div>
+          ) : (
+            <p className="m-0 text-body-sm text-ink-muted">
+              A page that opens on the row clicked is opened as a side sheet, a full page or a
+              modal, as its page is set.
+            </p>
+          )
         }
       />
     </Section>

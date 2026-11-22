@@ -24,6 +24,7 @@ import {
   TextField,
   ToggleRow,
 } from "@volvel/ui";
+import { Calendar, Hash, List, Search, Type } from "lucide-react";
 import { useState } from "react";
 import { RANGE_WORDS } from "../filtersControl.tsx";
 import {
@@ -143,6 +144,15 @@ export function narrowedBy(env: Env, filter: PageFilter): Narrowed[] {
   return out;
 }
 
+/** What kind of filter a row is, drawn before its name. */
+const FILTER_ICONS: Partial<Record<PageFilterType, typeof Type>> = {
+  search: Search,
+  choice: List,
+  date_range: Calendar,
+  number: Hash,
+  text: Type,
+};
+
 export function FilterDisplaySection({ env }: { env: Env }) {
   const own = filtersOfWidget(env);
   const [open, setOpen] = useState<string | undefined>();
@@ -249,6 +259,7 @@ export function FilterDisplaySection({ env }: { env: Env }) {
   const items: SortableItem[] = own.map((one) => ({
     id: one.name,
     label: one.label ?? heading(one.name),
+    icon: FILTER_ICONS[one.type] ?? Type,
     sub: filterLine(env.widgets, one),
   }));
   return (
@@ -337,7 +348,7 @@ export function FilterDisplaySection({ env }: { env: Env }) {
           />
         </LabelledBlock>
         <ToggleRow
-          label="Offer \u201cClear\u201d"
+          label="Offer “Clear”"
           help="A button that puts every filter here back to how it starts."
           checked={env.config.reset === true}
           onChange={(next) => setConfig(env, "reset", next ? true : undefined, "the Clear button")}

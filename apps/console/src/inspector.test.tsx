@@ -270,7 +270,7 @@ test("a condition is added from the dashed chip as column, test and value", asyn
   expect(written).toEqual([]);
   fireEvent.click(editor.getByRole("button", { name: "Add" }));
   expect(queryOf(written.at(-1)).filters).toEqual([{ column: "status", op: "ne", value: "paid" }]);
-  expect(screen.getByRole("button", { name: "Status is not paid" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Status is not Paid" })).toBeTruthy();
 });
 
 test("a setting that depends on another is shown only while it holds", () => {

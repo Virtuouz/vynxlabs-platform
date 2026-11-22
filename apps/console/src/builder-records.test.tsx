@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { filtersOf, type InterfaceBody } from "@volvel/manifest";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { footNote } from "./screens/builder/AddFormDialog.tsx";
 import { InterfaceBuilder } from "./screens/builder/AppBuilder.tsx";
 import { KIND_LINE, pageLine, withKind } from "./screens/builder/pageKinds.ts";
 import {
@@ -10,8 +11,11 @@ import {
   defaultPlan,
   detailEdit,
   formEdit,
+  formModal,
+  formWidget,
   onThisRecord,
   type PageContext,
+  submitAction,
   type TableInfo,
 } from "./screens/builder/records.ts";
 import { show } from "./testing.tsx";
@@ -506,4 +510,50 @@ test("a new form starts a date today, and the Add a form row says so", () => {
   ]);
   expect(controlWords(dated.columns[1] as never, "create")).toBe("Date · today by default");
   expect(controlWords(dated.columns[1] as never, "edit")).toBe("Date");
+});
+
+test("the line under Add a form is true in every case: it names the button only when one is added", () => {
+  const plan = (mode: "create" | "edit", where: "modal" | "page") => ({
+    ...defaultPlan(invoices, mode),
+    where,
+  });
+  expect(footNote(plan("create", "modal"), undefined)).toMatch(/Also adds a “New invoice” button/);
+  expect(footNote(plan("create", "page"), undefined)).toBe(
+    "The form is added at the end of this page.",
+  );
+  expect(footNote(plan("edit", "modal"), "invoices")).toMatch(
+    /Also adds an? “Edit invoice” button/,
+  );
+  expect(footNote(plan("edit", "modal"), undefined)).toMatch(/No button is added here/);
+  // And formEdit does what the line says.
+  const context = {
+    widgets: [],
+    filters: [],
+    pages: [],
+    page: { id: "p", title: "P", widgets: [] } as never,
+  };
+  expect(formEdit(context, plan("create", "modal")).widgets).toHaveLength(1);
+  expect(formEdit(context, plan("edit", "modal")).widgets).toHaveLength(0);
+});
+
+test("each After saving choice writes the steps it says", () => {
+  const base = defaultPlan(invoices);
+  const steps = (plan: typeof base) => submitAction(plan).steps.map((one) => one.do);
+  expect(steps({ ...base, where: "modal" })).toEqual(["create", "close", "message"]);
+  expect(steps({ ...base, where: "modal", message: "" })).toEqual(["create", "close"]);
+  expect(steps({ ...base, where: "page" })).toEqual(["create", "message"]);
+  expect(steps({ ...base, where: "page", message: "" })).toEqual(["create"]);
+  expect(steps({ ...defaultPlan(invoices, "edit"), where: "modal" })[0]).toBe("update");
+});
+
+test("a form in a modal leaves the title to the modal, and one on the page keeps its own", () => {
+  const modal = formModal({ ...defaultPlan(invoices), where: "modal" }, []);
+  expect(modal.widgets[0]?.title).toBeUndefined();
+  const onPage = formWidget({ ...defaultPlan(invoices), where: "page" }, "f", {
+    x: 0,
+    y: 0,
+    w: 12,
+    h: 10,
+  });
+  expect(onPage.title).toBe("New invoice");
 });

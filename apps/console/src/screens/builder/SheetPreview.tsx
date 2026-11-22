@@ -31,7 +31,7 @@ export function SheetPreview({
   /** The record it is drawn for, by its heading: "INV-9339". */
   record: string | undefined;
   /** Where the record is among those it can step through. */
-  position?: { at: number; of: number };
+  position?: { at: number; of: number; more?: boolean };
   /** The records on either side, named. */
   before?: string | undefined;
   after?: string | undefined;
@@ -86,7 +86,8 @@ export function SheetPreview({
               <ChevronLeft aria-hidden="true" size={14} /> {before ?? ""}
             </button>
             <span className="tabular-nums">
-              {position.at} of {position.of}
+              {position.at} of{" "}
+              {position.more ? `${position.of.toLocaleString()}+` : position.of.toLocaleString()}
             </span>
             <button
               type="button"
@@ -149,7 +150,16 @@ export function SheetPreviewHost({
     <SheetPreview
       title={page.title}
       record={sample.name}
-      {...(at >= 0 ? { position: { at: at + 1, of: sample.items.length } } : {})}
+      {...(at >= 0
+        ? {
+            position: {
+              at: at + 1,
+              // The table's own count when it is known; until then, what has been read.
+              of: Math.max(sample.total?.rows ?? sample.items.length, sample.items.length),
+              ...(sample.total?.more ? { more: true } : {}),
+            },
+          }
+        : {})}
       before={sample.items[at - 1]?.label}
       after={sample.items[at + 1]?.label}
       onStep={step}

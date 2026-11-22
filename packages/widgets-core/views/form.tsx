@@ -5,6 +5,7 @@ import {
   checkValue,
   DateField,
   EmptyState,
+  FieldMarks,
   type JsonSchema,
   MultiSelectField,
   Notice,
@@ -582,60 +583,62 @@ function FormBody({
   };
 
   return (
-    <form
-      ref={form}
-      noValidate
-      aria-busy={pending}
-      onSubmit={submit}
-      className="flex min-w-0 flex-col gap-4"
-    >
-      {failure ? <Notice tone="danger">{failure}</Notice> : null}
-      {note ? <Notice tone="plain">{note}</Notice> : null}
-      {sections.map((section, index) => (
-        <div
-          // biome-ignore lint/suspicious/noArrayIndexKey: sections have no id; their order is their identity
-          key={index}
-          className="flex min-w-0 flex-col gap-4"
-        >
-          {section.title ? (
-            <h3 className="m-0 border-line border-b pb-1 text-body-sm font-semibold text-ink">
-              {section.title}
-            </h3>
-          ) : null}
-          {/* Two across once the form has the room (a large modal, a wide page); long text takes the row. */}
-          <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-4 @[34rem]/cell:grid-cols-2">
-            {section.fields.map((field) => {
-              const { kind, column } = info(field);
-              const whole = kind === "longtext" || kind === "json" || column.multiple === true;
-              return (
-                <div
-                  key={field.column}
-                  className={`min-w-0 ${whole ? "@[34rem]/cell:col-span-2" : ""}`}
-                >
-                  {draw(field)}
-                </div>
-              );
-            })}
+    <FieldMarks value="required">
+      <form
+        ref={form}
+        noValidate
+        aria-busy={pending}
+        onSubmit={submit}
+        className="flex min-w-0 flex-col gap-4"
+      >
+        {failure ? <Notice tone="danger">{failure}</Notice> : null}
+        {note ? <Notice tone="plain">{note}</Notice> : null}
+        {sections.map((section, index) => (
+          <div
+            // biome-ignore lint/suspicious/noArrayIndexKey: sections have no id; their order is their identity
+            key={index}
+            className="flex min-w-0 flex-col gap-4"
+          >
+            {section.title ? (
+              <h3 className="m-0 border-line border-b pb-1 text-body-sm font-semibold text-ink">
+                {section.title}
+              </h3>
+            ) : null}
+            {/* Two across once the form has the room (a large modal, a wide page); long text takes the row. */}
+            <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-4 @[34rem]/cell:grid-cols-2">
+              {section.fields.map((field) => {
+                const { kind, column } = info(field);
+                const whole = kind === "longtext" || kind === "json" || column.multiple === true;
+                return (
+                  <div
+                    key={field.column}
+                    className={`min-w-0 ${whole ? "@[34rem]/cell:col-span-2" : ""}`}
+                  >
+                    {draw(field)}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      ))}
-      {building ? (
-        <p className="m-0 text-body-sm text-ink-muted">
-          Sends with: {fields.map((field) => info(field).label).join(", ")}
-        </p>
-      ) : (
-        <div className="flex flex-wrap justify-end gap-2">
-          {onClose ? (
-            <Button disabled={pending} onClick={onClose}>
-              Cancel
+        ))}
+        {building ? (
+          <p className="m-0 text-body-sm text-ink-muted">
+            Sends with: {fields.map((field) => info(field).label).join(", ")}
+          </p>
+        ) : (
+          <div className="flex flex-wrap justify-end gap-2">
+            {onClose ? (
+              <Button disabled={pending} onClick={onClose}>
+                Cancel
+              </Button>
+            ) : null}
+            <Button type="submit" variant="primary" loading={pending} disabled={pending || !act}>
+              {config.submitLabel ?? "Save"}
             </Button>
-          ) : null}
-          <Button type="submit" variant="primary" loading={pending} disabled={pending || !act}>
-            {config.submitLabel ?? "Save"}
-          </Button>
-        </div>
-      )}
-    </form>
+          </div>
+        )}
+      </form>
+    </FieldMarks>
   );
 }
 

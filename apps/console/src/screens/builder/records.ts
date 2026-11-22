@@ -351,7 +351,8 @@ export function formWidget(plan: FormPlan, id: string, at: PageWidget["at"]): Pa
   return {
     id,
     type: "core/form",
-    title: plan.title,
+    // In a modal the modal's own title says it; on the page the form carries its heading.
+    ...(plan.where === "page" ? { title: plan.title } : {}),
     at,
     data: {
       record: {

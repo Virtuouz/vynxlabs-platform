@@ -450,6 +450,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
             keep({ ...body, widgets: next.widgets });
           }}
           shell={{
+            bleed: true,
             title: loaded.title,
             saving: pending > 0 ? "saving" : "saved",
             savedWords: "Saved.",

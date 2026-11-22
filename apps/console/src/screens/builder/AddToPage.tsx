@@ -358,8 +358,11 @@ export function AddToPage({
                 </>
               ) : null}
               {onCarry
-                ? `Click to place at the end of ${target ? "it" : "the page"}, or drag it onto the page where you want it.`
+                ? `Click to place at the end of ${target ? "it" : "the page"}, or drag onto the grid.`
                 : `Click to place at the end of ${target ? "it" : "the page"}, then drag it where you want it.`}
+              {found.some((one) => one.type === "core/form")
+                ? " Form fields come from the table, so they aren't listed here."
+                : ""}
             </p>
           </div>
           {shown && more ? (

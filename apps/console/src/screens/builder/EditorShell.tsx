@@ -1,10 +1,12 @@
-import { Panel, SideSheet, useLast } from "@volvel/ui";
+import { Button, Panel, SideSheet, useLast } from "@volvel/ui";
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useShortcut } from "../../kit/keys.ts";
 import { useWide, WIDE } from "../../kit/layout.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { SplitPane } from "../../kit/SplitPane.tsx";
 import { UndoRedo } from "../../kit/UndoRedo.tsx";
+import { usePreference } from "../../prefs.ts";
 import { useNavigationGuard } from "../../router.tsx";
 import { RenameButton, RenameField } from "./BuilderHeader.tsx";
 
@@ -88,6 +90,17 @@ export function EditorShell({
   onCloseInspector: () => void;
 }) {
   const [renaming, setRenaming] = useState(false);
+  // The two side panes fold away, and stay as they were left. The inspector's is the split's own setting.
+  const [outlineFolded, foldOutline] = usePreference<boolean>("builder:outline-folded", false);
+  const [kept, keep] = usePreference<number | { size: number; collapsed?: "first" | "second" }>(
+    "split:page-editor",
+    70,
+  );
+  const settingsFolded = typeof kept === "object" && kept?.collapsed === "second";
+  const foldSettings = () => {
+    const size = typeof kept === "number" ? kept : (kept?.size ?? 70);
+    keep(settingsFolded ? size : { size, collapsed: "second" });
+  };
   useNavigationGuard(saving !== "saved", "A change is not saved yet.");
   const docked = useWide(WIDE.panel);
   // The sheet keeps showing what it showed while it closes.
@@ -134,6 +147,36 @@ export function EditorShell({
             <UndoRedo history={history} />
             {more}
             {primary}
+            {bleed && docked ? (
+              <span className="flex items-center gap-0.5">
+                <Button
+                  variant="quiet"
+                  aria-label={outlineFolded ? "Show pages and widgets" : "Hide pages and widgets"}
+                  aria-pressed={outlineFolded}
+                  tooltip={outlineFolded ? "Show pages and widgets" : "Hide pages and widgets"}
+                  onClick={() => foldOutline(!outlineFolded)}
+                >
+                  {outlineFolded ? (
+                    <PanelLeftOpen aria-hidden="true" size={16} />
+                  ) : (
+                    <PanelLeftClose aria-hidden="true" size={16} />
+                  )}
+                </Button>
+                <Button
+                  variant="quiet"
+                  aria-label={settingsFolded ? "Show the settings" : "Hide the settings"}
+                  aria-pressed={settingsFolded}
+                  tooltip={settingsFolded ? "Show the settings" : "Hide the settings"}
+                  onClick={foldSettings}
+                >
+                  {settingsFolded ? (
+                    <PanelRightOpen aria-hidden="true" size={16} />
+                  ) : (
+                    <PanelRightClose aria-hidden="true" size={16} />
+                  )}
+                </Button>
+              </span>
+            ) : null}
           </>
         }
         after={after}
@@ -146,16 +189,29 @@ export function EditorShell({
             : "flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:items-start"
         }
       >
-        <nav
-          aria-label="On this page"
-          className={
-            bleed
-              ? "flex shrink-0 flex-col gap-4 border-line border-t bg-structure px-2 py-4 max-lg:max-h-[45vh] max-lg:overflow-y-auto lg:w-58 lg:overflow-y-auto lg:border-r"
-              : "flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-60 lg:overflow-y-auto lg:border-r lg:border-line lg:pr-3"
-          }
-        >
-          {outline}
-        </nav>
+        {bleed && docked && outlineFolded ? (
+          <div className="flex w-9 shrink-0 items-start justify-center border-line border-t border-r bg-structure p-1">
+            <Button
+              variant="quiet"
+              aria-label="Show pages and widgets"
+              tooltip="Show pages and widgets"
+              onClick={() => foldOutline(false)}
+            >
+              <PanelLeftOpen aria-hidden="true" size={16} />
+            </Button>
+          </div>
+        ) : (
+          <nav
+            aria-label="On this page"
+            className={
+              bleed
+                ? "flex shrink-0 flex-col gap-4 border-line border-t bg-structure px-2 py-4 max-lg:max-h-[45vh] max-lg:overflow-y-auto lg:w-58 lg:overflow-y-auto lg:border-r"
+                : "flex shrink-0 flex-col gap-3 lg:sticky lg:top-0 lg:max-h-[calc(100vh-8rem)] lg:w-60 lg:overflow-y-auto lg:border-r lg:border-line lg:pr-3"
+            }
+          >
+            {outline}
+          </nav>
+        )}
         {docked ? (
           <SplitPane
             id="page-editor"

@@ -56,7 +56,7 @@ import {
 } from "./nav.ts";
 import { usePreference } from "./prefs.ts";
 import { openedAt, useRecordRecent } from "./recent.ts";
-import { Link, navigate, navigationKind, useRestoredScroll } from "./router.tsx";
+import { Link, navigate, navigationKind, useRestoredScroll, useUrlParam } from "./router.tsx";
 import { useTenantStream } from "./stream.ts";
 import { type ThemeChoice, useThemeChoice } from "./theme.ts";
 
@@ -694,7 +694,13 @@ export function Shell({
 }) {
   const brand = useBrand();
   const operator = isOperator(me);
-  const where = whereIs(path, operator);
+  const [editParam] = useUrlParam("edit");
+  const base = whereIs(path, operator);
+  // A dashboard being edited is the same workbench as an app's builder: panes edge to edge under one toolbar.
+  const where =
+    base.area === "data" && base.section === "dashboards" && editParam === "1"
+      ? { ...base, workbench: true }
+      : base;
   // The help follows where the reader is. A page or a dialog can say its own over this.
   useEffect(() => setSectionTopic(where.help), [where.help]);
   useShortcut("help", toggleHelp);

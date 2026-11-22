@@ -28,6 +28,10 @@ export function useSampleRecords(
 ) {
   const table = page?.kind && page.kind !== "page" ? page.record?.table : undefined;
   const rows = useLoad<{ items: Row[] }>(table ? `${root}/rows/${table}?limit=${OFFERED}` : null);
+  // How many rows the table has, as the caller may read it: what "of N" says, not how many are loaded.
+  const counted = useLoad<{ rows: number; sampled?: true }>(
+    table ? `${root}/column-counts?table=${encodeURIComponent(table)}` : null,
+  );
   const columns = catalog.tables.find((one) => one.name === table)?.columns ?? [];
   // A record is named as the page names it: by its Record detail's heading (an invoice's
   // number), else by the column that names a row of its table.
@@ -49,6 +53,10 @@ export function useSampleRecords(
     table,
     loading: table !== undefined && !rows.data && !rows.error,
     items: items.map((row) => ({ id: row.id, label: label(row) })),
+    /** The table's row count, when it is known; `more` when the table was only sampled (so it has at least this many). */
+    total: counted.data
+      ? { rows: counted.data.rows, more: counted.data.sampled === true }
+      : undefined,
     /** The id the page is drawn with, if the table has a row. */
     record: current?.id,
     name: current ? label(current) : undefined,

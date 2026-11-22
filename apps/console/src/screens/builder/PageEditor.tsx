@@ -768,6 +768,7 @@ export function PageEditor({
           root={root}
           catalog={catalog}
           initialTable={suggested}
+          pageRecordTable={pageInfo.page.record?.table}
           takenTitles={(pageInfo?.pages ?? []).map((one) => one.title)}
           onMake={makeForm}
         />

@@ -13,6 +13,13 @@ export type {
   WidgetPack,
   WireData,
 } from "@volvel/screens";
-export { fitContainers, PageView, placed, viewRegistry } from "@volvel/screens";
+export {
+  automaticAt,
+  changedByHand,
+  fitContainers,
+  PageView,
+  placed,
+  viewRegistry,
+} from "@volvel/screens";
 export { corePack } from "@volvel/widgets-core/views";
 export { labsPack } from "@volvel/widgets-labs/views";

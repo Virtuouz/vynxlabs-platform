@@ -10,9 +10,9 @@ export const VIEWPORTS = {
 } as const;
 
 /** Who the page is drawn as. "Me" is the maker; a group is one of the app's groups. */
-export type ViewAs = { as: "me" } | { as: "group"; group: string };
+export type ViewAs = { as: "me" } | { as: "group"; group: string; name: string };
 export const VIEW_AS_ME: ViewAs = { as: "me" };
-export const viewAsWords = (view: ViewAs) => (view.as === "me" ? "Me" : view.group);
+export const viewAsWords = (view: ViewAs) => (view.as === "me" ? "Me" : view.name);
 
 /** The name being typed, where the name stood. Enter keeps it, Escape and leaving the field are told which. */
 export function RenameField({
@@ -130,7 +130,8 @@ export function ViewAsMenu({
   onChange,
 }: {
   value: ViewAs;
-  groups: readonly string[];
+  /** The tenant's groups, by key (`group-keys`). */
+  groups: readonly { key: string; name: string }[];
   onChange: (next: ViewAs) => void;
 }) {
   return (
@@ -153,10 +154,10 @@ export function ViewAsMenu({
           onSelect: () => onChange(VIEW_AS_ME),
         },
         ...groups.map((group, at) => ({
-          label: group,
-          current: value.as === "group" && value.group === group,
+          label: group.name,
+          current: value.as === "group" && value.group === group.key,
           separated: at === 0,
-          onSelect: () => onChange({ as: "group", group }),
+          onSelect: () => onChange({ as: "group", group: group.key, name: group.name }),
         })),
       ]}
     />
@@ -200,9 +201,13 @@ export function PublishSplit({
   onPublish,
   openHref,
   restore,
+  check,
 }: {
   disabled: boolean;
+  /** Asks for the check ("Ready to publish"): the main part and the first item of the menu. */
   onPublish: () => void;
+  /** The check, in a popover under the main part, opened and closed from outside (it is saved first). */
+  check?: { open: boolean; onOpenChange: (open: boolean) => void; content: ReactNode } | undefined;
   /** The published app's address; the item is off while there is none. */
   openHref: string | undefined;
   /** Wired when draft history exists; until then the item is off. */
@@ -213,9 +218,32 @@ export function PublishSplit({
     "flex w-full items-center rounded-inner px-3 py-1.5 text-left text-body-sm hover:bg-action-soft focus-visible:bg-action-soft aria-disabled:pointer-events-none aria-disabled:opacity-50";
   return (
     <span className="inline-flex">
-      <Button variant="primary" disabled={disabled} className="rounded-r-none" onClick={onPublish}>
-        Publish
-      </Button>
+      {check ? (
+        <Popover
+          open={check.open}
+          onOpenChange={(next) => (next ? onPublish() : check.onOpenChange(false))}
+          title="What publishing does"
+          titleHidden
+          align="end"
+          wide
+          trigger={
+            <Button variant="primary" disabled={disabled} className="rounded-r-none">
+              Publish
+            </Button>
+          }
+        >
+          {check.content}
+        </Popover>
+      ) : (
+        <Button
+          variant="primary"
+          disabled={disabled}
+          className="rounded-r-none"
+          onClick={onPublish}
+        >
+          Publish
+        </Button>
+      )}
       <Popover
         open={open}
         onOpenChange={setOpen}
@@ -275,7 +303,7 @@ export function PublishSplit({
               Restore an earlier draft
             </button>
           ) : (
-            <MenuItemOff tooltip="In this phase">Restore an earlier draft</MenuItemOff>
+            <MenuItemOff tooltip="Nothing to restore here">Restore an earlier draft</MenuItemOff>
           )}
         </div>
       </Popover>

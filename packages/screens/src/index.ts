@@ -31,6 +31,17 @@ export {
   without,
 } from "./layout.ts";
 export {
+  automaticAt,
+  backToAutomatic,
+  changedByHand,
+  type Device,
+  hiddenOnPhone,
+  onTablet,
+  phoneMoved,
+  phoneOrder,
+  phoneSpan,
+} from "./narrow.ts";
+export {
   type Address,
   addressOf,
   type Over,

@@ -2,7 +2,7 @@ import type { Page, PageFilter, PageWidget, WidgetIn } from "@volvel/manifest";
 import { type ActingUser, type Condition, conditionWords } from "@volvel/manifest/action";
 import { childrenOf, isContainer, type Roles, tabsOf, topLevel } from "@volvel/manifest/parts";
 import { EmptyState, Panel, useFlip } from "@volvel/ui";
-import { GripHorizontal } from "@volvel/ui/icons";
+import { EyeOff, GripHorizontal } from "@volvel/ui/icons";
 import type { ActOutcome, Choice, EventPayload, FilterHost } from "@volvel/widgets";
 import type React from "react";
 import {
@@ -40,6 +40,15 @@ import {
   sizeWords,
   without,
 } from "./layout.ts";
+import {
+  type Device,
+  hiddenOnPhone,
+  intoTablet,
+  onTablet,
+  phoneMoved,
+  phoneOrder,
+  phoneSpan,
+} from "./narrow.ts";
 import {
   type Box,
   CARRIED,
@@ -95,8 +104,26 @@ export interface PageViewProps {
    * app's path and the page. Left out, a fold lasts until the page is left.
    */
   foldKey?: string;
+  /**
+   * The screen size the page is drawn for. The tablet draws each widget at the place set for it
+   * (`layout.tablet.at`), and a move or a stretch on it is written there, after `editing.askLayout`.
+   * The phone orders widgets by priority and its own places, and a move on it writes its own place.
+   * Left out, the page is the desktop's; the phone's rules follow the room the grid is given.
+   */
+  device?: Device;
+  /**
+   * While building: draw the page as this group sees it (`key` is the group's key). A widget it
+   * may not see is faded and says so, an action it may not run is greyed with the reason, a
+   * `showWhen` on the user is judged for it. Rows are not: they are read as the builder.
+   */
+  viewAs?: { key: string; name: string };
   /** Present while building: the canvas. */
   editing?: {
+    /**
+     * Asked before a move or a stretch on the tablet's or the phone's drawing writes that device's
+     * own layout. Left out, it is written.
+     */
+    askLayout?(device: "tablet" | "phone"): Promise<boolean>;
     selected: string | undefined;
     onSelect(id: string | undefined): void;
     /** Every change of place or size, or a removal or duplicate, as a new widget list, with words for Undo ("Moved Invoices"). */
@@ -167,6 +194,10 @@ interface GridContext {
   record: string | undefined;
   thisRow: Readonly<Record<string, unknown>> | undefined;
   user: ActingUser | undefined;
+  /** While building as a group ("View as"): who the page is judged for, and what to call them. */
+  viewing: { user: ActingUser; name: string } | undefined;
+  /** A reorder on the phone's drawing: the widget is read before another, or last. */
+  movePhone(id: string, before: string | undefined): void;
   onRecord(row: Readonly<Record<string, unknown>>): void;
   /** Closes the sheet or modal the page is shown in; absent when it is not. */
   onClose: (() => void) | undefined;
@@ -241,9 +272,15 @@ function Cell({
   selected,
   handlers,
   fade,
+  hiddenFor,
+  span,
   place,
 }: {
   ctx: GridContext;
+  /** While building "View as" a group that may not see it: drawn faded, saying so ("Hidden for Billing"). */
+  hiddenFor: string | undefined;
+  /** How many of the phone's two columns it takes. */
+  span: 1 | 2;
   /** While building, what decides when the widget is shown: it is drawn faded, with this said. */
   fade: string | undefined;
   widget: PageWidget;
@@ -329,7 +366,11 @@ function Cell({
     ...definition?.defaults,
     ...widget.config,
     ...(folds ? { folded: ctx.fold.folded(widget) } : {}),
+    // On a phone the filters sit behind one "Filters · n" button, beside the search.
+    ...(narrow && definition?.role === "filters" ? { sit: "button" } : {}),
   };
+  // Who the page is judged for: the builder's own view as a group, or the person looking.
+  const actor = ctx.viewing?.user ?? user;
   const View = entry?.View;
   const emit = (event: string, payload: EventPayload) => {
     // A container's fold is the host's, which keeps it for the reader.
@@ -418,7 +459,6 @@ function Cell({
     building && definition && "rowClick" in definition.events && opened?.do === "open"
       ? (ctx.pages?.find((one) => one.id === opened.page)?.title ?? opened.page)
       : undefined;
-  const hiddenOnPhones = definition?.layout.phone === "hide";
   const style = {
     "--col": `${at.x + 1} / span ${at.w}`,
     "--row": `${at.y + 1} / span ${at.h}`,
@@ -442,9 +482,9 @@ function Cell({
       data-selected={selected ? "" : undefined}
       style={style}
       // A view may size what it draws by its cell's width: the container named `cell`.
-      className={`@container/cell relative flex min-h-0 min-w-0 flex-col @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
+      className={`@container/cell relative flex min-h-0 min-w-0 flex-col ${span === 2 ? "col-span-2" : ""} @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)] ${
         selected ? "ring-2 ring-action" : building ? "hover:ring-1 hover:ring-action/40" : ""
-      } ${fade || away ? "opacity-60" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
+      } ${fade || away ? "opacity-60" : ""} ${hiddenFor ? "opacity-40" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
         building ? "cursor-grab touch-pan-y select-none active:cursor-grabbing" : ""
       }`}
       {...(building
@@ -534,19 +574,20 @@ function Cell({
                       }),
                   })}
               can={(at, row) =>
-                (building || mayRun(actionAt(widget, at), user)) &&
+                ((building && !ctx.viewing) || mayRun(actionAt(widget, at), actor)) &&
                 holds(
                   actionAt(widget, at)?.when,
                   { this: record ? thisRow : null, event: row },
-                  user,
+                  actor,
                 )
               }
               why={(at, row) => {
-                const denied = building ? undefined : whyNotRun(actionAt(widget, at), user);
+                const denied =
+                  building && !ctx.viewing ? undefined : whyNotRun(actionAt(widget, at), actor);
                 if (denied) return denied;
                 const when = actionAt(widget, at)?.when;
                 const records = { this: record ? thisRow : null, event: row };
-                const failing = (when ?? []).filter((one) => !holds([one], records, user));
+                const failing = (when ?? []).filter((one) => !holds([one], records, actor));
                 return failing.length > 0
                   ? `Only when ${failing.map((one) => conditionWords(one)).join(" and ")}.`
                   : undefined;
@@ -573,16 +614,20 @@ function Cell({
       {fade ? (
         <p className="m-0 px-3 pb-2 text-meta text-ink-muted">Shown only when {fade}</p>
       ) : null}
-      {building && seenByTag(widget.rules) ? (
+      {hiddenFor ? (
+        <span
+          data-hidden-for=""
+          className="pointer-events-none absolute top-1 left-1 layer-sticky rounded-inner bg-sunken px-1.5 text-meta text-ink-muted"
+        >
+          {hiddenFor}
+        </span>
+      ) : building && seenByTag(widget.rules) ? (
         <span
           data-seen-by=""
           className="pointer-events-none absolute top-1 left-1 rounded-inner bg-sunken px-1.5 text-meta text-ink-muted"
         >
           {seenByTag(widget.rules)}
         </span>
-      ) : null}
-      {building && narrow && hiddenOnPhones ? (
-        <span className="absolute top-2 right-2 text-meta text-ink-muted">Hidden on phones</span>
       ) : null}
       {selected || held ? (
         <>
@@ -660,10 +705,46 @@ function WidgetGrid({
   const narrow = useNarrow(ref);
   const { editing, placement, drawn } = ctx;
   // Top to bottom and left to right, so the page reads in order without the grid.
+  // On a phone: by priority, then by the phone's own places (narrow.ts).
   const ordered = useMemo(
-    () => [...widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x),
-    [widgets],
+    () =>
+      narrow
+        ? phoneOrder(widgets)
+        : [...widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x),
+    [widgets, narrow],
   );
+  // A press on a widget on the phone, dragged up or down and let go, reads it before the one it
+  // was let go above (or last): written as the phone's own place, once it is asked about.
+  const reorderOnPhone = (event: React.PointerEvent<HTMLElement>, id: string) => {
+    if (event.pointerType !== "mouse" || event.button !== 0 || inner || !editing) return;
+    const startY = event.clientY;
+    const done = (up: PointerEvent) => {
+      window.removeEventListener("pointerup", done);
+      if (Math.abs(up.clientY - startY) < 8) return;
+      const cells = [...(ref.current?.children ?? [])].filter(
+        (node): node is HTMLElement =>
+          node instanceof HTMLElement && node.dataset.widgetCell !== undefined,
+      );
+      const target = cells.find((cell) => {
+        if (cell.dataset.widgetCell === id) return false;
+        const box = cell.getBoundingClientRect();
+        return up.clientY < box.top + box.height / 2;
+      });
+      const ids = ordered.map((one) => one.id);
+      const before = target?.dataset.widgetCell;
+      // Where it already is: nothing to write.
+      const next = ids[ids.indexOf(id) + 1];
+      if (before === next) return;
+      ctx.movePhone(id, before);
+    };
+    window.addEventListener("pointerup", done);
+  };
+  const stepOnPhone = (id: string, by: -1 | 1) => {
+    const ids = ordered.map((one) => one.id);
+    const at = ids.indexOf(id) + by;
+    if (at < 0 || at >= ids.length) return;
+    ctx.movePhone(id, by < 0 ? ids[at] : ids[at + 1]);
+  };
   useFlip(JSON.stringify(ordered.map((one) => ({ id: one.id, at: one.at }))), { ref });
   const into: WidgetIn | undefined = inner
     ? { widget: inner.container, ...(inner.tab !== undefined ? { tab: inner.tab } : {}) }
@@ -683,7 +764,7 @@ function WidgetGrid({
             ...(inner.tab !== undefined ? { "data-grid-tab": inner.tab } : {}),
           }
         : {})}
-      className={`grid grid-cols-1 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12 ${inner && editing ? "min-h-10 rounded-inner" : ""} ${
+      className={`grid grid-cols-2 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12 ${inner && editing ? "min-h-10 rounded-inner" : ""} ${
         inner && landingHere ? "outline-2 outline-dashed outline-action/50 outline-offset-2" : ""
       }`}
       onClick={(event) => {
@@ -703,12 +784,36 @@ function WidgetGrid({
           ) : null;
         }
         const entry = ctx.registry.get(widget.type);
-        // On a phone a widget whose definition says so is not shown at all.
-        if (!editing && narrow && entry?.definition.layout.phone === "hide") return null;
+        // On a phone a widget its layout (or else its definition) hides is not shown at all; building, a dashed place-holder stands in, which chooses it.
+        if (narrow && hiddenOnPhone(widget, entry?.definition)) {
+          if (!editing) return null;
+          return (
+            <HiddenOnPhone
+              key={widget.id}
+              id={widget.id}
+              name={ctx.nameOf(widget.id)}
+              selected={editing.selected === widget.id}
+              onSelect={() => editing.onSelect(widget.id)}
+            />
+          );
+        }
         // Served, a widget whose conditions do not hold is not drawn; building, it is drawn faded and says when.
         const showWhen = widget.rules?.showWhen;
         if (!editing && !ctx.shownNow(showWhen)) return null;
         if (!editing && !seenByUser(widget.rules, ctx.user)) return null;
+        // Building as a group: a widget it may not see is drawn faded, and says for whom it is hidden.
+        const viewing = ctx.viewing;
+        const hiddenFor =
+          editing && viewing
+            ? !seenByUser(widget.rules, viewing.user) ||
+              !holds(
+                (showWhen ?? []).filter((one) => "user" in one),
+                {},
+                viewing.user,
+              )
+              ? `Hidden for ${viewing.name}`
+              : undefined
+            : undefined;
         const fade =
           editing && showWhen && showWhen.length > 0
             ? showWhen
@@ -733,6 +838,8 @@ function WidgetGrid({
             narrow={narrow}
             selected={selected}
             fade={fade}
+            hiddenFor={hiddenFor}
+            span={narrow ? phoneSpan(widget) : 2}
             place={
               container
                 ? (tab) => (
@@ -746,13 +853,22 @@ function WidgetGrid({
             }
             handlers={{
               onPointerDown: (event, how) => {
-                // A press on a widget that is not a drag chooses it by click, below.
-                if (narrow && how === "move") return;
+                // On a phone a press is a click, or a drag up or down that reorders it.
+                if (narrow && how === "move") return reorderOnPhone(event, widget.id);
                 placement.grab(event, widget.id, stored.at, how, widget.in);
               },
               onKeyDown: (event) => {
                 if (!editing || isControl(event.target)) return;
-                if (event.key === "Escape") {
+                if (
+                  narrow &&
+                  !inner &&
+                  (event.key === "ArrowUp" || event.key === "ArrowDown") &&
+                  !event.metaKey &&
+                  !event.ctrlKey
+                ) {
+                  event.preventDefault();
+                  stepOnPhone(widget.id, event.key === "ArrowUp" ? -1 : 1);
+                } else if (event.key === "Escape") {
                   editing.onSelect(undefined);
                 } else if (event.key === "Delete") {
                   event.preventDefault();
@@ -792,7 +908,9 @@ const gridKey = (into: WidgetIn | undefined) => gridOf({ in: into });
  * Delete, and let go with Esc.
  */
 export function PageView({
-  widgets,
+  widgets: given,
+  device,
+  viewAs,
   filters,
   registry,
   client,
@@ -812,6 +930,20 @@ export function PageView({
   foldKey,
   editing,
 }: PageViewProps) {
+  // The tablet draws each widget where its own layout puts it; what is changed there is written back as that layout.
+  const widgets = useMemo(() => (device === "tablet" ? onTablet(given) : given), [given, device]);
+  // Building as a group: who the page is judged for. Rows are still the builder's.
+  const viewUser = useMemo<ActingUser | undefined>(
+    () =>
+      editing && viewAs
+        ? {
+            id: user?.id ?? "builder",
+            ...(user?.email ? { email: user.email } : {}),
+            groups: [viewAs.key],
+          }
+        : undefined,
+    [editing, viewAs, user],
+  );
   const [told, setTold] = useState("");
   // Each action that ran makes every widget read again, on top of the host's own refresh.
   const [ran, setRan] = useState(0);
@@ -919,8 +1051,29 @@ export function PageView({
 
   const gridRef = useRef<HTMLDivElement>(null);
   // Every change the page makes to its widgets: containers kept as tall as what they hold.
-  const change = (next: PageWidget[], label: string, pin?: string) =>
-    editing?.onChange([...fitContainers(next, roles, pin ? { pin } : {})], label);
+  const change = (next: PageWidget[], label: string, pin?: string) => {
+    if (!editing) return;
+    const made = [...fitContainers(next, roles, pin ? { pin } : {})];
+    if (device !== "tablet") return editing.onChange(made, label);
+    // On the tablet a move is the tablet's own place: it is asked about first, and the desktop's stays.
+    const written = intoTablet(given, widgets, made);
+    const was = new Map(given.map((widget) => [widget.id, JSON.stringify(widget.layout?.tablet)]));
+    const byHand = written.some(
+      (widget) =>
+        was.has(widget.id) && JSON.stringify(widget.layout?.tablet) !== was.get(widget.id),
+    );
+    const apply = () => editing.onChange(written, label);
+    if (!byHand || !editing.askLayout) return apply();
+    void editing.askLayout("tablet").then((yes) => yes && apply());
+  };
+  /** On the phone: the widget is read before another, or last. Asked about first, and marked as changed by hand. */
+  const movePhone = (id: string, before: string | undefined) => {
+    if (!editing) return;
+    const apply = () =>
+      editing.onChange(phoneMoved(given, id, before), `Moved ${name(id)} on the phone`);
+    if (!editing.askLayout) return apply();
+    void editing.askLayout("phone").then((yes) => yes && apply());
+  };
   const placement = usePlacement({
     grid: gridRef,
     limits: (id) => limitsOf(registry.get(byId.get(id)?.type ?? "")?.definition),
@@ -1096,6 +1249,8 @@ export function PageView({
     record,
     thisRow,
     user,
+    viewing: viewUser && viewAs ? { user: viewUser, name: viewAs.name } : undefined,
+    movePhone,
     onRecord: setThisRow,
     onClose: over ? () => onNavigate?.({ close: true }) : undefined,
     overRecord,
@@ -1154,7 +1309,7 @@ function Landing({ card, at }: { card: PlaceCard; at: Box }) {
       data-flip-key={CARRIED}
       data-landing=""
       style={style}
-      className="relative flex min-h-24 flex-col justify-center gap-0.5 rounded-panel border-2 border-dashed border-action bg-action-soft px-4 @2xl:min-h-0 @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)]"
+      className="relative col-span-2 flex min-h-24 flex-col justify-center gap-0.5 rounded-panel border-2 border-dashed border-action bg-action-soft px-4 @2xl:min-h-0 @2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)]"
     >
       <span className="truncate font-semibold text-ink">{card.title}</span>
       <span className="text-body-sm text-ink-muted">{card.kind}</span>
@@ -1162,6 +1317,36 @@ function Landing({ card, at }: { card: PlaceCard; at: Box }) {
         {sizeWords(at)}
       </span>
     </div>
+  );
+}
+
+/** Building the phone's layout: a widget it hides is a dashed place-holder, which can be chosen to change that. */
+function HiddenOnPhone({
+  id,
+  name,
+  selected,
+  onSelect,
+}: {
+  id: string;
+  name: string;
+  selected: boolean;
+  onSelect(): void;
+}) {
+  return (
+    <button
+      type="button"
+      data-widget-cell={id}
+      data-hidden-on-phone=""
+      data-selected={selected ? "" : undefined}
+      aria-pressed={selected}
+      onClick={onSelect}
+      className={`col-span-2 flex min-h-10 items-center gap-2 rounded-panel border border-dashed border-action bg-action-soft px-3 py-2 text-left text-body-sm text-ink ${
+        selected ? "ring-2 ring-action" : ""
+      }`}
+    >
+      <EyeOff aria-hidden="true" size={14} className="shrink-0 text-action" />
+      <span className="min-w-0 truncate">{name} is hidden on phones</span>
+    </button>
   );
 }
 

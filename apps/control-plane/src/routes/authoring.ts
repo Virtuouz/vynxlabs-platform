@@ -812,6 +812,55 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.get(
+      `${base}/group-keys`,
+      {
+        config: { access: access.workspace("resource:read") },
+        schema: {
+          summary: "The keys of the tenant's groups, members' and end users'",
+          description:
+            "What an action's `runBy` and a widget's `seenBy` name groups by. The builder's " +
+            "publish check and its \"View as\" read it: a group named there that is not here " +
+            "matches nobody.",
+          tags: ["authoring"],
+          params: WorkspaceParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(
+                Type.Object({
+                  key: Type.String(),
+                  name: Type.String(),
+                  kind: Type.String({ description: "`member` or `end_user`." }),
+                }),
+              ),
+            }),
+          },
+        },
+      },
+      async ({ params }) => {
+        const [members, endUsers] = await Promise.all([
+          db
+            .selectFrom("principal_group")
+            .select(["key", "name"])
+            .where("tenant_id", "=", params.t)
+            .orderBy("name")
+            .execute(),
+          db
+            .selectFrom("end_user_group")
+            .select(["key", "name"])
+            .where("tenant_id", "=", params.t)
+            .orderBy("name")
+            .execute(),
+        ]);
+        return {
+          items: [
+            ...members.map((row) => ({ key: row.key, name: row.name, kind: "member" })),
+            ...endUsers.map((row) => ({ key: row.key, name: row.name, kind: "end_user" })),
+          ],
+        };
+      },
+    );
+
     app.post(
       `${base}/draft-history/:id/restore`,
       {

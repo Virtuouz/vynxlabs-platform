@@ -3,8 +3,8 @@ import { Button, Notice } from "@volvel/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../../api.ts";
 import { ask, failureText, notify, takenText } from "../../ask.tsx";
+import { ago } from "../../kit/format.ts";
 import { useHistory } from "../../kit/history.ts";
-import { useActionLists } from "../../kit/inspector/catalog.ts";
 import { heading } from "../../kit/inspector/model.ts";
 import { Loading } from "../../kit/LoadState.tsx";
 import {
@@ -18,12 +18,14 @@ import {
   ViewAsMenu,
 } from "./BuilderHeader.tsx";
 import { draftChangeCount } from "./changes.ts";
+import { DraftHistory } from "./DraftHistory.tsx";
 import { type DraftAnswer, type Listed, slug } from "./data.ts";
+import { useGroupKeys } from "./groupKeys.ts";
 import { NewPageDialog } from "./NewPageDialog.tsx";
 import { runsActions } from "./outline.ts";
 import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
-import { PublishDialog } from "./PublishDialog.tsx";
+import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, movedPage } from "./pageKinds.ts";
 import type { Started } from "./starters.ts";
 
@@ -90,7 +92,10 @@ export function AppBuilder({
   );
   /** What people see now: what the draft's changes are counted against. Not there until it is published. */
   const deployed = useLoad<{ body: InterfaceBody }>(`${root}/interfaces/${path}`);
-  const { groups } = useActionLists(root);
+  const { groups } = useGroupKeys(root);
+  /** The screen sizes whose hand-made layout the builder has agreed to write, until the page is left. */
+  const agreed = useRef(new Set<string>());
+  const [restoring, setRestoring] = useState(false);
 
   // What is saved and not deployed, or else what is deployed.
   useEffect(() => {
@@ -185,7 +190,34 @@ export function AppBuilder({
   const acts = runsActions(page?.widgets ?? []);
   const review = async () => {
     dirty.current = false;
-    if (await save(body)) setReviewing(true);
+    if (await save(body)) {
+      deployed.reload();
+      setReviewing(true);
+    }
+  };
+  /** Dragging on the phone or tablet preview writes that screen's own layout: asked once, then it is the builder's choice. */
+  const askLayout = async (device: "tablet" | "phone") => {
+    if (agreed.current.has(device)) return true;
+    const sure = await ask.confirm({
+      title: `Change the ${device} layout by hand?`,
+      text: `The ${device} layout is made from the desktop one. Moving a widget here gives it a place of its own on the ${device}, and it stops following the desktop. "Go back to automatic" in its Layout undoes that.`,
+      action: `Change the ${device} layout`,
+    });
+    if (sure) agreed.current.add(device);
+    return sure;
+  };
+  /** An earlier draft becomes the current one: one step, which Undo takes back. */
+  const restoreDraft = (earlier: InterfaceBody, savedAt: string) => {
+    change((draft) => {
+      for (const key of Object.keys(draft) as (keyof InterfaceBody)[]) delete draft[key];
+      Object.assign(draft, structuredClone(earlier));
+    }, "restoring an earlier draft");
+    setRestoring(false);
+    setPageId(undefined);
+    setSelected(undefined);
+    notify.success(`The draft saved ${ago(savedAt)} is back.`, {
+      action: { label: "Undo", onClick: history.undo },
+    });
   };
   const publish = async () => {
     setPublishing(true);
@@ -202,6 +234,7 @@ export function AppBuilder({
       await api.post(`${root}/changes/deploy`, { paths, message: `Publish ${body.title}` });
       revision.current = undefined;
       setReviewing(false);
+      deployed.reload();
       notify.success("Published. People who open the app now see this.", {
         ...(url ? { link: { label: "Open the app", href: url } } : {}),
       });
@@ -317,6 +350,28 @@ export function AppBuilder({
         disabled={problems.length > 0 || typeof saving === "object"}
         onPublish={() => void review()}
         openHref={url}
+        restore={() => setRestoring(true)}
+        check={{
+          open: reviewing,
+          onOpenChange: setReviewing,
+          content: (
+            <PublishCheck
+              root={root}
+              path={path}
+              appPath={appPath}
+              drafted={[...pending]}
+              body={body}
+              deployed={deployed.data ? deployed.data.body : deployed.error ? null : undefined}
+              problems={problems}
+              publishing={publishing}
+              onPublish={() => void publish()}
+              onTry={(group) => {
+                setViewAs({ as: "group", group: group.key, name: group.name });
+                setReviewing(false);
+              }}
+            />
+          ),
+        }}
       />
     ),
     notices: (
@@ -395,6 +450,10 @@ export function AppBuilder({
           shell={shell}
           refreshKey={kept}
           frame={{ name: viewport, width: VIEWPORTS[viewport].width }}
+          layout={{
+            viewAs: viewAs.as === "group" ? { key: viewAs.group, name: viewAs.name } : undefined,
+            askLayout,
+          }}
           pageInfo={{
             page,
             pages: body.pages,
@@ -461,16 +520,13 @@ export function AppBuilder({
         pages={body.pages}
         onMake={addPage}
       />
-      <PublishDialog
-        open={reviewing}
-        onClose={() => setReviewing(false)}
+      <DraftHistory
+        open={restoring}
+        onClose={() => setRestoring(false)}
         root={root}
         path={path}
-        appPath={appPath}
-        drafted={[...pending]}
-        body={body}
-        publishing={publishing}
-        onPublish={() => void publish()}
+        current={body}
+        onRestore={restoreDraft}
       />
     </>
   );

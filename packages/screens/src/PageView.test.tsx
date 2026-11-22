@@ -546,8 +546,9 @@ describe("the frame", () => {
         }}
       />,
     );
-    expect(screen.getByText("Aside")).toBeTruthy();
-    expect(screen.getByText("Hidden on phones")).toBeTruthy();
+    // Building: the widget itself is not drawn; a dashed place-holder says so, and can be chosen.
+    expect(screen.queryByText("Aside")).toBeNull();
+    expect(screen.getByText(/is hidden on phones/)).toBeTruthy();
   });
 });
 

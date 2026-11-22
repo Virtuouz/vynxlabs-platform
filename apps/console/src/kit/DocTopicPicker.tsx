@@ -47,7 +47,7 @@ export function DocTopicPicker({
       </span>
       {value ? (
         <div
-          className={`flex min-w-0 flex-col gap-2 rounded-control border p-2.5 ${
+          className={`flex min-w-0 flex-col gap-2 rounded-control border p-3 ${
             lost ? "border-attention bg-attention-soft" : "border-line bg-surface"
           }`}
         >

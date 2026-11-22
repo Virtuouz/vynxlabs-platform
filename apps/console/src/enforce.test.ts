@@ -333,11 +333,33 @@ test("every sheet and dialog can arrive and leave with motion", () => {
 });
 
 /**
+ * A list that is put in order by dragging its handle is moved by `useSortable` (packages/ui): the
+ * row follows the pointer, the others slide, it settles, Esc puts it back, and nothing moves under
+ * reduced motion. No screen makes a drag of its own with the browser's `draggable` and drop events
+ * (the row pops into place), except a tree that moves things between folders (`Tree`, which the
+ * docs and the data screens use), and the Columns menu, which is dnd-kit's and slides.
+ */
+test("a list reordered by a handle uses the shared sortable", () => {
+  const found: string[] = [];
+  for (const path of new Set(drawn())) {
+    if (/packages\/ui\/src\/(Tree|drawer\/useSortable)\.tsx?$/.test(path)) continue;
+    if (/apps\/console\/src\/(kit\/views|screens\/docs\/Docs)\.tsx$/.test(path)) continue;
+    const lines = readFileSync(path, "utf8").split("\n");
+    lines.forEach((line, index) => {
+      if (/\bonDragStart=|\bdraggable(=|\s*$)/.test(line) && !/draggable=\{false\}/.test(line)) {
+        found.push(`${where(path)}:${index + 1} a drag of its own: use useSortable`);
+      }
+    });
+  }
+  expect(found).toEqual([]);
+});
+
+/**
  * Whatever is moved a place by a button or a key is seen to move (phase 19,
  * M2). The buttons are the kit's `MoveButtons`, and what they move is held by
  * `useFlip`, which plays each thing from where it was. So no screen draws
  * move buttons of its own, and a file that moves things from the arrow keys
- * uses `useFlip` or the shared placement. An arrow that moves nothing, such
+ * uses `useFlip`, `useSortable` or the shared placement. An arrow that moves nothing, such
  * as the next match in a log, says so with `move-allowed:` on the line before.
  */
 test("every move by a button or a key is animated by the shared pieces", () => {
@@ -346,7 +368,7 @@ test("every move by a button or a key is animated by the shared pieces", () => {
     if (/packages\/ui\/src\/(MoveButtons|useFlip)\.tsx?$/.test(path)) continue;
     const text = readFileSync(path, "utf8");
     const lines = text.split("\n");
-    const flips = /\buseFlip\b|\busePlacement\b/.test(text);
+    const flips = /\buseFlip\b|\busePlacement\b|\buseSortable\b/.test(text);
     lines.forEach((line, index) => {
       if (/move-allowed:/.test(`${lines[index - 1]}${lines[index - 2]}`)) return;
       if (/aria-label=\{?[`"']Move [^`"']*\b(up|down|earlier|later|left|right)[`"']/.test(line)) {

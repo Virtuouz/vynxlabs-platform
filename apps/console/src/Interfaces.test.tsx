@@ -269,7 +269,12 @@ test("widgets are added and removed, and what is wrong is said before anything c
   expect(await settings.findByRole("textbox", { name: "Title" })).toBeTruthy();
   // What is wrong is counted beside the name, and listed when it is opened.
   fireEvent.click(await screen.findByRole("button", { name: "1 to fix" }, { timeout: 4000 }));
-  expect(await screen.findByText("Chart on Sales: a chart needs a shape.")).toBeTruthy();
+  expect(
+    (await screen.findAllByText("Chart on Sales: a chart needs a shape.")).length,
+  ).toBeGreaterThan(0);
+  // The same problem is on the tab it is fixed in, and only there: a dot on Display, none on Data.
+  expect(settings.getByRole("tab", { name: /^Display/ }).textContent).toContain("needs fixing");
+  expect(settings.getByRole("tab", { name: /^Data/ }).textContent).not.toContain("needs fixing");
   fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
   expect((screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement).disabled).toBe(
     true,

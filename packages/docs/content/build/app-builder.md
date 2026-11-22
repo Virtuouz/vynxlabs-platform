@@ -41,6 +41,20 @@ A record page, a side sheet and a modal that opens on a record each say the tabl
 
 Add a form, a detail or a button from **Add to page**. When a page shows a table, the list opens with suggestions of what goes with it: "Invoice detail", "New invoice form". **+ Page** starts a page from a table in the same way.
 
+## Deciding requests
+
+**Approvals** puts the requests waiting for a decision on a page, so that the people who decide them do it where they work. It shows the approval steps of the workflows you choose (or of every workflow that has one): each with its title, where it came from and how long it has waited ("Reorder · asked 2 hours ago · due in 2 days", in red when it is overdue), and the details the step was asked with, as Record detail draws them: money, dates and numbers as people read them. **Approve** is the main button and **Reject** the outlined red one. Rejecting opens a box for the reason with **Reject** under it; **Ask why** says whether that is needed (a rejection is, unless you say never) and whether an approval needs one too. When one is decided it leaves, a notice says who decided what, and the next one is open and has the focus. If someone else decided it first, the request says who and what, and is not changed.
+
+It looks like **rows**, **cards** or a **queue**: the list at the left with the chosen one's detail beside it, or under it when the widget is narrow. Rows and cards open the detail in a side sheet or a modal that steps through them, or draw it in place.
+
+Who may decide is **not** set here. It is set on the workflow's approval step, as it always was, and the server holds to it:
+
+- Only a **member** of the workspace may decide, as themselves, and only one who holds `approval:write` (and `approval:read` to see) and is among the step's named approvers. An end user, a guest and a service account see nothing and decide nothing. This is the same standing as the approval mail's, and it is not what the app grants: the permissions an app uses do not include approvals.
+- Someone who may read but not decide sees the requests with the buttons greyed and the reason ("Only the practice-managers group can decide this."), never hidden.
+- The widget reads only the workflows it lists, in this workspace. The comment is trimmed and at most 2,000 characters, and the audit records who decided, with `via: "app"` and the app, page and widget.
+
+Where the Approvals widget is shown to some groups only, the server shows it to them only, too.
+
 ## What happens when something is pressed
 
 A button, a row's action and a form's **When it is sent** are each written as **steps**, from the **Actions** tab. Steps run in order:

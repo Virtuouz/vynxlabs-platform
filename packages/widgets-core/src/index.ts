@@ -1433,7 +1433,7 @@ export const approvals = defineWidget({
           group: "Looks like",
           control: "segmented",
           label: "A click opens",
-          choices: { sheet: "Side sheet", modal: "Modal", nothing: "Nothing" },
+          choices: { sheet: "Sheet", modal: "Modal", nothing: "None" },
           order: 1.5,
         }),
       },
@@ -1490,7 +1490,7 @@ export const approvals = defineWidget({
           group: "Deciding",
           control: "segmented",
           label: "Ask why",
-          choices: { never: "Never", rejecting: "When rejecting", always: "Always" },
+          choices: { never: "Never", rejecting: "Rejecting", always: "Always" },
           order: 3,
         }),
       },
@@ -1527,7 +1527,7 @@ export const approvals = defineWidget({
     advance: true,
   },
   events: {},
-  layout: { min: { w: 4, h: 5 }, default: { w: 6, h: 9 }, phone: "stack" },
+  layout: { min: { w: 4, h: 5 }, default: { w: 8, h: 12 }, phone: "stack" },
 });
 
 export const CORE_WIDGETS = [

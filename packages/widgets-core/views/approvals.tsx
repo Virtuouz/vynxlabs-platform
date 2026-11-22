@@ -163,11 +163,11 @@ function Status({ item, overdue }: { item: ApprovalItem; overdue: boolean }) {
 function Meta({ item, now }: { item: ApprovalItem; now: number }) {
   const meta = metaOf(item, now);
   return (
-    <p className="m-0 flex flex-wrap items-center gap-x-1.5 text-body-sm text-ink-muted">
+    <p className="m-0 text-body-sm text-ink-muted">
       {meta.parts.map((part, at) => (
-        <span key={part.text} className={part.danger ? "text-danger" : undefined}>
-          {at > 0 ? <span aria-hidden="true">· </span> : null}
-          {part.text}
+        <span key={part.text}>
+          {at > 0 ? " · " : ""}
+          <span className={part.danger ? "text-danger" : undefined}>{part.text}</span>
         </span>
       ))}
     </p>
@@ -422,6 +422,7 @@ function Row({
   onOpen,
   onFocus,
   card,
+  chevron = true,
   settled,
 }: {
   item: ApprovalItem;
@@ -432,6 +433,8 @@ function Row({
   onOpen?: (() => void) | undefined;
   onFocus?: (() => void) | undefined;
   card?: boolean;
+  /** A row that opens something says so with a chevron; one that is only chosen does not. */
+  chevron?: boolean;
   settled?: boolean;
 }) {
   const meta = metaOf(item, now);
@@ -466,10 +469,10 @@ function Row({
           className={`flex min-w-0 items-center gap-3 outline-none ${
             card
               ? "rounded-control border border-line bg-surface p-3 data-[selected]:border-action"
-              : "border-b border-line px-2 py-3"
+              : "border-b border-l-2 border-line border-l-transparent px-2 py-3 data-[selected]:border-l-action"
           } ${
             open
-              ? "cursor-pointer hover:bg-sunken focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-action data-[selected]:bg-action-soft"
+              ? "cursor-pointer hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-action data-[selected]:bg-sunken"
               : ""
           }`}
         >
@@ -489,7 +492,7 @@ function Row({
           ) : meta.overdue ? (
             <DotBadge tone="danger">Overdue</DotBadge>
           ) : null}
-          {open ? (
+          {open && chevron ? (
             <ChevronRight aria-hidden="true" size={16} className="shrink-0 text-ink-muted" />
           ) : null}
         </div>
@@ -717,16 +720,18 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
 
   const showDecided = config.decided === true && !sample;
   const tabs = showDecided ? (
-    <SegmentedControl
-      label="Show"
-      size="small"
-      value={view}
-      onChange={setView}
-      options={[
-        { value: "waiting", label: "Waiting", count: waiting.length },
-        { value: "decided", label: "Decided", count: decidedOnes.length },
-      ]}
-    />
+    <div className="self-start">
+      <SegmentedControl
+        label="Show"
+        size="small"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: "waiting", label: "Waiting", count: waiting.length },
+          { value: "decided", label: "Decided", count: decidedOnes.length },
+        ]}
+      />
+    </div>
   ) : null;
 
   const noticeBar = notice ? (
@@ -767,6 +772,7 @@ export function ApprovalsView(props: WidgetViewProps<ApprovalsConfig>) {
         item={item}
         now={now}
         card={card}
+        chevron={look !== "queue"}
         leaving={entry.leaving}
         open={open}
         selected={look === "queue" ? current?.id === item.id : sheet === item.id}

@@ -13,6 +13,8 @@ import {
   CheckChip,
   ChipSet,
   DrawerBlock,
+  DrawerEditor,
+  RadioCards,
   SegmentedControl,
   SortableRows,
   TextField,
@@ -160,17 +162,25 @@ export function ApprovalsDataSection({ env }: { env: Env }) {
             : "Only these. A workflow with no approval step has nothing to show."}
         </p>
       </DrawerBlock>
-      <LabelledBlock label="Whose">
-        <SegmentedControl<"mine" | "all">
+      <DrawerBlock label="Whose">
+        <RadioCards<"mine" | "all">
           label="Whose"
           value={source.whose === "all" ? "all" : "mine"}
           options={[
-            { value: "mine", label: "Theirs to decide" },
-            { value: "all", label: "Every one, theirs or not" },
+            {
+              value: "mine",
+              title: "Theirs to decide",
+              line: "Only the requests the viewer may approve or reject",
+            },
+            {
+              value: "all",
+              title: "Every one, theirs or not",
+              line: "The others are shown with their buttons greyed",
+            },
           ]}
           onChange={(whose) => write({ flows: source.flows, whose }, "choosing whose requests")}
         />
-      </LabelledBlock>
+      </DrawerBlock>
     </Group>
   );
 }
@@ -241,26 +251,29 @@ export function ApprovalsFieldsSection({ env }: { env: Env }) {
             ))}
           </ChipSet>
         ) : null}
-        <div className="flex items-end gap-2">
-          <div className="min-w-0 flex-1">
+        <div>
+          <DrawerEditor
+            title="Add a detail by its name"
+            doneLabel="Add"
+            side="left"
+            onDone={() => add(adding)}
+            trigger={
+              <button type="button" className={dashedFace}>
+                <span aria-hidden="true">+</span>
+                Detail
+              </button>
+            }
+          >
             <TextField
               name={`${env.widget.id}-detail-name`}
               label="Add a detail by its name"
+              hint="As the workflow's step names it: total, on_hand."
               required={false}
               maxLength={80}
               value={adding}
               onChange={setAdding}
             />
-          </div>
-          <button
-            type="button"
-            className={dashedFace}
-            disabled={adding.trim() === ""}
-            onClick={() => add(adding)}
-          >
-            <span aria-hidden="true">+</span>
-            Add
-          </button>
+          </DrawerEditor>
         </div>
       </div>
     </Group>
@@ -339,7 +352,7 @@ export function ApprovalsActionsSection({ env }: { env: Env }) {
             value={askWhy}
             options={[
               { value: "never", label: "Never" },
-              { value: "rejecting", label: "When rejecting" },
+              { value: "rejecting", label: "Rejecting" },
               { value: "always", label: "Always" },
             ]}
             onChange={(next) =>

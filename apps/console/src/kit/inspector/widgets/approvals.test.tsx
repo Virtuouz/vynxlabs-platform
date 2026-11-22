@@ -135,9 +135,9 @@ describe("Data: which requests", () => {
 
   test("whose: theirs to decide, or every one", () => {
     const seen = mount(ApprovalsDataSection);
-    fireEvent.click(screen.getByRole("radio", { name: "Every one, theirs or not" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Every one, theirs or not/ }));
     expect(source(seen.widget).whose).toBe("all");
-    fireEvent.click(screen.getByRole("radio", { name: "Theirs to decide" }));
+    fireEvent.click(screen.getByRole("radio", { name: /Theirs to decide/ }));
     expect(source(seen.widget).whose).toBe("mine");
   });
 
@@ -199,7 +199,8 @@ describe("Display: what each shows", () => {
       ),
     );
     expect(fieldsOf(seen.widget).some((one) => one.name === "on_hand")).toBe(true);
-    fireEvent.change(screen.getByLabelText("Add a detail by its name"), {
+    fireEvent.click(screen.getByRole("button", { name: "Detail" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Add a detail by its name" }), {
       target: { value: "notes" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Add" }));
@@ -216,7 +217,7 @@ describe("Actions: deciding", () => {
     expect(seen.widget.config?.approveLabel).toBeUndefined();
     fireEvent.click(screen.getByRole("radio", { name: "Always" }));
     expect(seen.widget.config?.askWhy).toBe("always");
-    fireEvent.click(screen.getByRole("radio", { name: "When rejecting" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Rejecting" }));
     expect(seen.widget.config?.askWhy).toBeUndefined();
     fireEvent.click(screen.getByRole("switch", { name: /Ask before approving/ }));
     expect(seen.widget.config?.confirm).toBe(true);

@@ -704,10 +704,37 @@ export const performance = defineInterface({
           },
         },
         {
+          // The reorder flow's approval step, decided here: a manager reads the order, approves or
+          // rejects it, and the next is there. Who may decide is set on the flow's step, not here:
+          // others who may read approvals see the orders, with the buttons greyed and why.
+          id: "waiting",
+          type: "core/approvals",
+          title: "Orders waiting for a manager",
+          at: { x: 0, y: 3, w: 12, h: 13 },
+          data: {
+            requests: { source: { approvals: { flows: ["inventory/reorder"], whose: "all" } } },
+          },
+          config: {
+            look: "queue",
+            fields: [
+              { name: "item" },
+              { name: "clinic" },
+              { name: "quantity" },
+              { name: "total", label: "Order total" },
+              { name: "on_hand", label: "On hand" },
+            ],
+            decided: true,
+            askWhy: "rejecting",
+            approveLabel: "Approve order",
+            rejectLabel: "Reject",
+            empty: "No orders are waiting for a manager.",
+          },
+        },
+        {
           id: "lines",
           type: "core/table",
           title: "Stock",
-          at: { x: 0, y: 3, w: 12, h: 12 },
+          at: { x: 0, y: 16, w: 12, h: 12 },
           data: {
             rows: {
               source: { visual: { table: "inventory", sort: [{ by: "on_hand" }] } },
@@ -730,7 +757,7 @@ export const performance = defineInterface({
           id: "orders-section",
           type: "core/section",
           title: "Orders to VetSupply",
-          at: { x: 0, y: 15, w: 12, h: 9 },
+          at: { x: 0, y: 28, w: 12, h: 9 },
           subtitle: "What the clinics have asked the supplier for, newest first.",
           config: {
             folds: true,

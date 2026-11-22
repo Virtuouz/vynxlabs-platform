@@ -26,6 +26,7 @@ import {
   type Tab,
   type WidgetDefinition,
 } from "@volvel/widgets";
+import { drawersFor } from "./custom.ts";
 
 /** A column of a table, as the workspace's schema says. */
 export interface CatalogColumn {
@@ -142,6 +143,8 @@ export function isShown(hint: InspectorHint, config: Record<string, unknown>): b
 /** Whether a tab has anything to draw. Rules and Actions say what is so even when nothing can be set. */
 export function tabsOf(definition: WidgetDefinition): Tab[] {
   return TABS.filter((tab) => {
+    // A widget's own drawer pieces (Approvals' "Which requests") make a tab as a setting does.
+    if (drawersFor(definition.type, tab).length > 0) return true;
     if (tab === "data")
       return dataParts(definition).length > 0 || configSettings(definition, tab).length > 0;
     if (tab === "display") return true; // the title and the line under it are every widget's

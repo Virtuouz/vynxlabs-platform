@@ -80,6 +80,7 @@ The agent is offered exactly the scripts and the flow it is bound to (`src/apps.
      - The PayFern payment for the wrong amount was refused by the script.
 2. **Triggers.** Pause the hourly reminders in production, then resume them.
 3. **Approvals, as Rowan.** Approve a stock order. The order appears at `http://127.0.0.1:4020/`.
+   - Or on Clinic performance's **Stock** page: the **Approvals** widget is a queue of the same orders. Approve one, reject another with a reason, and the next opens. Devi (Billing) is not a manager and does not see it; the widget is for those who may read approvals, and the buttons are theirs only if the step names them.
 4. **Front desk as Jess, on a phone.** Check a patient in, move them to the exam room, finish the visit. Then:
    - The invoice appears for the owner, and the thank-you text at the stand-ins page.
    - Then book a visit: only free times are offered, in Pacific time.

@@ -1,5 +1,6 @@
-import type { Page, PageFilter, PageWidget } from "@volvel/manifest";
+import type { Page, PageFilter, PageWidget, WidgetIn } from "@volvel/manifest";
 import { type ActingUser, type Condition, conditionWords } from "@volvel/manifest/action";
+import { childrenOf, isContainer, type Roles, tabsOf, topLevel } from "@volvel/manifest/parts";
 import { EmptyState, Panel, useFlip } from "@volvel/ui";
 import { GripHorizontal } from "@volvel/ui/icons";
 import type { ActOutcome, Choice, EventPayload, FilterHost } from "@volvel/widgets";
@@ -26,7 +27,15 @@ import {
 } from "./actions.tsx";
 import { Frame, nameOf } from "./Frame.tsx";
 import { useFilterHost } from "./filterHost.ts";
-import { duplicated, limitsOf, placed, sizeWords, without } from "./layout.ts";
+import {
+  duplicated,
+  fitContainers,
+  gridOf,
+  limitsOf,
+  putAt,
+  sizeWords,
+  without,
+} from "./layout.ts";
 import {
   type Box,
   CARRIED,
@@ -34,6 +43,7 @@ import {
   type Carrying,
   type HowMoved,
   isControl,
+  type Placement,
   usePlacement,
 } from "./placement.ts";
 import type { FilterValues, PageDataClient, ViewEntry, ViewRegistry } from "./types.ts";
@@ -69,6 +79,16 @@ export interface PageViewProps {
   overRecord?: string;
   /** The pages of the app, so that `open` knows whether its target is a page, a sheet or a modal. */
   pages?: readonly Page[];
+  /**
+   * Which tab of each Tabs is open, by the Tabs' widget id, and how to open another: the served
+   * app keeps it in its address. Left out, and while building, the page keeps it itself.
+   */
+  tabs?: { open: Readonly<Record<string, string>>; choose(widget: string, tab: string): void };
+  /**
+   * Names where a folded Section is kept in this browser (`volvel.fold.<foldKey>.<widget>`): the
+   * app's path and the page. Left out, a fold lasts until the page is left.
+   */
+  foldKey?: string;
   /** Present while building: the canvas. */
   editing?: {
     selected: string | undefined;
@@ -119,69 +139,107 @@ function useNarrow(ref: RefObject<HTMLElement | null>): boolean {
   return narrow;
 }
 
-function Cell({
-  widget,
-  entry,
-  at,
-  held,
-  arriving,
-  narrow,
-  flow,
-  client,
-  filterValues,
-  refreshKey,
-  emptyMessage,
-  editing,
-  selected,
-  onEvent,
-  handlers,
-  run,
-  record,
-  thisRow,
-  user,
-  onRecord,
-  fade,
-  onClose,
-  overRecord,
-  filterHost,
-}: {
-  /** A Search and filter widget's: the page's filters, and how to set them. */
-  filterHost: FilterHost | undefined;
-  /** Closes the sheet or modal the page is shown in; absent when it is not. */
-  onClose: (() => void) | undefined;
-  overRecord: string | undefined;
+/** What the page shares with every grid it draws, the page's own and each container's. */
+interface GridContext {
+  registry: ViewRegistry;
+  roles: Roles;
+  client: PageDataClient;
+  filterValues: FilterValues;
+  refreshKey: number;
+  emptyMessage: string;
+  editing: Editing | undefined;
+  onEvent: PageViewProps["onEvent"];
   run(request: Request): Promise<ActOutcome>;
   /** The page's record id, and its row when a widget has read it. */
   record: string | undefined;
   thisRow: Readonly<Record<string, unknown>> | undefined;
   user: ActingUser | undefined;
   onRecord(row: Readonly<Record<string, unknown>>): void;
+  /** Closes the sheet or modal the page is shown in; absent when it is not. */
+  onClose: (() => void) | undefined;
+  overRecord: string | undefined;
+  /** Drawn in a column at its own height (a served side sheet or modal), not at its place on the grid. */
+  flow: boolean;
+  placement: Placement;
+  /** Every widget as it is drawn now: held ones where they would land, containers as tall as they are. */
+  drawn: readonly PageWidget[];
+  /** Every widget as it is stored. */
+  stored: ReadonlyMap<string, PageWidget>;
+  /** The widgets seen since the page was opened: those not in it have just arrived. */
+  known: ReadonlySet<string>;
+  shownNow(conditions: readonly Condition[] | undefined): boolean;
+  /** Where what is held or carried would land, when that is a grid it is not on. */
+  landing: { card: Card; in: WidgetIn | undefined } | undefined;
+  /** The tab of a container that is open, and how to open another. */
+  tab: { open(container: PageWidget): string | undefined; choose(container: string, tab: string): void };
+  /** Whether a Section is folded as its reader left it, and how to fold it. */
+  fold: { folded(container: PageWidget): boolean; set(container: string, folded: boolean): void };
+  remove(id: string): void;
+  duplicate(id: string): void;
+  nameOf(id: string): string;
+  /** What a Search and filter widget is given, for the filters it declares. */
+  hostFor(filters: readonly PageFilter[]): FilterHost;
+}
+
+/** Whether an event is for this cell and not for a widget drawn inside it. */
+const isOwn = (event: { target: EventTarget | null; currentTarget: EventTarget }) =>
+  (event.target as HTMLElement | null)?.closest?.("[data-widget-cell]") === event.currentTarget;
+
+function Cell({
+  ctx,
+  widget,
+  entry,
+  at,
+  held,
+  away,
+  arriving,
+  narrow,
+  selected,
+  handlers,
+  fade,
+  place,
+}: {
+  ctx: GridContext;
   /** While building, what decides when the widget is shown: it is drawn faded, with this said. */
   fade: string | undefined;
   widget: PageWidget;
   entry: ViewEntry | undefined;
   at: Box;
   held: boolean;
+  /** Being dragged to another grid: it stays where it was, faded, until it is let go. */
+  away: boolean;
   /** It is new on the page since the page was opened: it fades in where it lands. */
   arriving: boolean;
   narrow: boolean;
-  /** Drawn in a column at its own height (a served side sheet or modal), not at its place on the grid. */
-  flow: boolean;
-  client: PageDataClient;
-  filterValues: FilterValues;
-  refreshKey: number;
-  emptyMessage: string;
-  editing: Editing | undefined;
   selected: boolean;
-  onEvent: PageViewProps["onEvent"];
+  /** A container's: the drawing of what it holds, in `tab` for Tabs. */
+  place: ((tab?: string) => React.ReactNode) | undefined;
   handlers: {
     onPointerDown: (event: React.PointerEvent<HTMLElement>, how: HowMoved) => void;
     onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => void;
   };
 }) {
+  const {
+    flow,
+    client,
+    filterValues,
+    refreshKey,
+    emptyMessage,
+    editing,
+    onEvent,
+    run,
+    record,
+    thisRow,
+    user,
+    onRecord,
+    onClose,
+    overRecord,
+  } = ctx;
   const definition = entry?.definition;
+  // A container is drawn on the page as it is, its heading and what it holds, with no card.
+  const container = place !== undefined;
   // A widget drawn on the page as it is, with no card: a button.
-  const bare = definition?.layout.frame === "none";
+  const bare = definition?.layout.frame === "none" || container;
   // Whether it arrived is as of when it first drew: the next draw must not stop its fade.
   const [arrived] = useState(arriving);
   // A widget added before its source was chosen has nothing to ask for yet.
@@ -208,9 +266,21 @@ function Cell({
     emptyMessage,
   });
   const building = editing !== undefined;
-  const config = { ...definition?.defaults, ...widget.config };
+  // A Section the reader folded is folded as they left it, whatever the page says it starts as.
+  const folds = container && widget.config?.folds === true;
+  const config = {
+    ...definition?.defaults,
+    ...widget.config,
+    ...(folds ? { folded: ctx.fold.folded(widget) } : {}),
+  };
   const View = entry?.View;
   const emit = (event: string, payload: EventPayload) => {
+    // A container's fold is the host's, which keeps it for the reader.
+    if (folds && event === "fold") {
+      const folded = (payload as { group?: { folded?: unknown } }).group?.folded;
+      if (!building && typeof folded === "boolean") ctx.fold.set(widget.id, folded);
+      return;
+    }
     // A column heading clicked while building is the builder's: it opens that column's settings.
     if (building && event === "column") {
       const column = (payload as { group?: { column?: unknown } }).group?.column;
@@ -265,7 +335,13 @@ function Cell({
   const extras = {
     ...(onClose ? { close: onClose } : {}),
     ...(selectedRecord ? { selectedRecord } : {}),
-    ...(filterHost ? { filters: filterHost } : {}),
+    ...(definition?.role === "filters"
+      ? {
+          filters: ctx.hostFor(
+            Array.isArray(widget.config?.filters) ? (widget.config.filters as PageFilter[]) : [],
+          ),
+        }
+      : {}),
   };
   const name = nameOf(widget, definition);
   const hiddenOnPhones = definition?.layout.phone === "hide";
@@ -273,6 +349,14 @@ function Cell({
     "--col": `${at.x + 1} / span ${at.w}`,
     "--row": `${at.y + 1} / span ${at.h}`,
   } as CSSProperties;
+  const tab = container
+    ? {
+        tab: {
+          open: ctx.tab.open(widget),
+          choose: (to: string) => ctx.tab.choose(widget.id, to),
+        },
+      }
+    : {};
   return (
     <Card
       bare={bare}
@@ -280,6 +364,7 @@ function Cell({
       aria-label={name}
       // What is held follows the pointer, and is not played from where it was.
       data-flip-key={held ? undefined : widget.id}
+      data-widget-cell={widget.id}
       data-selected={selected ? "" : undefined}
       style={style}
       // A view may size what it draws by its cell's width: the container named `cell`.
@@ -287,21 +372,27 @@ function Cell({
         flow ? "" : "@2xl:[grid-column:var(--col)] @2xl:[grid-row:var(--row)]"
       } ${
         selected ? "ring-2 ring-action" : ""
-      } ${fade ? "opacity-60" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
+      } ${fade || away ? "opacity-60" : ""} ${held ? "layer-sticky opacity-90 shadow-drag" : ""} ${arrived ? "animate-arrive" : ""} ${
         building ? "cursor-grab touch-pan-y select-none active:cursor-grabbing" : ""
       }`}
       {...(building
         ? {
             role: "group",
             tabIndex: 0,
-            onClick: () => editing?.onSelect(widget.id),
+            // A press, a click or a key inside a widget in this one is that widget's, not this one's.
+            onClick: (event: React.MouseEvent<HTMLElement>) => {
+              if (isOwn(event)) editing?.onSelect(widget.id);
+            },
             // Arriving by keyboard chooses it, so that the keys that follow are for it.
             onFocus: (event: React.FocusEvent<HTMLElement>) => {
               if (event.target === event.currentTarget && !selected) editing?.onSelect(widget.id);
             },
-            onPointerDown: (event: React.PointerEvent<HTMLElement>) =>
-              handlers.onPointerDown(event, "move"),
-            onKeyDown: handlers.onKeyDown,
+            onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
+              if (isOwn(event)) handlers.onPointerDown(event, "move");
+            },
+            onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
+              if (isOwn(event)) handlers.onKeyDown(event);
+            },
           }
         : {})}
     >
@@ -313,6 +404,7 @@ function Cell({
         building={building}
         onRename={editing ? (title) => editing.onRename(widget.id, title) : undefined}
         tabbable={!narrow}
+        container={container}
       >
         {waiting ? (
           <p className="m-0 text-ink-muted">
@@ -326,6 +418,8 @@ function Cell({
             emit={emit}
             building={building}
             {...extras}
+            {...(place ? { place } : {})}
+            {...tab}
             {...(building || !client.act
               ? {}
               : {
@@ -405,11 +499,179 @@ function Cell({
   );
 }
 
+/** What a page remembers of how a Section was left, for the reader, in this browser. Never needed: every access may fail. */
+function foldStored(key: string): boolean | undefined {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value === "1" ? true : value === "0" ? false : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function foldKept(key: string, folded: boolean) {
+  try {
+    window.localStorage.setItem(key, folded ? "1" : "0");
+  } catch {
+    // Not kept: it is folded for now, and starts as the page says after a reload.
+  }
+}
+
 /**
- * A page: its widgets on twelve columns, the filters among them (Search and filter widgets). Each widget reads its
- * own data, under the viewer's permissions, from the client. With `editing` it
+ * Widgets on twelve columns: the page's own, or, inside a container, that container's (or one
+ * tab of it). The one piece that draws a grid, so a container's is the page's: the same classes,
+ * the same reading order on a phone, the same container query by the room it is given, the
+ * same places and the same moves. Each widget in it is drawn as any widget of the page is.
+ */
+function WidgetGrid({
+  ctx,
+  widgets,
+  inner,
+  gridRef,
+}: {
+  ctx: GridContext;
+  /** What is on this grid, as it is drawn. */
+  widgets: readonly PageWidget[];
+  /** Absent for the page's own grid. */
+  inner?: { container: string; tab?: string };
+  /** The page's grid is measured by the page too. */
+  gridRef?: RefObject<HTMLDivElement | null>;
+}) {
+  const own = useRef<HTMLDivElement>(null);
+  const ref = gridRef ?? own;
+  const narrow = useNarrow(ref);
+  const { editing, placement, flow, drawn } = ctx;
+  // Top to bottom and left to right, so the page reads in order without the grid.
+  const ordered = useMemo(
+    () => [...widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x),
+    [widgets],
+  );
+  useFlip(JSON.stringify(ordered.map((one) => ({ id: one.id, at: one.at }))), { ref });
+  const into: WidgetIn | undefined = inner
+    ? { widget: inner.container, ...(inner.tab !== undefined ? { tab: inner.tab } : {}) }
+    : undefined;
+  const landingHere =
+    ctx.landing !== undefined &&
+    ctx.landing.in?.widget === into?.widget &&
+    ctx.landing.in?.tab === into?.tab;
+  const grid = (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: a click on the empty page lets go of the chosen widget; Esc does the same from the keyboard
+    // biome-ignore lint/a11y/noStaticElementInteractions: as above
+    <div
+      ref={ref}
+      {...(inner
+        ? {
+            "data-grid-in": inner.container,
+            ...(inner.tab !== undefined ? { "data-grid-tab": inner.tab } : {}),
+          }
+        : {})}
+      className={`${
+        flow
+          ? "grid grid-cols-1 gap-3"
+          : "grid grid-cols-1 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12"
+      } ${inner && editing ? "min-h-10 rounded-inner" : ""} ${
+        inner && landingHere ? "outline-2 outline-dashed outline-action/50 outline-offset-2" : ""
+      }`}
+      onClick={(event) => {
+        if (editing && event.target === event.currentTarget) editing.onSelect(undefined);
+      }}
+    >
+      {inner && editing && widgets.length === 0 ? (
+        <p className="m-0 flex min-h-10 items-center justify-center rounded-inner border border-dashed border-line px-3 text-body-sm text-ink-muted [grid-column:1/-1]">
+          Drag a widget here
+        </p>
+      ) : null}
+      {ordered.map((widget) => {
+        // What is carried or dragged in from elsewhere lands where this says.
+        if (widget.id === CARRIED) {
+          return ctx.landing ? (
+            <Landing key={CARRIED} card={ctx.landing.card} at={widget.at} />
+          ) : null;
+        }
+        const entry = ctx.registry.get(widget.type);
+        // On a phone a widget whose definition says so is not shown at all.
+        if (!editing && narrow && entry?.definition.layout.phone === "hide") return null;
+        // Served, a widget whose conditions do not hold is not drawn; building, it is drawn faded and says when.
+        const showWhen = widget.rules?.showWhen;
+        if (!editing && !ctx.shownNow(showWhen)) return null;
+        const fade =
+          editing && showWhen && showWhen.length > 0
+            ? showWhen
+                .map((one) => conditionWords(one, (field) => field.replace(/_/g, " ")))
+                .join(" and ")
+            : undefined;
+        const selected = editing?.selected === widget.id;
+        const stored = ctx.stored.get(widget.id) ?? widget;
+        const holding = placement.held?.id === widget.id ? placement.held : undefined;
+        const sameGrid = holding ? gridKey(holding.in) === gridKey(widget.in) : false;
+        const container = entry?.definition.role === "container";
+        return (
+          <Cell
+            key={widget.id}
+            ctx={ctx}
+            widget={widget}
+            entry={entry}
+            at={widget.at}
+            held={holding !== undefined && sameGrid}
+            away={holding !== undefined && !sameGrid}
+            arriving={editing !== undefined && !ctx.known.has(widget.id)}
+            narrow={narrow}
+            selected={selected}
+            fade={fade}
+            place={
+              container
+                ? (tab) => (
+                    <WidgetGrid
+                      ctx={ctx}
+                      inner={{ container: widget.id, ...(tab !== undefined ? { tab } : {}) }}
+                      widgets={childrenOf(drawn, widget.id, tab)}
+                    />
+                  )
+                : undefined
+            }
+            handlers={{
+              onPointerDown: (event, how) => {
+                // A press on a widget that is not a drag chooses it by click, below.
+                if (narrow && how === "move") return;
+                placement.grab(event, widget.id, stored.at, how, widget.in);
+              },
+              onKeyDown: (event) => {
+                if (!editing || isControl(event.target)) return;
+                if (event.key === "Escape") {
+                  editing.onSelect(undefined);
+                } else if (event.key === "Delete") {
+                  event.preventDefault();
+                  ctx.remove(widget.id);
+                } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "d") {
+                  // The browser's own answer to this is a bookmark.
+                  event.preventDefault();
+                  ctx.duplicate(widget.id);
+                } else if (!event.metaKey && !event.ctrlKey) {
+                  placement
+                    .keys(widget.id, nameOf(widget, entry?.definition), stored.at, stored.in)
+                    .onKeyDown(event);
+                }
+              },
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+  // The page lays itself out by the room it is given, not by the window's width: an app served
+  // full-width and a preview drawn at a phone's width both get the layout of their size. So does
+  // a container: by the room the container is given.
+  return <div className="@container min-w-0">{grid}</div>;
+}
+
+const gridKey = (into: WidgetIn | undefined) => gridOf({ in: into });
+
+/**
+ * A page: its widgets on twelve columns. Each widget reads its
+ * own data, under the viewer's permissions, from the client. A Section or Tabs holds widgets
+ * on a grid of its own, drawn the same way. With `editing` it
  * is the builder's canvas: a click chooses a widget, which is dragged by
- * itself and stretched by its corner, moved a cell with the arrows, changed in
+ * itself (into a Section or a tab, or out of one) and stretched by its
+ * corner, moved a cell with the arrows, changed in
  * size with Shift and the arrows, copied with ⌘D or Ctrl+D, removed with
  * Delete, and let go with Esc.
  */
@@ -430,6 +692,8 @@ export function PageView({
   over,
   overRecord,
   pages,
+  tabs: tabHost,
+  foldKey,
   editing,
 }: PageViewProps) {
   const [told, setTold] = useState("");
@@ -461,10 +725,9 @@ export function PageView({
     client,
     given: filterOptions,
   });
-  // Top to bottom and left to right, so the page reads in order without the grid.
-  const ordered = useMemo(
-    () => [...widgets].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x),
-    [widgets],
+  const roles = useMemo<Roles>(
+    () => ({ get: (type: string) => registry.get(type)?.definition }),
+    [registry],
   );
   const byId = useMemo(() => new Map(widgets.map((widget) => [widget.id, widget])), [widgets]);
   const name = useCallback(
@@ -475,24 +738,88 @@ export function PageView({
     [byId, registry],
   );
 
+  // Which tab of each Tabs is open: in the served app's address (a reload and a link keep it),
+  // and while building, here.
+  const [openTabs, setOpenTabs] = useState<Readonly<Record<string, string>>>({});
+  const tabsNow = !editing && tabHost ? tabHost.open : openTabs;
+  const openTab = (container: PageWidget) => {
+    const ids = tabsOf(container).map((tab) => tab.id);
+    const wanted = tabsNow[container.id];
+    return wanted !== undefined && ids.includes(wanted) ? wanted : ids[0];
+  };
+  const chooseTab = (container: string, tab: string) =>
+    !editing && tabHost
+      ? tabHost.choose(container, tab)
+      : setOpenTabs((now) => ({ ...now, [container]: tab }));
+  // Choosing a widget in a tab that is not open opens that tab.
+  const selectedId = editing?.selected;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: opened when the choice changes
+  useEffect(() => {
+    const chosen = selectedId ? byId.get(selectedId) : undefined;
+    const container = chosen?.in ? byId.get(chosen.in.widget) : undefined;
+    if (chosen?.in?.tab && container && openTab(container) !== chosen.in.tab)
+      setOpenTabs((now) => ({ ...now, [container.id]: chosen.in?.tab as string }));
+  }, [selectedId]);
+
+  // A Section folded by its reader stays folded for them: kept in this browser, if it will.
+  const [folds, setFolds] = useState<Readonly<Record<string, boolean>>>({});
+  const foldedNow = (container: PageWidget): boolean => {
+    // Building, a Section is open, so that what is in it can be reached.
+    if (editing || container.config?.folds !== true) return false;
+    const seen = folds[container.id];
+    if (seen !== undefined) return seen;
+    const kept = foldKey ? foldStored(`volvel.fold.${foldKey}.${container.id}`) : undefined;
+    return kept ?? container.config?.folded === true;
+  };
+  const setFolded = (container: string, folded: boolean) => {
+    setFolds((now) => ({ ...now, [container]: folded }));
+    if (foldKey) foldKept(`volvel.fold.${foldKey}.${container}`, folded);
+  };
+
   const gridRef = useRef<HTMLDivElement>(null);
+  // Every change the page makes to its widgets: containers kept as tall as what they hold.
+  const change = (next: PageWidget[], label: string, pin?: string) =>
+    editing?.onChange([...fitContainers(next, roles, pin ? { pin } : {})], label);
   const placement = usePlacement({
     grid: gridRef,
     limits: (id) => limitsOf(registry.get(byId.get(id)?.type ?? "")?.definition),
     onGrabbed: (id) => editing?.onSelect(id),
+    // A container is not put in another: it has no grid to drop on.
+    targets: (id) => {
+      const held = byId.get(id);
+      const node = gridRef.current;
+      if (!node || (held && isContainer(held, roles))) return [];
+      return [...node.querySelectorAll<HTMLElement>("[data-grid-in]")].map((grid) => ({
+        into: {
+          widget: grid.dataset.gridIn as string,
+          ...(grid.dataset.gridTab !== undefined ? { tab: grid.dataset.gridTab } : {}),
+        },
+        node: grid,
+      }));
+    },
     onMove: editing
-      ? (id, at, _by, how) =>
-          editing.onChange(
-            placed(widgets, id, at),
-            `${how === "move" ? "Moved" : "Resized"} ${name(id)}`,
-          )
+      ? (id, at, _by, how, into) => {
+          const was = byId.get(id)?.in;
+          const next = putAt(widgets, id, at, into, roles);
+          const where =
+            gridKey(was) === gridKey(into)
+              ? ""
+              : into
+                ? ` into ${name(into.widget)}`
+                : ` out of ${name(was?.widget ?? "")}`;
+          change(
+            next,
+            `${how === "move" ? "Moved" : "Resized"} ${name(id)}${where}`,
+            id,
+          );
+        }
       : undefined,
   });
 
   const remove = (id: string) => {
     if (!editing) return;
     const label = name(id);
-    editing.onChange(without(widgets, id), `Removed ${label}`);
+    change(without(widgets, id), `Removed ${label}`);
     editing.onSelect(undefined);
     setTold(`${label} is removed.`);
   };
@@ -500,7 +827,7 @@ export function PageView({
     if (!editing) return;
     const made = duplicated(widgets, id);
     if (!made) return;
-    editing.onChange(made.widgets, `Duplicated ${name(id)}`);
+    change(made.widgets, `Duplicated ${name(id)}`);
     editing.onSelect(made.copy.id);
     setTold(`${name(id)} is copied.`);
   };
@@ -511,29 +838,54 @@ export function PageView({
   const flow = over === true && !editing;
 
   // Where everything is drawn: while something is held or carried, where it would all be
-  // if it were let go now, so what is in the way is seen to move aside as it travels.
+  // if it were let go now, so what is in the way is seen to move aside as it travels. What is
+  // dragged to a grid it is not on (another container's, the page's) stays where it was, and a
+  // landing is drawn where it would go.
   const carrying = placement.carrying;
-  const preview = useMemo(() => {
-    const boxes = widgets.map((widget) => ({ id: widget.id, at: widget.at }));
-    const held = placement.held;
-    if (held) return placed(boxes, held.id, held.at);
-    if (carrying?.at)
-      return placed([...boxes, { id: CARRIED, at: carrying.at }], CARRIED, carrying.at);
-    return boxes;
-  }, [widgets, placement.held, carrying?.at]);
-  const drawnAt = useMemo(() => new Map(preview.map((one) => [one.id, one.at])), [preview]);
-  useFlip(JSON.stringify(preview), { ref: gridRef });
+  const held = placement.held;
+  const heldWas = held ? byId.get(held.id) : undefined;
+  const leaving = held !== undefined && heldWas !== undefined && gridKey(held.in) !== gridKey(heldWas.in);
+  const foldedKey = widgets
+    .filter((one) => foldedNow(one))
+    .map((one) => one.id)
+    .join(",");
+  const drawn = useMemo(() => {
+    let list: readonly PageWidget[] = widgets;
+    const ghost = (at: Box, into: WidgetIn | undefined): PageWidget =>
+      ({ id: CARRIED, type: "", at, ...(into ? { in: into } : {}) }) as PageWidget;
+    if (held && heldWas) {
+      list = leaving
+        ? putAt([...widgets, ghost(held.at, held.in)], CARRIED, held.at, held.in, roles)
+        : putAt(widgets, held.id, held.at, held.in, roles);
+    } else if (carrying?.at) {
+      list = putAt([...widgets, ghost(carrying.at, undefined)], CARRIED, carrying.at, undefined, roles);
+    }
+    // A container is as tall as what it holds: exactly so while building, and at least so when
+    // served; a folded one is short.
+    return fitContainers(
+      list,
+      roles,
+      {
+        ...(editing ? {} : { grow: true }),
+        folded: (id) => foldedKey.split(",").includes(id),
+        ...(held ? { pin: held.id } : {}),
+      },
+    );
+    // biome-ignore lint/correctness/useExhaustiveDependencies: what is folded is `foldedKey`
+  }, [widgets, held, heldWas, leaving, carrying?.at, roles, editing, foldedKey]);
 
   // A widget that was not on the page when it was opened has arrived: added, copied or carried in.
   const known = useRef<Set<string> | undefined>(undefined);
   known.current ??= new Set(widgets.map((widget) => widget.id));
+  const seen = known.current;
   useEffect(() => {
     for (const widget of widgets) known.current?.add(widget.id);
   });
 
   // A carry asked for by the host starts once per request.
   const carryRequest = editing?.carrying;
-  const endRow = () => widgets.reduce((low, widget) => Math.max(low, widget.at.y + widget.at.h), 0);
+  const endRow = () =>
+    topLevel(widgets).reduce((low, widget) => Math.max(low, widget.at.y + widget.at.h), 0);
   const narrowNow = useRef(narrow);
   narrowNow.current = narrow;
   // biome-ignore lint/correctness/useExhaustiveDependencies: a request is started once, when it is new
@@ -547,6 +899,51 @@ export function PageView({
   const emptyMessage =
     filters.length > 0 ? "Nothing matches the filters." : "There is nothing here yet.";
 
+  const landing = carrying?.at
+    ? { card: carrying.card, in: undefined }
+    : leaving && held && heldWas
+      ? {
+          card: {
+            title: name(held.id),
+            kind: registry.get(heldWas.type)?.definition.title ?? heldWas.type,
+            size: { w: held.at.w, h: held.at.h },
+            limits: limitsOf(registry.get(heldWas.type)?.definition),
+          },
+          in: held.in,
+        }
+      : undefined;
+
+  const ctx: GridContext = {
+    registry,
+    roles,
+    client,
+    filterValues,
+    refreshKey: refreshKey + ran,
+    emptyMessage,
+    editing,
+    onEvent,
+    run: actions.run,
+    record,
+    thisRow,
+    user,
+    onRecord: setThisRow,
+    onClose: over ? () => onNavigate?.({ close: true }) : undefined,
+    overRecord,
+    flow,
+    placement,
+    drawn,
+    stored: byId,
+    known: seen,
+    shownNow,
+    landing,
+    tab: { open: openTab, choose: chooseTab },
+    fold: { folded: foldedNow, set: setFolded },
+    remove,
+    duplicate,
+    nameOf: name,
+    hostFor,
+  };
+
   return (
     <div className="flex flex-col gap-3">
       {widgets.length === 0 ? (
@@ -556,105 +953,8 @@ export function PageView({
           {editing ? "Add a widget to start." : undefined}
         </EmptyState>
       ) : null}
-      {/*
-        The page lays itself out by the room it is given, not by the window's width: an app
-        served full-width and a preview drawn at a phone's width both get the layout of their size.
-      */}
-      <div className="@container">
-        {/* biome-ignore lint/a11y/useKeyWithClickEvents: a click on the empty page lets go of the chosen widget; Esc does the same from the keyboard */}
-        {/* biome-ignore lint/a11y/noStaticElementInteractions: as above */}
-        <div
-          ref={gridRef}
-          className={
-            flow
-              ? "grid grid-cols-1 gap-3"
-              : "grid grid-cols-1 gap-3 @2xl:auto-rows-[2.5rem] @2xl:grid-cols-12"
-          }
-          onClick={(event) => {
-            if (editing && event.target === event.currentTarget) editing.onSelect(undefined);
-          }}
-        >
-          {ordered.map((widget) => {
-            const entry = registry.get(widget.type);
-            // On a phone a widget whose definition says so is not shown at all.
-            if (!editing && narrow && entry?.definition.layout.phone === "hide") return null;
-            // Served, a widget whose conditions do not hold is not drawn; building, it is drawn faded and says when.
-            const showWhen = widget.rules?.showWhen;
-            if (!editing && !shownNow(showWhen)) return null;
-            const fade =
-              editing && showWhen && showWhen.length > 0
-                ? showWhen
-                    .map((one) => conditionWords(one, (field) => field.replace(/_/g, " ")))
-                    .join(" and ")
-                : undefined;
-            const at = drawnAt.get(widget.id) ?? widget.at;
-            const selected = editing?.selected === widget.id;
-            return (
-              <Cell
-                key={widget.id}
-                widget={widget}
-                entry={entry}
-                at={at}
-                held={placement.held?.id === widget.id}
-                arriving={editing !== undefined && !known.current?.has(widget.id)}
-                narrow={narrow}
-                flow={flow}
-                client={client}
-                filterValues={filterValues}
-                refreshKey={refreshKey + ran}
-                emptyMessage={emptyMessage}
-                editing={editing}
-                selected={selected}
-                onEvent={onEvent}
-                run={actions.run}
-                record={record}
-                thisRow={thisRow}
-                user={user}
-                onRecord={setThisRow}
-                fade={fade}
-                onClose={over ? () => onNavigate?.({ close: true }) : undefined}
-                overRecord={overRecord}
-                filterHost={
-                  entry?.definition.role === "filters"
-                    ? hostFor(
-                        Array.isArray(widget.config?.filters)
-                          ? (widget.config.filters as PageFilter[])
-                          : [],
-                      )
-                    : undefined
-                }
-                handlers={{
-                  onPointerDown: (event, how) => {
-                    // A press on a widget that is not a drag chooses it by click, below.
-                    if (narrow && how === "move") return;
-                    placement.grab(event, widget.id, widget.at, how);
-                  },
-                  onKeyDown: (event) => {
-                    if (!editing || isControl(event.target)) return;
-                    if (event.key === "Escape") {
-                      editing.onSelect(undefined);
-                    } else if (event.key === "Delete") {
-                      event.preventDefault();
-                      remove(widget.id);
-                    } else if (
-                      (event.metaKey || event.ctrlKey) &&
-                      event.key.toLowerCase() === "d"
-                    ) {
-                      // The browser's own answer to this is a bookmark.
-                      event.preventDefault();
-                      duplicate(widget.id);
-                    } else if (!event.metaKey && !event.ctrlKey) {
-                      placement
-                        .keys(widget.id, nameOf(widget, entry?.definition), widget.at)
-                        .onKeyDown(event);
-                    }
-                  },
-                }}
-              />
-            );
-          })}
-          {carrying?.at ? <Landing card={carrying.card} at={carrying.at} /> : null}
-        </div>
+      <div>
+        <WidgetGrid ctx={ctx} widgets={topLevel(drawn)} gridRef={gridRef} />
         {carrying && !carrying.at ? <Carried carrying={carrying} /> : null}
         <span role="status" className="sr-only">
           {placement.said}

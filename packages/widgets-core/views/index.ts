@@ -9,13 +9,14 @@ import { CORE_WIDGETS } from "../src/index.ts";
 import { ActionsView } from "./actions.tsx";
 import { ButtonView } from "./button.tsx";
 import { ChartView } from "./chart.tsx";
-import { SectionView, TabsView } from "./compose.tsx";
 import { DetailView } from "./detail.tsx";
 import { FilterView } from "./filter.tsx";
 import { FormView } from "./form.tsx";
 import { ListView } from "./list.tsx";
 import { PivotView } from "./pivot.tsx";
+import { SectionView } from "./section.tsx";
 import { StatView } from "./stat.tsx";
+import { TabsView } from "./tabs.tsx";
 import { TableView } from "./table.tsx";
 import { TextView } from "./text.tsx";
 

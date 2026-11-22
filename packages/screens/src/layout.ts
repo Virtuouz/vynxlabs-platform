@@ -1,8 +1,22 @@
+import type { PageWidget, WidgetIn } from "@volvel/manifest";
+import {
+  CONTAINER_HEAD_ROWS,
+  containerHeight,
+  isContainer,
+  type Roles,
+} from "@volvel/manifest/parts";
 import type { WidgetDefinition } from "@volvel/widgets";
 import type { Box } from "./placement.ts";
 
-/** Anything with a place on the grid: a page's widget, a dashboard's. */
-type Placed = { id: string; at: Box };
+/**
+ * Anything with a place on the grid: a page's widget, a dashboard's. A widget in a container
+ * (`in`) is placed on that container's own grid, not the page's.
+ */
+type Placed = { id: string; at: Box; in?: WidgetIn | undefined };
+
+/** The grid a widget is on: the page's (""), or one container's, one tab of it. */
+export const gridOf = (widget: { in?: WidgetIn | undefined }): string =>
+  widget.in ? `${widget.in.widget}/${widget.in.tab ?? ""}` : "";
 
 const overlap = (a: Box, b: Box) =>
   a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
@@ -36,6 +50,19 @@ export function settle<T extends Placed>(widgets: T[], moved: string | undefined
     widget.at.y = Math.min(LAST_ROW, y);
     placed.push(widget);
   }
+}
+
+/**
+ * `settle`, once for each grid the widgets are on: the page's, and each container's tab. A
+ * widget lying in a container is not in the way of one on the page.
+ */
+export function settleGrids<T extends Placed>(widgets: T[], moved: string | undefined): void {
+  const grids = new Map<string, T[]>();
+  for (const widget of widgets) {
+    const key = gridOf(widget);
+    grids.set(key, [...(grids.get(key) ?? []), widget]);
+  }
+  for (const group of grids.values()) settle(group, moved);
 }
 
 /** How small and how large a widget may be made, in cells. */
@@ -74,14 +101,72 @@ export function placed<T extends Placed>(widgets: readonly T[], id: string, at: 
   const next = copied(widgets);
   const one = next.find((widget) => widget.id === id);
   if (one) one.at = { ...at };
-  settle(next, id);
+  settleGrids(next, id);
   return next;
 }
 
-/** The widgets without one, and what was under it risen. */
+/**
+ * The widgets with one put at a place on a grid: the page's (`into` left out), or a
+ * container's, one tab of it. Everything on the grid it lands on is made room around it, and
+ * what it left rises. A container is never put in a container. What a container holds is
+ * placed relative to it, so moving the container moves it all.
+ */
+export function putAt<T extends Placed>(
+  widgets: readonly T[],
+  id: string,
+  at: Box,
+  into: WidgetIn | undefined,
+  roles: Roles,
+): T[] {
+  const next = copied(widgets);
+  const one = next.find((widget) => widget.id === id);
+  if (!one) return next;
+  one.at = { ...at };
+  const lands = into && !isContainer(one as unknown as PageWidget, roles) ? into : undefined;
+  if (lands) one.in = { ...lands };
+  else delete one.in;
+  settleGrids(next, id);
+  return next;
+}
+
+/** The widgets without one, and what was under it risen. What it holds goes with it. */
 export function without<T extends Placed>(widgets: readonly T[], id: string): T[] {
-  const next = copied(widgets.filter((widget) => widget.id !== id));
-  settle(next, undefined);
+  const next = copied(widgets.filter((widget) => widget.id !== id && widget.in?.widget !== id));
+  settleGrids(next, undefined);
+  return next;
+}
+
+/** The rows a folded container is drawn: its heading, and a line. */
+export const FOLDED_ROWS = CONTAINER_HEAD_ROWS + 1;
+
+/**
+ * The widgets with each container as tall as it must be: its heading and what it holds
+ * (`containerHeight`), which is what the builder keeps its `at.h` at. A served page draws a
+ * container at least that tall (`grow`: never shorter than its own `at.h`), and a folded one
+ * (`folded`) short. Whatever lay below one that changed height is made room for or risen.
+ * Gives back the same array when nothing changed.
+ */
+export function fitContainers<T extends PageWidget>(
+  widgets: readonly T[],
+  roles: Roles,
+  how: { grow?: boolean; folded?: (id: string) => boolean; pin?: string } = {},
+): readonly T[] {
+  let next: T[] | undefined;
+  for (const [index, widget] of widgets.entries()) {
+    if (widget.in || !isContainer(widget, roles)) continue;
+    const fits = containerHeight(widget, widgets);
+    const h = how.folded?.(widget.id)
+      ? FOLDED_ROWS
+      : how.grow
+        ? Math.max(widget.at.h, fits)
+        : fits;
+    if (h === widget.at.h) continue;
+    next ??= copied(widgets);
+    (next[index] as T).at.h = h;
+  }
+  if (!next) return widgets;
+  // The one that was just put somewhere stays where it was put.
+  settleGrids(next, how.pin);
   return next;
 }
 
@@ -109,7 +194,16 @@ export function duplicated<T extends Placed & { title?: string }>(
   if (original.title) copy.title = `${original.title} copy`;
   copy.at = { ...original.at, y: Math.min(LAST_ROW, original.at.y + original.at.h) };
   const next = [...copied(widgets), copy];
-  settle(next, copy.id);
+  // What a container holds is copied with it, to the copy.
+  const taken = new Set([...widgets.map((widget) => widget.id), copy.id]);
+  for (const held of widgets.filter((widget) => widget.in?.widget === id)) {
+    const child = structuredClone(held);
+    child.id = copyId(held.id, taken);
+    taken.add(child.id);
+    if (child.in) child.in.widget = copy.id;
+    next.push(child);
+  }
+  settleGrids(next, copy.id);
   return { widgets: next, copy };
 }
 

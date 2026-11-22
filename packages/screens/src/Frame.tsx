@@ -118,6 +118,7 @@ export function Frame({
   building,
   onRename,
   tabbable,
+  container = false,
   children,
 }: {
   widget: PageWidget;
@@ -128,6 +129,11 @@ export function Frame({
   onRename: ((title: string) => void) | undefined;
   /** The body scrolls, so it takes focus and can be scrolled by keyboard. */
   tabbable: boolean;
+  /**
+   * The widget holds others (a Section, Tabs) and is drawn with no card: its heading one row of
+   * the page's grid and what it holds under it, with no padding and no scrolling of its own.
+   */
+  container?: boolean;
   children: ReactNode;
 }) {
   const name = nameOf(widget, definition);
@@ -135,7 +141,7 @@ export function Frame({
   const kept = !building && state.status === "ready" ? resultOf(reading.read) : undefined;
   const followed = Object.values(reading.read ?? {}).find((wire) => wire.followed)?.followed;
   // A widget drawn with no card (a button) shows its title only while it is being renamed.
-  const bare = definition?.layout.frame === "none";
+  const bare = definition?.layout.frame === "none" && !container;
   const heading = bare ? building && selected : widget.title || widget.subtitle || (building && selected);
   const body = (() => {
     if (!definition) {
@@ -168,7 +174,9 @@ export function Frame({
   return (
     <>
       {heading ? (
-        <header className="flex min-w-0 flex-col gap-0.5 px-4 pt-3 pb-2">
+        <header
+          className={`flex min-w-0 flex-col gap-0.5 ${container ? "min-h-7 justify-center" : "px-4 pt-3 pb-2"}`}
+        >
           <div className="flex min-w-0 items-center gap-2">
             <Title
               widget={widget}
@@ -208,10 +216,10 @@ export function Frame({
         </header>
       ) : null}
       <div
-        tabIndex={tabbable ? 0 : undefined}
+        tabIndex={tabbable && !container ? 0 : undefined}
         aria-busy={reading.stale ? true : undefined}
-        className={`flex min-h-0 flex-1 flex-col gap-2 ${bare ? "justify-center" : "px-4 pb-4"} @2xl:overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
-          heading || bare ? "" : "pt-4"
+        className={`flex min-h-0 flex-1 flex-col ${container ? "" : "gap-2 @2xl:overflow-auto"} ${bare ? "justify-center" : container ? "" : "px-4 pb-4"} outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
+          heading || bare || container ? "" : "pt-4"
         } ${reading.stale ? "opacity-50" : ""}`}
       >
         {reading.stale ? (

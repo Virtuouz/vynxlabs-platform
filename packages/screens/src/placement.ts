@@ -1,3 +1,4 @@
+import type { WidgetIn } from "@volvel/manifest";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -61,17 +62,34 @@ export interface Carrying {
   at: Box | undefined;
 }
 
+/** A grid inside a container, which something can be dropped on. */
+export interface Target {
+  into: WidgetIn;
+  /** The element that is the grid: where its cells are counted from. */
+  node: HTMLElement;
+}
+
+const sameIn = (a: WidgetIn | undefined, b: WidgetIn | undefined) =>
+  a?.widget === b?.widget && a?.tab === b?.tab;
+
 export interface Placement {
   /** For the element that is the grid. Each thing on it carries `data-flip-key`. */
   grid: RefObject<HTMLDivElement | null>;
   /** What is being dragged or stretched, and where it would land. */
-  held: { id: string; at: Box; how: HowMoved } | undefined;
+  held: { id: string; at: Box; how: HowMoved; in: WidgetIn | undefined } | undefined;
   /** What is being carried onto the page, and where it would land. */
   carrying: Carrying | undefined;
   /** Where to draw a thing: where it would land while it is held, its own place otherwise. */
   at: (id: string, own: Box) => Box;
   /** Start a drag (`move`) from anywhere on a thing, or a stretch from its corner. */
-  grab: (event: ReactPointerEvent<HTMLElement>, id: string, own: Box, how: HowMoved) => void;
+  grab: (
+    event: ReactPointerEvent<HTMLElement>,
+    id: string,
+    own: Box,
+    how: HowMoved,
+    /** The container it is in; left out for a widget on the page's own grid. */
+    from?: WidgetIn,
+  ) => void;
   /**
    * Carry something onto the page from where the pointer is now, until it is let go:
    * `onDrop` is told where it landed, or nothing when it was let go off the page or Esc
@@ -89,6 +107,8 @@ export interface Placement {
     id: string,
     name: string,
     own: Box,
+    /** The container it is in, which the keys keep it in. */
+    from?: WidgetIn,
   ) => {
     "aria-keyshortcuts": string;
     onKeyDown: (event: ReactKeyboardEvent<HTMLElement>) => void;
@@ -160,16 +180,30 @@ export function usePlacement({
   onMove,
   limits,
   onGrabbed,
+  targets,
 }: {
   grid: RefObject<HTMLDivElement | null>;
-  /** `by` says whether it was dragged or moved a cell with a key, for what counts as one step to undo. */
-  onMove: ((id: string, at: Box, by: "pointer" | "keys", how: HowMoved) => void) | undefined;
+  /**
+   * `by` says whether it was dragged or moved a cell with a key, for what counts as one step to
+   * undo. `into` is the container whose grid it landed on, or nothing for the page's own.
+   */
+  onMove:
+    | ((
+        id: string,
+        at: Box,
+        by: "pointer" | "keys",
+        how: HowMoved,
+        into: WidgetIn | undefined,
+      ) => void)
+    | undefined;
+  /** The grids inside containers that a thing may be dropped on; a container itself has none. */
+  targets?: (id: string) => Target[];
   /** How small and how large each thing may be made. */
   limits: (id: string) => Limits;
   /** Called when a press on a thing has become a drag. */
   onGrabbed?: (id: string) => void;
 }): Placement {
-  const [held, setHeld] = useState<{ id: string; at: Box; how: HowMoved }>();
+  const [held, setHeld] = useState<Placement["held"]>();
   const [carrying, setCarrying] = useState<Carrying>();
   const [said, setSaid] = useState("");
   const grabbed = useRef(onGrabbed);
@@ -179,8 +213,8 @@ export function usePlacement({
   useEffect(() => () => ending.current?.(), []);
 
   /** Where a point of the window is on the grid, in cells, as fractions. */
-  const cellOf = (point: { x: number; y: number }) => {
-    const node = grid.current;
+  const cellOf = (point: { x: number; y: number }, on: HTMLElement | null = grid.current) => {
+    const node = on;
     if (!node) return undefined;
     const box = node.getBoundingClientRect();
     const column = (box.width + GRID.gap) / GRID.columns;
@@ -197,14 +231,40 @@ export function usePlacement({
     };
   };
 
-  const grab: Placement["grab"] = (event, id, own, how) => {
+  /** The grid under a point: that of the container it is over, if any. */
+  const gridUnder = (id: string, point: { x: number; y: number }): Target | undefined => {
+    for (const target of targets?.(id) ?? []) {
+      // Anywhere over the container counts, its heading too, so that it can be dragged down inside it.
+      const area = (
+        target.node.closest("[data-widget-cell]") ?? target.node
+      ).getBoundingClientRect();
+      if (
+        point.x >= area.left &&
+        point.x <= area.right &&
+        point.y >= area.top &&
+        point.y <= area.bottom
+      )
+        return target;
+    }
+    return undefined;
+  };
+
+  const grab: Placement["grab"] = (event, id, own, how, origin) => {
     const node = grid.current;
     if (!onMove || !node || event.button !== 0) return;
     // A press on a button, a link or a field is that control's, not the start of a drag.
     if (isControl(event.target)) return;
     const from = { x: event.clientX, y: event.clientY };
-    const start = cellOf(from);
+    // Cells are counted on the grid it is on: the page's, or its container's.
+    const home = origin
+      ? ((event.target as HTMLElement).closest("[data-widget-cell]")?.parentElement ?? node)
+      : node;
+    const start = cellOf(from, home);
     if (!start) return;
+    // Where in the widget it was taken, in cells, so that it lands under the pointer as it was held.
+    const holdX = start.x - own.x;
+    const holdY = start.y - own.y;
+    let latestIn = origin;
     const least = limits(id);
     let pointer = from;
     let latest = own;
@@ -212,13 +272,22 @@ export function usePlacement({
     let stopScrolling: (() => void) | undefined;
     if (how === "stretch") event.preventDefault();
     const place = () => {
-      const now = cellOf(pointer);
+      if (how === "stretch") {
+        const now = cellOf(pointer, home);
+        if (!now) return;
+        latest = stretched(own, Math.round(now.x - start.x), Math.round(now.y - start.y), least);
+        setHeld({ id, at: latest, how, in: origin });
+        return;
+      }
+      const under = gridUnder(id, pointer);
+      const now = cellOf(pointer, under ? under.node : node);
       if (!now) return;
-      const across = Math.round(now.x - start.x);
-      const down = Math.round(now.y - start.y);
-      latest =
-        how === "move" ? moved(own, across, down, least) : stretched(own, across, down, least);
-      setHeld({ id, at: latest, how });
+      latestIn = under?.into;
+      latest = fit(
+        { x: Math.round(now.x - holdX), y: Math.round(now.y - holdY), w: own.w, h: own.h },
+        least,
+      );
+      setHeld({ id, at: latest, how, in: latestIn });
     };
     const follow = (moving: PointerEvent) => {
       pointer = { x: moving.clientX, y: moving.clientY };
@@ -240,7 +309,8 @@ export function usePlacement({
     };
     const drop = () => {
       end();
-      if (dragging && !same(latest, own)) onMove(id, latest, "pointer", how);
+      if (dragging && (!same(latest, own) || !sameIn(latestIn, origin)))
+        onMove(id, latest, "pointer", how, latestIn);
     };
     if (how === "stretch") stopScrolling = scrollAtEdges(node, () => pointer, place);
     ending.current = end;
@@ -313,7 +383,7 @@ export function usePlacement({
     place();
   };
 
-  const keys: Placement["keys"] = (id, name, own) => ({
+  const keys: Placement["keys"] = (id, name, own, from) => ({
     "aria-keyshortcuts":
       "ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown",
     onKeyDown: (event) => {
@@ -332,7 +402,7 @@ export function usePlacement({
         ? stretched(own, by[0], by[1], least)
         : moved(own, by[0], by[1], least);
       if (same(next, own)) return;
-      onMove(id, next, "keys", event.shiftKey ? "stretch" : "move");
+      onMove(id, next, "keys", event.shiftKey ? "stretch" : "move", from);
       setSaid(
         event.shiftKey
           ? `${name} is ${next.w} wide and ${next.h} tall.`

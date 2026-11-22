@@ -258,7 +258,10 @@ export function EditorShell({
             }
           />
         ) : (
-          <div data-canvas className={bleed ? "min-w-0 flex-1 p-4" : "min-w-0 flex-1"}>
+          <div
+            data-canvas
+            className={bleed ? "min-w-0 max-w-full flex-1 overflow-x-auto p-4" : "min-w-0 flex-1"}
+          >
             {canvas}
           </div>
         )}

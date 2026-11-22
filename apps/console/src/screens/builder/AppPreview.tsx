@@ -4,6 +4,7 @@ import { Button, Notice } from "@volvel/ui";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, api, useLoad } from "../../api.ts";
 import { Loading } from "../../kit/LoadState.tsx";
+import { PageHeader } from "../../kit/PageHeader.tsx";
 import { navigate } from "../../router.tsx";
 import { DeviceSwitch, VIEWPORTS } from "./BuilderHeader.tsx";
 import { pageClient } from "./client.ts";
@@ -103,7 +104,7 @@ export function AppPreview({
               className="mx-auto flex flex-col gap-4 p-4"
               style={{ maxWidth: width ? `${width}px` : "1400px" }}
             >
-              <h1 className="m-0 text-display font-semibold">{body.title}</h1>
+              <PageHeader compact title={body.title} />
               <AppView
                 nav={nav}
                 pages={body.pages}

@@ -28,6 +28,7 @@ import {
   settleOnGrid,
   unbindDeclared,
 } from "../../kit/inspector/model.ts";
+import { EditOnPage } from "../../kit/markdown/onThePage.ts";
 import { AddFormDialog } from "./AddFormDialog.tsx";
 import { AddToPage } from "./AddToPage.tsx";
 import { ButtonOffers } from "./ButtonOffers.tsx";
@@ -68,6 +69,7 @@ import { definitionOf, views } from "./registry.ts";
 import { type Box, type CarryRequest, type FilterValues, PageView, placed } from "./renderer.ts";
 import { SampleBar, useSampleRecords, useTableInfo } from "./SampleRecord.tsx";
 import { detailActionsEdit, groupCandidates, groupEdit, suggestedEdit } from "./suggest.ts";
+import { TextOnPage } from "./TextOnPage.tsx";
 
 /**
  * What the editor changes: a page's widgets. Its filters are those of its Search and filter
@@ -197,6 +199,9 @@ export function PageEditor({
 
   const put = (next: PageWidget[], label: string, key?: string) =>
     onChange({ widgets: next }, label, key);
+  // A Text widget being written where it is on the canvas ("Edit on the page").
+  const [writing, setWriting] = useState<string>();
+  const writingWidget = widgets.find((one) => one.id === writing && one.type === "core/text");
 
   /** A change that also touches filters and pages (a detail, a form, a next step): one step to Undo. */
   const apply = (edit: Edit, label: string) => {
@@ -486,6 +491,10 @@ export function PageEditor({
                   `title:${id}`,
                 ),
               onColumn: (id) => onSelect(id),
+              onEditText: (id) => {
+                onSelect(id);
+                setWriting(id);
+              },
               carrying,
             }}
           />
@@ -495,7 +504,7 @@ export function PageEditor({
   );
 
   return (
-    <>
+    <EditOnPage.Provider value={(id) => setWriting(id)}>
       <EditorShell
         {...shell}
         outline={outline}
@@ -639,10 +648,29 @@ export function PageEditor({
           onMake={makeForm}
         />
       ) : null}
+      {writingWidget ? (
+        <TextOnPage
+          key={writingWidget.id}
+          widget={writingWidget.id}
+          title={nameOf(writingWidget)}
+          text={typeof writingWidget.config?.text === "string" ? writingWidget.config.text : ""}
+          onCancel={() => setWriting(undefined)}
+          onDone={(text) => {
+            setWriting(undefined);
+            if (text === (writingWidget.config?.text ?? "")) return;
+            put(
+              widgets.map((one) =>
+                one.id === writingWidget.id ? { ...one, config: { ...one.config, text } } : one,
+              ),
+              `writing ${nameOf(writingWidget)}`,
+            );
+          }}
+        />
+      ) : null}
       <span role="status" className="sr-only">
         {told}
       </span>
-    </>
+    </EditOnPage.Provider>
   );
 }
 

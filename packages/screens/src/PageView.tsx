@@ -99,6 +99,8 @@ export interface PageViewProps {
     onRename(id: string, title: string): void;
     /** A column heading was clicked in a table while building. */
     onColumn?(id: string, column: string): void;
+    /** A Text widget was double-clicked: its words are to be written where they are. */
+    onEditText?(id: string): void;
     /**
      * Something carried onto the page from outside it ("Add to page"), from where the
      * pointer was when the carrying began. A new value starts a new carry. `onDrop` is
@@ -416,6 +418,13 @@ function Cell({
               if (isOwn(event)) editing?.onSelect(widget.id);
             },
             // Arriving by keyboard chooses it, so that the keys that follow are for it.
+            ...(editing?.onEditText && widget.type === "core/text"
+              ? {
+                  onDoubleClick: (event: React.MouseEvent<HTMLElement>) => {
+                    if (isOwn(event) && !isControl(event.target)) editing.onEditText?.(widget.id);
+                  },
+                }
+              : {}),
             onFocus: (event: React.FocusEvent<HTMLElement>) => {
               if (event.target === event.currentTarget && !selected) editing?.onSelect(widget.id);
             },

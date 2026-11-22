@@ -843,7 +843,7 @@ describe("the canvas", () => {
     fireEvent.keyDown(chart, { key: "ArrowRight" });
     expect(s.onChange).toHaveBeenLastCalledWith(expect.anything(), "Moved By clinic");
     expect(at(lastList(s), "by_clinic")).toEqual(place(4, 0, 6, 6));
-    expect(screen.getByText("By clinic is at column 5, row 1.")).toBeTruthy();
+    expect(screen.getByText("By clinic moved to column 5, row 1.")).toBeTruthy();
     fireEvent.keyDown(group("By clinic"), { key: "ArrowDown" });
     // What is under it is pushed down.
     const moved = s.onChange.mock.lastCall?.[0] as PageWidget[];
@@ -1009,6 +1009,47 @@ describe("the canvas", () => {
       expect(s.onChange).toHaveBeenCalledTimes(1);
       expect(s.onChange).toHaveBeenLastCalledWith(expect.anything(), "Moved Invoiced");
       expect(at(lastList(s), "total")).toEqual(place(2, 2, 3, 3));
+    });
+
+    test("Esc, a cancelled pointer and a window that loses the pointer put a drag back, and say so", async () => {
+      const s = spies();
+      render(<Builder spies={s} />);
+      await screen.findByText("INV-1");
+      press(group("Invoiced"), 100, 100);
+      move(100 + 202, 100 + 104);
+      expect(screen.getByText("3 × 3 · col 3 · row 3")).toBeTruthy();
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByText("3 × 3 · col 3 · row 3")).toBeNull();
+      expect(screen.getByText(/Move cancelled\. Invoiced is back where it was\./)).toBeTruthy();
+      // Letting go after that writes nothing.
+      drop();
+      expect(s.onChange).not.toHaveBeenCalled();
+
+      // A resize, ended by the pointer being cancelled.
+      fireEvent.click(group("By clinic"));
+      press(screen.getByTitle("Drag to change its size"), 500, 300);
+      move(500 + 202, 300 + 52);
+      fireEvent.pointerCancel(window, { pointerId: 1 });
+      expect(screen.getByText(/Resize cancelled\./)).toBeTruthy();
+      drop();
+      expect(s.onChange).not.toHaveBeenCalled();
+
+      // Losing the window.
+      press(group("Invoiced"), 100, 100);
+      move(300, 300);
+      fireEvent.blur(window);
+      drop();
+      expect(s.onChange).not.toHaveBeenCalled();
+    });
+
+    test("a drag let go is told, by name and place", async () => {
+      const s = spies();
+      render(<Builder spies={s} />);
+      await screen.findByText("INV-1");
+      press(group("Invoiced"), 100, 100);
+      move(100 + 202, 100 + 104);
+      drop();
+      expect(screen.getByText("Invoiced moved to column 3, row 3.")).toBeTruthy();
     });
 
     test("a press that hardly moves is a click, not a drag", async () => {

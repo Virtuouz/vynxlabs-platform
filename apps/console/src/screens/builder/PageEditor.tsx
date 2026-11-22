@@ -8,7 +8,7 @@ import {
   type Page,
   type PageWidget,
 } from "@volvel/manifest";
-import { GRID } from "@volvel/screens";
+import { focusWidget, GRID, neighbourOf } from "@volvel/screens";
 import { Button, Closing, EmptyState, Kbd } from "@volvel/ui";
 import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
@@ -440,8 +440,10 @@ export function PageEditor({
     const words = removalWords(gone.removed);
     // What a removed Search and filter declared is no longer followed by anything.
     const next = gone.removed.reduce((list, one) => unbindDeclared(list, one), gone.widgets);
+    const after = neighbourOf(widgets, id);
     put(next, `removing ${words}`);
     onSelect(undefined);
+    focusWidget(after);
     notify.success(`Removed ${words}.`, { action: { label: "Undo", onClick: shell.history.undo } });
   };
 

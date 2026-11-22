@@ -70,7 +70,9 @@ export {
   CARRIED,
   type Card,
   type Carrying,
+  focusWidget,
   GRID,
+  neighbourOf,
   type Placement,
   usePlacement,
 } from "./placement.ts";

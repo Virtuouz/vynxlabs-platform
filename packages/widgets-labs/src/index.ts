@@ -19,7 +19,8 @@ export const goal = defineWidget({
   category: "understand",
   icon: "target",
   surfaces: ["app", "dashboard"],
-  data: { value: { shape: "summary", values: { min: 1, max: 1 }, breakdowns: { min: 0, max: 0 } } },
+  // The second value, when there is one, is where `goalFrom` reads the goal: a column of the source, summed or the like.
+  data: { value: { shape: "summary", values: { min: 1, max: 2 }, breakdowns: { min: 0, max: 0 } } },
   dataHints: [
     {
       of: "value",
@@ -36,14 +37,27 @@ export const goal = defineWidget({
       target: {
         type: "number",
         exclusiveMinimum: 0,
-        "x-volvel": hint({ tab: "display", control: "number", label: "Target", order: 1 }),
-      },
-      format: {
-        ...FORMAT,
         "x-volvel": hint({
-          tab: "display",
-          control: "format",
-          label: "Numbers look like",
+          tab: "data",
+          group: "Progress",
+          control: "number",
+          label: "Goal",
+          help: "A fixed amount. Or take it from a column below.",
+          order: 1,
+        }),
+      },
+      goalFrom: {
+        type: "string",
+        minLength: 1,
+        maxLength: 130,
+        "x-volvel": hint({
+          tab: "data",
+          group: "Progress",
+          control: "column",
+          of: "value",
+          types: ["number", "integer"],
+          label: "Goal from a column",
+          help: "A column of the result, such as a monthly target. It wins over the fixed amount.",
           order: 2,
         }),
       },
@@ -52,9 +66,41 @@ export const goal = defineWidget({
         maxLength: 200,
         "x-volvel": hint({
           tab: "display",
+          group: "Heading",
           control: "text",
           label: "A line under it",
           help: "Such as “of $60,000 this month”.",
+          order: 1,
+        }),
+      },
+      format: {
+        ...FORMAT,
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "format",
+          label: "Numbers",
+          order: 2,
+        }),
+      },
+      percent: {
+        type: "boolean",
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "switch",
+          label: "Show the percentage",
+          order: 2.5,
+        }),
+      },
+      reached: {
+        enum: ["green", "none"],
+        "x-volvel": hint({
+          tab: "display",
+          group: "Look",
+          control: "segmented",
+          label: "When reached, the bar",
+          choices: { green: "Turns green", none: "Stays" },
           order: 3,
         }),
       },
@@ -62,6 +108,7 @@ export const goal = defineWidget({
         enum: ["up", "down"],
         "x-volvel": hint({
           tab: "display",
+          group: "Look",
           level: "more",
           control: "segmented",
           label: "Good news is",
@@ -73,6 +120,7 @@ export const goal = defineWidget({
         type: "boolean",
         "x-volvel": hint({
           tab: "display",
+          group: "Look",
           level: "more",
           control: "switch",
           label: "Colour by how close",
@@ -81,10 +129,9 @@ export const goal = defineWidget({
         }),
       },
     },
-    required: ["target"],
     additionalProperties: false,
   },
-  defaults: { goodWhen: "up", bands: false },
+  defaults: { goodWhen: "up", bands: false, reached: "green", percent: true },
   events: { click: { gives: "nothing", label: "When it is clicked" } },
   layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 }, phone: "stack" },
 });

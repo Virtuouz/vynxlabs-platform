@@ -14,9 +14,20 @@ import { listensTo, PRESSABLE, press } from "./press.tsx";
 interface StatConfig {
   format?: ValueFormat;
   caption?: string;
+  /** Switched off: the period before is not drawn, whatever `compareTo` says. */
+  compare?: boolean;
   compareTo?: string;
   delta?: "percent" | "absolute" | "points";
   goodWhen?: "up" | "down";
+}
+
+/** Whether a change is good news: up is, unless the figure says going up is bad. Undefined for no change. */
+export function changeTone(
+  direction: "up" | "down" | "same",
+  goodWhen: "up" | "down" | undefined,
+): "good" | "bad" | undefined {
+  if (direction === "same") return undefined;
+  return (direction === "up") === (goodWhen !== "down") ? "good" : "bad";
 }
 
 /** One number, how it stands against the period before, and its line over time. */
@@ -28,7 +39,7 @@ export function StatView(props: WidgetViewProps<StatConfig>) {
   const value = summary.rows[0]?.[name];
   const earlier = summary.previous ? (summary.previous[0]?.[name] ?? null) : undefined;
   const against =
-    summary.previous !== undefined
+    summary.previous !== undefined && config.compare !== false
       ? comparison(value, earlier, { delta: config.delta, format: config.format })
       : undefined;
   const Mark =
@@ -38,10 +49,8 @@ export function StatView(props: WidgetViewProps<StatConfig>) {
         ? ArrowDownRight
         : Minus;
   // Up is good news unless the figure says otherwise: fewer overdue is better.
-  const good =
-    against && against.direction !== "same"
-      ? (against.direction === "up") === (config.goodWhen !== "down")
-      : undefined;
+  const tone = against ? changeTone(against.direction, config.goodWhen) : undefined;
+  const good = tone === undefined ? undefined : tone === "good";
   const caption = config.caption?.replace("{previous}", formatNumber(earlier, config.format));
   const line = trendOf(summary);
   const label = labelOf(summary.columns, name);
@@ -73,8 +82,8 @@ export function StatView(props: WidgetViewProps<StatConfig>) {
           >
             <Mark aria-hidden="true" size={14} />
             <span aria-hidden="true">{against.short}</span>
-            {/* Said once: here when the line below is in the maker's own words. */}
-            {caption ? <span className="sr-only">{against.text}</span> : null}
+            {/* The sentence is read aloud here, once; the line below is its short form to look at. */}
+            <span className="sr-only">{against.text}</span>
           </span>
         ) : null}
       </span>
@@ -85,8 +94,12 @@ export function StatView(props: WidgetViewProps<StatConfig>) {
           className="my-1 text-action"
         />
       ) : null}
-      {caption || against ? (
-        <span className="text-body-sm text-ink-muted">{caption ?? against?.text}</span>
+      {caption ? (
+        <span className="text-body-sm text-ink-muted">{caption}</span>
+      ) : against ? (
+        <span aria-hidden="true" className="text-body-sm text-ink-muted">
+          {against.direction === "same" ? "same as the period before" : "vs the period before"}
+        </span>
       ) : null}
     </div>
   );

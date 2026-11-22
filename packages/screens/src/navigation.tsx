@@ -22,7 +22,7 @@ export interface Over {
 }
 
 /** The parameters that belong to the page on screen: its open tabs and its filters. */
-const isOwn = (key: string) => key.startsWith("tab.") || key.startsWith("f.");
+const isOwn = (key: string) => key.startsWith("tab.") || key.startsWith("f.") || key === "ask";
 
 /** The page's own parameters in a query string. */
 export function ownParams(search: string): Record<string, string> {
@@ -109,6 +109,8 @@ export function addressOf(base: string, address: Address): string {
 
 /** Marks a history entry the app made to put a sheet or modal over a page, so that closing it can go back. */
 const OVER = "volvelOver";
+/** Marks the entry made for a question an action asks (`ask`): Back answers it with no. */
+const ASKED = "volvelAsk";
 
 const read = (base: string): Address =>
   parseAddress(base, window.location.pathname, window.location.search);
@@ -260,6 +262,30 @@ export function useAddress(base: string) {
     [show],
   );
 
+  /**
+   * The question an action asks before it runs (its confirmation, and the form it may hold) is
+   * in the address as `ask`, so that Back closes it, a reload brings it back and a link can name it.
+   */
+  const ask = useCallback(
+    (ref: string | undefined) => {
+      const now: Address = { ...current.current, own: ownParams(window.location.search) };
+      if (ref !== undefined) {
+        const next: Address = { ...now, own: { ...now.own, ask: ref } };
+        window.history.pushState({ [ASKED]: true }, "", addressOf(base, next));
+        setAddress(next);
+        return;
+      }
+      const state = window.history.state as Record<string, unknown> | null;
+      if (state?.[ASKED] === true) {
+        window.history.back();
+        return;
+      }
+      const { ask: _asked, ...own } = now.own ?? {};
+      show({ ...now, own }, "replace", false);
+    },
+    [base, show],
+  );
+
   const stepping = useMemo(() => {
     const place = steppingOf(among, address.sheet?.record);
     return place ? { ...place, loading: reading } : undefined;
@@ -306,7 +332,7 @@ export function useAddress(base: string) {
     },
     [among, reading, show],
   );
-  return { address, go, stepping, step, choose };
+  return { address, go, stepping, step, choose, ask };
 }
 
 /**

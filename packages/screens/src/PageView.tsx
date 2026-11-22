@@ -115,6 +115,8 @@ export interface PageViewProps {
    * app keeps it in its address. Left out, and while building, the page keeps it itself.
    */
   tabs?: { open: Readonly<Record<string, string>>; choose(widget: string, tab: string): void };
+  /** The question an action asks, as the host keeps it in the address (`widget|at|record`). */
+  ask?: { open: string | undefined; set(ref: string | undefined): void };
   /**
    * Names where a folded Section is kept in this browser (`volvel.fold.<foldKey>.<widget>`): the
    * app's path and the page. Left out, a fold lasts until the page is left.
@@ -1093,6 +1095,7 @@ export function PageView({
   overRecord,
   pages,
   tabs: tabHost,
+  ask: askHost,
   foldKey,
   editing,
 }: PageViewProps) {
@@ -1148,6 +1151,24 @@ export function PageView({
       ),
     [widgets],
   );
+  // The question the address names, as a request again: its widget is on this page, and its row is read.
+  const findRequest = async (ref: string): Promise<Request | undefined> => {
+    const [id = "", at = "", record = ""] = ref.split("|");
+    const widget = byIdRef.current.get(id);
+    if (!widget || at === "") return undefined;
+    if (record === "") return { widget, at };
+    try {
+      const read = await client.read(id, filterValues);
+      const rows = Object.values(read.inputs).find((one) => one.shape === "rows");
+      const row =
+        rows?.shape === "rows"
+          ? rows.rows.find((one) => String(one.id ?? "") === record)
+          : undefined;
+      return { widget, at, record, ...(row ? { row } : {}) };
+    } catch {
+      return { widget, at, record };
+    }
+  };
   const host: ActionsHost = {
     client,
     registry,
@@ -1160,6 +1181,7 @@ export function PageView({
     // otherwise this page does it for itself.
     refresh: () => (onActed ? onActed() : setRan((count) => count + 1)),
     label: (value) => value,
+    ...(askHost ? { asked: askHost.open, onAsk: askHost.set, find: findRequest } : {}),
   };
   const actions = useActions(host);
   // What decides whether a widget is shown, as far as the browser knows it.
@@ -1178,6 +1200,8 @@ export function PageView({
     [registry],
   );
   const byId = useMemo(() => new Map(widgets.map((widget) => [widget.id, widget])), [widgets]);
+  const byIdRef = useRef(byId);
+  byIdRef.current = byId;
   const name = useCallback(
     (id: string) => {
       const widget = byId.get(id);
@@ -1445,7 +1469,7 @@ export function PageView({
       : [];
   });
   const emptyMessage = narrowed
-    ? searched.length > 0 && !filters.some((one) => one.type !== "search" && holding(one))
+    ? searched.length > 0
       ? `Nothing matches “${searched.join(" ")}”`
       : "Nothing matches the filters."
     : "There is nothing here yet.";

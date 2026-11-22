@@ -201,7 +201,7 @@ function App() {
     [path],
   );
   return (
-    <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 p-4">
+    <div className="mx-auto flex min-h-screen max-w-[1400px] flex-col gap-4 overflow-x-clip p-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="m-0 text-display font-semibold">{view?.body.title ?? context.app.title}</h1>
         <span className="flex flex-wrap items-center gap-3 text-body text-ink-muted">

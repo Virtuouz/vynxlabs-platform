@@ -77,14 +77,36 @@ async function read<T>(response: Response): Promise<T> {
   return parsed as T;
 }
 
+/**
+ * Reads asked for before the screen that needs them was drawn: `index.html` starts the ones that
+ * follow from the address alone while the scripts are still arriving (`window.__vxEarly`, by path).
+ * A screen's own read of the same path takes the answer once; a read that failed is asked again.
+ */
+declare global {
+  interface Window {
+    __vxEarly?: Record<string, Promise<Response> | undefined>;
+  }
+}
+function takeEarly(path: string): Promise<Response> | undefined {
+  const kept = typeof window === "undefined" ? undefined : window.__vxEarly?.[path];
+  if (!kept || !window.__vxEarly) return undefined;
+  delete window.__vxEarly[path];
+  return kept;
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
-    method,
-    credentials: "same-origin",
-    ...(body === undefined
-      ? {}
-      : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-  });
+  const early = method === "GET" ? takeEarly(path) : undefined;
+  const response = await (early?.catch(() => undefined) ?? Promise.resolve(undefined)).then(
+    (kept) =>
+      kept ??
+      fetch(`/api/v1${path}`, {
+        method,
+        credentials: "same-origin",
+        ...(body === undefined
+          ? {}
+          : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+      }),
+  );
   const parsed = await read<T>(response);
   if (method !== "GET") afterWrite(path);
   return parsed;

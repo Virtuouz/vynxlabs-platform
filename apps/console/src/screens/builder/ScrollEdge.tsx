@@ -43,7 +43,7 @@ export function ScrollEdge() {
     >
       {more ? (
         <span
-          className="absolute top-0 right-0 flex items-center justify-end bg-linear-to-r from-transparent to-action/25 pr-1 forced-colors:border-r-4 forced-colors:border-[Highlight] forced-colors:bg-transparent"
+          className="absolute top-0 right-0 flex items-center justify-end bg-linear-to-r from-transparent to-action/25 pr-3 forced-colors:border-r-4 forced-colors:border-[Highlight] forced-colors:bg-transparent"
           style={{ height: box.h, width: 44 }}
         >
           <span className="flex size-6 items-center justify-center rounded-full border border-line-strong bg-raised text-ink shadow-raised forced-colors:border-[CanvasText]">

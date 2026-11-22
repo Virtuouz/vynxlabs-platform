@@ -44,8 +44,47 @@ function help(): Plugin {
   };
 }
 
+/**
+ * On an address that opens an app's builder, its script and what it needs are asked for with the
+ * page, beside the console's own, not after the console has drawn and found it needs them. On a
+ * slow line that is the difference between one wait and two. Every other address loads as it did.
+ */
+function builderPreload(): Plugin {
+  return {
+    name: "volvel-builder-preload",
+    transformIndexHtml: {
+      order: "post",
+      handler(html, context) {
+        const bundle = context.bundle;
+        if (!bundle) return html;
+        const chunks = Object.values(bundle).filter((one) => one.type === "chunk");
+        const byFile = new Map(chunks.map((one) => [one.fileName, one]));
+        const builder = chunks.find((one) =>
+          one.facadeModuleId?.endsWith("screens/builder/AppBuilder.tsx"),
+        );
+        if (!builder) return html;
+        const closure = (start: string) => {
+          const seen = new Set<string>();
+          const walk = (file: string) => {
+            if (seen.has(file)) return;
+            seen.add(file);
+            for (const next of byFile.get(file)?.imports ?? []) walk(next);
+          };
+          walk(start);
+          return seen;
+        };
+        const entry = chunks.find((one) => one.isEntry);
+        const have = entry ? closure(entry.fileName) : new Set<string>();
+        const files = [...closure(builder.fileName)].filter((file) => !have.has(file));
+        const script = `<script>if(/^\\/t\\/[^/]+\\/workspaces\\/[^/]+\\/screens\\/[^/?#]+/.test(location.pathname)){${JSON.stringify(files)}.forEach(function(f){var l=document.createElement("link");l.rel="modulepreload";l.href="/"+f;document.head.appendChild(l)})}</script>`;
+        return html.replace("</head>", `${script}</head>`);
+      },
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), help()],
+  plugins: [react(), tailwindcss(), help(), builderPreload()],
   server: {
     // In development the console runs on its own port and talks to a local control plane.
     proxy: { "/api": "http://localhost:8080" },

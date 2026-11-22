@@ -6,7 +6,6 @@ import { ask, failureText, notify, takenText } from "../../ask.tsx";
 import { ago } from "../../kit/format.ts";
 import { useHistory } from "../../kit/history.ts";
 import { heading } from "../../kit/inspector/model.ts";
-import { Loading } from "../../kit/LoadState.tsx";
 import {
   DeviceSwitch,
   DraftPill,
@@ -17,6 +16,7 @@ import {
   type ViewAs,
   ViewAsMenu,
 } from "./BuilderHeader.tsx";
+import { BuilderSkeleton } from "./BuilderSkeleton.tsx";
 import { draftChangeCount } from "./changes.ts";
 import { DraftHistory } from "./DraftHistory.tsx";
 import { type DraftAnswer, type Listed, slug } from "./data.ts";
@@ -100,36 +100,44 @@ export function AppBuilder({
   const agreed = useRef(new Set<string>());
   const [restoring, setRestoring] = useState(false);
 
-  // What is saved and not deployed, or else what is deployed.
+  // What is saved and not deployed, or else what is deployed. Someone who may not edit reads what
+  // is deployed (the draft only when nothing is deployed yet). The deployed page is read once, by
+  // `deployed`, and this takes it from there.
+  const [noDraft, setNoDraft] = useState(false);
   useEffect(() => {
-    if (!known) return;
+    if (!known || readOnly) return;
     let current = true;
-    const published = () =>
-      api.get<{ body: InterfaceBody }>(`${root}/interfaces/${path}`).then(
-        (view) => current && setBody(view.body),
-        (error: ApiError) => current && setMissing(error.message),
-      );
-    if (readOnly) {
-      // The published page, which the person may read; the draft only when nothing is published yet.
-      api.get<{ body: InterfaceBody }>(`${root}/interfaces/${path}`).then(
-        (view) => current && setBody(view.body),
-        () =>
-          api.get<DraftAnswer>(`${root}/drafts/${path}`).then(
-            (draft) => current && setBody(draft.body),
-            (error: ApiError) => current && setMissing(error.message),
-          ),
-      );
-    } else {
-      api.get<DraftAnswer>(`${root}/drafts/${path}`).then((draft) => {
+    api.get<DraftAnswer>(`${root}/drafts/${path}`).then(
+      (draft) => {
         if (!current) return;
         revision.current = draft.revision;
         setBody(draft.body);
-      }, published);
-    }
+      },
+      () => current && setNoDraft(true),
+    );
     return () => {
       current = false;
     };
   }, [root, path, known, readOnly]);
+  useEffect(() => {
+    if (!known || body || !(readOnly || noDraft)) return;
+    if (deployed.data) {
+      setBody(deployed.data.body);
+    } else if (deployed.error) {
+      if (!readOnly) {
+        setMissing(deployed.error.message);
+        return;
+      }
+      let current = true;
+      api.get<DraftAnswer>(`${root}/drafts/${path}`).then(
+        (draft) => current && setBody(draft.body),
+        (error: ApiError) => current && setMissing(error.message),
+      );
+      return () => {
+        current = false;
+      };
+    }
+  }, [known, body, readOnly, noDraft, deployed.data, deployed.error, root, path]);
 
   const save = useCallback(
     async (next: InterfaceBody) => {
@@ -188,7 +196,7 @@ export function AppBuilder({
   };
 
   if (missing) return <Notice tone="danger">{missing}</Notice>;
-  if (!body || !known) return <Loading />;
+  if (!body || !known) return <BuilderSkeleton />;
   const page = body.pages.find((candidate) => candidate.id === pageId) ?? body.pages[0];
   const listed = list.data?.items.find((item) => item.path === path);
   const appPath = listed?.app ?? null;

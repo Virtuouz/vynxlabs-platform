@@ -1054,17 +1054,23 @@ export function checkWidgets(
   }
   // What a widget is placed in is a container on this page, one level deep, and on one of its tabs.
   const byId = new Map(widgets.map((widget) => [widget.id, widget]));
-  widgets.forEach((widget, index) => {
-    if (!widget.in) return;
+  for (const [index, widget] of widgets.entries()) {
+    if (!widget.in) continue;
     const path = `${at}/widgets/${index}/in`;
     const say = (where: string, message: string) => issues.push({ path: where, message });
     const holder = byId.get(widget.in.widget);
-    if (!holder)
-      return say(`${path}/widget`, `there is no widget "${widget.in.widget}" on the page`);
-    if (registry.get(holder.type)?.role !== "container") {
-      return say(`${path}/widget`, `"${holder.id}" holds no widgets: only a Section or Tabs do`);
+    if (!holder) {
+      say(`${path}/widget`, `there is no widget "${widget.in.widget}" on the page`);
+      continue;
     }
-    if (holder.in) return say(path, "a container's widgets are one level deep: it is in another");
+    if (registry.get(holder.type)?.role !== "container") {
+      say(`${path}/widget`, `"${holder.id}" holds no widgets: only a Section or Tabs do`);
+      continue;
+    }
+    if (holder.in) {
+      say(path, "a container's widgets are one level deep: it is in another");
+      continue;
+    }
     if (registry.get(widget.type)?.role === "container")
       say(path, "a Section or Tabs is never placed in another");
     const tabs = parts.tabsOf(holder);
@@ -1073,7 +1079,7 @@ export function checkWidgets(
       else if (!tabs.some((tab) => tab.id === widget.in?.tab))
         say(`${path}/tab`, `"${holder.id}" has no tab "${widget.in.tab}"`);
     } else if (widget.in.tab) say(`${path}/tab`, `"${holder.id}" has no tabs`);
-  });
+  }
 
   const columnType = (table: string, column: string): string | null | undefined => {
     const known = context.tableOf?.(table);

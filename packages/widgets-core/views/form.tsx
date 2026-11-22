@@ -17,7 +17,7 @@ import {
   TextField,
 } from "@volvel/ui";
 import type { ColumnInfo, RecordData, WidgetViewProps } from "@volvel/widgets";
-import { moneyFormatOf } from "@volvel/widgets";
+import { moneyFormatOf, mustGive } from "@volvel/widgets";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /** One field of the form, as `config.fields` lists it. */
@@ -190,18 +190,20 @@ export function initialValue(
 
 /**
  * What the form starts with: the open record's values for the fields. A new record starts
- * with each field's own start (`initial`); an open record's own value always wins.
+ * with each field's own start (`initial`), else what the table gives a row that gives none
+ * (the column's default); an open record's own value always wins.
  */
 function startValues(
   fields: readonly FieldConfig[],
   record: Values | null,
   kinds: (field: FieldConfig) => Kind,
   viewer: FormViewProps["viewer"],
+  defaults?: ReadonlyMap<string, unknown>,
 ): Values {
   const out: Values = {};
   for (const field of fields) {
     if (!record) {
-      const value = initialValue(field, kinds(field), viewer);
+      const value = initialValue(field, kinds(field), viewer) ?? defaults?.get(field.column);
       if (!isEmpty(value)) out[field.column] = value;
       continue;
     }
@@ -279,8 +281,9 @@ function FormBody({
         edit ? original : null,
         (field) => kindOf(byName.get(field.column) as FormColumn),
         viewer,
+        new Map(columns.map((column) => [column.name, column.default])),
       ),
-    [fields, original, edit, byName, viewer],
+    [fields, original, edit, byName, viewer, columns],
   );
 
   const [values, setValues] = useState<Values>(begin);
@@ -300,7 +303,8 @@ function FormBody({
     return {
       column,
       kind,
-      required: field.required ?? column.required ?? false,
+      // The server's own rule: asked for when the column is required and has no default.
+      required: field.required ?? (edit ? column.required === true : mustGive(column)),
       label: field.label?.trim() || column.label || words(column.name),
     };
   };
@@ -463,6 +467,7 @@ function FormBody({
           label={label}
           hint={common.hint}
           error={errors[name]}
+          required={required}
           disabled={off}
           value={held}
           choices={building ? undefined : choices}
@@ -481,6 +486,7 @@ function FormBody({
           label={label}
           {...(common.hint ? { hint: common.hint } : {})}
           error={errors[name]}
+          required={required}
           options={options}
           value={Array.isArray(held) ? (held as string[]) : []}
           disabled={off}
@@ -649,22 +655,36 @@ function FormBody({
             </div>
           </div>
         ))}
+        {/* The buttons as people will see them. While building they are drawn and do nothing. */}
+        <div
+          // In a modal or sheet the buttons stay at the foot of what is seen, over the fields that
+          // scroll under them, so that Create is always there to press.
+          className={
+            onClose && !building
+              ? "sticky -bottom-4 z-[1] -mx-5 -mb-4 flex flex-wrap justify-end gap-2 border-line border-t bg-surface px-5 py-3"
+              : "flex flex-wrap justify-end gap-2"
+          }
+          {...(building ? { inert: true } : {})}
+        >
+          {onClose ? (
+            <Button disabled={pending} onClick={onClose}>
+              Cancel
+            </Button>
+          ) : null}
+          <Button
+            type={building ? "button" : "submit"}
+            variant="primary"
+            loading={pending}
+            disabled={pending || (!building && !act)}
+          >
+            {config.submitLabel ?? "Save"}
+          </Button>
+        </div>
         {building ? (
           <p className="m-0 text-body-sm text-ink-muted">
             Sends with: {fields.map((field) => info(field).label).join(", ")}
           </p>
-        ) : (
-          <div className="flex flex-wrap justify-end gap-2">
-            {onClose ? (
-              <Button disabled={pending} onClick={onClose}>
-                Cancel
-              </Button>
-            ) : null}
-            <Button type="submit" variant="primary" loading={pending} disabled={pending || !act}>
-              {config.submitLabel ?? "Save"}
-            </Button>
-          </div>
-        )}
+        ) : null}
       </form>
     </FieldMarks>
   );
@@ -680,6 +700,7 @@ function ReferenceField({
   label,
   hint,
   error,
+  required,
   disabled,
   value,
   choices,
@@ -689,6 +710,7 @@ function ReferenceField({
   label: string;
   hint: string | undefined;
   error: string | undefined;
+  required: boolean;
   disabled: boolean;
   value: unknown;
   choices: FormViewProps["choices"] | undefined;
@@ -744,6 +766,7 @@ function ReferenceField({
     label,
     ...(hint ? { hint } : {}),
     error: problem,
+    required,
     options,
     disabled,
     placeholder: `Search ${label.toLowerCase()}`,

@@ -59,6 +59,13 @@ export function TextOnPage({
   onCancel: () => void;
 }) {
   const [written, setWritten] = useState(text);
+  /** Leaving with text that was typed asks first: Esc is not a way to lose it by accident. */
+  const [asking, setAsking] = useState(false);
+  const changed = written !== text;
+  const leave = () => {
+    if (changed) setAsking(true);
+    else onCancel();
+  };
   const [place, setPlace] = useState<Place>(() =>
     placeOver(document.querySelector(`[data-widget-cell="${widget}"]`)),
   );
@@ -81,28 +88,51 @@ export function TextOnPage({
       onKeyDown={(event) => {
         if (event.key === "Escape" && !event.defaultPrevented) {
           event.stopPropagation();
-          onCancel();
+          if (asking) setAsking(false);
+          else leave();
         }
       }}
     >
-      <MarkdownEditor
-        profile="page"
-        label={`Text of ${title}`}
-        value={written}
-        onChange={setWritten}
-        height={`${place.height - (place.full ? 112 : 52)}px`}
-        autoFocus
-        modes={["source", "split", "preview"]}
-        path={`widget/${widget}.md`}
-      />
-      <div className="flex shrink-0 items-center justify-end gap-2 border-line border-t px-3 py-2">
-        <span className="mr-auto text-meta text-ink-muted">Esc leaves the text as it was.</span>
-        <Button size="small" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button size="small" variant="primary" onClick={() => onDone(written)}>
-          Done
-        </Button>
+      <div className="min-h-0 flex-1">
+        <MarkdownEditor
+          profile="page"
+          label={`Text of ${title}`}
+          value={written}
+          onChange={setWritten}
+          fill
+          autoFocus
+          modes={["source", "split", "preview"]}
+          path={`widget/${widget}.md`}
+        />
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-line border-t px-3 py-2">
+        {asking ? (
+          <>
+            <span className="mr-auto text-meta text-ink">
+              Leave without keeping what you wrote?
+            </span>
+            <Button size="small" onClick={() => setAsking(false)} autoFocus>
+              Keep writing
+            </Button>
+            <Button size="small" onClick={onCancel}>
+              Discard
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className="mr-auto text-meta text-ink-muted">
+              {changed
+                ? "Esc asks before it throws the text away."
+                : "Esc leaves the text as it was."}
+            </span>
+            <Button size="small" onClick={leave}>
+              Cancel
+            </Button>
+            <Button size="small" variant="primary" onClick={() => onDone(written)}>
+              Done
+            </Button>
+          </>
+        )}
       </div>
     </Appear>,
     document.body,

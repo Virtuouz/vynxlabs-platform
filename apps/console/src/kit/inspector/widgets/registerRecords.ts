@@ -8,12 +8,13 @@
 import type { Tab } from "@volvel/widgets";
 import { type ComponentType, createElement } from "react";
 import type { Env } from "../controls.tsx";
-import { registerDrawer, registerTilePreview } from "../custom.ts";
+import { registerDrawer, registerSettingControl, registerTilePreview } from "../custom.ts";
 import { ActionsDisplaySection } from "./actionsDrawer.tsx";
 import { ButtonDisplaySection } from "./buttonDrawer.tsx";
 import { DetailDataSection, DetailDisplaySection } from "./detailDrawer.tsx";
 import { FilterDisplaySection } from "./filterDrawer.tsx";
 import { FormDisplaySection } from "./formDrawer.tsx";
+import { FormMode } from "./formMode.tsx";
 import { ButtonPreview, iconOf } from "./recordShared.tsx";
 import { SectionDisplaySection } from "./sectionDrawer.tsx";
 import { TabsDisplaySection } from "./tabsDrawer.tsx";
@@ -57,6 +58,8 @@ piece("core/form", "display", FormDisplaySection, {
   hides: ["fields", "submitLabel"],
   headingLast: true,
 });
+// What a form does is cards, as Record detail's "Shows" is, in words that say what saving does.
+registerSettingControl("core/form", "mode", (env) => createElement(FormMode, { env }));
 piece("core/button", "display", ButtonDisplaySection, {
   hides: ["label", "icon", "tone", "full", "place"],
 });

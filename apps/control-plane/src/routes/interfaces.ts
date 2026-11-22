@@ -300,7 +300,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           const columns = canRead
             ? await data
                 .selectFrom("data_column")
-                .select(["name", "type", "required", "reference_table", "options"])
+                .select(["name", "type", "required", "reference_table", "options", "default_value"])
                 .where("table_id", "=", table.id)
                 .where("status", "=", "active")
                 .orderBy("created_at")
@@ -340,6 +340,11 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 // A reference is of the type `reference`, and `references` says which table.
                 type: column.reference_table ? "reference" : column.type,
                 required: column.required,
+                // What a new row gets when it gives none: the form starts with it, and the column
+                // is not asked for (the data server's rule: required and without a default).
+                ...(column.default_value !== null && column.default_value !== undefined
+                  ? { default: column.default_value }
+                  : {}),
                 references: column.reference_table,
                 // A colour by name is given as the colour itself: a page needs no list of names.
                 ...(column.options?.values

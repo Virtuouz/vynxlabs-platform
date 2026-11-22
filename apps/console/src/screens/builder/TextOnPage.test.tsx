@@ -31,14 +31,28 @@ describe("a Text widget written on the page", () => {
     expect(onCancel).not.toHaveBeenCalled();
   });
 
-  test("Esc, or Cancel, leaves the text as it was", async () => {
+  test("Esc, or Cancel, leaves text that was not changed", async () => {
     const { onDone, onCancel } = open();
     const box = await screen.findByLabelText("Text of Heading");
-    fireEvent.change(box, { target: { value: "Changed.\n" } });
     fireEvent.keyDown(box, { key: "Escape" });
     await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalledTimes(2);
+    expect(onDone).not.toHaveBeenCalled();
+  });
+
+  test("Esc over typed text asks before it throws the text away", async () => {
+    const { onDone, onCancel } = open();
+    const box = await screen.findByLabelText("Text of Heading");
+    fireEvent.change(box, { target: { value: "Changed.\n" } });
+    fireEvent.keyDown(box, { key: "Escape" });
+    expect(await screen.findByText("Leave without keeping what you wrote?")).toBeTruthy();
+    expect(onCancel).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Keep writing" }));
+    expect(screen.queryByText("Leave without keeping what you wrote?")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onDone).not.toHaveBeenCalled();
   });
 

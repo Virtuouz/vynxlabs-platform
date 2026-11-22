@@ -271,6 +271,8 @@ function columnInfoOf(
       label,
       type: one.referenceTable ? "reference" : one.type,
       required: one.required,
+      // What a new row gets when it gives none: a form starts with it, and does not ask for it.
+      ...(one.default !== null && one.default !== undefined ? { default: one.default } : {}),
       ...(one.referenceTable ? { references: one.referenceTable } : {}),
       ...(description ? { description } : {}),
       ...(values && values.length > 0

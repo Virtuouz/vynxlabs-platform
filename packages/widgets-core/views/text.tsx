@@ -31,7 +31,7 @@ export function TextView({ config, building }: WidgetViewProps<{ text?: string; 
   const look = config.look ?? "plain";
   if (text.trim() === "") {
     return building ? (
-      <p className="m-0 text-ink-muted">Write something in the Display tab.</p>
+      <p className="m-0 text-ink-muted">Click to write, or Edit on the page.</p>
     ) : null;
   }
   return (

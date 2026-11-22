@@ -435,8 +435,15 @@ test("Layout writes a tablet and a phone as Automatic or Custom, what narrow scr
   expect(written.at(-1)?.layout?.tablet).toBeDefined();
   fireEvent.click(within(screen.getByRole("group", { name: "Tablet" })).getByText("Automatic"));
   expect(written.at(-1)?.layout).toBeUndefined();
-  fireEvent.change(screen.getByLabelText("On narrow screens"), { target: { value: "stack" } });
+  // Narrow screens: five short choices in one row, with what the chosen one does said under it.
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "On narrow screens" })).getByText("Stack"),
+  );
   expect(written.at(-1)?.layout?.narrow).toBe("stack");
+  expect(screen.getByText(/Takes the whole row, after everything/)).toBeTruthy();
+  // A height past what the widget allows is said, not only kept within.
+  fireEvent.change(screen.getByLabelText("Height"), { target: { value: "99" } });
+  expect(screen.getByRole("status").textContent).toMatch(/Height is at most 40 for a chart/);
   fireEvent.change(screen.getByRole("spinbutton", { name: "Priority" }), {
     target: { value: "2" },
   });

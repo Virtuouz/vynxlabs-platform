@@ -98,6 +98,11 @@ export interface PageViewProps {
   filterOptions?: Readonly<Record<string, readonly (string | { value: string; label: string })[]>>;
   /** A widget raised an event its definition declares. Told after the page has done what its widget says to do. */
   onEvent?: (widget: string, event: string, payload: EventPayload) => void;
+  /**
+   * Building a side sheet or a modal: it is drawn as it opens, so a form shows the Cancel it
+   * will have (inert here), as the served page does.
+   */
+  overlay?: "sheet" | "modal";
   /** The record the page is open on: a record page, a side sheet or a modal. */
   record?: string;
   /** Who is looking, for drawing `when` and `showWhen`. The server checks again. */
@@ -302,7 +307,13 @@ function Measured({
     watch.observe(node);
     return () => watch.disconnect();
   }, [on]);
-  return on ? <div ref={box}>{children}</div> : <>{children}</>;
+  return on ? (
+    <div ref={box} className="shrink-0">
+      {children}
+    </div>
+  ) : (
+    children
+  );
 }
 
 /** Whether an event is for this cell and not for a widget drawn inside it. */
@@ -369,6 +380,15 @@ function Cell({
   const container = place !== undefined;
   // A widget drawn on the page as it is, with no card: a button.
   const bare = definition?.layout.frame === "none" || container;
+  // A Text is as tall as its words unless it was sized by hand: one still at the height it was
+  // added with grows to show all of its text, and says nothing is cut. Taller than that, it was
+  // sized by someone, and is the height they gave it.
+  const growsWithText =
+    widget.type === "core/text" &&
+    (ctx.stored.get(widget.id)?.at.h ?? at.h) <= (definition?.layout.default.h ?? at.h);
+  // A form in a published modal or sheet is the overlay's own content: the overlay is its card
+  // and its only scroller, so it has no frame, no padding and no scroll box of its own.
+  const flat = onClose !== undefined && editing === undefined && widget.type === "core/form";
   // Whether it arrived is as of when it first drew: the next draw must not stop its fade.
   const [arrived] = useState(arriving);
   // A widget added before its source was chosen has nothing to ask for yet.
@@ -559,7 +579,7 @@ function Cell({
     : {};
   return (
     <Card
-      bare={bare}
+      bare={bare || flat}
       building={building}
       ref={oneStop.ref}
       aria-label={name}
@@ -620,6 +640,7 @@ function Cell({
         }
         tabbable={!narrow}
         container={container}
+        flat={flat}
         opens={opens}
         offer={ctx.offerAt === widget.id ? ctx.offer : undefined}
         quiet={ctx.emptied.size > 1 && ctx.offerAt !== widget.id}
@@ -637,8 +658,18 @@ function Cell({
           </p>
         ) : View ? (
           <Measured
-            on={entry?.definition.role === "filters" || entry?.definition.role === "container"}
-            onSize={(pixels) => ctx.measured(widget.id, pixels)}
+            on={
+              entry?.definition.role === "filters" ||
+              entry?.definition.role === "container" ||
+              growsWithText
+            }
+            // A text's card is its content and the card's own room around it (its padding, and its heading).
+            onSize={(pixels) =>
+              ctx.measured(
+                widget.id,
+                growsWithText ? pixels + 28 + (widget.title || widget.subtitle ? 36 : 0) : pixels,
+              )
+            }
           >
             <View
               config={config}
@@ -906,7 +937,10 @@ function WidgetGrid({
             ...(inner.tab !== undefined ? { "data-grid-tab": inner.tab } : {}),
           }
         : {})}
-      className={`grid grid-cols-2 gap-3 @2xl/page:@md/grid:auto-rows-[2.5rem] @2xl/page:@md/grid:grid-cols-12 ${inner && editing ? "min-h-10 rounded-inner" : ""} ${
+      className={`grid grid-cols-2 gap-3 ${
+        // In a published modal or sheet the overlay is the one scroller: rows are as tall as what is in them.
+        ctx.onClose && !editing ? "" : "@2xl/page:@md/grid:auto-rows-[2.5rem]"
+      } @2xl/page:@md/grid:grid-cols-12 ${inner && editing ? "min-h-10 rounded-inner" : ""} ${
         inner && landingHere ? "outline-2 outline-dashed outline-action/50 outline-offset-2" : ""
       }`}
       onClick={(event) => {
@@ -1093,6 +1127,7 @@ export function PageView({
   user,
   onNavigate,
   over,
+  overlay,
   overRecord,
   pages,
   tabs: tabHost,
@@ -1551,7 +1586,7 @@ export function PageView({
     groupNames: groupNames ?? user?.groupNames,
     movePhone,
     onRecord: setThisRow,
-    onClose: over ? () => onNavigate?.({ close: true }) : undefined,
+    onClose: over ? () => onNavigate?.({ close: true }) : overlay ? () => {} : undefined,
     overRecord,
     pages,
     placement,

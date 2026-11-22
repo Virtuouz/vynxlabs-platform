@@ -333,7 +333,10 @@ describe("components", () => {
     const source = ":product[] is here.\n\n::screenshot{name=a alt=b}\n";
     expect(codes(source)).toEqual(["component_not_allowed", "component_not_allowed"]);
     expect(codes(source, "product")).toEqual([]);
-    expect(renderHtml(parse(source))).toBe("<p> is here.</p>");
+    // What it held is drawn, and a component on a line of its own that cannot be shown says so.
+    expect(renderHtml(parse(source))).toBe(
+      '<p> is here.</p><p class="vd-unavailable">“screenshot” is not something this text can show.</p>',
+    );
   });
 
   test("a term nobody can explain to this reader is its word alone", () => {

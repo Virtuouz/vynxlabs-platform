@@ -1,5 +1,5 @@
-import { type ProfileName, parse, type Root } from "@volvel/markup";
-import { Button, Doc, Popover, reveal as revealIn } from "@volvel/ui";
+import { type ProfileName, parse, type Root, walk } from "@volvel/markup";
+import { Button, Doc, Popover, reveal as revealIn, useMarkdownKnowledge } from "@volvel/ui";
 import {
   Bold,
   Code as CodeIcon,
@@ -50,6 +50,11 @@ export interface MarkdownEditorProps {
   label: string;
   /** A CSS length for the source and the preview. */
   height?: string;
+  /**
+   * Fill the room the parent gives, whatever the toolbar's height: the source and the
+   * preview each scroll inside it, and nothing below is pushed or covered.
+   */
+  fill?: boolean;
   /** Takes the focus as it opens. */
   autoFocus?: boolean;
   /** More in the toolbar, after the formatting buttons. */
@@ -98,6 +103,7 @@ export function MarkdownEditor({
   profile,
   label,
   height = "68vh",
+  fill = false,
   autoFocus,
   toolbarExtra,
   modes = ["source", "split", "preview"],
@@ -129,6 +135,17 @@ export function MarkdownEditor({
 
   const typed = useDeferredValue(value);
   const read = useMemo(() => tree ?? parse(typed), [tree, typed]);
+  // What the app around it knows of terms and fields: the preview draws them with it, and a term
+  // or a field it cannot find is said, since a reader is shown the word or the path alone.
+  const knows = useMarkdownKnowledge();
+  const notFound = useMemo(
+    () => (custom === undefined && profile === "page" ? unresolved(read, knows) : []),
+    [read, knows, custom, profile],
+  );
+  const shownProblems = useMemo(
+    () => (notFound.length > 0 ? [...(problems ?? []), ...notFound] : problems),
+    [problems, notFound],
+  );
   const within = useMemo(() => containersWhere(read, cursor.line), [read, cursor.line]);
   const offered = useMemo(() => insertables(within, profile), [within, profile]);
 
@@ -201,9 +218,10 @@ export function MarkdownEditor({
     sideTabs && sideTabs.length > 0 ? [{ id: "preview", label: "Preview" }, ...sideTabs] : [];
   const sideTab = sideTabs?.find((one) => one.id === side);
   const previewHeight = tabs.length > 0 ? `calc(${height} - 4vh)` : height;
+  const sized = fill ? undefined : { height: previewHeight };
 
   return (
-    <div className="flex min-h-0 flex-col">
+    <div className={`flex min-h-0 flex-col ${fill ? "h-full" : ""}`}>
       <div
         role="toolbar"
         aria-label="Write"
@@ -307,10 +325,12 @@ export function MarkdownEditor({
         ) : null}
       </div>
 
-      <div className={`grid min-h-0 ${mode === "split" ? "lg:grid-cols-2" : "grid-cols-1"}`}>
+      <div
+        className={`grid min-h-0 ${mode === "split" ? "lg:grid-cols-2" : "grid-cols-1"} ${fill ? "flex-1 grid-rows-[minmax(0,1fr)]" : ""}`}
+      >
         <div
           onKeyDownCapture={keys}
-          className={!sourceShown ? "hidden" : mode === "split" ? "hidden lg:block" : ""}
+          className={`${fill ? "h-full min-h-0" : ""} ${!sourceShown ? "hidden" : mode === "split" ? "hidden lg:block" : ""}`}
         >
           <Suspense fallback={<p className="p-3 text-ink-muted">Loading the editor…</p>}>
             <CodeEditor
@@ -320,9 +340,9 @@ export function MarkdownEditor({
               value={value}
               onChange={onChange}
               {...(onSave ? { onSave } : {})}
-              {...(problems ? { problems } : {})}
+              {...(shownProblems ? { problems: shownProblems } : {})}
               wrap
-              height={height}
+              height={fill ? "100%" : height}
               {...(reveal ? { reveal } : {})}
               handle={handle}
               onCursor={(at) => {
@@ -336,7 +356,7 @@ export function MarkdownEditor({
           </Suspense>
         </div>
         <div
-          className={`flex min-h-0 flex-col border-line lg:border-l ${
+          className={`flex min-h-0 flex-col border-line lg:border-l ${fill ? "h-full" : ""} ${
             !previewShown ? "hidden" : mode === "split" ? "hidden lg:flex" : ""
           }`}
         >
@@ -367,15 +387,23 @@ export function MarkdownEditor({
           {side === "preview" || !sideTab ? (
             <section
               ref={shown}
-              className="overflow-y-auto p-6"
-              style={{ height: previewHeight }}
+              className={`overflow-y-auto p-6 ${fill ? "min-h-0 flex-1" : ""}`}
+              style={sized}
               aria-label={previewLabel}
             >
               {custom ??
                 (value.trim() === "" ? (
                   <p className="m-0 text-ink-muted">Nothing written yet.</p>
                 ) : (
-                  <Doc tree={read} profile={profile} headingShift={1} lines idPrefix={`p${id}`} />
+                  <Doc
+                    tree={read}
+                    profile={profile}
+                    headingShift={1}
+                    lines
+                    idPrefix={`p${id}`}
+                    {...(knows.term ? { term: knows.term } : {})}
+                    {...(knows.field ? { field: knows.field } : {})}
+                  />
                 ))}
               {within.length > 0 ? (
                 <p className="m-0 mt-3 text-meta text-action">
@@ -386,8 +414,8 @@ export function MarkdownEditor({
           ) : (
             <section
               aria-label={sideTab.label}
-              className="overflow-y-auto p-4"
-              style={{ height: previewHeight }}
+              className={`overflow-y-auto p-4 ${fill ? "min-h-0 flex-1" : ""}`}
+              style={sized}
             >
               {sideTab.content}
             </section>
@@ -396,6 +424,35 @@ export function MarkdownEditor({
       </div>
     </div>
   );
+}
+
+/**
+ * The terms and fields of a text that the host, which does know of them, cannot find: said on their
+ * lines, since a reader is shown the word or the path with nothing behind it.
+ */
+function unresolved(tree: Root, knows: ReturnType<typeof useMarkdownKnowledge>): Marker[] {
+  const found: Marker[] = [];
+  if (!knows.term && !knows.field) return found;
+  for (const { node } of walk(tree)) {
+    if (node.type !== "component" || node.line === undefined) continue;
+    if (node.name === "term" && knows.term && !knows.term(node.props)) {
+      const what = node.props.id ?? Object.values(node.props).join(" ");
+      found.push({
+        line: node.line,
+        column: 1,
+        severity: "warning",
+        message: `No term "${what}" can be found here. Readers see the word with nothing behind it.`,
+      });
+    } else if (node.name === "field" && knows.field && !knows.field(node.props.path ?? "")) {
+      found.push({
+        line: node.line,
+        column: 1,
+        severity: "warning",
+        message: `No field "${node.props.path ?? ""}" can be found here. Readers see its path with nothing behind it.`,
+      });
+    }
+  }
+  return found;
 }
 
 function ToolButton({

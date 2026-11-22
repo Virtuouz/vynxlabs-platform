@@ -36,6 +36,10 @@ export interface CatalogColumn {
   name: string;
   type: string;
   references: string | null;
+  /** NOT NULL, as the table says: a row must give it unless it has a default. */
+  required?: boolean;
+  /** What a row gets when it gives none. */
+  default?: unknown;
   /** What the column holds, as its table's definition says. */
   description?: string;
   /** How many different values the column holds, when the schema says. Orders a breakdown's choices. */

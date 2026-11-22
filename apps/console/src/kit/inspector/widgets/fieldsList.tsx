@@ -17,6 +17,7 @@ import {
   SortableRows,
   TextField,
 } from "@volvel/ui";
+import { mustGive } from "@volvel/widgets";
 import { Layers } from "lucide-react";
 import { useState } from "react";
 import { columnOptions } from "../controls.tsx";
@@ -70,6 +71,19 @@ export function kindOfColumn(env: Env, column: string, row?: FieldRow): string {
   }
 }
 
+/**
+ * Whether a form asks for the field: what was set, else the table's own rule (the one the form
+ * and Add a form use): required and without a default.
+ */
+export function requiredOf(env: Env, row: FieldRow): boolean {
+  if (typeof row.required === "boolean") return row.required;
+  const table = tableOfInput(env.widget.data?.record, env.page, env.widgets);
+  const found = env.catalog.tables
+    .find((one) => one.name === table)
+    ?.columns.find((one) => one.name === row.column);
+  return found ? mustGive(found) : false;
+}
+
 /** The fields as set, or every column of the table when none are set yet. */
 export function fieldRows(env: Env): FieldRow[] {
   const value = env.config.fields;
@@ -110,7 +124,7 @@ export function itemsOf(env: Env, rows: readonly FieldRow[], kind: FieldsKind): 
       row.initial !== null &&
       (row.initial as { kind?: unknown }).kind === "today";
     const flags = [
-      kind === "form" && row.required ? "Required" : undefined,
+      kind === "form" && requiredOf(env, row) ? "Required" : undefined,
       row.hidden ? "Hidden" : undefined,
       today ? "Today by default" : undefined,
     ].filter(Boolean);
@@ -177,7 +191,10 @@ export function FieldsList({
           if (index !== at) return row;
           const merged: FieldRow = { ...row, ...change };
           for (const key of ["label", "help"] as const) if (!merged[key]) delete merged[key];
-          for (const key of ["required", "hidden"] as const) if (!merged[key]) delete merged[key];
+          if (!merged.hidden) delete merged.hidden;
+          // Not asking for a field the table asks for is said, not left out: an unset one follows the table.
+          if (!merged.required && !(kind === "form" && requiredOf(env, row)))
+            delete merged.required;
           return merged;
         }),
       );
@@ -223,7 +240,7 @@ export function FieldsList({
               <CheckboxField
                 name={`${env.widget.id}-field-required`}
                 label="Must be filled in"
-                checked={open.required === true}
+                checked={requiredOf(env, open)}
                 onChange={(required) => patch({ required })}
               />
             ) : (

@@ -142,6 +142,7 @@ export function Frame({
   onRename,
   tabbable,
   container = false,
+  flat = false,
   opens,
   offer,
   quiet = false,
@@ -161,6 +162,11 @@ export function Frame({
    * the page's grid and what it holds under it, with no padding and no scrolling of its own.
    */
   container?: boolean;
+  /**
+   * Drawn into the room of the modal or sheet it is in: no padding, and no scroll box of its own,
+   * since the overlay scrolls and nothing may scroll inside it.
+   */
+  flat?: boolean;
   /** Building: what a click on a row does, in words ("Invoice detail"), said at the right of the heading. */
   opens?: string | undefined;
   /** The page's filters narrow what is read: a way to take them all off, offered when that left nothing. */
@@ -344,8 +350,8 @@ export function Frame({
           ref={watch}
           tabIndex={tabbable && !container && scrolls ? 0 : undefined}
           aria-busy={reading.stale ? true : undefined}
-          className={`flex min-h-0 flex-1 flex-col ${container ? "" : "gap-2 overflow-auto"} ${bare ? "justify-center" : container ? "" : "px-[14px] pb-[14px]"} outline-none! focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
-            bare || container ? "" : heading ? "pt-[10px]" : "pt-[14px]"
+          className={`flex min-h-0 flex-1 flex-col ${container ? "" : flat ? "gap-2" : "gap-2 overflow-auto"} ${bare ? "justify-center" : container || flat ? "" : "px-[14px] pb-[14px]"} outline-none! focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
+            bare || container || flat ? "" : heading ? "pt-[10px]" : "pt-[14px]"
           } ${reading.stale ? "opacity-50" : ""}`}
         >
           {reading.stale ? (

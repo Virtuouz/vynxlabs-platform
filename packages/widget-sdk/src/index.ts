@@ -356,8 +356,20 @@ export interface ColumnInfo {
   values?: readonly { value: string; label?: string; color?: string }[];
   /** Whether a row must have a value here, as its table's definition says. Left out for what is not a column of a table. */
   required?: boolean;
+  /** What a new row gets when it gives none, as its table's definition says. */
+  default?: unknown;
   /** For a reference column: the table it points to, by its path. */
   references?: string;
+}
+
+/**
+ * Whether a person must give this column a value when they add a row: the data server's own
+ * rule, a column that is required (NOT NULL) and has no default. One that has a default is
+ * filled in by the server when left out, so it is not asked for, and a form starts with it.
+ * Every form, and every list of what a form asks, uses this one rule.
+ */
+export function mustGive(column: { required?: boolean | undefined; default?: unknown }): boolean {
+  return column.required === true && (column.default === undefined || column.default === null);
 }
 
 export interface RowsData {

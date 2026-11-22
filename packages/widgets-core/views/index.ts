@@ -73,7 +73,7 @@ export {
   relativeRange,
   valueFor,
 } from "./filterValues.ts";
-export { shadeOf } from "./pivot.tsx";
+export { headingWords, shadeOf } from "./pivot.tsx";
 export { changeTone } from "./stat.tsx";
 export {
   ActionsView,

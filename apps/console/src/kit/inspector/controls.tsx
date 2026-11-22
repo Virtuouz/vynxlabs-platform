@@ -116,6 +116,8 @@ export interface Env {
   onRemoveTab?: ((tab: string, fate: TabFate) => void) | undefined;
   /** Chooses another widget of the page: a Section's "Holds" rows select what they name. */
   select?: ((id: string) => void) | undefined;
+  /** Goes to a page of the app, as the outline does: what "Opens New appointment" does. */
+  openPage?: ((id: string) => void) | undefined;
   /** Switches the drawer to a tab of this widget. */
   openTab?: ((tab: Tab) => void) | undefined;
   /** "When a row is clicked", as the builder draws it (a table's or a list's); the Actions tab places it. */
@@ -155,8 +157,20 @@ export function columnOptions(
 
 const labelOf = (setting: ConfigSetting) => setting.hint.label;
 
-/** One setting, drawn by the control its hint names. */
-export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetting }) {
+/**
+ * One setting, drawn by the control its hint names. `bare` leaves out the label the control would
+ * write above itself, for a place that already says it: the title of the small editor it opens
+ * in, or the group it is the only row of.
+ */
+export function ConfigControl({
+  env,
+  setting,
+  bare = false,
+}: {
+  env: Env;
+  setting: ConfigSetting;
+  bare?: boolean;
+}) {
   const { hint, name, schema } = setting;
   const { widget } = env;
   const chosenGroups = useChosenGroups();
@@ -178,6 +192,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
         <TextField
           name={field}
           label={hint.label}
+          labelHidden={bare}
           {...(help ? { hint: help } : {})}
           required={false}
           value={typeof value === "string" ? value : ""}
@@ -201,6 +216,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
         <NumberField
           name={field}
           label={hint.label}
+          labelHidden={bare}
           {...(help ? { hint: help } : {})}
           required={false}
           value={typeof value === "number" ? value : undefined}
@@ -228,6 +244,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
           <SelectField
             name={field}
             label={hint.label}
+            labelHidden={bare}
             {...(help ? { hint: help } : {})}
             value={value === undefined ? "" : String(value)}
             options={[...(fixed ? [] : [{ value: "", label: "Not chosen" }]), ...choices]}
@@ -239,7 +256,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
       }
       return (
         <div className="flex flex-col gap-1">
-          <span className="text-body-sm font-medium text-ink">{hint.label}</span>
+          {bare ? null : <span className="text-body-sm font-medium text-ink">{hint.label}</span>}
           <div>
             <SegmentedControl
               label={hint.label}
@@ -266,6 +283,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
         <SelectField
           name={field}
           label={hint.label}
+          labelHidden={bare}
           hint={
             dates.length === 0
               ? "The page has no filter for a range of dates yet. Add one to its Search and filter."
@@ -288,6 +306,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
         <SelectField
           name={field}
           label={hint.label}
+          labelHidden={bare}
           {...(help ? { hint: help } : {})}
           value={typeof value === "string" ? value : ""}
           options={[
@@ -391,7 +410,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
     case "position":
       return (
         <div className="flex flex-col gap-1">
-          <span className="text-body-sm font-medium text-ink">{hint.label}</span>
+          {bare ? null : <span className="text-body-sm font-medium text-ink">{hint.label}</span>}
           <PositionPicker
             label={hint.label}
             value={(typeof value === "string" ? value : "middle-center") as Position}
@@ -404,7 +423,7 @@ export function ConfigControl({ env, setting }: { env: Env; setting: ConfigSetti
       const preview = tilePreviewFor(env.definition.type, name);
       return (
         <div className="flex flex-col gap-1.5">
-          <span className="text-body-sm font-medium text-ink">{hint.label}</span>
+          {bare ? null : <span className="text-body-sm font-medium text-ink">{hint.label}</span>}
           <TilePicker
             label={hint.label}
             columns={choicesOf(setting).length === 2 ? 2 : choicesOf(setting).length === 4 ? 4 : 3}
@@ -916,7 +935,16 @@ export function settingSummary(env: Env, setting: ConfigSetting): ReactNode {
  * control in it, or, for a switch, tiles, a segmented choice, a position or a list, the control
  * itself in the group. The same control either way.
  */
-export function SettingRow({ env, setting }: { env: Env; setting: ConfigSetting }) {
+export function SettingRow({
+  env,
+  setting,
+  bare = false,
+}: {
+  env: Env;
+  setting: ConfigSetting;
+  /** The group it is drawn in is named as it is: the label is not written twice. */
+  bare?: boolean;
+}) {
   const { hint, name } = setting;
   const own = settingControlFor(env.definition.type, name);
   if (own) return <DrawerBlock>{own(env)}</DrawerBlock>;
@@ -940,7 +968,7 @@ export function SettingRow({ env, setting }: { env: Env; setting: ConfigSetting 
   if (INLINE.has(hint.control)) {
     return (
       <DrawerBlock>
-        <ConfigControl env={env} setting={setting} />
+        <ConfigControl env={env} setting={setting} bare={bare} />
       </DrawerBlock>
     );
   }
@@ -949,7 +977,7 @@ export function SettingRow({ env, setting }: { env: Env; setting: ConfigSetting 
       label={hint.label}
       value={settingSummary(env, setting)}
       editorTitle={hint.label}
-      editor={<ConfigControl env={env} setting={setting} />}
+      editor={<ConfigControl env={env} setting={setting} bare />}
     />
   );
 }

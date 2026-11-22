@@ -218,31 +218,37 @@ export function MiniChart({ kind, values }: { kind: ChartKind; values: readonly 
       ));
     }
     if (kind === "bar-sideways") {
-      const bar = (h - 8) / Math.max(shown.length, 1);
+      // A slot for each bar, the bar a part of it with a gap beside: one bar is one bar, not the whole box.
+      const slot = (h - 8) / Math.max(shown.length, 1);
+      const thick = Math.min(slot - 3, 12);
+      const lead = (slot - thick) / 2;
       return shown.map((value, at) => (
         <rect
           // biome-ignore lint/suspicious/noArrayIndexKey: marks are drawn in order and never reordered
           key={`${at}-${value}`}
           x="4"
-          y={4 + at * bar}
-          width={(value / high) * (w - 8)}
-          height={bar - 3}
+          y={4 + at * slot + lead}
+          width={Math.max(3, (value / high) * (w - 8))}
+          height={thick}
           rx="2"
           fill="currentColor"
           opacity="0.8"
         />
       ));
     }
-    const bar = (w - 8) / Math.max(shown.length, 1);
+    // A slot for each bar, the bar a part of it with a gap beside: one bar is one bar, not the whole box.
+    const slot = (w - 8) / Math.max(shown.length, 1);
+    const wide = Math.min(slot - 4, 16);
+    const lead = (slot - wide) / 2;
     return shown.map((value, at) => {
-      const tall = (value / high) * (h - 8);
+      const tall = Math.max(3, (value / high) * (h - 8));
       return (
         <rect
           // biome-ignore lint/suspicious/noArrayIndexKey: marks are drawn in order and never reordered
           key={`${at}-${value}`}
-          x={4 + at * bar}
+          x={4 + at * slot + lead}
           y={h - 4 - tall}
-          width={bar - 4}
+          width={wide}
           height={tall}
           rx="2"
           fill="currentColor"

@@ -123,7 +123,7 @@ export const goal = defineWidget({
           group: "Look",
           level: "more",
           control: "switch",
-          label: "Colour by how close",
+          label: "Color by how close",
           help: "Green when it is going well, amber when it is close, red when it is not.",
           order: 5,
         }),

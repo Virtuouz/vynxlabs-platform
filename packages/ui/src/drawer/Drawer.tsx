@@ -9,6 +9,7 @@ import {
   useRef,
 } from "react";
 import { useOpening } from "../presence.tsx";
+import { edgeShadows } from "./edgeShadows.ts";
 
 /** An icon component from `@volvel/ui/icons`, or any component that takes a class and a size. */
 export type DrawerIcon = ComponentType<{
@@ -410,7 +411,13 @@ export function DrawerEditor({
                 <X aria-hidden="true" size={14} />
               </Popover.Close>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">{children}</div>
+            <div
+              className="min-h-0 flex-1 overflow-y-auto p-3"
+              // A soft shadow at the foot while there is more to see: a small screen shows part of a long editor.
+              style={edgeShadows("var(--color-raised)")}
+            >
+              {children}
+            </div>
             {footer ? (
               <div className="flex justify-end border-t border-line px-3 py-2">
                 <Popover.Close

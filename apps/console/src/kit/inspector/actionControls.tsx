@@ -19,6 +19,7 @@ import {
   CheckboxField,
   Details,
   DrawerEditor,
+  DrawerRow,
   Menu,
   MoveButtons,
   SegmentedControl,
@@ -1170,6 +1171,7 @@ export function ActionEditor({
         {when}
       </p>
       {count === 0 ? <p className="m-0 text-body-sm text-ink-muted">Nothing yet.</p> : null}
+      <OpensPages env={env} action={current} />
       {/* Always drawn, so the first step added is a new card (it opens), not one that was there. */}
       {count >= 0 ? (
         <StepTimeline
@@ -1218,6 +1220,30 @@ export function ActionEditor({
 
 // ---------------------------------------------------------------------------
 // The controls
+
+/**
+ * "Opens New appointment ›": a row for each page that an action opens, which goes to that page.
+ * A modal or a sheet is not on the outline of the page its button is on, so this is where a
+ * person finds it. Shown by the Actions tab of every widget and by a button's Display.
+ */
+export function OpensPages({ env, action }: { env: Env; action: Action | undefined }) {
+  if (!env.openPage) return null;
+  const pages = (action?.steps ?? []).flatMap((step) => {
+    if (step.do !== "open") return [];
+    const target = env.pages.find((one) => one.id === step.page);
+    return target ? [target] : [];
+  });
+  const unique = pages.filter((one, at) => pages.indexOf(one) === at);
+  if (unique.length === 0) return null;
+  const open = env.openPage;
+  return (
+    <div className="divide-y divide-line overflow-hidden rounded-panel border border-line bg-surface">
+      {unique.map((page) => (
+        <DrawerRow key={page.id} label="Opens" value={page.title} onClick={() => open(page.id)} />
+      ))}
+    </div>
+  );
+}
 
 /** A setting that holds one action (a form's "When it is sent"). */
 export function ActionControl({

@@ -142,6 +142,7 @@ export function SlotsGroup({
   const cell = (slot: Slot, wide: boolean) => {
     const setting = settings.find((one) => one.name === slot);
     if (!setting) return null;
+    const none = !columnOfSlot(env.config, slot);
     return (
       <DrawerEditor
         key={slot}
@@ -156,15 +157,24 @@ export function SlotsGroup({
           <button
             type="button"
             data-slot={slot}
-            aria-label={`${SLOT_WORDS[slot]}: ${shown(slot)}. Choose its column`}
-            className={`flex min-w-0 cursor-pointer flex-col items-start rounded-control border border-dashed border-action bg-action-soft/40 px-2 py-1 text-left outline-offset-2 hover:bg-action-soft focus-visible:outline-2 focus-visible:outline-focus ${
-              wide ? "flex-1" : "shrink-0"
-            }`}
+            aria-label={`${SLOT_WORDS[slot]}: ${none ? "none" : shown(slot)}. Choose its column`}
+            className={`flex min-w-0 cursor-pointer flex-col items-start rounded-control border border-dashed px-2 py-1 text-left outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus ${
+              none
+                ? "border-line-strong hover:border-action"
+                : "border-action bg-action-soft/40 hover:bg-action-soft"
+            } ${wide ? "flex-1" : "shrink-0"}`}
           >
-            <span className="text-tag text-action" aria-hidden="true">
+            <span
+              className={`text-tag ${none ? "text-ink-muted" : "text-action"}`}
+              aria-hidden="true"
+            >
               {SLOT_WORDS[slot]}
             </span>
-            <span className="max-w-full truncate text-body-sm text-ink">{shown(slot)}</span>
+            <span
+              className={`max-w-full truncate text-body-sm ${none ? "text-ink-muted" : "text-ink"}`}
+            >
+              {none ? "None" : shown(slot)}
+            </span>
           </button>
         }
       >
@@ -187,52 +197,52 @@ export function SlotsGroup({
               {has("picture") ? cell("picture", false) : null}
               <div className="flex min-w-0 flex-1 flex-col gap-2">
                 <div className="flex gap-2">
-                  {has("title") ? cell("title", true) : null}
-                  {has("right") ? cell("right", false) : null}
+                  {cell("title", true)}
+                  {cell("right", false)}
                 </div>
-                {has("subtitle") || has("badge") ? (
-                  <div className="flex gap-2">
-                    {has("subtitle") ? cell("subtitle", true) : null}
-                    {has("badge") ? cell("badge", false) : null}
-                  </div>
-                ) : null}
+                <div className="flex gap-2">
+                  {cell("subtitle", true)}
+                  {cell("badge", false)}
+                </div>
               </div>
             </div>
-            {empty.length ? (
+            {empty.some((one) => one.name === "picture") ? (
               <div className="flex flex-wrap gap-1.5">
-                {empty.map((one) => (
-                  <DrawerEditor
-                    key={one.name}
-                    title={SLOT_WORDS[one.name]}
-                    footer={false}
-                    side="left"
-                    open={opened?.slot === one.name && opened.from === "preview"}
-                    onOpenChange={(next) =>
-                      setOpened(
-                        next
-                          ? { widget: env.widget.id, slot: one.name, from: "preview" }
-                          : undefined,
-                      )
-                    }
-                    trigger={
-                      <button
-                        type="button"
-                        data-slot={one.name}
-                        className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-control border border-dashed border-line-strong px-2 text-meta text-ink-muted outline-offset-2 hover:border-action hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
-                      >
-                        <span aria-hidden="true">+</span>
-                        {SLOT_WORDS[one.name]}
-                      </button>
-                    }
-                  >
-                    <SlotPicker
-                      label={SLOT_WORDS[one.name]}
-                      options={pickerOptions(env, one)}
-                      value={undefined}
-                      onPick={(column) => put(one.name, column)}
-                    />
-                  </DrawerEditor>
-                ))}
+                {empty
+                  .filter((one) => one.name === "picture")
+                  .map((one) => (
+                    <DrawerEditor
+                      key={one.name}
+                      title={SLOT_WORDS[one.name]}
+                      footer={false}
+                      side="left"
+                      open={opened?.slot === one.name && opened.from === "preview"}
+                      onOpenChange={(next) =>
+                        setOpened(
+                          next
+                            ? { widget: env.widget.id, slot: one.name, from: "preview" }
+                            : undefined,
+                        )
+                      }
+                      trigger={
+                        <button
+                          type="button"
+                          data-slot={one.name}
+                          className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-control border border-dashed border-line-strong px-2 text-meta text-ink-muted outline-offset-2 hover:border-action hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+                        >
+                          <span aria-hidden="true">+</span>
+                          {SLOT_WORDS[one.name]}
+                        </button>
+                      }
+                    >
+                      <SlotPicker
+                        label={SLOT_WORDS[one.name]}
+                        options={pickerOptions(env, one)}
+                        value={undefined}
+                        onPick={(column) => put(one.name, column)}
+                      />
+                    </DrawerEditor>
+                  ))}
               </div>
             ) : null}
           </DrawerBlock>

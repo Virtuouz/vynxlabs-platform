@@ -3,8 +3,8 @@
  * of the grid. Display: its heading, how numbers look, shading, and the totals.
  */
 import { DrawerBlock, DrawerGroup } from "@volvel/ui";
-import { formatNumber } from "@volvel/widgets";
-import { shadeOf } from "@volvel/widgets-core/views";
+import { formatNumber, type SummaryData } from "@volvel/widgets";
+import { headingWords, shadeOf } from "@volvel/widgets-core/views";
 import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
 import {
   ConfigToggle,
@@ -20,16 +20,22 @@ import {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** What the heading of a date is on a small grid: "Sep" for a month, else as it is. */
-function headingOf(value: unknown, bucket: string | undefined, dated: boolean): string {
+/**
+ * What the heading of a column is on a small grid: "Sep" for a month, else as the page says it
+ * (a choice by its label, a day as "Nov 16").
+ */
+function headingOf(
+  summary: SummaryData,
+  name: string,
+  value: unknown,
+  bucket: string | undefined,
+  dated: boolean,
+): string {
   const text = String(value ?? "—");
-  if (dated && /^\d{4}-\d{2}-\d{2}/.test(text)) {
-    const month = MONTHS[Number(text.slice(5, 7)) - 1] ?? text;
-    return bucket === "month" || bucket === "quarter"
-      ? month
-      : `${month} ${Number(text.slice(8, 10))}`;
+  if (dated && /^\d{4}-\d{2}-\d{2}/.test(text) && (bucket === "month" || bucket === "quarter")) {
+    return MONTHS[Number(text.slice(5, 7)) - 1] ?? text;
   }
-  return text;
+  return headingWords(summary.columns, name, value);
 }
 
 /** The grid the pivot draws, small: the first breakdown down the side, the last across, each cell shaded by its size. */
@@ -79,12 +85,12 @@ export function PivotPreview({
       <span />
       {columns.map((c) => (
         <span key={c} className="truncate px-1">
-          {headingOf(c, across.bucket, dated)}
+          {headingOf(summary, acrossName, c, across.bucket, dated)}
         </span>
       ))}
       {rows.map((r) => (
         <div key={r} className="contents">
-          <span className="truncate pr-1">{r}</span>
+          <span className="truncate pr-1">{headingWords(summary.columns, downName, r)}</span>
           {columns.map((c) => (
             <span
               key={c}

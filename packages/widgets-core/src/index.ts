@@ -84,7 +84,7 @@ export const table = defineWidget({
             format: FORMAT,
             // `badge` draws a choice as a chip with a dot, in the tone `badges` gives its value.
             as: { enum: ["text", "bar", "delta", "badge"] },
-            // Each value's tone, for `as: "badge"`. A value left out takes its colour from the column, or is neutral.
+            // Each value's tone, for `as: "badge"`. A value left out takes its color from the column, or is neutral.
             badges: {
               type: "object",
               maxProperties: 50,
@@ -255,7 +255,7 @@ export const list = defineWidget({
       title: slot("Title", 1),
       subtitle: slot("Under the title", 2),
       right: slot("Right", 3, "A figure at the right of the row."),
-      badge: slot("Badge", 4, "Drawn as a chip with a dot, in its colour.", ["enum"]),
+      badge: slot("Badge", 4, "Drawn as a chip with a dot, in its color.", ["enum"]),
       picture: slot("Picture", 5, "A column holding a picture's address.", ["text", "url"]),
       look: {
         enum: ["list", "cards"],
@@ -916,7 +916,7 @@ export const detail = defineWidget({
           control: "fields",
           of: "record",
           level: "more",
-          label: "Status colours",
+          label: "Status colors",
           order: 9,
         }),
       },

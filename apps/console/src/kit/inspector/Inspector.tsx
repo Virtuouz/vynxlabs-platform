@@ -107,6 +107,8 @@ export interface InspectorProps {
   onTab?: ((tab: Tab) => void) | undefined;
   /** Chooses another widget of the page (a Section's "Holds" rows). */
   onSelect?: ((id: string) => void) | undefined;
+  /** Goes to a page of the app (what "Opens New appointment" does). */
+  onOpenPage?: ((id: string) => void) | undefined;
   /** "When a row is clicked" as the builder draws it, for a table or a list. */
   rowClickEditor?: ReactNode;
   /** Someone who may not edit reads the drawer: its settings are shown, none can be changed. */
@@ -117,9 +119,26 @@ export interface InspectorProps {
 
 const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
 
-/** What a disclosure holds, in a line: "Sorted by, at most". */
-function aboutMore(labels: readonly string[]): string {
-  return labels.map((label, at) => (at === 0 ? label : lower(label))).join(", ");
+/**
+ * What a row is called in the line under "More … options", where a label that reads as the start
+ * of a sentence ("Sorted by", "Good news is") would be half of one. A name for each, not a phrase.
+ */
+const SUMMARY_WORDS: Record<string, string> = {
+  "Sorted by": "Sort order",
+  "At most": "Limit",
+  "Show at most": "Limit",
+  "A line of how it went, by": "Trend line",
+  "Good news is": "Good news direction",
+  "Color by how close": "Color bands",
+  "The range it is compared across": "Comparison range",
+  "Along the bottom": "Bottom axis",
+  "Up the side": "Side axis",
+};
+
+/** What a disclosure holds, in a line of names: "Sort order, limit". */
+export function aboutMore(labels: readonly string[]): string {
+  const names = labels.map((label) => SUMMARY_WORDS[label] ?? label);
+  return names.map((label, at) => (at === 0 ? label : lower(label))).join(", ");
 }
 
 /** What a tab is called for this widget: "Content" for a Text, else the usual. */
@@ -172,7 +191,7 @@ export function Inspector(props: InspectorProps) {
   }
 
   const pack = WidgetRegistry.packOf(definition.type);
-  const named = pack === "core" ? definition.title : `${definition.title} · ${heading(pack)} pack`;
+  const named = pack === "core" ? definition.title : `${definition.title} · ${heading(pack)}`;
   const kind = props.holds ? `${named} · ${props.holds}` : named;
   const Icon = outlineIcon(definition.icon);
 
@@ -220,6 +239,7 @@ export function Inspector(props: InspectorProps) {
     addFilters: props.onAddFilters,
     onRemoveTab: props.onRemoveTab,
     select: props.onSelect,
+    openPage: props.onOpenPage,
     openTab: setTab,
     rowClickEditor: props.rowClickEditor,
   };
@@ -441,7 +461,15 @@ function TabBody({
   );
   const own = tabName(definition.type, tab);
   settings.forEach((setting: ConfigSetting, at) => {
-    const node = <SettingRow key={setting.name} env={env} setting={setting} />;
+    const groupName = setting.hint.group ?? own;
+    const node = (
+      <SettingRow
+        key={setting.name}
+        env={env}
+        setting={setting}
+        bare={setting.hint.label.toLowerCase() === groupName.toLowerCase()}
+      />
+    );
     if ((setting.hint.level ?? "main") !== "main") {
       more.push(node);
       moreLabels.push(setting.hint.label);

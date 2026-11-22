@@ -9,12 +9,11 @@ import {
   type PageWidget,
 } from "@volvel/manifest";
 import { GRID } from "@volvel/screens";
-import { Button, Closing, EmptyState, Kbd } from "@volvel/ui";
+import { Button, Closing, EmptyState, edgeShadows, Kbd } from "@volvel/ui";
 import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Plus } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../../ask.tsx";
-import { edgeShadows } from "../../kit/edgeShadows.ts";
 import { useActionLists, useCatalog } from "../../kit/inspector/catalog.ts";
 import { groupPath } from "../../kit/inspector/groupChoices.tsx";
 import { InspectorHost } from "../../kit/inspector/InspectorHost.tsx";
@@ -312,7 +311,20 @@ export function PageEditor({
     setForming(false);
     setTold(edit.told);
   };
-  const makeForm = (plan: FormPlan) => apply(formEdit(context, plan, selected), "adding a form");
+  const makeForm = (plan: FormPlan) => {
+    const edit = formEdit(context, plan, selected);
+    apply(edit, "adding a form");
+    // A modal is not on the outline of this page: the notice says where it is, and goes there.
+    const made = edit.addPages[0];
+    if (made && pageInfo && made.kind === "modal") {
+      notify.success(edit.told, {
+        action: {
+          label: "Open it",
+          onClick: () => pageInfo.onOpen({ page: made.id, as: "modal" }),
+        },
+      });
+    }
+  };
   // An approval step in the workspace, and none on the page to decide it: offered with the next steps.
   const approvalsOffered = pageInfo ? approvalsSuggestion(lists.approvals, widgets) : undefined;
   const pickNext = (key: string) => {
@@ -806,6 +818,20 @@ export function PageEditor({
                   onTab={setInspectorTab}
                   sample={{ table: sample.table, record: sample.record }}
                   onSelect={onSelect}
+                  {...(pageInfo
+                    ? {
+                        onOpenPage: (id: string) => {
+                          const target = pageInfo.pages.find((one) => one.id === id);
+                          pageInfo.onOpen({
+                            page: id,
+                            as:
+                              target?.kind === "sheet" || target?.kind === "modal"
+                                ? target.kind
+                                : "page",
+                          });
+                        },
+                      }
+                    : {})}
                   {...(pageInfo && (widget.type === "core/table" || widget.type === "core/list")
                     ? {
                         rowClick: (

@@ -682,7 +682,8 @@ const GROUPING = /^(status|state|stage|type|kind|category|clinic|channel|priorit
 /** When a row was made or is due: the date a grid is cut by. */
 const WHEN_MADE = /(^|_)(issued|created|starts?|date|due|on|scheduled|opened|booked)(_|$)/;
 /** What happens to some rows only (chased, paid, sent, cancelled…): a poor heading. */
-const MOSTLY_EMPTY = /(chased|paid|sent|cancel+ed|completed|closed|deleted|resolved|reminded)/;
+const MOSTLY_EMPTY =
+  /(chased|checked|paid|sent|cancel+ed|completed|closed|deleted|resolved|reminded)/;
 
 /** The data inputs a new widget starts with when the page's table is obvious: a count, by the first date or kind. */
 export function defaultInputs(
@@ -727,8 +728,14 @@ export function defaultInputs(
           }));
         }
       } else if (breakdowns.min > 0) {
+        // The date a table's own dates are about (Starts at) before the one every table has (Created at).
+        const own = (column: CatalogColumn) =>
+          !SYSTEM_COLUMNS.has(column.name) && TEMPORAL.has(column.type);
         const by =
-          columns.find((column) => column.name !== "updated_at" && TEMPORAL.has(column.type)) ??
+          columns.find((column) => own(column) && WHEN_MADE.test(column.name)) ??
+          columns.find((column) => own(column) && !MOSTLY_EMPTY.test(column.name)) ??
+          columns.find(own) ??
+          columns.find((column) => column.name === "created_at" && TEMPORAL.has(column.type)) ??
           columns.find((column) => column.type === "enum") ??
           columns.find((column) => column.type === "text");
         if (by) {

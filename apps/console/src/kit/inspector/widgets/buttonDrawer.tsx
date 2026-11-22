@@ -17,7 +17,7 @@ import {
   ToggleRow,
 } from "@volvel/ui";
 import { Type } from "lucide-react";
-import { ActionEditor } from "../actionControls.tsx";
+import { ActionEditor, OpensPages } from "../actionControls.tsx";
 import {
   ButtonPreview,
   type Env,
@@ -85,7 +85,8 @@ export function ToneTiles({
   return (
     <TilePicker<Tone>
       label="Style"
-      columns={4}
+      // Four across, as the board has them; a label too long for a quarter of the drawer is written in full, two across.
+      columns={(label || "Button").length > 12 ? 2 : 4}
       value={(tone as Tone | undefined) ?? "primary"}
       onChange={onChange}
       options={TONES.map((one) => ({
@@ -110,6 +111,7 @@ export function ButtonDisplaySection({ env }: { env: Env }) {
         onLabel={(next) => setConfig(env, "label", next, "what it says", true)}
         onIcon={(next) => setConfig(env, "icon", next, "its icon")}
       />
+      <OpensPages env={env} action={env.widget.on?.click} />
       <Group label="Style">
         <DrawerBlock>
           <ToneTiles

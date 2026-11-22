@@ -1,4 +1,10 @@
-import { formatDay, type SummaryData, type WidgetViewProps } from "@volvel/widgets";
+import {
+  type ColumnInfo,
+  choiceWords,
+  formatDay,
+  type SummaryData,
+  type WidgetViewProps,
+} from "@volvel/widgets";
 import { formatNumber, labelOf, numberOf, type ValueFormat } from "./format.ts";
 import { listensTo, PRESSABLE, press } from "./press.tsx";
 import { ScrollsSideways } from "./scrolls.tsx";
@@ -28,6 +34,23 @@ interface Turned {
   rowNames: string[];
   rows: { headers: string[]; cells: (number | null)[]; total: number | null }[];
   totals: { cells: (number | null)[]; total: number | null };
+}
+
+/**
+ * What a heading of the grid says: a choice by its label ("No show"), a day as the boards write it
+ * ("Nov 16"), anything else as it is. The page and the drawer's small grid both say it this way.
+ */
+export function headingWords(
+  columns: readonly Pick<ColumnInfo, "name" | "type">[],
+  name: string,
+  value: unknown,
+): string {
+  if (value === null || value === undefined) return "—";
+  const info = columns.find((one) => one.name === name);
+  if (info?.type === "enum") {
+    return choiceWords(info as Parameters<typeof choiceWords>[0], value);
+  }
+  return formatDay(value) ?? String(value);
 }
 
 /** The first row heading stays in view when the grid is scrolled sideways. */
@@ -129,7 +152,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
             ))}
             {turned.columns.map((name) => (
               <th key={name} scope="col" className={`${cell} text-meta font-medium text-ink-muted`}>
-                {formatDay(name) ?? name}
+                {headingWords(summary.columns, across, name)}
               </th>
             ))}
             {rowTotals && turned.columns.length > 1 ? (
@@ -148,7 +171,7 @@ export function PivotView(props: WidgetViewProps<PivotConfig>) {
                   scope="row"
                   className={`px-2.5 py-1.5 text-left font-normal whitespace-nowrap ${at === 0 ? STUCK : ""}`}
                 >
-                  {formatDay(header) ?? header}
+                  {headingWords(summary.columns, turned.rowNames[at] ?? "", header)}
                 </th>
               ))}
               {row.cells.map((value, at) => (

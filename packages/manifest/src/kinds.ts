@@ -1075,7 +1075,7 @@ export const tableKind: KindDefinition = {
                       color: {
                         type: "string",
                         pattern: `^(${Object.keys(ENUM_COLORS).join("|")}|#[0-9a-fA-F]{6})$`,
-                        description: "A colour by name, or as #rrggbb.",
+                        description: "A color by name, or as #rrggbb.",
                       },
                       renamedFrom: {
                         ...enumValue,

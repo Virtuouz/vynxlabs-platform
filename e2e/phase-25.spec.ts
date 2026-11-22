@@ -276,7 +276,7 @@ test("POLISH-002: the labs Goal is added from Add to page, marked with its pack,
   await expect(goal).toContainText("Labs");
   await goal.click();
   await expect(owner.locator("section[data-selected]")).toHaveAttribute("aria-label", "Goal");
-  await expect(settings()).toContainText("Labs pack");
+  await expect(settings()).toContainText("Labs");
   // The target is the Goal row of the Data tab: a fixed amount, or a column.
   const target = await openSetting(owner, settings(), "Goal");
   await target.getByRole("spinbutton", { name: "Amount" }).fill("20000000");

@@ -31,6 +31,7 @@ export {
   type SortField,
   type SortKey,
 } from "./EditorBodies.tsx";
+export { edgeShadows } from "./edgeShadows.ts";
 export {
   CURRENCIES,
   choiceOf,

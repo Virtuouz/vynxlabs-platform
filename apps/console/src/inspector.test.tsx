@@ -361,7 +361,7 @@ test("a widget from a pack no code here knows is drawn from its definition", () 
     />,
   );
   // The pack is named beside its kind.
-  expect(screen.getByText("Gauge · Labs pack")).toBeTruthy();
+  expect(screen.getByText("Gauge · Labs")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /^Size/ }));
   fireEvent.change(screen.getByRole("spinbutton", { name: "Size" }), { target: { value: "5" } });
   expect(written.at(-1)?.config?.size).toBe(5);

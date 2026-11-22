@@ -412,6 +412,11 @@ export function AppBuilder({
                 label,
                 key,
               ),
+            onSetPage: (next, label) =>
+              change((draft) => {
+                const at = draft.pages.findIndex((one) => one.id === next.id);
+                if (at >= 0) draft.pages[at] = next;
+              }, label),
             onRemovePage: body.pages.length > 1 ? removePage : undefined,
           }}
           pages={

@@ -8,6 +8,7 @@ import {
   Dialog,
   GlossaryProvider,
   Notice,
+  pageIconOf,
   SideSheet,
   Tabs,
   ToastProvider,
@@ -381,11 +382,15 @@ function App() {
               label="Pages"
               value={open?.id ?? ""}
               onChange={(id) => go({ page: id, as: "page" })}
-              tabs={menu.map((page) => ({
+              tabs={menu.map((page) => {
+                const Icon = pageIconOf(page.icon);
+                return {
                 id: page.id,
                 label: page.title,
+                ...(Icon ? { icon: <Icon size={14} /> } : {}),
                 content: page.id === open?.id ? drawn : null,
-              }))}
+                };
+              })}
             />
           )}
           <Closing subject={sheet ? { page: sheet, record: address.sheet?.record } : undefined}>

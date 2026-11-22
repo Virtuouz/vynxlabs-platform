@@ -13,6 +13,7 @@ import {
   Rows3,
   SquareDashed,
   Table,
+  Target,
   Type,
 } from "lucide-react";
 
@@ -31,6 +32,7 @@ const ICONS: Record<string, LucideIcon> = {
   tabs: PanelTop,
   filter: Filter,
   actions: Rows3,
+  target: Target,
 };
 
 export const outlineIcon = (name: string | undefined): LucideIcon =>

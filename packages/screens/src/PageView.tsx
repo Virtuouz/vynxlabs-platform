@@ -4,7 +4,7 @@ import { childrenOf, isContainer, type Roles, tabsOf, topLevel } from "@volvel/m
 import { EmptyState, Panel, useFlip } from "@volvel/ui";
 import { EyeOff, GripHorizontal } from "@volvel/ui/icons";
 import type { ActOutcome, Choice, DecideOutcome, EventPayload, FilterHost } from "@volvel/widgets";
-import { calloutEdge } from "@volvel/widgets-core/views";
+import { calloutEdge, valueFor } from "@volvel/widgets-core/views";
 import type React from "react";
 import {
   type CSSProperties,
@@ -50,6 +50,7 @@ import {
   phoneOrder,
   phoneSpans,
 } from "./narrow.ts";
+import { useOneStop } from "./oneStop.ts";
 import {
   type Box,
   CARRIED,
@@ -189,6 +190,8 @@ interface GridContext {
   filterValues: FilterValues;
   refreshKey: number;
   emptyMessage: string;
+  /** Takes every filter of the page off, when some narrow what is read. */
+  clearFilters: (() => void) | undefined;
   /** The row last chosen in each table or list that something on the page follows, by widget id. */
   chosen: Readonly<Record<string, string>>;
   /** The tables and lists some widget follows (`{ selected: id }`): a click on a row chooses it. */
@@ -341,6 +344,10 @@ function Cell({
   // A widget added before its source was chosen has nothing to ask for yet.
   // A summary with fewer values or breakdowns than it needs (a pivot broken down one way) is not
   // finished either.
+  // A widget that reads the page's record has nothing to ask for when no record is chosen: it is
+  // not asked (the server would say there is no such record), and says so.
+  const noRecord =
+    record === undefined && Object.values(widget.data ?? {}).some((one) => "record" in one.source);
   const waiting =
     definition !== undefined &&
     Object.entries(definition.data).some(([input, declared]) => {
@@ -363,7 +370,8 @@ function Cell({
   const reading = useWidgetData({
     client,
     widget,
-    reads: definition !== undefined && Object.keys(definition.data).length > 0 && !waiting,
+    reads:
+      definition !== undefined && Object.keys(definition.data).length > 0 && !waiting && !noRecord,
     filterValues,
     refreshKey,
     // A table says what it says when empty, in the words its maker chose.
@@ -376,6 +384,8 @@ function Cell({
     chosen: Object.keys(chosenAsked).length > 0 ? chosenAsked : undefined,
   });
   const building = editing !== undefined;
+  // On the canvas a widget is one stop for the keyboard: Enter goes in, Esc comes out.
+  const oneStop = useOneStop(building);
   // A Section the reader folded is folded as they left it, whatever the page says it starts as.
   const folds = container && widget.config?.folds === true;
   const config = {
@@ -491,6 +501,7 @@ function Cell({
     <Card
       bare={bare}
       building={building}
+      ref={oneStop.ref}
       aria-label={name}
       // What is held follows the pointer, and is not played from where it was.
       data-flip-key={held ? undefined : widget.id}
@@ -520,13 +531,16 @@ function Cell({
                 }
               : {}),
             onFocus: (event: React.FocusEvent<HTMLElement>) => {
+              oneStop.props.onFocus?.(event);
               if (event.target === event.currentTarget && !selected) editing?.onSelect(widget.id);
             },
+            onBlur: oneStop.props.onBlur,
             onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
               if (isOwn(event)) handlers.onPointerDown(event, "move");
             },
             onKeyDown: (event: React.KeyboardEvent<HTMLElement>) => {
-              if (isOwn(event)) handlers.onKeyDown(event);
+              oneStop.props.onKeyDown?.(event);
+              if (isOwn(event) && !event.defaultPrevented) handlers.onKeyDown(event);
             },
           }
         : {})}
@@ -541,8 +555,15 @@ function Cell({
         tabbable={!narrow}
         container={container}
         opens={opens}
+        clearFilters={ctx.clearFilters}
       >
-        {waiting ? (
+        {noRecord ? (
+          <p className="m-0 text-ink-muted">
+            {building
+              ? "No record to show yet. Choose a sample record."
+              : "Open a record to see it here."}
+          </p>
+        ) : waiting ? (
           <p className="m-0 text-ink-muted">
             {building ? "Choose what it shows in Data." : "Nothing is set up here yet."}
           </p>
@@ -1258,8 +1279,16 @@ export function PageView({
       endRow,
     });
   }, [carryRequest]);
-  const emptyMessage =
-    filters.length > 0 ? "Nothing matches the filters." : "There is nothing here yet.";
+  // The filters narrow what is read when any holds a value: a read that finds nothing then says so
+  // and offers to take them off.
+  const narrowed = filters.some((filter) => {
+    const value = valueFor(filter, filterValues);
+    return value !== undefined && value !== null && value !== "";
+  });
+  const clearFilters = narrowed
+    ? () => onFilterValues(Object.fromEntries(filters.map((filter) => [filter.name, null])))
+    : undefined;
+  const emptyMessage = narrowed ? "Nothing matches the filters." : "There is nothing here yet.";
 
   const landing = carrying?.at
     ? { card: carrying.card, in: undefined }
@@ -1282,6 +1311,7 @@ export function PageView({
     filterValues,
     refreshKey: refreshKey + ran,
     emptyMessage,
+    clearFilters,
     chosen,
     followed,
     choose: (widget, row) =>
@@ -1439,8 +1469,10 @@ function Card({
   building,
   className = "",
   children,
+  ref,
   ...rest
 }: Omit<React.HTMLAttributes<HTMLElement>, "onSelect" | "title"> & {
+  ref?: React.Ref<HTMLElement>;
   bare: boolean;
   building: boolean;
   className?: string;
@@ -1448,7 +1480,7 @@ function Card({
 } & Record<`data-${string}`, string | undefined>) {
   if (!bare) {
     return (
-      <Panel as="section" className={className} {...rest}>
+      <Panel as="section" className={className} {...(ref ? { ref } : {})} {...rest}>
         {children}
       </Panel>
     );
@@ -1456,6 +1488,7 @@ function Card({
   return (
     <section
       {...rest}
+      {...(ref ? { ref } : {})}
       className={`${className} ${building ? "rounded-panel border border-dashed border-line" : ""}`}
     >
       {children}

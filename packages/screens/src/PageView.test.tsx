@@ -456,11 +456,20 @@ describe("the frame", () => {
     );
     expect(await screen.findByText("There is nothing here yet.")).toBeTruthy();
     unmount();
-    const filters: PageFilter[] = [{ name: "q", type: "text", label: "Search" }];
+    // A filter that holds nothing narrows nothing: the words are the plain ones.
+    const idle: PageFilter[] = [{ name: "q", type: "text", label: "Search" }];
+    const again = render(
+      <Page client={clientOf({ invoices: { rows: none } })} widgets={[table]} filters={idle} />,
+    );
+    expect(await screen.findByText("There is nothing here yet.")).toBeTruthy();
+    again.unmount();
+    // One that holds a value does, and the person is offered to take it off.
+    const filters: PageFilter[] = [{ name: "q", type: "text", label: "Search", default: "zzz" }];
     render(
       <Page client={clientOf({ invoices: { rows: none } })} widgets={[table]} filters={filters} />,
     );
     expect(await screen.findByText("Nothing matches the filters.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Clear filters" })).toBeTruthy();
   });
 
   test("a read that failed says why, and Try again reads again", async () => {

@@ -46,6 +46,8 @@ export function pageClient(
       if (Object.keys(filters).length > 0) params.set("filters", JSON.stringify(filters));
       if (options.input) params.set("input", options.input);
       if (options.cursor) params.set("cursor", options.cursor);
+      if (options.sort) params.set("sort", options.sort);
+      if (options.size) params.set("size", String(options.size));
       if (options.chosen && Object.keys(options.chosen).length > 0) {
         params.set("chosen", JSON.stringify(options.chosen));
       }

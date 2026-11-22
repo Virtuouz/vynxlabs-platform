@@ -1,7 +1,7 @@
 import { Button, OnHeading, Toggletip } from "@volvel/ui";
 import { ChevronDown, ChevronUp } from "@volvel/ui/icons";
 import type { ColumnInfo, RowsData, WidgetViewProps } from "@volvel/widgets";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   type ColumnSpec,
   cellOf,
@@ -49,14 +49,36 @@ interface TableConfig {
 /** "Show more", for a view whose rows come a page at a time. */
 export function ShowMore({ data }: { data: RowsData }) {
   if (!data.more) return null;
+  const left = data.total !== undefined ? data.total - data.rows.length : undefined;
   return (
-    <div className="mt-2 flex justify-center">
+    <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+      {data.total !== undefined ? (
+        <span role="status" className="text-body-sm text-ink-muted tabular-nums">
+          Showing {data.rows.length.toLocaleString("en-US")} of {data.total.toLocaleString("en-US")}
+        </span>
+      ) : null}
       <Button size="small" onClick={() => data.more?.()}>
-        Show more
+        {left !== undefined && left > 0
+          ? `Show ${Math.min(left, data.rows.length).toLocaleString("en-US")} more`
+          : "Show more"}
       </Button>
     </div>
   );
 }
+
+/**
+ * A long value is cut to two lines, whole in its tooltip (and in the record's detail), so that one
+ * long value does not make a row twelve lines tall. A word with no break in it breaks anywhere.
+ */
+const LONG_VALUE = 40;
+export const clamped = (value: unknown, node: ReactNode): ReactNode =>
+  typeof value === "string" && value.length > LONG_VALUE ? (
+    <span title={value} className="line-clamp-2 [overflow-wrap:anywhere]">
+      {node}
+    </span>
+  ) : (
+    node
+  );
 
 type Shown = { spec: ColumnSpec; info: ColumnInfo | undefined }[];
 
@@ -112,6 +134,7 @@ function TableButtons({
  */
 function ChosenBar({
   count,
+  note,
   rows,
   actions,
   props,
@@ -119,6 +142,8 @@ function ChosenBar({
   onDone,
 }: {
   count: number;
+  /** Said after the count: that only the rows shown can be chosen, when more are waiting. */
+  note?: string | undefined;
   rows: readonly Readonly<Record<string, unknown>>[];
   actions: readonly RowAction[];
   props: Pick<WidgetViewProps, "act" | "can" | "why" | "building" | "viewing">;
@@ -138,6 +163,7 @@ function ChosenBar({
       className="mb-2 flex flex-wrap items-center gap-2 rounded-control border border-action bg-action-soft px-3 py-1.5 text-body-sm"
     >
       <strong className="font-medium">{count} chosen</strong>
+      {note ? <span className="text-ink-muted">{note}</span> : null}
       {offered.map(({ item, where }) => (
         <Button
           key={item.id}
@@ -242,7 +268,7 @@ export function PhoneRows({
                   {lines.map((one, index) => (
                     <span key={one.key} className="min-w-0 break-words">
                       {index > 0 ? <span aria-hidden="true">· </span> : null}
-                      {one.node}
+                      {clamped(one.value, one.node)}
                     </span>
                   ))}
                 </span>
@@ -272,17 +298,22 @@ export function PhoneRows({
 
 export function TableView(props: WithSelected<TableConfig>) {
   const { config, data, size, emit, building, selectedRecord } = props;
-  const [sort, setSort] = useState<{ column: string; descending: boolean }>();
+  const [own, setOwn] = useState<{ column: string; descending: boolean }>();
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
   const rows = data.rows;
   if (rows?.shape !== "rows") return null;
+  // Rows that come a page at a time are put in order by the server, over all of them; the rest, here.
+  const remote = rows.sortBy !== undefined;
+  const sort = remote ? rows.sorted : own;
+  const setSort = remote ? (rows.sortBy as NonNullable<RowsData["sortBy"]>) : setOwn;
   const shown = columnsToShow(config.columns, rows);
   const pressable = listensTo(props, "rowClick");
   const actions = config.rowActions ?? [];
   const buttons = config.buttons ?? [];
   const sortable = sort && shown.some(({ spec }) => spec.column === sort.column && spec.sortable);
   // Sorting is of the rows read: the rows shown, in the browser.
-  const ordered = sortable ? sortedBy(rows.rows, rows, sort.column, sort.descending) : rows.rows;
+  const ordered =
+    sortable && !remote ? sortedBy(rows.rows, rows, sort.column, sort.descending) : rows.rows;
   const idOf = (row: Record<string, unknown>) => rowId(row, rows.rows.indexOf(row));
   // Only rows that are still there stay chosen (an action ran, or the filters changed).
   const here = new Set(ordered.map(idOf));
@@ -302,6 +333,11 @@ export function TableView(props: WithSelected<TableConfig>) {
     selecting && chosen.length > 0 ? (
       <ChosenBar
         count={chosen.length}
+        note={
+          rows.more
+            ? `Only the ${rows.rows.length.toLocaleString("en-US")} rows shown can be chosen.`
+            : undefined
+        }
         rows={chosenRows}
         actions={actions}
         props={props}
@@ -350,7 +386,7 @@ export function TableView(props: WithSelected<TableConfig>) {
                 <input
                   type="checkbox"
                   className={CHECKBOX}
-                  aria-label="Choose every row"
+                  aria-label={rows.more ? "Choose every row shown" : "Choose every row"}
                   checked={allTicked}
                   onChange={(event) =>
                     setTicked(event.currentTarget.checked ? new Set(ordered.map(idOf)) : new Set())
@@ -485,7 +521,10 @@ export function TableView(props: WithSelected<TableConfig>) {
                         : ""
                     }`}
                   >
-                    {cellOf(spec, info, row[spec.column], rows, most.get(spec.column))}
+                    {clamped(
+                      row[spec.column],
+                      cellOf(spec, info, row[spec.column], rows, most.get(spec.column)),
+                    )}
                   </td>
                 ))}
                 {actions.length > 0 ? (

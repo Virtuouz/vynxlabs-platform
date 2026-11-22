@@ -12,11 +12,19 @@ export interface Reading {
   stale: boolean;
   /** The next page of a rows input: on its way, or why it did not come. */
   more: { loading: boolean; error?: string; retry: () => void } | undefined;
+  /**
+   * Every row of the rows input that has more, up to `DOWNLOAD_ROWS`, for a download: what the
+   * page shows is a page of them. Resolves to what was read when nothing is waiting.
+   */
+  all: () => Promise<Readonly<Record<string, WireData>> | undefined>;
   /** Reads again. */
   retry: () => void;
   /** Each input as it was read: for the frame's Download, and its notices. */
   read: Readonly<Record<string, WireData>> | undefined;
 }
+
+/** The most rows a download reads. */
+export const DOWNLOAD_ROWS = 10_000;
 
 const sentence = (error: unknown): { forbidden: boolean; message: string } => {
   const status = (error as { status?: unknown } | null)?.status;
@@ -56,6 +64,9 @@ export function useWidgetData({
   const [more, setMore] = useState<{ loading: boolean; error?: string; input?: string }>({
     loading: false,
   });
+  // A table's order, asked of the server so that it is over every row and not only the page read.
+  const [sorting, setSorting] = useState<{ column: string; descending: boolean }>();
+  const sortOf = sorting ? `${sorting.descending ? "-" : ""}${sorting.column}` : undefined;
   const paging = useRef<AbortController | undefined>(undefined);
   const config = widget.config;
   // Everything that decides what is read, as one value to watch. Where a widget is on the page is not part of it.
@@ -68,6 +79,7 @@ export function useWidgetData({
     filterValues,
     refreshKey,
     chosen,
+    sortOf,
     attempt,
   ]);
 
@@ -82,6 +94,7 @@ export function useWidgetData({
       .read(widget.id, filterValues, {
         signal: controller.signal,
         ...(chosen ? { chosen } : {}),
+        ...(sortOf ? { sort: sortOf } : {}),
       })
       .then(
         (read) => {
@@ -114,6 +127,7 @@ export function useWidgetData({
           cursor,
           signal: controller.signal,
           ...(chosen ? { chosen } : {}),
+          ...(sortOf ? { sort: sortOf } : {}),
         })
         .then(
           (read) => {
@@ -159,13 +173,48 @@ export function useWidgetData({
     const drawn: Record<string, WidgetData> = {};
     for (const [name, wire] of Object.entries(inputs ?? {})) {
       const next = wire.shape === "rows" ? wire.next : undefined;
-      drawn[name] = toWidgetData(
+      const shown = toWidgetData(
         wire,
         next !== undefined ? () => !more.loading && page(name, next) : undefined,
       );
+      drawn[name] =
+        shown.shape === "rows" && (next !== undefined || sorting)
+          ? { ...shown, sortBy: setSorting, ...(sorting ? { sorted: sorting } : {}) }
+          : shown;
     }
     return drawn;
-  }, [inputs, more.loading, page]);
+  }, [inputs, more.loading, page, sorting]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `asked` stands for the filters, order and widget
+  const all = useCallback(async () => {
+    if (!inputs) return inputs;
+    const whole: Record<string, WireData> = { ...inputs };
+    for (const [name, wire] of Object.entries(inputs)) {
+      if (wire.shape !== "rows" || wire.next === undefined) continue;
+      let rows = [...wire.rows];
+      const names = { ...wire.names };
+      let cursor: string | undefined = wire.next;
+      while (cursor !== undefined && rows.length < DOWNLOAD_ROWS) {
+        const read = await client.read(widget.id, filterValues, {
+          input: name,
+          cursor,
+          size: Math.min(1000, DOWNLOAD_ROWS - rows.length),
+          ...(chosen ? { chosen } : {}),
+          ...(sortOf ? { sort: sortOf } : {}),
+        });
+        const next = read.inputs[name];
+        if (next?.shape !== "rows") break;
+        rows = [...rows, ...next.rows];
+        for (const [column, found] of Object.entries(next.names ?? {})) {
+          names[column] = { ...names[column], ...found };
+        }
+        cursor = next.next;
+      }
+      const { next: _after, ...rest } = wire;
+      whole[name] = { ...rest, rows, names };
+    }
+    return whole;
+  }, [client, inputs, asked]);
 
   const retry = useCallback(() => setAttempt((count) => count + 1), []);
   const retryMore = () => {
@@ -193,6 +242,7 @@ export function useWidgetData({
         ? { loading: more.loading, ...(more.error ? { error: more.error } : {}), retry: retryMore }
         : undefined,
     retry,
+    all,
     read: inputs,
   };
 }

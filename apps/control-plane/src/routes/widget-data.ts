@@ -70,6 +70,22 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             input: Type.Optional(
               Type.String({ maxLength: 41, description: "Read only this data input, to page it." }),
             ),
+            size: Type.Optional(
+              Type.Integer({
+                minimum: 1,
+                maximum: 1000,
+                description:
+                  "With `input`: how many rows to read, in place of the widget's own page size.",
+              }),
+            ),
+            sort: Type.Optional(
+              Type.String({
+                minLength: 1,
+                maxLength: 80,
+                description:
+                  "A rows input of a table in the order of this column (`-name` for descending), over all its rows.",
+              }),
+            ),
             cursor: Type.Optional(
               Type.String({
                 maxLength: 200,
@@ -171,6 +187,8 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           ...(query.record !== undefined ? { record: query.record } : {}),
           ...(behind ? { behind } : {}),
           ...(chosen ? { chosen } : {}),
+          ...(query.sort !== undefined ? { sort: query.sort } : {}),
+          ...(query.size !== undefined && query.input !== undefined ? { size: query.size } : {}),
           ...(kernel.hosts.runsCodeApps(await kernel.hosts.place(request))
             ? { elsewhere: true }
             : {}),

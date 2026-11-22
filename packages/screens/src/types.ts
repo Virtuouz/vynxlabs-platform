@@ -21,6 +21,8 @@ export type WireData =
       rows: Record<string, unknown>[];
       /** An opaque cursor for the next page, when there is one. */
       next?: string;
+      /** With a next page: how many rows there are in all. Sent with the first page. */
+      total?: number;
       /** For a reference column: the name of the row each id points to. */
       names?: Record<string, Record<string, string>>;
       followed?: Followed;
@@ -90,6 +92,10 @@ export interface PageDataClient {
        * `chosen` parameter (JSON) for a widget whose source is `{ selected }`.
        */
       chosen?: Readonly<Record<string, string>>;
+      /** A table's rows in the order of this column (`-name` for descending), over all its rows. */
+      sort?: string;
+      /** With `input`: how many rows to read, in place of the widget's own page (a download reads big ones). */
+      size?: number;
     },
   ): Promise<{ inputs: Record<string, WireData> }>;
   /**

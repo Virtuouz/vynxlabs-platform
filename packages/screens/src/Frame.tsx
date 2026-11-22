@@ -1,11 +1,19 @@
 import type { PageWidget } from "@volvel/manifest";
-import { Button, HeadingSlot, hasHeadingControls, Menu, Notice, Skeleton } from "@volvel/ui";
+import {
+  Button,
+  EmptyState,
+  HeadingSlot,
+  hasHeadingControls,
+  Menu,
+  Notice,
+  Skeleton,
+} from "@volvel/ui";
 import { Download, PanelRight } from "@volvel/ui/icons";
 import type { WidgetDefinition, WidgetState } from "@volvel/widgets";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { download, type Result, toCsv, toXlsx } from "./export.ts";
 import type { WireData } from "./types.ts";
-import type { Reading } from "./useWidgetData.ts";
+import { DOWNLOAD_ROWS, type Reading } from "./useWidgetData.ts";
 
 /** What a widget read as a table to keep: the first input that has rows, as its view was given them. */
 function resultOf(read: Readonly<Record<string, WireData>> | undefined): Result | undefined {
@@ -62,6 +70,12 @@ function Title({
     }
   }, [renaming]);
   const title = widget.title ?? "";
+  // A title cut with "…" says the whole of itself on hover.
+  const cut = useRef<HTMLHeadingElement>(null);
+  const tell = () => {
+    const el = cut.current;
+    if (el) el.title = el.scrollWidth > el.clientWidth ? title : "";
+  };
   if (renaming) {
     const finish = (save: boolean) => {
       if (settled.current) return;
@@ -102,7 +116,15 @@ function Title({
       </button>
     );
   }
-  return <h2 className="m-0 min-w-0 truncate text-body font-semibold">{title}</h2>;
+  return (
+    <h2
+      ref={cut}
+      onMouseEnter={tell}
+      className="m-0 max-w-full min-w-0 flex-[1_1_8rem] truncate text-body font-semibold"
+    >
+      {title}
+    </h2>
+  );
 }
 
 /**
@@ -121,6 +143,7 @@ export function Frame({
   tabbable,
   container = false,
   opens,
+  clearFilters,
   children,
 }: {
   widget: PageWidget;
@@ -138,11 +161,24 @@ export function Frame({
   container?: boolean;
   /** Building: what a click on a row does, in words ("Invoice detail"), said at the right of the heading. */
   opens?: string | undefined;
+  /** The page's filters narrow what is read: a way to take them all off, offered when that left nothing. */
+  clearFilters?: (() => void) | undefined;
   children: ReactNode;
 }) {
   const name = nameOf(widget, definition);
   const state: WidgetState = definition ? reading.state : { status: "ready" };
   const kept = !building && state.status === "ready" ? resultOf(reading.read) : undefined;
+  // A table read a page at a time is downloaded whole, as far as a download reads.
+  const total = Object.values(reading.read ?? {}).reduce(
+    (most, wire) => (wire.shape === "rows" && wire.total ? Math.max(most, wire.total) : most),
+    0,
+  );
+  const capped =
+    total > DOWNLOAD_ROWS ? ` (the first ${DOWNLOAD_ROWS.toLocaleString("en-US")} rows)` : "";
+  const keep = async (save: (result: Result) => void) => {
+    const whole = resultOf(await reading.all()) ?? kept;
+    if (whole) save(whole);
+  };
   const followed = Object.values(reading.read ?? {}).find((wire) => wire.followed)?.followed;
   // A widget drawn with no card (a button, a filter bar) has no title on the page: it is named in
   // the inspector, for the outline. A heading there would sit over what it draws.
@@ -195,8 +231,20 @@ export function Frame({
         // What the widget keeps even with nothing to read (a table's buttons) is still drawn.
         return (
           <>
-            <p className="m-0 text-body-sm text-ink-muted">{state.message}</p>
             {controls ? children : null}
+            <EmptyState
+              inCard
+              title={state.message}
+              action={
+                clearFilters ? (
+                  <Button size="small" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            >
+              {clearFilters ? "The filters on this page leave no rows." : undefined}
+            </EmptyState>
           </>
         );
       case "ready":
@@ -249,17 +297,21 @@ export function Frame({
                   label={<Download aria-hidden="true" size={16} />}
                   items={[
                     {
-                      label: "Download as CSV",
+                      label: `Download as CSV${capped}`,
                       onSelect: () =>
-                        download(`${fileName(name)}.csv`, toCsv(kept), "text/csv;charset=utf-8"),
+                        void keep((whole) =>
+                          download(`${fileName(name)}.csv`, toCsv(whole), "text/csv;charset=utf-8"),
+                        ),
                     },
                     {
-                      label: "Download as a spreadsheet",
+                      label: `Download as a spreadsheet${capped}`,
                       onSelect: () =>
-                        download(
-                          `${fileName(name)}.xlsx`,
-                          toXlsx(kept, name.slice(0, 31)),
-                          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        void keep((whole) =>
+                          download(
+                            `${fileName(name)}.xlsx`,
+                            toXlsx(whole, name.slice(0, 31)),
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                          ),
                         ),
                     },
                   ]}

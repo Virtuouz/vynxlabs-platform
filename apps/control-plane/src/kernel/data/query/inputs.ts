@@ -61,6 +61,8 @@ export type WireData =
       rows: Record<string, unknown>[];
       /** Asks for the next page: send it back as `cursor`. */
       next?: string;
+      /** With a next page: how many rows there are in all, as the filters leave them. Sent with the first page. */
+      total?: number;
       /** For a reference column: the name of the row each id points to. */
       names?: Record<string, Record<string, string>>;
       followed?: { names: string; now: string };
@@ -91,8 +93,20 @@ export type WireData =
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** How many rows a page of a rows input holds. */
+/** How many rows a page of a rows input holds when the widget does not say. */
 export const ROWS_PAGE = 100;
+
+/** How many rows a page of this widget's rows holds: a table's "Rows at a time", else `ROWS_PAGE`. */
+export function pageOf(widget: PageWidget, asked?: number): number {
+  if (asked !== undefined) return Math.min(Math.max(Math.trunc(asked), 1), 1000);
+  const size =
+    widget.type === "core/table"
+      ? (widget.config?.pageSize ?? widgetRegistry().get(widget.type)?.defaults?.pageSize)
+      : undefined;
+  return typeof size === "number" && Number.isInteger(size)
+    ? Math.min(Math.max(size, 1), 200)
+    : ROWS_PAGE;
+}
 
 export interface ReadRequest {
   tenantId: string;
@@ -112,6 +126,10 @@ export interface ReadRequest {
   recordTable?: string;
   /** The record the page is open on, by its ID. */
   record?: string;
+  /** With `only`: how many rows a page holds, in place of the widget's own (a download reads big pages). */
+  size?: number;
+  /** A table's rows in the order of this column (`-name` for descending): the whole table's, not the page's. */
+  sort?: string;
   /** With `only`: read the rows behind one group of that summary, by the groups' names. */
   behind?: Record<string, unknown>;
   /** The page's widgets, for a `{ selected }` source to find the table it was chosen in. */
@@ -400,6 +418,20 @@ export async function readWidget(
     });
   };
 
+  /** How many rows a query finds in all. */
+  const totalOf = async (asked: WidgetQuery): Promise<{ total?: number }> => {
+    try {
+      const counted = await run({
+        ...asked,
+        text: `select count(*) as n from (${asked.text}) as vx_c`,
+      });
+      const n = Number(counted.rows[0]?.[0]);
+      return Number.isFinite(n) ? { total: n } : {};
+    } catch {
+      return {};
+    }
+  };
+
   /** The name of each row a reference column of a result points to, as the caller may read that table. */
   const namesOf = async (
     visual: VisualQuery,
@@ -524,7 +556,7 @@ export async function readWidget(
     const page = await findRows(source.db, target, {
       ...(conditions.length > 0 ? { filter: { and: conditions } } : {}),
       sort,
-      limit: Math.min(ROWS_PAGE, visual.limit ?? ROWS_PAGE),
+      limit: Math.min(pageOf(widget, request.size), visual.limit ?? pageOf(widget, request.size)),
       offset,
     });
     const shown =
@@ -822,6 +854,18 @@ export async function readWidget(
     }
 
     // Rows and a record. A table in a data source goes by the rows path, which can read it.
+    if (declared.shape === "rows" && request.sort && "visual" in input.source) {
+      const descending = request.sort.startsWith("-");
+      input = {
+        ...input,
+        source: {
+          visual: {
+            ...input.source.visual,
+            sort: [{ by: request.sort.replace(/^-/, ""), ...(descending ? { descending } : {}) }],
+          },
+        },
+      };
+    }
     const outside = await external(input, offset);
     if (outside) {
       if (declared.shape === "record") {
@@ -841,7 +885,7 @@ export async function readWidget(
     if (declared.shape === "approvals")
       throw badRequest("An approvals input has no table to read.");
     const asked = await inputQuery(kernel, at, input, page, { shape: declared.shape });
-    const size = declared.shape === "record" ? 1 : ROWS_PAGE;
+    const size = declared.shape === "record" ? 1 : pageOf(widget, request.size);
     const result = await run(asked, { limit: size, offset }).catch((error) => {
       // A chosen or own row the caller may not read is told as one that is not there.
       if (ofChosen && error instanceof HttpError && error.statusCode === 403) return null;
@@ -883,6 +927,7 @@ export async function readWidget(
       columns,
       rows,
       ...(result.truncated ? { next: encodeCursor(offset + rows.length) } : {}),
+      ...(result.truncated && offset === 0 ? await totalOf(asked) : {}),
       ...(Object.keys(pointed).length > 0 ? { names: pointed } : {}),
       ...(asked.followed ? { followed: asked.followed } : {}),
     };

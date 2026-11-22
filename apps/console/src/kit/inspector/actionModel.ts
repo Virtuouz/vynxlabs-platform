@@ -7,7 +7,7 @@
  * The action types are read off `PageWidget`, because `@volvel/manifest` does not
  * export them by name yet.
  */
-import type { PageWidget } from "@volvel/manifest";
+import { listWords, type PageWidget } from "@volvel/manifest";
 import { type CatalogColumn, heading, withSystemColumns } from "./model.ts";
 
 export type Action = NonNullable<PageWidget["on"]>[string];
@@ -62,14 +62,14 @@ export function refWords(ctx: ActionContext, ref: RecordRef): string {
 /** The kinds of step offered, with what each is called in "Add a step". */
 export const STEP_WORDS: Record<StepKind, { title: string; help: string }> = {
   update: { title: "Update the record", help: "Set fields of a record" },
-  create: { title: "Create a record", help: "Add a row to a table" },
-  delete: { title: "Delete the record", help: "Remove a record for good" },
+  create: { title: "Make a record", help: "Add a row to a table" },
+  delete: { title: "Remove the record", help: "Remove a record for good" },
   flow: { title: "Run a workflow", help: "Start a flow that can be run by hand" },
   script: { title: "Run a script", help: "Start a script of the workspace" },
   open: { title: "Open a page", help: "Go to a page, a side sheet or a dialog" },
   close: { title: "Close", help: "Close this sheet or dialog" },
   message: { title: "Show a message", help: "Say something in a notice" },
-  narrow: { title: "Narrow a filter", help: "Set a page filter to what was clicked" },
+  narrow: { title: "Filter the page", help: "Set a page filter to what was clicked" },
   rows: { title: "Show the rows behind", help: "Open the rows behind what was clicked" },
 };
 
@@ -325,9 +325,11 @@ export function conditionSentence(one: Condition, ctx?: ActionContext): string {
     return one.record === "exists" ? "a record is chosen" : "no record is chosen";
   const said = `${heading(one.field)} ${TEST_LABELS[one.test] ?? one.test}`;
   const of = ctx && one.of === "event" ? " of the clicked record" : "";
-  return NO_VALUE_TESTS.has(one.test)
-    ? `${said}${of}`
-    : `${said}${of} ${String(one.value ?? "")}`.trim();
+  if (NO_VALUE_TESTS.has(one.test)) return `${said}${of}`;
+  const value = Array.isArray(one.value)
+    ? listWords(one.value.map(String))
+    : String(one.value ?? "");
+  return `${said}${of} ${value}`.trim();
 }
 
 // ---------------------------------------------------------------------------

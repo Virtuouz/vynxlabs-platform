@@ -1,28 +1,58 @@
 /**
- * The Actions tab's body. Moved out of `Inspector.tsx` so the agent that rebuilds it (board 9,
- * left) owns one file; the drawer shell draws the tab, the header and the dot around it.
+ * The Actions tab, designed once (board 9) for every widget that can be clicked: a trigger
+ * sentence, the steps as a timeline, "If it fails", and, at the end, a summary of the widget's
+ * rules that opens the Rules tab (board 4).
  */
+import { ChevronRight, Lock } from "lucide-react";
 import { ActionEditor } from "./actionControls.tsx";
 import type { Action } from "./actionModel.ts";
+import { actionSlots } from "./actionSlots.ts";
 import { ConfigControl, type Env } from "./controls.tsx";
+import { useChosenGroups } from "./groupChoices.tsx";
 import { configSettings, isShown } from "./model.ts";
+import { type GroupChoice, groupName, rulesSummary, withSlot } from "./timelineModel.ts";
 
-export function ActionsTab({ env }: { env: Env }) {
+export function ActionsTab({
+  env,
+  onOpenRules,
+  groupChoices,
+}: {
+  env: Env;
+  /** Switches the drawer to its Rules tab: the summary card's "Rules ›". Left out: the card has no link. */
+  onOpenRules?: (() => void) | undefined;
+  groupChoices?: readonly GroupChoice[];
+}) {
+  const given = useChosenGroups(env.groups);
+  const choices = groupChoices ?? given;
   const events = Object.entries(env.definition.events);
   const settings = configSettings(env.definition, "actions").filter((one) =>
     isShown(one.hint, env.config),
   );
   const setEvent = (name: string, action: Action | undefined, key?: string) => {
-    const on = { ...(env.widget.on ?? {}) };
-    if (action) on[name] = action;
-    else delete on[name];
-    const { on: _before, ...rest } = env.widget;
     env.write(
-      Object.keys(on).length > 0 ? { ...rest, on } : rest,
+      withSlot(env.widget, { kind: "event", name }, action),
       "changing what it does",
       key ? `on:${env.widget.id}:${name}` : undefined,
     );
   };
+
+  const slots = actionSlots(env).filter(
+    (slot) => slot.action && (slot.action.steps.length > 0 || slot.action.confirm),
+  );
+  const unique = <T,>(list: T[]) => [...new Set(list)];
+  const noun = env.surface === "app" ? "app" : "dashboard";
+  const summary = rulesSummary({
+    showWhen: env.widget.rules?.showWhen,
+    seenBy: env.widget.rules?.seenBy?.groups.map((path) => groupName(path, choices)),
+    pressedWhen: slots.flatMap((slot) => slot.action?.when ?? []),
+    runBy: unique(
+      slots
+        .flatMap((slot) => slot.action?.runBy?.groups ?? [])
+        .map((path) => groupName(path, choices)),
+    ),
+    noun,
+  });
+
   return (
     <div className="flex flex-col gap-4">
       {events.map(([name, event]) => (
@@ -38,6 +68,23 @@ export function ActionsTab({ env }: { env: Env }) {
       {settings.map((setting) => (
         <ConfigControl key={setting.name} env={env} setting={setting} />
       ))}
+      {slots.length > 0 ? (
+        <div className="flex items-center gap-3 rounded-panel border border-line px-3 py-3 text-body-sm text-ink-muted">
+          <Lock aria-hidden="true" size={14} className="shrink-0" />
+          <p className="m-0 min-w-0 flex-1" data-testid="rules-summary">
+            {summary}
+          </p>
+          {onOpenRules ? (
+            <button
+              type="button"
+              onClick={onOpenRules}
+              className="inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded-inner text-ink outline-offset-2 hover:text-action focus-visible:outline-2 focus-visible:outline-focus"
+            >
+              Rules <ChevronRight aria-hidden="true" size={14} />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

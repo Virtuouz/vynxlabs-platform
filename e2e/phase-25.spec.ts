@@ -333,6 +333,8 @@ test("POLISH-001: the page is published, says what it changes first, and opens f
   await expect(owner.getByText("Published. People who open the app now see this.")).toBeVisible({
     timeout: 60_000,
   });
+  // The toast offers the app, whose address is read after the publish.
+  await expect(owner.getByRole("link", { name: "Open the app" })).toBeVisible();
   // Clinic performance itself, as the repository deployed it to the clinics: a manager opens it,
   // and a front-desk end user, whom it is not shared with, is told so.
   const manager = await signedIn(browser, OWNER);

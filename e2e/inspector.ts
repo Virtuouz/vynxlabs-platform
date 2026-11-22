@@ -32,3 +32,13 @@ export async function closeSetting(page: Page, editor: Locator): Promise<void> {
   await page.keyboard.press("Escape");
   await expect(editor).toBeHidden();
 }
+
+/**
+ * Chooses one of an editor's options (its radio is visually hidden; the option's label is what is
+ * pressed), and says that it is now the chosen one.
+ */
+export async function choose(editor: Locator, name: string | RegExp): Promise<void> {
+  const radio = editor.getByRole("radio", { name });
+  await radio.locator("xpath=ancestor::label[1]").click();
+  await expect(radio).toBeChecked();
+}

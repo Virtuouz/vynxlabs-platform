@@ -1,3 +1,4 @@
+import { choose, closeSetting, openSetting } from "./inspector.ts";
 import { signInWithPassword } from "./sign-in.ts";
 import { expect, type Page, test } from "./test.ts";
 import { expectNoAxeViolations, readEveryList } from "./visual.ts";
@@ -317,12 +318,17 @@ test("a pivot of loans by month and status is built from menus, with no SQL writ
     .click();
   const inspector = page.getByRole("complementary", { name: "Settings" });
   // The page reads one table, so the new widget reads it too, and follows the page's filter.
-  await expect(inspector.getByText("Follows the page filters")).toBeVisible();
-  await inspector.getByLabel("What value 1 works out").selectOption("count");
-  await inspector.getByLabel("Breakdown 1", { exact: true }).selectOption("lent_on");
-  await inspector.getByLabel("How often breakdown 1 is cut").selectOption("month");
-  await inspector.getByRole("button", { name: "Break it down" }).click();
-  await inspector.getByLabel("Breakdown 2", { exact: true }).selectOption("status");
+  await expect(inspector.getByText(/^Follows 1 page filter/)).toBeVisible();
+  const measure = await openSetting(page, inspector, "Measure");
+  await measure.getByLabel("What it works out").selectOption("count");
+  await closeSetting(page, measure);
+  const rows = await openSetting(page, inspector, "Rows");
+  await choose(rows, /^Lent on/);
+  await choose(rows, "Month");
+  await closeSetting(page, rows);
+  const columns = await openSetting(page, inspector, "Columns");
+  await choose(columns, /^Status/);
+  await closeSetting(page, columns);
   const pivot = page.locator("section[data-selected]");
   // In the last 30 days: two out, one late, three in all.
   await expect(pivot).toContainText("out");

@@ -148,9 +148,12 @@ test("the trigger line, then steps on a rail, built as board 4 draws them", asyn
   fireEvent.click(await screen.findByRole("menuitem", { name: "Paid on" }));
 
   add("Run a workflow");
-  fireEvent.change(screen.getByLabelText("Workflow"), { target: { value: "send-receipt" } });
+  // A workflow is one chip in the card; it opens its small editor.
+  fireEvent.click(screen.getByRole("button", { name: /^Change step 3/ }));
+  fireEvent.change(await screen.findByLabelText("Workflow"), { target: { value: "send-receipt" } });
   fireEvent.change(screen.getByLabelText("What it is given"), { target: { value: "this" } });
   expect(screen.getByText("Gets this invoice as its input")).toBeTruthy();
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
   add("Show a message");
   fireEvent.change(screen.getByLabelText("The message says"), {
     target: { value: "Invoice marked paid" },
@@ -165,7 +168,7 @@ test("the trigger line, then steps on a rail, built as board 4 draws them", asyn
     ],
   });
   // Numbered, with the failure said as a row and what it changes said where it acts.
-  expect(screen.getAllByText(/Step \d+:/)).toHaveLength(4);
+  expect(screen.getAllByRole("button", { name: /^Step \d+:/ })).toHaveLength(4);
   expect(screen.getByText("If it fails")).toBeTruthy();
   expect(screen.getByText("Show the error and keep the sheet open")).toBeTruthy();
   expect(screen.getByText(/Changes Status and Paid on of an invoice\./)).toBeTruthy();
@@ -176,7 +179,7 @@ test("the trigger line, then steps on a rail, built as board 4 draws them", asyn
   ]);
 });
 
-test("steps are put in order from the keyboard, and a card collapses to one line", () => {
+test("steps are put in order from the keyboard, and each card is its sentence until it is opened", () => {
   const start: PageWidget = {
     ...pressMe,
     on: {
@@ -202,12 +205,16 @@ test("steps are put in order from the keyboard, and a card collapses to one line
   expect(order()).toBe("update,close,message");
   expect(screen.getByRole("status").textContent).toContain("position 2 of 3");
 
-  // One line each: "2 · Close", "1 · Update this invoice: Status".
-  fireEvent.click(screen.getByRole("button", { name: /Collapse step 1: Update the record/ }));
-  expect(screen.getByText(/Update this invoice: Status/)).toBeTruthy();
-  expect(screen.queryByLabelText("Status becomes")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: /Expand step 1/ }));
+  // Each card is closed as its sentence: a record update is its chips, a message is its words,
+  // and the card opens on a click for what the words do not reach (the message's tone).
   expect(screen.getByRole("button", { name: "Status becomes Paid" })).toBeTruthy();
+  expect(screen.queryByLabelText("The message says")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^Step 3: Show a message, open it/ }));
+  expect(screen.getByLabelText("The message says")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^Step 3: Show a message, close it/ }));
+  expect(screen.queryByLabelText("The message says")).toBeNull();
+  // Remove is in the card, shown while it is pointed at or has focus.
+  expect(screen.getByRole("button", { name: "Remove step 1" })).toBeTruthy();
 });
 
 test("while Ask to confirm is open, the confirmation is previewed beside the widget", () => {
@@ -232,14 +239,17 @@ test("while Ask to confirm is open, the confirmation is previewed beside the wid
       <Actions start={start} />
     </SampleRecordProvider>,
   );
+  // The confirmation is its words with the field as a chip; opened, its preview is drawn.
+  expect(screen.queryByRole("complementary")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: /^Step 1: Ask to confirm, open it/ }));
   const preview = screen.getByRole("complementary", { name: "What people will see, step 1" });
   expect(within(preview).getByText("Mark INV-9339 as paid?")).toBeTruthy();
   expect(within(preview).getByText("Status becomes Paid.")).toBeTruthy();
   expect(within(preview).getByText("Mark paid")).toBeTruthy();
   expect(within(preview).getByText("Cancel")).toBeTruthy();
   expect(within(preview).getByText(/Edit the wording in step 1/)).toBeTruthy();
-  // Collapsed, the step is no longer open, and the preview goes.
-  fireEvent.click(screen.getByRole("button", { name: /Collapse step 1: Ask to confirm/ }));
+  // Closed, the step is no longer open, and the preview goes.
+  fireEvent.click(screen.getByRole("button", { name: /^Step 1: Ask to confirm, close it/ }));
   expect(screen.queryByRole("complementary")).toBeNull();
 });
 

@@ -177,16 +177,19 @@ export function AppBuilder({
   const listed = list.data?.items.find((item) => item.path === path);
   const appPath = listed?.app ?? null;
   const pending = new Set(drafts.data?.items.map((draft) => draft.path));
-  const hasChanges =
-    pending.has(path) || (appPath !== null && pending.has(appPath)) || saving !== "saved";
-  const served = apps.data?.items.find((app) => app.path === appPath);
-  const url = served?.url;
-  // The draft's own preview, when the app has one and there is a draft to see.
-  const previewUrl = hasChanges && served?.preview ? served.preview : url;
   const changes =
     deployed.data === undefined && !deployed.error
       ? undefined
       : draftChangeCount(deployed.data?.body, body);
+  // A draft that says what is published already is not a change: "Published." until it differs.
+  const hasChanges =
+    saving !== "saved" ||
+    (appPath !== null && pending.has(appPath)) ||
+    (pending.has(path) && (changes === undefined || changes > 0));
+  const served = apps.data?.items.find((app) => app.path === appPath);
+  const url = served?.url;
+  // The draft's own preview, when the app has one and there is a draft to see.
+  const previewUrl = hasChanges && served?.preview ? served.preview : url;
   const acts = runsActions(page?.widgets ?? []);
   /** Writes the draft only when there is something unsaved: looking at the check changes nothing. */
   const settle = async () => {

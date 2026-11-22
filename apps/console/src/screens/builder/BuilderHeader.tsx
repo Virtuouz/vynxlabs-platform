@@ -98,6 +98,25 @@ export function DeviceSwitch({
       role="radiogroup"
       aria-label="Screen size"
       className="flex rounded-control border border-line p-0.5"
+      // A radio group: the arrow keys move the choice, and Tab leaves the group.
+      onKeyDown={(event) => {
+        const keys = Object.keys(VIEWPORTS) as (keyof typeof VIEWPORTS)[];
+        const by =
+          event.key === "ArrowRight" || event.key === "ArrowDown"
+            ? 1
+            : event.key === "ArrowLeft" || event.key === "ArrowUp"
+              ? -1
+              : 0;
+        if (by === 0) return;
+        event.preventDefault();
+        const next = keys[(keys.indexOf(value) + by + keys.length) % keys.length];
+        if (!next) return;
+        onChange(next);
+        const group = event.currentTarget;
+        requestAnimationFrame(() =>
+          group.querySelector<HTMLElement>(`[data-device="${next}"]`)?.focus(),
+        );
+      }}
     >
       {(Object.keys(VIEWPORTS) as (keyof typeof VIEWPORTS)[]).map((one) => {
         const Icon = VIEWPORTS[one].icon;
@@ -109,6 +128,8 @@ export function DeviceSwitch({
             role="radio"
             aria-checked={value === one}
             aria-label={VIEWPORTS[one].label}
+            data-device={one}
+            tabIndex={value === one ? 0 : -1}
             onClick={() => onChange(one)}
             className={`flex h-7 items-center gap-1.5 rounded-inner px-3 text-meta ${
               value === one ? "bg-selected text-ink" : "text-ink-muted hover:text-ink"

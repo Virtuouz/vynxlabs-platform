@@ -344,7 +344,7 @@ export function Frame({
           ref={watch}
           tabIndex={tabbable && !container && scrolls ? 0 : undefined}
           aria-busy={reading.stale ? true : undefined}
-          className={`flex min-h-0 flex-1 flex-col ${container ? "" : "gap-2 overflow-auto"} ${bare ? "justify-center" : container ? "" : "px-[14px] pb-[14px]"} outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
+          className={`flex min-h-0 flex-1 flex-col ${container ? "" : "gap-2 overflow-auto"} ${bare ? "justify-center" : container ? "" : "px-[14px] pb-[14px]"} outline-none! focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset ${
             bare || container ? "" : heading ? "pt-[10px]" : "pt-[14px]"
           } ${reading.stale ? "opacity-50" : ""}`}
         >

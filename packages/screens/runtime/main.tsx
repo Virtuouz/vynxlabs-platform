@@ -72,10 +72,10 @@ function clientFor(path: string, page: string, record?: string): PageDataClient 
     },
     async options(filter) {
       const query = new URLSearchParams({ of: "interface", path, page, filter });
-      const found = await api.get<{ values: string[] }>(
+      const found = await api.get<{ values: string[]; labels?: Record<string, string> }>(
         `${workspaceApi()}/filter-options?${query}`,
       );
-      return found.values;
+      return found.values.map((value) => ({ value, label: found.labels?.[value] ?? value }));
     },
     async act(widget, at, given) {
       try {

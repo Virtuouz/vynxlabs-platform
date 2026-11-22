@@ -25,7 +25,7 @@ interface Common {
 const box =
   "flex min-h-control w-full flex-wrap items-center gap-1 rounded-control border border-line-control bg-surface px-1.5 py-1 focus-within:outline-2 focus-within:outline-offset-1 focus-within:outline-action data-[disabled]:opacity-60 has-[[aria-invalid=true]]:border-danger";
 const input =
-  "min-w-24 flex-1 bg-transparent px-1 text-ink outline-none placeholder:text-ink-muted/70";
+  "min-w-24 flex-1 bg-transparent px-1 text-ink outline-none! placeholder:text-ink-muted/70";
 const popup =
   "max-h-72 w-[var(--anchor-width)] min-w-56 overflow-y-auto rounded-control border border-line bg-surface p-1 shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0";
 const row =

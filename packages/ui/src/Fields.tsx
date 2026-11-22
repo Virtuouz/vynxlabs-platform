@@ -67,7 +67,7 @@ function InlineFrame({
 
 /** What a control inside an `InlineFrame` is drawn with: no box of its own. */
 const bare =
-  "h-full min-w-0 flex-1 appearance-none bg-transparent text-ink outline-none placeholder:text-ink-muted/70 focus-visible:outline-none disabled:opacity-60";
+  "h-full min-w-0 flex-1 appearance-none bg-transparent text-ink outline-none! placeholder:text-ink-muted/70 focus-visible:outline-none! disabled:opacity-60";
 
 interface Common {
   label: string;

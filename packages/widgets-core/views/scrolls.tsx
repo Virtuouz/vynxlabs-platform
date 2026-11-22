@@ -39,7 +39,7 @@ export function ScrollsSideways({ label, children }: { label: string; children: 
         aria-label={wide ? label : undefined}
         tabIndex={wide ? 0 : undefined}
         onScroll={look}
-        className="overflow-x-auto rounded-inner outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
+        className="overflow-x-auto rounded-inner outline-none! focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-inset"
       >
         {children}
       </div>

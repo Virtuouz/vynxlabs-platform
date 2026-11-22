@@ -37,7 +37,18 @@ export interface DialogProps {
 
 /** A field a person types into: not a switch, a choice, a file or a hidden one. */
 const TEXT_FIELD =
-  'textarea:not([disabled]), input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"])';
+  'textarea:not([disabled]), select:not([disabled]), input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="range"]):not([type="color"]):not([type="button"]):not([type="submit"])';
+
+/**
+ * The first field to type in or choose from, in the order it is read. An optional date is not
+ * the one to start on: that would open its calendar (or a phone's picker) before anything was
+ * asked, so it is passed over.
+ */
+function firstField(root: HTMLElement | null): HTMLElement | undefined {
+  return Array.from(root?.querySelectorAll<HTMLElement>(TEXT_FIELD) ?? []).find(
+    (field) => !(field.hasAttribute("data-date-input") && !field.hasAttribute("required")),
+  );
+}
 
 export function Dialog({
   open,
@@ -72,7 +83,7 @@ export function Dialog({
           // the first control does.
           initialFocus={() =>
             popup.current?.querySelector<HTMLElement>("[data-autofocus]") ??
-            popup.current?.querySelector<HTMLElement>(TEXT_FIELD) ??
+            firstField(popup.current) ??
             true
           }
           className={`fixed layer-dialog flex flex-col overflow-hidden border-line bg-surface shadow-modal transition-[opacity,scale] motion-slow data-[ending-style]:opacity-0 data-[starting-style]:scale-98 data-[starting-style]:opacity-0 ${

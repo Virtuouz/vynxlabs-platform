@@ -95,7 +95,7 @@ export interface PageViewProps {
    */
   onActed?: () => void;
   /** For a choice filter that lists a table's column: what was read for it, by filter name. */
-  filterOptions?: Readonly<Record<string, readonly string[]>>;
+  filterOptions?: Readonly<Record<string, readonly (string | { value: string; label: string })[]>>;
   /** A widget raised an event its definition declares. Told after the page has done what its widget says to do. */
   onEvent?: (widget: string, event: string, payload: EventPayload) => void;
   /** The record the page is open on: a record page, a side sheet or a modal. */

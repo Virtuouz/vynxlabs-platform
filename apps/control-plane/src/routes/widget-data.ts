@@ -219,7 +219,12 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             filter: Type.String({ minLength: 1, maxLength: 60 }),
             draft: Type.Optional(Type.String({ maxLength: 5 })),
           }),
-          response: { 200: Type.Object({ values: Type.Array(Type.String()) }) },
+          response: {
+            200: Type.Object({
+              values: Type.Array(Type.String()),
+              labels: Type.Optional(Type.Record(Type.String(), Type.String())),
+            }),
+          },
         },
       },
       async ({ ctx, params, query }) => {
@@ -249,7 +254,17 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         const enumValues = column.options?.values;
         if (enumValues && enumValues.length > 0) {
-          return { values: enumValues.map((one) => one.value).slice(0, MAX_OPTIONS) };
+          const named = enumValues.slice(0, MAX_OPTIONS);
+          // A choice is offered in its own words ("Paid"), as the table's chips say it.
+          const labels = Object.fromEntries(
+            named.flatMap((one) =>
+              one.label && one.label !== one.value ? [[one.value, one.label]] : [],
+            ),
+          );
+          return {
+            values: named.map((one) => one.value),
+            ...(Object.keys(labels).length > 0 ? { labels } : {}),
+          };
         }
         const written = writeVisual(
           {

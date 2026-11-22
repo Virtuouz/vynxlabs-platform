@@ -14,6 +14,7 @@ import {
   type Hm,
   hmText,
   localeOf,
+  datePattern,
   monthNames,
   parseEntry,
   parseTime,
@@ -182,7 +183,7 @@ export function DateInput({
   };
 
   const problem = own;
-  const sample = formatWall(wallOf(todayYmd(), { h: 9, mi: 0 }), locale, withTime);
+  const hint = datePattern(locale, withTime);
   const { onBlur, onFocus, ...forwarded } = (boxProps ?? {}) as {
     onBlur?: (event: unknown) => void;
     onFocus?: (event: unknown) => void;
@@ -235,12 +236,13 @@ export function DateInput({
           }}
           id={(aria.id as string | undefined) ?? id}
           type="text"
+          data-date-input=""
           inputMode="text"
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
           dir="auto"
-          placeholder={sample}
+          placeholder={hint}
           required={required}
           disabled={disabled}
           aria-label={rest["aria-label"]}

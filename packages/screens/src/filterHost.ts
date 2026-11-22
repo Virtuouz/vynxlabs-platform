@@ -4,8 +4,9 @@ import { useCallback, useMemo, useRef } from "react";
 import { valueFor } from "./filters.ts";
 import type { FilterValues, PageDataClient } from "./types.ts";
 
-/** The words of a choice that is only its value. */
-const choiceOf = (value: string): Choice => ({ value, label: value });
+/** The words of a choice: its own, or else its value. */
+const choiceOf = (one: string | Choice): Choice =>
+  typeof one === "string" ? { value: one, label: one } : one;
 
 /**
  * What a page gives each of its Search and filter widgets: where the filters stand, a way to
@@ -22,7 +23,7 @@ export function useFilterHost(options: {
   onValues: (values: FilterValues) => void;
   client: PageDataClient;
   /** What the host already read for a choice, by filter name. */
-  given?: Readonly<Record<string, readonly string[]>> | undefined;
+  given?: Readonly<Record<string, readonly (string | Choice)[]>> | undefined;
 }): (own: readonly PageFilter[]) => FilterHost {
   const { filters, values, onValues, client, given } = options;
   const latest = useRef(values);
@@ -31,7 +32,7 @@ export function useFilterHost(options: {
   told.current = onValues;
   // A table's values are read once for as long as the client is the same.
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new client is a new read
-  const read = useMemo(() => new Map<string, Promise<readonly string[]>>(), [client]);
+  const read = useMemo(() => new Map<string, Promise<readonly (string | Choice)[]>>(), [client]);
   const write = useCallback((change: (now: FilterValues) => FilterValues) => {
     latest.current = change(latest.current);
     told.current(latest.current);
@@ -41,7 +42,7 @@ export function useFilterHost(options: {
     for (const filter of filters) shown[filter.name] = valueFor(filter, values);
     const reader = client.options?.bind(client);
     const offers = (filter: PageFilter | undefined, name: string) => {
-      if (filter?.choices) return Promise.resolve(filter.choices);
+      if (filter?.choices) return Promise.resolve(filter.choices as readonly string[]);
       const have = given?.[name];
       if (have) return Promise.resolve(have);
       if (!reader) return Promise.reject(new Error("There is nothing to read the values from."));
@@ -72,7 +73,9 @@ export function useFilterHost(options: {
                 name,
               );
               const words = search.trim().toLowerCase();
-              return found.filter((one) => one.toLowerCase().includes(words)).map(choiceOf);
+              return found
+                .map(choiceOf)
+                .filter((one) => `${one.label} ${one.value}`.toLowerCase().includes(words));
             },
           }
         : {}),

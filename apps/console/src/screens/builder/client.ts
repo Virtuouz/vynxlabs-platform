@@ -132,10 +132,10 @@ export function pageClient(
       return found;
     },
     options: async (filter) => {
-      const found = await api.get<{ values: string[] }>(
+      const found = await api.get<{ values: string[]; labels?: Record<string, string> }>(
         `${root}/filter-options?${page(new URLSearchParams({ filter }))}`,
       );
-      return found.values;
+      return found.values.map((value) => ({ value, label: found.labels?.[value] ?? value }));
     },
   };
 }

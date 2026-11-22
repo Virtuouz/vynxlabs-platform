@@ -73,7 +73,7 @@ function CompactSelect({
         aria-label={label}
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
-        className="min-w-0 flex-1 cursor-pointer appearance-none bg-transparent text-ink outline-none"
+        className="min-w-0 flex-1 cursor-pointer appearance-none bg-transparent text-ink outline-none!"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>

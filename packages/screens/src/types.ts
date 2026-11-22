@@ -103,7 +103,7 @@ export interface PageDataClient {
    * for them (`from`) and lists none: the column's values, as the viewer may
    * read them. Left out, such a filter is typed into.
    */
-  options?(filter: string): Promise<readonly string[]>;
+  options?(filter: string): Promise<readonly (string | { value: string; label: string })[]>;
   /**
    * Runs an action a widget holds, named by where it is (`on/<event>`,
    * `config/<property>`, `config/<property>/<index>/action`), with the records it

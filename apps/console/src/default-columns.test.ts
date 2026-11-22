@@ -24,6 +24,29 @@ describe("the columns a widget draws when it names none", () => {
     ]);
   });
 
+  it("puts what a row is about before other moments and notes", () => {
+    const columns = [
+      col("checked_in_at", "timestamp"),
+      col("client_code"),
+      col("notes"),
+      col("number"),
+      col("pet_name"),
+      col("reason"),
+      col("starts_at", "timestamp"),
+      col("status"),
+    ];
+    expect(defaultColumns(columns).map((one) => one.name)).toEqual([
+      "number",
+      "status",
+      "starts_at",
+      "pet_name",
+      "client_code",
+      "reason",
+      "checked_in_at",
+      "notes",
+    ]);
+  });
+
   it("keeps the table's own order when no column names a row", () => {
     expect(defaultColumns([col("b"), col("a")]).map((one) => one.name)).toEqual(["b", "a"]);
   });

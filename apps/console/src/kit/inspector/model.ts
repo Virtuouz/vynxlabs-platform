@@ -27,6 +27,7 @@ import {
   type Tab,
   type WidgetDefinition,
 } from "@volvel/widgets";
+import { DEFAULT_COLUMNS, defaultColumns } from "@volvel/widgets-core/views";
 import { drawersFor } from "./custom.ts";
 
 /** A column of a table, as the workspace's schema says. */
@@ -385,15 +386,9 @@ const hasColumn = (catalog: Catalog, table: string, column: string) =>
 /** The most columns a search looks in for one widget (the server allows 12). */
 export const MAX_SEARCH_COLUMNS = 8;
 
-/** How many columns a table draws when it names none: as the page draws them. */
-const DEFAULT_SHOWN_COLUMNS = 8;
-
-const SYSTEM_NAMES = new Set(["id", "created_at", "updated_at"]);
-
 /**
  * The text columns of `table` that a search looks in for a widget: the ones it shows. A table
- * names them in its columns, or draws the first eight (not the system ones, not JSON) when it
- * names none; a list shows its title, subtitle and right-hand columns, or its first column when it
+ * names them in its columns, or draws the first eight of the default ones when it names none; a list shows its title, subtitle and right-hand columns, or its first column when it
  * names none. Else the table's display column. At most `MAX_SEARCH_COLUMNS`.
  */
 export function searchColumns(widget: PageWidget, table: string, catalog: Catalog): string[] {
@@ -402,9 +397,7 @@ export function searchColumns(widget: PageWidget, table: string, catalog: Catalo
   );
   const text = new Set(columns.filter((one) => one.type === "text").map((one) => one.name));
   const config = widget.config ?? {};
-  const byDefault = columns
-    .filter((one) => !SYSTEM_NAMES.has(one.name) && one.type !== "json")
-    .map((one) => one.name);
+  const byDefault = defaultColumns(columns).map((one) => one.name);
   const named =
     Array.isArray(config.columns) && config.columns.length > 0
       ? (config.columns as { column?: unknown; hidden?: boolean }[])
@@ -414,7 +407,7 @@ export function searchColumns(widget: PageWidget, table: string, catalog: Catalo
   const shown: unknown[] =
     named ??
     (widget.type === "core/table"
-      ? byDefault.slice(0, DEFAULT_SHOWN_COLUMNS)
+      ? byDefault.slice(0, DEFAULT_COLUMNS)
       : widget.type === "core/list"
         ? [config.title ?? byDefault[0], config.subtitle, config.right]
         : [config.title, config.subtitle, config.right]);

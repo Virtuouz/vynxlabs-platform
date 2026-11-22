@@ -127,17 +127,28 @@ const IDENTIFYING = [
   "date",
   "due_on",
 ];
+/** A column that names something the row is about ("pet_name"), which says more than its other columns. */
+const NAMES_SOMETHING = /_(name|title)$/;
+/** Words kept about a row, long or rarely filled: the last to be drawn. */
+const KEPT_WORDS = /^(notes?|comments?|remarks?|description|details|body)$|_(notes?|comments?)$/;
 
 /**
  * The columns a widget draws when it names none: the default ones, with the columns that say
- * what a row is (its name, title or number), where it stands and when first, and the rest as the table has them.
+ * what a row is (its name, title or number), where it stands and when first, then the names of what
+ * it is about, and the rest as the table has them, other moments and notes last.
  */
 export function defaultColumns<T extends { name: string; type: string }>(
   columns: readonly T[],
 ): T[] {
   const rank = (column: T) => {
-    const at = IDENTIFYING.indexOf(column.name.toLowerCase());
-    return at === -1 ? IDENTIFYING.length : at;
+    const name = column.name.toLowerCase();
+    const at = IDENTIFYING.indexOf(name);
+    if (at !== -1) return at;
+    const rest = IDENTIFYING.length;
+    if (NAMES_SOMETHING.test(name)) return rest;
+    // A moment other than the row's own (when it was checked in, chased, paid) comes after what it is about.
+    if (column.type === "timestamp") return rest + 2;
+    return KEPT_WORDS.test(name) ? rest + 3 : rest + 1;
   };
   return columns
     .filter(isDefaultColumn)

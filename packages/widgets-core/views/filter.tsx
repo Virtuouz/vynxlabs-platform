@@ -248,7 +248,7 @@ function TypedControl({ filter, label, value, onChange }: Control) {
           type={numeric ? "number" : "text"}
           value={typed}
           onChange={(event) => setTyped(event.currentTarget.value)}
-          className="h-full min-w-0 flex-1 bg-transparent text-ink outline-none placeholder:text-ink-muted/70"
+          className="h-full min-w-0 flex-1 bg-transparent text-ink outline-none! placeholder:text-ink-muted/70"
           {...(search
             ? {
                 placeholder: label,

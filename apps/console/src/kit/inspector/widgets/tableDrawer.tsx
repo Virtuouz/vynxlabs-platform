@@ -17,6 +17,7 @@ import {
   TextField,
   ToggleRow,
 } from "@volvel/ui";
+import { DEFAULT_COLUMNS, defaultColumns } from "@volvel/widgets-core/views";
 import { ListOrdered, Trash2, Type, Zap } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ActionControl, actionContext } from "../actionControls.tsx";
@@ -61,10 +62,13 @@ const writeConfig = (env: Env, name: string, value: unknown, label: string, key?
 export function TableColumnsSection({ env, bare, ...source }: TableSectionProps) {
   const { names, facts, table } = useTableData(env, source);
   const stored = env.config.columns as ColumnSetting[] | undefined;
-  // A table that names no columns draws them all but JSON, which says nothing in a cell.
+  // A table that names no columns draws what the page draws: the first eight that say
+  // something (not the system ones or JSON), the one that names a row first.
   const columns = columnsOf(
     stored,
-    names.filter((name) => facts.find((one) => one.name === name)?.type !== "json"),
+    defaultColumns(facts.filter((one) => names.includes(one.name)))
+      .slice(0, DEFAULT_COLUMNS)
+      .map((one) => one.name),
   );
   const request = useColumnRequest(env.widget.id);
   const [open, setOpen] = useState<{ column: string; canvas: boolean } | undefined>();

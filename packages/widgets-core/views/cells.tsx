@@ -112,6 +112,27 @@ export const SYSTEM_COLUMNS = new Set(["id", "created_at", "updated_at"]);
 export const isDefaultColumn = (column: { name: string; type: string }): boolean =>
   !SYSTEM_COLUMNS.has(column.name) && column.type !== "json";
 
+/** The names that say what a row is, most telling first. */
+const IDENTIFYING = ["name", "title", "number", "code", "reference", "ref", "label", "subject"];
+
+/**
+ * The columns a widget draws when it names none: the default ones, with the column that says
+ * what a row is (its name, title or number) first, and the rest as the table has them.
+ */
+export function defaultColumns<T extends { name: string; type: string }>(
+  columns: readonly T[],
+): T[] {
+  const rank = (column: T) => {
+    const at = IDENTIFYING.indexOf(column.name.toLowerCase());
+    return at === -1 ? IDENTIFYING.length : at;
+  };
+  return columns
+    .filter(isDefaultColumn)
+    .map((column, at) => ({ column, at }))
+    .sort((a, b) => rank(a.column) - rank(b.column) || a.at - b.at)
+    .map((one) => one.column);
+}
+
 /**
  * A JSON value as a short, readable form: how many items a list holds, or the JSON written
  * compactly and cut. `full` is the whole of it, for a tooltip.
@@ -141,8 +162,7 @@ export function columnsToShow(
   const chosen: ColumnSpec[] =
     specs && specs.length > 0
       ? named
-      : data.columns
-          .filter(isDefaultColumn)
+      : defaultColumns(data.columns)
           .slice(0, DEFAULT_COLUMNS)
           .map((column) => ({ column: column.name }));
   return chosen.map((spec) => ({

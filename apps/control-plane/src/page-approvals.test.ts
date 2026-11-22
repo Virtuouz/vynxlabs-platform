@@ -933,3 +933,10 @@ describe("what the page checks", () => {
     );
   });
 });
+
+describe("the write path", () => {
+  test("every successful change here left an audit entry, and the route was exercised", () => {
+    expect(t.unaudited).toEqual([]);
+    expect(t.unexercised((route) => /\/page-approvals(\/|$)/.test(route))).toEqual([]);
+  });
+});

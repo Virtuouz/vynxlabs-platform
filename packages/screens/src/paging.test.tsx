@@ -85,7 +85,7 @@ describe("rows a page at a time", () => {
 
 describe("a widget that found nothing", () => {
   const definition = corePack.definitions.find((one) => one.type === "core/table");
-  const empty = (clearFilters?: () => void) =>
+  const empty = (clearFilters?: () => void, quiet = false) =>
     render(
       <Frame
         widget={{ id: "t", type: "core/table", title: "Invoices", at: { x: 0, y: 0, w: 12, h: 6 } }}
@@ -104,7 +104,8 @@ describe("a widget that found nothing", () => {
         building={false}
         onRename={undefined}
         tabbable={false}
-        clearFilters={clearFilters}
+        offer={clearFilters ? { label: "Clear filters", run: clearFilters } : undefined}
+        quiet={quiet}
       >
         <span />
       </Frame>,
@@ -116,6 +117,12 @@ describe("a widget that found nothing", () => {
     expect(screen.getByText("Nothing matches the filters.")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(clear).toHaveBeenCalled();
+  });
+
+  test("says it quietly, with no button, when another widget holds the page's offer", () => {
+    empty(undefined, true);
+    expect(screen.getByText("Nothing matches the filters.")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   test("offers nothing to clear when no filter narrowed it", () => {

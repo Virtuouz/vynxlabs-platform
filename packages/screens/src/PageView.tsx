@@ -211,8 +211,13 @@ interface GridContext {
   filterValues: FilterValues;
   refreshKey: number;
   emptyMessage: string;
-  /** Takes every filter of the page off, when some narrow what is read. */
-  clearFilters: (() => void) | undefined;
+  /** A way out of the filters that leave nothing, when some narrow what is read. */
+  offer: { label: string; run: () => void } | undefined;
+  /** Where each widget that is empty is drawn, so that the page makes its offer once. */
+  emptied: ReadonlySet<string>;
+  /** The widget that is empty now and is first on the page. */
+  offerAt: string | undefined;
+  reportEmpty(id: string, empty: boolean): void;
   /** The row last chosen in each table or list that something on the page follows, by widget id. */
   chosen: Readonly<Record<string, string>>;
   /** The tables and lists some widget follows (`{ selected: id }`): a click on a row chooses it. */
@@ -397,8 +402,10 @@ function Cell({
       definition !== undefined && Object.keys(definition.data).length > 0 && !waiting && !noRecord,
     filterValues,
     refreshKey,
-    // A table says what it says when empty, in the words its maker chose.
+    // A table says what it says when empty, in the words its maker chose; filters that narrow
+    // what it reads are said first (what was searched for, or the filters).
     emptyMessage:
+      !ctx.offer &&
       widget.type === "core/table" &&
       typeof widget.config?.empty === "string" &&
       widget.config.empty
@@ -612,7 +619,9 @@ function Cell({
         tabbable={!narrow}
         container={container}
         opens={opens}
-        clearFilters={ctx.clearFilters}
+        offer={ctx.offerAt === widget.id ? ctx.offer : undefined}
+        quiet={ctx.emptied.size > 1 && ctx.offerAt !== widget.id}
+        onEmpty={(empty) => ctx.reportEmpty(widget.id, empty)}
       >
         {noRecord ? (
           <p className="m-0 text-ink-muted">
@@ -1057,6 +1066,12 @@ const factsOf = (
     ? { columns: wire.columns, ...(wire.names ? { names: wire.names } : {}) }
     : undefined;
 
+/** Nothing, no words and `null` are one value: the filter narrows nothing. */
+const sameValue = (a: unknown, b: unknown) => {
+  const norm = (value: unknown) => JSON.stringify(value === undefined || value === "" ? null : value);
+  return norm(a) === norm(b);
+};
+
 export function PageView({
   widgets: given,
   device,
@@ -1066,7 +1081,7 @@ export function PageView({
   registry,
   client,
   filterValues,
-  onFilterValues,
+  onFilterValues: onValuesGiven,
   refreshKey = 0,
   onActed,
   filterOptions,
@@ -1096,7 +1111,27 @@ export function PageView({
         : undefined,
     [editing, viewAs, user],
   );
+  // A filter that is set to nothing where it starts as nothing is not set at all: the address
+  // never holds `null` for it, and a value it does hold is one that means something (all time
+  // over a range that starts on the last 30 days).
+  const onFilterValues = useCallback(
+    (next: FilterValues) =>
+      onValuesGiven(
+        Object.fromEntries(
+          Object.entries(next).filter(([name, value]) => {
+            if (value === undefined) return false;
+            if (value !== null && value !== "") return true;
+            const filter = filters.find((one) => one.name === name);
+            return filter !== undefined && filter.default !== undefined && filter.default !== null;
+          }),
+        ),
+      ),
+    [onValuesGiven, filters],
+  );
   const [told, setTold] = useState("");
+  // The widgets that are empty now: the page offers a way out of its filters once, at the
+  // first of them, and the others say it quietly.
+  const [emptied, setEmptied] = useState<ReadonlySet<string>>(new Set());
   // Each action that ran makes every widget read again, on top of the host's own refresh.
   const [ran, setRan] = useState(0);
   const [thisRow, setThisRow] = useState<Readonly<Record<string, unknown>>>();
@@ -1371,14 +1406,55 @@ export function PageView({
   }, [carryRequest]);
   // The filters narrow what is read when any holds a value: a read that finds nothing then says so
   // and offers to take them off.
-  const narrowed = filters.some((filter) => {
+  const holding = (filter: PageFilter) => {
     const value = valueFor(filter, filterValues);
     return value !== undefined && value !== null && value !== "";
+  };
+  const narrowed = filters.some(holding);
+  // "Clear filters" puts every filter back to how it STARTS (the widget's own words, its default),
+  // so a page that opens on the last 30 days opens on them again. When they already are, what is
+  // left to offer is to take them off: "Show everything".
+  const startsAs = (filter: PageFilter) =>
+    sameValue(valueFor(filter, filterValues), filter.default);
+  const moved = filters.some((filter) => !startsAs(filter));
+  const offer = !narrowed
+    ? undefined
+    : moved
+      ? {
+          label: "Clear filters",
+          run: () =>
+            onFilterValues({
+              ...filterValues,
+              ...Object.fromEntries(
+                filters.filter((filter) => !startsAs(filter)).map((filter) => [filter.name, undefined]),
+              ),
+            }),
+        }
+      : {
+          label: "Show everything",
+          run: () =>
+            onFilterValues({
+              ...filterValues,
+              ...Object.fromEntries(filters.filter(holding).map((filter) => [filter.name, null])),
+            }),
+        };
+  const searched = filters.flatMap((filter) => {
+    const value = valueFor(filter, filterValues);
+    return filter.type === "search" && typeof value === "string" && value.trim() !== ""
+      ? [value.trim()]
+      : [];
   });
-  const clearFilters = narrowed
-    ? () => onFilterValues(Object.fromEntries(filters.map((filter) => [filter.name, null])))
-    : undefined;
-  const emptyMessage = narrowed ? "Nothing matches the filters." : "There is nothing here yet.";
+  const emptyMessage = narrowed
+    ? searched.length > 0 && !filters.some((one) => one.type !== "search" && holding(one))
+      ? `Nothing matches “${searched.join(" ")}”`
+      : "Nothing matches the filters."
+    : "There is nothing here yet.";
+
+  // The first of the empty widgets, top to bottom and left to right, holds the page's one offer.
+  const offerAt = [...emptied]
+    .map((id) => byId.get(id))
+    .filter((one): one is PageWidget => one !== undefined)
+    .sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x)[0]?.id;
 
   const landing = carrying?.at
     ? { card: carrying.card, in: undefined }
@@ -1402,7 +1478,17 @@ export function PageView({
     filterValues,
     refreshKey: refreshKey + ran,
     emptyMessage,
-    clearFilters,
+    offer,
+    emptied,
+    offerAt,
+    reportEmpty: (id, empty) =>
+      setEmptied((now) => {
+        if (now.has(id) === empty) return now;
+        const next = new Set(now);
+        if (empty) next.add(id);
+        else next.delete(id);
+        return next;
+      }),
     chosen,
     followed,
     choose: (widget, row) =>

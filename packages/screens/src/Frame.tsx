@@ -143,7 +143,9 @@ export function Frame({
   tabbable,
   container = false,
   opens,
-  clearFilters,
+  offer,
+  quiet = false,
+  onEmpty,
   children,
 }: {
   widget: PageWidget;
@@ -162,11 +164,22 @@ export function Frame({
   /** Building: what a click on a row does, in words ("Invoice detail"), said at the right of the heading. */
   opens?: string | undefined;
   /** The page's filters narrow what is read: a way to take them all off, offered when that left nothing. */
-  clearFilters?: (() => void) | undefined;
+  offer?: { label: string; run: () => void } | undefined;
+  /** Another widget on the page holds the offer: this one says what it has, in a line. */
+  quiet?: boolean;
+  /** Told when the widget is empty, and when it no longer is. */
+  onEmpty?: ((empty: boolean) => void) | undefined;
   children: ReactNode;
 }) {
   const name = nameOf(widget, definition);
   const state: WidgetState = definition ? reading.state : { status: "ready" };
+  const isEmpty = state.status === "empty";
+  const told = useRef(onEmpty);
+  told.current = onEmpty;
+  useEffect(() => {
+    told.current?.(isEmpty);
+    return () => told.current?.(false);
+  }, [isEmpty]);
   const kept = !building && state.status === "ready" ? resultOf(reading.read) : undefined;
   // A table read a page at a time is downloaded whole, as far as a download reads.
   const total = Object.values(reading.read ?? {}).reduce(
@@ -232,19 +245,21 @@ export function Frame({
         return (
           <>
             {controls ? children : null}
-            <EmptyState
-              inCard
-              title={state.message}
-              action={
-                clearFilters ? (
-                  <Button size="small" onClick={clearFilters}>
-                    Clear filters
-                  </Button>
-                ) : undefined
-              }
-            >
-              {clearFilters ? "The filters on this page leave no rows." : undefined}
-            </EmptyState>
+            {quiet ? (
+              <p className="m-0 text-ink-muted">{state.message}</p>
+            ) : (
+              <EmptyState
+                inCard
+                title={state.message}
+                action={
+                  offer ? (
+                    <Button size="small" onClick={offer.run}>
+                      {offer.label}
+                    </Button>
+                  ) : undefined
+                }
+              />
+            )}
           </>
         );
       case "ready":

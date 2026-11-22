@@ -9,6 +9,8 @@ export interface SideSheetProps {
   title: ReactNode;
   /** A line under the title. */
   description?: ReactNode;
+  /** Drawn in a tile before the title, as the boards head a drawer. */
+  icon?: ReactNode;
   /** Kept in view at the foot of the sheet: the buttons that finish what it is for. */
   footer?: ReactNode;
   /** `wide` is for a sheet with a table or two columns in it. */
@@ -36,6 +38,7 @@ export function SideSheet({
   onClose,
   title,
   description,
+  icon,
   footer,
   size = "regular",
   width: chosen,
@@ -53,7 +56,7 @@ export function SideSheet({
   return (
     <Base.Root open={shown} onOpenChange={(next: boolean) => !next && onClose()}>
       <Base.Portal>
-        <Base.Backdrop className="fixed inset-0 layer-sheet bg-ink/30 transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
+        <Base.Backdrop className="fixed inset-0 layer-sheet bg-scrim transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Base.Popup
           {...(returnFocus ? { finalFocus: () => returnFocus() ?? true } : {})}
           className={`fixed inset-y-0 layer-sheet flex w-full flex-col border-line bg-surface shadow-modal transition-transform motion-slow ${
@@ -70,19 +73,28 @@ export function SideSheet({
               }
             : {})}
         >
-          <div className="flex items-start justify-between gap-3 border-line border-b px-5 py-4">
-            <div className="flex min-w-0 flex-col gap-1">
-              <span aria-hidden="true" className="h-0.5 w-5 bg-action" />
-              <Base.Title className="m-0 text-title">{title}</Base.Title>
-              {description ? (
-                <Base.Description className="m-0 text-meta text-ink-muted">
-                  {description}
-                </Base.Description>
+          <div className="flex items-center justify-between gap-3 border-line border-b px-5 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              {icon ? (
+                <span
+                  aria-hidden="true"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-control border border-action/30 bg-action-soft text-action"
+                >
+                  {icon}
+                </span>
               ) : null}
+              <div className="flex min-w-0 flex-col">
+                <Base.Title className="m-0 text-title font-semibold">{title}</Base.Title>
+                {description ? (
+                  <Base.Description className="m-0 text-meta text-ink-muted">
+                    {description}
+                  </Base.Description>
+                ) : null}
+              </div>
             </div>
             <Base.Close
               aria-label="Close"
-              className="flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
+              className="flex size-8 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-hover hover:text-ink"
             >
               <X aria-hidden="true" size={16} />
             </Base.Close>

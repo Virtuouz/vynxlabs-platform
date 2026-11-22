@@ -41,13 +41,15 @@ export function Popover({
       <Base.Portal>
         <Base.Positioner side={side} align={align} sideOffset={6} className="layer-popover">
           <Base.Popup
-            className={`rounded-control border border-line text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0 ${
+            className={`rounded-panel border border-line-strong text-ink shadow-overlay transition-[opacity,translate] motion-base data-[ending-style]:opacity-0 data-[starting-style]:-translate-y-1 data-[starting-style]:opacity-0 ${
               wide
                 ? "w-[22rem] max-w-[90vw] overflow-hidden bg-raised p-0"
-                : "max-w-sm bg-surface p-3"
+                : "max-w-sm bg-raised p-3"
             }`}
           >
-            <Base.Title className={titleHidden ? "sr-only" : "m-0 mb-1 text-meta font-semibold"}>
+            <Base.Title
+              className={titleHidden ? "sr-only" : "m-0 mb-1.5 text-body-sm font-semibold"}
+            >
               {title}
             </Base.Title>
             <Base.Description render={<div />} className={wide ? "" : "text-ink-muted"}>

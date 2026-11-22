@@ -10,7 +10,8 @@
     "./icons": "./src/icons.ts"
   },
   "files": [
-    "dist"
+    "dist",
+    "fonts"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node -e \"fs.copyFileSync('src/tokens.css', 'dist/tokens.css')\"",

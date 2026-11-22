@@ -1,4 +1,5 @@
 import { Field } from "@base-ui/react/field";
+import { ChevronDown } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
 import {
   createContext,
@@ -13,7 +14,58 @@ import { TermText } from "./Term.tsx";
 
 /** A control's own box. An invalid one has a danger edge, beside the words that say why. */
 export const control =
-  "h-control w-full rounded-control border border-line-control bg-surface px-3 text-ink placeholder:text-ink-muted/70 disabled:opacity-60 data-[invalid]:border-danger aria-[invalid=true]:border-danger";
+  "h-control w-full rounded-control border border-line-control bg-field px-3 text-ink placeholder:text-ink-muted/70 disabled:opacity-60 data-[invalid]:border-danger aria-[invalid=true]:border-danger";
+
+/** A select's own box: the native control, drawn flat so the chevron beside it is the kit's. */
+const selectControl = `${control} appearance-none pr-8`;
+
+/** The chevron a select shows at its end. It takes no pointer: the select under it does. */
+function Chevron() {
+  return (
+    <ChevronDown
+      aria-hidden="true"
+      size={14}
+      className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-ink-muted"
+    />
+  );
+}
+
+/**
+ * A field whose label sits inside its box, before the value: "Clinic  All".
+ * For a filter bar and other rows of small controls. The label is a real
+ * label, so the control keeps its name; the box takes the focus ring.
+ */
+function InlineFrame({
+  label,
+  hint,
+  error,
+  children,
+  chevron = false,
+}: Omit<Common, "hint"> & { hint: string | undefined; children: ReactNode; chevron?: boolean }) {
+  return (
+    <Field.Root invalid={error !== undefined} className="flex flex-col gap-1">
+      <div className="relative flex h-control items-center gap-2 rounded-control border border-line-control bg-field px-3 text-body-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus has-[[data-invalid]]:border-danger">
+        <Field.Label className="shrink-0 font-normal text-ink-muted">{label}</Field.Label>
+        {children}
+        {chevron ? <Chevron /> : null}
+      </div>
+      {hint ? (
+        <Field.Description className="m-0 text-body-sm text-ink-muted">
+          <TermText>{hint}</TermText>
+        </Field.Description>
+      ) : null}
+      {error ? (
+        <Field.Error match role="alert" className="m-0 text-body-sm text-danger">
+          {error}
+        </Field.Error>
+      ) : null}
+    </Field.Root>
+  );
+}
+
+/** What a control inside an `InlineFrame` is drawn with: no box of its own. */
+const bare =
+  "h-full min-w-0 flex-1 appearance-none bg-transparent text-ink outline-none placeholder:text-ink-muted/70 focus-visible:outline-none disabled:opacity-60";
 
 interface Common {
   label: string;
@@ -25,6 +77,11 @@ interface Common {
    * value makes plain: the label is read, not shown (P4-1).
    */
   labelHidden?: boolean;
+  /**
+   * The label sits inside the box, before the value, as in a filter bar:
+   * "Clinic  All". The hint and the error stay under it.
+   */
+  inline?: boolean;
 }
 
 const Beside = createContext<ReactNode>(null);
@@ -110,9 +167,21 @@ export function TextField({
   error,
   onChange,
   labelHidden = false,
+  inline = false,
   ...input
 }: TextFieldProps) {
   if (labelHidden && input.placeholder === undefined) input.placeholder = label;
+  if (inline) {
+    return (
+      <InlineFrame label={label} hint={hint} error={error}>
+        <Field.Control
+          {...input}
+          className={bare}
+          onChange={(event: ChangeEvent<HTMLInputElement>) => onChange?.(event.currentTarget.value)}
+        />
+      </InlineFrame>
+    );
+  }
   return (
     <FieldFrame
       label={label}
@@ -147,8 +216,31 @@ export function SelectField({
   options,
   onChange,
   labelHidden = false,
+  inline = false,
   ...select
 }: SelectFieldProps) {
+  const choices = options.map((option) => (
+    <option key={option.value} value={option.value}>
+      {option.label}
+    </option>
+  ));
+  if (inline) {
+    return (
+      <InlineFrame label={label} hint={hint} error={error} chevron>
+        <Field.Control
+          render={
+            <select
+              {...select}
+              className={`${bare} pr-6`}
+              onChange={(event) => onChange?.(event.currentTarget.value)}
+            >
+              {choices}
+            </select>
+          }
+        />
+      </InlineFrame>
+    );
+  }
   return (
     <FieldFrame
       label={label}
@@ -157,21 +249,20 @@ export function SelectField({
       required={select.required}
       labelHidden={labelHidden}
     >
-      <Field.Control
-        render={
-          <select
-            {...select}
-            className={control}
-            onChange={(event) => onChange?.(event.currentTarget.value)}
-          >
-            {options.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        }
-      />
+      <div className="relative">
+        <Field.Control
+          render={
+            <select
+              {...select}
+              className={selectControl}
+              onChange={(event) => onChange?.(event.currentTarget.value)}
+            >
+              {choices}
+            </select>
+          }
+        />
+        <Chevron />
+      </div>
     </FieldFrame>
   );
 }

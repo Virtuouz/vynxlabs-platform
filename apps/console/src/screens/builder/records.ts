@@ -5,10 +5,16 @@
  * they should become, with the pages it also adds. The editor applies one as a
  * single step that Undo takes back whole.
  */
-import { displayGuess, type Page, type PageFilter, type PageWidget } from "@volvel/manifest";
+import {
+  displayGuess,
+  type Page,
+  type PageFilter,
+  type PageWidget,
+  topLevel,
+} from "@volvel/manifest";
 import { bindFilter, type Catalog, heading, newId, visualOf } from "../../kit/inspector/model.ts";
 import type { Action, Condition, Step } from "./contract.ts";
-import { uniquePageId } from "./pageKinds.ts";
+import { kindOf, uniquePageId } from "./pageKinds.ts";
 
 // ----- What a table is -----
 
@@ -106,6 +112,10 @@ export const isRowsWidget = (widget: PageWidget): boolean =>
 
 // ----- What a change is -----
 
+/** The row under the lowest widget on the page's own grid (what is in a container is on the container's). */
+export const bottomOf = (widgets: readonly PageWidget[]): number =>
+  topLevel(widgets).reduce((low, one) => Math.max(low, one.at.y + one.at.h), 0);
+
 /** What a builder change makes of a page: its widgets and filters, the pages it adds, and what it says. */
 export interface Edit {
   widgets: PageWidget[];
@@ -184,23 +194,39 @@ export function makeDetail(
   table: TableInfo,
   pages: readonly Page[],
 ): { page: Page; click: Action } {
-  const noun = oneOf(table.name);
-  const title = `${noun} detail`;
+  const title = `${oneOf(table.name)} detail`;
   const id = uniquePageId(pages, `${singular(table.name)}-detail`);
+  const rowActions =
+    (list.config?.rowActions as
+      | { id: string; label: string; tone?: string; action: Action }[]
+      | undefined) ?? [];
+  const detail = detailWidget(table, title, { x: 0, y: 0, w: 12, h: 12 }, rowActions);
+  return {
+    page: { id, title, kind: "sheet", record: { table: table.name }, widgets: [detail] },
+    click: openRecord(id),
+  };
+}
+
+/**
+ * A Record detail of one record of the table: the heading, the status and every column as
+ * a field, and `rowActions` (written for a clicked row) as its own actions, read on the record.
+ */
+export function detailWidget(
+  table: TableInfo,
+  title: string,
+  at: PageWidget["at"],
+  rowActions: readonly { id: string; label: string; tone?: string; action: Action }[] = [],
+): PageWidget {
   const shown = table.columns.filter(
     (column) => !isSystem(column.name) || column.name === "created_at",
   );
   const heading_ = displayGuess(table.columns) ?? shown[0]?.name ?? "id";
   const status = table.columns.find((column) => column.type === "enum")?.name;
-  const rowActions =
-    (list.config?.rowActions as
-      | { id: string; label: string; tone?: string; action: Action }[]
-      | undefined) ?? [];
-  const detail: PageWidget = {
+  return {
     id: "detail",
     type: "core/detail",
     title,
-    at: { x: 0, y: 0, w: 12, h: 12 },
+    at,
     data: { record: { source: { record: "this" } } },
     config: {
       heading: heading_,
@@ -219,10 +245,6 @@ export function makeDetail(
           }
         : {}),
     },
-  };
-  return {
-    page: { id, title, kind: "sheet", record: { table: table.name }, widgets: [detail] },
-    click: openRecord(id),
   };
 }
 
@@ -343,6 +365,39 @@ export function formWidget(plan: FormPlan, id: string, at: PageWidget["at"]): Pa
   };
 }
 
+/** The modal a form opens in: a page of its own, on a record when it edits one. */
+export function formModal(plan: FormPlan, pages: readonly Page[]): Page {
+  return {
+    id: uniquePageId(pages, plan.title),
+    title: plan.title,
+    kind: "modal",
+    ...(plan.mode === "edit" ? { record: { table: plan.table.name } } : {}),
+    widgets: [formWidget(plan, "form", { x: 0, y: 0, w: 12, h: 10 })],
+  };
+}
+
+/** A button that opens a page, on this record when it is passed along. */
+export function openButton(
+  id: string,
+  label: string,
+  page: string,
+  at: PageWidget["at"],
+  onThisRecord_ = false,
+): PageWidget {
+  return {
+    id,
+    type: "core/button",
+    title: label,
+    at,
+    config: { label, tone: "primary" },
+    on: {
+      click: {
+        steps: [{ do: "open", page, ...(onThisRecord_ ? { record: "this" as const } : {}) }],
+      },
+    },
+  };
+}
+
 /**
  * "Add a form": the form; for a modal, the page it opens as and a button on
  * this page that opens it. An edit form opens on the record, so its button is
@@ -353,7 +408,7 @@ export function formEdit(context: PageContext, plan: FormPlan): Edit {
   const table = plan.table.name;
   if (plan.where === "page") {
     const id = newId("core/form", widgets);
-    const y = widgets.reduce((low, one) => Math.max(low, one.at.y + one.at.h), 0);
+    const y = bottomOf(widgets);
     return {
       widgets: [...widgets, formWidget(plan, id, { x: 0, y, w: 12, h: 10 })],
       filters: [...context.filters],
@@ -362,14 +417,8 @@ export function formEdit(context: PageContext, plan: FormPlan): Edit {
       told: `The form for ${manyOf(table)} is added at the end of the page.`,
     };
   }
-  const pageId = uniquePageId(pages, plan.title);
-  const modal: Page = {
-    id: pageId,
-    title: plan.title,
-    kind: "modal",
-    ...(plan.mode === "edit" ? { record: { table } } : {}),
-    widgets: [formWidget(plan, "form", { x: 0, y: 0, w: 12, h: 10 })],
-  };
+  const modal = formModal(plan, pages);
+  const pageId = modal.id;
   const opensOnRecord = plan.mode === "edit";
   const hereHasRecord = context.page.record?.table === table;
   const addButton = !opensOnRecord || hereHasRecord;
@@ -377,21 +426,8 @@ export function formEdit(context: PageContext, plan: FormPlan): Edit {
   let select: string | undefined;
   if (addButton) {
     const id = newId("core/button", widgets);
-    const y = widgets.reduce((low, one) => Math.max(low, one.at.y + one.at.h), 0);
-    next.push({
-      id,
-      type: "core/button",
-      title: plan.title,
-      at: { x: 0, y, w: 3, h: 1 },
-      config: { label: plan.title, tone: "primary" },
-      on: {
-        click: {
-          steps: [
-            { do: "open", page: pageId, ...(opensOnRecord ? { record: "this" as const } : {}) },
-          ],
-        },
-      },
-    });
+    const y = bottomOf(widgets);
+    next.push(openButton(id, plan.title, pageId, { x: 0, y, w: 3, h: 1 }, opensOnRecord));
     select = id;
   }
   return {
@@ -419,11 +455,26 @@ export function markable(table: TableInfo): { column: string; value: string } | 
   return undefined;
 }
 
-export type Suggestion =
+export type Suggestion = { hint: string } & (
+  | { key: "search"; label: string; columns: string[] }
   | { key: "detail"; label: string; widget: PageWidget }
   | { key: "form"; label: string }
   | { key: "mark"; label: string; column: string; value: string }
-  | { key: "filter"; label: string; column: string };
+  | { key: "filter"; label: string; column: string }
+  | { key: "group"; label: string; ids: string[] }
+  | { key: "section"; label: string; ids: string[] }
+);
+
+/** The columns of the table a search looks in: the ones that hold words. */
+export const textColumns = (table: TableInfo): string[] =>
+  table.columns
+    .filter(
+      (column) => (column.type === "text" || column.type === "long_text") && !isSystem(column.name),
+    )
+    .map((column) => column.name);
+
+/** The most buttons an Action group holds. */
+export const GROUP_MAX = 8;
 
 /** The table the page is about: the one most of it reads, or the one it opens on. */
 export function pageTable(context: PageContext, mostRead: string | undefined): string | undefined {
@@ -437,16 +488,42 @@ export function suggestionsFor(context: PageContext, table: TableInfo | undefine
   const out: Suggestion[] = [];
   const noun = oneOf(table.name);
   const onRecord = page.record?.table === table.name;
+  const reads = widgets.some((widget) => tableOf(widget) === table.name);
+  const words = textColumns(table);
+  if (
+    kindOf(page) === "page" &&
+    reads &&
+    words.length > 0 &&
+    !filters.some((one) => one.type === "search")
+  ) {
+    out.push({
+      key: "search",
+      label: `Search ${manyOf(table.name).toLowerCase()}`,
+      columns: words,
+      hint: `A search bar over ${words.slice(0, 3).join(", ")}`,
+    });
+  }
   const rows = withoutRowClick(widgets, table.name)[0];
   if (rows && !detailPageFor(pages, table.name)) {
-    out.push({ key: "detail", label: `${noun} detail`, widget: rows });
+    out.push({
+      key: "detail",
+      label: `${noun} detail`,
+      widget: rows,
+      hint: "A side sheet a click on a row opens",
+    });
   }
   const hasForm = pages.some(
     (one) =>
       one.kind === "modal" &&
       one.widgets.some((widget) => widget.type === "core/form" && tableOf(widget) === table.name),
   );
-  if (!hasForm) out.push({ key: "form", label: `New ${noun.toLowerCase()} form` });
+  if (!hasForm) {
+    out.push({
+      key: "form",
+      label: `New ${noun.toLowerCase()} form`,
+      hint: "A button that opens a form",
+    });
+  }
   const mark = markable(table);
   if (mark) {
     const label = `Mark ${mark.value.toLowerCase()}`;
@@ -462,7 +539,14 @@ export function suggestionsFor(context: PageContext, table: TableInfo | undefine
         );
     const canPlace =
       onRecord || widgets.some((widget) => isRowsWidget(widget) && tableOf(widget) === table.name);
-    if (!there && canPlace) out.push({ key: "mark", label: `${label} button`, ...mark });
+    if (!there && canPlace) {
+      out.push({
+        key: "mark",
+        label: `${label} button`,
+        ...mark,
+        hint: onRecord ? "A button on the record" : "A button on each row",
+      });
+    }
   }
   const status = table.columns.find((column) => column.type === "enum");
   if (
@@ -471,7 +555,30 @@ export function suggestionsFor(context: PageContext, table: TableInfo | undefine
     !filters.some((one) => one.name === status.name || one.from?.column === status.name) &&
     widgets.some((widget) => tableOf(widget) === table.name)
   ) {
-    out.push({ key: "filter", label: `${heading(status.name)} filter`, column: status.name });
+    out.push({
+      key: "filter",
+      label: `${heading(status.name)} filter`,
+      column: status.name,
+      hint: `Narrow the page by ${status.name.replace(/_/g, " ")}`,
+    });
+  }
+  const buttons = topLevel(widgets).filter((widget) => widget.type === "core/button");
+  if (buttons.length >= 2 && buttons.length <= GROUP_MAX) {
+    out.push({
+      key: "group",
+      label: "Group the buttons",
+      ids: buttons.map((one) => one.id),
+      hint: `One toolbar for ${buttons.length} buttons`,
+    });
+  }
+  const stats = topLevel(widgets).filter((widget) => widget.type === "core/stat");
+  if (stats.length >= 2) {
+    out.push({
+      key: "section",
+      label: "A section for the numbers",
+      ids: stats.map((one) => one.id),
+      hint: `Holds the ${stats.length} numbers under a heading`,
+    });
   }
   return out;
 }
@@ -494,7 +601,7 @@ export function markAction(mark: { column: string; value: string }, of: "event" 
 /** Applies a suggestion that needs nothing asked. The form is the one that asks, in its dialog. */
 export function suggestionEdit(
   context: PageContext,
-  suggestion: Exclude<Suggestion, { key: "form" }>,
+  suggestion: Extract<Suggestion, { key: "detail" | "mark" | "filter" }>,
   table: TableInfo,
   catalog: Catalog,
 ): Edit {
@@ -517,7 +624,7 @@ export function suggestionEdit(
   const label = `Mark ${suggestion.value.toLowerCase()}`;
   if (page.record?.table === table.name) {
     const id = newId("core/button", widgets);
-    const y = widgets.reduce((low, one) => Math.max(low, one.at.y + one.at.h), 0);
+    const y = bottomOf(widgets);
     return {
       widgets: [
         ...widgets,

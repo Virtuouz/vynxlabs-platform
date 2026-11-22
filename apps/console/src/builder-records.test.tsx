@@ -354,13 +354,13 @@ test("Add to page suggests what follows from the table the page shows, each corr
   const suggestions = async () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
     const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
-    return within(await dialog.findByRole("region", { name: "Next steps" }));
+    return within(await dialog.findByRole("region", { name: "Suggested for Invoices" }));
   };
   let next = await suggestions();
-  expect(next.getByText("Invoices")).toBeTruthy();
-  expect(next.getByRole("button", { name: "Invoice detail" })).toBeTruthy();
-  expect(next.getByRole("button", { name: "New invoice form" })).toBeTruthy();
-  fireEvent.click(next.getByRole("button", { name: "Mark paid button" }));
+  expect(next.getByRole("heading", { name: "Suggested for Invoices" })).toBeTruthy();
+  expect(next.getByRole("button", { name: /^Invoice detail/ })).toBeTruthy();
+  expect(next.getByRole("button", { name: /^New invoice form/ })).toBeTruthy();
+  fireEvent.click(next.getByRole("button", { name: /^Mark paid button/ }));
   // On a page of rows the button belongs to each row, and does what the row says.
   await saved((body) => body.pages[0]?.widgets[0]?.config?.rowActions !== undefined);
   expect(pageOf("money")?.widgets[0]?.config?.rowActions).toMatchObject([
@@ -370,8 +370,8 @@ test("Add to page suggests what follows from the table the page shows, each corr
     },
   ]);
   next = await suggestions();
-  expect(next.queryByRole("button", { name: "Mark paid button" })).toBeNull();
-  fireEvent.click(next.getByRole("button", { name: "Status filter" }));
+  expect(next.queryByRole("button", { name: /^Mark paid button/ })).toBeNull();
+  fireEvent.click(next.getByRole("button", { name: /^Status filter/ }));
   await saved((body) => filtersOf(body.pages[0]?.widgets ?? []).length === 1);
   expect(filtersOf(pageOf("money")?.widgets ?? [])[0]).toEqual({
     name: "status",
@@ -382,9 +382,7 @@ test("Add to page suggests what follows from the table the page shows, each corr
   // The table is narrowed by it.
   expect(
     pageOf("money")?.widgets.find((one) => one.type === "core/table")?.data?.rows?.filters,
-  ).toEqual([
-    { filter: "status", column: "status" },
-  ]);
+  ).toEqual([{ filter: "status", column: "status" }]);
 });
 
 test("what is written is the same when it is made without the screen", () => {

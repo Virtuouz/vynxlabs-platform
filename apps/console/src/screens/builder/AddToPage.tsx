@@ -1,4 +1,4 @@
-import { Button, Dialog, Kbd, TextField } from "@volvel/ui";
+import { Dialog, Kbd, TextField } from "@volvel/ui";
 import {
   CATEGORIES,
   CATEGORY_TITLES,
@@ -16,6 +16,7 @@ import {
   MousePointerClick,
   PanelRight,
   Puzzle,
+  Sparkles,
   Table,
   Type,
 } from "lucide-react";
@@ -66,7 +67,7 @@ export function AddToPage({
   /** "This page shows Invoices. Common next steps: …": what is worth adding to what the page shows. */
   suggestions?: {
     table: string;
-    items: readonly { key: string; label: string }[];
+    items: readonly { key: string; label: string; hint?: string }[];
     onPick: (key: string) => void;
   };
 }) {
@@ -84,9 +85,38 @@ export function AddToPage({
       .toLowerCase()
       .includes(needle);
   const found = offeredOn(surface).filter(matches);
+  // The suggestions come first, and the search narrows them as it does the widgets.
+  const suggested = (suggestions?.items ?? []).filter(
+    (item) =>
+      needle === "" ||
+      [item.label, item.hint ?? "", suggestions?.table ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(needle),
+  );
   const add = (definition: WidgetDefinition) => {
     onAdd(definition);
     setSearch("");
+  };
+  const pick = (key: string) => {
+    suggestions?.onPick(key);
+    setSearch("");
+  };
+  /** The arrow keys walk the list, from the search field down and back: what is chosen is entered. */
+  const walk = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    const here = event.target as HTMLElement;
+    const stops = [
+      ...event.currentTarget.querySelectorAll<HTMLElement>(
+        "input[name=add-to-page-search], button[data-add-item]",
+      ),
+    ];
+    const at = stops.indexOf(here);
+    if (at < 0) return;
+    const to = stops[at + (event.key === "ArrowDown" ? 1 : -1)];
+    if (!to) return;
+    event.preventDefault();
+    to.focus();
   };
   /** A press on a widget in the list that travels is a carry, not a click. A finger scrolls the list instead. */
   const pickUp = (event: React.PointerEvent<HTMLButtonElement>, definition: WidgetDefinition) => {
@@ -117,14 +147,17 @@ export function AddToPage({
       title="Add to page"
       size="palette"
     >
-      <div className="flex flex-col gap-4">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: the arrow keys walk the buttons inside; each is reachable by Tab as well */}
+      <div className="flex flex-col gap-4" onKeyDown={walk}>
         <div className="flex items-end gap-2">
           <form
             className="min-w-0 flex-1"
             onSubmit={(event) => {
               event.preventDefault();
-              const first = found[0];
-              if (first) add(first);
+              const [first] = suggested;
+              if (first) return pick(first.key);
+              const [one] = found;
+              if (one) add(one);
             }}
           >
             <TextField
@@ -138,24 +171,39 @@ export function AddToPage({
           </form>
           <Kbd>esc</Kbd>
         </div>
-        {suggestions && suggestions.items.length > 0 && needle === "" ? (
-          <section aria-label="Next steps" className="flex flex-col gap-2">
-            <p className="m-0 text-body-sm text-ink-muted">
-              This page shows <strong className="font-medium text-ink">{suggestions.table}</strong>.
-              Common next steps:
-            </p>
-            <ul className="m-0 flex list-none flex-wrap gap-2 p-0">
-              {suggestions.items.map((item) => (
+        {suggestions && suggested.length > 0 ? (
+          <section
+            aria-label={`Suggested for ${suggestions.table}`}
+            className="flex flex-col gap-1"
+          >
+            <h3 className="m-0 text-label text-ink-subtle uppercase">
+              Suggested for {suggestions.table}
+            </h3>
+            <ul className="m-0 flex list-none flex-col p-0">
+              {suggested.map((item) => (
                 <li key={item.key}>
-                  <Button size="small" onClick={() => suggestions.onPick(item.key)}>
-                    {item.label}
-                  </Button>
+                  <button
+                    type="button"
+                    data-add-item=""
+                    onClick={() => pick(item.key)}
+                    className="flex w-full items-center gap-3 rounded-control px-2 py-2 text-left hover:bg-action-soft"
+                  >
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-control border border-line text-ink-muted">
+                      <Sparkles aria-hidden="true" size={16} />
+                    </span>
+                    <span className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+                      <span className="font-medium text-ink">{item.label}</span>
+                      {item.hint ? (
+                        <span className="truncate text-body-sm text-ink-muted">{item.hint}</span>
+                      ) : null}
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>
           </section>
         ) : null}
-        {found.length === 0 ? (
+        {found.length === 0 && suggested.length === 0 ? (
           <p className="m-0 text-ink-muted">
             Nothing here is called that. Try a word for what it shows, such as “chart” or “records”.
           </p>
@@ -180,6 +228,7 @@ export function AddToPage({
                       <li key={definition.type}>
                         <button
                           type="button"
+                          data-add-item=""
                           onClick={() => add(definition)}
                           onPointerDown={(event) => pickUp(event, definition)}
                           draggable={false}

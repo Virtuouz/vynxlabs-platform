@@ -245,7 +245,11 @@ test("a side sheet is previewed with a sample record, and another can be chosen"
   await open();
   fireEvent.click(screen.getByRole("button", { name: /Invoice detail\s*Side sheet/ }));
   expect(await screen.findByText(/Preview of/)).toBeTruthy();
-  expect(screen.getByText(/Preview of/).textContent).toBe("Preview of Invoice detail for INV-9339");
+  // One quiet line, with the record chosen in place.
+  expect(screen.getByText(/Preview of/).textContent).toBe("Preview of Invoice detail for");
+  expect((screen.getByLabelText("Preview with another record") as HTMLSelectElement).value).toBe(
+    "r1",
+  );
   // The page is drawn at a sheet's width, and its widgets are read for that record.
   expect(document.querySelector("[data-page-kind=sheet]")).toBeTruthy();
   await waitFor(() =>
@@ -261,7 +265,9 @@ test("a side sheet is previewed with a sample record, and another can be chosen"
       calls.some((call) => call.url.includes("/widget-data") && call.url.includes("record=r2")),
     ).toBe(true),
   );
-  expect(screen.getByText(/Preview of/).textContent).toBe("Preview of Invoice detail for INV-9340");
+  expect((screen.getByLabelText("Preview with another record") as HTMLSelectElement).value).toBe(
+    "r2",
+  );
 });
 
 test("a table that does nothing on a click can be made to open an Invoice detail, which makes the sheet and the click", async () => {

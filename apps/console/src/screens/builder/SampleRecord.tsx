@@ -83,23 +83,29 @@ export function SampleBar({
       </p>
     );
   }
+  // One quiet line: "Preview of Invoice detail for [INV-9339 ▾]", the record chosen in place.
   return (
-    <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-      <p className="m-0 text-body-sm text-ink-muted">
-        Preview of <strong className="font-medium text-ink">{page.title}</strong> for{" "}
-        <strong className="font-medium text-ink">{sample.name}</strong>
+    <div className="mb-3 flex flex-wrap items-center gap-2 text-body-sm text-ink-muted">
+      <p className="m-0">
+        Preview of <strong className="font-medium text-ink">{page.title}</strong>
+        {sample.items.length > 1 ? " for" : null}
       </p>
       {sample.items.length > 1 ? (
-        <div className="w-60 max-w-full">
+        <div className="w-44 max-w-full">
           <SelectField
             label="Preview with another record"
+            labelHidden
             name="sample-record"
             value={sample.record}
             options={sample.items.map((one) => ({ value: one.id, label: one.label }))}
             onChange={onChoose}
           />
         </div>
-      ) : null}
+      ) : (
+        <p className="m-0">
+          for <strong className="font-medium text-ink">{sample.name}</strong>
+        </p>
+      )}
     </div>
   );
 }

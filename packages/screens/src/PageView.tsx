@@ -740,7 +740,8 @@ function Cell({
       ) : building && seenByTag(widget.rules, ctx.groupNames) ? (
         <span
           data-seen-by=""
-          className="pointer-events-none absolute top-1 left-1 rounded-inner bg-sunken px-1.5 text-meta text-ink-muted"
+          // On the top edge, as a label on it, so that it is not over the widget's own heading or its chip.
+          className="pointer-events-none absolute top-0 left-3 layer-sticky -translate-y-1/2 rounded-inner border border-line bg-surface px-1.5 text-meta leading-4 text-ink-muted"
         >
           {seenByTag(widget.rules, ctx.groupNames)}
         </span>

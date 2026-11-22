@@ -354,7 +354,12 @@ function ActionRows({
       noun,
       "-",
     );
-    put([...list, { id, label: firstLabel, action: { steps: [] } }], `adding ${noun}`);
+    // Each is named apart from the others ("Action", "Action 2"), so that they can be told apart
+    // in the table, in the outline and in a screen reader before anyone has named them.
+    const taken = new Set(list.map((one) => one.label));
+    let label = firstLabel;
+    for (let n = 2; taken.has(label); n += 1) label = `${firstLabel} ${n}`;
+    put([...list, { id, label, action: { steps: [] } }], `adding ${noun}`);
     openAction(env.widget.id, { name, id });
   };
   return (
@@ -422,7 +427,7 @@ export function ActionSubView({ env }: { env: Env }) {
         env={env}
         id={`${env.widget.id}-${one.id}`}
         label={
-          !one.label || one.label === "Action" || one.label === "Button"
+          !one.label || /^(Action|Button)( \d+)?$/.test(one.label)
             ? "What it does"
             : `What ${one.label} does`
         }

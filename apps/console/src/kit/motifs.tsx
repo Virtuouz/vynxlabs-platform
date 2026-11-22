@@ -10,11 +10,12 @@ export type JunctionKind = "here" | "production" | "pending" | "plain" | "danger
 export function Junction({ kind, size = 7 }: { kind: JunctionKind; size?: 5 | 7 }) {
   const box = size === 5 ? "size-[5px]" : "size-[7px]";
   const look: Record<JunctionKind, string> = {
-    here: "bg-action",
+    // Forced colors takes every fill away: the dot keeps its own.
+    here: "bg-action forced-colors:forced-color-adjust-none",
     production: "border border-attention",
     pending: "border border-dashed border-action",
     plain: "border border-line-strong",
-    danger: "bg-danger",
+    danger: "bg-danger forced-colors:forced-color-adjust-none",
   };
   return (
     <span

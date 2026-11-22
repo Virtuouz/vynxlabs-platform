@@ -184,3 +184,24 @@ test("one refusal said by the save and by the deploy is one line, and it links t
   expect(refused).toHaveLength(1);
   expect(refused[0]?.at).toEqual({ page: "edit", widget: "form" });
 });
+
+test("a row action with no words and no icon is refused, and named in the check", () => {
+  const table: PageWidget = {
+    id: "t",
+    type: "core/table",
+    title: "Invoices",
+    at: { x: 0, y: 0, w: 12, h: 8 },
+    config: {
+      rowActions: [
+        { id: "a", label: "Mark paid", action: { steps: [] } },
+        { id: "b", label: "", action: { steps: [] } },
+      ],
+    },
+  };
+  const items = run(body(table));
+  expect(items.find((one) => one.id === "unnamed")).toMatchObject({
+    state: "fail",
+    text: "1 button with no label",
+    at: { page: "edit", widget: "t" },
+  });
+});

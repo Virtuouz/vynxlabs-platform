@@ -220,6 +220,34 @@ export function checksFor(input: {
     );
   }
 
+  // Buttons and row actions say what they do: one with no words and no icon is a button nobody can name.
+  const unnamed = every.flatMap(({ page, widget }) =>
+    (["rowActions", "buttons"] as const).flatMap((key) => {
+      const list = widget.config?.[key];
+      if (!Array.isArray(list)) return [];
+      return list.flatMap((one: { label?: unknown; icon?: unknown }) =>
+        (typeof one.label !== "string" || one.label.trim() === "") && !one.icon
+          ? [{ page, widget, key }]
+          : [],
+      );
+    }),
+  );
+  if (unnamed.length > 0) {
+    const first = unnamed[0];
+    items.push({
+      id: "unnamed",
+      state: "fail",
+      text: `${plural(unnamed.length, "button")} with no label`,
+      detail: sentence(
+        unnamed.map(
+          (one) =>
+            `${one.key === "rowActions" ? "a row action" : "a button"} of ${nameOf(one.widget, definitionOf(one.widget.type))}, on ${one.page.title}`,
+        ),
+      ),
+      ...(first ? { at: { page: first.page.id, widget: first.widget.id } } : {}),
+    });
+  }
+
   // Forms: each has a table, and asks for columns it has.
   for (const { page, widget } of every.filter((one) => one.widget.type === "core/form")) {
     // "New invoice form": named by what it is on, the page, when it has no title of its own.

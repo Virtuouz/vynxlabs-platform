@@ -9,13 +9,16 @@ import { Tooltip } from "./Tooltip.tsx";
  * "+ Add a step".
  */
 const styles = {
-  primary: "bg-action text-action-ink font-semibold hover:brightness-110",
+  primary:
+    "bg-action text-action-ink font-semibold hover:brightness-110 forced-colors:border-2 forced-colors:border-[ButtonText]",
   secondary: "border border-line-strong bg-transparent text-ink hover:bg-hover",
   quiet: "text-ink hover:bg-hover",
   danger: "border border-danger/50 text-danger hover:bg-danger-soft",
-  "danger-solid": "bg-danger text-action-ink font-semibold hover:brightness-110",
+  "danger-solid":
+    "bg-danger text-action-ink font-semibold hover:brightness-110 forced-colors:border-2 forced-colors:border-[ButtonText]",
   /** Reserved for the one action that changes production. */
-  promote: "bg-attention text-canvas font-semibold hover:brightness-110",
+  promote:
+    "bg-attention text-canvas font-semibold hover:brightness-110 forced-colors:border-2 forced-colors:border-[ButtonText]",
   dashed:
     "border border-dashed border-line-strong bg-transparent text-ink-muted hover:bg-hover hover:text-ink",
 };
@@ -70,7 +73,7 @@ const classesOf = (
 ) => {
   const variant =
     named in ALIASES ? ALIASES[named as keyof typeof ALIASES] : (named as keyof typeof styles);
-  return `inline-flex items-center justify-center rounded-control text-body-sm font-medium whitespace-nowrap no-underline transition-[background-color,filter] motion-fast active:brightness-95 disabled:opacity-50 disabled:pointer-events-none aria-disabled:opacity-50 aria-disabled:pointer-events-none ${SIZES[size]} ${styles[variant]} ${extra}`;
+  return `inline-flex items-center justify-center rounded-control text-body-sm font-medium whitespace-nowrap no-underline transition-[background-color,filter] motion-fast active:brightness-95 disabled:opacity-50 disabled:pointer-events-none aria-disabled:opacity-50 aria-disabled:pointer-events-none forced-colors:disabled:border-2 forced-colors:disabled:border-[GrayText] forced-colors:disabled:text-[GrayText] forced-colors:aria-disabled:border-2 forced-colors:aria-disabled:border-[GrayText] forced-colors:aria-disabled:text-[GrayText] ${SIZES[size]} ${styles[variant]} ${extra}`;
 };
 
 export function Button({ tooltip, keys, ...props }: ButtonProps) {

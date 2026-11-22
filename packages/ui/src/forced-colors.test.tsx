@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
+import { Button } from "./Button.tsx";
 import { TilePicker } from "./drawer/Choices.tsx";
 
 // Phase 28, K1: in forced colors (Windows high contrast) every fill is gone, so what is chosen must
@@ -43,4 +44,17 @@ test("a tile that is chosen says so to the stylesheet, not only by its fill", ()
   );
   expect(screen.getByText("Beta").closest("label")?.hasAttribute("data-selected")).toBe(true);
   expect(screen.getByText("Alpha").closest("label")?.hasAttribute("data-selected")).toBe(false);
+});
+
+test("a solid button keeps an edge in forced colors, and a disabled one says so by its edge too", () => {
+  render(
+    <>
+      <Button variant="primary">Go</Button>
+      <Button variant="primary" disabled>
+        Off
+      </Button>
+    </>,
+  );
+  expect(screen.getByText("Go").className).toContain("forced-colors:border-[ButtonText]");
+  expect(screen.getByText("Off").className).toContain("forced-colors:disabled:border-[GrayText]");
 });

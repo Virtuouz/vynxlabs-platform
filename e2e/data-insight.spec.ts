@@ -182,10 +182,10 @@ test("an enum column is added, given colours that can be read, and chosen from i
   const values = page.getByRole("dialog", { name: "Values of status" });
   const late = values.getByRole("listitem").filter({ has: page.locator('input[value="late"]') });
   await late.getByLabel("Shown as").fill("Overdue");
-  await late.getByLabel("Colour").selectOption("custom");
+  await late.getByLabel("Color").selectOption("custom");
   await late.getByLabel("As #rrggbb").fill("#fde047");
   const out = values.getByRole("listitem").filter({ has: page.locator('input[value="out"]') });
-  await out.getByLabel("Colour").selectOption("blue");
+  await out.getByLabel("Color").selectOption("blue");
   await values.getByRole("button", { name: "Save" }).click();
   await expect(values).toBeHidden();
 

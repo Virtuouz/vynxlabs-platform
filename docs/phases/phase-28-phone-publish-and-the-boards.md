@@ -1,6 +1,6 @@
 # Phase 28: the builder looks and works as the boards draw it, on a phone too, and is published after a check
 
-Status: in progress, on branch `phase-28-the-boards`, off `phase-27-composition` at `922bc9e`.
+Status: built, on branch `phase-28-the-boards`, off `phase-27-composition` at `922bc9e`. Waiting for the owner's first look.
 Last updated: 2026-11-22
 
 The roadmap's last phase:
@@ -389,7 +389,16 @@ Also walked: by keyboard alone from making an app to publishing it; drags on the
 
 ## The full suites
 
-To be filled in when they have run.
+On 2026-11-22, on the final build.
+- `pnpm test`: 3,050 passed, 2 skipped, none failed.
+- `pnpm e2e` on a fresh instance set up as CI does: 187 passed, 4 failed, 2 skipped, and 8 did not run (the tests after a failure in the same file). The four, each looked into:
+  - a pivot of loans: the test read "out", and choices are now said "Out";
+  - a choice column's colors: the test looked for "Colour", and the label is "Color";
+  - a documentation page's details: the test read the page's top, which the editor folds as it opens, so it passed or not by timing; it opens the fold first;
+  - Runs at 1440: its sentence took a row of its own when "Updated 06:52" was added to it, while the page was not live. It stays on one line. The reference picture was right and is unchanged.
+- Those four files rerun on a fresh instance after the fixes: all pass (29), so do the 8 that had not run.
+- **Pictures:** the 92 of `redesign`, and the 12 of `wide` and `tenant-apps` that the owner accepted, as they were.
+- `docs:check` (43.0 % of the kinds' fields described), `check:schemas`, Biome and the type checks pass.
 
 ## After the owner's first look
 

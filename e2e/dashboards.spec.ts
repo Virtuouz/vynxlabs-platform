@@ -328,8 +328,8 @@ test("a pivot of loans by month and status is built from menus, with no SQL writ
   await closeSetting(page, rows);
   const pivot = page.locator("section[data-selected]");
   // In the last 30 days: two out, one late, three in all.
-  await expect(pivot).toContainText("out");
-  await expect(pivot).toContainText("late");
+  await expect(pivot).toContainText("Out");
+  await expect(pivot).toContainText("Late");
   await expect(pivot).toContainText("3");
   const stored = await call(page, "GET", `${W}/dashboards/${board}`);
   const made = stored.body.widgets.find((one: { type: string }) => one.type === "core/pivot");

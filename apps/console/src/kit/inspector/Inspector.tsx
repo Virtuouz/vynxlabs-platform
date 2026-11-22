@@ -38,6 +38,7 @@ import {
   heading,
   isShown,
   type ScriptChoice,
+  type TabFate,
   tabCount,
   tabsOf,
   visualOf,
@@ -69,6 +70,16 @@ export interface InspectorProps {
   scripts?: readonly ScriptChoice[];
   /** The names of the groups of members, for "the current user is in …". */
   groups?: readonly string[];
+  /** Every widget of the page, this one included: a filter followed or a tab removed reaches the others. */
+  widgets?: readonly PageWidget[];
+  /** Writes the page's widgets as they should now be, for a change that reaches more than this widget. */
+  onChangeWidgets?: (next: PageWidget[], label: string, key?: string) => void;
+  /** Takes back the last step: offered beside what is removed. */
+  onUndo?: () => void;
+  /** Adds a Search and filter widget at the top of the page. Left out where the page cannot. */
+  onAddFilters?: () => void;
+  /** Removes a tab of this container with what it held moved or removed; the container editor's own, when it has one. */
+  onRemoveTab?: (tab: string, fate: TabFate) => void;
 }
 
 const lower = (text: string) => text.charAt(0).toLowerCase() + text.slice(1);
@@ -129,6 +140,16 @@ export function Inspector(props: InspectorProps) {
     flows: props.flows ?? [],
     scripts: props.scripts ?? [],
     groups: props.groups ?? [],
+    widgets: props.widgets ?? [widget, ...(props.neighbours ?? [])],
+    writeAll:
+      props.onChangeWidgets ??
+      ((next, label, key) => {
+        const mine = next.find((one) => one.id === widget.id);
+        if (mine) props.onChange(mine, label, key);
+      }),
+    undo: props.onUndo,
+    addFilters: props.onAddFilters,
+    onRemoveTab: props.onRemoveTab,
   };
   const tabs = tabsOf(definition);
 

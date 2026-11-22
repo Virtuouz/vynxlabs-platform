@@ -796,13 +796,39 @@ export function PageView({
       const held = byId.get(id);
       const node = gridRef.current;
       if (!node || (held && isContainer(held, roles))) return [];
-      return [...node.querySelectorAll<HTMLElement>("[data-grid-in]")].map((grid) => ({
+      const grids = [...node.querySelectorAll<HTMLElement>("[data-grid-in]")].map((grid) => ({
         into: {
           widget: grid.dataset.gridIn as string,
           ...(grid.dataset.gridTab !== undefined ? { tab: grid.dataset.gridTab } : {}),
         },
         node: grid,
       }));
+      // Each tab of a Tabs that is not open, by its name in the strip: held over, it opens.
+      const headers = grids.flatMap((grid) => {
+        const container = byId.get(grid.into.widget);
+        const cell = grid.node.closest<HTMLElement>("[data-widget-cell]");
+        if (!container || !cell) return [];
+        const names = [...cell.querySelectorAll<HTMLElement>('[role="tab"]')];
+        return tabsOf(container).flatMap((tab, index) => {
+          const header = names[index];
+          return header && tab.id !== grid.into.tab
+            ? [
+                {
+                  into: { widget: container.id, tab: tab.id },
+                  node: grid.node,
+                  header,
+                  bottom: childrenOf(widgets, container.id, tab.id)
+                    .filter((one) => one.id !== id)
+                    .reduce((low, one) => Math.max(low, one.at.y + one.at.h), 0),
+                },
+              ]
+            : [];
+        });
+      });
+      return [...grids, ...headers];
+    },
+    onOpen: (into) => {
+      if (into.tab) chooseTab(into.widget, into.tab);
     },
     onMove: editing
       ? (id, at, _by, how, into) => {

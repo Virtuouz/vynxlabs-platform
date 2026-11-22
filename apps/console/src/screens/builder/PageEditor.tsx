@@ -160,7 +160,15 @@ export function PageEditor({
   const [adding, setAdding] = useState(false);
   const [forming, setForming] = useState(false);
   /** The button whose "Group with other buttons…" is open. */
-  const [grouping, setGrouping] = useState<{ id: string; open: boolean; asked: number }>();
+  // The button asked about, and what it may be grouped with, as they were when asked: the
+  // grouping removes them, and the dialog still leaves as a dialog does.
+  const [grouping, setGrouping] = useState<{
+    id: string;
+    open: boolean;
+    asked: number;
+    button: PageWidget;
+    others: PageWidget[];
+  }>();
   const sample = useSampleRecords(root, pageInfo?.page, catalog, pageInfo?.record);
   const lists = useActionLists(root);
   const [filterValues, setFilterValues] = useState<FilterValues>({});
@@ -512,6 +520,8 @@ export function PageEditor({
                       id: widget.id,
                       open: true,
                       asked: (before?.asked ?? 0) + 1,
+                      button: widget,
+                      others: groupCandidates(widgets, widget),
                     }))
                   }
                   onMove={() =>
@@ -605,16 +615,13 @@ export function PageEditor({
             }
           : {})}
       />
-      {pageInfo && grouping && widgets.some((one) => one.id === grouping.id) ? (
+      {pageInfo && grouping ? (
         <GroupButtonsDialog
           key={grouping.asked}
           open={grouping.open}
           onClose={() => setGrouping({ ...grouping, open: false })}
-          button={widgets.find((one) => one.id === grouping.id) as PageWidget}
-          others={groupCandidates(
-            widgets,
-            widgets.find((one) => one.id === grouping.id) as PageWidget,
-          )}
+          button={grouping.button}
+          others={grouping.others}
           onGroup={(ids) => {
             setGrouping({ ...grouping, open: false });
             regroup(groupEdit(context, ids), "grouping buttons");

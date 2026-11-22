@@ -2,7 +2,7 @@ import { MAX_PAGES, type Page } from "@volvel/manifest";
 import { Button, Dialog, SelectField, TextField } from "@volvel/ui";
 import { useEffect, useMemo, useState } from "react";
 import { useCatalog } from "../../kit/inspector/catalog.ts";
-import { heading } from "../../kit/inspector/model.ts";
+import { heading, mainTable } from "../../kit/inspector/model.ts";
 import { useTableInfo } from "./SampleRecord.tsx";
 import {
   blankPage,
@@ -49,7 +49,21 @@ export function NewPageDialog({
     setStart("blank");
     setTyped(undefined);
   }, [open]);
-  const chosen = table && tables.some((one) => one.name === table) ? table : tables[0]?.name;
+  // Started from the table the app reads most, else the first.
+  const usual = useMemo(
+    () =>
+      mainTable(
+        pages.flatMap((one) => one.widgets),
+        catalog,
+      ),
+    [pages, catalog],
+  );
+  const chosen =
+    table && tables.some((one) => one.name === table)
+      ? table
+      : usual && tables.some((one) => one.name === usual)
+        ? usual
+        : tables[0]?.name;
   const fromTable = start !== "blank" && chosen !== undefined;
   const info = useTableInfo(root, fromTable ? chosen : undefined);
   const title = (typed ?? startTitle(start, chosen)).trim();

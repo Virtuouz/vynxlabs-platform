@@ -679,7 +679,7 @@ test("POLISH-003: the outline nests what a Section holds, the Section grows with
   // The outline: Alpha is under the Section's own item, and Beta (on the page) is not.
   const item = outline()
     .getByRole("listitem")
-    .filter({ has: outline().getByRole("button", { name: "Section", exact: true }) });
+    .filter({ has: owner.getByRole("button", { name: "Section", exact: true }) });
   await expect(item.getByRole("button", { name: "Alpha", exact: true })).toBeVisible();
   await expect(item.getByRole("button", { name: "Beta", exact: true })).toHaveCount(0);
   // The Section grows with what it holds: Alpha made much taller, and the Section follows.
@@ -756,6 +756,10 @@ test("POLISH-003: a button offers to be grouped with the one beside it, and the 
   const offer = settings().getByRole("button", { name: /group/i }).first();
   await expect(offer).toBeVisible();
   await offer.click();
+  // It asks which: the button beside it is chosen already.
+  const asked = owner.getByRole("dialog", { name: "Group with other buttons" });
+  await expect(asked.getByRole("checkbox", { name: /Email/ })).toBeChecked();
+  await asked.getByRole("button", { name: "Group the buttons" }).click();
   await expect
     .poll(async () => {
       const tools = await draftPage("tools");
@@ -769,7 +773,7 @@ test("POLISH-003: a button offers to be grouped with the one beside it, and the 
       );
     })
     .toBe(true);
-  await expect(widget("Action group")).toBeVisible();
+  await expect(widget("Actions")).toBeVisible();
   // One step back, and the two buttons are separate again.
   await owner.keyboard.press("Control+z");
   await expect(widget("Print")).toBeVisible();
@@ -788,22 +792,30 @@ test("POLISH-003: + Page offers A list of Invoices, which makes a page with a se
   if (await confirm.count()) await confirm.first().click();
   await expect
     .poll(async () => ((await drafted()).pages as Wid[]).filter((one) => !known.has(one.id)).length)
-    .toBeGreaterThanOrEqual(3);
-  const added = ((await drafted()).pages as Wid[]).filter((one) => !known.has(one.id));
-  const types = (kind: string | undefined) =>
-    added
-      .filter((one) => (one.kind ?? "page") === (kind ?? "page"))
-      .flatMap((one) => (one.widgets as Wid[]).map((made) => made.type));
+    .toBeGreaterThanOrEqual(1);
+  const all = (await drafted()).pages as Wid[];
+  const list = all.find((one) => !known.has(one.id) && !one.kind);
+  const widgets = (list?.widgets ?? []) as Wid[];
   // The list: a search, and the table.
-  const list = added.find((one) => !one.kind);
-  const bar = ((list?.widgets ?? []) as Wid[]).find((one) => one.type === "core/filter");
+  const bar = widgets.find((one) => one.type === "core/filter");
   expect(((bar?.config.filters ?? []) as Wid[]).some((one) => one.type === "search")).toBe(true);
-  expect(types(undefined)).toContain("core/table");
-  // The sheet a row opens, and the New invoice form.
-  expect(types("sheet")).toContain("core/detail");
-  expect(types("modal")).toContain("core/form");
-  // The table is drawn on the canvas of the page that was added.
-  await expect(owner.getByRole("button", { name: new RegExp(`^${list?.title}`) })).toBeVisible();
+  const table = widgets.find((one) => one.type === "core/table");
+  expect(table).toBeTruthy();
+  // A row opens an invoice's sheet with its detail, and a button the New invoice form: made, or the
+  // app's own when it has them already (Fernhill does), never a second of each.
+  const pageOf = (id: string) => all.find((one) => one.id === id);
+  const sheet = pageOf(table?.on?.rowClick?.steps?.[0]?.page);
+  expect(sheet?.kind).toBe("sheet");
+  expect((sheet?.widgets as Wid[]).map((one) => one.type)).toContain("core/detail");
+  const button = widgets.find((one) => one.type === "core/button");
+  const modal = pageOf(button?.on?.click?.steps?.[0]?.page);
+  expect(modal?.kind).toBe("modal");
+  expect((modal?.widgets as Wid[]).map((one) => one.type)).toContain("core/form");
+  expect(all.filter((one) => one.kind === "sheet" && one.title === sheet?.title)).toHaveLength(1);
+  // The builder opens the page that was added.
+  await expect(
+    owner.getByRole("button", { name: `${list?.title} Page`, exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
 });
 
 // ----- A dashboard -----

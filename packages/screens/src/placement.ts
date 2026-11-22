@@ -67,6 +67,13 @@ export interface Target {
   into: WidgetIn;
   /** The element that is the grid: where its cells are counted from. */
   node: HTMLElement;
+  /**
+   * For a tab of Tabs that is not open: its name in the strip. Held over it, the tab opens
+   * (`onOpen`), and a thing let go there lands at the bottom of that tab.
+   */
+  header?: HTMLElement;
+  /** For a tab's name: the first free row of that tab, where what is let go there lands. */
+  bottom?: number;
 }
 
 const sameIn = (a: WidgetIn | undefined, b: WidgetIn | undefined) =>
@@ -181,6 +188,7 @@ export function usePlacement({
   limits,
   onGrabbed,
   targets,
+  onOpen,
 }: {
   grid: RefObject<HTMLDivElement | null>;
   /**
@@ -198,6 +206,8 @@ export function usePlacement({
     | undefined;
   /** The grids inside containers that a thing may be dropped on; a container itself has none. */
   targets?: (id: string) => Target[];
+  /** A tab's name was held over while dragging: its tab is opened, so what it holds is seen. */
+  onOpen?: (into: WidgetIn) => void;
   /** How small and how large each thing may be made. */
   limits: (id: string) => Limits;
   /** Called when a press on a thing has become a drag. */
@@ -235,8 +245,13 @@ export function usePlacement({
   const areasOf = (id: string): [Target, DOMRect][] =>
     (targets?.(id) ?? []).map((target) => [
       target,
-      // Anywhere over the container counts, its heading too, so that it can be dragged down inside it.
-      (target.node.closest("[data-widget-cell]") ?? target.node).getBoundingClientRect(),
+      // A tab's name is its own place; anywhere else over the container counts, its heading
+      // too, so that it can be dragged down inside it.
+      (
+        target.header ??
+        target.node.closest("[data-widget-cell]") ??
+        target.node
+      ).getBoundingClientRect(),
     ]);
 
   /**
@@ -249,7 +264,11 @@ export function usePlacement({
     point: { x: number; y: number },
     scrolledBy: number,
   ): Target | undefined => {
-    for (const [target, area] of areas) {
+    // A tab's name first: it lies over its container's area.
+    const ordered = [...areas].sort(
+      ([a], [b]) => Number(b.header !== undefined) - Number(a.header !== undefined),
+    );
+    for (const [target, area] of ordered) {
       const top = area.top - scrolledBy;
       const bottom = area.bottom - scrolledBy;
       if (point.x >= area.left && point.x <= area.right && point.y >= top && point.y <= bottom)
@@ -293,6 +312,17 @@ export function usePlacement({
         return;
       }
       const under = gridUnder(areas, pointer, scroller.scrollTop - scrolledFrom);
+      if (under?.header) {
+        // Over a tab's name: that tab opens, and the thing goes to the bottom of it.
+        if (!sameIn(latestIn, under.into)) onOpen?.(under.into);
+        latestIn = under.into;
+        latest = fit(
+          { x: Math.min(own.x, 12 - own.w), y: under.bottom ?? 0, w: own.w, h: own.h },
+          least,
+        );
+        setHeld({ id, at: latest, how, in: latestIn });
+        return;
+      }
       const now = cellOf(pointer, under ? under.node : node);
       if (!now) return;
       latestIn = under?.into;

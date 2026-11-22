@@ -67,10 +67,13 @@ export function BackHead({
   );
 }
 
-/** A label over a control, inside a group: "Fields across", "Line up". */
+/**
+ * A label over a segmented control, inside a group: "Fields across", "Line up". The segments
+ * share the width, as the boards draw them.
+ */
 export function LabelledBlock({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex flex-col gap-2 px-3 py-3">
+    <div className="flex flex-col gap-2 px-3 py-3 [&_fieldset]:flex [&_fieldset]:w-full [&_fieldset]:flex-nowrap [&_label]:flex-1 [&_label]:justify-center">
       <p className="m-0 text-body-sm text-ink-muted">{label}</p>
       {children}
     </div>
@@ -102,10 +105,10 @@ export function ButtonPreview({
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex min-h-7 max-w-full items-center justify-center gap-1 rounded-control px-2 text-body-sm font-medium ${face}`}
+      className={`inline-flex min-h-7 max-w-full items-center justify-center gap-1 rounded-control px-2 py-0.5 text-center text-meta leading-tight font-medium ${face}`}
     >
       {Icon ? <Icon size={12} /> : null}
-      <span className="truncate">{label}</span>
+      <span className="line-clamp-2 break-words">{label}</span>
     </span>
   );
 }

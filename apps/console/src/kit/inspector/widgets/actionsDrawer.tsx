@@ -24,7 +24,15 @@ import { ActionEditor, actionContext } from "../actionControls.tsx";
 import { ConditionsEditor } from "../conditions.tsx";
 import { uniqueName } from "../model.ts";
 import { ButtonLabelGroup, ToneTiles } from "./buttonDrawer.tsx";
-import { BackHead, dashedFace, type Env, reorderBy, setConfig, TONE_WORDS } from "./shared.tsx";
+import {
+  BackHead,
+  dashedFace,
+  type Env,
+  LabelledBlock,
+  reorderBy,
+  setConfig,
+  TONE_WORDS,
+} from "./shared.tsx";
 
 export interface GroupButton {
   id: string;
@@ -229,7 +237,7 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
         ) : null}
       </DrawerGroup>
       <DrawerGroup label="Look">
-        <DrawerBlock label="Line up">
+        <LabelledBlock label="Line up">
           <SegmentedControl<"left" | "right" | "spread">
             label="Line up"
             value={lineUp}
@@ -240,7 +248,7 @@ export function ActionsDisplaySection({ env }: { env: Env }) {
             ]}
             onChange={(next) => setConfig(env, "lineUp", next, "how the buttons line up")}
           />
-        </DrawerBlock>
+        </LabelledBlock>
         <DrawerRow
           label="Show up to"
           icon={Ellipsis}

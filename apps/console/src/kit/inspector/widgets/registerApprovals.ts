@@ -1,8 +1,10 @@
 /**
- * Registers the Approvals widget's drawer with the shell (`../custom.ts`). Importing this file
- * does it. Its rows that the definition's hints already draw (Looks like, A click opens, Decided
- * ones) are left to the shell; what is its own is which requests, what each shows, and deciding.
+ * Registers the Approvals widget's drawer with the shell (`../custom.ts`); `registerAll.ts`
+ * imports it. Its rows that the definition's hints already draw (Looks like, A click opens,
+ * Decided ones) are left to the shell; what is its own is which requests, what each shows, and
+ * deciding. Each piece is a whole section drawing its own groups.
  */
+
 import { createElement } from "react";
 import { registerDrawer, registerTilePreview } from "../custom.ts";
 import {
@@ -11,34 +13,30 @@ import {
   ApprovalsFieldsSection,
   LookPreview,
 } from "./approvalsDrawer.tsx";
-import { FlatSection } from "./recordShared.tsx";
 
 const TYPE = "core/approvals";
 
 registerDrawer(TYPE, {
   tab: "data",
-  group: "Which requests",
   order: 0,
-  render: (env) => createElement(FlatSection, null, createElement(ApprovalsDataSection, { env })),
+  section: ApprovalsDataSection,
   dot: (env) => env.widget.data?.requests !== undefined,
 });
 
 registerDrawer(TYPE, {
   tab: "display",
-  group: "What each shows",
   order: 2,
+  section: ApprovalsFieldsSection,
   hides: ["fields"],
-  render: (env) => createElement(FlatSection, null, createElement(ApprovalsFieldsSection, { env })),
+  headingLast: true,
   dot: (env) => Array.isArray(env.config.fields) && env.config.fields.length > 0,
 });
 
 registerDrawer(TYPE, {
   tab: "actions",
-  group: "Deciding",
   order: 0,
+  section: ApprovalsActionsSection,
   hides: ["approveLabel", "rejectLabel", "askWhy", "confirm", "advance"],
-  render: (env) =>
-    createElement(FlatSection, null, createElement(ApprovalsActionsSection, { env })),
 });
 
 // What each tile of "Looks like" draws: the arrangement, as a few shapes.

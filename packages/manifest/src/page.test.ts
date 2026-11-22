@@ -492,7 +492,6 @@ describe("composition (phase 27)", () => {
   });
 });
 
-<<<<<<< HEAD
 describe("what a form's field starts with", () => {
   const form = (initial: unknown, column = "total"): PageWidget => ({
     id: "new",
@@ -529,7 +528,9 @@ describe("what a form's field starts with", () => {
 
   it("refuses a start the schema does not know", () => {
     expect(said(form({ kind: "tomorrow" })).length).toBeGreaterThan(0);
-=======
+  });
+});
+
 describe("approvals (phase 28, decision 0007)", () => {
   const widget = (source: object, extra: Partial<PageWidget> = {}): PageWidget => ({
     id: "queue",
@@ -623,6 +624,5 @@ describe("approvals (phase 28, decision 0007)", () => {
     expect(issues([{ ...added, config: { fields: [{ name: "total", label: "Sum" }] } }])).toEqual(
       [],
     );
->>>>>>> c31d761 (Phase 28 E1: the Approvals drawer, the selector's tile, drawing and suggestion, the flows list's approval steps, and their tests)
   });
 });

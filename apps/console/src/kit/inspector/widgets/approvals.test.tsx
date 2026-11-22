@@ -66,7 +66,6 @@ function Harness({
     pages: [],
     flows: [],
     scripts: [],
-    groups: [],
     widgets: [widget],
     writeAll: () => undefined,
   };
@@ -97,15 +96,14 @@ describe("a new Approvals widget", () => {
     expect(source(widget)).toEqual({ whose: "mine" });
   });
 
-  test("its drawer pieces are registered: which requests, what each shows, deciding", () => {
-    expect(drawersFor("core/approvals", "data").map((one) => one.group)).toEqual([
-      "Which requests",
-    ]);
-    expect(drawersFor("core/approvals", "display").map((one) => one.group)).toEqual([
-      "What each shows",
-    ]);
-    expect(drawersFor("core/approvals", "actions").map((one) => one.group)).toEqual(["Deciding"]);
-    expect(hiddenSettings("core/approvals", "display")).toEqual(new Set(["fields"]));
+  test("its drawer pieces are registered: which requests, what each shows, deciding, heading last", () => {
+    for (const tab of ["data", "display", "actions"] as const) {
+      expect(drawersFor("core/approvals", tab)).toHaveLength(1);
+    }
+    expect(drawersFor("core/approvals", "display")[0]?.headingLast).toBe(true);
+    expect(hiddenSettings("core/approvals")).toEqual(
+      new Set(["fields", "approveLabel", "rejectLabel", "askWhy", "confirm", "advance"]),
+    );
   });
 });
 

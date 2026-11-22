@@ -14,13 +14,12 @@ import {
   MeasureRow,
   NumbersRow,
   PreviewCard,
-  PreviewSection,
   queryOf,
   type SectionProps,
   sampleSummary,
   setter,
   withConfigObject,
-} from "./shared.tsx";
+} from "./chartShared.tsx";
 
 /** The summary the preview draws: the real one, with the period before kept or left out as the switch says. */
 export function previewSummary(
@@ -58,20 +57,22 @@ export function StatPreview({ env, data }: SectionProps) {
   const comparing = isComparing(env.config);
   const summary = previewSummary(env, data, comparing);
   return (
-    <PreviewSection>
-      <PreviewCard label="Preview">
-        <p className="m-0 mb-1 text-body-sm font-semibold text-ink">
-          {env.widget.title || env.definition.title}
-        </p>
-        <StatView
-          config={{ ...env.config, compare: comparing }}
-          data={{ value: summary }}
-          size={{ w: 3, h: 3, narrow: false }}
-          emit={() => undefined}
-          building
-        />
-      </PreviewCard>
-    </PreviewSection>
+    <DrawerGroup label="Preview">
+      <DrawerBlock>
+        <PreviewCard label="Preview">
+          <p className="m-0 mb-1 text-body-sm font-semibold text-ink">
+            {env.widget.title || env.definition.title}
+          </p>
+          <StatView
+            config={{ ...env.config, compare: comparing }}
+            data={{ value: summary }}
+            size={{ w: 3, h: 3, narrow: false }}
+            emit={() => undefined}
+            building
+          />
+        </PreviewCard>
+      </DrawerBlock>
+    </DrawerGroup>
   );
 }
 

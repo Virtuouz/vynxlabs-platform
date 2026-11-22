@@ -5,8 +5,8 @@ import { CADENCE_WORDS } from "@volvel/widgets";
 import type { ReactNode } from "react";
 import type { Env } from "../controls.tsx";
 import { heading, renamedResult } from "../model.ts";
+import { columnIcon, type DrawerData, groupings, type Query, TEMPORAL } from "./chartShared.tsx";
 import { type Cadence, ColumnPicker } from "./columnPicker.tsx";
-import { columnIcon, type DrawerData, groupings, type Query, TEMPORAL } from "./shared.tsx";
 
 type Group = NonNullable<VisualQuery["groupBy"]>[number];
 

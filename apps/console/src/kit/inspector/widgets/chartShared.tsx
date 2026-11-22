@@ -46,7 +46,7 @@ export interface SectionProps {
   data?: DrawerData | undefined;
 }
 
-export type DrawerSection = ComponentType<SectionProps>;
+export type DrawerSection = (props: SectionProps) => ReactNode;
 
 export const TEMPORAL = new Set(["date", "timestamp"]);
 export const NUMERIC = new Set(["integer", "number"]);
@@ -521,7 +521,7 @@ export function Swatches({ colors }: { colors: readonly string[] }) {
   return (
     <span className="inline-flex gap-0.5" aria-hidden="true">
       {colors.map((color) => (
-        <span key={color} className="size-3 rounded-[3px]" style={{ background: color }} />
+        <span key={color} className="size-3 rounded-inner" style={{ background: color }} />
       ))}
     </span>
   );
@@ -625,22 +625,5 @@ export const inputOf = (env: Env, name: string): DataInput | undefined => env.wi
 
 /** The card a preview is drawn in. */
 export function PreviewCard({ children, label }: { children: ReactNode; label?: string }) {
-  return (
-    <div
-      className="rounded-panel border border-line bg-surface px-3 py-3"
-      {...(label ? { role: "group", "aria-label": label } : {})}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** The label "PREVIEW" over a card, as the groups of rows are labelled. */
-export function PreviewSection({ children }: { children: ReactNode }) {
-  return (
-    <section className="flex flex-col gap-1.5">
-      <h3 className="m-0 px-0.5 text-label font-semibold text-ink-muted uppercase">Preview</h3>
-      {children}
-    </section>
-  );
+  return <div {...(label ? { role: "group", "aria-label": label } : {})}>{children}</div>;
 }

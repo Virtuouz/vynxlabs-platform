@@ -3,7 +3,14 @@
  * holds its heading and look: the percentage, and what the bar does when the goal is reached.
  */
 import type { PageFilter, VisualQuery } from "@volvel/manifest";
-import { DrawerGroup, DrawerRow, NumberField, SegmentedControl, SelectField } from "@volvel/ui";
+import {
+  DrawerBlock,
+  DrawerGroup,
+  DrawerRow,
+  NumberField,
+  SegmentedControl,
+  SelectField,
+} from "@volvel/ui";
 import { formatNumber, type SummaryData } from "@volvel/widgets";
 import { labsPack } from "@volvel/widgets-labs/views";
 import { Calendar, Target } from "lucide-react";
@@ -17,12 +24,11 @@ import {
   NUMERIC,
   NumbersRow,
   PreviewCard,
-  PreviewSection,
   queryOf,
   type SectionProps,
   sampleSummary,
   setter,
-} from "./shared.tsx";
+} from "./chartShared.tsx";
 
 const GoalView = labsPack.views["labs/goal"];
 
@@ -44,22 +50,24 @@ function figures(env: SectionProps["env"], data: DrawerData | undefined): Summar
 export function GoalPreview({ env, data }: SectionProps) {
   const summary = figures(env, data);
   return (
-    <PreviewSection>
-      <PreviewCard label="Preview">
-        <p className="m-0 mb-1 text-body-sm font-semibold text-ink">
-          {env.widget.title || env.definition.title}
-        </p>
-        {GoalView ? (
-          <GoalView
-            config={env.config}
-            data={{ value: summary }}
-            size={{ w: 3, h: 3, narrow: false }}
-            emit={() => undefined}
-            building
-          />
-        ) : null}
-      </PreviewCard>
-    </PreviewSection>
+    <DrawerGroup label="Preview">
+      <DrawerBlock>
+        <PreviewCard label="Preview">
+          <p className="m-0 mb-1 text-body-sm font-semibold text-ink">
+            {env.widget.title || env.definition.title}
+          </p>
+          {GoalView ? (
+            <GoalView
+              config={env.config}
+              data={{ value: summary }}
+              size={{ w: 3, h: 3, narrow: false }}
+              emit={() => undefined}
+              building
+            />
+          ) : null}
+        </PreviewCard>
+      </DrawerBlock>
+    </DrawerGroup>
   );
 }
 

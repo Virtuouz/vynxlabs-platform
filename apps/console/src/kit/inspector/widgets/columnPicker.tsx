@@ -10,7 +10,7 @@ import type { BREAKDOWN_CADENCES } from "@volvel/widgets";
 import { Search } from "lucide-react";
 import { type ReactNode, useId, useState } from "react";
 import { heading } from "../model.ts";
-import { columnIcon, type Grouping, TEMPORAL } from "./shared.tsx";
+import { columnIcon, type Grouping, TEMPORAL } from "./chartShared.tsx";
 
 export type Cadence = (typeof BREAKDOWN_CADENCES)[number];
 

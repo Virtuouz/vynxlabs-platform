@@ -17,16 +17,18 @@ import {
   type SectionProps,
   sampleSummary,
   TEMPORAL,
-} from "./shared.tsx";
+} from "./chartShared.tsx";
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** What the heading of a date is on a small grid: "Sep" for a month, else as it is. */
 function headingOf(value: unknown, bucket: string | undefined, dated: boolean): string {
   const text = String(value ?? "—");
   if (dated && /^\d{4}-\d{2}-\d{2}/.test(text)) {
-    const at = new Date(`${text.slice(0, 10)}T00:00:00Z`);
+    const month = MONTHS[Number(text.slice(5, 7)) - 1] ?? text;
     return bucket === "month" || bucket === "quarter"
-      ? at.toLocaleString("en-US", { month: "short", timeZone: "UTC" })
-      : at.toLocaleString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+      ? month
+      : `${month} ${Number(text.slice(8, 10))}`;
   }
   return text;
 }
@@ -76,7 +78,7 @@ export function PivotPreview({ query, data }: { query: Query; data: DrawerData |
           {columns.map((c) => (
             <span
               key={c}
-              className="h-4 rounded-[3px]"
+              className="h-4 rounded-inner"
               style={{
                 background: `color-mix(in srgb, var(--color-action) ${Math.round(shadeOf(cell(r, c), low, high) * 100)}%, transparent)`,
               }}

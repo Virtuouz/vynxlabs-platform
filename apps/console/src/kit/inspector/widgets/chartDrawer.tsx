@@ -53,7 +53,7 @@ import {
   setter,
   TEMPORAL,
   withConfigObject,
-} from "./shared.tsx";
+} from "./chartShared.tsx";
 
 /** The kinds of chart the type picker offers, in the order of the board. */
 const KINDS: { value: ChartKind; label: string; icon: typeof ChartColumn }[] = [

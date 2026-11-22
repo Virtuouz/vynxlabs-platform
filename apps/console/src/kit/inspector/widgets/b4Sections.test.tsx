@@ -10,7 +10,7 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { show } from "../../../testing.tsx";
 import type { Env } from "../controls.tsx";
 import { type Catalog, configOf } from "../model.ts";
-import { type DrawerData, drawerSections } from "./index.ts";
+import { type DrawerData, drawerSections } from "./b4Sections.ts";
 
 const catalog: Catalog = {
   tables: [
@@ -503,4 +503,29 @@ test("pivot display: shading and the two totals, shown unless switched off", () 
   expect(last().config?.rowTotals).toBe(false);
   fireEvent.click(screen.getByRole("switch", { name: "Total for each column" }));
   expect(last().config?.columnTotals).toBe(false);
+});
+
+// ---------------------------------------------------------------------------
+// Through the drawer's extension points
+
+test("registered, the chart's display tab draws its own pieces and not the generic rows they replace", async () => {
+  const { Inspector } = await import("../Inspector.tsx");
+  show(
+    <Inspector
+      widget={byClinic()}
+      definition={chart}
+      surface="app"
+      filters={[]}
+      catalog={catalog}
+      onChange={() => {}}
+      onDuplicate={() => {}}
+      onRemove={() => {}}
+      rowRules={() => ""}
+    />,
+  );
+  fireEvent.click(screen.getByRole("tab", { name: /^Display/ }));
+  const panel = within(await screen.findByRole("tabpanel"));
+  expect(panel.getAllByRole("heading", { name: "Chart type" })).toHaveLength(1);
+  expect(panel.getByRole("radio", { name: /^Pie/ })).toBeTruthy();
+  expect(panel.getAllByRole("switch", { name: "Show values on bars" })).toHaveLength(1);
 });

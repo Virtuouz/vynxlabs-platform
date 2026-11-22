@@ -39,10 +39,10 @@ import {
 import {
   type Box,
   CARRIED,
-  type Card,
   type Carrying,
   type HowMoved,
   isControl,
+  type Card as PlaceCard,
   type Placement,
   usePlacement,
 } from "./placement.ts";
@@ -109,7 +109,7 @@ export interface PageViewProps {
 
 /** A widget not yet on the page, held by the pointer. */
 export interface CarryRequest {
-  card: Card;
+  card: PlaceCard;
   from: { x: number; y: number };
   onDrop(at: Box | undefined): void;
 }
@@ -169,9 +169,12 @@ interface GridContext {
   known: ReadonlySet<string>;
   shownNow(conditions: readonly Condition[] | undefined): boolean;
   /** Where what is held or carried would land, when that is a grid it is not on. */
-  landing: { card: Card; in: WidgetIn | undefined } | undefined;
+  landing: { card: PlaceCard; in: WidgetIn | undefined } | undefined;
   /** The tab of a container that is open, and how to open another. */
-  tab: { open(container: PageWidget): string | undefined; choose(container: string, tab: string): void };
+  tab: {
+    open(container: PageWidget): string | undefined;
+    choose(container: string, tab: string): void;
+  };
   /** Whether a Section is folded as its reader left it, and how to fold it. */
   fold: { folded(container: PageWidget): boolean; set(container: string, folded: boolean): void };
   remove(id: string): void;
@@ -807,11 +810,7 @@ export function PageView({
               : into
                 ? ` into ${name(into.widget)}`
                 : ` out of ${name(was?.widget ?? "")}`;
-          change(
-            next,
-            `${how === "move" ? "Moved" : "Resized"} ${name(id)}${where}`,
-            id,
-          );
+          change(next, `${how === "move" ? "Moved" : "Resized"} ${name(id)}${where}`, id);
         }
       : undefined,
   });
@@ -844,7 +843,8 @@ export function PageView({
   const carrying = placement.carrying;
   const held = placement.held;
   const heldWas = held ? byId.get(held.id) : undefined;
-  const leaving = held !== undefined && heldWas !== undefined && gridKey(held.in) !== gridKey(heldWas.in);
+  const leaving =
+    held !== undefined && heldWas !== undefined && gridKey(held.in) !== gridKey(heldWas.in);
   const foldedKey = widgets
     .filter((one) => foldedNow(one))
     .map((one) => one.id)
@@ -858,20 +858,21 @@ export function PageView({
         ? putAt([...widgets, ghost(held.at, held.in)], CARRIED, held.at, held.in, roles)
         : putAt(widgets, held.id, held.at, held.in, roles);
     } else if (carrying?.at) {
-      list = putAt([...widgets, ghost(carrying.at, undefined)], CARRIED, carrying.at, undefined, roles);
+      list = putAt(
+        [...widgets, ghost(carrying.at, undefined)],
+        CARRIED,
+        carrying.at,
+        undefined,
+        roles,
+      );
     }
     // A container is as tall as what it holds: exactly so while building, and at least so when
     // served; a folded one is short.
-    return fitContainers(
-      list,
-      roles,
-      {
-        ...(editing ? {} : { grow: true }),
-        folded: (id) => foldedKey.split(",").includes(id),
-        ...(held ? { pin: held.id } : {}),
-      },
-    );
-    // biome-ignore lint/correctness/useExhaustiveDependencies: what is folded is `foldedKey`
+    return fitContainers(list, roles, {
+      ...(editing ? {} : { grow: true }),
+      folded: (id) => foldedKey.split(",").includes(id),
+      ...(held ? { pin: held.id } : {}),
+    });
   }, [widgets, held, heldWas, leaving, carrying?.at, roles, editing, foldedKey]);
 
   // A widget that was not on the page when it was opened has arrived: added, copied or carried in.
@@ -969,7 +970,7 @@ export function PageView({
 }
 
 /** Where something carried onto the page would land, at its size, with what it is. */
-function Landing({ card, at }: { card: Card; at: Box }) {
+function Landing({ card, at }: { card: PlaceCard; at: Box }) {
   const style = {
     "--col": `${at.x + 1} / span ${at.w}`,
     "--row": `${at.y + 1} / span ${at.h}`,

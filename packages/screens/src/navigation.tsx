@@ -11,13 +11,38 @@ import type { NavigateTo } from "./actions.tsx";
  * | `<base><page>/<record>` | a record page |
  * | `?sheet=<page>&record=<id>` | a side sheet over the page; the page stays in view |
  * | `?modal=<page>[&record=<id>]` | a modal over the page |
+ * | `tab.<widget>=<tab>` | the open tab of a Tabs on the page |
+ *
+ * A page's own parameters (`tab.*` and the filters' `f.*`) are kept in the address when a sheet
+ * or modal is opened over the page or closed, so the page under it stays as it was.
  */
 export interface Over {
   page: string;
   record?: string;
 }
 
+/** The parameters that belong to the page on screen: its open tabs and its filters. */
+const isOwn = (key: string) => key.startsWith("tab.") || key.startsWith("f.");
+
+/** The page's own parameters in a query string. */
+export function ownParams(search: string): Record<string, string> {
+  const own: Record<string, string> = {};
+  for (const [key, value] of new URLSearchParams(search)) if (isOwn(key)) own[key] = value;
+  return own;
+}
+
+/** The open tab of each Tabs an address names, by the Tabs' widget id. */
+export function tabsOfAddress(address: Address): Record<string, string> {
+  const tabs: Record<string, string> = {};
+  for (const [key, value] of Object.entries(address.own ?? {})) {
+    if (key.startsWith("tab.") && key.length > 4) tabs[key.slice(4)] = value;
+  }
+  return tabs;
+}
+
 export interface Address {
+  /** The page's own parameters, as written (`tab.<widget>`, `f.<filter>`). */
+  own?: Record<string, string>;
   page?: string;
   record?: string;
   sheet?: Over;
@@ -49,7 +74,9 @@ export function parseAddress(base: string, pathname: string, search: string): Ad
   // A modal opened from a sheet (an invoice's Edit) is over the sheet, which stays: its record
   // is `modalRecord`. A modal on its own has `record`, as a sheet does.
   const modalOn = (sheet ? query.get("modalRecord") : on) ?? undefined;
+  const own = ownParams(search);
   return {
+    ...(Object.keys(own).length > 0 ? { own } : {}),
     ...(page ? { page } : {}),
     ...(record ? { record } : {}),
     ...(sheet ? { sheet: { page: sheet, ...(on ? { record: on } : {}) } } : {}),
@@ -65,13 +92,15 @@ export function addressOf(base: string, address: Address): string {
     .map(encodeURIComponent)
     .join("/");
   const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(address.own ?? {})) query.set(key, value);
   if (address.sheet) {
     query.set("sheet", address.sheet.page);
     if (address.sheet.record) query.set("record", address.sheet.record);
   }
   if (address.modal) {
     query.set("modal", address.modal.page);
-    if (address.modal.record) query.set(address.sheet ? "modalRecord" : "record", address.modal.record);
+    if (address.modal.record)
+      query.set(address.sheet ? "modalRecord" : "record", address.modal.record);
   }
   const text = query.toString();
   return `${root}${path}${text ? `?${text}` : ""}`;
@@ -142,7 +171,8 @@ export function useAddress(base: string) {
 
   const go = useCallback(
     (to: NavigateTo) => {
-      const now = current.current;
+      // The page's own parameters as the address has them now: the page keeps its filters there itself.
+      const now: Address = { ...current.current, own: ownParams(window.location.search) };
       if ("close" in to) {
         if (!now.sheet && !now.modal) return;
         const history = window.history.state as Record<string, unknown> | null;
@@ -156,6 +186,7 @@ export function useAddress(base: string) {
         } else {
           show(
             {
+              ...(now.own ? { own: now.own } : {}),
               ...(now.page ? { page: now.page } : {}),
               ...(now.record ? { record: now.record } : {}),
             },
@@ -173,6 +204,7 @@ export function useAddress(base: string) {
       }
       const over: Over = { page: to.page, ...(to.record ? { record: to.record } : {}) };
       const under: Address = {
+        ...(now.own ? { own: now.own } : {}),
         ...(now.page ? { page: now.page } : {}),
         ...(now.record ? { record: now.record } : {}),
       };
@@ -192,11 +224,20 @@ export function useAddress(base: string) {
     [show],
   );
 
+  /** Opens a tab of a Tabs on the page. A new entry in the history, so Back goes to the tab before. */
+  const choose = useCallback(
+    (widget: string, tab: string) => {
+      const now: Address = { ...current.current, own: ownParams(window.location.search) };
+      show({ ...now, own: { ...now.own, [`tab.${widget}`]: tab } }, "push", false);
+    },
+    [show],
+  );
+
   const stepping = useMemo(() => steppingOf(among, address.sheet?.record), [among, address.sheet]);
   /** Moves the open sheet to the record before or after it in its list. */
   const step = useCallback(
     (by: "previous" | "next") => {
-      const now = current.current;
+      const now: Address = { ...current.current, own: ownParams(window.location.search) };
       const place = steppingOf(among, now.sheet?.record);
       const record = place?.[by];
       if (!now.sheet || !record) return;
@@ -204,7 +245,7 @@ export function useAddress(base: string) {
     },
     [among, show],
   );
-  return { address, go, stepping, step };
+  return { address, go, stepping, step, choose };
 }
 
 /** "2 of 236", with Previous and Next: a sheet opened from a list steps through it. */

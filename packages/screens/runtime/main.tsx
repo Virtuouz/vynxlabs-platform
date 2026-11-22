@@ -24,6 +24,7 @@ import {
   type PageDataClient,
   PageView,
   Stepper,
+  tabsOfAddress,
   useAddress,
   viewRegistry,
   WidgetReadError,
@@ -145,6 +146,7 @@ function PageOf({
   overRecord,
   changed,
   onActed,
+  tabs,
 }: {
   over?: boolean;
   overRecord?: string;
@@ -157,6 +159,8 @@ function PageOf({
   /** Bumped when an action ran on any page on screen: each reads again. */
   changed: number;
   onActed(): void;
+  /** The open tab of each Tabs, kept in the address (the page on screen; not one over it). */
+  tabs?: { open: Readonly<Record<string, string>>; choose(widget: string, tab: string): void };
 }) {
   const client = useMemo(() => clientFor(path, page.id, record), [path, page.id, record]);
   const filters = useMemo(() => filtersOf(page.widgets, roles), [page.widgets]);
@@ -192,6 +196,8 @@ function PageOf({
         keep(next);
       }}
       pages={pages}
+      foldKey={`${path}.${page.id}`}
+      {...(tabs && kept ? { tabs } : {})}
       onNavigate={(to) => {
         onNavigate(to);
         // Opening a sheet or modal, or closing one, rebuilds the address: the filters go back in it.
@@ -231,7 +237,7 @@ function App() {
     );
   }, []);
   // What is open is in the address, so that it can be linked to, reloaded and closed with Back.
-  const { address, go, stepping, step } = useAddress(context.base);
+  const { address, go, stepping, step, choose } = useAddress(context.base);
   const path = context.app.interface;
 
   useEffect(() => {
@@ -280,6 +286,7 @@ function App() {
         onNavigate={go}
         changed={changed}
         onActed={() => setChanged((count) => count + 1)}
+        {...(!over ? { tabs: { open: tabsOfAddress(address), choose } } : {})}
         {...(record ? { record } : {})}
         {...(over ? { over } : {})}
         {...(!over && overRecord ? { overRecord } : {})}

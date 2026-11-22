@@ -18,10 +18,14 @@ export {
 export {
   copyId,
   duplicated,
+  FOLDED_ROWS,
   fit,
+  fitContainers,
+  gridOf,
   type Limits,
   limitsOf,
   placed,
+  putAt,
   settle,
   sizeWords,
   without,
@@ -30,10 +34,12 @@ export {
   type Address,
   addressOf,
   type Over,
+  ownParams,
   parseAddress,
   Stepper,
   type Stepping,
   steppingOf,
+  tabsOfAddress,
   useAddress,
 } from "./navigation.tsx";
 export { type CarryRequest, PageView, type PageViewProps } from "./PageView.tsx";

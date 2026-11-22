@@ -155,11 +155,7 @@ export function fitContainers<T extends PageWidget>(
   for (const [index, widget] of widgets.entries()) {
     if (widget.in || !isContainer(widget, roles)) continue;
     const fits = containerHeight(widget, widgets);
-    const h = how.folded?.(widget.id)
-      ? FOLDED_ROWS
-      : how.grow
-        ? Math.max(widget.at.h, fits)
-        : fits;
+    const h = how.folded?.(widget.id) ? FOLDED_ROWS : how.grow ? Math.max(widget.at.h, fits) : fits;
     if (h === widget.at.h) continue;
     next ??= copied(widgets);
     (next[index] as T).at.h = h;

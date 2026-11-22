@@ -16,8 +16,8 @@ import { ListView } from "./list.tsx";
 import { PivotView } from "./pivot.tsx";
 import { SectionView } from "./section.tsx";
 import { StatView } from "./stat.tsx";
-import { TabsView } from "./tabs.tsx";
 import { TableView } from "./table.tsx";
+import { TabsView } from "./tabs.tsx";
 import { TextView } from "./text.tsx";
 
 /** What a pack is to whatever draws pages: its definitions, and a view for each type. */

@@ -504,7 +504,7 @@ export function PageEditor({
             }
           >
             {/* The twelve column guides, drawn behind the widgets while building: GRID's columns and gap. */}
-            <div data-column-guides="" style={GUIDES}>
+            <div data-column-guides="" style={device === "phone" ? undefined : GUIDES}>
               {widgets.length === 0 ? (
                 <EmptyState
                   title="Nothing on this page yet"

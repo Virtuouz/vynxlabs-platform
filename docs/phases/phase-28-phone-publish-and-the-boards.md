@@ -288,3 +288,109 @@ Answered by the owner on 2026-11-22.
 | M10 | Approvals on a page (decision 0007) | E1 |
 | M11 | The walk against the nineteen boards, and the browser tests | F1 to F3, H1, J1 to J3 |
 
+## Polish gate (M2 to M11, which change what people see)
+
+1. **Rules.**
+   - 001: every widget has its loading, empty, filtered-empty, failed and forbidden states. An empty one that a filter or a search narrowed says which, and offers to put the filters back.
+   - 002: one inspector, one drawer kit, one date and choice formatter (`formatDay`, `choiceWords` in the widget SDK), one condition editor, one money rule (`moneyFormatOf`).
+   - 003: what follows a choice is that choice's own (`useLoadOf`); a draft that equals what is published says so; the page's counts are the table's.
+   - 004 and 005: walked at 1440, 1440×640, 768 and 390.
+   - 006: filters, the open sheet and modal, the question an action asks, and the builder's page are in the address.
+   - 007: arrows, Enter and Esc in every list, tab strip, device switch and drag; one Tab stop per widget on the canvas; focus goes to what was placed, and back to what opened a sub-view.
+   - 008: a placeholder is where it lands; Esc puts back; the drawer's editors arrive and leave with the kit's motion.
+   - 009 and 010: the boards' words; a refusal in words, never the schema's.
+   - 011: the controls by column type, including conditions on dates and several values.
+   - 012: groups are stored by key and said by name.
+   - 013: below.
+   - 014: walked on seeded, throwaway instances.
+   - 015: below, under Left out.
+2. **Siblings.**
+   - The app builder and the dashboard editor share `EditorShell` (edge to edge), the inspector and the canvas; the builder's draft preview and the served app share `AppView`.
+   - The kit pieces changed here are used across the console: buttons and fields at 36 px, Geist, radios and checkboxes, the date field, dialogs (a form's first field has the focus, a long title wraps), popovers (kept off the top bar), tooltips (a tap shows one). The console's 92 reference pictures were taken again and looked at, old beside new.
+3. **Lifecycle.**
+   - Widget: add, place, move, size, duplicate, remove and undo, on three screen sizes, each put back to automatic.
+   - Sheet and modal: size by edge, arrows and select.
+   - Draft: saved, previewed, checked, published, restored from history, undone.
+   - An unfinished action is kept in a draft; publishing refuses it and names it.
+   - Bulk: rows chosen in a table, 200 at most, in one transaction.
+4. **States.** The builder's and the served app's first load draw their frame at once; an approval decided by someone else says who; a viewer's builder is read only and says why; publishing, refused publishing, and a check that blocks.
+5. **Walk.** Below, in Findings.
+6. **Guards.** Typecheck, each milestone's tests, `pnpm test` and `pnpm e2e` (below), `docs:check`, `check:schemas`, Biome. New in `enforce.test.ts`: a dialog may not be born open. `e2e/phase-28.spec.ts` (42) and `e2e/phase-28-approvals.spec.ts` (13), each test titled with its rule.
+7. **Left out.** See "Left out, and asked" below.
+
+## Findings
+
+Built by the integrator (M1) and about thirty agents, each in its own worktree against the written contract, merged and integrated one by one.
+
+**The walk (2026-11-22).** On throwaway instances of their own, each seeded by `examples/fernhill/setup/setup.mjs`. Eight walks, each with its boards beside it; the ones that came back half done were cut smaller and finished.
+
+| What | 1440 dark | 1440 light | 768 | 390 |
+|---|---|---|---|---|
+| Builder: frame, canvas, outline, selector, page inspector | looked at, boards 1, 2, 7 | looked at | looked at | looked at |
+| Inspectors: all 15 widgets | every tab, 14 of them beside their board (no board draws Approvals) | one tab and one editor each | one editor each | one tab and one editor each |
+| Steps, rules, Layout, confirm preview | looked at, boards 4, 8, 9 | one pass | no | no |
+| Row click and its sheet preview | looked at, board 3 | looked at | covered by the settings sheet there | covered there |
+| Add a form | looked at, board 5 | looked at | looked at | looked at |
+| Phone and tablet previews, publish check | looked at, board 6 | looked at | publish check only | publish check only |
+| View as, draft history, draft preview | looked at | preview | preview | preview |
+| Text: every Markdown component | looked at, board 19 | published app only | no | published app only |
+| Served app: its pages | looked at | looked at | looked at | looked at |
+| Served app: sheets, modals and forms | a few | looked at | a few | looked at |
+| Approvals, as four people | looked at | looked at | looked at | looked at |
+| Pet owners' portal, as two owners | no | no | no | looked at |
+| Dashboards: made by hand, shared, viewed, edited | no | looked at | looked at | looked at |
+
+Each walk was on the build of its day. What was fixed after it was looked at again where the fix touched it, and the browser tests ran on the final build.
+
+Also walked: by keyboard alone from making an app to publishing it; drags on the page, in and out of a Section, from "Add to page", on a tablet, with Esc and undo; sheet sizes by edge, arrows and select, also drawn scaled; folded panes with a reload; a widget and an action limited to a group, under View as and signed in as someone of each; reduced motion, 200 % zoom and forced colors; a cold network (500 kbit/s, 2 s); Back, a reload and a shared link; 0, 1 and 10,000 rows, 100-character titles.
+
+**The five acceptance journeys,** by hand, each from an empty app: invoices, appointments and approvals work end to end; the portal works as two owners on a phone; the analytics dashboard was made by hand, shared and opened by a manager. All five are browser tests too.
+
+**Found and fixed, the ones a person would have met:**
+- **A condition offered the previous column's values.** "Issued on" asked for a clinic. A read that follows a choice gave the last one's answer; the same in five other places.
+- **The group picker stored names where the server matches keys,** so a rule could match nobody. The greyed reason said a renamed group's old name.
+- **Approvals could have been decided by an app's own script.** An app written as code shares an address, and the sign-in there, with the app that shows the queue. Decisions are taken in place only where no such app can run (decision 0007, rule 8); elsewhere the queue opens the console.
+- **Someone with over 200 requests ahead of theirs saw an empty queue.**
+- **"Rows at a time" did nothing;** a table read 100 rows, and sorted only those.
+- **Editing in place in the sheet "Open record detail" makes did not save.**
+- **The publish check wrote a draft each time it opened,** blocked a valid edit form, counted changes that were only key order, and said "Ready to publish" while it was blocked.
+- **Preview showed the published app.** It is the draft.
+- **View as disagreed with the server about some groups.**
+- **A viewer's builder looked editable.** It is read only and says why.
+- **"Clear filters" emptied every filter,** so Money went from 30 days to all time.
+- **Money was typed in cents.** It is typed as money, and kept to the cent.
+- **The desktop canvas scrolled sideways at 1440,** and on Visits drew the Tabs over the Section's numbers: a container was laid out by its own width. It is laid out as its page is, which replaces phase 27's rule.
+- **Esc did not cancel a drag on the canvas,** and a sheet drawn scaled did not follow the pointer.
+- **A drag from "Add to page" landed three rows below its placeholder.**
+- **A cold load was blank** for 16 s in the builder and 5 s in a published app, which sent a 758 kB script uncompressed. Something is drawn in 4 to 6 s and 3 s.
+- **The server built sentences such as "This needs the to edit this page"** wherever a phrase was given for a permission's name.
+
+**What the browser tests taught.** Fifteen of the first forty-two failed on faults three walks had passed over (a new Table that could not be published, empty field lists, dead badge colors): the walks looked, and the tests used it.
+
+**Differences from the boards, kept:**
+- **Goal** (14) has "Rows it uses" and a Display tab: its source, its conditions and its title have no other place.
+- **Chart and Pivot** (10, 15) have "Where each one goes": which column each page filter narrows.
+- **A page's inspector** (2) has one tab for a plain page: it reads no rows and has no rules.
+- **Fields** (5) keep "optional" in the console, as the pattern library says; an app's form marks what is required.
+- **Control borders** are heavier than the boards' in dark, for a 3:1 contrast.
+- **Statuses in Fernhill** are text columns, so a new table shows them as text until they are made badges.
+
+**Not fixed, said here:**
+- **Sharing a dashboard** is with a group or everyone, not one person.
+- **The console has no content security policy;** its first page has small inline scripts, which a strict one would have to allow.
+- **Apps written as code** can use a visitor's app sign-in for what apps may do (decision 0004), as before this phase.
+- **Not every tab at every width:** the blanks and the "no"s in the table above.
+- **Not walked:** a screen reader; a real phone; the served app on a tenant's own hostname.
+
+## Left out, and asked
+
+- **Grouping a List or a Table by day** ("a calendar-like list"): no board draws it and no decision asks for it. Asked of the owner on 2026-11-22; left out unless they want it.
+- **Limiting Fernhill's Edit and Void to a group:** whoever may open the app may run an action that names no group (decision 0004). Mentioned to the owner on 2026-11-22.
+
+## The full suites
+
+To be filled in when they have run.
+
+## After the owner's first look
+
+Not yet.

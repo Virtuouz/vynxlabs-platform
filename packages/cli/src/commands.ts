@@ -152,8 +152,14 @@ export const COMMANDS = [
   entry(
     "tenant",
     ACCESS,
-    "tenant rollback <number> --tenant <slug>",
-    "Go back to the access a release left.",
+    "tenant rollback <number> --tenant <slug> [--yes]",
+    "Go back to the access a release left. It says what that removes, and asks first; --yes answers for you, and is needed where there is no terminal to ask at.",
+  ),
+  entry(
+    "tenant",
+    ACCESS,
+    "tenant approval [on|off] --tenant <slug>",
+    "Say whether a change to the tenant's access waits for a second person. Without on or off, says which it is now. Turning it on needs two people who may release the access.",
   ),
 
   entry(

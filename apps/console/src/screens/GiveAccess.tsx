@@ -1,7 +1,8 @@
+import { APP_FACING_KINDS } from "@volvel/manifest";
 import { Button, ComboboxField, Notice, SelectField, SideSheet } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { failureText, notify } from "../ask.tsx";
+import { failureText, noteWaiting, notify } from "../ask.tsx";
 
 interface Principal {
   type: "member" | "group" | "service_account" | "end_user" | "end_user_group";
@@ -14,10 +15,20 @@ interface Role {
   name: string;
   description?: string;
   workspaceId?: string | null;
+  permissions?: string[];
 }
+
+/** Nobody signed in holds anything but what apps use: only a role that gives some is offered. */
+const givesAppPermissions = (role: Role) =>
+  (role.permissions ?? []).some(
+    (one) => one.startsWith("*:") || APP_FACING_KINDS.includes(one.split(":")[0] ?? ""),
+  );
 
 /** Everyone who signs in to the tenant's apps: chosen as a whole, not found by name. */
 const EVERY_END_USER = "end_users:";
+/** Anyone at all, with no sign-in: for what an app shows in public. */
+const ANYONE = "anonymous:";
+const WHOLE_WORKSPACE = "";
 
 /**
  * Giving someone access, starting from who they are (08 §3.40): find them by
@@ -52,6 +63,7 @@ export function GiveAccess({
   const [chosenWorkspace, setWorkspaceId] = useState("");
   const workspaceId = inWorkspace?.id ?? chosenWorkspace;
   const at = inWorkspace ? `&workspaceId=${inWorkspace.id}` : "";
+  const [thing, setThing] = useState(WHOLE_WORKSPACE);
   const [roleId, setRoleId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
@@ -68,16 +80,22 @@ export function GiveAccess({
     open && !inWorkspace ? `${base}/workspaces` : null,
   );
   const roles = useLoad<{ items: Role[] }>(open ? `${base}/roles?limit=200${at}` : null);
-  // A role defined in a workspace is offered only there.
-  const usable = (roles.data?.items ?? []).filter(
-    (role) => !role.workspaceId || role.workspaceId === workspaceId,
+  // One thing in the workspace is chosen from what the workspace holds.
+  const things = useLoad<{ items: { id: string; kind: string; path: string }[] }>(
+    open && workspaceId ? `${base}/workspaces/${workspaceId}/resources` : null,
   );
   const chosen = who ? `${who.type}:${who.id}` : principal;
+  // A role defined in a workspace is offered only there. Anyone without signing in is offered
+  // only the roles that give something an app uses.
+  const usable = (roles.data?.items ?? [])
+    .filter((role) => !role.workspaceId || role.workspaceId === workspaceId)
+    .filter((role) => chosen !== ANYONE || givesAppPermissions(role));
   const described = usable.find((one) => one.id === roleId)?.description || undefined;
   const close = () => {
     setTyped("");
     setPrincipal(undefined);
     setWorkspaceId("");
+    setThing(WHOLE_WORKSPACE);
     setRoleId(undefined);
     setProblem(undefined);
     onClose();
@@ -92,6 +110,11 @@ export function GiveAccess({
       value: EVERY_END_USER,
       label: "Every end user who signs in",
       hint: "All of them, now and later",
+    },
+    {
+      value: ANYONE,
+      label: "Anyone, without signing in",
+      hint: "Only roles that give what an app uses",
     },
   ];
 
@@ -119,6 +142,7 @@ export function GiveAccess({
                   ...(principalId ? { principalId } : {}),
                   roleId,
                   ...(workspaceId ? { workspaceId } : {}),
+                  ...(workspaceId && thing ? { resourceId: thing } : {}),
                 });
                 const role = usable.find((one) => one.id === roleId)?.name ?? "the role";
                 const name =
@@ -126,13 +150,21 @@ export function GiveAccess({
                 const where =
                   inWorkspace?.name ??
                   workspaces.data?.items.find((one) => one.id === workspaceId)?.name;
+                const one = things.data?.items.find((item) => item.id === thing);
                 notify.success(
-                  `${name} holds ${role}${where ? ` in ${where}` : " in the whole tenant"}.`,
+                  `${name} holds ${role}${
+                    one
+                      ? ` on ${one.kind} ${one.path} in ${where}`
+                      : where
+                        ? ` in ${where}`
+                        : " in the whole tenant"
+                  }.`,
                 );
                 onGiven();
                 close();
               } catch (error) {
-                setProblem(failureText(error));
+                if (noteWaiting(error)) close();
+                else setProblem(failureText(error));
               } finally {
                 setBusy(false);
               }
@@ -177,10 +209,31 @@ export function GiveAccess({
             ]}
             onChange={(next) => {
               setWorkspaceId(next);
+              setThing(WHOLE_WORKSPACE);
               setRoleId(undefined);
             }}
           />
         )}
+        {workspaceId ? (
+          <SelectField
+            name="resourceId"
+            label="What"
+            value={thing}
+            options={[
+              { value: WHOLE_WORKSPACE, label: "Everything in the workspace" },
+              ...(things.data?.items ?? []).map((one) => ({
+                value: one.id,
+                label: `${one.kind} ${one.path}`,
+              })),
+            ]}
+            hint={
+              things.error
+                ? failureText(things.error)
+                : "Give it for one thing only, such as one app, and nothing else in the workspace."
+            }
+            onChange={setThing}
+          />
+        ) : null}
         <SelectField
           name="roleId"
           label="Role"

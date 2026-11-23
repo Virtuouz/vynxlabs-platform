@@ -3,7 +3,7 @@ import { Button, Notice, SelectField, SideSheet, Tabs } from "@volvel/ui";
 import { ArrowUpRight } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { ask, failureText } from "../ask.tsx";
+import { ask, failureText, noteWaiting } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import type { SortState } from "../kit/DataTable.tsx";
 import { bytes, count } from "../kit/format.ts";
@@ -83,12 +83,14 @@ interface Binding {
   principalType: string;
   principalId: string | null;
   principalLabel: string;
+  roleId?: string;
   roleName: string;
   managedByResource: boolean;
 }
 interface Named {
   id: string;
   name: string;
+  builtin?: boolean;
 }
 interface Stored {
   id: string;
@@ -145,6 +147,9 @@ function ShareDialog({
   const atApp = (bindings.data?.items ?? []).filter(
     (binding) => binding.scopeType === "resource" && binding.resourceId === app?.id,
   );
+  // The portal roles are the built-in ones: a role of a workspace may be called the same.
+  const portalRole = (name: string) =>
+    roles.data?.items.find((role) => role.builtin && role.name === name);
   const options = [
     { value: "end_users", label: "Every end user who signs in" },
     ...(endUserGroups.data?.items ?? []).map((group) => ({
@@ -165,7 +170,8 @@ function ShareDialog({
       bindings.reload();
       onChanged();
     } catch (error) {
-      setProblem(failureText(error));
+      if (noteWaiting(error)) onChanged();
+      else setProblem(failureText(error));
     } finally {
       setBusy(false);
     }
@@ -205,9 +211,11 @@ function ShareDialog({
               <span>
                 {binding.principalLabel}{" "}
                 <span className="text-ink-muted">
-                  {binding.roleName === "portal_reader"
+                  {binding.roleId !== undefined &&
+                  binding.roleId === portalRole("portal_reader")?.id
                     ? "may read"
-                    : binding.roleName === "portal_user"
+                    : binding.roleId !== undefined &&
+                        binding.roleId === portalRole("portal_user")?.id
                       ? "may read and change"
                       : `as ${binding.roleName}`}
                 </span>
@@ -295,7 +303,7 @@ function ShareDialog({
           event.preventDefault();
           void run(async () => {
             const [principalType, principalId] = who.split(":");
-            const roleId = roles.data?.items.find((role) => role.name === may)?.id;
+            const roleId = portalRole(may)?.id;
             if (!roleId) throw new Error("The role for this was not found.");
             for (const resourceId of targets) {
               const held = (bindings.data?.items ?? []).some(
@@ -303,7 +311,7 @@ function ShareDialog({
                   binding.resourceId === resourceId &&
                   binding.principalType === principalType &&
                   binding.principalId === (principalId ?? null) &&
-                  binding.roleName === may,
+                  binding.roleId === roleId,
               );
               if (held) continue;
               await api.post(`${base}/bindings`, {

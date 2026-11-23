@@ -24,6 +24,8 @@ export interface Io {
   out: (line: string) => void;
   err: (line: string) => void;
   env: Record<string, string | undefined>;
+  /** Asks a yes or no question of whoever is at the terminal. Absent when nobody can answer. */
+  confirm?: (question: string) => Promise<boolean>;
 }
 
 export interface Settings {

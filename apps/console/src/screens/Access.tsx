@@ -1,3 +1,4 @@
+import { isExplicitKind } from "@volvel/manifest";
 import { Notice, TextField } from "@volvel/ui";
 import { useState } from "react";
 import { type Me, useLoad } from "../api.ts";
@@ -199,6 +200,12 @@ export function EffectiveAccess({
                   <>
                     {principal.name} is given <Mono>{wanted}</Mono>, but none of it counts while
                     they are suspended. It counts again when they are resumed.
+                  </>
+                ) : everything && isExplicitKind(wanted.split(":")[0] ?? "") ? (
+                  <>
+                    {principal.name} holds <Mono>*:*</Mono>, which gives every permission except
+                    those given by name, and <Mono>{wanted}</Mono> is one of those. A role that
+                    lists it, bound to them or a group of theirs, would give it.
                   </>
                 ) : (
                   <>

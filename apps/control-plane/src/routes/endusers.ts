@@ -513,12 +513,17 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     });
     const Group = Type.Object({
       id: Id,
+      key: Type.String({ description: "What code and a repository name it by. It never changes." }),
       name: Type.String(),
       description: Type.String(),
       memberCount: Type.Integer(),
       managedBy: Type.String({
         description:
           "`provider` for one an identity provider pushed, which is changed there, `release` otherwise.",
+      }),
+      signInValues: Type.Array(Type.String(), {
+        description:
+          "What a person's sign-in says that puts them in this group (`membership.sso.values`).",
       }),
       createdAt: Time,
     });
@@ -563,10 +568,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           items: rows.map((row) => ({
             id: row.id,
+            key: row.key,
             name: row.name,
             description: row.description,
             memberCount: Number(row.member_count ?? 0),
             managedBy: row.managed_by,
+            signInValues: [...row.sso_values].sort(),
             createdAt: iso(row.created_at),
           })),
         };
@@ -632,10 +639,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!made.row) return reply.code(202).send(waiting(made.released));
         return reply.code(201).send({
           id: made.row.id,
+          key: made.row.key,
           name: made.row.name,
           description: made.row.description,
           memberCount: 0,
           managedBy: made.row.managed_by,
+          signInValues: [...made.row.sso_values].sort(),
           createdAt: iso(made.row.created_at),
         });
       },
@@ -690,6 +699,9 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body: Type.Object({
             name: Type.Optional(GroupName),
             description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
+            signInValues: Type.Optional(
+              Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 }),
+            ),
           }),
           response: { 200: Group, 202: Waiting },
         },
@@ -704,9 +716,19 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "This group is made by the identity provider, which names it. Rename it there.",
             );
           }
+          if (now.managedBy === "provider" && body.signInValues !== undefined) {
+            throw conflict(
+              "This group is made by the identity provider, which fills it. Change it there.",
+            );
+          }
           const description =
             body.description?.trim() ?? (now.resource.body.description as string | undefined);
-          const { description: _was, ...rest } = now.resource.body;
+          const { description: _was, membership: _kept, ...rest } = now.resource.body;
+          const values =
+            body.signInValues !== undefined
+              ? [...new Set(body.signInValues.map((one) => one.trim()).filter(Boolean))].sort()
+              : ((now.resource.body.membership as { sso?: { values?: string[] } } | undefined)?.sso
+                  ?.values ?? []);
           const released = await releaseOne(
             trx,
             audit,
@@ -720,6 +742,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ...rest,
                   title: body.name ?? (now.resource.body.title as string),
                   ...(description ? { description } : {}),
+                  ...(values.length > 0 ? { membership: { sso: { values } } } : {}),
                 },
               },
             },
@@ -741,10 +764,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!changed.row) return reply.code(202).send(waiting(changed.released));
         return {
           id: changed.row.id,
+          key: changed.row.key,
           name: changed.row.name,
           description: changed.row.description,
           memberCount: changed.members ?? 0,
           managedBy: changed.row.managed_by,
+          signInValues: [...changed.row.sso_values].sort(),
           createdAt: iso(changed.row.created_at),
         };
       },

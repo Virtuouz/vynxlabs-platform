@@ -722,6 +722,39 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
+    app.get(
+      "/tenants/:t/me/groups",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "The groups the caller is in, in a tenant",
+          description:
+            "The caller's own groups only: a member's groups of members, with what each is " +
+            "called now. A page's rules name groups, and a console page is drawn by them.",
+          tags: ["identity"],
+          params: TenantParams,
+          response: {
+            200: Type.Object({
+              items: Type.Array(Type.Object({ key: Type.String(), name: Type.String() })),
+            }),
+          },
+        },
+      },
+      async ({ ctx, params }) => {
+        const { id, type } = ctx.principal;
+        if (type !== "member" || !id) return { items: [] };
+        const rows = await db
+          .selectFrom("group_member")
+          .innerJoin("principal_group", "principal_group.id", "group_member.group_id")
+          .select(["principal_group.key", "principal_group.name"])
+          .where("group_member.member_id", "=", id)
+          .where("principal_group.tenant_id", "=", params.t)
+          .orderBy("principal_group.name")
+          .execute();
+        return { items: rows };
+      },
+    );
+
     app.post(
       "/tenants/:t/groups",
       {

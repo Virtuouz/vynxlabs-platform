@@ -374,3 +374,50 @@ test("a change made right before a share is saved on the revision the change mad
   await waitFor(() => expect(sent("PUT")).toHaveLength(2));
   expect(sent("PUT").map((call) => (call.body as Any).revision)).toEqual([4, 5]);
 });
+
+test("a widget limited to a group is drawn to a member in that group, and not to one outside it", async () => {
+  const limited = {
+    ...mine,
+    body: {
+      widgets: [
+        {
+          id: "billing",
+          type: "core/text",
+          at: { x: 0, y: 0, w: 6, h: 2 },
+          config: { text: "Billing only." },
+          rules: { seenBy: { groups: ["groups/billing"] } },
+        },
+      ],
+    },
+  };
+  routes[`GET ${api}/dashboards/d1`] = () => [200, limited];
+  routes["GET /api/v1/me"] = () => [
+    200,
+    {
+      principal: { type: "member", id: "m1", name: "Mia", email: "mia@x" },
+      tenants: [],
+      instancePermissions: [],
+    },
+  ];
+  routes["GET /api/v1/tenants/t1/me/groups"] = () => [
+    200,
+    { items: [{ key: "billing", name: "Billing" }] },
+  ];
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  expect(await screen.findByText("Billing only.")).toBeTruthy();
+  cleanup();
+  // Another tenant, where the member is in no group: the widget is not drawn to them.
+  const other = "/tenants/t2/workspaces/w1";
+  routes[`GET /api/v1${other}/dashboards/d1`] = () => [200, limited];
+  routes[`GET /api/v1${other}/widget-data`] = () => [200, { inputs: {} }];
+  routes[`GET /api/v1${other}/queries/schema`] = routes[`GET ${api}/queries/schema`] as never;
+  routes[`GET /api/v1${other}/queries`] = () => [200, { items: [] }];
+  routes["GET /api/v1/tenants/t2/me/groups"] = () => [200, { items: [] }];
+  show(<DashboardView root={other} link="/t/t2/workspaces/w1" id="d1" />);
+  // Once what the member is in has been read, the widget stays hidden.
+  await waitFor(() =>
+    expect(calls.some((call) => call.url.endsWith("/tenants/t2/me/groups"))).toBe(true),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  await waitFor(() => expect(screen.queryByText("Billing only.")).toBeNull());
+});

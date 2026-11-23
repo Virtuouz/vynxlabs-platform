@@ -28,6 +28,7 @@ import { useTitleObject } from "../kit/title.ts";
 import { useBleedWhile } from "../kit/workbench.ts";
 import { Page } from "../ListScreen.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
+import { useViewer } from "../viewer.ts";
 import { pageClient } from "./builder/client.ts";
 import { PageEditor } from "./builder/PageEditor.tsx";
 import { definitionOf, views } from "./builder/registry.ts";
@@ -150,6 +151,7 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
   /** Counted up by Try again, so the read is made once more. */
   const [attempt, setAttempt] = useState(0);
   const [mode, setMode] = useUrlParam("edit");
+  const viewer = useViewer(root);
   const [set, setSet] = useUrlParam("f");
   const [selected, setSelected] = useState<string>();
   const [sharing, setSharing] = useState(false);
@@ -562,6 +564,8 @@ export function DashboardView({ root, link, id }: { root: string; link: string; 
             setSet(Object.keys(kept).length > 0 ? JSON.stringify(kept) : undefined);
           }}
           refreshKey={refreshKey}
+          foldKey={`dashboard.${id}`}
+          {...(viewer ? { user: viewer, groupNames: viewer.groupNames ?? {} } : {})}
         />
       )}
       {sharingDialog}

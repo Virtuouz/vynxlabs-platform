@@ -47,3 +47,11 @@ Commits are named by the row in their subject: `git log --grep "(WID-01)"`.
 - **Siblings looked at:** Dashboard tables (same view); the phone list is not sorted by heading; the drawer `ColumnEditor`/`columnModel` already read unset as on; console `Data.tsx:261` has the same json/enum_list rule.
 - **A person sees:** headings are buttons by default; "Sort by clicking the heading" off removes them.
 - **Walk:** a table with no `sortable`; click a heading three times; drawer toggle; 1440/390, keyboard Enter on a heading, reload. Not run in a browser.
+
+## WID-07 On a dashboard "Who can see it" and "user is in group" hid the widget from everyone
+- **Tests:** `apps/console/src/Dashboards.test.tsx` > "a widget limited to a group is drawn to a member in that group, and not to one outside it" (failed before: drawn to nobody); `apps/control-plane/src/me-groups.test.ts` (the new route).
+- **Changed:** new `GET /tenants/:t/me/groups` in `apps/control-plane/src/routes/tenants.ts` (access: signed in; the caller's own member groups, key and name; nothing for others); `apps/console/src/viewer.ts` (`useViewer(root)`: the member from `/me` plus those groups, with `groupNames` by path); used by `screens/Dashboards.tsx` (also `foldKey` `dashboard.<id>`, so a Section's fold and a Tabs' remembered tab are kept per dashboard: the fix for the fold and for WID-21's dashboard half) and `screens/builder/SheetPreview.tsx` (sheet preview).
+- **Siblings looked at:** `AppPreview.tsx:111` passes `user={undefined}` on purpose (it has "View as"); left to BLD-04 as the row says, it can call `useViewer` too. `/me` carries no groups, so the new route is the one place the console learns them. This is a new route, not a contract of a kind or worker.
+- **A person sees:** a member in the group sees the widget on the dashboard; one outside does not; folds are remembered per dashboard.
+- **Walk:** a dashboard with a widget limited to a group and a Section folded; as a member in and out of the group; 1440/390, light/dark, reload (the fold stays). Not run in a browser.
+- **Left out:** end users have no dashboards, so only members are handled; the user is read once per page load.

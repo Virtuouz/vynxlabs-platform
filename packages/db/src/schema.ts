@@ -967,6 +967,15 @@ export interface EndUserTokenTable {
   created_at: Generated<Date>;
 }
 
+export interface MemberPasswordTokenTable {
+  id: string;
+  member_id: string;
+  token_hash: string;
+  expires_at: Timestamp;
+  used_at: Date | null;
+  created_at: Generated<Date>;
+}
+
 export interface AppSessionTable {
   id: string;
   tenant_id: string;
@@ -1369,6 +1378,7 @@ export interface PlatformSchema {
   end_user_group: EndUserGroupTable;
   end_user_group_member: EndUserGroupMemberTable;
   end_user_token: EndUserTokenTable;
+  member_password_token: MemberPasswordTokenTable;
   app_session: AppSessionTable;
   app_handoff: AppHandoffTable;
   app_domain: AppDomainTable;

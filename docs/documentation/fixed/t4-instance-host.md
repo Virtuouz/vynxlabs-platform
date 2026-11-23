@@ -49,3 +49,16 @@ Items: INS-10, 15, 22, 25, 27, 28; HOST-16, 19, 28, 30.
 - `packages/worker/src/host.ts`: a 404 from the worker host route (what the control plane answers when `MANAGED_WORKERS` is not `host`) is `HostRouteOff`; `run()` says once "The control plane's MANAGED_WORKERS is not set to host, ... Asking again every 30 seconds." and asks again after `routeOffPauseMs` (default 30 s; `stop()` cuts the pause short), no longer "could not be reached" every 2 s. `deploy/compose/.env.example` says the host still starts in those modes and how to stop it.
 - Test: `host.test.ts` "a control plane whose managed workers are not set to host is said once, and asked again only after a long pause (HOST-19)" (no such message before).
 - Siblings: the control plane's route answer is unchanged (`kernel/http.ts:349`); the standalone worker (`worker.ts`) is another route. Left out: the compose profile the row proposes: the default is `host`, so the service must start without one; the line in `.env.example` covers it.
+
+## HOST-30 (already fixed)
+- `kernel/execution/supervisor.ts`: an `error` after `spawn` is logged as a refused signal and leaves the worker and its credential (it is still running); `stop()` gives up on a worker it cannot signal. Test that shows it: `supervisor-stop.test.ts` "a worker that cannot be signalled is left, and stopping does not throw or wait for ever" (passes; emits EPERM on each `kill`). Nothing changed.
+
+## HOST-28
+- `docs/self-hosting.md`: new "Restoring an instance", "Changing `AUTH_SECRET`", "Upgrading Postgres to a newer major version" (under Backups), "Installing where there is no internet" (under Using your own Postgres or object store), and the object store's needs (`HeadBucket`, Put, Get, Delete; `CreateBucket` only on a 404; any other answer stops boot; no listing) in that section.
+- Test: `guide.test.ts` "the guide says how to restore, upgrade Postgres, change AUTH_SECRET, install with no internet ... (HOST-28)" (headings absent before).
+- Left out, for the owner: the row asks for each page "from a drill that ran". I could run none (no image built, nothing pulled, no second database server), so the steps are written from the code and the compose file and have not been drilled: a drill of restore, a Postgres major upgrade and an offline install should be run before the guide is called checked. The support policy is the owner's to state; no line invents one.
+
+## Lines for docs and changelog
+- Setting: a malformed `OTEL_EXPORTER_OTLP_HEADERS` is listed with the other settings problems instead of a stack trace.
+- API: `GET /audit` also returns entries of deleted tenants (each has its `tenantId`); `PUT /instance/database-locations/:name` is 400 for the platform's own database or one already registered under another name; `PATCH /members/:id` and `DELETE /tenants/:t/access-grants/:id` write no audit entry when nothing changes.
+- Worker host: says once that `MANAGED_WORKERS` is not `host` and asks again every 30 seconds.

@@ -608,7 +608,10 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return ctx.mutate(async (trx, audit) => {
           const changed = await trx
             .updateTable("tenant_member")
-            .set({ suspended_at: body.suspended ? new Date() : null })
+            .set({
+              suspended_at: body.suspended ? new Date() : null,
+              suspended_by: body.suspended ? "hand" : null,
+            })
             .where("tenant_id", "=", params.t)
             .where("member_id", "=", params.memberId)
             .returning("suspended_at")

@@ -46,6 +46,12 @@ export interface MemberTable {
   image: string | null;
   /** Set when the instance's own identity provider said the person has left. */
   disabled_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /** Who turned the account off: a person here, or the instance's identity provider. */
+  disabled_by: ColumnType<
+    "hand" | "provider" | null,
+    "hand" | "provider" | null | undefined,
+    "hand" | "provider" | null
+  >;
   created_at: Timestamp;
   updated_at: Timestamp;
 }
@@ -82,6 +88,12 @@ export interface TenantMemberTable {
   member_id: string;
   /** Set when the member may not act in this tenant for now. */
   suspended_at: ColumnType<Date | null, Date | null | undefined, Date | null>;
+  /** Who suspended the member: a person here, or the tenant's identity provider. */
+  suspended_by: ColumnType<
+    "hand" | "provider" | null,
+    "hand" | "provider" | null | undefined,
+    "hand" | "provider" | null
+  >;
   created_at: Generated<Date>;
 }
 
@@ -898,6 +910,8 @@ export interface EndUserTable {
   password_hash: string | null;
   attributes: ColumnType<Record<string, string>, string | undefined, string>;
   disabled_at: Date | null;
+  /** Who turned the account off: a person here, or the tenant's identity provider. */
+  disabled_by: "hand" | "provider" | null;
   last_signed_in_at: Date | null;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;

@@ -330,3 +330,133 @@ describe("pushed groups (GOV-03)", () => {
     ).toBe(1);
   });
 });
+
+describe("what a person here turned off, a push does not turn on (GOV-05)", () => {
+  const members = async () => (await alice.get(`/tenants/${tenant}/members?limit=200`)).body.items;
+  const suspended = async (email: string) =>
+    (await members()).find((member: Any) => member.email === email)?.suspended;
+
+  test("a member suspended by hand stays so when the directory says active", async () => {
+    const eve = await alice.post(`/tenants/${tenant}/members`, {
+      email: "eve@acme.example",
+      name: "Eve",
+      password: PASSWORD,
+    });
+    expect(eve.status).toBe(201);
+    expect(
+      (await alice.patch(`/tenants/${tenant}/members/${eve.body.id}`, { suspended: true })).status,
+    ).toBe(200);
+    const made = await push(staff, "POST", "/Users", pushedUser("eve@acme.example"));
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect(await suspended("eve@acme.example")).toBe(true);
+    // The directory says it again, and still the hand wins.
+    await push(staff, "PATCH", `/Users/${made.body.id}`, {
+      schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+      Operations: [{ op: "replace", value: { active: false } }],
+    });
+    await push(staff, "PATCH", `/Users/${made.body.id}`, {
+      schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+      Operations: [{ op: "replace", value: { active: true } }],
+    });
+    expect(await suspended("eve@acme.example")).toBe(true);
+    // Until it is lifted by hand.
+    await alice.patch(`/tenants/${tenant}/members/${eve.body.id}`, { suspended: false });
+    expect(await suspended("eve@acme.example")).toBe(false);
+  });
+
+  test("what the directory suspended, it resumes", async () => {
+    const found = await push(staff, "GET", `/Users?filter=userName eq "dan@acme.example"`);
+    const id = found.body.Resources[0].id;
+    const patch = (active: boolean) =>
+      push(staff, "PATCH", `/Users/${id}`, {
+        schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+        Operations: [{ op: "replace", value: { active } }],
+      });
+    await patch(false);
+    expect(await suspended("dan@acme.example")).toBe(true);
+    await patch(true);
+    expect(await suspended("dan@acme.example")).toBe(false);
+    // A person here suspends them while the directory has them off: that is now a hand's.
+    await patch(false);
+    const dan = (await members()).find((member: Any) => member.email === "dan@acme.example");
+    await alice.patch(`/tenants/${tenant}/members/${dan.id}`, { suspended: true });
+    await patch(true);
+    expect(await suspended("dan@acme.example")).toBe(true);
+  });
+
+  test("an account an operator disabled stays disabled when the instance's provider pushes it", async () => {
+    const base = "/instance/identity-providers";
+    const ops = await provider(t.admin, base, { audience: "members", name: "Operators" });
+    await prove(t.admin, base, ops, "ops.example");
+    const token = (await t.admin.post(`/instance/provisioning/${ops}/tokens`, { name: "Dir" })).body
+      .token;
+    const carol = await t.admin.post("/members", {
+      email: "carol@ops.example",
+      name: "Carol",
+      password: PASSWORD,
+    });
+    expect(carol.status).toBe(201);
+    expect((await t.admin.patch(`/members/${carol.body.id}`, { disabled: true })).status).toBe(200);
+    const made = await push(ops, "POST", "/Users", pushedUser("carol@ops.example"), token);
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const disabled = async () =>
+      (await t.admin.get("/members?limit=200")).body.items.find(
+        (member: Any) => member.email === "carol@ops.example",
+      ).disabled;
+    expect(await disabled()).toBe(true);
+    await t.admin.patch(`/members/${carol.body.id}`, { disabled: false });
+    // Pushed off by the directory, and on again by it.
+    const patch = (active: boolean) =>
+      push(
+        ops,
+        "PATCH",
+        `/Users/${made.body.id}`,
+        {
+          schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          Operations: [{ op: "replace", value: { active } }],
+        },
+        token,
+      );
+    await patch(false);
+    expect(await disabled()).toBe(true);
+    await patch(true);
+    expect(await disabled()).toBe(false);
+  });
+
+  test("the same for an end user a person here disabled", async () => {
+    const customers = await provider(alice, providers(), {
+      audience: "end_users",
+      name: "Acme Customers",
+    });
+    const token = (await alice.post(`${provisioning(customers)}/tokens`, { name: "Dir" })).body
+      .token;
+    const made = await push(
+      customers,
+      "POST",
+      "/Users",
+      pushedUser("kim@customer.example"),
+      token,
+    );
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const list = async () =>
+      (await alice.get(`/tenants/${tenant}/end-users?limit=200`)).body.items.find(
+        (user: Any) => user.email === "kim@customer.example",
+      );
+    const kim = await list();
+    await alice.patch(`/tenants/${tenant}/end-users/${kim.id}`, { disabled: true });
+    const patch = (active: boolean) =>
+      push(
+        customers,
+        "PATCH",
+        `/Users/${made.body.id}`,
+        {
+          schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+          Operations: [{ op: "replace", value: { active } }],
+        },
+        token,
+      );
+    await patch(false);
+    await patch(true);
+    expect((await list()).disabled).toBe(true);
+  });
+});

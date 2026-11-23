@@ -476,7 +476,10 @@ async function applyGroups(
   });
 }
 
-/** Turns a person on or off here, in the way that fits who they are. Changes nothing that already holds. */
+/**
+ * Turns a person on or off here, in the way that fits who they are. Changes nothing that already
+ * holds, and turns on only what a push turned off: a person who was turned off by hand stays so.
+ */
 async function setActive(
   trx: Trx,
   audit: Audit,
@@ -489,13 +492,19 @@ async function setActive(
   if (person.principal_type === "end_user") {
     const user = await trx
       .selectFrom("end_user")
-      .select(["disabled_at", "email"])
+      .select(["disabled_at", "disabled_by", "email"])
       .where("id", "=", id)
       .executeTakeFirst();
     if (!user || (user.disabled_at === null) === active) return;
+    // What a person here turned off stays off until a person here turns it on.
+    if (active && user.disabled_by !== "provider") return;
     await trx
       .updateTable("end_user")
-      .set({ disabled_at: active ? null : now, updated_at: now })
+      .set({
+        disabled_at: active ? null : now,
+        disabled_by: active ? null : "provider",
+        updated_at: now,
+      })
       .where("id", "=", id)
       .execute();
     if (!active) {
@@ -517,14 +526,15 @@ async function setActive(
   if (provider.tenantId !== null) {
     const belongs = await trx
       .selectFrom("tenant_member")
-      .select("suspended_at")
+      .select(["suspended_at", "suspended_by"])
       .where("tenant_id", "=", provider.tenantId)
       .where("member_id", "=", id)
       .executeTakeFirst();
     if (!belongs || (belongs.suspended_at === null) === active) return;
+    if (active && belongs.suspended_by !== "provider") return;
     await trx
       .updateTable("tenant_member")
-      .set({ suspended_at: active ? null : now })
+      .set({ suspended_at: active ? null : now, suspended_by: active ? null : "provider" })
       .where("tenant_id", "=", provider.tenantId)
       .where("member_id", "=", id)
       .execute();
@@ -546,13 +556,14 @@ async function setActive(
   }
   const member = await trx
     .selectFrom("member")
-    .select(["disabled_at", "email"])
+    .select(["disabled_at", "disabled_by", "email"])
     .where("id", "=", id)
     .executeTakeFirst();
   if (!member || (member.disabled_at === null) === active) return;
+  if (active && member.disabled_by !== "provider") return;
   await trx
     .updateTable("member")
-    .set({ disabled_at: active ? null : now })
+    .set({ disabled_at: active ? null : now, disabled_by: active ? null : "provider" })
     .where("id", "=", id)
     .execute();
   // Every sign-in the person has ends now, on every device.
@@ -989,7 +1000,7 @@ async function ensureLocalGroup(
   const name = forMembers ? displayName.slice(0, 200) : groupSlug(displayName);
   if (name === "") return false;
   const table = forMembers ? "principal_group" : "end_user_group";
-  let group = await trx
+  const found = await trx
     .selectFrom(table)
     .select(["id", "managed_by"])
     .where("tenant_id", "=", tenantId)
@@ -998,10 +1009,11 @@ async function ensureLocalGroup(
   // Only a group the provider made is the provider's to fill. One made by hand, or released
   // with the tenant's access, may hold bindings: a pushed group of the same name must not
   // put people in it. The push is kept and the refusal is shown with the others.
-  if (group && group.managed_by !== "provider") {
+  if (found && found.managed_by !== "provider") {
     await refuseTakeover(trx, provider, displayName, name);
     return false;
   }
+  let group: { id: string } | undefined = found;
   if (!group) {
     group = { id: newId() };
     if (forMembers) {

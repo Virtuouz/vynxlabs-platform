@@ -370,7 +370,10 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ? { attributes: JSON.stringify(body.attributes) }
                 : {}),
               ...(body.disabled !== undefined
-                ? { disabled_at: body.disabled ? new Date() : null }
+                ? {
+                    disabled_at: body.disabled ? new Date() : null,
+                    disabled_by: body.disabled ? "hand" : null,
+                  }
                 : {}),
             })
             .where("id", "=", params.userId)

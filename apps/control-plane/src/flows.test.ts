@@ -877,6 +877,15 @@ describe("running a flow", () => {
     });
   });
 
+  test("WLK-15: an input too large to load is named when an expression reads a key of it", async () => {
+    const failed = await finished(await start("wide", { blob: "x".repeat(300 * 1024) }));
+    expect(failed.status).toBe("failed");
+    expect(failed.error.message).toContain("No such key: blob");
+    expect(failed.error.message).toContain(
+      "The input the flow was started with is too large to use in an expression",
+    );
+  });
+
   test("a sub-flow's answer too large to hold gives the next step a note, and a retry keeps its own copy (FLW-33)", async () => {
     const blob = "x".repeat(200 * 1024);
     const failUntil = new Date(Date.now() + 1500).toISOString();

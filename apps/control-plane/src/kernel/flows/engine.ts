@@ -29,7 +29,7 @@ import { type AliasUse, formerPaths, resolveResource } from "../resolve.js";
 import { traceFlowRun, traceFor } from "../trace.js";
 import { expireLinks, mailApprovers } from "./approval-links.js";
 import { resolveApprovers } from "./approvers.js";
-import { buildContext, type ContextStep, readOutput } from "./context.js";
+import { buildContext, type ContextStep, readOutput, tooLargeIn } from "./context.js";
 import { ExpressionError } from "./expressions.js";
 
 /** The most items one foreach will run. More than this belongs in a script. */
@@ -730,12 +730,18 @@ class Advance {
     expression: string,
     extra?: Record<string, unknown>,
   ): Promise<unknown> {
+    const context = await this.#context(extra);
     try {
-      return await this.#kernel.expressions.evaluate(expression, await this.#context(extra));
+      return await this.#kernel.expressions.evaluate(expression, context);
     } catch (error) {
       if (error instanceof ExpressionError) {
+        const large = error.message.startsWith("No such key") ? tooLargeIn(context) : [];
         throw new StepFailure(
-          `The expression for "${field}" could not be evaluated: ${error.message}`,
+          `The expression for "${field}" could not be evaluated: ${error.message}${
+            large.length > 0
+              ? `. ${large.map((one) => `${one} is too large to use in an expression, so it has no keys here`).join(". ")}. Read it in a script.`
+              : ""
+          }`,
         );
       }
       throw error;

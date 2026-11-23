@@ -96,7 +96,7 @@ export function Notice({
           >
             Open in documentation
           </a>
-        </div>
+        </section>
       ) : null}
     </div>
   );

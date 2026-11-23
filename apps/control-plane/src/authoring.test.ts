@@ -1313,3 +1313,38 @@ describe("the title of a kept dashboard's draft (P31)", () => {
     await alice.delete(`${ws()}/drafts/boards/lending`);
   });
 });
+
+describe("a one-line script edit (P31 fe)", () => {
+  test("says it changes its code and not the input it takes", async () => {
+    const waitFor = async (id: string) => {
+      for (let i = 0; i < 150; i++) {
+        const task = (await alice.get(`${ws()}/tasks/${id}`)).body;
+        if (task.status === "succeeded" || task.status === "failed") return task;
+        await sleep(100);
+      }
+      throw new Error(`Task ${id} did not end.`);
+    };
+    const typed =
+      'import { z } from "@volvel/sdk";\n' +
+      "export const input = z.object({ name: z.string().min(1) });\n" +
+      "export default async (input: { name: string }) => ({ hello: input.name });\n";
+    const first = await draft("orders/oneline", scriptBody(typed));
+    await waitFor(first.body.schemaTaskId);
+    const deployed = await alice.post(`${ws()}/changes/deploy`, { paths: ["orders/oneline"] });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    // The console saves what it read: the body with the schema the worker found.
+    const live = (await alice.get(`${ws()}/resources/orders/oneline`)).body;
+    const edited = await draft(
+      "orders/oneline",
+      scriptBody(`${typed}// one more line\n`, {
+        input: (live.body ?? live).input,
+        output: (live.body ?? live).output,
+      }),
+    );
+    await waitFor(edited.body.schemaTaskId);
+    const listed = (await alice.get(`${ws()}/drafts`)).body.items.find(
+      (item: { path: string }) => item.path === "orders/oneline",
+    );
+    expect(listed.about).toEqual(["Changes its code (1 more lines)."]);
+  });
+});

@@ -12,7 +12,20 @@ const MAX_SENTENCES = 8;
 const list = (names: string[]) =>
   names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+// The database keeps a body's keys in an order of its own, so two bodies are the same when
+// their keys and values are, in whatever order they are written.
+const ordered = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(ordered)
+    : value && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value as Record<string, unknown>)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([key, one]) => [key, ordered(one)]),
+        )
+      : value;
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(ordered(a ?? null)) === JSON.stringify(ordered(b ?? null));
 
 const STEP: Record<string, string> = {
   trigger: "a trigger",

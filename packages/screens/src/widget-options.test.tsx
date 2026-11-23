@@ -396,6 +396,16 @@ describe("record detail options", () => {
     expect(client.act).toHaveBeenCalledTimes(1);
   });
 
+  test("after Escape, focus goes back to the field's button, not to the page (R-last)", async () => {
+    const client = clientOf({ record });
+    render(<Page client={client} widgets={[detail({ edit: true })]} />);
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit Note/ }));
+    const note = await screen.findByLabelText("Note");
+    fireEvent.keyDown(note, { key: "Escape" });
+    const back = await screen.findByRole("button", { name: /^Edit Note/ });
+    await waitFor(() => expect(document.activeElement).toBe(back));
+  });
+
   test("without edit a field is not pressable", async () => {
     render(<Page client={clientOf({ record })} widgets={[detail({})]} />);
     await screen.findByRole("heading", { name: /INV-1/ });

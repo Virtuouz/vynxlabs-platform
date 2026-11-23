@@ -1,7 +1,7 @@
 import { Button, Details } from "@volvel/ui";
 import type { ColumnInfo, RecordData, RowsData, WidgetViewProps } from "@volvel/widgets";
 import { formatOfColumn, moneyText, parseMoney } from "@volvel/widgets";
-import { type KeyboardEvent, type ReactNode, useEffect, useState } from "react";
+import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   type Tone as BadgeTone,
   type ColumnSpec,
@@ -336,6 +336,17 @@ export function DetailView({
   const { running, run } = useRunning();
   // Which field is being edited in place.
   const [editing, setEditing] = useState<string>();
+  // The editor leaves with its field's name here; the button that took its place gets the focus.
+  const leaving = useRef<string>();
+  const fields = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const column = leaving.current;
+    if (editing !== undefined || column === undefined) return;
+    leaving.current = undefined;
+    for (const one of fields.current?.querySelectorAll<HTMLElement>("[data-field]") ?? []) {
+      if (one.dataset.field === column) one.querySelector<HTMLElement>("button")?.focus();
+    }
+  }, [editing]);
   const input = data.record as NamedRecord | undefined;
   if (input?.shape !== "record") return null;
   const record = input.record;
@@ -403,7 +414,10 @@ export function DetailView({
               choices={choices}
               money={moneyOf(field, infoOf(field.column))}
               save={(value) => saveField(field.column, value)}
-              stop={() => setEditing(undefined)}
+              stop={() => {
+                leaving.current = field.column;
+                setEditing(undefined);
+              }}
             />
           ) : pressable ? (
             // A button inside the value, so the term and the value are still read as a term and a value.
@@ -431,7 +445,7 @@ export function DetailView({
   );
 
   return (
-    <div className="flex flex-col gap-4">
+    <div ref={fields} className="flex flex-col gap-4">
       <div className="flex items-start gap-x-3">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           {heading ? (

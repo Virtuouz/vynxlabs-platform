@@ -75,6 +75,7 @@ import {
   type DocRow,
   type DocsApp,
   type DocsList,
+  entriesOf,
   filterRows,
   findRow,
   folderId,
@@ -87,8 +88,10 @@ import {
   pendingOf,
   resolvers,
   rowsOf,
+  setOf,
   sourcesOf,
 } from "./model.ts";
+import { ServedAfter, ServedEyebrow } from "./Served.tsx";
 
 /** The product's own help, for the terms a tenant's page may use. Loaded once. */
 export function useProduct(): Manifest | undefined {
@@ -1568,6 +1571,8 @@ function Reader({
     () => readPage(inApp(app, page.path), page.source),
     [app, page.path, page.source],
   );
+  const site = useMemo(() => setOf(entriesOf(list, app), read.entry), [list, app, read.entry]);
+  const here = inApp(app, page.path);
   const drawn = useMemo(
     () =>
       resolvers({
@@ -1613,6 +1618,7 @@ function Reader({
             <p className="m-0 text-meta text-ink-muted">{trail.join(" › ")}</p>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">
+            <ServedEyebrow set={site} path={here} />
             <h2 className="m-0 text-display">{page.title}</h2>
             {state ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-attention/60 bg-attention-soft px-2 py-0.5 text-meta text-attention">
@@ -1731,6 +1737,11 @@ function Reader({
                   </a>
                 ),
             }}
+          />
+          <ServedAfter
+            set={site}
+            path={here}
+            address={(to) => `${link}/docs/${app ? `${app.docs}/` : ""}${to}`}
           />
         </div>
       </div>

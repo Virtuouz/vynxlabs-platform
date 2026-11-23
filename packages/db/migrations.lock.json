@@ -83,5 +83,9 @@
   "0082_doc_writer_feedback.sql": "cab23f41f3be6a86869fe8075ab322816bd8b81af2ed62f826d5bec2a67fdbf1",
   "0083_row_file_history.sql": "50fd3393eed9a738dfc4de846fe6efa503b1ea9606ec27f86aae41f02fbce644",
   "0084_dashboard_widget_query.sql": "39146aa7e47d1e12a00875cd68c88296a618dbcaf2fe97afcbf24a3e4334d52d",
-  "0085_one_page_model.sql": "2b62358d13835d657f88841c93e779b3b479f876a14e4c17a4df9882d52fa356"
+  "0085_one_page_model.sql": "2b62358d13835d657f88841c93e779b3b479f876a14e4c17a4df9882d52fa356",
+  "0086_refusal_reasons.sql": "adafa00798d54ad51144d10864ad2fd0a497d424203f1f5f72a9d7d2dce4c1ba",
+  "0087_flow_run_output_ref.sql": "46dbdabd8157f3f59929cfee0498d3e82f3dc1dfadcf27e0bd9e1d4f7aa4efcb",
+  "0088_governance.sql": "0495b724b2bd2a7a4965e58162724d07ac9e522c56a9d981e311d3509a234fba",
+  "0089_key_makers.sql": "2b59fe3b51dd986737e6f0c86fb80aa28ce745adcf9a3833157f2b268308c498"
 }

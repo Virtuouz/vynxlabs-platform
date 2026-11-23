@@ -48,6 +48,8 @@ import {
   ColumnRulesDialog,
   DefaultField,
   hasNoDefault,
+  IndexDialog,
+  MAX_INDEXES,
   typesFrom,
 } from "./ColumnControls.tsx";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
@@ -145,6 +147,8 @@ interface RowsBrowserProps {
   readOnlyNote?: string;
   /** What the table is, whatever it is called: its saved views are kept under this. */
   tableId?: string | undefined;
+  /** Where the table's indexes are changed, when the person may: a read stopped for taking too long points there. */
+  indexesAt?: string | undefined;
 }
 
 type DataRow = Record<string, unknown>;
@@ -439,7 +443,23 @@ function RowsBrowser(
             .join(" ")}
         </Notice>
       ) : null}
-      {page.error ? <ErrorState error={page.error} what="the rows" onRetry={page.reload} /> : null}
+      {page.error ? (
+        <ErrorState
+          error={page.error}
+          what="the rows"
+          onRetry={page.reload}
+          help={
+            props.indexesAt && (page.error as Partial<ApiError>).code === "too_slow" ? (
+              <>
+                An index on the columns you filter and sort by makes this faster.{" "}
+                <Link to={props.indexesAt} className="text-action underline">
+                  Add an index
+                </Link>
+              </>
+            ) : undefined
+          }
+        />
+      ) : null}
       {checked.size > 0 && canBatch ? (
         <div
           role="toolbar"
@@ -1383,6 +1403,8 @@ interface TableDetail {
   policy: { type: string; column?: string; rules?: Rule[] };
   /** The column that stands for a row where another table refers to it. */
   display?: string | null;
+  /** The indexes the definition lists, each a list of column names. */
+  indexes?: string[][];
   rowCount: number;
   stored: { schema: string; table: string };
   columns: TableColumn[];
@@ -1468,6 +1490,9 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           key={active.map((column) => column.name).join(",")}
           label={`Rows of ${data.name}`}
           tableId={data.id}
+          {...(data.managedIn === "ui"
+            ? { indexesAt: `${link}/tables/${data.name}?view=definition&at=indexes` }
+            : {})}
           rowsPath={`${root}/rows/${data.name}`}
           rowPath={(key) => `${root}/row/${key}/${data.name}`}
           keyColumn="id"
@@ -1954,6 +1979,14 @@ function Definition({
   // The column whose rules (required, no two alike, what it is given) or whose type is being changed.
   const [rulesOf, setRulesOf] = useState<TableColumn>();
   const [typeOf, setTypeOf] = useState<TableColumn>();
+  const [indexing, setIndexing] = useState(false);
+  // A link from a read that was stopped for taking too long lands here, on the indexes.
+  const [at] = useUrlParam("at", "");
+  const indexesHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (at === "indexes") indexesHeading.current?.scrollIntoView?.({ block: "start" });
+  }, [at]);
+  const indexes = table.indexes ?? [];
   const [failure, setFailure] = useState<string>();
   // What was chosen for "What stands for a row" shows at once, until the save has answered.
   const [chosenDisplay, setChosenDisplay] = useState<string>();
@@ -2419,6 +2452,86 @@ function Definition({
         )}
       </section>
 
+      <section className="flex flex-col gap-2" aria-labelledby="indexes-heading">
+        <h2
+          id="indexes-heading"
+          ref={indexesHeading}
+          tabIndex={-1}
+          className="m-0 text-title font-semibold"
+        >
+          Indexes
+        </h2>
+        <p className="m-0 max-w-measure text-ink-muted">
+          An index on the columns rows are filtered or sorted by keeps a read of a large table from
+          being stopped for taking too long. It makes writes a little slower.
+        </p>
+        {indexes.length === 0 ? (
+          <p className="m-0 text-ink-muted">No indexes. Only the ID is indexed.</p>
+        ) : (
+          <DataTable<{ columns: string[] }>
+            variant="static"
+            framed
+            label="Indexes"
+            rows={indexes.map((columns) => ({ columns }))}
+            rowKey={(row) => row.columns.join(",")}
+            empty={null}
+            columns={[
+              {
+                header: "Columns, in order",
+                cell: (row) => <Code>{row.columns.join(", ")}</Code>,
+              },
+              ...(editable
+                ? [
+                    {
+                      header: "",
+                      align: "end" as const,
+                      cell: (row: { columns: string[] }) => (
+                        <Button
+                          size="small"
+                          variant="quiet"
+                          aria-label={`Remove the index on ${row.columns.join(", ")}`}
+                          onClick={() =>
+                            void quietly(
+                              change(
+                                (body) => {
+                                  const left = (body.indexes ?? []).filter(
+                                    (one) => one.join(",") !== row.columns.join(","),
+                                  );
+                                  if (left.length > 0) body.indexes = left;
+                                  else delete body.indexes;
+                                },
+                                { label: `removing the index on ${row.columns.join(", ")}` },
+                              ),
+                            )
+                          }
+                        >
+                          Remove
+                        </Button>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
+        )}
+        {editable ? (
+          <div>
+            <Button
+              size="small"
+              disabled={indexes.length >= MAX_INDEXES}
+              onClick={() => setIndexing(true)}
+            >
+              Add an index
+            </Button>
+            {indexes.length >= MAX_INDEXES ? (
+              <span className="ml-2 text-body-sm text-ink-muted">
+                A table has at most {MAX_INDEXES} indexes. Remove one to add another.
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+
       <section className="flex flex-col gap-3">
         <h2 className="m-0 text-title font-semibold">Who sees rows</h2>
         {editable ? (
@@ -2513,6 +2626,21 @@ function Definition({
           )
         }
       </Closing>
+      <IndexDialog
+        key={indexes.length}
+        open={indexing}
+        columns={[...active.map((column) => column.name), "created_at", "updated_at", "id"]}
+        existing={indexes}
+        onClose={() => setIndexing(false)}
+        onSave={(columns) =>
+          change(
+            (body) => {
+              body.indexes = [...(body.indexes ?? []), columns];
+            },
+            { report: false, label: `the index on ${columns.join(", ")}` },
+          )
+        }
+      />
       <Closing subject={rulesOf}>
         {(column, shown) => (
           <ColumnRulesDialog

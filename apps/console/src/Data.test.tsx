@@ -1095,8 +1095,9 @@ function editable(extra: Record<string, object> = {}, columns: object[] = []) {
   routes[`GET /api/v1${root}/resources/orders`] = () => [200, { body, version: 3 }];
   routes[`PUT /api/v1${root}/resources/orders`] = () => [200, { version: 4 }];
   return () =>
-    calls.filter((call) => call.method === "PUT").at(-1)?.body as {
-      body: { columns: Record<string, Record<string, unknown>> };
+    calls.filter((call) => call.method === "PUT" && call.url.endsWith("/resources/orders")).at(-1)
+      ?.body as {
+      body: { columns: Record<string, Record<string, unknown>>; indexes?: string[][] };
     };
 }
 const column = (name: string, type: string, more: object = {}) => ({
@@ -1250,4 +1251,67 @@ test("TAB-P3: a column's type is changed to what keeps its values, and a referen
   fireEvent.click(await screen.findByRole("option", { name: "clients" }));
   fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
   await waitFor(() => expect(saved().body.columns.customer?.references).toBe("clients"));
+});
+
+test("TAB-P4: a table's indexes are listed, added with the platform's own columns, and removed", async () => {
+  const saved = editable();
+  const table = orders("ui") as ReturnType<typeof orders> & { indexes?: string[][] };
+  table.indexes = [["total"]];
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [
+    200,
+    {
+      body: {
+        columns: {
+          number: { type: "text" },
+          total: { type: "number" },
+          owner_id: { type: "uuid" },
+        },
+        indexes: [["total"]],
+      },
+      version: 3,
+    },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  const list = await screen.findByRole("table", { name: "Indexes" });
+  expect(within(list).getByText("total")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Add an index" }));
+  const dialog = await screen.findByRole("dialog");
+  const box = within(dialog).getByRole("combobox");
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: "owner_id" }));
+  fireEvent.click(await screen.findByRole("option", { name: "created_at" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add index" }));
+  await waitFor(() =>
+    expect(saved().body.indexes).toEqual([["total"], ["owner_id", "created_at"]]),
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Remove the index on total" }));
+  await waitFor(() => expect(calls.filter((call) => call.method === "PUT").length).toBe(2));
+  await waitFor(() => expect(saved().body.indexes).toBeUndefined());
+});
+
+test("TAB-P4: a read stopped for taking too long links to the indexes of a table made in the console, and only there", async () => {
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("ui")];
+  routes[`GET /api/v1${root}/rows/orders`] = () => [
+    422,
+    {
+      status: 422,
+      code: "too_slow",
+      detail:
+        "This took longer than 8 seconds and was stopped. Narrow the filter, or add an index.",
+    },
+  ];
+  const view = show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  const link = await screen.findByRole("link", { name: "Add an index" });
+  expect(link.getAttribute("href")).toContain("/tables/orders?view=definition&at=indexes");
+  view.unmount();
+  // A table from the repository is changed there, not here.
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("code")];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText(/took longer than 8 seconds/);
+  expect(screen.queryByRole("link", { name: "Add an index" })).toBeNull();
 });

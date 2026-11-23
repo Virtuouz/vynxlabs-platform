@@ -445,3 +445,66 @@ export function ChangeTypeDialog({
     </Dialog>
   );
 }
+
+/** The most indexes a table may have, and the most columns in one: what a definition allows. */
+export const MAX_INDEXES = 20;
+export const MAX_INDEX_COLUMNS = 5;
+
+/**
+ * An index on columns that rows are filtered or sorted by, so that a read of a large table is
+ * not stopped for taking too long. The order the columns are chosen in is the order of the index.
+ * The columns the platform fills in may be named too.
+ */
+export function IndexDialog({
+  columns,
+  existing,
+  open,
+  onClose,
+  onSave,
+}: {
+  columns: string[];
+  existing: string[][];
+  open: boolean;
+  onClose: () => void;
+  onSave: (columns: string[]) => Promise<void>;
+}) {
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [problem, setProblem] = useState<string>();
+  const saving = useSaving(async () => {
+    setProblem(undefined);
+    if (chosen.length === 0) {
+      setProblem("Choose at least one column.");
+      throw new Error("Choose the columns to index, then save.");
+    }
+    if (existing.some((one) => one.join("\u0000") === chosen.join("\u0000"))) {
+      setProblem("There is already an index on these columns, in this order.");
+      throw new Error("Choose other columns, or another order.");
+    }
+    await onSave(chosen);
+  }, onClose);
+  return (
+    <Dialog open={open} onClose={onClose} title="Add an index">
+      <div className="flex flex-col gap-4">
+        <MultiSelectField
+          label="Columns"
+          inline
+          value={chosen}
+          options={columns.map((name) => ({ value: name, label: name }))}
+          error={chosen.length > MAX_INDEX_COLUMNS ? `At most ${MAX_INDEX_COLUMNS}.` : problem}
+          hint={`Up to ${MAX_INDEX_COLUMNS}, in the order they are filtered or sorted by. Put the column rows are filtered by first.`}
+          onChange={setChosen}
+        />
+        {saving.error ? <Notice tone="danger">{saving.error}</Notice> : null}
+        <Buttons
+          busy={saving.busy}
+          onClose={onClose}
+          onSave={() => {
+            if (chosen.length > MAX_INDEX_COLUMNS) return;
+            void saving.save();
+          }}
+          action="Add index"
+        />
+      </div>
+    </Dialog>
+  );
+}

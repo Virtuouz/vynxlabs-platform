@@ -538,7 +538,11 @@ export function ResourceEditor({
         </Notice>
       ) : null}
       {draft.clashed ? (
-        <DraftClash what={about.noun} onTake={() => setAgain((n) => n + 1)} />
+        <DraftClash
+          what={about.noun}
+          mine={() => JSON.stringify(draft.value()?.body ?? body, null, 2)}
+          onTake={() => setAgain((n) => n + 1)}
+        />
       ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
 

@@ -23,7 +23,8 @@ import { ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { useHelpTopic } from "../help/store.ts";
 import { DataTable } from "../kit/DataTable.tsx";
-import { putDraft, readDraft } from "../kit/draftApi.ts";
+import { DraftClash } from "../kit/DraftClash.tsx";
+import { isDraftClash, putDraft, readDraft } from "../kit/draftApi.ts";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
@@ -269,6 +270,8 @@ export function DashboardView({
   const [describing, setDescribing] = useState(false);
   /** Saves that have been asked for and not yet answered. */
   const [pending, setPending] = useState(0);
+  // What was written when someone else saved the draft first: kept on the screen, not saved.
+  const [clash, setClash] = useState<DashboardBody>();
   /** Counted up when a save is kept, when it is time to refresh, and by "Refresh now". */
   const [refreshKey, setRefreshKey] = useState(0);
   // Its name is the last crumb, which makes "Dashboards" before it the way back to the list.
@@ -437,6 +440,8 @@ export function DashboardView({
     onFailure?: () => Promise<void>,
   ): Promise<boolean> => {
     const line = queue.current;
+    // Nothing is saved over what someone else saved until this one has chosen.
+    if (clash) return Promise.resolve(false);
     line.waiting += 1;
     setPending((n) => n + 1);
     const run = line.last.then(async () => {
@@ -483,6 +488,11 @@ export function DashboardView({
         return true;
       } catch (error) {
         line.waiting -= 1;
+        if (resource && isDraftClash(error)) {
+          // What is on the screen is kept: showing the draft that is kept would draw it away.
+          setClash((change.body ?? resource.body) as DashboardBody);
+          return false;
+        }
         notify.error(error);
         await onFailure?.();
         return false;
@@ -661,6 +671,20 @@ export function DashboardView({
     </div>
   );
 
+  const clashNotice = clash ? (
+    <DraftClash
+      what="dashboard"
+      mine={() => JSON.stringify(clash, null, 2)}
+      onTake={async () => {
+        const theirs = await fetchDashboard();
+        queue.current.revision = theirs.revision;
+        setLoaded(theirs);
+        setClash(undefined);
+        setRefreshKey((n) => n + 1);
+      }}
+    />
+  ) : null;
+
   if (edit) {
     return (
       <>
@@ -681,8 +705,13 @@ export function DashboardView({
           shell={{
             bleed: true,
             title: loaded.title,
-            saving: pending > 0 ? "saving" : "saved",
+            saving: clash
+              ? { failed: "someone else saved this dashboard" }
+              : pending > 0
+                ? "saving"
+                : "saved",
             savedWords: "Saved.",
+            notices: clashNotice,
             history,
             primary: (
               <Button variant="primary" onClick={() => setMode(undefined)}>
@@ -785,6 +814,7 @@ export function DashboardView({
           takes it back.
         </Notice>
       ) : null}
+      {clashNotice}
       {stand === "removed" ? (
         <Notice tone="attention">
           This dashboard is removed in your drafts. Nothing changes until that draft is deployed.

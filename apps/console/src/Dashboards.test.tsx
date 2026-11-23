@@ -675,3 +675,25 @@ test("QSD-MP10: a table of a data source is offered as where a list reads from, 
   await figure.findByText("Stock");
   expect(figure.queryByText("orders in erp")).toBeNull();
 });
+
+test("a dashboard the workspace keeps, saved over by someone else, offers to copy what was written and to load theirs", async () => {
+  keeping({ "boards/lending": draftOf("boards/lending") });
+  routes[`PUT ${api}/drafts/boards/lending`] = () => [
+    409,
+    { status: 409, code: "draft_changed", detail: "Someone else saved this." },
+  ];
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="at/boards/lending" editable />);
+  await screen.findByText(/Kept by the workspace, at boards\/lending/);
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Add to page" }))[0] as HTMLElement,
+  );
+  const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
+  fireEvent.click(dialog.getByRole("button", { name: /Chart/ }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  // The inspector is open beside it, so the page behind is queried as it is.
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Copy what I wrote" })).toBeTruthy(),
+  );
+  expect(screen.getByRole("button", { name: "Load their version" })).toBeTruthy();
+});

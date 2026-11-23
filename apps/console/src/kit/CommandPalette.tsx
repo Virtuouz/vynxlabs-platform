@@ -6,8 +6,11 @@ import {
   Braces,
   CircleHelp,
   CornerDownLeft,
+  Database,
   FileCode2,
+  FileSearch,
   Keyboard,
+  KeyRound,
   type LucideIcon,
   Pin,
   PinOff,
@@ -90,6 +93,10 @@ const KIND_ICON: Record<string, LucideIcon> = {
   connection: Plug,
   event: Radio,
   doc: BookOpen,
+  variable: Braces,
+  secret: KeyRound,
+  query: FileSearch,
+  data_source: Database,
   run: Play,
   flow_run: Play,
   member: User,
@@ -106,6 +113,10 @@ const KIND_LABEL: Record<string, string> = {
   connection: "Connection",
   event: "Event",
   doc: "Page",
+  variable: "Variable",
+  secret: "Secret",
+  query: "Query",
+  data_source: "Data source",
   run: "Run",
   flow_run: "Flow run",
   member: "Member",
@@ -177,6 +188,8 @@ function pageOf(tenantId: string, found: Found): string {
     case "connection":
     case "variable":
     case "secret":
+    case "query":
+    case "data_source":
     case "event":
       return objectHref(ws, found.kind, found.ref);
     default:

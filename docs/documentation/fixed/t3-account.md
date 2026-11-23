@@ -45,3 +45,18 @@ Rows: SHL-MP2, SHL-MP3, SHL-MP4, ACC-MP17, GOV-P1 to P9, SHL-13 (see each entry 
 - Left out: the instance log has no CSV and no single-entry route (`GET /instance/audit/:id`): the finding named them with facets; the item's list (action, actor, target type, target, to) does not, so they stay (listed under Found).
 - Person sees: Audit (tenant and instance): date range, workspace (tenant), who/action/done to at the instance, and a way from one entry to everything about its target.
 - Walk: tenant Audit and Instance audit at 1440/768/390 (the toolbar wraps: check the new date fields and Workspace select do not push the search box off at 390), light and dark, reload with filters in the address, CSV download with a date range and a workspace. Gate: states (list loading and failed already by `CollectionView`; filtered-empty offers Clear), keyboard (native date and select fields), copy plain.
+
+## SHL-13 (palette finds and remembers more)
+- **Search.** `CP/routes/search.ts`: `READ` gains `variable` (`variable:read`), `query` (`resource:read`, as the queries list asks) and `data_source` (`data_source:read`); secrets are found by name from the `secret` table with `secret:read` (never a value). The recent-items PUT's kinds follow `READ`.
+- **Migration** `0094_t3_account_recent_kinds.sql` (named 0094, not 0090: the phase branch already holds 0090 to 0093 and the migrator refuses a gap or a repeat; the integrator renumbers and locks it): the `member_recent_item.kind` check lacked `doc`, which the API accepted and the table then refused (a fault found with this row), and the new kinds.
+- **Console.** `CO/recent.ts`: `RecentKind` and `openedAt` take pages (`docs/`), variables, data sources by address and a saved query by `?query=` (`Shell.tsx` passes it); `CO/kit/CommandPalette.tsx`: icons, names and pages for variable, secret, query, data source.
+- Tests: `search.test.ts` "variables, saved queries, data sources and secrets are found too ... (SHL-13)" and "a page, a variable, a saved query and a data source are remembered too" (both failed before); `CommandPalette.test.tsx` "variables, secrets, saved queries and data sources are found, named, and open their own page"; `recent.test.ts`.
+- Left out, with why: recent for `app`, `trigger` and `schedule` (their pages open by `?app=<id>` and `?trigger=<key>`, which name no kind or no path: recording them needs the page to say which it is); dashboards (a member's own dashboard is private, and a path search would name other people's); drafts that were never deployed (the known fault "a draft-only flow link lands on not found" in t2-walk-flow: a draft-only object has no page that opens by path yet).
+- Siblings: the `/tenants/:t/search` consumers (palette only); `hasHome`/`objectHref` already knew these kinds.
+- Person sees: ⌘K finds variables, secrets (names), saved queries and data sources, labeled, and Recent now holds pages, variables, queries and data sources.
+- Walk: ⌘K at 1440/390 with a typed word that matches each kind; open a variable, a query (`?query=`) and a page, then reopen ⌘K: they are in Recent. Gate: states unchanged (the palette's searching and failure lines), keyboard (arrows and Enter, as before), copy: kind names plain.
+
+## Found (not fixed here)
+- The instance's audit log has no CSV and no single-entry route (the tenant's have); the item did not ask for them.
+- The migrator needs consecutive numbers, so a lane's `0090_<lane>_...` cannot run once the phase branch is past 0090: this lane used 0094.
+- `docs/documentation/FIXING.md` asks `0090_...`; `identity.ts` has an unused `forbidden` import (not mine).

@@ -58,7 +58,7 @@ import {
 } from "./nav.ts";
 import { usePreference } from "./prefs.ts";
 import { openedAt, useRecordRecent } from "./recent.ts";
-import { Link, navigate, navigationKind, useRestoredScroll } from "./router.tsx";
+import { Link, navigate, navigationKind, useQueryValue, useRestoredScroll } from "./router.tsx";
 import { useTenantStream } from "./stream.ts";
 import { type ThemeChoice, useThemeChoice } from "./theme.ts";
 
@@ -737,7 +737,8 @@ export function Shell({
     tenantId ? `/tenants/${tenantId}/workspaces` : null,
   );
   const workspace = workspaces.data?.items.find((candidate) => candidate.id === workspaceId);
-  const opened = openedAt(path);
+  const [openedQuery] = useQueryValue("query");
+  const opened = openedAt(path, openedQuery);
   useRecordRecent(tenantId ?? undefined, workspaceId ?? undefined, opened?.kind, opened?.ref);
   const wsCounts = useLoad<WorkspaceCounts>(
     tenantId && workspaceId ? `/tenants/${tenantId}/workspaces/${workspaceId}/summary` : null,

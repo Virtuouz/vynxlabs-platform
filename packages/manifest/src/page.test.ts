@@ -636,3 +636,31 @@ describe("approvals (phase 28, decision 0007)", () => {
     );
   });
 });
+
+describe("the name of an app and of its interface (BLD-06, D52)", () => {
+  it("is at most 100 characters in both, so one limit holds for a name typed once", () => {
+    const kinds = new KindRegistry();
+    registerPlatformKinds(kinds);
+    const long = "x".repeat(101);
+    const app = (title: string) =>
+      kinds.validateManifest({
+        kind: "app",
+        schemaVersion: 1,
+        path: "sales",
+        ownership: "ui",
+        body: { title, interface: "screens/sales" },
+      });
+    const screen = (title: string) =>
+      kinds.validateManifest({
+        kind: "interface",
+        schemaVersion: 2,
+        path: "screens/sales",
+        ownership: "ui",
+        body: { title, pages: [{ id: "main", title: "Main", widgets: [] }] },
+      });
+    expect(screen("x".repeat(100)).ok).toBe(true);
+    expect(app("x".repeat(100)).ok).toBe(true);
+    expect(screen(long).ok).toBe(false);
+    expect(app(long).ok).toBe(false);
+  });
+});

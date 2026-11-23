@@ -133,6 +133,7 @@ test("the app is named in the header and renamed in place, with no field for it"
   expect(screen.getByRole("heading", { name: "Sales", level: 1 })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Rename the app" }));
   const field = screen.getByLabelText("Name of the app") as HTMLInputElement;
+  expect(field.maxLength).toBe(100); // BLD-06: what the interface takes
   fireEvent.change(field, { target: { value: "Takings" } });
   fireEvent.keyDown(field, { key: "Enter" });
   expect(await screen.findByRole("heading", { name: "Takings", level: 1 })).toBeTruthy();

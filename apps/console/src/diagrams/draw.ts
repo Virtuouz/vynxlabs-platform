@@ -13,6 +13,8 @@ import type { Mermaid } from "mermaid";
 const EASE = "cubic-bezier(0.2, 0, 0, 1)";
 const SVG = "http://www.w3.org/2000/svg";
 const MIN_ZOOM = 0.25;
+/** The least a diagram is fitted at: a very wide one is still shown whole, in a phone's box. */
+const MIN_FIT = 0.02;
 const MAX_ZOOM = 8;
 /** The height a diagram's box may take, in pixels: never a sliver, never more than a screen's worth. */
 const MIN_HEIGHT = 160;
@@ -179,6 +181,8 @@ export class PanZoom {
   private readonly left: number;
   private readonly top: number;
   private scale = 1;
+  /** What fitting gave: zooming out may go as far as that, however small. */
+  private fitted = 1;
   private x = 0;
   private y = 0;
   /** Whether the reader moved it. A box that changes size refits a diagram nobody touched. */
@@ -228,10 +232,13 @@ export class PanZoom {
       (height - PADDING * 2) / this.height,
     );
     this.moved = false;
+    // The scale drawn is the one the middle is worked out from, so it is in the middle.
+    const fitted = Math.max(MIN_FIT, scale);
+    this.fitted = fitted;
     this.place(
-      Math.max(MIN_ZOOM, scale),
-      (width - this.width * scale) / 2 - this.left * scale,
-      (height - this.height * scale) / 2 - this.top * scale,
+      fitted,
+      (width - this.width * fitted) / 2 - this.left * fitted,
+      (height - this.height * fitted) / 2 - this.top * fitted,
       animate,
     );
   }
@@ -239,7 +246,10 @@ export class PanZoom {
   zoomBy(factor: number, at?: { x: number; y: number }): void {
     const shown = this.svg.getBoundingClientRect();
     const point = at ?? { x: shown.width / 2, y: shown.height / 2 };
-    const scale = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.scale * factor));
+    const scale = Math.min(
+      MAX_ZOOM,
+      Math.max(Math.min(MIN_ZOOM, this.fitted), this.scale * factor),
+    );
     if (scale === this.scale) return;
     const ratio = scale / this.scale;
     this.moved = true;

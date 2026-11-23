@@ -137,3 +137,10 @@ test("the decided list shows each decision's comment, and which were decided fro
   expect(await screen.findByText(/Receipt checked/)).toBeTruthy();
   expect(screen.getByText(/decided from the mail/)).toBeTruthy();
 });
+
+test("WLK-15: the times on the page say their zone", async () => {
+  show(<ApproveLink token="abc123abc123abc123abc123" />);
+  await screen.findByRole("heading", { name: "Refund the Brooks family" });
+  expect(document.body.textContent).toMatch(/since \d{4}-\d\d-\d\d \d\d:\d\d:\d\d \S+\./);
+  expect(document.body.textContent).toMatch(/until \d{4}-\d\d-\d\d \d\d:\d\d:\d\d \S+, or/);
+});

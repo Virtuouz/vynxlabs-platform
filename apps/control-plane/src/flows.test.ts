@@ -464,6 +464,9 @@ function bundle(
         ["use", "note"],
       ],
     ),
+    flow("quoting", { start: manual, span: set({ span: "duration(trigger.apiKey)" }) }, [
+      ["start", "span"],
+    ]),
     flow("cutting", { start: manual, half: set({ half: "trigger.text.substring(0, 2)" }) }, [
       ["start", "half"],
     ]),
@@ -892,6 +895,15 @@ describe("running a flow", () => {
     });
   });
 
+  test("WLK-15: an input too large to load is named when an expression reads a key of it", async () => {
+    const failed = await finished(await start("wide", { blob: "x".repeat(300 * 1024) }));
+    expect(failed.status).toBe("failed");
+    expect(failed.error.message).toContain("No such key: blob");
+    expect(failed.error.message).toContain(
+      "The input the flow was started with is too large to use in an expression",
+    );
+  });
+
   test("a sub-flow's answer too large to hold gives the next step a note, and a retry keeps its own copy (FLW-33)", async () => {
     const blob = "x".repeat(200 * 1024);
     const failUntil = new Date(Date.now() + 1500).toISOString();
@@ -917,6 +929,19 @@ describe("running a flow", () => {
     expect(step(again, "child").output).toEqual({
       stored: expect.stringContaining(`flow-runs/${retried.body.id}/`),
     });
+  });
+
+  test("an expression's failure that quotes a secret the run was given is masked in the lists too (mask2)", async () => {
+    const id = await start("quoting", { apiKey: "k-live-98765" });
+    const done = await finished(id);
+    expect(done.status).toBe("failed");
+    const listed = (await alice.get(`${ws()}/flow-runs`)).body.items.find(
+      (one: Any) => one.id === id,
+    );
+    expect(JSON.stringify(listed)).not.toContain("k-live-98765");
+    expect(JSON.stringify(done)).not.toContain("k-live-98765");
+    const activity = (await alice.get(`${ws()}/activity?q=${id}`)).body;
+    expect(JSON.stringify(activity)).not.toContain("k-live-98765");
   });
 
   test("a value the database cannot hold does not leave the run going for ever (FLW-02)", async () => {

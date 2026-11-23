@@ -214,9 +214,9 @@ export function ResourceEditor({
   const resources = useLoad<{ items: { path: string; kind: string; body: { mode?: string } }[] }>(
     `${root}/resources`,
   );
-  const drafts = useLoad<{ items: { path: string; kind: string; deleted: boolean }[] }>(
-    `${root}/drafts`,
-  );
+  const drafts = useLoad<{
+    items: { path: string; kind: string; deleted: boolean; mode?: string }[];
+  }>(`${root}/drafts`);
   const secrets = useLoad<{ items: { name: string }[] }>(`${root}/secrets`);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `again` reads the resource again
@@ -317,7 +317,12 @@ export function ResourceEditor({
       if (one.kind === wanted && (!mode || one.body.mode === mode)) known.set(one.path, undefined);
     }
     for (const draft of drafts.data?.items ?? []) {
-      if (draft.kind === wanted && !draft.deleted && !known.has(draft.path) && !mode) {
+      if (
+        draft.kind === wanted &&
+        !draft.deleted &&
+        !known.has(draft.path) &&
+        (!mode || draft.mode === mode)
+      ) {
         known.set(draft.path, "A draft, not yet deployed.");
       }
     }

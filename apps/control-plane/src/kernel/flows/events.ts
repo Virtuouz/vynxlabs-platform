@@ -3,6 +3,7 @@ import { PLATFORM_EVENT_PREFIX, validateJson } from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import { instanceTriggersPaused } from "../execution/control.js";
+import { maskFor, redactText, secretStrings } from "../execution/redact.js";
 import { kickStarted, notPausedAlone, recordRefusal, startTarget } from "../execution/triggers.js";
 import type { Kernel } from "../kernel.js";
 import { resolveResource } from "../resolve.js";
@@ -106,6 +107,13 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
           .orderBy("trigger_state.node_id")
           .execute();
   const started: { kind: string; id: string }[] = [];
+  // What a subscriber's refusal says about the event can quote a value of it: the evaluator names
+  // the value it choked on. The secrets of the payload are masked in what is kept and logged.
+  const maskedPayload = async (text: string) =>
+    redactText(
+      text,
+      maskFor(secretStrings(event.payload, await eventSchema(trx, event.workspaceId, event.name))),
+    );
   for (const subscriber of subscribers) {
     if (subscriber.filter) {
       try {
@@ -115,15 +123,16 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
         if (wanted !== true) continue;
       } catch (error) {
         if (!(error instanceof ExpressionError)) throw error;
+        const reason = await maskedPayload(error.message);
         kernel.log.warn(
-          { event: event.name, target: subscriber.target_path, reason: error.message },
+          { event: event.name, target: subscriber.target_path, reason },
           "an event filter could not be evaluated, so its subscriber was not started",
         );
         await recordRefusal(
           kernel,
           subscriber,
           "filter",
-          `The filter could not be worked out for the event ${event.name}: ${error.message}`,
+          `The filter could not be worked out for the event ${event.name}: ${reason}`,
         );
         continue;
       }
@@ -155,15 +164,16 @@ export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent
     } catch (error) {
       // A payload the subscriber's script does not accept must not undo the publish.
       if (!(error instanceof HttpError)) throw error;
+      const reason = await maskedPayload(error.message);
       kernel.log.warn(
-        { event: event.name, target: subscriber.target_path, reason: error.message },
+        { event: event.name, target: subscriber.target_path, reason },
         "an event's subscriber could not be started",
       );
       await recordRefusal(
         kernel,
         subscriber,
         "input",
-        `The event ${event.name} does not fit what this starts: ${error.message}`,
+        `The event ${event.name} does not fit what this starts: ${reason}`,
       );
     }
   }

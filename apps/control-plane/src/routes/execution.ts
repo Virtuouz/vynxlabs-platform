@@ -249,6 +249,30 @@ const RunStatus = Type.Union([
   Type.Literal("failed"),
   Type.Literal("cancelled"),
 ]);
+/** What started a run: its kind, the details of that kind, and for a trigger source's run, which one. */
+const RunTrigger = Type.Unsafe<{
+  type: string;
+  relay?: { resourceId: string; node: string; mode: "webhook" | "poll" };
+  [detail: string]: unknown;
+}>({
+  type: "object",
+  additionalProperties: true,
+  properties: {
+    type: { type: "string" },
+    relay: {
+      type: "object",
+      description: "Set when the run is of a trigger source: the source and the node it starts.",
+      properties: {
+        resourceId: { type: "string", format: "uuid" },
+        node: { type: "string" },
+        mode: { enum: ["webhook", "poll"] },
+      },
+      required: ["resourceId", "node", "mode"],
+    },
+  },
+  required: ["type"],
+});
+
 const Run = Type.Object({
   id: Id,
   script: Type.String(),
@@ -256,7 +280,7 @@ const Run = Type.Object({
   state: RunStateSchema,
   attempt: Type.Integer(),
   maxAttempts: Type.Integer(),
-  trigger: AnyObject,
+  trigger: RunTrigger,
   startedBy: Type.Object({ type: Type.String(), id: NullableId }),
   bundleId: Id,
   bundleVersion: Type.Integer(),

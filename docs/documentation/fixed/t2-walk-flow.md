@@ -1,0 +1,62 @@
+# Fixed: lane t2-walk-flow
+
+Paths: `C/` = `apps/console/src/`. Seen failing on the code before the fix, by `git apply -R` of the fix.
+
+## WLK-15a a renamed case keeps its edge
+`C/screens/FlowEditor.tsx` `FlowNodeCard`: `useUpdateNodeInternals` is called when a step's handle ids change, so React Flow measures the new `case:<name>` handle and draws the edge. Test `WLK-15: a renamed case has its handle measured again...` in `C/FlowEditorWalk.test.tsx` (the editor renders, a case is renamed with Enter, the canvas is told to measure the step; happy-dom cannot measure, so the call is what is read). Siblings: every node type goes through `FlowNodeCard`; only a branch changes its handle ids. Walk: rename a case with Enter, the edge stays, at 1440 and 390, light and dark, then reload. Gate: states unchanged; lifecycle: rename keeps the connection; keyboard: Enter commits as before; copy none.
+
+## WLK-15f small things in the flow editor and the approval link
+- "Draft Draft": `C/screens/FlowEditor.tsx` (`saveState`) no longer repeats the state pill's word when nothing is being saved; test `WLK-15: the state is said once...` (`FlowEditorWalk.test.tsx`). Siblings: other `StatePill` + status text pairs were not found in the editor; `stateLabel` import removed.
+- Reserved case name "already used": done by walk1 (`FlowSteps.test.tsx` `WLK-15: a case called otherwise...`).
+- "otherwise" cut: `C/FlowGraph.tsx` `autoLayout` widens the rank gap to the longest word on a connection; test in `FlowGraph.test.tsx`. Siblings: every graph (editor, run view) uses `autoLayout`; saved positions still win.
+- Approval link times: `C/kit/Time.tsx` takes `zone` (the reader's zone after the time, UTC on hover as before), `C/kit/format.ts` `zoneName`; `C/screens/ApproveLink.tsx` uses it for "since" and "until". Test in `ApproveLink.test.tsx`. D21.
+- Triggers path breaks mid-word: `C/kit/PageHeader.tsx` heading `break-all` to `break-words` (shared by every non-compact mono title: object pages of every kind). No test (layout).
+- Minimap at 390: `FlowEditor.tsx` `MiniMap className="max-sm:hidden"`. No test (layout).
+Walk: flow editor with a branch at 1440/768/390 light and dark; an approval link at 390; a trigger page with a long path. Gate: states unchanged; keyboard unchanged; copy: the link page says "2026-11-15 10:00:00 UTC".
+
+## WLK-15d a deploy's problems and the editor's list are one list, in words
+`C/kit/refusalWords.ts` `inWords`: "/body/nodes/mail no trigger leads to this node" is said "mail: no trigger leads to this node", "/body/edges/1 ..." as "Connection 2: ...". `C/kit/RefusalList.tsx` applies it, so every refusal (DeployMenu, Release, Promotion) is in words. `C/screens/FlowEditor.tsx` `manifestProblems` runs `checkFlow` (the build's own graph check) on the open flow and adds what the editor's list did not name, in the same words, so the list shows what a deploy would refuse. A step the editor already names is not said twice (one fault, one line; a second fault of the same step shows after the first is fixed). Tests in `C/RefusalWords.test.tsx` (the list test failed without `inWords`). Siblings: three `RefusalList` callers. Left out: schema faults of one step's fields (the server's `registry.validateManifest`) are not run in the editor; they still arrive in words from the server. Walk: a flow with a loop, Deploy "This change only", and Review all drafts, at 390. Gate: states: the editor's "n to fix" counts them; copy: no addresses.
+
+## WLK-15c a 300 KB trigger input
+Said, not read: a payload over 256 KB is kept in storage by design and named in the API (`{stored}`), tested in `flows.test.ts`; the API is not changed. `apps/control-plane/src/kernel/flows/context.ts` `tooLargeIn` and `kernel/flows/engine.ts` `#evaluate`: a "No such key" beside a large input or output now says "The input the flow was started with is too large to use in an expression, so it has no keys here. Read it in a script." Test `WLK-15: an input too large to load...` in `flows.test.ts`. `packages/ui/src/JsonView.tsx` (under `ResultView`, so every input and output panel in RunPage, Runs and the inspectors): a lone `{stored: "runs|flow-runs/….json"}` reads "Too large to show here. It is kept with the run, as <path>. A script can read it." Test in `packages/ui/src/ResultView.test.tsx`. Left out: reading the stored payload into the console (it would send up to the storage limit through the run route; the row allowed "or say so"). Walk: start a flow with a 300 KB input, open the run, the input panel and failed step, at 390. Gate: states: failed run names the cause; copy plain.
+
+## opsb found: the run's `trigger.relay` has a schema
+`apps/control-plane/src/routes/execution.ts` `RunTrigger` (in the `Run` response schema): `type` and an optional `relay` with `resourceId`, `node`, `mode`; other details stay open. The API's OpenAPI description now names it (additive; no route changed). Console: `C/screens/runAgain.ts` `RunTrigger` type for `isSourceRun`. Test `WLK-15: a run says in its schema...` in `app.test.ts` (failed before). Siblings: the run list and the run read share `Run`; the flow run's `trigger` has no `relay`.
+
+## opsa found: `usePagedList` keeps the reader's place (OPS-11 sibling)
+`C/kit/paged.tsx`: a first page that comes again for the same list (a change, a refresh, `reload`) is read again together with the pages after it, until the last row the reader had is on screen again (by `id`; by count for rows without one), so new rows pushed down are not lost and the list does not fold to page 1. A new search or route still starts at page 1. Test `OPS-11: a list read again keeps the pages...` in `C/kit/paged.test.tsx` (failed before: the list fell back to the first three). Siblings, all through the hook: `ListScreen.tsx`/`kit/ListCollection.tsx`, `Members.tsx`, `Groups.tsx`, `Operate.tsx` (events); their tests pass. Cost: one extra request for each page the reader had loaded, on a change. Walk: Events and Members with "Load more" twice, a new event arriving, at 390.
+
+## opsa/trg found: a source's run is counted and traced as what it came to
+`apps/control-plane/src/kernel/execution/runs.ts` `completeRun`/`afterRun`: the run-ended metric and the trace are recorded once passing on a trigger source's answer has run (`settled` callback), so a run that the relay fails is `failed` in `volvel_runs_finished_total` and in the trace, not `succeeded`. Test `a source's run that fails when its answer is passed on is counted and traced...` in `extensions.test.ts` (failed before: the failed count did not move). Siblings: `failRun`/`finishFailed` and cancel already record once. Left out: the duration metric uses the run's own end time as before.
+
+## mask2 found: an approval's title is masked by the run's values
+`apps/control-plane/src/kernel/flows/approval-detail.ts` `approvalTitle` (masks by `flowKnown`, as the detail is). Applied where a title is shown: the queue and the decided list (`routes/flows.ts` `toApproval`, `toDecided` now async with the known-values cache), the widget (`kernel/pages/approvals.ts`, waiting, decided, and the decide answer), the mail subject and text (`kernel/flows/approval-links.ts`), the link page (`routes/approval-links.ts`), MCP `list_approvals` (`routes/mcp.ts`). Test `a title that holds a value the run was given is masked...` in `approval-links.test.ts` (failed before: the subject held the key). The audit entry of a decision still holds the title as written (audit is the record). Siblings: the five readers above are all the readers of `detail.title`.
+
+## mask2 found: failures that quote a payload value are masked where they are made
+- Flow-level expression errors: `kernel/flows/engine.ts` `#evaluate` masks the evaluator's message ("Invalid duration string: k-live-...", "No such key: <value>") by what the run was given before the failure is stored, so the lists, alerts, events and activity show it masked as the run page did. Test `an expression's failure that quotes a secret the run was given is masked in the lists too` in `flows.test.ts` (the list showed the key before).
+- Event-filter and input refusals (`recordRefusal`) and their log lines: `kernel/flows/events.ts` masks by the event's secret fields (by schema and by key); a webhook's input refusal likewise (`kernel/execution/triggers.ts`). Test `a filter's failure that quotes a secret in the event is kept without it` in `operations.test.ts` (failed before). Left out: the schedule's input refusal (the input is the schedule's own, not a request's); a webhook refusal has no test of its own.
+
+## flw2/ext2 found (four faults)
+- Editor opened a deployed flow without its saved arrangement: `C/screens/FlowEditor.tsx` (open of a deployed or repository flow) also reads `flows/<path>` and draws at its `layout` (body positions, then the arrangement saved on the flow page). A failing read leaves the body's own positions. Test `WLK-15: a deployed flow opens where it was last arranged on its page` in `FlowEditorWalk.test.tsx` (failed before).
+- Draft-only flow link landed on "not found": `C/screens/Flows.tsx` `FlowView`: in an editable workspace a 404 with a live draft goes to the editor (replace, so Back works). One place for every link (`kit/objects.tsx` `objectHref` and any bookmark), not each caller. Test in `FlowsList.test.tsx` (failed before). Siblings: `Flows.tsx` `flowPage` (list) already did it; `kit/objects.tsx` unchanged.
+- A poll source that is only a draft was not offered: server `routes/authoring.ts` `DraftSummary.mode` (additive, trigger source drafts only); `C/screens/ResourceEditor.tsx` and `FlowEditor.tsx` `ofKind` offer a draft whose mode is the one asked. Tests: `authoring.test.ts` (list says the mode), `ResourceEditor.test.tsx` (a schedule offers a draft-only polling source; failed before).
+- A script step's name cleared lost its icon and group: `C/screens/Authoring.tsx` keeps the cleared step's icon and group and gives them back when the name is typed again. Test extended in `Authoring.test.tsx` (EXT-08; failed before). The draft still carries no `node` while the name is empty.
+Walk: flow editor on a flow arranged on its page, a link to a draft-only flow, a schedule's Trigger source picker with only a draft source, a script's "Use as a flow step", at 390, light and dark, keyboard, reload.
+
+## Items shown done already (verify), with the test that shows it
+- WLK-15b header names compare in lower case: `FlowEditor.test.tsx` / `FlowSteps.test.tsx` (walk1). WLK-15e Enter in Add step: `FlowEditorWalk.test.tsx` `WLK-15: in Add step, Enter in the search adds the first match` (walk1). The reserved case name: `FlowSteps.test.tsx` `WLK-15: a case called otherwise...` (walk1).
+- WLK-16a a service account's decision has a name: `page-approvals.test.ts` `WLK-16` (walk1); the retry plan's `approvalsKept` has no test of its own, still (left).
+- WLK-16b `fireScheduleNow` starts a source run for a schedule with a `source`: `triggers.ts:1219` (fixed by opsb; no separate test found by walk1 either; the source-run path is exercised in `extensions.test.ts`; left without a test of its own).
+- WLK-16c a child flow run's ID and one older than When open: `RunPage.test.tsx` (walk1).
+
+## Found
+- `retry plan approvalsKept` and `fireScheduleNow` source start have no test of their own (see above).
+- The flow editor's list shows one fault of a step at a time when the editor's own list already names that step (`manifestProblems`); the second shows after the first is fixed.
+- Schema faults of a single step's fields (the server's manifest validation) are not run in the editor; they arrive, in words, from the server on deploy.
+- `packages/ui` `JsonView` recognizes `{stored: "runs|flow-runs/....json"}`: if a table row is ever shown with exactly that shape it reads as kept apart.
+
+## Lines for docs and CHANGELOG
+- A run's `trigger` in the API names `relay` (`resourceId`, `node`, `mode`) for a trigger source's run.
+- `GET drafts` items of a trigger source carry `mode`.
+- A flow that fails on an expression no longer quotes a secret the run was given in its error.
+- A payload over 256 KB is kept in storage and shown as "too large to show here"; an expression that reads a key of it says it is too large.

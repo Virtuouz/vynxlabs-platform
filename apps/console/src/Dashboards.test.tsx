@@ -435,3 +435,87 @@ test("F1 on a dashboard that is looked at opens the dashboards' help, and the ed
   await screen.findByRole("button", { name: "Add to page" });
   expect(getHelpTopic()).toBe("data-dashboards-editor");
 });
+
+test("someone who may not make dashboards is not offered New dashboard, and is told what it takes (DAT-24)", async () => {
+  routes[`GET ${api}/dashboards`] = () => [200, { items: [], mayCreate: false }];
+  show(<Dashboards root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("No dashboards yet");
+  expect(screen.queryByRole("button", { name: "New dashboard" })).toBeNull();
+  expect(screen.getByText(/dashboard:write/)).toBeTruthy();
+}, 30_000);
+
+test("a name over 100 letters is refused on the field, and the dialog stays with what was typed (DAT-33, D52)", async () => {
+  routes[`GET ${api}/dashboards`] = () => [200, { items: [], mayCreate: true }];
+  routes[`POST ${api}/dashboards`] = () => [201, { ...mine, id: "d9", title: "Ok" }];
+  show(<Dashboards root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "New dashboard" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  const field = within(dialog).getByRole("textbox") as HTMLInputElement;
+  expect(field.maxLength).toBe(100);
+  const long = "a".repeat(101);
+  fireEvent.change(field, { target: { value: long } });
+  // Pasted text goes past what typing allows, and is refused when it is sent.
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await within(dialog).findByText(/at most 100/);
+  expect((within(dialog).getByRole("textbox") as HTMLInputElement).value).toBe(long);
+  expect(sent("POST")).toHaveLength(0);
+}, 30_000);
+
+test("the groups a dashboard can be shown to say why they are not listed (DAT-32)", async () => {
+  routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
+  routes["GET /api/v1/tenants/t1/groups"] = () => [
+    403,
+    { status: 403, detail: "This needs the group:read permission." },
+  ];
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByLabelText("Held", { selector: "section" });
+  fireEvent.click(screen.getByRole("button", { name: "Share" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  await dialog.findByText(/group:read/);
+  expect(dialog.getByText(/cannot list the groups|can't list the groups/i)).toBeTruthy();
+}, 30_000);
+
+test("what a dashboard names that the workspace does not have is said above it (DAT-28)", async () => {
+  routes[`GET ${api}/dashboards/d1`] = () => [
+    200,
+    {
+      ...mine,
+      problems: [
+        {
+          path: "/body/widgets/1/data/rows/source/visual/table",
+          message: 'there is no table "nowhere/leads" in this workspace',
+        },
+      ],
+    },
+  ];
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByLabelText("Held", { selector: "section" });
+  expect(
+    await screen.findByText(/there is no table "nowhere\/leads" in this workspace/),
+  ).toBeTruthy();
+}, 30_000);
+
+test("a dashboard does not read on its timer while the tab is hidden, and reads once when it is shown again (DAT-27)", async () => {
+  routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
+  // Only the timer is faked, and before the screen starts it.
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByLabelText("Held", { selector: "section" });
+  const reads = () => calls.filter((call) => call.url.includes("/widget-data")).length;
+  await waitFor(() => expect(reads()).toBe(2));
+  try {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    vi.advanceTimersByTime(11 * 60_000);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(reads()).toBe(2);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(reads()).toBe(4));
+  } finally {
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    vi.useRealTimers();
+  }
+}, 30_000);

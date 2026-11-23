@@ -29,6 +29,8 @@ export function loadDocs() {
   const issues = [];
   const entries = [];
   const assets = new Set();
+  // Each page as written, for "Copy as Markdown" on /docs.
+  const sources = new Map();
   // Where pages were, read from the frontmatter as written, so that a page that moved is
   // understood by any version of the schema.
   const moved = [];
@@ -59,6 +61,7 @@ export function loadDocs() {
       if (Array.isArray(was)) {
         moved.push({ path: named.path, movedFrom: was.filter((one) => typeof one === "string") });
       }
+      sources.set(named.path, text);
       const read = readPage(named.path, text, { profile: "product" });
       entries.push(read.entry);
       issues.push(...read.issues);
@@ -80,7 +83,7 @@ export function loadDocs() {
       severity: "error",
     });
   }
-  return { set: built.set, issues, assets, redirects };
+  return { set: built.set, issues, assets, redirects, sources };
 }
 
 export function report(issues) {

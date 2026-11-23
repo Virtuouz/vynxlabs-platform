@@ -87,6 +87,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), help(), builderPreload()],
   server: {
     // In development the console runs on its own port and talks to a local control plane.
-    proxy: { "/api": "http://localhost:8080" },
+    proxy: {
+      "/api": "http://localhost:8080",
+      // The product's documentation, and the stylesheet and script its pages load.
+      "/docs": "http://localhost:8080",
+      "/_platform": "http://localhost:8080",
+    },
   },
 });

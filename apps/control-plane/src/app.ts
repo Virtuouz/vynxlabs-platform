@@ -17,6 +17,7 @@ import { installFrontDoor } from "./kernel/apps/front.js";
 import { SYSTEM } from "./kernel/audit.js";
 import { authOptions, signInFeatures } from "./kernel/auth.js";
 import { closeAllSources } from "./kernel/data/sources.js";
+import { helpFile } from "./kernel/docs/help-files.js";
 import { consoleDirectory } from "./kernel/docs/product.js";
 import { pushTenantAccess } from "./kernel/git.js";
 import { type Access, access, installAccessControl } from "./kernel/http.js";
@@ -70,6 +71,7 @@ import { permissionRoutes } from "./routes/permissions.js";
 import { poolRoutes } from "./routes/pools.js";
 import { portabilityRoutes } from "./routes/portability.js";
 import { preferenceRoutes } from "./routes/preferences.js";
+import { productDocsRoutes } from "./routes/product-docs.js";
 import { promotionRequestRoutes } from "./routes/promotion-requests.js";
 import { queryRoutes } from "./routes/queries.js";
 import { scimRoutes } from "./routes/scim.js";
@@ -392,26 +394,51 @@ export async function buildApp(options: AppOptions) {
       // the browser takes it, and nothing is compressed while a request waits.
       preCompressed: true,
       cacheControl: false,
+      // The documentation under help/ is answered by one handler, below: it knows which of its
+      // names say what a file holds for ever, and answers a missing file as missing.
+      globIgnore: ["help/**"],
       setHeaders(response, path) {
-        // A file under assets has a hash of its content in its name, so it never changes. The
-        // help's pictures are named by their path, so a release can change what a name holds.
+        // A file under assets has a hash of its content in its name, so it never changes.
         const hashed =
-          /[\\/]assets[\\/]/.test(path) &&
-          !/[\\/]help[\\/]/.test(path) &&
-          /-[\w-]{8}\.[a-z0-9]+(\.(br|gz))?$/i.test(path);
+          /[\\/]assets[\\/]/.test(path) && /-[\w-]{8}\.[a-z0-9]+(\.(br|gz))?$/i.test(path);
         response.header(
           "cache-control",
           hashed ? "public, max-age=31536000, immutable" : "no-cache",
         );
       },
     });
+    app.get(
+      "/help/*",
+      { config: { access: access.public }, schema: { hide: true } },
+      async (request, reply) => {
+        let name: string;
+        try {
+          name = decodeURIComponent((request.params as { "*": string })["*"]);
+        } catch {
+          return notFoundHandler(request, reply);
+        }
+        const file = helpFile(consoleDir, name, String(request.headers["accept-encoding"] ?? ""));
+        if (!file) return notFoundHandler(request, reply);
+        reply
+          .header("content-type", file.type)
+          .header("x-content-type-options", "nosniff")
+          .header("vary", "accept-encoding")
+          // Only a picture named by a hash of itself never changes: the rest is what this release holds.
+          .header(
+            "cache-control",
+            file.immutable ? "public, max-age=31536000, immutable" : "no-cache",
+          );
+        if (file.encoding) reply.header("content-encoding", file.encoding);
+        return reply.send(file.body);
+      },
+    );
   }
+  productDocsRoutes(app, kernel);
   app.setNotFoundHandler((request, reply) => {
     const isApi = request.url === "/api" || request.url.startsWith("/api/");
     // The console is a single-page app: any other path is one of its screens.
-    // The help's files are asked for by name: one that is not there is missing, not a screen.
-    const isHelpFile = /^\/help\/[^?]*\.[a-z0-9]+(\?|$)/i.test(request.url);
-    if (consoleDir && request.method === "GET" && !isApi && !isHelpFile) {
+    // The help's files, and /docs, have routes of their own: what is missing there is missing.
+    if (consoleDir && request.method === "GET" && !isApi) {
       return reply.sendFile("index.html");
     }
     return notFoundHandler(request, reply);

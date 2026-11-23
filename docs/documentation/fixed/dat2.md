@@ -94,5 +94,4 @@ Tests: `apps/control-plane/src/data-reading.test.ts` (new, DAT-12, 13, 16, 17, 1
 States: a parameter field with an error; a source down on a widget (502 text); a key-less table with Add row. Lifecycle: type a wrong value, fix it, run. Keyboard: native select and date field; Add row dialog as before. Copy: above. Not walked in a browser (no server allowed in this lane): walk Queries at 1440, 768 and 390 px in light and dark, then Data > source > keyless table, and F1 on a dashboard in both modes.
 
 ## Found
-- `queries/saved` and widgets on a saved query still share `limit`/offset behavior untested for a source over its limit with `cursor` past the end (DAT-19 returns an empty page).
 - The Queries list does not show `renamedFrom` or a title (DAT-30).

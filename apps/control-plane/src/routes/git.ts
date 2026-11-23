@@ -14,6 +14,7 @@ import {
 } from "../kernel/git.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { requireStanding } from "../kernel/pages/standing.js";
 import { AnyObject, Id, iso, NullableId, TenantParams, Time, WorkspaceParams } from "./shared.js";
 
 const NullableString = Type.Union([Type.String(), Type.Null()]);
@@ -538,6 +539,9 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return pull(kernel, ctx.actor, workspace, {
           resolutions: body.resolutions,
           allowDelete: body.allowDelete,
+          // Brought in, SQL and a data source's table are held to what a console deploy is.
+          standing: (changes) =>
+            requireStanding(kernel, ctx, workspace, changes, { deploying: true }),
         });
       },
     );

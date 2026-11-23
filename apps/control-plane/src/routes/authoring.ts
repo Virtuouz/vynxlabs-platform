@@ -997,6 +997,15 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const paths = query.paths?.split(",").filter(Boolean);
         let summary: Awaited<ReturnType<typeof deployDrafts>>["summary"] | undefined;
         try {
+          // What a deploy would refuse the caller for SQL or a data source's table, this says too.
+          let pending = db
+            .selectFrom("resource_draft")
+            .select(["kind", "path", "body", "deleted"])
+            .where("workspace_id", "=", workspace.id);
+          if (paths) pending = pending.where("path", "in", paths);
+          await requireStanding(kernel, ctx, workspace, await pending.execute(), {
+            deploying: true,
+          });
           await mutate(db, ctx.actor, async (trx, audit) => {
             summary = (await deployDrafts(kernel, trx, audit, workspace, ctx.principal, { paths }))
               .summary;

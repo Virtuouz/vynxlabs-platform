@@ -167,9 +167,9 @@ describe("the example integration", () => {
     expect(refused.err).toBe(
       [
         "Could not deploy to main. The workspace is missing something this bundle needs. Set up each one, then deploy again.",
-        '  - the connection "alerts" is not bound in this workspace',
-        '  - the connection "erp" is not bound in this workspace',
-        '  - the connection "shop" is not bound in this workspace',
+        '  - the connection "alerts" is not set up in this workspace',
+        '  - the connection "erp" is not set up in this workspace',
+        '  - the connection "shop" is not set up in this workspace',
         '  - the secret "SHOP_WEBHOOK_SECRET" is not set in this workspace',
       ].join("\n"),
     );

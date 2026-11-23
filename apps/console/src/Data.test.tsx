@@ -2,6 +2,7 @@
 import { cleanup, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { parseValue } from "@volvel/ui";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { resetPreferences } from "./prefs.ts";
 import { navigate } from "./router.tsx";
 import {
   bodyToRestore,
@@ -488,6 +489,9 @@ test("a source's column the database fills in is not asked for when a row is add
 });
 
 test("the Data sources screens use the product's words, not the platform (P31)", async () => {
+  // A description read in an earlier test is folded behind help: start as a first visit.
+  localStorage.clear();
+  resetPreferences();
   routes[`GET /api/v1${root}/data-source-tables/erp`] = () => [200, { items: [] }];
   routes[`GET /api/v1${root}/data-source-bindings`] = () => [200, { items: [] }];
   show(<SourceView root={root} path="erp" link="/t/t1/workspaces/w1" />);

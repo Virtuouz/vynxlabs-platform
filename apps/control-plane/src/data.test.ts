@@ -347,7 +347,7 @@ describe("the data API", () => {
       { path: "/day", message: "must be a day that exists, such as 2026-01-31" },
       { path: "/ref", message: "must be an ID" },
       { path: "/nope", message: 'there is no column "nope" in lab/samples' },
-      { path: "/id", message: '"id" is set by the platform' },
+      { path: "/id", message: '"id" is set by Volvel' },
     ]);
     expect(
       (await alice.post(`${ws()}/rows/customers`, { email: "a@x.example" })).body.errors,

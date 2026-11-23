@@ -293,14 +293,14 @@ describe("a service account's key does not answer for a person (ACC-08, API-19)"
       resources: [...now, { kind: "group", key: "ops", body: { title: "Ops" } }],
     });
     expect(asked.status, JSON.stringify(asked.body)).toBe(202);
-    const decided = await robot.post(`/tenants/${a.id}/access/releases/${asked.body.id}/decision`, {
+    const decided = await robot.post(`/tenants/${a.id}/access/releases/${asked.body.release.id}/decision`, {
       decision: "approve",
     });
     expect(decided.status, JSON.stringify(decided.body)).toBe(403);
     expect(
       (
         await (a.clients.bob as Client).post(
-          `/tenants/${a.id}/access/releases/${asked.body.id}/decision`,
+          `/tenants/${a.id}/access/releases/${asked.body.release.id}/decision`,
           { decision: "approve" },
         )
       ).status,
@@ -328,13 +328,13 @@ describe("a service account's key does not answer for a person (ACC-08, API-19)"
       resources: [...now, { kind: "group", key: "ops", body: { title: "Ops" } }],
     });
     expect(asked.status, JSON.stringify(asked.body)).toBe(202);
-    const own = await ann.post(`/tenants/${a.id}/access/releases/${asked.body.id}/decision`, {
+    const own = await ann.post(`/tenants/${a.id}/access/releases/${asked.body.release.id}/decision`, {
       decision: "approve",
     });
     expect(own.status, JSON.stringify(own.body)).toBe(409);
     expect(own.body.code).toBe("own_release");
     const other = await (a.clients.bob as Client).post(
-      `/tenants/${a.id}/access/releases/${asked.body.id}/decision`,
+      `/tenants/${a.id}/access/releases/${asked.body.release.id}/decision`,
       { decision: "approve" },
     );
     expect(other.status, JSON.stringify(other.body)).toBe(200);

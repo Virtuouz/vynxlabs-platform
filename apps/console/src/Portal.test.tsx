@@ -515,7 +515,7 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
 
   show(<Domains base={base} />);
   await screen.findByText("No hostnames yet");
-  expect(document.body.textContent).toContain("the platform issues none");
+  expect(document.body.textContent).toContain("Volvel issues none");
   fireEvent.click(screen.getAllByRole("button", { name: "Add a hostname" })[0] as HTMLElement);
   await screen.findByRole("dialog");
   // The first workspace has no app to serve, so nothing can be added there.

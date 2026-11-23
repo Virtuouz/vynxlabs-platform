@@ -338,7 +338,7 @@ describe("an external Postgres database as a data source", () => {
       { path: "/name", message: "must be text" },
     ]);
     expect((await alice.post(rows, { name: "x", tags: ["a"] })).body.errors).toEqual([
-      { path: "/tags", message: '"tags" has a type the platform only reads' },
+      { path: "/tags", message: '"tags" has a type Volvel only reads' },
     ]);
     expect((await alice.get(`${ws()}/source-rows/nope/erp`)).status).toBe(404);
     // A table with no key can be read and added to, not changed.

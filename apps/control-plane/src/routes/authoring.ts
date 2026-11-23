@@ -844,13 +844,13 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/group-keys`,
       {
-        config: { access: access.workspace("resource:read") },
+        config: { access: access.custom },
         schema: {
           summary: "The keys of the tenant's groups, members' and end users'",
           description:
             "What an action's `runBy` and a widget's `seenBy` name groups by. The builder's " +
             'publish check and its "View as" read it: a group named there that is not here ' +
-            "matches nobody.",
+            "matches nobody. `interface:read` is enough, as it is for the drafts a builder sees.",
           tags: ["authoring"],
           params: WorkspaceParams,
           response: {
@@ -866,7 +866,8 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params }) => {
+        await enter(ctx, params, "resource:read");
         const [members, endUsers] = await Promise.all([
           db
             .selectFrom("principal_group")
@@ -959,13 +960,15 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/changes/preview`,
       {
-        config: { access: access.workspace("deployment:read") },
+        config: { access: access.custom },
         schema: {
           summary: "What deploying the drafts would do",
           description:
             "Found by deploying them and taking it all back, so the answer is exactly what a " +
             "deploy would then do, including every refusal: code that does not build, a " +
-            "manifest that is not valid, a connection that is not bound.",
+            "manifest that is not valid, a connection that is not bound. Needs " +
+            "`deployment:read`; `interface:write` is enough for the interfaces and apps named in " +
+            "`paths`, as it is to deploy them.",
           tags: ["authoring"],
           params: WorkspaceParams,
           querystring: Type.Object({
@@ -992,9 +995,22 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx, query }) => {
-        const workspace = ctx.workspace as WorkspaceRef;
+      async ({ ctx, params, query }) => {
         const paths = query.paths?.split(",").filter(Boolean);
+        const at = await findWorkspace(kernel, params.t, params.w);
+        ctx.workspace = at;
+        if (
+          !(await ctx.allowed("deployment:read", { tenantId: at.tenantId, workspaceId: at.id }))
+        ) {
+          // The check a builder makes before publishing: what is theirs, named, as the deploy holds them.
+          const { held } = await enter(ctx, params, "deployment:write");
+          if (!paths?.length) throw forbidden("deployment:read");
+          for (const path of paths) {
+            if ((await screenAt(at, path, held)) === true) continue;
+            throw forbidden("deployment:read");
+          }
+        }
+        const workspace = at;
         let summary: Awaited<ReturnType<typeof deployDrafts>>["summary"] | undefined;
         try {
           await mutate(db, ctx.actor, async (trx, audit) => {

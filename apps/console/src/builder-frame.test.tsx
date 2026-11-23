@@ -374,6 +374,27 @@ test("Ready to publish: checks, what changes, Try as, and a blocking problem", a
   expect(await screen.findByRole("button", { name: "View as Billing" })).toBeTruthy();
 });
 
+test("a check that the control plane refuses says so, with a way to ask again (BLD-03)", async () => {
+  withAside({});
+  const before = globalThis.fetch;
+  let refused = true;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) =>
+    refused && address.includes("/changes/preview")
+      ? new Response(
+          JSON.stringify({ detail: "This needs the deployment:read permission.", status: 403 }),
+          { status: 403 },
+        )
+      : before(address, init),
+  );
+  await open();
+  fireEvent.click(screen.getAllByRole("button", { name: "Publish" })[0] as HTMLElement);
+  expect(await screen.findByText(/This needs the deployment:read permission/)).toBeTruthy();
+  expect(screen.queryByText("Checking what publishing does…")).toBeNull();
+  refused = false;
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  expect(await screen.findByRole("heading", { name: "Ready to publish" })).toBeTruthy();
+});
+
 test("a table that is not there, or a group that is gone, is said before publishing", async () => {
   withAside({ rules: { seenBy: { groups: ["vanished"] } } });
   (stored.pages[0] as { widgets: PageWidget[] }).widgets.push({

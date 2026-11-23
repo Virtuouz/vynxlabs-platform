@@ -149,6 +149,16 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
         `${manifest.path} (${manifest.kind}): paths under ${CORE_PREFIX} are kept for the platform's own nodes.`,
       );
     }
+    // `default` is what the queue of scripts that name no pool is shown as. A pool cannot be
+    // made with that name, so a script naming it would wait where no pool is.
+    if (
+      (manifest.kind === "script" || manifest.kind === "trigger_source") &&
+      (manifest.body as { worker?: unknown } | undefined)?.worker === "default"
+    ) {
+      problems.push(
+        `${manifest.path} (${manifest.kind}): /body/worker names a pool called default. That is the queue of ${manifest.kind === "script" ? "scripts" : "sources"} that name no pool: leave worker out to use it, or name a pool you have made.`,
+      );
+    }
     const result = registry.validateManifest(manifest);
     if (!result.ok) {
       for (const issue of result.issues) {

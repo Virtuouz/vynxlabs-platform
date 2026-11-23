@@ -173,3 +173,27 @@ describe("the names of an app's files (APP-05)", () => {
     expect(check("my logo.png")[0]).toContain("build.rollupOptions.output");
   });
 });
+
+describe("a script's worker pool", () => {
+  const script = (worker: string): BundleManifest => ({
+    kind: "script",
+    schemaVersion: 1,
+    path: "jobs/nightly",
+    ownership: "code",
+    body: {
+      entry: "nightly",
+      input: { type: "object" },
+      output: {},
+      timeoutSeconds: 30,
+      retries: { limit: 0, delaySeconds: 0, backoff: false },
+      uses: { connections: [], secrets: [], variables: [] },
+      worker,
+    },
+  });
+
+  test("cannot be called default: that is the queue of scripts that name no pool (GOV-38)", () => {
+    const problems = checkBundleManifests([script("default")]);
+    expect(problems.join("\n")).toContain("pool called default");
+    expect(checkBundleManifests([script("clients-lan")])).toEqual([]);
+  });
+});

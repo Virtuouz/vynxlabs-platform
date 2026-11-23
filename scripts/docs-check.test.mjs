@@ -13,7 +13,7 @@ test("docs:check asks whether the generated pages are old before anything rewrit
   const script = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).scripts["docs:check"];
   const steps = script.split("&&").map((step) => step.trim());
   const asks = steps.findIndex((step) => step.includes("check.mjs --staleness"));
-  const writes = steps.findIndex((step) => step.includes("generators/api.mjs"));
+  const writes = steps.findIndex((step) => step.includes("docs/generate.mjs"));
   expect(asks).toBeGreaterThan(-1);
   expect(asks).toBeLessThan(writes);
 });

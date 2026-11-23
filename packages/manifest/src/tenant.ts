@@ -233,6 +233,11 @@ export const isTenantFile = (path: string): boolean => {
   return match !== null && isTenantKind(match[2] as string);
 };
 
+/** The name of a tenant resource's file, relative to the tenant folder: `<folder>/<key>.<kind>.yaml`. */
+export function tenantFileName(definition: { kind: string; folder: string }, key: string): string {
+  return `${definition.folder}/${key}.${definition.kind}.yaml`;
+}
+
 /**
  * Writes tenant resources as files, one each: `<folder>/<key>.<kind>.yaml`,
  * relative to the tenant folder. The title is written beside the body, as every
@@ -249,7 +254,10 @@ export function renderTenantFiles(resources: readonly TenantResource[]): Resourc
         Object.entries(rest).sort(([a], [b]) => order.indexOf(a) - order.indexOf(b)),
       );
       return {
-        path: `${definition?.folder ?? resource.kind}/${resource.key}.${resource.kind}.yaml`,
+        path: tenantFileName(
+          { kind: resource.kind, folder: definition?.folder ?? resource.kind },
+          resource.key,
+        ),
         content: stringify(
           { ...(said !== undefined ? { title: said } : {}), schemaVersion: 1, body },
           YAML_OPTIONS,

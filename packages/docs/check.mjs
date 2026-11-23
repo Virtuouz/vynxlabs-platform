@@ -47,7 +47,7 @@ const problems = [];
 // `pnpm docs:check` asks this first (`--staleness`), before the API's generator rewrites
 // every page: asked after it, nothing could ever be old.
 if (process.argv.includes("--staleness")) {
-  const old = existsSync(GENERATED) ? stale() : [];
+  const old = existsSync(GENERATED) ? await stale() : [];
   for (const one of old) console.error(`${one} Run pnpm docs:generate.`);
   if (old.length > 0) {
     console.error(
@@ -57,8 +57,8 @@ if (process.argv.includes("--staleness")) {
   }
   process.exit(0);
 }
-if (!existsSync(GENERATED)) write();
-for (const one of stale()) {
+if (!existsSync(GENERATED)) await write();
+for (const one of await stale()) {
   problems.push(`${one} Run pnpm docs:generate.`);
 }
 

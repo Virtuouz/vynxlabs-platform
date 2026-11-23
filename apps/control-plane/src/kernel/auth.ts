@@ -27,6 +27,21 @@ const SIGN_IN_RULE = { window: 60, max: SIGN_IN_ATTEMPTS_PER_MINUTE };
 const timestamps = { createdAt: "created_at", updatedAt: "updated_at" };
 
 /** The authentication options, shared by the running service and the schema test. */
+/** Which optional parts of the library the options switch on: the one place a description reads it from. */
+export function signInFeatures(options: ReturnType<typeof authOptions>) {
+  const user = options.user as {
+    changeEmail?: { enabled?: boolean };
+    deleteUser?: { enabled?: boolean };
+  };
+  const social = (options as { socialProviders?: Record<string, unknown> }).socialProviders;
+  return {
+    signUp: !options.emailAndPassword.disableSignUp,
+    social: Object.keys(social ?? {}).length > 0,
+    changeEmail: user.changeEmail?.enabled === true,
+    deleteUser: user.deleteUser?.enabled === true,
+  };
+}
+
 export function authOptions(
   db: Db,
   config: Pick<Config, "publicUrl" | "authSecret"> & { authLimits?: boolean },

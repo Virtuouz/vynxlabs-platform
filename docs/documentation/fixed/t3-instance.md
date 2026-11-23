@@ -22,3 +22,11 @@ Items: INS-MP3, 4, 5, 7, 9, 10, 11, 12; HOST-MP2, 3/4, 5, 7. Each test was seen 
 - Test: `TenantScreens.test.tsx` "an operator turns workers off for a tenant and reads its retention from the list, with no grant (INS-MP7)".
 - Siblings: the same switch stays on the tenant's Workers screen and retention on its Retention screen (same routes). Not added to the mobile list's row menu.
 - Walk: Tenants, pick a row (inspector at 1440, dialog at 390), turn workers off and on, open the sheet, shorten a period (confirm), reload. Keyboard: both buttons and the sheet (Esc closes). Copy as written. Not signed in with a grant: no tenant data is shown.
+
+## INS-MP9, INS-MP12 (locations: Edit and inspector; tenants by location)
+- API, both additive: `PUT /instance/database-locations/:name` takes `connectionString` as optional: left out, only a registered name's `description` changes, nothing is connected to, audited `database_location.described`; an unknown name without an address is 400 saying so (`routes/locations.ts`). `GET /tenants?dataLocation=<name>` (`routes/tenants.ts`).
+- Console: `Environments.tsx` `DatabaseLocations` is now a `ListCollection` with Edit (description; new address optional, "leave it empty to keep it") and an inspector (what it is for, database and host, status or its problem, "Tenants here" with links and a link to the tenant list). `Tenants.tsx`: "Tables kept in" select (operators, kept in the address as `?location=`), its own empty text, the inspector's location is a link to the location. `kit/ListCollection.tsx` takes `filters` (shared piece; other lists may use it).
+- Tests: `environments.test.ts` "a location's description changes without its address ... (INS-MP9, INS-MP12)" (400 before); `Locations.test.tsx` (two).
+- Siblings: other lists with an inspector (`InstanceMembers`, `Operators`) not changed. The Tenants "Tables kept in" column stays plain text so a click still opens the row.
+- Left out: pointing a tenant at another location (an export and an import, as the API says).
+- Walk: Instance > Database locations: Edit, inspector at 390 px (dialog), Remove still for an empty location; Tenants with the filter, reload keeps it, Back.

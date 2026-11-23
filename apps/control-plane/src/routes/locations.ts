@@ -177,8 +177,10 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.instance("instance:write") },
         schema: {
-          summary: "Register a dedicated database, or change its address",
+          summary: "Register a dedicated database, change its address, or change its description",
           description:
+            "Without `connectionString`, only the description of a database already registered is " +
+            "changed, and nothing is connected to. " +
             "The platform connects first, and prepares the database: a catalog of custom " +
             "tables and a restricted sign-in for row requests. The user given must own the " +
             "database and be allowed to create roles. The address is stored encrypted. Pointing " +
@@ -187,28 +189,62 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["instance"],
           params: Params,
           body: Type.Object({
-            connectionString: Type.String({
-              minLength: 1,
-              maxLength: 2000,
-              description: "postgres://user:password@host:5432/database",
-            }),
+            connectionString: Type.Optional(
+              Type.String({
+                minLength: 1,
+                maxLength: 2000,
+                description:
+                  "postgres://user:password@host:5432/database. Needed to register a name; left out, the address stays and only the description changes.",
+              }),
+            ),
             description: Type.Optional(Type.String({ maxLength: 500 })),
           }),
           response: { 204: NoContent },
         },
       },
       async ({ ctx, params, body }, reply) => {
+        if (body.connectionString === undefined) {
+          const known = await db
+            .selectFrom("database_location")
+            .select("name")
+            .where("name", "=", params.name)
+            .executeTakeFirst();
+          if (!known) {
+            throw badRequest(
+              `"${params.name}" is not registered yet: give its connection string, postgres://user:password@host/database.`,
+            );
+          }
+          if (body.description === undefined) {
+            throw badRequest("Send a description, a connection string, or both.");
+          }
+          const description = body.description;
+          await ctx.mutate(async (trx, audit) => {
+            await trx
+              .updateTable("database_location")
+              .set({ description, updated_at: new Date() })
+              .where("name", "=", params.name)
+              .execute();
+            await audit({
+              action: "database_location.described",
+              targetType: "database_location",
+              targetId: null,
+              details: { name: params.name, description },
+            });
+          });
+          return reply.code(204).send(null);
+        }
+        const connectionString = body.connectionString;
         let address: ReturnType<typeof shown>;
         try {
-          if (!/^postgres(ql)?:$/.test(new URL(body.connectionString).protocol)) throw new Error();
-          address = shown(body.connectionString);
+          if (!/^postgres(ql)?:$/.test(new URL(connectionString).protocol)) throw new Error();
+          address = shown(connectionString);
         } catch {
           throw badRequest(
             "The connection string must look like postgres://user:password@host/database.",
           );
         }
         // Prove it works, and prepare it, before any tenant is pointed at it.
-        const store = await kernel.data.connect(body.connectionString).catch((error: Error) => {
+        const store = await kernel.data.connect(connectionString).catch((error: Error) => {
           throw badRequest(`That database could not be prepared. ${error.message}`);
         });
         try {
@@ -217,7 +253,7 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           await store.close();
         }
         await ctx.mutate(async (trx, audit) => {
-          const sealed = kernel.data.seal(params.name, body.connectionString);
+          const sealed = kernel.data.seal(params.name, connectionString);
           await trx
             .insertInto("database_location")
             .values({

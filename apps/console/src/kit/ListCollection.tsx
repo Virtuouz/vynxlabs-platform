@@ -24,6 +24,7 @@ export function ListCollection<Row>({
   rowActions,
   search,
   paged,
+  filters,
   inspect,
 }: {
   title: string;
@@ -43,6 +44,8 @@ export function ListCollection<Row>({
    * `search` then only says there is a box.
    */
   paged?: boolean;
+  /** Controls beside the search box that narrow the list: kept by the screen, in the address. */
+  filters?: ReactNode;
   /** What the inspector shows for the chosen row. Without it rows are not chosen. */
   inspect?: {
     title: (row: Row) => ReactNode;
@@ -105,17 +108,22 @@ export function ListCollection<Row>({
         description={description}
         actions={createButton}
         toolbar={
-          created || hasSearch ? (
+          created || hasSearch || filters ? (
             <div className="flex flex-col gap-3">
               {created ? <Notice tone="attention">{created}</Notice> : null}
-              {hasSearch ? (
-                <div className="w-full max-w-sm">
-                  <TextField
-                    label={`Search ${title.toLowerCase()}`}
-                    name="search"
-                    value={query}
-                    onChange={setQuery}
-                  />
+              {hasSearch || filters ? (
+                <div className="flex flex-wrap items-end gap-3">
+                  {hasSearch ? (
+                    <div className="w-full max-w-sm">
+                      <TextField
+                        label={`Search ${title.toLowerCase()}`}
+                        name="search"
+                        value={query}
+                        onChange={setQuery}
+                      />
+                    </div>
+                  ) : null}
+                  {filters}
                 </div>
               ) : null}
             </div>

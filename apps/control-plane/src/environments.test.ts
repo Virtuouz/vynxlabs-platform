@@ -1032,6 +1032,48 @@ describe("database locations", () => {
     }
   });
 
+  test("a location's description changes without its address, and tenants are listed by location (INS-MP9, INS-MP12)", async () => {
+    const extra = await createTestDatabase();
+    try {
+      await t.admin.put("/instance/database-locations/described", {
+        connectionString: extra.connectionString,
+        description: "for the first client",
+      });
+      const placed = await t.admin.post("/tenants", {
+        slug: "placed-here",
+        name: "Placed here",
+        dataLocation: "described",
+      });
+      expect(placed.status, JSON.stringify(placed.body)).toBe(201);
+      // Only the words: no address is sent, and it still answers afterwards.
+      const edited = await t.admin.put("/instance/database-locations/described", {
+        description: "for the second client",
+      });
+      expect(edited.status, JSON.stringify(edited.body)).toBe(204);
+      const row = (await t.admin.get("/instance/database-locations")).body.items.find(
+        (one: Any) => one.name === "described",
+      );
+      expect(row).toMatchObject({
+        description: "for the second client",
+        reachable: true,
+        tenants: 1,
+      });
+      // A name nobody registered needs an address.
+      const unknown = await t.admin.put("/instance/database-locations/never-made", {
+        description: "x",
+      });
+      expect(unknown.status).toBe(400);
+      expect(unknown.body.detail).toMatch(/connection string/i);
+      const there = await t.admin.get("/tenants?dataLocation=described");
+      expect(there.body.items.map((one: Any) => one.slug)).toEqual(["placed-here"]);
+      expect((await t.admin.get("/tenants?dataLocation=nowhere")).body.items).toEqual([]);
+      await t.admin.post(`/tenants/${placed.body.id}/deletion`, { confirm: "placed-here" });
+      await t.admin.delete("/instance/database-locations/described");
+    } finally {
+      await extra.drop();
+    }
+  });
+
   test("an operator registers one, sees whether it answers, and removes it", async () => {
     const extra = await createTestDatabase();
     try {

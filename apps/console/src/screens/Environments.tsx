@@ -3,6 +3,8 @@ import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { count } from "../kit/format.ts";
+import { ListCollection } from "../kit/ListCollection.tsx";
+import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import {
   KeyValues,
   Panel,
@@ -15,7 +17,7 @@ import { consoleLink } from "../kit/objects.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
 import { Code, Mono, StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
-import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
+import { CreateDialog, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
 
 export interface WorkspaceSummary {
@@ -722,18 +724,98 @@ interface Location {
   problem: string | null;
 }
 
+/** What is said of a location whose address is not changed: the database stays, and so does its sign-in. */
+function EditLocation({ row, onDone }: { row: Location; onDone: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button size="small" onClick={() => setOpen(true)}>
+        Edit
+      </Button>
+      <CreateDialog
+        open={open}
+        onClose={() => setOpen(false)}
+        initial={{ description: row.description }}
+        config={{
+          action: "Edit location",
+          description: `Now ${row.database} on ${row.host}. The address is stored encrypted and never shown: leave it empty to keep it, or give a new one to point ${row.name} at another database. A new address is refused unless it holds what the tenants here keep.`,
+          fields: [
+            { name: "description", label: "What it is for", required: false },
+            {
+              name: "connectionString",
+              label: "New connection string",
+              type: "password",
+              required: false,
+              placeholder: "postgres://user:password@host:5432/database",
+              hint: "Stored encrypted, and never shown again.",
+            },
+          ],
+          submit: ({ description = "", connectionString }) =>
+            api.put(`/instance/database-locations/${row.name}`, {
+              description,
+              ...(connectionString ? { connectionString } : {}),
+            }),
+        }}
+        onCreated={() => {
+          setOpen(false);
+          notify.success(`${row.name} is saved.`);
+          onDone();
+        }}
+      />
+    </>
+  );
+}
+
+/** The tenants that keep their tables in one location: where an operator sees what removing or editing it touches. */
+function LocationTenants({ name }: { name: string }) {
+  const loaded = useLoad<{ items: { id: string; name: string; slug: string }[] }>(
+    `/tenants?dataLocation=${encodeURIComponent(name)}&limit=50`,
+  );
+  if (loaded.error)
+    return <ErrorState error={loaded.error} what="its tenants" onRetry={loaded.reload} />;
+  if (!loaded.data) return <Loading what="its tenants" />;
+  if (loaded.data.items.length === 0) {
+    return <p className="m-0 text-body-sm text-ink-muted">No tenant keeps its tables here.</p>;
+  }
+  return (
+    <ul className="m-0 flex list-none flex-col gap-1 p-0">
+      {loaded.data.items.map((one) => (
+        <li key={one.id} className="flex flex-wrap items-baseline gap-2">
+          <Link to={`/t/${one.id}`} className="font-medium text-action">
+            {one.name}
+          </Link>
+          <Mono className="text-ink-subtle">{one.slug}</Mono>
+        </li>
+      ))}
+      <li>
+        <Link to={`/?location=${encodeURIComponent(name)}`} className="text-action text-meta">
+          Show them in the tenant list
+        </Link>
+      </li>
+    </ul>
+  );
+}
+
 export function DatabaseLocations() {
   return (
-    <ListScreen<Location>
+    <ListCollection<Location>
       title="Database locations"
       description="Databases, other than the instance's own, where a tenant's custom tables can live. A tenant is placed in one when it is created or imported."
       path="/instance/database-locations"
       rowKey={(row) => row.name}
       columns={[
         { header: "Name", cell: (row) => <Code>{row.name}</Code> },
-        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
-        { header: "Database", cell: (row) => `${row.database} on ${row.host}` },
-        { header: "Tenants", cell: (row) => row.tenants, align: "end" },
+        {
+          header: "For",
+          priority: 2,
+          cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+        },
+        {
+          header: "Database",
+          priority: 3,
+          cell: (row) => (row.host ? `${row.database} on ${row.host}` : ""),
+        },
+        { header: "Tenants", priority: 2, cell: (row) => row.tenants, align: "end" },
         {
           header: "Status",
           cell: (row) =>
@@ -774,15 +856,44 @@ export function DatabaseLocations() {
             ...(description ? { description } : {}),
           }),
       }}
-      rowActions={(row, reload) =>
-        row.tenants > 0 ? null : (
-          <RemoveButton
-            confirm={`Remove "${row.name}" from this instance? Nothing in that database is touched.`}
-            run={() => api.delete(`/instance/database-locations/${row.name}`)}
-            onDone={reload}
-          />
-        )
-      }
+      rowActions={(row, reload) => (
+        <>
+          <EditLocation row={row} onDone={reload} />
+          {row.tenants > 0 ? null : (
+            <RemoveButton
+              confirm={`Remove "${row.name}" from this instance? Nothing in that database is touched.`}
+              run={() => api.delete(`/instance/database-locations/${row.name}`)}
+              onDone={reload}
+            />
+          )}
+        </>
+      )}
+      inspect={{
+        title: (row) => row.name,
+        eyebrow: () => "Database location",
+        body: (row) => (
+          <div className="flex flex-col gap-5">
+            <KeyValues
+              rows={[
+                { label: "For", value: row.description || "Not said" },
+                {
+                  label: "Database",
+                  value: row.host ? `${row.database} on ${row.host}` : "Its address cannot be read",
+                },
+                {
+                  label: "Status",
+                  value: row.reachable ? "Answers" : (row.problem ?? "Does not answer"),
+                },
+                { label: "Tenants", value: String(row.tenants) },
+              ]}
+            />
+            <section aria-label="Tenants here" className="flex flex-col gap-2">
+              <SectionLabel>Tenants here</SectionLabel>
+              <LocationTenants name={row.name} />
+            </section>
+          </div>
+        ),
+      }}
     />
   );
 }

@@ -2,7 +2,7 @@
 
 Volvel is one self-hostable foundation for custom internal apps, business workflows and system integrations. The design is in [docs/master-spec.md](docs/master-spec.md). Work is delivered in phases, each with a design doc under [docs/phases](docs/phases).
 
-The platform is at phase 6, apps. A developer defines scripts, flows, tables, data sources and apps in a tenant's repository and deploys them. An app is served by the instance to the tenant's staff, to its own pool of end users, or to anyone, as its bindings say, with the tenant's branding. Changes move from a dev workspace to production as the same bundle, a tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another. Editing by end users is the next track.
+A developer defines scripts, flows, tables, data sources and apps in a tenant's repository and deploys them. An app is served by the instance to the tenant's staff, to its own pool of end users, or to anyone, as its bindings say, with the tenant's branding. Changes move from a dev workspace to production as the same bundle, a tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another.
 
 To run an instance, read [docs/self-hosting.md](docs/self-hosting.md).
 
@@ -32,7 +32,7 @@ The API describes itself at http://localhost:8080/api/v1/openapi.json.
 `examples/acme` is a sample tenant repository: an order sync between a shop and an ERP.
 
 ```sh
-alias platform="node $PWD/packages/cli/dist/bin.js"
+alias volvel="node $PWD/packages/cli/dist/bin.js"
 
 volvel login --url http://localhost:8080 --token <api key>   # create the key in the console, under your account menu
 cd examples/acme
@@ -95,7 +95,7 @@ cp deploy/compose/.env.example deploy/compose/.env    # then fill it in
 docker compose -f deploy/compose/compose.yaml up -d --wait
 ```
 
-This runs the control plane, Postgres and the object store with persistent volumes. Keep a copy of `MASTER_KEY`: without it, stored secrets cannot be read again. The control plane listens on `127.0.0.1:8080` by default. Put a reverse proxy that terminates TLS in front of it before exposing it.
+This runs the control plane, the worker host that starts managed workers (it needs `WORKER_HOST_TOKEN` in `.env`), Postgres and the object store with persistent volumes. Take Postgres or the object store out of `COMPOSE_PROFILES` in `.env` to use your own. Keep a copy of `MASTER_KEY`: without it, stored secrets cannot be read again. The control plane listens on `127.0.0.1:8080` by default. Put a reverse proxy that terminates TLS in front of it before exposing it.
 
 The full guide, including TLS, backups, upgrades, dedicated databases, workers in another network and moving a tenant, is [docs/self-hosting.md](docs/self-hosting.md).
 

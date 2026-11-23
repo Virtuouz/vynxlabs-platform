@@ -1,6 +1,6 @@
 #!/bin/sh
 # Starts the worker host (decision 0001). It runs as root in a container of its
-# own, holding only CAP_SETUID and CAP_SETGID, to start each worker as vxrun,
+# own, holding only CAP_SETUID and CAP_SETGID, to start each worker as a user of its own,
 # and CAP_NET_ADMIN, if given, for the rules below.
 #
 # The container's network is the first boundary: it reaches the control plane

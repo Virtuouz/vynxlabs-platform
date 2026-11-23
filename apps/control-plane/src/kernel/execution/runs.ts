@@ -183,7 +183,12 @@ export function laneOf(
   return { group: `${resourceId}:${key}`, limit: concurrency.limit, key };
 }
 
-export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
+/**
+ * What starting a script would refuse, found out without starting it: it is in the bundle, and the
+ * input is what its schema takes. A page's action asks this before its data is saved, and a start
+ * asks it again.
+ */
+export async function checkRunStart(kernel: Kernel, trx: Trx | Kernel["db"], request: StartRun) {
   const workspace = await trx
     .selectFrom("workspace")
     .select(["id", "active_bundle_id"])
@@ -245,7 +250,15 @@ export async function startRun(kernel: Kernel, trx: Trx, request: StartRun) {
 
   const issues = validateJson(body.input, request.input ?? {}, "/input");
   if (issues.length > 0) throw badRequest("The input does not match the script's schema.", issues);
+  return { request, body, bundleId, resourceId, alias };
+}
 
+export async function startRun(kernel: Kernel, trx: Trx, startRequest: StartRun) {
+  const { request, body, bundleId, resourceId, alias } = await checkRunStart(
+    kernel,
+    trx,
+    startRequest,
+  );
   const key = request.idempotencyKey ?? randomUUID();
   if (request.idempotencyKey !== undefined) {
     const earlier = await trx

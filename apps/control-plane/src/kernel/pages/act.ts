@@ -25,8 +25,8 @@ import {
   withData,
 } from "../data/rows.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
-import { startRun } from "../execution/runs.js";
-import { kickFlow, startFlowRun } from "../flows/engine.js";
+import { checkRunStart, startRun } from "../execution/runs.js";
+import { checkFlowStart, kickFlow, startFlowRun } from "../flows/engine.js";
 import type { RequestContext } from "../http.js";
 import type { Kernel } from "../kernel.js";
 import { resolveResource } from "../resolve.js";
@@ -565,6 +565,20 @@ export async function runAction(
         }
       }
     }
+    // ---- What a start would refuse is found out here, in the order of the steps and before the
+    // data is saved: the throw ends the transaction, and nothing it changed is kept.
+    for (const start of starts) {
+      const asked = {
+        tenantId,
+        workspaceId,
+        input: start.input,
+        trigger: { type: "manual" },
+        startedBy: { type: ctx.principal.type, id: ctx.principal.id },
+      };
+      if (start.do === "flow")
+        await checkFlowStart(kernel, kernel.db, { ...asked, flow: start.path });
+      else await checkRunStart(kernel, kernel.db, { ...asked, script: start.path });
+    }
     // ---- Each change is audited, with where it came from, in the same transaction.
     for (const change of changes) {
       await writeAudit(kernel.db, ctx.actor, {
@@ -587,50 +601,56 @@ export async function runAction(
       change.id,
     ]);
   }
+  // What still fails now (the queue, the database) is answered as saved, and said: the data is kept.
+  const notStarted: { do: "flow" | "script"; path: string }[] = [];
   for (const start of starts) {
-    const trigger = { type: "manual", detail: { origin } };
-    const startedBy = { type: ctx.principal.type, id: ctx.principal.id };
-    if (start.do === "flow") {
-      const result = await ctx.mutate(async (trx, audit) => {
-        const started = await startFlowRun(kernel, trx, {
-          tenantId,
-          workspaceId,
-          flow: start.path,
-          input: start.input,
-          trigger,
-          startedBy,
+    try {
+      const trigger = { type: "manual", detail: { origin } };
+      const startedBy = { type: ctx.principal.type, id: ctx.principal.id };
+      if (start.do === "flow") {
+        const result = await ctx.mutate(async (trx, audit) => {
+          const started = await startFlowRun(kernel, trx, {
+            tenantId,
+            workspaceId,
+            flow: start.path,
+            input: start.input,
+            trigger,
+            startedBy,
+          });
+          await audit({
+            action: "flow_run.started",
+            targetType: "flow_run",
+            targetId: started.flowRun.id,
+            tenantId,
+            workspaceId,
+            details: { flow: start.path, via: "page_action", ...origin },
+          });
+          return started;
         });
-        await audit({
-          action: "flow_run.started",
-          targetType: "flow_run",
-          targetId: started.flowRun.id,
-          tenantId,
-          workspaceId,
-          details: { flow: start.path, via: "page_action", ...origin },
+        kickFlow(kernel, result.flowRun.id);
+      } else {
+        await ctx.mutate(async (trx, audit) => {
+          const started = await startRun(kernel, trx, {
+            tenantId,
+            workspaceId,
+            script: start.path,
+            input: start.input,
+            trigger,
+            startedBy,
+          });
+          await audit({
+            action: "run.started",
+            targetType: "run",
+            targetId: started.run.id,
+            tenantId,
+            workspaceId,
+            details: { script: start.path, via: "page_action", ...origin },
+          });
+          return started;
         });
-        return started;
-      });
-      kickFlow(kernel, result.flowRun.id);
-    } else {
-      await ctx.mutate(async (trx, audit) => {
-        const started = await startRun(kernel, trx, {
-          tenantId,
-          workspaceId,
-          script: start.path,
-          input: start.input,
-          trigger,
-          startedBy,
-        });
-        await audit({
-          action: "run.started",
-          targetType: "run",
-          targetId: started.run.id,
-          tenantId,
-          workspaceId,
-          details: { script: start.path, via: "page_action", ...origin },
-        });
-        return started;
-      });
+      }
+    } catch {
+      notStarted.push({ do: start.do, path: start.path });
     }
   }
 
@@ -653,7 +673,10 @@ export async function runAction(
     client,
     ...(events ? { changed: changes.length === 0 ? 0 : rounds.length } : {}),
     ...(made ? { made } : {}),
-    ...(starts.length > 0 ? { started: starts.length } : {}),
+    ...(starts.length - notStarted.length > 0
+      ? { started: starts.length - notStarted.length }
+      : {}),
+    ...(notStarted.length > 0 ? { notStarted } : {}),
     ...(!said && action.done ? { message: action.done } : {}),
   };
 }

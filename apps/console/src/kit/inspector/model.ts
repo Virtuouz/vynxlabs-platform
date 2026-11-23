@@ -68,12 +68,12 @@ export interface FlowChoice {
   path: string;
   /** What the workflow is called, where it has a name of its own. */
   title?: string | null;
-  manualInput?: { properties?: Record<string, unknown> } | null;
+  manualInput?: { properties?: Record<string, unknown>; required?: string[] } | null;
 }
 /** A script of the workspace, and what it takes. */
 export interface ScriptChoice {
   path: string;
-  inputSchema?: { properties?: Record<string, unknown> } | null;
+  inputSchema?: { properties?: Record<string, unknown>; required?: string[] } | null;
 }
 export const EMPTY_CATALOG: Catalog = { tables: [], queries: [], maySql: false };
 

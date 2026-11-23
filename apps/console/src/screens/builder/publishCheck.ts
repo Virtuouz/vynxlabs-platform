@@ -39,6 +39,8 @@ export interface Known {
   queries: ReadonlySet<string> | undefined;
   flows: ReadonlySet<string>;
   scripts: ReadonlySet<string>;
+  /** What each flow's manual trigger and each script's input must be given: the server refuses a start without it. */
+  inputsNeeded?: ReadonlyMap<string, readonly string[]> | undefined;
   /** The keys of the tenant's groups, members' and end users'. */
   groups: readonly string[] | undefined;
   /** Each flow, with whether it asks for an approval: `undefined` while it is read. */
@@ -75,6 +77,19 @@ export function actionsOf(widget: PageWidget): { at: string; action: Action }[] 
   return found;
 }
 
+/** What each flow's manual trigger and each script's input requires, keyed `flow:<path>` and `script:<path>`. */
+export function inputsNeededOf(
+  flows: readonly { path: string; manualInput?: { required?: string[] } | null }[] | undefined,
+  scripts: readonly { path: string; inputSchema?: { required?: string[] } | null }[] | undefined,
+): ReadonlyMap<string, readonly string[]> {
+  return new Map([
+    ...(flows ?? []).map((one) => [`flow:${one.path}`, one.manualInput?.required ?? []] as const),
+    ...(scripts ?? []).map(
+      (one) => [`script:${one.path}`, one.inputSchema?.required ?? []] as const,
+    ),
+  ]);
+}
+
 const NO_STEPS = "has no steps yet";
 
 /** What is wrong with an action, in words; nothing when it is complete. */
@@ -94,6 +109,14 @@ export function actionProblem(
       return `it starts ${step.path}, which can't be started by hand`;
     if (step.do === "script" && known.scripts.size > 0 && !known.scripts.has(step.path))
       return `it runs ${step.path}, which does not exist`;
+    if (step.do === "flow" || step.do === "script") {
+      // A start the server would refuse is found only after the data is saved, so it is told here.
+      const missing = (known.inputsNeeded?.get(`${step.do}:${step.path}`) ?? []).filter(
+        (name) => !(name in (step.input ?? {})),
+      );
+      if (missing.length > 0)
+        return `it ${step.do === "flow" ? "starts" : "runs"} ${step.path} without ${missing.join(", ")}, which it needs`;
+    }
   }
   return undefined;
 }

@@ -353,6 +353,9 @@ export function useActions(host: ActionsHost): {
       }
       const closing = response.message ?? action.done;
       if (!said && closing) say(closing);
+      // Saved, but what it was to start did not start: said apart, in the words of an error.
+      for (const one of response.notStarted ?? [])
+        say(`Saved. The ${one.do} ${one.path} could not be started.`, "danger");
       now.refresh();
       // A script or a workflow is started and not waited for: what it changes is read as it lands.
       if (response.started) {

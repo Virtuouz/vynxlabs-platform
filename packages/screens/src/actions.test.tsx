@@ -226,6 +226,24 @@ describe("confirming an action", () => {
     await waitFor(() => expect(screen.getByTestId("outcome").textContent).toBe('{"ok":true}'));
   });
 
+  test("an action saved but not started says so, and the page is read again", async () => {
+    const client = clientOf({
+      client: [],
+      started: 0,
+      notStarted: [{ do: "flow", path: "flows/ping" }],
+    });
+    show([withAction(markPaid)], client);
+    await screen.findByText("INV-1");
+    const reads = client.read.mock.calls.length;
+    fireEvent.click(screen.getByLabelText("Act on INV-1"));
+    await screen.findByText("Mark paid?");
+    fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
+    expect(
+      await screen.findByText("Saved. The flow flows/ping could not be started."),
+    ).toBeTruthy();
+    await waitFor(() => expect(client.read.mock.calls.length).toBeGreaterThan(reads));
+  });
+
   test("Cancel runs nothing and says so to the view", async () => {
     const client = clientOf();
     show([withAction(markPaid)], client);

@@ -126,4 +126,35 @@ describe("tenant access, lane t3-access", () => {
       managedBy: "release",
     });
   });
+
+  test("ACC-MP13: what a sign-in says that fills a group is served and changed through a release", async () => {
+    for (const [path, name] of [
+      ["groups", "Staff by sign-in"],
+      ["end-user-groups", "Clients by sign-in"],
+    ] as const) {
+      const made = await alice.post(`/tenants/${tenant}/${path}`, { name });
+      expect(made.status, JSON.stringify(made.body)).toBe(201);
+      expect(made.body.signInValues).toEqual([]);
+      const before = (await releases()).length;
+      const set = await alice.patch(`/tenants/${tenant}/${path}/${made.body.id}`, {
+        signInValues: ["finance", " ops ", "finance"],
+      });
+      expect(set.status, JSON.stringify(set.body)).toBe(200);
+      expect(set.body.signInValues).toEqual(["finance", "ops"]);
+      expect(await releases()).toHaveLength(before + 1);
+      // Another change keeps them.
+      const renamed = await alice.patch(`/tenants/${tenant}/${path}/${made.body.id}`, {
+        description: "Filled from the provider's groups.",
+      });
+      expect(renamed.body.signInValues).toEqual(["finance", "ops"]);
+      const listed = (await alice.get(`/tenants/${tenant}/${path}`)).body.items.find(
+        (one: Any) => one.id === made.body.id,
+      );
+      expect(listed.signInValues).toEqual(["finance", "ops"]);
+      const cleared = await alice.patch(`/tenants/${tenant}/${path}/${made.body.id}`, {
+        signInValues: [],
+      });
+      expect(cleared.body.signInValues).toEqual([]);
+    }
+  });
 });

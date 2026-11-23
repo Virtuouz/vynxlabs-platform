@@ -478,3 +478,19 @@ test("ACC-MP5: anyone without signing in is offered only roles that give what an
     roleId: "r-portal",
   });
 });
+
+test("ACC-MP13: what fills a group at sign-in is shown, and changed from the row", async () => {
+  routes.push((method, url) =>
+    method === "GET" && url.endsWith("/groups")
+      ? [200, { items: [{ ...deskGroup, signInValues: ["finance", "ops"] }] }]
+      : undefined,
+  );
+  show(<Groups base={base} />);
+  expect(await screen.findByText("Filled by sign-in: finance, ops")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Sign-in values" }));
+  const dialog = await screen.findByRole("dialog");
+  expect((within(dialog).getByRole("textbox") as HTMLTextAreaElement).value).toBe("finance\nops");
+  await answer("Save", "ops\n staff \n");
+  await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+  expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ signInValues: ["ops", "staff"] });
+});

@@ -161,6 +161,45 @@ function MembersDialog({
   );
 }
 
+/** Asks which sign-in values fill a group, and saves them through the release. */
+async function fillFromSignIn(
+  route: string,
+  row: { name: string; signInValues?: string[] },
+  reload: () => void,
+) {
+  const typed = await ask.prompt({
+    title: `Filled by sign-in: ${row.name}`,
+    text: "Someone whose sign-in says one of these values is put in this group when they sign in. One value per line, as the identity provider names it. Leave it empty to fill the group by hand only.",
+    label: "Values",
+    initial: (row.signInValues ?? []).join("\n"),
+    action: "Save",
+    required: false,
+    multiline: true,
+  });
+  if (typed === null) return;
+  const values = [
+    ...new Set(
+      typed
+        .split("\n")
+        .map((one) => one.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (values.join("\n") === [...(row.signInValues ?? [])].sort().join("\n")) return;
+  try {
+    await api.patch(route, { signInValues: values });
+    reload();
+  } catch (error) {
+    notify.error(error);
+  }
+}
+
+/** What a group is filled by at sign-in, said under its name. */
+function FilledBySignIn({ values }: { values: string[] | undefined }) {
+  if (!values || values.length === 0) return null;
+  return <span className="text-meta text-ink-muted">Filled by sign-in: {values.join(", ")}</span>;
+}
+
 /** Asks what a group is for and saves it. Both kinds of group say it the same way. */
 async function describeGroup(
   route: string,
@@ -192,6 +231,8 @@ interface MemberGroup {
   name: string;
   description: string;
   managedBy: string;
+  /** What a sign-in says that puts someone in the group. */
+  signInValues?: string[];
   createdAt: string;
 }
 
@@ -227,6 +268,7 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
                 {row.description ? (
                   <span className="text-meta text-ink-muted">{row.description}</span>
                 ) : null}
+                <FilledBySignIn values={row.signInValues} />
               </span>
             ),
           },
@@ -281,6 +323,16 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
                   disabled={row.managedBy === "provider"}
                 >
                   Describe
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() => fillFromSignIn(`${base}/groups/${row.id}`, row, groups.reload)}
+                  disabled={row.managedBy === "provider"}
+                  {...(row.managedBy === "provider"
+                    ? { title: "An identity provider made this group. Change it there." }
+                    : {})}
+                >
+                  Sign-in values
                 </Button>
                 <RemoveButton
                   label="Delete"
@@ -344,6 +396,7 @@ interface EndUserGroup {
   description: string;
   memberCount: number;
   managedBy?: string;
+  signInValues?: string[];
 }
 
 /** Groups of end users: the people of the tenant's apps, sorted by what they may see and do. */
@@ -384,7 +437,12 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
           {
             header: "What it is for",
             priority: 2,
-            cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+            cell: (row) => (
+              <span className="flex flex-col text-ink-muted">
+                {row.description}
+                <FilledBySignIn values={row.signInValues} />
+              </span>
+            ),
           },
           {
             header: "People",
@@ -428,6 +486,18 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
                   }
                 >
                   Describe
+                </Button>
+                <Button
+                  size="small"
+                  onClick={() =>
+                    fillFromSignIn(`${base}/end-user-groups/${row.id}`, row, groups.reload)
+                  }
+                  disabled={row.managedBy === "provider"}
+                  {...(row.managedBy === "provider"
+                    ? { title: "An identity provider made this group. Change it there." }
+                    : {})}
+                >
+                  Sign-in values
                 </Button>
                 <RemoveButton
                   label="Delete"

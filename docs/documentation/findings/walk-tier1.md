@@ -96,3 +96,8 @@ Walked on the throwaway instance at `8f8fa3f7`. Rows of the same shape as the ot
 - A deploy with problems shows a raw "bundle's manifests are not valid … /body/nodes/mail", and names a problem the editor's list does not: one list, in words, the same in both.
 - In Add step, Enter does not pick the first match.
 - Minor: the header says "Draft Draft" / "Deployed Deployed"; a reserved case name says "already used"; the edge label "otherwise" is cut; the approval link page shows times with no zone; the Triggers path breaks mid-word at 1440; at 390 the minimap covers the canvas.
+
+### WLK-16 Left by tier 2 lanes, for the next owner of the file
+- A service account's decision has no name in `decidedSteps` (`kernel/pages/approvals.ts`) or the retry plan's `approvalsKept`: they read `member` only (opsb).
+- `fireScheduleNow` ignores a schedule's `source` (opsb; OPS findings).
+- A child flow run's ID, and an exact run ID older than the When filter, say "No run has this ID" (opsb, OPS-33).

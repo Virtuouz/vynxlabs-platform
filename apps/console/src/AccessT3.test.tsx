@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { EndUserGroups, Groups } from "./screens/Groups.tsx";
+import { AttributesDialog, EndUserGroups, Groups } from "./screens/Groups.tsx";
 import { MemberList } from "./screens/Members.tsx";
-import { show } from "./testing.tsx";
+import { answer, show } from "./testing.tsx";
 
 const base = "/tenants/t1";
 type Reply = [number, unknown];
@@ -86,5 +86,102 @@ test("ACC-32, ACC-MP7: where someone works is asked only with a role, and severa
   expect(calls.find((c) => c.method === "POST")?.body).toEqual({
     email: "bo@acme.test",
     bindings: [{ roleId: "r-viewer", workspaceId: "w1" }, { roleId: "r-editor" }],
+  });
+});
+
+const deskGroup = {
+  id: "g1",
+  key: "desk",
+  name: "Desk",
+  description: "",
+  managedBy: "release",
+  createdAt: "2026-11-01T00:00:00Z",
+};
+
+test("ACC-34: taking someone out of a group asks first, and nothing is sent before the answer", async () => {
+  routes.push((method, url) => {
+    if (method === "GET" && url.endsWith("/groups")) return [200, { items: [deskGroup] }];
+    if (method === "GET" && url.endsWith("/groups/g1"))
+      return [200, { members: [{ id: "m1", email: "ada@acme.test", name: "Ada" }] }];
+    if (method === "DELETE") return [204, null];
+    return undefined;
+  });
+  show(<Groups base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Members" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Take ada@acme.test out" }));
+  const said = await answer("Take out");
+  expect(said).toContain("lose whatever Desk gives");
+  await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
+});
+
+test("ACC-34: not confirming sends nothing", async () => {
+  routes.push((method, url) => {
+    if (method === "GET" && url.endsWith("/groups")) return [200, { items: [deskGroup] }];
+    if (method === "GET" && url.endsWith("/groups/g1"))
+      return [200, { members: [{ id: "m1", email: "ada@acme.test", name: "Ada" }] }];
+    return undefined;
+  });
+  show(<Groups base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Members" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Take ada@acme.test out" }));
+  const sure = await screen.findByText(/lose whatever Desk gives/);
+  expect(sure).toBeTruthy();
+  expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+});
+
+test("ACC-33: an attribute name given twice is named at its field and nothing is sent; spaces are dropped", async () => {
+  show(
+    <AttributesDialog
+      base={base}
+      open
+      user={{ id: "u1", email: "pat@x.test", attributes: { customer: "a" } }}
+      onClose={() => {}}
+      onSaved={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Add an attribute" }));
+  fireEvent.change(screen.getByLabelText("Name", { selector: '[name="name-1"]' }), {
+    target: { value: " customer " },
+  });
+  expect(await screen.findByText(/customer is given twice/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+  fireEvent.change(screen.getByLabelText("Name", { selector: '[name="name-1"]' }), {
+    target: { value: " region " },
+  });
+  fireEvent.change(screen.getByLabelText("Value", { selector: '[name="value-1"]' }), {
+    target: { value: "eu" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+  expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+    attributes: { customer: "a", region: "eu" },
+  });
+});
+
+test("ACC-MP8: a group can say what it is for when made and afterwards", async () => {
+  routes.push((method, url) => {
+    if (method === "GET" && url.endsWith("/groups")) return [200, { items: [deskGroup] }];
+    if (method === "POST" && url.endsWith("/groups")) return [201, { id: "g2" }];
+    return undefined;
+  });
+  show(<Groups base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Create group" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Finance" } });
+  fireEvent.change(within(dialog).getByLabelText("What it is for"), {
+    target: { value: "The money people" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Create group" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+  expect(calls.find((c) => c.method === "POST")?.body).toEqual({
+    name: "Finance",
+    description: "The money people",
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Describe" }));
+  await answer("Save", "Front desk staff");
+  await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
+  expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({
+    description: "Front desk staff",
   });
 });

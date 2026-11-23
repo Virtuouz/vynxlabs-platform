@@ -133,12 +133,19 @@ function MembersDialog({
                   size="small"
                   variant="danger"
                   aria-label={`Take ${person.email} out`}
-                  onClick={() =>
+                  onClick={async () => {
+                    const sure = await ask.confirm({
+                      title: `Take ${person.email} out of ${group.name}?`,
+                      text: `They lose whatever ${group.name} gives, from their next request. Anything given to them directly, or through other groups, stays.`,
+                      action: "Take out",
+                      danger: true,
+                    });
+                    if (!sure) return;
                     api.delete(`${path}/members/${person.id}`).then(() => {
                       notify.success(`${person.email} is out of the group.`);
                       detail.reload();
-                    }, notify.error)
-                  }
+                    }, notify.error);
+                  }}
                 >
                   Take out
                 </Button>
@@ -152,6 +159,30 @@ function MembersDialog({
       </div>
     </Dialog>
   );
+}
+
+/** Asks what a group is for and saves it. Both kinds of group say it the same way. */
+async function describeGroup(
+  route: string,
+  row: { name: string; description: string },
+  reload: () => void,
+) {
+  const next = await ask.prompt({
+    title: `What ${row.name} is for`,
+    label: "Description",
+    hint: "In plain words, 500 characters at most. Leave it empty to say nothing.",
+    initial: row.description,
+    action: "Save",
+    required: false,
+    multiline: true,
+  });
+  if (next === null || next.trim() === row.description) return;
+  try {
+    await api.patch(route, { description: next.trim().slice(0, 500) });
+    reload();
+  } catch (error) {
+    notify.error(error);
+  }
 }
 
 interface MemberGroup {
@@ -244,6 +275,13 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
                 >
                   Rename
                 </Button>
+                <Button
+                  size="small"
+                  onClick={() => describeGroup(`${base}/groups/${row.id}`, row, groups.reload)}
+                  disabled={row.managedBy === "provider"}
+                >
+                  Describe
+                </Button>
                 <RemoveButton
                   label="Delete"
                   disabled={
@@ -273,8 +311,12 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
         }}
         config={{
           action: "Create group",
-          fields: [{ name: "name", label: "Name", placeholder: "Finance team" }],
-          submit: (values) => api.post(`${base}/groups`, values),
+          fields: [
+            { name: "name", label: "Name", placeholder: "Finance team" },
+            { name: "description", label: "What it is for", required: false },
+          ],
+          submit: ({ name, description }) =>
+            api.post(`${base}/groups`, { name, ...(description ? { description } : {}) }),
         }}
       />
       <Closing subject={open}>
@@ -369,26 +411,9 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
                 </Button>
                 <Button
                   size="small"
-                  onClick={async () => {
-                    const next = await ask.prompt({
-                      title: `What ${row.name} is for`,
-                      label: "Description",
-                      hint: "In plain words, 500 characters at most. Leave it empty to say nothing.",
-                      initial: row.description,
-                      action: "Save",
-                      required: false,
-                      multiline: true,
-                    });
-                    if (next === null || next.trim() === row.description) return;
-                    try {
-                      await api.patch(`${base}/end-user-groups/${row.id}`, {
-                        description: next.trim().slice(0, 500),
-                      });
-                      groups.reload();
-                    } catch (error) {
-                      notify.error(error);
-                    }
-                  }}
+                  onClick={() =>
+                    describeGroup(`${base}/end-user-groups/${row.id}`, row, groups.reload)
+                  }
                 >
                   Describe
                 </Button>
@@ -476,6 +501,15 @@ export function AttributesDialog({
   });
   const [problem, setProblem] = useState<string>();
   const [busy, setBusy] = useState(false);
+  // A name is read without the spaces around it, and a name is given once.
+  const repeats = new Set<number>();
+  const seen = new Map<string, number>();
+  rows.forEach(([name], index) => {
+    const key = name.trim();
+    if (key === "") return;
+    if (seen.has(key)) repeats.add(index);
+    else seen.set(key, index);
+  });
   const change = (index: number, at: 0 | 1, text: string) =>
     setRows((before) =>
       before.map((row, each) =>
@@ -494,11 +528,16 @@ export function AttributesDialog({
         className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
+          if (repeats.size > 0) return;
           setBusy(true);
           setProblem(undefined);
           try {
             await api.patch(`${base}/end-users/${user.id}`, {
-              attributes: Object.fromEntries(rows.filter(([name]) => name.trim() !== "")),
+              attributes: Object.fromEntries(
+                rows
+                  .filter(([name]) => name.trim() !== "")
+                  .map(([name, value]) => [name.trim(), value]),
+              ),
             });
             onSaved();
           } catch (error) {
@@ -517,6 +556,9 @@ export function AttributesDialog({
               value={name}
               required={false}
               placeholder="customer_id"
+              {...(repeats.has(index)
+                ? { error: `${name.trim()} is given twice. Each name takes one value.` }
+                : {})}
               onChange={(text) => change(index, 0, text)}
             />
             <TextField

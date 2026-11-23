@@ -31,7 +31,7 @@ const KINDS: { key: Kind; label: string; about: string }[] = [
     key: "auditDays",
     label: "Audit log",
     about:
-      "Who changed what. Older entries are not shown here or exported with the tenant. The instance exports whole months to its object store before removing them.",
+      "Who changed what. Older entries are not shown here or exported with the tenant. The instance exports whole months to its object store before removing them. Files that rows replaced or were deleted with are kept for this long too, and are deleted after it.",
   },
 ];
 
@@ -84,6 +84,12 @@ export function RetentionSettings({ base }: { base: string }) {
             <p className="m-0">
               Anything older is removed within minutes of saving, and cannot be brought back.
             </p>
+            {shorter.some(({ key }) => key === "auditDays") && (
+              <p className="m-0">
+                Audit log: files that rows replaced, or were deleted with, longer ago than the new
+                period are deleted too.
+              </p>
+            )}
           </div>
         ),
         action: "Save and remove older history",

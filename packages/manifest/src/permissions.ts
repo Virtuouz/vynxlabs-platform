@@ -409,7 +409,11 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     group: "Data",
     scope: "workspace",
     appFacing: true,
-    verbs: { read: "Download files.", write: "Upload files." },
+    verbs: {
+      read: "Download a file that a row you may read names, or that you uploaded. Listing every file also needs the permission to read rows past the row policy.",
+      write:
+        "Upload files. Deleting one also needs the permission to change rows past the row policy, and is refused while a row names the file.",
+    },
   },
   {
     kind: "app",

@@ -2,6 +2,8 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { HEARTBEAT_SECONDS } from "@volvel/db";
 import { Type } from "typebox";
 import {
+  deleteRowKeepingFiles,
+  insertRowsKeepingFiles,
   MAX_FILE_BYTES,
   readFile,
   storeFile,
@@ -897,7 +899,16 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               const rows = args.rows ?? [];
               if (rows.length === 0 || rows.length > 1000)
                 throw badRequest("Insert between 1 and 1,000 rows at a time.");
-              return insertRows(data, target, rows, scope);
+              return own
+                ? insertRowsKeepingFiles(
+                    kernel,
+                    data,
+                    { tenantId: run.tenant_id, id: run.workspace_id },
+                    target,
+                    rows,
+                    scope,
+                  )
+                : insertRows(data, target, rows, scope);
             }
             case "update":
               // A workspace table's file column names files Volvel stores: a replaced one is
@@ -914,7 +925,18 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   )
                 : updateRow(data, target, String(args.id), args.patch);
             case "delete":
-              await deleteRow(data, target, String(args.id));
+              if (own) {
+                await deleteRowKeepingFiles(
+                  kernel,
+                  data,
+                  { tenantId: run.tenant_id, id: run.workspace_id },
+                  { type: "script", id: null },
+                  target,
+                  String(args.id),
+                );
+              } else {
+                await deleteRow(data, target, String(args.id));
+              }
               return null;
             case "aggregate":
               return aggregateRows(data, target, aggregateQueryFrom(args));

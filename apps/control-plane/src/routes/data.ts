@@ -5,18 +5,20 @@ import { displayGuess, PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { loadCatalog, purgeRetired, workspaceSchema } from "../kernel/data/apply.js";
 import { columnCounts, columnValues, refuseColumn } from "../kernel/data/column-values.js";
-import { updateRowKeepingFiles } from "../kernel/data/files.js";
+import {
+  deleteRowKeepingFiles,
+  deleteRowsKeepingFiles,
+  insertRowsKeepingFiles,
+  updateRowKeepingFiles,
+} from "../kernel/data/files.js";
 import {
   aggregateQueryFrom,
   aggregateRows,
   type DataScope,
-  deleteRow,
-  deleteRows,
   describeTable,
   findRows,
   getRow,
   groupValues,
-  insertRows,
   type Row,
   scopeFor,
   withData,
@@ -774,7 +776,14 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (rows.length === 0 || rows.length > 1000)
           throw badRequest("Send between 1 and 1,000 rows.");
         const items = await withData(kernel, params.t, scope, (data) =>
-          insertRows(data, target, rows, scope),
+          insertRowsKeepingFiles(
+            kernel,
+            data,
+            { tenantId: params.t, id: params.w },
+            target,
+            rows,
+            scope,
+          ),
         );
         // Rows are business data, not configuration: they are not written to the audit log one by one.
         ctx.mutated = true;
@@ -928,7 +937,14 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }) => {
         const { target, scope } = await enter(ctx, params, wildPath(params), "write");
         const done = await withData(kernel, params.t, scope, (data) =>
-          deleteRows(data, target, body.ids),
+          deleteRowsKeepingFiles(
+            kernel,
+            data,
+            { tenantId: params.t, id: params.w },
+            ctx.principal,
+            target,
+            body.ids,
+          ),
         );
         ctx.mutated = true;
         if (done.deleted.length > 0) {
@@ -951,7 +967,16 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }, reply) => {
         const { target, scope } = await enter(ctx, params, wildPath(params), "write");
-        await withData(kernel, params.t, scope, (data) => deleteRow(data, target, params.id));
+        await withData(kernel, params.t, scope, (data) =>
+          deleteRowKeepingFiles(
+            kernel,
+            data,
+            { tenantId: params.t, id: params.w },
+            ctx.principal,
+            target,
+            params.id,
+          ),
+        );
         ctx.mutated = true;
         await announceRows(kernel, params.t, params.w, target.name, "deleted", [params.id]);
         return reply.code(204).send(null);

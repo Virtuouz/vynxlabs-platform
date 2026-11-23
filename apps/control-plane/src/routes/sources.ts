@@ -5,7 +5,14 @@ import type {
 import { validateJson } from "@volvel/manifest";
 import { Type } from "typebox";
 import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
-import { MAX_FILE_BYTES, readFile, storeFile, toStoredFile } from "../kernel/data/files.js";
+import {
+  MAX_FILE_BYTES,
+  mayReadFile,
+  namedFiles,
+  readFile,
+  storeFile,
+  toStoredFile,
+} from "../kernel/data/files.js";
 import { checkSource } from "../kernel/data/health.js";
 import {
   deleteRow,
@@ -26,8 +33,8 @@ import {
   sourceTable,
   sourceTables,
 } from "../kernel/data/sources.js";
-import { badRequest, notFound } from "../kernel/errors.js";
-import { access, type WorkspaceRef } from "../kernel/http.js";
+import { badRequest, conflict, notFound } from "../kernel/errors.js";
+import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { parseRowsQuery, RowsPage, RowsQuery, toRowsPage, WildParams, wildPath } from "./data.js";
 import {
@@ -497,12 +504,15 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("file:read") },
         schema: {
           summary: "Files stored in a workspace, newest first",
+          description:
+            "Every file of the workspace, so it also needs `data_all:read`. A person who only has `file:read` gets a file by its ID, through a row they may read or because they uploaded it.",
           tags: ["files"],
           params: WorkspaceParams,
           response: { 200: Type.Object({ items: Type.Array(StoredFile) }) },
         },
       },
-      async ({ params }) => {
+      async ({ ctx, params }) => {
+        await ctx.authorize("data_all:read", { tenantId: params.t, workspaceId: params.w });
         const rows = await db
           .selectFrom("file")
           .selectAll()
@@ -563,18 +573,38 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     const FileParams = Type.Object({ t: Id, w: Id, id: Id });
 
+    async function mayReadOrNotFound(
+      ctx: RequestContext,
+      params: { t: string; w: string },
+      found: Awaited<ReturnType<typeof readFile>>,
+    ) {
+      const allowed = await mayReadFile(
+        kernel,
+        ctx,
+        { tenantId: params.t, id: params.w },
+        { id: found.file.id, createdBy: found.createdBy },
+      );
+      if (!allowed) throw notFound("The file");
+    }
+
     app.get(
       `${base}/files/:id`,
       {
         config: { access: access.workspace("file:read") },
         schema: {
           summary: "A file's details",
+          description:
+            "A file the caller uploaded, or one that a row they may read names. Any other file is answered as not found. `data_all:read` gives every file.",
           tags: ["files"],
           params: FileParams,
           response: { 200: StoredFile },
         },
       },
-      async ({ params }) => (await readFile(kernel, db, params.w, params.id)).file,
+      async ({ ctx, params }) => {
+        const found = await readFile(kernel, db, params.w, params.id);
+        await mayReadOrNotFound(ctx, params, found);
+        return found.file;
+      },
     );
 
     app.get(
@@ -583,13 +613,17 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("file:read") },
         schema: {
           summary: "Download a file",
+          description:
+            "A file the caller uploaded, or one that a row they may read names. Any other file is answered as not found. `data_all:read` gives every file.",
           tags: ["files"],
           params: FileParams,
           response: { 200: Type.Unsafe<Buffer>({ type: "string", format: "binary" }) },
         },
       },
-      async ({ params }, reply) => {
-        const { file, content } = await readFile(kernel, db, params.w, params.id);
+      async ({ ctx, params }, reply) => {
+        const found = await readFile(kernel, db, params.w, params.id);
+        await mayReadOrNotFound(ctx, params, found);
+        const { file, content } = found;
         return (
           reply
             .header("content-type", file.contentType)
@@ -610,12 +644,21 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("file:write") },
         schema: {
           summary: "Delete a file",
+          description:
+            "Needs `file:write` and `data_all:write`. Refused while a row names the file: change or delete the row first. A file that rows named before is kept for the audit log's period and goes with its history.",
           tags: ["files"],
           params: FileParams,
           response: { 204: NoContent },
         },
       },
       async ({ ctx, params }, reply) => {
+        await ctx.authorize("data_all:write", { tenantId: params.t, workspaceId: params.w });
+        const naming = await namedFiles(kernel, params.t, [params.id], params.w);
+        if (naming.has(params.id)) {
+          throw conflict(
+            "A row still names this file. Change the row to another file or none, or delete the row, and then delete the file.",
+          );
+        }
         const key = await ctx.mutate(async (trx, audit) => {
           const row = await trx
             .deleteFrom("file")

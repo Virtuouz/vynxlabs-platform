@@ -26,6 +26,7 @@ import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { ViewsMenu } from "../kit/views.tsx";
 import { CopyButton } from "../ListScreen.tsx";
+import { useRecordRecent } from "../recent.ts";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { PublishEventButton } from "./PublishEvent.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
@@ -254,6 +255,14 @@ export function TriggersWorkbench({
   const types = [...new Set(items.map((one) => one.type))];
   const rows = items.filter((one) => type === "all" || one.type === type);
   const open = items.find((one) => triggerKey(one) === chosen);
+  // One a resource holds (not a flow's own trigger) is remembered for the palette's Recent.
+  const ids = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)/.exec(root);
+  useRecordRecent(
+    ids?.[1],
+    ids?.[2],
+    open && !open.node ? (open.type === "schedule" ? "schedule" : "trigger") : undefined,
+    open?.path,
+  );
   const pausedCount = items.filter((one) => one.paused).length;
   const [creating, setCreating] = useState(false);
   // Triggers checked, to pause or resume together.

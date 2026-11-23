@@ -111,3 +111,22 @@ test("new triggers are made in a dev workspace; production says where instead", 
   fireEvent.click(await screen.findByRole("menuitem", { name: "Schedule" }));
   expect(await screen.findByRole("heading", { name: "New schedule" })).toBeTruthy();
 });
+
+test("a schedule that is opened is remembered for the palette's Recent list", async () => {
+  const put: unknown[] = [];
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    if (init.method === "PUT" && address.includes("/me/recent-items")) {
+      put.push(JSON.parse(init.body as string));
+      return new Response(null, { status: 204 });
+    }
+    return Response.json({ items: [trigger("reminders/hourly", "", "reminders/send", "script")] });
+  });
+  history.replaceState(null, "", `${link}/triggers?trigger=reminders%2Fhourly`);
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  await screen.findByRole("button", { name: "Pause this trigger" });
+  await vi.waitFor(() =>
+    expect(put).toEqual([
+      { tenantId: "t1", workspaceId: "w1", kind: "schedule", ref: "reminders/hourly" },
+    ]),
+  );
+});

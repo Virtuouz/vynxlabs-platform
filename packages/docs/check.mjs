@@ -3,14 +3,13 @@
 //   - a page that does not read, validate or link (the same checks as the build);
 //   - a topic the console asks for that no page has;
 //   - a page that names a screenshot the list in screenshots.mjs does not have;
-//   - a page nothing leads to: no screen opens it and no other page links to it.
+//   - a page that its folder's `pages:` does not list, or a folder its parent's does not.
 //
 // That every section and editor of the console names a topic at all is held by
 // its types. That React and HTML draw the same thing is held by markup's tests.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { resolveLink } from "@volvel/docs-engine";
-import { linkKind, walk } from "@volvel/markup";
+import { walk } from "@volvel/markup";
 import { topicsAsked } from "./asked.mjs";
 import { GENERATED, stale, write } from "./generate.mjs";
 import { coverage } from "./generators/reference.mjs";
@@ -73,7 +72,7 @@ if (covered.share + 1e-9 < floor) {
   );
 }
 
-const { set, issues: found, redirects } = loadDocs();
+const { set, issues: found, redirects, written } = loadDocs();
 // A warning about a page's type or subjects that is known and not yet mended is listed in
 // lint-allow.json as "<path>:<code>". The list only gets shorter: an entry that no longer fires
 // is a problem, so that it is taken out.
@@ -122,17 +121,15 @@ problems.push(
 
 const { found: topics, unreadable } = asked();
 problems.push(...unreadable);
-const opened = new Set();
 for (const [topic, where] of topics) {
   const path = set.topics[topic] ?? (set.pages.has(topic) ? topic : undefined);
   if (path === undefined) {
     problems.push(
       `${where}  asks for the help "${topic}", and no page has that topic. Add topic: ${topic} to a page under packages/docs/content.`,
     );
-  } else opened.add(path);
+  }
 }
 
-const linked = new Set();
 const shots = new Set(shotNames());
 for (const entry of set.pages.values()) {
   for (const { node } of walk(entry.tree)) {
@@ -146,18 +143,40 @@ for (const entry of set.pages.values()) {
       );
     }
   }
-  for (const { node } of walk(entry.tree)) {
-    if (node.type !== "link" || linkKind(node.href) !== "relative") continue;
-    const target = resolveLink(set, entry.path, node.href);
-    if (!("missing" in target) && target.path !== entry.path) linked.add(target.path);
-  }
 }
-for (const path of [...set.pages.keys()].sort()) {
+// Every page written by hand is listed in its folder's `pages:`, and every folder with one in its
+// parent's, so that the order a reader sees is written down and a page cannot be left out of it by
+// being forgotten. A generated page is placed by the generator and comes after, by title.
+const folders = new Set();
+for (const path of written) {
+  const parts = path.split("/");
+  for (let n = 1; n < parts.length; n++) folders.add(parts.slice(0, n).join("/"));
+}
+const listed = (folder) => {
+  const index = set.pages.get(folder === "" ? "index" : `${folder}/index`);
+  return index === undefined ? undefined : (index.frontmatter.pages ?? []);
+};
+const leftOut = (folder, name, what) => {
+  const where = folder === "" ? "index.md" : `${folder}/index.md`;
+  const list = listed(folder);
+  if (list === undefined) {
+    problems.push(
+      `${folder}/  has no index.md, so ${what} "${name}" is in no folder's pages:. Add ${where} that lists it.`,
+    );
+  } else if (!list.includes(name)) {
+    problems.push(
+      `${where}  does not list ${what} "${name}" in pages:. Add it, in the order a reader should meet it.`,
+    );
+  }
+};
+for (const path of [...written].sort()) {
   if (path === "index" || path.endsWith("/index")) continue;
-  if (opened.has(path) || linked.has(path)) continue;
-  problems.push(
-    `${path}.md  nothing leads here: no screen of the console opens it, and no other page links to it.`,
-  );
+  const at = path.lastIndexOf("/");
+  leftOut(at === -1 ? "" : path.slice(0, at), path.slice(at + 1), "the page");
+}
+for (const folder of [...folders].sort()) {
+  const at = folder.lastIndexOf("/");
+  leftOut(at === -1 ? "" : folder.slice(0, at), folder.slice(at + 1), "the folder");
 }
 
 for (const problem of problems) console.error(problem);

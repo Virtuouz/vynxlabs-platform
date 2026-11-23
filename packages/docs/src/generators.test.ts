@@ -152,12 +152,12 @@ test("the sign-in library's routes are on one page, and the ones the instance ha
 
 test("the API's pages are among the generated ones, so a route that changed makes them old (API-14, API-23)", async () => {
   const files = await expected();
-  expect(files.has("api/index.md")).toBe(true);
+  expect(files.has("develop/reference/api/index.md")).toBe(true);
   expect(files.has("openapi.json")).toBe(true);
-  expect(files.get("index.md")).toContain("(api/index)");
+  expect(files.get("develop/reference/index.md")).toContain("(api/index)");
   await write();
   expect(await stale()).toEqual([]);
-  for (const name of ["api/audit.md", "openapi.json"]) {
+  for (const name of ["develop/reference/api/audit.md", "openapi.json"]) {
     const file = join(GENERATED, name);
     const kept = readFileSync(file, "utf8");
     try {

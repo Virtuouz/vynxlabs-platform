@@ -117,9 +117,11 @@ describe("every screen has help", () => {
   });
 
   test("a topic or a page's path leads to a page, with the heading asked for", () => {
-    expect(pageFor(manifest, "data-tables")).toEqual({ path: "data/tables" });
-    expect(pageFor(manifest, "start/concepts#resources")).toEqual({
-      path: "start/concepts",
+    expect(pageFor(manifest, "data-tables")).toEqual({
+      path: "console/reference/screens/data/tables",
+    });
+    expect(pageFor(manifest, "start/explanation/concepts#resources")).toEqual({
+      path: "start/explanation/concepts",
       anchor: "resources",
     });
     expect(pageFor(manifest, "no-such-topic")).toBeUndefined();
@@ -147,11 +149,11 @@ describe("which topic is the screen's", () => {
         <Topic />
         <Page topic="data-tables" />
         <Dialog open onClose={() => {}} title="New column">
-          <HelpTopic topic="start/concepts" />
+          <HelpTopic topic="start/explanation/concepts" />
         </Dialog>
       </>,
     );
-    expect(told()).toBe("start/concepts|page|closed");
+    expect(told()).toBe("start/explanation/concepts|page|closed");
     rerender(
       <>
         <Topic />
@@ -166,11 +168,11 @@ describe("which topic is the screen's", () => {
   test("what was followed inside the panel is kept while the screen is, and left when it changes", () => {
     show(<Topic />);
     act(() => setSectionTopic("data-tables"));
-    act(() => openHelp("start/concepts"));
-    expect(told()).toBe("data-tables|start/concepts|open");
+    act(() => openHelp("start/explanation/concepts"));
+    expect(told()).toBe("data-tables|start/explanation/concepts|open");
     act(() => closeHelp());
     act(() => openHelp());
-    expect(told()).toBe("data-tables|start/concepts|open");
+    expect(told()).toBe("data-tables|start/explanation/concepts|open");
     act(() => setSectionTopic("operate-runs"));
     expect(told()).toBe("operate-runs|page|open");
   });
@@ -222,7 +224,7 @@ describe("the help panel", () => {
       const text = JSON.stringify({
         ...manifest,
         pages: manifest.pages.map((one: { path: string }) =>
-          one.path === "data/tables" ? { ...one, since: "0.4" } : one,
+          one.path === "console/reference/screens/data/tables" ? { ...one, since: "0.4" } : one,
         ),
       });
       return { ok: true, status: 200, json: async () => JSON.parse(text), text: async () => text };
@@ -230,7 +232,7 @@ describe("the help panel", () => {
     show(<Screen />);
     act(() => openHelp("data-tables"));
     await within(panel()).findByText("New in version 0.4");
-    act(() => openHelp("start/concepts"));
+    act(() => openHelp("start/explanation/concepts"));
     await within(panel()).findByRole("heading", { name: /concepts/i });
     expect(within(panel()).queryByText(/New in version/)).toBeNull();
   });
@@ -268,7 +270,7 @@ describe("the help panel", () => {
 
   test("a term on the page that explains it does not offer to open that page (DOC-13)", async () => {
     show(<Screen />);
-    act(() => openHelp("start/concepts"));
+    act(() => openHelp("start/explanation/concepts"));
     fireEvent.click(await within(panel()).findByRole("button", { name: "workspaces" }));
     await screen.findByText(/A place where a tenant's resources live and run/);
     expect(screen.queryByRole("button", { name: /More about/ })).toBeNull();
@@ -484,7 +486,7 @@ describe("what the reader's own team has added", () => {
     ).toEqual(["How we refund an order"]);
     expect(within(team).getByRole("link").getAttribute("href")).toBe(refunds.url);
     // Another page of the help has none.
-    act(() => openHelp("start/concepts"));
+    act(() => openHelp("start/explanation/concepts"));
     await within(panel).findByRole("heading", { name: "Concepts" });
     expect(within(panel).queryByRole("region", { name: "From your team" })).toBeNull();
   });
@@ -514,7 +516,9 @@ describe("what the reader's own team has added", () => {
 });
 
 describe("what an error means", () => {
-  const errors = JSON.parse(readFileSync(join(DOCS, "pages/reference/errors.json"), "utf8"));
+  const errors = JSON.parse(
+    readFileSync(join(DOCS, "pages/develop/reference/errors.json"), "utf8"),
+  );
   const sections = new Set(
     (errors.tree.children as { type: string; id?: string }[])
       .filter((node) => node.type === "heading")

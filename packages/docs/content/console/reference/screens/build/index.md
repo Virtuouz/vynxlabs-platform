@@ -1,0 +1,35 @@
+---
+title: Build
+icon: blocks
+description: Scripts, flows and apps, and everything else a workspace holds.
+pages:
+  - flows
+  - flow-editor
+  - scripts
+  - script-editor
+  - app-builder
+  - app-builder-editor
+  - published-apps
+  - extensions
+  - extension-editor
+  - resources
+  - resource-editor
+  - documentation
+  - documentation-editor
+moved_from:
+  - build/index
+---
+
+Scripts, flows and apps, and everything else a workspace holds.
+
+- [Flows](flows): A flow is a graph of steps that runs in order and remembers where it is, so it survives a restart and can wait for an approval.
+- [The flow editor](flow-editor): Where a flow is drawn: steps on a canvas, what each takes and gives, and a test run beside it.
+- [Scripts](scripts): A script is a function the workspace runs: on a schedule, from a trigger, as a step of a flow, or by hand.
+- [The script editor](script-editor): Where a script is written and tried, with the SDK's types to hand and a run of the draft one key away.
+- [App Builder](app-builder): Apps made in the console: pages of widgets over tables, with filters that readers set.
+- [Building an interface](app-builder-editor): The builder for one app: add widgets to a page, place and size them on it, and set each one in Data, Display, Actions and Rules.
+- [Published apps](published-apps): The apps a workspace serves, where each is served, and who may open it.
+- [Extensions](extensions): Connectors and trigger sources a tenant writes for itself, beside the ones that come with the product.
+- [Writing an extension](extension-editor): The editor for a connector or a trigger source.
+- [All resources](resources): Every resource in the workspace in one list, of whatever kind, with who manages each.
+- [Editing a resource](resource-editor): The editor for a resource that has no screen of its own, as the form its kind describes.

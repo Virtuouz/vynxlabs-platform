@@ -10,8 +10,9 @@ export const VERSION = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8
 /** Where pages come from, and the folder under the docs root each is read into. */
 const ROOTS = [
   { folder: join(HERE, "content"), under: "" },
-  // Written by the generators, never by hand: `pnpm docs:generate`.
-  { folder: join(HERE, "generated"), under: "reference" },
+  // Written by the generators, never by hand: `pnpm docs:generate`. They are written where they
+  // are shown (`develop/reference/errors.md`), so both folders mount at the root.
+  { folder: join(HERE, "generated"), under: "" },
 ];
 
 function filesUnder(folder) {
@@ -32,6 +33,8 @@ export function loadDocs() {
   // Where pages were, read from the frontmatter as written, so that a page that moved is
   // understood by any version of the schema.
   const moved = [];
+  const seen = new Set();
+  const written = new Set();
   for (const { folder, under } of ROOTS) {
     for (const file of filesUnder(folder)) {
       const name = join(under, relative(folder, file)).split("\\").join("/");
@@ -59,6 +62,19 @@ export function loadDocs() {
       if (Array.isArray(was)) {
         moved.push({ path: named.path, movedFrom: was.filter((one) => typeof one === "string") });
       }
+      if (seen.has(named.path)) {
+        issues.push({
+          path: named.path,
+          line: 1,
+          column: 1,
+          code: "path_twice",
+          message: `A page of content and a generated page are both at ${named.path}. Generated pages are never written by hand: move or rename the page you wrote.`,
+          severity: "error",
+        });
+        continue;
+      }
+      seen.add(named.path);
+      if (folder === join(HERE, "content")) written.add(named.path);
       const read = readPage(named.path, text, { profile: "product" });
       entries.push(read.entry);
       issues.push(...read.issues);
@@ -80,7 +96,7 @@ export function loadDocs() {
       severity: "error",
     });
   }
-  return { set: built.set, issues, assets, redirects };
+  return { set: built.set, issues, assets, redirects, written };
 }
 
 export function report(issues) {

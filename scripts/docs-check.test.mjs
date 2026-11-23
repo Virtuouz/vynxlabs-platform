@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
@@ -19,7 +19,7 @@ test("docs:check asks whether the generated pages are old before anything rewrit
 });
 
 test("a generated page that is not what the code says fails the check, with no regenerating first", () => {
-  const generated = join(DOCS, "generated/errors.md");
+  const generated = join(DOCS, "generated/develop/reference/errors.md");
   if (!existsSync(generated)) {
     // A checkout that has never been built has no generated pages to be old.
     expect(run("--staleness").status).toBe(0);
@@ -31,8 +31,39 @@ test("a generated page that is not what the code says fails the check, with no r
     writeFileSync(generated, `${kept}\nA line the code does not say.\n`);
     const old = run("--staleness");
     expect(old.status).toBe(1);
-    expect(old.stderr).toContain("generated/errors.md is not what the code says now");
+    expect(old.stderr).toContain(
+      "generated/develop/reference/errors.md is not what the code says now",
+    );
   } finally {
     writeFileSync(generated, kept);
+  }
+});
+
+test("a page its folder's pages: does not list fails the check, and so does a folder its parent does not list", () => {
+  const stray = join(DOCS, "content/start/explanation/stray.md");
+  try {
+    writeFileSync(stray, "---\ntitle: Stray\n---\n\nNothing lists this page.\n");
+    const left = run();
+    expect(left.status).toBe(1);
+    expect(left.stderr).toContain(
+      'start/explanation/index.md  does not list the page "stray" in pages:',
+    );
+  } finally {
+    rmSync(stray, { force: true });
+  }
+  const folder = join(DOCS, "content/start/stray-folder");
+  try {
+    mkdirSync(folder);
+    writeFileSync(
+      join(folder, "index.md"),
+      "---\ntitle: Stray\n---\n\nNothing lists this folder.\n",
+    );
+    const left = run();
+    expect(left.status).toBe(1);
+    expect(left.stderr).toContain(
+      'start/index.md  does not list the folder "stray-folder" in pages:',
+    );
+  } finally {
+    rmSync(folder, { force: true, recursive: true });
   }
 });

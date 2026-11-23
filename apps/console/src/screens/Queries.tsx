@@ -13,6 +13,7 @@ import { ErrorState, Loading, LoadState } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { ReadTable } from "../kit/ReadTable.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
+import { ReferenceList } from "../kit/references.tsx";
 import { parametersIn } from "../kit/sqlParameters.ts";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { Page } from "../ListScreen.tsx";
@@ -609,6 +610,12 @@ export function Queries({ root, link }: { root: string; link: string }) {
               )}
             </LoadState>
           </section>
+          {listed ? (
+            <section className="flex flex-col gap-2">
+              <SectionLabel>Used by</SectionLabel>
+              <ReferenceList root={root} link={link} kind="query" name={listed.path} />
+            </section>
+          ) : null}
           <section className="flex flex-col gap-2">
             <SectionLabel>Tables</SectionLabel>
             {sqlTables.length === 0 ? (

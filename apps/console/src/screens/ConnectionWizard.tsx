@@ -216,6 +216,7 @@ export function ConnectionWizard({
   const [config, setConfig] = useState<Record<string, unknown>>(row?.config ?? {});
   const [formKey, setFormKey] = useState(0);
   const [credential, setCredential] = useState("");
+  const [removeCredential, setRemoveCredential] = useState(false);
   const [saved, setSaved] = useState<ConnectionRow | undefined>(row?.bound ? row : undefined);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
@@ -307,9 +308,10 @@ export function ConnectionWizard({
       }
       await api.put(`${root}/connection-bindings/${path}`, {
         config,
-        ...(credential ? { credential } : {}),
+        ...(credential ? { credential } : removeCredential ? { credential: null } : {}),
       });
       setCredential("");
+      setRemoveCredential(false);
       const list = await api.get<{ items: ConnectionRow[] }>(`${root}/connection-bindings`);
       setSaved(
         list.items.find((item) => item.path === path) ?? {
@@ -512,6 +514,8 @@ export function ConnectionWizard({
               ? {}
               : { hint: `${credentialSays.hint} Stored encrypted and never shown again.` })}
             onChange={setCredential}
+            removed={removeCredential}
+            onRemove={setRemoveCredential}
           />
         </section>
 

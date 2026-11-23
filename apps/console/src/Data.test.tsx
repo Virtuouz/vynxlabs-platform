@@ -635,6 +635,35 @@ test("a connected data source is changed from what it is, and the stored passwor
   );
 });
 
+test("a data source's stored password is removed from its Change form: password null (DAT-MP5)", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          description: "The ERP",
+          bound: true,
+          config: { host: "erp.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${root}/data-source-bindings/erp`] = () => [200, {}];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Change" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByLabelText("Remove the stored password"));
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(
+      ((calls.find((call) => call.method === "PUT")?.body ?? {}) as { password?: null }).password,
+    ).toBe(null),
+  );
+});
+
 test("WLK-07: another host asks for the password again instead of dropping it in silence", async () => {
   routes[`GET /api/v1${root}/data-source-bindings`] = () => [
     200,
@@ -1080,6 +1109,38 @@ test("TAB-28: a time is shown, typed and read in the reader's zone, with UTC on 
   show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   await screen.findByText("A-1");
   expect(await screen.findAllByTitle("2026-11-01T10:00:00.000Z (UTC)")).not.toHaveLength(0);
+});
+
+test("a data source's row says which scripts use it (REL-MP7)", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          description: "",
+          bound: true,
+          config: { host: "erp.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  routes[`GET /api/v1${root}/references`] = () => [
+    200,
+    {
+      items: [
+        {
+          target: { kind: "data_source", name: "erp" },
+          by: { kind: "script", path: "orders/sync" },
+          how: "reads and writes it",
+        },
+      ],
+    },
+  ];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByRole("link", { name: "orders/sync" })).toBeTruthy();
 });
 
 const bound = {

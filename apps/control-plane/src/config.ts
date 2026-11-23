@@ -325,6 +325,9 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     }
     return parsed;
   };
+  // Read by the worker host and its firewall rules, which share the environment: said here
+  // too, so that a wrong value is found when the instance starts and not when a worker does.
+  whole("MANAGED_WORKER_USERS", 1, 60_000);
   const limits: Limits = {
     runSlots: whole("RUN_SLOTS", 1, 1000),
     runMemoryFloorMb: whole("RUN_MEMORY_FLOOR_MB", 0, 1_000_000),

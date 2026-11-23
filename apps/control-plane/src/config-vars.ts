@@ -179,12 +179,19 @@ export const CONFIG_VARS = {
   MANAGED_WORKER_UID: {
     group: "Workers",
     default: "10001",
-    description: "The user workers run as.",
+    description:
+      "The first user workers run as. With a worker host each worker runs as a user of its own, from this one up, so that one tenant's script cannot read another's worker.",
   },
   MANAGED_WORKER_GID: {
     group: "Workers",
     default: "10001",
-    description: "The group workers run as.",
+    description: "The first group workers run as. Each worker's group follows its user.",
+  },
+  MANAGED_WORKER_USERS: {
+    group: "Workers",
+    default: "256",
+    description:
+      "How many users, counted from `MANAGED_WORKER_UID`, the worker host may use: it never runs more workers at once than this. Read by the worker host, and by its firewall rules.",
   },
   MANAGED_WORKERS_MAX: {
     group: "Workers",

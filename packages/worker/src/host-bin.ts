@@ -29,8 +29,10 @@ Options:
   --max-workers <n>   Workers alive at once. Default: twice the run slots.
 
 WORKER_HOST_TOKEN is the token the control plane was given. VOLVEL_URL can be
-used instead of --url. Workers run as MANAGED_WORKER_UID and MANAGED_WORKER_GID,
-10001 by default; this process must be able to switch to them.`);
+used instead of --url. Each worker runs as a user of its own: the next free one of
+MANAGED_WORKER_USERS (256 by default) from MANAGED_WORKER_UID and MANAGED_WORKER_GID,
+10001 by default, so no more than that many workers run at once. This process must
+be able to switch to them.`);
   process.exit(0);
 }
 
@@ -51,11 +53,20 @@ const id = (name: string) => {
   }
   return parsed;
 };
-const user = { uid: id("MANAGED_WORKER_UID"), gid: id("MANAGED_WORKER_GID") };
+const users = Number(process.env.MANAGED_WORKER_USERS ?? "256");
+if (!Number.isInteger(users) || users < 1 || users > 60000) {
+  console.error("MANAGED_WORKER_USERS must be a whole number from 1 to 60000.");
+  process.exit(2);
+}
+const user = { uid: id("MANAGED_WORKER_UID"), gid: id("MANAGED_WORKER_GID"), count: users };
 // A worker of the host's own user could read the token from this process. Refuse to start any.
-if (process.getuid?.() === user.uid) {
+if (
+  process.getuid?.() !== undefined &&
+  process.getuid() >= user.uid &&
+  process.getuid() < user.uid + users
+) {
   console.error(
-    "volvel-worker-host runs as the user it would start workers as. Run it as root, " +
+    "volvel-worker-host runs as one of the users it would start workers as. Run it as root, " +
       "with CAP_SETUID and CAP_SETGID, so that workers run as a user of their own.",
   );
   process.exit(2);
@@ -95,7 +106,7 @@ const host = new WorkerHost({
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.on(signal, () => void host.stop());
 }
-log("info", "worker host started", { url, uid: user.uid, gid: user.gid });
+log("info", "worker host started", { url, uid: user.uid, gid: user.gid, users });
 const reason = await host.run();
 log("info", `worker host exiting: ${reason}`);
 process.exit(reason === "refused" ? 1 : 0);

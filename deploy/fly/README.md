@@ -53,7 +53,7 @@ and add the group to `fly.toml`:
   workers = "volvel-worker-host --url http://<app>.internal:8080"
 ```
 
-Size the `workers` machines for the scripts they will run. The worker host runs as root, to start each worker as `vxrun`. Set `MANAGED_WORKERS=false` instead if every tenant is served by standalone workers.
+Size the `workers` machines for the scripts they will run. The worker host runs as root, to start each worker as a user of its own. Set `MANAGED_WORKERS=false` instead if every tenant is served by standalone workers.
 
 `APPS_URL` gives apps written as code an address of their own: `fly certs add apps.<your domain>`. Without it they are not served.
 

@@ -149,7 +149,9 @@ test("APP-MP3: apps are searched, filtered by how they are built, sorted, and a 
   expect(screen.queryByText("Orders")).toBeNull();
   fireEvent.click(screen.getByRole("radio", { name: /^All/ }));
   // Sort by the title's header.
-  fireEvent.click(screen.getByRole("button", { name: /App/ }));
+  fireEvent.click(
+    screen.getByRole("columnheader", { name: /^App/ }).querySelector("button") as HTMLElement,
+  );
   const titles = () =>
     screen
       .getAllByRole("row")

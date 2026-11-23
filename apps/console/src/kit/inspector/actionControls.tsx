@@ -1067,7 +1067,9 @@ export function ActionEditor({
   const asked = current.confirm?.ask ?? [];
   const put = (next: Action, key?: string) =>
     onChange(
-      !next.confirm && next.steps.length === 0 && !next.when && !next.runBy ? undefined : next,
+      !next.confirm && next.steps.length === 0 && !next.when && !next.runBy && !next.done
+        ? undefined
+        : next,
       key,
     );
   const stepKeys = useStepKeys(current.steps.length);
@@ -1229,6 +1231,20 @@ export function ActionEditor({
             {failure}
           </span>
         </p>
+      ) : null}
+      {count > 0 ? (
+        <TextField
+          name={`${id}-done`}
+          label="When it is done, say"
+          hint="A notice after every step has worked. Leave it empty to say nothing."
+          required={false}
+          value={current.done ?? ""}
+          maxLength={300}
+          onChange={(text) => {
+            const { done: _before, ...rest } = current;
+            put(text.trim() === "" ? rest : { ...rest, done: text }, `${id}-done`);
+          }}
+        />
       ) : null}
       {current.steps.length > 0 ? (
         <p className="m-0 text-body-sm text-ink-muted">

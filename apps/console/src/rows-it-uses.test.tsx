@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
-import type { PageWidget } from "@volvel/manifest";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { Page, PageWidget } from "@volvel/manifest";
 import { sampleOf } from "@volvel/ui";
 import { formatValue } from "@volvel/widgets";
 import { chart as coreChart, list } from "@volvel/widgets-core";
@@ -83,7 +83,15 @@ const listWidget = (): PageWidget => ({
 });
 
 let written: PageWidget[];
-function Harness({ start, definition }: { start: PageWidget; definition: typeof chart }) {
+function Harness({
+  start,
+  definition,
+  page,
+}: {
+  start: PageWidget;
+  definition: typeof chart;
+  page?: Page;
+}) {
   const [widget, setWidget] = useState(start);
   return (
     <Inspector
@@ -92,6 +100,7 @@ function Harness({ start, definition }: { start: PageWidget; definition: typeof 
       surface="app"
       filters={[]}
       catalog={catalog}
+      {...(page ? { page, pages: [page] } : {})}
       onChange={(next) => {
         written.push(next);
         setWidget(next);
@@ -135,6 +144,70 @@ test("a choice column's values are chosen, several make an array, and the chip s
   fireEvent.click(editor.getByLabelText(/^Paid/));
   expect(last().filters).toEqual([{ column: "status", op: "in", value: ["void", "paid"] }]);
   expect(panel().getByRole("button", { name: "Status is Void, Paid" })).toBeTruthy();
+});
+
+test("a condition on a record page can be about that record's column or the current user (WID-M9)", async () => {
+  const page: Page = {
+    id: "invoice",
+    title: "Invoice",
+    kind: "record",
+    record: { table: "invoices" },
+    widgets: [],
+  };
+  show(<Harness start={listWidget()} definition={list as never} page={page} />);
+  fireEvent.click(panel().getByRole("button", { name: "Condition" }));
+  let editor = await dialog();
+  fireEvent.change(editor.getByLabelText("Field"), { target: { value: "number" } });
+  fireEvent.click(editor.getByRole("radio", { name: "This record's" }));
+  fireEvent.change(editor.getByLabelText("Column of this record"), { target: { value: "number" } });
+  fireEvent.click(editor.getByRole("button", { name: "Add" }));
+  expect(last().filters).toEqual([{ column: "number", op: "eq", value: { record: "number" } }]);
+  expect(panel().getByRole("button", { name: "Number is this record's number" })).toBeTruthy();
+
+  fireEvent.click(panel().getByRole("button", { name: "Number is this record's number" }));
+  editor = await dialog();
+  fireEvent.click(editor.getByRole("radio", { name: "The current user" }));
+  expect(last().filters).toEqual([{ column: "number", op: "eq", value: { user: "id" } }]);
+  expect(panel().getByRole("button", { name: "Number is the current user" })).toBeTruthy();
+});
+
+test("a money column's condition is typed in dollars and kept in cents (WID-26)", async () => {
+  const money: Catalog = {
+    ...catalog,
+    tables: [
+      {
+        name: "invoices",
+        columns: [
+          {
+            name: "total",
+            type: "integer",
+            references: null,
+            description: "What is owed, in cents.",
+          },
+        ],
+      },
+    ],
+  };
+  const start = listWidget();
+  render(
+    <Inspector
+      widget={start}
+      definition={list as never}
+      surface="app"
+      filters={[]}
+      catalog={money}
+      onChange={(next) => written.push(next)}
+      onDuplicate={() => {}}
+      onRemove={() => {}}
+      rowRules={() => "/rules"}
+    />,
+  );
+  fireEvent.click(panel().getByRole("button", { name: "Condition" }));
+  const editor = await dialog();
+  fireEvent.click(editor.getByRole("radio", { name: "is more than" }));
+  fireEvent.change(editor.getByLabelText("Value"), { target: { value: "12.50" } });
+  fireEvent.click(editor.getByRole("button", { name: "Add" }));
+  expect(last().filters).toEqual([{ column: "total", op: "gt", value: 1250 }]);
 });
 
 test("a condition is removed by its ×", async () => {

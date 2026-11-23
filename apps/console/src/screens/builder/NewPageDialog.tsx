@@ -132,6 +132,7 @@ export function NewPageDialog({
           name="page-title"
           value={typed ?? startTitle(start, chosen)}
           maxLength={NAME_MAX}
+          showCount
           required
           onChange={setTyped}
         />

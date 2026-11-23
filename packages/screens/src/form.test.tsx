@@ -47,6 +47,7 @@ const columns = [
   col("tags", "enum_list", "Tags", {
     values: [{ value: "late" }, { value: "vip", label: "VIP" }],
   }),
+  col("scan", "file", "Scan"),
 ];
 
 const wire = (record: Record<string, unknown> | null): WireData =>
@@ -165,6 +166,13 @@ describe("controls by column type", () => {
     // A several-choice column is a list to choose from, not a box to type "a,b" in (WID-10).
     expect(screen.queryByRole("textbox", { name: /Tags/ })).toBeNull();
     expect(screen.getByText("Tags")).toBeTruthy();
+  });
+
+  test("a file column is not a box to type in: it says where the file is added (WID-10)", async () => {
+    draw(null, create);
+    await ready();
+    expect(screen.queryByRole("textbox", { name: /Scan/ })).toBeNull();
+    expect(screen.getByText(/A file cannot be added in a form/)).toBeTruthy();
   });
 
   test("money is typed as dollars and sent as cents", async () => {

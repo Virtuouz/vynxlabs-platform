@@ -139,6 +139,15 @@ function choiceValue(value: unknown, column: CatalogColumn | undefined): string 
   return Array.isArray(value) ? value.map(say).join(", ") : say(value);
 }
 
+/** What a value taken from the page's record or from the person looking is called in a sentence. */
+function sourceWords(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  if ("record" in value)
+    return `this record's ${heading(String((value as { record: string }).record)).toLowerCase()}`;
+  if ("user" in value) return "the current user";
+  return undefined;
+}
+
 /** The sentence of a condition: "Status is not" and its value, for a chip. */
 export function sentenceOf(
   condition: VisualCondition,
@@ -154,7 +163,7 @@ export function sentenceOf(
         ? ""
         : condition.op === "between" && Array.isArray(condition.value)
           ? condition.value.join(" and ")
-          : choiceValue(condition.value, column),
+          : (sourceWords(condition.value) ?? choiceValue(condition.value, column)),
   };
 }
 

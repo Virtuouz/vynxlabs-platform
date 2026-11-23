@@ -427,3 +427,15 @@ test("an action at a config path has its own Actions and Rules editors", () => {
   expect(changes.at(-1)).toEqual({ steps: [{ do: "close" }] });
   expect(screen.getByText("Who can run it")).toBeTruthy();
 });
+
+test("an action can say something when it is done, and drops it when it is emptied (WID-M2)", () => {
+  show(<Actions />);
+  expect(screen.queryByLabelText("When it is done, say")).toBeNull();
+  add("Show a message");
+  fireEvent.change(screen.getByLabelText("When it is done, say"), {
+    target: { value: "All paid" },
+  });
+  expect(last().on?.click?.done).toBe("All paid");
+  fireEvent.change(screen.getByLabelText("When it is done, say"), { target: { value: "" } });
+  expect(last().on?.click).not.toHaveProperty("done");
+});

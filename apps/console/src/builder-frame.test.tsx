@@ -396,6 +396,32 @@ test("a check that the control plane refuses says so, with a way to ask again (B
   expect(await screen.findByRole("heading", { name: "Ready to publish" })).toBeTruthy();
 });
 
+test("tables and groups that could not be read are said, not taken for missing (BLD-03)", async () => {
+  withAside({ rules: { seenBy: { groups: ["vanished"] } } });
+  (stored.pages[0] as { widgets: PageWidget[] }).widgets.push({
+    id: "t",
+    type: "core/table",
+    title: "Ghosts",
+    at: { x: 0, y: 12, w: 12, h: 4 },
+    data: { rows: { source: { visual: { table: "ghost" } } } },
+    config: { columns: [] },
+  } as PageWidget);
+  const before = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) =>
+    address.includes("/queries/schema") || address.includes("/group-keys")
+      ? new Response(JSON.stringify({ detail: "The service is down.", status: 500 }), {
+          status: 500,
+        })
+      : before(address, init),
+  );
+  await open();
+  fireEvent.click(screen.getAllByRole("button", { name: "Publish" })[0] as HTMLElement);
+  expect(await screen.findByText(/Could not check the tables and queries/)).toBeTruthy();
+  expect(screen.getByText(/Could not check .*the groups/)).toBeTruthy();
+  expect(screen.queryByText("1 data source not found")).toBeNull();
+  expect(screen.queryByText(/no longer exists/)).toBeNull();
+});
+
 test("a table that is not there, or a group that is gone, is said before publishing", async () => {
   withAside({ rules: { seenBy: { groups: ["vanished"] } } });
   (stored.pages[0] as { widgets: PageWidget[] }).widgets.push({

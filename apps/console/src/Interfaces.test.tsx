@@ -132,7 +132,10 @@ test("an app is made as an interface and the app that serves it, and is then bui
   const dialog = await screen.findByRole("dialog");
   // The interface refuses a name past 100 characters, so the field stops there (BLD-06).
   expect((within(dialog).getByLabelText("Name") as HTMLInputElement).maxLength).toBe(100);
+  // ...and says how many are typed (BLD-06).
+  expect(within(dialog).getByText("0 of 100")).toBeTruthy();
   fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Stock room" } });
+  expect(within(dialog).getByText("10 of 100")).toBeTruthy();
   // The address is made from the name.
   expect((within(dialog).getByLabelText("Address") as HTMLInputElement).value).toBe("stock-room");
   fireEvent.click(within(dialog).getByRole("button", { name: "Make the app" }));

@@ -77,6 +77,7 @@ type Kind =
   | "boolean"
   | "enum"
   | "reference"
+  | "file"
   | "json";
 
 /** A column that holds a list of values: marked so, or a several-choice column. */
@@ -86,6 +87,7 @@ const holdsList = (column: FormColumn) =>
 function kindOf(column: FormColumn): Kind {
   const type = column.type.toLowerCase();
   if (type === "reference") return "reference";
+  if (type === "file") return "file";
   if (type === "enum" || type === "enum_list") return "enum";
   if (type === "boolean") return "boolean";
   if (type === "date") return "date";
@@ -139,6 +141,7 @@ function schemaOf(column: FormColumn, kind: Kind): JsonSchema {
       one = { enum: (column.values ?? []).map((value) => value.value) };
       break;
     case "json":
+    case "file":
       return {};
     default:
       one = { type: "string" };
@@ -551,6 +554,16 @@ function FormBody({
       );
     }
     switch (kind) {
+      case "file":
+        // A form cannot take a file to a row yet: said at the field, never a box to type an id in.
+        return (
+          <div key={name} data-form-file={name} className="flex min-w-0 flex-col gap-1">
+            <span className="text-label font-medium text-ink">{label}</span>
+            <p className="m-0 text-body-sm text-ink-muted">
+              A file cannot be added in a form. Add it to the row in the table.
+            </p>
+          </div>
+        );
       case "boolean":
         return (
           <CheckboxField

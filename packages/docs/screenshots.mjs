@@ -21,6 +21,7 @@ import queries from "./shots/queries.mjs";
 import releases from "./shots/releases.mjs";
 import scripts from "./shots/scripts.mjs";
 import sso from "./shots/sso.mjs";
+import tutorials from "./shots/tutorials.mjs";
 import widgets from "./shots/widgets.mjs";
 
 /** The day every picture is taken on, so a time on a screen is the same in each run. */
@@ -176,6 +177,7 @@ export const SHOTS = [
   ...releases,
   ...scripts,
   ...sso,
+  ...tutorials,
   ...widgets,
 ];
 

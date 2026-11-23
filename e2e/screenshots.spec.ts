@@ -16,6 +16,7 @@ import { scenes as releases } from "./scenes/releases.ts";
 import type { Built, Given, Scene } from "./scenes/scene.ts";
 import { scenes as scripts } from "./scenes/scripts.ts";
 import { scenes as sso } from "./scenes/sso.ts";
+import { scenes as tutorials } from "./scenes/tutorials.ts";
 import { scenes as widgets } from "./scenes/widgets.ts";
 import { signInWithPassword } from "./sign-in.ts";
 import { expect, type Page, test } from "./test.ts";
@@ -71,6 +72,7 @@ const SCENES: Record<string, Scene> = {
   ...releases,
   ...scripts,
   ...sso,
+  ...tutorials,
   ...widgets,
 };
 /** Fernhill's people sign in with the seed's password (examples/fernhill/setup/setup.mjs). */

@@ -17,6 +17,13 @@ export const DOC_CSS = `
   line-height: 1.6;
   overflow-wrap: break-word;
 }
+/* Made from the page's own ink, so each is read against whatever ground the page has, in light and in dark. */
+.vd-doc {
+  --vd-stripe: color-mix(in srgb, var(--vd-ink, #1a1a1a) 6%, transparent);
+  --vd-code-bg: color-mix(in srgb, var(--vd-ink, #1a1a1a) 11%, transparent);
+  --vd-code-ink: var(--vd-ink, #1a1a1a);
+  --vd-code-line: color-mix(in srgb, var(--vd-ink, #1a1a1a) 26%, transparent);
+}
 .vd-doc > :first-child { margin-top: 0; }
 .vd-doc > :last-child { margin-bottom: 0; }
 .vd-doc h1, .vd-doc h2, .vd-doc h3, .vd-doc h4, .vd-doc h5, .vd-doc h6 {
@@ -50,10 +57,13 @@ export const DOC_CSS = `
   font-family: var(--vd-font-code, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 0.9em;
 }
+/* Inline code is a chip of its own: a block of code is a panel on the sunken ground, with its own edge. */
 .vd-doc :not(pre) > code {
-  padding: 0.1em 0.35em;
+  padding: 0.12em 0.4em;
   border-radius: 4px;
-  background: var(--vd-sunken, #f3f3f3);
+  background: var(--vd-code-bg);
+  color: var(--vd-code-ink);
+  box-shadow: inset 0 0 0 1px var(--vd-code-line);
 }
 .vd-doc pre {
   padding: 0.85em 1em;
@@ -71,7 +81,8 @@ export const DOC_CSS = `
   background: var(--vd-surface, #fff);
   white-space: nowrap;
 }
-.vd-doc .vd-table { margin: 0 0 1em; overflow-x: auto; }
+.vd-doc .vd-table { position: relative; margin: 0 0 1em; overflow-x: auto; container-type: inline-size; }
+.vd-doc tbody tr:nth-child(even) { background: var(--vd-stripe); }
 .vd-doc table { width: 100%; border-collapse: collapse; }
 .vd-doc th, .vd-doc td {
   padding: 0.45em 0.75em;
@@ -83,6 +94,25 @@ export const DOC_CSS = `
 .vd-doc .vd-align-left { text-align: left; }
 .vd-doc .vd-align-center { text-align: center; }
 .vd-doc .vd-align-right { text-align: right; }
+/* As table-saw stacks a table: where its container is narrow, a row is label and value pairs, the labels
+   from each cell's data-label, with the header row kept for a screen reader. No script does this. */
+@container (max-width: 40rem) {
+  /* A table of one or two columns fits a phone as it is: only three or more stack. */
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) thead tr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(1px, 1px, 1px, 1px); }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) table, .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody { display: block; }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody tr { display: block; padding: 0.35em 0; border-bottom: 1px solid var(--vd-line, #dcdcdc); }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody td {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: 0 1em;
+    border-bottom: 0;
+    padding-block: 0.25em;
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody td::before { content: attr(data-label); font-weight: 600; }
+  .vd-doc .vd-table:not([data-cols="1"]):not([data-cols="2"]) tbody td:not([data-label]) { grid-template-columns: minmax(0, 1fr); }
+}
 .vd-doc .vd-tasks { padding-left: 0.25em; list-style: none; }
 .vd-doc .vd-task input { margin-right: 0.35em; }
 
@@ -207,6 +237,79 @@ export const DOC_CSS = `
 .vd-doc .vd-details-body { padding: 0 1em 0.75em; }
 .vd-doc .vd-details-body > :last-child { margin-bottom: 0; }
 
+.vd-doc .vd-zoom {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--vd-radius, 6px);
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 0;
+  vertical-align: bottom;
+  cursor: zoom-in;
+}
+.vd-doc .vd-zoom:focus-visible { outline: 2px solid var(--vd-action, #1d4ed8); outline-offset: 2px; }
+/* The larger view of a picture: over everything, the picture fitted to the window with its words under it. */
+.vd-doc .vd-lightbox {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  overflow: hidden;
+}
+.vd-doc .vd-lightbox[open] { display: grid; place-items: center; }
+.vd-doc .vd-lightbox::backdrop { background: rgb(0 0 0 / 0.98); }
+.vd-doc .vd-lightbox-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: 100vw;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 3.5rem 1rem 1rem;
+  box-sizing: border-box;
+}
+.vd-doc .vd-lightbox-img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100dvh - 9rem);
+  object-fit: contain;
+  transform-origin: 0 0;
+  cursor: default;
+}
+.vd-doc .vd-lightbox-caption { max-width: min(60rem, 100%); margin: 0; padding: 0.35rem 0.6rem; border-radius: 6px; background: #000; font-size: 0.95rem; line-height: 1.4; text-align: center; color: #fff; }
+.vd-doc .vd-lightbox-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 0.6);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.vd-doc .vd-lightbox-close:hover { background: rgb(0 0 0 / 0.85); }
+.vd-doc .vd-lightbox-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .vd-doc .vd-field code { font-weight: 600; }
 .vd-doc .vd-screenshot img { border: 1px solid var(--vd-line, #dcdcdc); }
 .vd-doc .vd-screenshot .vd-shot-dark { display: none; }

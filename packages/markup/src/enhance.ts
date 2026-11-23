@@ -102,5 +102,103 @@ export const ENHANCE_SCRIPT = `(() => {
   document.addEventListener("click", (event) => {
     for (const term of terms) if (!term.contains(event.target)) close(term);
   });
+
+  // A picture pressed opens larger: the whole of it, fitted to the window, its words as the caption.
+  // It grows from where it is and goes back there, unless the reader asked for less motion.
+  const still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const EASE = "cubic-bezier(0.2, 0, 0, 1)";
+  let box = null, big = null, caption = null, closer = null, opener = null, closing = false;
+  const seen = (button) => {
+    const pictures = [...button.querySelectorAll("img")];
+    return pictures.find((one) => getComputedStyle(one).display !== "none") || pictures[0];
+  };
+  const play = (node, frames, options, pseudo) => {
+    if (still || typeof node.animate !== "function") return null;
+    try { return node.animate(frames, pseudo ? { ...options, pseudoElement: "::backdrop" } : options); } catch (_) { return null; }
+  };
+  const fade = [{ opacity: 0 }, { opacity: 1 }];
+  const hideBox = () => {
+    if (!box || !box.open || closing) return;
+    closing = true;
+    const back = opener ? seen(opener) : null;
+    const finish = () => {
+      if (!closing) return;
+      closing = false;
+      box.close();
+      const was = opener;
+      opener = null;
+      if (was && was.isConnected) was.focus();
+    };
+    const to = back ? back.getBoundingClientRect() : null;
+    const from = big.getBoundingClientRect();
+    const inView = to && to.width > 0 && to.bottom > 0 && to.top < window.innerHeight && to.right > 0 && to.left < window.innerWidth;
+    const frames = inView && from.width > 0
+      ? [{ transform: "none" }, { transform: "translate(" + (to.left - from.left) + "px," + (to.top - from.top) + "px) scale(" + to.width / from.width + "," + to.height / from.height + ")" }]
+      : [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "scale(0.96)" }];
+    const run = play(big, frames, { duration: 200, easing: EASE, fill: "forwards" });
+    play(box, [...fade].reverse(), { duration: 200, easing: EASE, fill: "forwards" }, true);
+    play(closer, [...fade].reverse(), { duration: 120, easing: EASE, fill: "forwards" });
+    play(caption, [...fade].reverse(), { duration: 120, easing: EASE, fill: "forwards" });
+    if (run) { run.onfinish = finish; run.oncancel = finish; setTimeout(finish, 400); } else finish();
+  };
+  const buildBox = () => {
+    big = document.createElement("img");
+    big.className = "vd-lightbox-img";
+    caption = document.createElement("figcaption");
+    caption.className = "vd-lightbox-caption";
+    caption.setAttribute("aria-hidden", "true");
+    const figure = document.createElement("figure");
+    figure.className = "vd-lightbox-figure";
+    figure.append(big, caption);
+    closer = document.createElement("button");
+    closer.type = "button";
+    closer.className = "vd-lightbox-close";
+    closer.setAttribute("aria-label", "Close");
+    closer.textContent = "\\u00d7";
+    box = document.createElement("dialog");
+    box.className = "vd-lightbox";
+    box.append(figure, closer);
+    closer.addEventListener("click", hideBox);
+    // A press anywhere but on the picture, its words or the button closes it.
+    box.addEventListener("click", (event) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".vd-lightbox-img, .vd-lightbox-caption, .vd-lightbox-close")) hideBox();
+    });
+    // Escape closes it as the page does: moving away, back to the picture.
+    box.addEventListener("cancel", (event) => { event.preventDefault(); hideBox(); });
+    // Nothing else in it can take focus, so Tab stays on the one button.
+    box.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") { event.preventDefault(); closer.focus(); }
+    });
+  };
+  const zoomIn = (button) => {
+    const picture = seen(button);
+    if (!picture || closing) return;
+    if (!box) buildBox();
+    opener = button;
+    const words = picture.getAttribute("alt") || [...button.querySelectorAll("img")].map((one) => one.getAttribute("alt")).find(Boolean) || "";
+    big.setAttribute("src", picture.getAttribute("src"));
+    big.alt = words;
+    if (picture.naturalWidth > 0) { big.width = picture.naturalWidth; big.height = picture.naturalHeight; }
+    else { big.removeAttribute("width"); big.removeAttribute("height"); }
+    caption.textContent = words;
+    caption.hidden = !words;
+    box.setAttribute("aria-label", words || "Larger picture");
+    (button.closest(".vd-doc") || document.body).append(box);
+    box.showModal();
+    closer.focus();
+    const from = picture.getBoundingClientRect();
+    const to = big.getBoundingClientRect();
+    const frames = from.width > 0 && to.width > 0
+      ? [{ transform: "translate(" + (from.left - to.left) + "px," + (from.top - to.top) + "px) scale(" + from.width / to.width + "," + from.height / to.height + ")" }, { transform: "none" }]
+      : [{ opacity: 0, transform: "scale(0.96)" }, { opacity: 1, transform: "none" }];
+    play(big, frames, { duration: 260, easing: EASE });
+    play(box, fade, { duration: 200, easing: EASE }, true);
+    play(closer, fade, { duration: 200, easing: EASE });
+    play(caption, fade, { duration: 200, easing: EASE });
+  };
+  document.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest("[data-vd-zoom]") : null;
+    if (button) { event.preventDefault(); zoomIn(button); }
+  });
 })();
 `;

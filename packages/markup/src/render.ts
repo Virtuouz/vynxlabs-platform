@@ -106,6 +106,8 @@ export interface Context {
   profile: ProfileName;
   registry: Registry;
   ids: number;
+  /** How many links the node being drawn is inside: a picture in a link is the link's, not a button. */
+  inLink?: number;
   /**
    * A renderer's own way to draw a node: HTML of the caller's, or a React
    * component. It gives back what it drew, or nothing to leave the node as usual.
@@ -123,6 +125,29 @@ export function context(options: RenderOptions = {}): Context {
     registry: options.registry ?? REGISTRY,
     ids: 0,
   };
+}
+
+/** Draws what is inside a link, noting that it is. */
+export function inLink<T>(ctx: Context, draw: () => T): T {
+  ctx.inLink = (ctx.inLink ?? 0) + 1;
+  try {
+    return draw();
+  } finally {
+    ctx.inLink = (ctx.inLink ?? 1) - 1;
+  }
+}
+
+/**
+ * A picture the reader can press to see larger: the page's script (or the console's own
+ * component) opens the modal on a press. It is a button, so the keyboard reaches it.
+ */
+export function zoomable(ctx: Context, ...pictures: El[]): El {
+  if (ctx.inLink) return pictures[0] as El;
+  return el(
+    "button",
+    { type: "button", class: "vd-zoom", "data-vd-zoom": "", "aria-haspopup": "dialog" },
+    pictures,
+  );
 }
 
 export const el = (tag: string, attrs: El["attrs"] = {}, children: Drawn[] = []): El => ({
@@ -237,7 +262,7 @@ function usual(node: Node, ctx: Context): Drawn[] {
       const attrs: El["attrs"] = { href };
       if (node.title) attrs.title = node.title;
       if (isExternal(href)) attrs.rel = "noopener noreferrer";
-      return [el("a", attrs, inside())];
+      return [el("a", attrs, inLink(ctx, inside))];
     }
     case "image": {
       const src = srcOf(node.src, ctx);
@@ -245,7 +270,7 @@ function usual(node: Node, ctx: Context): Drawn[] {
       const attrs: El["attrs"] = { src, alt: node.alt };
       if (node.title) attrs.title = node.title;
       attrs.loading = "lazy";
-      return [el("img", attrs)];
+      return [zoomable(ctx, el("img", attrs))];
     }
     case "list": {
       const attrs: El["attrs"] = {};
@@ -264,15 +289,24 @@ function usual(node: Node, ctx: Context): Drawn[] {
     case "rule":
       return [el("hr")];
     case "table": {
+      // As table-saw labels them: every body cell says which column it is in, so that a row
+      // can stand as label and value pairs where the table is narrow, with no script.
+      const labels = (node.children.find((row) => row.header)?.children ?? []).map((cell) =>
+        plain(cell).replace(/\s+/g, " ").trim(),
+      );
       const cells = (row: (typeof node.children)[number]) =>
         row.children.map((cell, index) => {
           const align = node.align[index];
-          return el(
-            row.header ? "th" : "td",
-            // A class, not a style: a page is served under a policy that takes no inline styles.
-            align ? { class: `vd-align-${align}` } : {},
-            drawAll(cell.children, ctx),
-          );
+          const attrs: El["attrs"] = {};
+          // A class, not a style: a page is served under a policy that takes no inline styles.
+          if (align) attrs.class = `vd-align-${align}`;
+          if (!row.header && labels[index]) attrs["data-label"] = labels[index];
+          const drawn = drawAll(cell.children, ctx);
+          // As table-saw does: a body cell of several pieces (words and code, say) is wrapped in one, so
+          // that stacked as a grid it is a value and not a column for each piece.
+          const value =
+            !row.header && drawn.length > 1 ? [el("span", { class: "vd-cell" }, drawn)] : drawn;
+          return el(row.header ? "th" : "td", attrs, value);
         });
       const head = node.children.filter((row) => row.header);
       const body = node.children.filter((row) => !row.header);
@@ -295,7 +329,11 @@ function usual(node: Node, ctx: Context): Drawn[] {
           ),
         );
       }
-      return [el("div", { class: "vd-table" }, [el("table", {}, parts)])];
+      return [
+        el("div", { class: "vd-table", "data-cols": String(node.align.length || labels.length) }, [
+          el("table", {}, parts),
+        ]),
+      ];
     }
     case "tableRow":
     case "tableCell":
@@ -461,22 +499,29 @@ function component(node: Component, ctx: Context): Drawn[] {
       if (!src || imageKind(src) === "refused") {
         return [el("p", { class: "vd-screenshot-missing" }, [alt])];
       }
+      const pressed = (...pictures: El[]) => zoomable(ctx, ...pictures);
       const dark = ctx.options.screenshotDark?.(node.props.name ?? "");
       if (dark && dark !== src && imageKind(dark) !== "refused") {
         return [
           el("figure", { class: "vd-screenshot" }, [
-            el("img", { class: "vd-shot-light", src, alt, loading: "lazy" }),
-            el("img", {
-              class: "vd-shot-dark",
-              src: dark,
-              alt: "",
-              "aria-hidden": "true",
-              loading: "lazy",
-            }),
+            pressed(
+              el("img", { class: "vd-shot-light", src, alt, loading: "lazy" }),
+              el("img", {
+                class: "vd-shot-dark",
+                src: dark,
+                alt: "",
+                "aria-hidden": "true",
+                loading: "lazy",
+              }),
+            ),
           ]),
         ];
       }
-      return [el("figure", { class: "vd-screenshot" }, [el("img", { src, alt, loading: "lazy" })])];
+      return [
+        el("figure", { class: "vd-screenshot" }, [
+          pressed(el("img", { src, alt, loading: "lazy" })),
+        ]),
+      ];
     }
     case "file-tree":
       return [el("div", { class: "vd-file-tree" }, inside())];

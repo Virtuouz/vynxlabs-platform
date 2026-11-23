@@ -4,6 +4,7 @@ import { CircleCheck, Info, OctagonAlert, TriangleAlert } from "lucide-react";
 import { type ReactNode, useMemo, useRef, useState } from "react";
 import { Details } from "./Details.tsx";
 import { servedComponents } from "./DocServed.tsx";
+import { DocZoom, zoomButton } from "./DocZoom.tsx";
 import { Tabs } from "./Tabs.tsx";
 import { Term } from "./Term.tsx";
 import { Kbd } from "./Tooltip.tsx";
@@ -29,8 +30,6 @@ const THEMED = `
   --vd-font-code: var(--vx-font-code);
   --vd-radius: var(--vx-radius-control);
 }
-/* Inline code gets an edge, so its padding reads as part of the code, not as a space before the comma after it. */
-.vd-doc :not(pre) > code { box-shadow: inset 0 0 0 1px var(--vx-line); }
 /* As a served site sets its pages: a size of its own, whatever is around it. */
 .vd-doc.vd-served { font-size: 16px; line-height: 1.6; }
 `;
@@ -45,10 +44,20 @@ const ALERT = {
 } as const;
 
 /** A picture in the text; where it cannot be loaded, its description in its place. */
-function Picture({ src, alt, title }: { src: string; alt: string; title?: string | undefined }) {
+function Picture({
+  src,
+  alt,
+  title,
+  zoom,
+}: {
+  src: string;
+  alt: string;
+  title?: string | undefined;
+  zoom: boolean;
+}) {
   const [failed, setFailed] = useState(false);
   if (failed) return <span className="text-ink-muted italic">{alt}</span>;
-  return (
+  const picture = (
     <img
       src={src}
       alt={alt}
@@ -57,11 +66,19 @@ function Picture({ src, alt, title }: { src: string; alt: string; title?: string
       onError={() => setFailed(true)}
     />
   );
+  // Pressed, it opens larger: the page's `Doc` listens for the press, as the site's script does.
+  return zoom ? (
+    <button type="button" className="vd-zoom" data-vd-zoom="" aria-haspopup="dialog">
+      {picture}
+    </button>
+  ) : (
+    picture
+  );
 }
 
 /** The kit's own components, for the parts of a page that are more than text. */
 const KIT: Components = {
-  image: ({ src, alt, title }) => <Picture src={src} alt={alt} title={title} />,
+  image: ({ src, alt, title, zoom }) => <Picture src={src} alt={alt} title={title} zoom={zoom} />,
   // A callout, as the documentation site draws one: a colored rail and an icon for its type,
   // its border kept wherever it sits (inside a widget's card too, where a notice drops its own).
   alert: ({ type, title, children }) => {
@@ -186,12 +203,25 @@ export function Doc({ tree, more, asServed, components, ...rest }: DocProps) {
       components: { ...KIT, term: drawTerm, ...components },
     });
   }, [tree, more, asServed, components, options]);
+  const [zoomed, setZoomed] = useState<HTMLElement | null>(null);
   return (
-    <div className={asServed ? "vd-doc vd-served" : "vd-doc"}>
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the press is on a button inside, which the keyboard presses.
+    // biome-ignore lint/a11y/noStaticElementInteractions: it only listens for presses of the pictures' own buttons.
+    <div
+      className={asServed ? "vd-doc vd-served" : "vd-doc"}
+      onClick={(event) => {
+        const button = zoomButton(event.target);
+        if (button) {
+          event.preventDefault();
+          setZoomed(button);
+        }
+      }}
+    >
       <style href="volvel-doc" precedence="default">
         {DOC_CSS + DOC_DARK_CSS + THEMED}
       </style>
       {drawn}
+      {zoomed ? <DocZoom opener={zoomed} onClose={() => setZoomed(null)} /> : null}
     </div>
   );
 }

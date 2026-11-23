@@ -37,3 +37,9 @@ No migration.
 - Siblings: "Run again with other input" on the run page and in Runs use `POST runs/:id/rerun`, which takes neither (left out). Dialogs that do not pass `timing` are unchanged.
 - Depends on OPS-25 (t4-flows-ops): until it lands a later run is listed and counted as queued; the dialog says it "waits as queued".
 - Polish gate: states: saving and failure are the form's; keyboard: native select and fields, Enter submits; 390 px: the fields wrap. Walk: Run on a script page, with Later and a past time, with priority 500, then a valid one; reload clears it (a dialog).
+
+## OPS-MP2 Platform events in the event picker
+- `packages/manifest/src/bundle-check.ts`: `PLATFORM_EVENTS` (name, description, payload fields) for `platform/run-succeeded`, `run-failed`, `flow-run-finished`, `deployment-created`, `row-changed`; exported from the manifest package. `apps/console/src/kit/platformEvents.ts` `listenChoices` adds them after the workspace's own events, each with a hint "<what> Payload: a, b." Used by the trigger editor (`ResourceEditor.tsx`) and the flow editor's event trigger (`FlowEditor.tsx`). Not used for the "may publish" grants of a step (`pickChoices.event`): the platform's events cannot be published by anyone else (`POST events` refuses `platform/`).
+- Tests: `ResourceEditor.test.tsx` "an event trigger can listen for the platform's own events...", `PlatformEvents.test.ts`, and `apps/control-plane/src/platform-events.test.ts`, which fails when the control plane publishes a platform event the list lacks.
+- Siblings: the bundle check already accepts any `platform/` event path (`expect`); `defineEventTrigger`/`trigger.event` in the SDK take any path. A script's `events` grant picker and the Events screen are unchanged.
+- Sees: Triggers editor, "Event" field; flow editor, an event start's "Event" field. Walk both at 390 px (long hints wrap in the list).

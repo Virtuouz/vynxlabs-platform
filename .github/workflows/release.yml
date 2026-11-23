@@ -74,6 +74,9 @@ jobs:
           XDG_CONFIG_HOME="$RUNNER_TEMP/xdg" VOLVEL_URL=http://localhost:8080 node setup/setup.mjs
       - name: Take the pictures
         run: pnpm docs:screenshots
+        env:
+          # The scene of Database locations makes a second database beside the instance's own.
+          DATABASE_URL: postgres://platform:platform@localhost:54329/platform
       - uses: actions/upload-artifact@v4
         with:
           name: docs-screenshots

@@ -425,7 +425,18 @@ function toDatabase(column: ColumnMeta, value: unknown, kept?: unknown): unknown
 
 function fromDatabase(column: ColumnMeta, value: unknown): unknown {
   if (value === null || value === undefined) return null;
-  if (column.type === "integer" || column.type === "number") return Number(value);
+  if (column.type === "integer" || column.type === "number") {
+    // A number a double cannot hold exactly (a source's bigint or numeric) is given as the text
+    // the database wrote, so that two keys are never one number and NaN is not an empty cell.
+    const text = String(value);
+    const number = Number(text);
+    const exact =
+      Number.isFinite(number) &&
+      (column.type === "integer"
+        ? Number.isSafeInteger(number)
+        : text.replace(/\D/g, "").replace(/^0+/, "").length <= 15 || String(number) === text);
+    return exact ? number : text;
+  }
   if (column.type === "timestamp") {
     // A source's `infinity` is no moment a date can hold: it is shown as the word it is.
     const moment = value instanceof Date ? value : new Date(String(value));
@@ -638,7 +649,8 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
   // The key breaks ties, so paging never repeats or skips a row.
   if (target.key) order.push(sql`${sql.ref(target.key)} asc`);
   const keyMeta = target.columns.find((one) => one.physicalName === target.key);
-  const byKeyset = keyset(target, sort) && keyMeta !== undefined;
+  // A key of type number is not exact in a double: such a table is paged by count, not after a row.
+  const byKeyset = keyset(target, sort) && keyMeta !== undefined && keyMeta.type !== "number";
   // After the last row: past it in the sort, or level with it and past its key. Rows with no
   // value in the sort column come last, in key order.
   let after = sql`true`;
@@ -647,7 +659,7 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
     const key = sql.ref(keyMeta.physicalName);
     const keyValue = (() => {
       try {
-        return toDatabase(keyMeta, query.after?.at(-1));
+        return keyParam(keyMeta, query.after?.at(-1));
       } catch {
         throw invalid();
       }
@@ -942,10 +954,17 @@ function keyColumn(target: RowTarget): ColumnMeta {
   return key;
 }
 
+/** A key as the database is given it: a whole number past 2^53 stays text, so it names its own row. */
+function keyParam(key: ColumnMeta, raw: unknown): unknown {
+  if (key.type === "integer" && typeof raw === "string" && /^-?\d+$/.test(raw)) return raw;
+  if (key.type === "number" && typeof raw === "string" && /^-?\d+(\.\d+)?$/.test(raw)) return raw;
+  return toDatabase(key, raw);
+}
+
 function keyValue(target: RowTarget, id: string): unknown {
   const key = keyColumn(target);
   try {
-    return toDatabase(key, key.type === "integer" || key.type === "number" ? Number(id) : id);
+    return keyParam(key, id);
   } catch {
     throw notFound("The row");
   }

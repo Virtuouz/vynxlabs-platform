@@ -350,6 +350,47 @@ describe("an external Postgres database as a data source", () => {
     expect((await bob.client.get(rows)).status).toBe(403);
   });
 
+  test("TAB-32 and TAB-16: whole numbers past 2^53 are not rounded, and `infinity` is shown as what it is", async () => {
+    const there = external.router.platform();
+    await sql`create table big (id bigint primary key, note text, seen timestamptz, price numeric)`.execute(
+      there,
+    );
+    await sql`insert into big values (9007199254740993, 'odd', 'infinity', 12345678901234567890.123456), (9007199254740992, 'even', '-infinity', 1.5), (5, 'small', now(), 2)`.execute(
+      there,
+    );
+    try {
+      const rows = `${ws()}/source-rows/big/erp`;
+      const listed = (await alice.get(`${rows}?limit=2`)).body;
+      // Paged by key and sorted by it: both keys are read and none is rounded into the other.
+      const all = [
+        ...listed.items,
+        ...(listed.nextCursor
+          ? (await alice.get(`${rows}?limit=2&cursor=${listed.nextCursor}`)).body.items
+          : []),
+      ];
+      expect(all.map((row: Any) => String(row.id)).sort()).toEqual([
+        "5",
+        "9007199254740992",
+        "9007199254740993",
+      ]);
+      const odd = all.find((row: Any) => row.note === "odd");
+      expect(odd.id).toBe("9007199254740993");
+      expect(odd.seen).toBe("Infinity");
+      expect(odd.price).toBe("12345678901234567890.123456");
+      const small = all.find((row: Any) => row.note === "small");
+      expect(small.id).toBe(5);
+      // Each key opens its own row, and changing one leaves the other alone.
+      const one = `${ws()}/source-row/big/9007199254740993/erp`;
+      expect((await alice.get(one)).body.note).toBe("odd");
+      expect((await alice.patch(one, { note: "changed" })).body.note).toBe("changed");
+      expect((await alice.get(`${ws()}/source-row/big/9007199254740992/erp`)).body.note).toBe(
+        "even",
+      );
+    } finally {
+      await sql`drop table big`.execute(there);
+    }
+  });
+
   test("a source that cannot be reached, or refuses the password, says so", async () => {
     await alice.put(`${ws()}/data-source-bindings/wrong-password`, {
       config: sourceConfig,

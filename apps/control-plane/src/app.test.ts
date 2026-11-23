@@ -11,10 +11,12 @@ let testDb: TestDatabase;
 let database: Database;
 let app: Awaited<ReturnType<typeof buildApp>>;
 let storageUp = true;
+let storageDelayMs = 0;
 const routes: RouteOptions[] = [];
 
 class FlakyStore extends MemoryObjectStore {
   override async check() {
+    if (storageDelayMs) await new Promise((resolve) => setTimeout(resolve, storageDelayMs));
     if (!storageUp) throw new Error("connection refused to 10.0.0.5");
   }
 }
@@ -90,6 +92,17 @@ describe("routes", () => {
       });
     } finally {
       storageUp = true;
+    }
+  });
+
+  test("the database's latency is the database's, not the slower of the two checks (INS-23)", async () => {
+    storageDelayMs = 700;
+    try {
+      const response = await app.inject({ url: "/api/v1/readyz" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().checks.database.latencyMs).toBeLessThan(500);
+    } finally {
+      storageDelayMs = 0;
     }
   });
 

@@ -74,11 +74,14 @@ export function healthRoutes(deps: {
       },
       async (request, reply) => {
         let readOnly: boolean | undefined;
-        const started = performance.now();
+        let latencyMs = 0;
         const [database, objectStore] = await Promise.all([
           run(async () => {
+            // Timed inside the check: the object store is asked at the same time and may be slower.
+            const started = performance.now();
             await deps.database.ping();
             readOnly = await deps.database.readOnly();
+            latencyMs = Math.round(performance.now() - started);
           }),
           run(() => deps.storage.check()),
         ]);
@@ -87,7 +90,7 @@ export function healthRoutes(deps: {
           ? {
               ...database,
               ...(readOnly === undefined ? {} : { readOnly }),
-              latencyMs: Math.round(performance.now() - started),
+              latencyMs,
             }
           : database;
         const ready = database.ok && objectStore.ok;

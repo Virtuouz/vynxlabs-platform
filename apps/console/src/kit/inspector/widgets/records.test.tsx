@@ -376,7 +376,11 @@ test("an action group adds a button, opens it, and lines up", () => {
 
 test("with Right or Spread the position is a row, not a grid whose columns do nothing (WID-30)", () => {
   const seen = mount(actions, group(), ActionsDisplaySection);
-  expect(screen.getByRole("radiogroup", { name: "Where it sits in its place" }).querySelectorAll("button")).toHaveLength(9);
+  expect(
+    screen
+      .getByRole("radiogroup", { name: "Where it sits in its place" })
+      .querySelectorAll("button"),
+  ).toHaveLength(9);
   fireEvent.click(screen.getByRole("radio", { name: "Right" }));
   expect(screen.queryByRole("radio", { name: "Top center" })).toBeNull();
   fireEvent.click(screen.getByRole("radio", { name: "Bottom" }));

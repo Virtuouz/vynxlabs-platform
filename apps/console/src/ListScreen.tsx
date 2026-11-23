@@ -193,6 +193,11 @@ export function CreateDialog({
   const [unpicked, setUnpicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const formId = useId();
+  // The first reason the server gave for something no field of the form shows: "The table's
+  // definition is not valid" alone would not say what to change.
+  const unplaced = (caught: ApiError) =>
+    caught.fields?.find((one) => !config.fields.some((field) => one.path === `/body/${field.name}`))
+      ?.message;
   const fieldError = (name: string) =>
     unpicked.includes(name)
       ? "Choose one."
@@ -300,7 +305,9 @@ export function CreateDialog({
           />
         ),
       )}
-      {error ? <Notice tone="danger">{error.message}</Notice> : null}
+      {error ? (
+        <Notice tone="danger">{[error.message, unplaced(error)].filter(Boolean).join(" ")}</Notice>
+      ) : null}
       {roomy ? null : <div className="mt-1 flex justify-end gap-2">{buttons}</div>}
     </form>
   );

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { copyText } from "../ask.tsx";
 import { actionWords } from "../audit-words.ts";
+import { useAddressBox } from "../kit/addressBox.ts";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { stamp } from "../kit/format.ts";
 import { Inspector, KeyValues, SectionLabel, useWide, WIDE } from "../kit/layout.tsx";
@@ -175,7 +176,6 @@ export function AuditTable({
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<ApiError>();
   const [loaded, setLoaded] = useState(false);
-  const [typed, setTyped] = useState(url.q ?? "");
   const [closed, setClosed] = useState(false);
   const [linked, setLinked] = useState<Entry>();
   const wide = useWide(WIDE.inspector);
@@ -184,13 +184,12 @@ export function AuditTable({
   const tenantLog = tenantId !== undefined;
 
   // The text searched reaches the address, and the server, once typing pauses.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const next = typed.trim() || undefined;
-      if (next !== url.q) setUrl({ q: next });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [typed, url.q, setUrl]);
+  const [typed, setTyped] = useAddressBox(
+    url.q,
+    (text) => text ?? "",
+    (text) => text.trim() || undefined,
+    (next) => setUrl({ q: next }),
+  );
 
   const filters = new URLSearchParams();
   if (url.area) filters.set("area", url.area);

@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
+import { useAddressBox } from "../kit/addressBox.ts";
 import { useArrivals } from "../kit/arrivals.ts";
 import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
 import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
@@ -187,18 +188,17 @@ export function RunsWorkbench({
       ? { key: url.sort, dir: url.dir === "asc" ? "asc" : "desc" }
       : undefined;
   const selected = url.run;
-  const [typed, setTyped] = useState(search ?? "");
   const [tick, setTick] = useState(0);
   // Compact by default: a run is one line, and twenty fit a laptop's screen.
   const [density, setDensity] = useDensity("runs", "compact");
 
   // What is typed reaches the address, and the list, once typing pauses.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if ((search ?? "") !== typed.trim()) setUrl({ q: typed.trim() || undefined });
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [typed, search, setUrl]);
+  const [typed, setTyped] = useAddressBox(
+    search,
+    (text) => text ?? "",
+    (text) => text.trim() || undefined,
+    (next) => setUrl({ q: next }),
+  );
 
   const from = windowStart(hours, tick);
   const query = new URLSearchParams({ limit: "100" });

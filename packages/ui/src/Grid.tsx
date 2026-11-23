@@ -64,6 +64,8 @@ export interface GridProps<Row extends Record<string, unknown>> {
   /** What is typed in the filter row, by column. */
   filters?: Record<string, string>;
   onFilter?: (column: string, text: string) => void;
+  /** What cannot be read in a filter box, by column. The box is marked, and the screen says what. */
+  filterErrors?: Record<string, string>;
   /** Saves one changed cell. A rejection's message is shown in the cell. */
   onEdit?: (row: Row, column: string, value: unknown) => Promise<unknown>;
   /** Replaces how a cell is shown. Return undefined to keep the grid's own rendering. */
@@ -111,6 +113,61 @@ export function keepsKey(event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey
   return !((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k");
 }
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/**
+ * A stored moment as the reader's own clock shows it, `2026-06-01 09:00` (with seconds when it
+ * has some). The same text is shown in a cell being edited and in the row's inspector, and
+ * read back by `instantFromText`: a time is shown, typed and filtered in one zone (D21).
+ */
+export function localWall(instant: string, separator = " "): string {
+  const at = new Date(instant);
+  if (Number.isNaN(at.getTime())) return instant;
+  const day = `${at.getFullYear()}-${pad2(at.getMonth() + 1)}-${pad2(at.getDate())}`;
+  const time = `${pad2(at.getHours())}:${pad2(at.getMinutes())}`;
+  return `${day}${separator}${time}${at.getSeconds() === 0 ? "" : `:${pad2(at.getSeconds())}`}`;
+}
+
+/** What hovering a time says: the moment in UTC, so a time is never only the reader's guess. */
+export const utcOf = (instant: string): string | undefined => {
+  const at = new Date(instant);
+  return Number.isNaN(at.getTime()) ? undefined : `${at.toISOString()} (UTC)`;
+};
+
+/**
+ * Text typed for a moment, as the instant it means: with a zone (`2026-06-01T09:00:00Z`,
+ * `+02:00`) as written, and without one in the reader's own zone. A moment that does not exist
+ * (31 February, 25:00) is refused, not moved to another.
+ */
+export function instantFromText(text: string): string {
+  const said = "Enter a date and time that exists, such as 2026-06-01 09:00.";
+  const zoned = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/i.test(
+    text,
+  );
+  const local = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?$/.exec(text);
+  if (zoned) {
+    const at = new Date(text.replace(" ", "T"));
+    if (Number.isNaN(at.getTime())) throw new Error(said);
+    return at.toISOString();
+  }
+  if (!local) throw new Error(said);
+  const [year, month, day, hour = 0, minute = 0, second = 0] = local
+    .slice(1)
+    .map((part) => (part === undefined ? undefined : Number(part))) as number[];
+  const at = new Date(year as number, (month as number) - 1, day as number, hour, minute, second);
+  // A day or hour that does not exist comes out as another: the text must read back as it was.
+  if (
+    Number.isNaN(at.getTime()) ||
+    at.getFullYear() !== year ||
+    at.getMonth() !== (month as number) - 1 ||
+    at.getDate() !== day ||
+    at.getHours() !== hour ||
+    at.getMinutes() !== minute
+  )
+    throw new Error(said);
+  return at.toISOString();
+}
+
 /** A stored value as text a person can read and edit. */
 export function showValue(type: string, value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -133,6 +190,7 @@ function editText(type: string, value: unknown): string {
   // Several of a column's values, as they are typed: with commas between.
   if (type === "enum_list" && Array.isArray(value)) return value.join(", ");
   if (type === "json" || typeof value === "object") return JSON.stringify(value);
+  if (type === "timestamp" && typeof value === "string") return localWall(value);
   return String(value);
 }
 
@@ -166,6 +224,20 @@ export function parseValue(type: string, text: string): unknown {
     } catch {
       throw new Error("Enter valid JSON.");
     }
+  }
+  if (type === "timestamp") return instantFromText(trimmed);
+  if (type === "date") {
+    const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+    const at = day ? new Date(Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3]))) : null;
+    if (
+      !day ||
+      !at ||
+      at.getUTCFullYear() !== Number(day[1]) ||
+      at.getUTCMonth() !== Number(day[2]) - 1 ||
+      at.getUTCDate() !== Number(day[3])
+    )
+      throw new Error("Enter a day that exists, such as 2026-06-01.");
+    return trimmed;
   }
   return type === "text" ? text : trimmed;
 }
@@ -504,9 +576,12 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                   {column.filterable ? (
                     <input
                       aria-label={`Filter by ${column.label ?? column.name}`}
+                      aria-invalid={
+                        props.filterErrors?.[column.name] !== undefined ? true : undefined
+                      }
                       placeholder="Filter"
                       value={filters?.[column.name] ?? ""}
-                      className="h-6 w-full min-w-20 rounded-inner border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
+                      className="h-6 w-full min-w-20 rounded-inner border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60 aria-[invalid=true]:border-danger"
                       onChange={(event) => onFilter?.(column.name, event.currentTarget.value)}
                       onKeyDown={(event) => {
                         if (keepsKey(event)) event.stopPropagation();
@@ -569,6 +644,8 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                         custom
                       ) : value === null || value === undefined ? (
                         <span className="text-ink-muted/60">empty</span>
+                      ) : column.type === "timestamp" && typeof value === "string" ? (
+                        <span title={utcOf(value)}>{showValue(column.type, value)}</span>
                       ) : (
                         showValue(column.type, value)
                       );
@@ -676,9 +753,12 @@ function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
                   {column.filterable ? (
                     <input
                       aria-label={`Filter by ${column.label ?? column.name}`}
+                      aria-invalid={
+                        props.filterErrors?.[column.name] !== undefined ? true : undefined
+                      }
                       placeholder="Filter"
                       value={filters?.[column.name] ?? ""}
-                      className="h-7 w-full min-w-20 rounded-inner border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60"
+                      className="h-7 w-full min-w-20 rounded-inner border border-line-control bg-surface px-1.5 text-ink placeholder:text-ink-muted/60 aria-[invalid=true]:border-danger"
                       onChange={(event) => onFilter?.(column.name, event.currentTarget.value)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter") event.currentTarget.blur();
@@ -738,6 +818,8 @@ function PlainGrid<Row extends Record<string, unknown>>(props: GridProps<Row>) {
                         custom
                       ) : value === null || value === undefined ? (
                         <span className="text-ink-muted/60">empty</span>
+                      ) : column.type === "timestamp" && typeof value === "string" ? (
+                        <span title={utcOf(value)}>{showValue(column.type, value)}</span>
                       ) : (
                         showValue(column.type, value)
                       );

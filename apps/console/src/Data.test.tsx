@@ -1,13 +1,18 @@
 // @vitest-environment happy-dom
 import { cleanup, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { parseValue } from "@volvel/ui";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { navigate } from "./router.tsx";
 import {
   bodyToRestore,
+  moveColumn,
+  pickerFilter,
   Sources,
   SourceView,
   Tables,
   TableView,
   toFilter,
+  viewsOf,
 } from "./screens/Data.tsx";
 import { answer, show } from "./testing.tsx";
 
@@ -148,7 +153,7 @@ test("a table's rows are browsed with sorting, filters and paging", async () => 
 
   // A filter that is not the column's type is explained and sends nothing wrong.
   fireEvent.change(screen.getByLabelText("Filter by total"), { target: { value: "lots" } });
-  expect((await screen.findByRole("alert")).textContent).toBe("Enter a number.");
+  expect((await screen.findByRole("alert")).textContent).toBe("total: Enter a number.");
 });
 
 test("a value is changed in place, and a row is added and deleted", async () => {
@@ -592,7 +597,10 @@ test("a connected data source is changed from what it is, and the stored passwor
 });
 
 /** An orders table with a reference to customers and a file, and its first row open in the inspector. */
-function openOrderWithCustomerAndFile(row: Record<string, unknown>) {
+function openOrderWithCustomerAndFile(
+  row: Record<string, unknown>,
+  customers: object = { display: "name" },
+) {
   const table = orders("ui");
   const extra = (name: string, type: string, references: string | null) => ({
     name,
@@ -609,7 +617,7 @@ function openOrderWithCustomerAndFile(row: Record<string, unknown>) {
     extra("attachment", "file", null),
   );
   routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
-  routes[`GET /api/v1${root}/tables/customers`] = () => [200, { display: "name" }];
+  routes[`GET /api/v1${root}/tables/customers`] = () => [200, customers];
   routes[`GET /api/v1${root}/rows/orders`] = () => [
     200,
     { items: [{ ...rows[0], customer: null, attachment: null, ...row }], nextCursor: null },
@@ -806,4 +814,176 @@ test("TAB-05: Create table asks for a new table, so a name in use is refused and
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   expect(await screen.findByText(/already at "codes"/)).toBeTruthy();
   expect(calls.find((call) => call.method === "PUT")?.body).toMatchObject({ create: true });
+});
+
+const settle = (ms: number) => new Promise((done) => setTimeout(done, ms));
+
+test("TAB-13: a saved view's filter stays, in the address and in the boxes, past the pause after it is chosen", async () => {
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  // A view is applied: the address is changed from outside the boxes.
+  navigate(
+    `/t/t1/workspaces/w1/tables/orders?filter=${encodeURIComponent(JSON.stringify({ number: "A-" }))}`,
+  );
+  await waitFor(() =>
+    expect(JSON.parse(lastRows().get("filter") ?? "null")).toEqual({
+      and: [{ column: "number", op: "contains", value: "A-" }],
+    }),
+  );
+  // Longer than the pause a typed box waits: the old, empty boxes must not write themselves back.
+  await settle(700);
+  expect(new URLSearchParams(location.search).get("filter")).toBe('{"number":"A-"}');
+  expect((screen.getByLabelText("Filter by number") as HTMLInputElement).value).toBe("A-");
+  expect(JSON.parse(lastRows().get("filter") ?? "null")).toMatchObject({
+    and: [{ column: "number" }],
+  });
+});
+
+test("TAB-20: a filter that cannot be read asks for nothing and exports nothing, and its message goes with its text", async () => {
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  fireEvent.change(screen.getByLabelText("Filter by total"), { target: { value: "abc" } });
+  expect((await screen.findByRole("alert")).textContent).toBe("total: Enter a number.");
+  expect(screen.getByLabelText("Filter by total").getAttribute("aria-invalid")).toBe("true");
+  const asks = calls.filter((call) => call.url.includes("/rows/orders")).length;
+  await settle(500);
+  // No rows are shown as though they were filtered, no request is made, and CSV is off.
+  expect(calls.filter((call) => call.url.includes("/rows/orders")).length).toBe(asks);
+  expect(screen.queryByText("A-1")).toBeNull();
+  const csv = screen.getByRole("button", { name: /CSV/ });
+  expect(csv.hasAttribute("disabled")).toBe(true);
+  expect(screen.queryByRole("link", { name: /CSV/ })).toBeNull();
+  // Put right, the message goes and the rows come back filtered.
+  fireEvent.change(screen.getByLabelText("Filter by total"), { target: { value: "5" } });
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  await waitFor(() =>
+    expect(JSON.parse(lastRows().get("filter") ?? "null")).toEqual({
+      and: [{ column: "total", op: "eq", value: 5 }],
+    }),
+  );
+  expect(screen.getByRole("link", { name: /CSV/ })).toBeTruthy();
+});
+
+test("TAB-18: Create table sends the values of a list it makes, and says why when it is refused", async () => {
+  routes[`GET /api/v1${root}/tables`] = () => [200, { items: [] }];
+  routes[`PUT /api/v1${root}/resources/states`] = () => [
+    400,
+    {
+      status: 400,
+      detail: "The table's definition is not valid.",
+      errors: [{ path: "/body/columns/state/values", message: "needs at least one value" }],
+    },
+  ];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Create table" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "states" } });
+  fireEvent.input(within(dialog).getByLabelText("First column"), { target: { value: "state" } });
+  fireEvent.change(within(dialog).getByLabelText("It holds"), { target: { value: "enum" } });
+  const values = await within(dialog).findByLabelText("Values");
+  fireEvent.input(values, { target: { value: "new, paid" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  expect(await within(dialog).findByText(/needs at least one value/)).toBeTruthy();
+  expect(calls.find((call) => call.method === "PUT")?.body).toMatchObject({
+    body: { columns: { state: { type: "enum", values: ["new", "paid"] } } },
+  });
+});
+
+test("TAB-19: a column is moved or retired everywhere the definition names it", () => {
+  const body = () => ({
+    columns: { a: { type: "text" }, b: { type: "text" }, who: { type: "uuid" } },
+    display: "a",
+    indexes: [["a"], ["a", "b"], ["b"]],
+    policy: {
+      type: "rules",
+      rules: [{ allow: "read", when: { column: "who", is: "principal" } }],
+    },
+  });
+  const renamed = body();
+  moveColumn(renamed as never, "a", "z");
+  expect(Object.keys(renamed.columns)).toEqual(["b", "who", "z"]);
+  expect((renamed.columns as Record<string, object>).z).toMatchObject({ renamedFrom: "a" });
+  expect(renamed.display).toBe("z");
+  expect(renamed.indexes).toEqual([["z"], ["z", "b"], ["b"]]);
+  const retired = body();
+  moveColumn(retired as never, "a");
+  expect(retired.display).toBeUndefined();
+  expect(retired.indexes).toEqual([["b"], ["b"]]);
+  expect(Object.keys(retired.columns)).toEqual(["b", "who"]);
+  // A rule that needs the column names itself.
+  expect(() => moveColumn(body() as never, "who")).toThrow(/rule 1 of who sees rows/);
+  const followed = body();
+  moveColumn(followed as never, "who", "owner");
+  expect(followed.policy.rules[0]?.when).toMatchObject({ column: "owner" });
+});
+
+test("TAB-21: a row picker searches by what the display column is, and a failed search keeps the picker", () => {
+  expect(pickerFilter("name", "text", "ab")).toEqual({
+    column: "name",
+    op: "contains",
+    value: "ab",
+  });
+  expect(pickerFilter("code", "integer", "12")).toEqual({ column: "code", op: "eq", value: 12 });
+  expect(pickerFilter("code", "integer", "x")).toBeNull();
+  expect(pickerFilter("meta", "json", "x")).toBeNull();
+  expect(pickerFilter(undefined, "text", "x")).toBeNull();
+  expect(pickerFilter("name", "text", "  ")).toBeNull();
+});
+
+test("TAB-21: typing in the picker of a column named by a number keeps the picker", async () => {
+  routes[`GET /api/v1${root}/rows/customers`] = (_body, url) =>
+    url.searchParams.get("filter")?.includes('"contains"')
+      ? [400, { status: 400, detail: "contains works on text columns" }]
+      : [200, { items: [{ id: "c1", code: 7 }], nextCursor: "NTA" }];
+  openOrderWithCustomerAndFile(
+    {},
+    { display: "code", columns: [{ name: "code", type: "integer", status: "active" }] },
+  );
+  const box = await screen.findByRole("combobox");
+  await screen.findByText(/Type to find more/);
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.change(screen.getByRole("combobox"), { target: { value: "12" } });
+  await settle(600);
+  const filters = calls
+    .filter((call) => call.url.includes("/rows/customers"))
+    .map((call) => new URL(call.url, "http://x").searchParams.get("filter"));
+  expect(filters.some((one) => one?.includes('"contains"'))).toBe(false);
+  expect(filters).toContain(JSON.stringify({ column: "code", op: "eq", value: 12 }));
+  // Still a picker, not a box for the row's ID.
+  expect(screen.queryByText(/The ID of a row/)).toBeNull();
+  expect(screen.getByRole("combobox")).toBeTruthy();
+});
+
+test("TAB-38: saved views belong to the table, not to how its name is spelled", () => {
+  const at = (name: string) => `/tenants/t1/workspaces/w1/rows/${name}`;
+  expect(viewsOf(at("crm/orders"), "0192aaaa-bbbb-7ccc-8ddd-111111111111")?.list).not.toBe(
+    viewsOf(at("crm-orders"), "0192aaaa-bbbb-7ccc-8ddd-222222222222")?.list,
+  );
+  // Renamed, the table keeps its views.
+  expect(viewsOf(at("old"), "0192aaaa-bbbb-7ccc-8ddd-111111111111")?.list).toBe(
+    viewsOf(at("new"), "0192aaaa-bbbb-7ccc-8ddd-111111111111")?.list,
+  );
+  expect(viewsOf(at("x"), "0192aaaa-bbbb-7ccc-8ddd-111111111111")?.list).toMatch(
+    /^[a-z][a-z0-9-]{0,39}$/,
+  );
+});
+
+test("TAB-28: a time is shown, typed and read in the reader's zone, with UTC on hover, and one that does not exist is refused", async () => {
+  expect(parseValue("timestamp", "2026-06-01T12:00:00Z")).toBe("2026-06-01T12:00:00.000Z");
+  expect(parseValue("timestamp", "2026-06-01 09:00")).toBe(
+    new Date(2026, 5, 1, 9, 0).toISOString(),
+  );
+  expect(parseValue("timestamp", "2026-06-01T09:00")).toBe(
+    new Date(2026, 5, 1, 9, 0).toISOString(),
+  );
+  expect(() => parseValue("timestamp", "2026-02-31 10:00")).toThrow(/exists/);
+  expect(() => parseValue("timestamp", "1")).toThrow(/exists/);
+  expect(() => parseValue("date", "2026-02-31")).toThrow(/exists/);
+  expect(parseValue("date", "2026-02-28")).toBe("2026-02-28");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  expect(await screen.findAllByTitle("2026-11-01T10:00:00.000Z (UTC)")).not.toHaveLength(0);
 });

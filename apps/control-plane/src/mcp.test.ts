@@ -276,6 +276,15 @@ const keyOf = async (account: string) =>
 let accounts: { narrow: string; wide: string };
 
 describe("an agent's tools", () => {
+  test("the server names itself for the product and the workspace", async () => {
+    const agent = await connect(await keyOf(accounts.wide));
+    try {
+      expect(agent.getServerVersion()?.name).toBe("volvel:main");
+    } finally {
+      await agent.close();
+    }
+  });
+
   test("are the scripts and flows its service account may start, and no others", async () => {
     const tools = (await narrow.listTools()).tools;
     expect(tools.map((tool) => tool.name)).toEqual([

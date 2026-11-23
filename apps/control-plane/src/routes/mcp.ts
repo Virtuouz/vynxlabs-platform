@@ -852,7 +852,7 @@ export function mcpRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
 
         const server = new Server(
-          { name: `platform:${workspace.slug}`, version: kernel.version },
+          { name: `volvel:${workspace.slug}`, version: kernel.version },
           { capabilities: { tools: {} } },
         );
         // Tools are worked out per request, from what the caller may do now.

@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApp, buildSearchIndex, type DocsApp, loadSearchIndex } from "@volvel/docs-engine";
 import { describe, expect, test } from "vitest";
-import { docPage, homePage, notFoundPage, pageAt, searchPage } from "./docs.js";
+import { docPage, homePage, notFoundPage, pageAt, type SiteView, searchPage } from "./index.js";
 
 /**
  * Golden HTML of a tenant docs site, drawn by the renderer. A move or a rewrite of the renderer
@@ -11,7 +11,7 @@ import { docPage, homePage, notFoundPage, pageAt, searchPage } from "./docs.js";
  * them again on purpose: `UPDATE_GOLDEN=1`.
  */
 const HERE = dirname(fileURLToPath(import.meta.url));
-const GOLDEN = join(HERE, "golden");
+const GOLDEN = join(HERE, "..", "golden");
 
 const app: DocsApp = {
   path: "handbook",
@@ -137,18 +137,17 @@ const built = buildApp(app, resources, { product: { terms: [], topics: [] } });
 const search = loadSearchIndex(buildSearchIndex(built.set));
 
 const look = {
-  tenantName: "Fernhill",
   themeHref: "/theme.css",
   logoHref: "/logo.png",
   iconsHref: "/icons",
 };
 const pictures = new Set(["chart.png"]);
-const site = (more: object = {}) => ({
-  frame: look,
-  app,
+const site = (more: Partial<SiteView> = {}): SiteView => ({
+  title: app.title,
+  look,
   base: "/apps/handbook/",
   set: built.set,
-  asset: (file: string) => (pictures.has(file) ? `/apps/handbook/${file}` : undefined),
+  resolve: { asset: (file) => (pictures.has(file) ? `/apps/handbook/${file}` : undefined) },
   ...more,
 });
 
@@ -161,7 +160,7 @@ const cases: Record<string, () => string> = {
   "home-no-feedback-no-look": () =>
     homePage({
       ...site(),
-      frame: { tenantName: "Fernhill", themeHref: "/t.css", logoHref: undefined },
+      look: { themeHref: "/t.css" },
     }),
   "page-components": () => docPage(site(), "guide/components"),
   "page-components-feedback": () =>
@@ -221,5 +220,20 @@ describe("the docs renderer's golden pages", () => {
   test("the pages carry the since line and the unresolved terms as they are", () => {
     const html = docPage(site(), "guide/components");
     expect(html).toContain('<p class="since">New in version 1.4.0</p>');
+  });
+});
+
+describe("what a site's view changes", () => {
+  test("a trailing slash ends every page's address, and not the search or the Markdown copy", () => {
+    const html = docPage(site({ trailingSlash: true }), "guide/components");
+    expect(html).toContain('href="/apps/handbook/guide/fresh/"');
+    expect(html).toContain('href="/apps/handbook/_search"');
+    expect(html).toContain('data-copy="/apps/handbook/guide/components.md"');
+  });
+
+  test("the profile and the platform's address are the view's", () => {
+    const html = homePage(site({ platform: "/static/", profile: "product" }));
+    expect(html).toMatch(/href="\/static\/docs\.[0-9a-f]{10}\.css"/);
+    expect(html).toContain('"platform":"/static/"');
   });
 });

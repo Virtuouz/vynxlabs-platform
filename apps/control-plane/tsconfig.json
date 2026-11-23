@@ -29,6 +29,9 @@
     },
     {
       "path": "../../packages/docs-engine"
+    },
+    {
+      "path": "../../packages/docs-site"
     }
   ]
 }

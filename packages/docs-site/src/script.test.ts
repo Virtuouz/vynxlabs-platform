@@ -1,6 +1,7 @@
+/// <reference lib="dom" />
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { DOCS_SCRIPT } from "./docs.js";
+import { DOCS_SCRIPT } from "./script.js";
 
 /**
  * The docs site's own script, run in a page of the shape the server draws: the phone navigation

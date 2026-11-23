@@ -9,6 +9,16 @@ import {
   type ResourceLike,
   urlOf,
 } from "@volvel/docs-engine";
+import {
+  docPage,
+  docsAsset,
+  notFoundPage,
+  pageAt,
+  pageMarkdown,
+  type SiteView,
+  searchAnswer,
+  searchPage,
+} from "@volvel/docs-site";
 import { APP_POLICY, keyOf, readFormAnswer } from "@volvel/manifest";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MIN_PASSWORD_LENGTH } from "../../config.js";
@@ -45,19 +55,7 @@ import {
 import { samlMetadata } from "../sso/saml.js";
 import { appBasePath, portalPath, portalUrl } from "./address.js";
 import { appFiles, readAsset } from "./assets.js";
-import {
-  DOCS_CSS,
-  DOCS_POLICY,
-  DOCS_SCRIPT,
-  docPage,
-  docsKept,
-  docsOf,
-  notFoundPage,
-  pageAt,
-  pageMarkdown,
-  searchAnswer,
-  searchPage,
-} from "./docs.js";
+import { DOCS_POLICY, docsKept, docsOf } from "./docs.js";
 import { hostnameOf, type Place } from "./hosts.js";
 import { isStaticFile, Limiter, MemoryLimiter } from "./limit.js";
 import {
@@ -1170,12 +1168,14 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const voted = new Set((readCookie(request, VOTE_COOKIE) ?? "").split(".").filter(Boolean));
     const voteOf = (page: string) =>
       createHash("sha256").update(`${at.app.path}:${page}`).digest("hex").slice(0, 10);
-    const drawn = {
-      frame: at.look,
-      app: at.app,
+    const drawn: SiteView = {
+      title: at.app.title,
+      look: at.look,
       base: at.base,
       set: docs.built.set,
-      asset: (file: string) => (at.pictures.has(file) ? `${at.base}${file}` : undefined),
+      resolve: {
+        asset: (file: string) => (at.pictures.has(file) ? `${at.base}${file}` : undefined),
+      },
       ...(at.app.feedback
         ? { feedback: { said: (page: string) => voted.has(voteOf(page)), recording: true } }
         : {}),
@@ -1339,12 +1339,14 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       workspaceSlug: workspace.slug,
       path: app.path,
     });
-    const drawn = {
-      frame: look,
-      app,
+    const drawn: SiteView = {
+      title: app.title,
+      look,
       base: `${served}_draft/`,
       set,
-      asset: (picture: string) => (pictures.has(picture) ? `${served}${picture}` : undefined),
+      resolve: {
+        asset: (picture: string) => (pictures.has(picture) ? `${served}${picture}` : undefined),
+      },
       notice:
         "A preview, with the workspace's drafts. Only members who may read its documentation see this. Its readers see what is deployed.",
       // Readers are asked whether a page helped. Nothing said in a preview is kept.
@@ -1403,14 +1405,21 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       return plain(reply, 405, "Method not allowed.");
     }
 
-    if (path === "/_platform/docs.css" || path === "/_platform/docs.js") {
-      const script = path.endsWith(".js");
+    // The stylesheet and the script of a docs site. A name with a hash in it is the file of one
+    // release for ever; the names without are for a page an older release drew.
+    const platformFile = /^\/_platform\/(docs(?:\.[0-9a-f]{10})?\.(?:css|js))$/.exec(path);
+    if (platformFile) {
+      const file = docsAsset(platformFile[1] as string);
+      if (!file) return plain(reply, 404, "There is no such file.");
       return reply
         .code(200)
-        .header("content-type", `${script ? "text/javascript" : "text/css"}; charset=utf-8`)
+        .header("content-type", `${file.type}; charset=utf-8`)
         .header("x-content-type-options", "nosniff")
-        .header("cache-control", "public, max-age=3600")
-        .send(script ? DOCS_SCRIPT : DOCS_CSS);
+        .header(
+          "cache-control",
+          file.immutable ? "public, max-age=31536000, immutable" : "public, max-age=3600",
+        )
+        .send(file.body);
     }
 
     // What draws a diagram on a page of documentation: Mermaid, and the instance's own pan and

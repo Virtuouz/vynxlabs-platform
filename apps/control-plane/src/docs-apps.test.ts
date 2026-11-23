@@ -258,7 +258,7 @@ describe("a folder of pages served as a docs app", () => {
     // The one script is the platform's own, served as a file. Nothing is written into the page
     // but what the script reads, as data that is never run.
     expect(home.body.match(/<script/g)).toHaveLength(2);
-    expect(home.body).toContain('<script src="/_platform/docs.js" defer></script>');
+    expect(home.body).toMatch(/<script src="\/_platform\/docs\.[0-9a-f]{10}\.js" defer><\/script>/);
     expect(home.body).toMatch(/<script type="application\/json" id="docs-data">\{"base":/);
     // The home page lists the collections, each with its first pages.
     expect(home.body).toContain(`<a href="${HELP}support">Customer support</a>`);
@@ -432,6 +432,22 @@ describe("a folder of pages served as a docs app", () => {
     const script = await browser().get("/_platform/docs.js");
     expect(script.headers["content-type"]).toContain("text/javascript");
     expect(script.body).toContain("data-vd-tabs");
+  });
+
+  test("the files a page loads are named by their hash, kept for ever; the old names still answer, for an hour", async () => {
+    const home = await browser().get(HELP);
+    const css = /href="(\/_platform\/docs\.[0-9a-f]{10}\.css)"/.exec(home.body)?.[1] as string;
+    const js = /src="(\/_platform\/docs\.[0-9a-f]{10}\.js)"/.exec(home.body)?.[1] as string;
+    for (const name of [css, js]) {
+      const file = await browser().get(name);
+      expect(file.status).toBe(200);
+      expect(file.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+    }
+    expect((await browser().get("/_platform/docs.css")).headers["cache-control"]).toBe(
+      "public, max-age=3600",
+    );
+    // A hash that is not the file's is not served as if it were.
+    expect((await browser().get("/_platform/docs.0000000000.js")).status).toBe(404);
   });
 
   test("an app bound to nobody is for members, and one bound to end users asks them to sign in", async () => {

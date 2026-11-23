@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Database, sql } from "@volvel/db";
 import { createTestDatabase } from "@volvel/db/testing";
 import type { RouteOptions } from "fastify";
-import { buildApp } from "./app.js";
+import { buildApp, describeApi as describe } from "./app.js";
 import type { Config } from "./config.js";
 import { recentAuthLog } from "./kernel/auth.js";
 import { bootstrapAdmin } from "./kernel/bootstrap.js";
@@ -311,3 +311,7 @@ export async function startTestApp(
 }
 
 export type TestApp = Awaited<ReturnType<typeof startTestApp>>;
+
+/** The API's OpenAPI description, made with no database to connect to. */
+export const describeApi = (version = "0.0.0", config: Partial<Config> = {}) =>
+  describe({ version, config: testConfig(config) });

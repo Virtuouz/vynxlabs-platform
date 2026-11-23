@@ -23,6 +23,8 @@ export interface DraftRead<B = Record<string, unknown>> {
   deleted: boolean;
   body: B;
   title?: string | null;
+  /** The path the resource has now, when the draft renames it. */
+  renamedFrom?: string;
 }
 
 /** Whether the server refused a save because the draft is not the one the save was based on. */

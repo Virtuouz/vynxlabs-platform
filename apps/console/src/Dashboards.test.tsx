@@ -435,3 +435,188 @@ test("F1 on a dashboard that is looked at opens the dashboards' help, and the ed
   await screen.findByRole("button", { name: "Add to page" });
   expect(getHelpTopic()).toBe("data-dashboards-editor");
 });
+
+// ----- Dashboards the workspace keeps (QSD-MP2) and what a dashboard is for (QSD-MP9) -----
+
+const kept = {
+  id: "r1",
+  kind: "dashboard",
+  path: "boards/lending",
+  title: "Lending",
+  ownership: "ui",
+  updatedAt: "2026-11-13T10:00:00.000Z",
+  body: { widgets: mine.body.widgets.filter((one: Any) => one.id === "note") },
+};
+const draftOf = (path: string, over: object = {}) => ({
+  path,
+  kind: "dashboard",
+  key: path,
+  title: null,
+  deleted: false,
+  revision: 1,
+  schemaVersion: 3,
+  body: kept.body,
+  ...over,
+});
+/** The routes of one dashboard the workspace keeps, with its draft in `drafts`. */
+function keeping(drafts: Record<string, Any> = {}, deployed: Any = kept) {
+  routes[`GET ${api}/resources/boards/lending`] = () => [200, deployed];
+  routes[`GET ${api}/drafts/boards/lending`] = () =>
+    drafts["boards/lending"] ? [200, drafts["boards/lending"]] : [404, { detail: "none" }];
+  routes[`PUT ${api}/drafts/boards/lending`] = (body) => {
+    const sent = body as Any;
+    drafts["boards/lending"] = draftOf("boards/lending", {
+      body: sent.body,
+      revision: (drafts["boards/lending"]?.revision ?? 0) + 1,
+    });
+    return [200, drafts["boards/lending"]];
+  };
+}
+
+test("QSD-MP2: the list shows the drafts that change dashboards the workspace keeps, and ones not deployed yet", async () => {
+  routes[`GET ${api}/dashboards`] = () => [
+    200,
+    {
+      items: [
+        { ...mine, id: "r1", kind: "resource", path: "boards/lending", title: "Lending" },
+        { ...mine, id: "r2", kind: "resource", path: "boards/old", title: "Old" },
+      ],
+    },
+  ];
+  routes[`GET ${api}/drafts`] = () => [
+    200,
+    {
+      items: [
+        draftOf("boards/lending"),
+        draftOf("boards/fresh", { title: "Fresh" }),
+        draftOf("boards/old", { deleted: true }),
+        { ...draftOf("boards/renamed"), renamedFrom: "boards/none" },
+      ],
+    },
+  ];
+  show(<Dashboards root={root} link="/t/t1/workspaces/w1" />);
+  const rows = await screen.findAllByRole("row");
+  const row = (name: string) => rows.find((one) => within(one).queryByText(name)) as HTMLElement;
+  expect(within(row("Lending")).getByText("Draft")).toBeTruthy();
+  expect(within(row("Old")).getByText("Removing")).toBeTruthy();
+  expect(within(row("Fresh")).getByText("Draft, never deployed")).toBeTruthy();
+  // A draft is opened by its path, which a draft that was never deployed has and an ID does not.
+  expect(within(row("Fresh")).getByRole("link", { name: "Fresh" }).getAttribute("href")).toBe(
+    "/t/t1/workspaces/w1/dashboards/at/boards/fresh",
+  );
+});
+
+test("QSD-MP2: a dashboard the workspace keeps is changed as a draft, on the revision of the draft", async () => {
+  const drafts: Record<string, Any> = {};
+  keeping(drafts);
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="at/boards/lending" editable />);
+  await screen.findByText(/Kept by the workspace, at boards\/lending/);
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Add to page" }))[0] as HTMLElement,
+  );
+  const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
+  fireEvent.click(dialog.getByRole("button", { name: /Chart/ }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  // The first save over what is deployed names no draft; the next names the one it made.
+  expect(sent("PUT")[0]?.url).toBe(`${api}/drafts/boards/lending`);
+  expect(put(0)).toMatchObject({ kind: "dashboard", schemaVersion: 3 });
+  expect(put(0).body.widgets.map((one: Any) => one.type)).toContain("core/chart");
+  expect(put(0).revision).toBeUndefined();
+  // The widgets are read as the draft says, so what is drawn is what was saved.
+  expect(
+    calls.some((call) => call.url.includes("/widget-data") && call.url.includes("draft=1")),
+  ).toBe(true);
+  // What it is for is part of what is drafted, saved on the draft the first save made.
+  fireEvent.click(screen.getByRole("button", { name: "More" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Description…" }));
+  const about = within(await screen.findByRole("dialog"));
+  expect(about.queryByLabelText("Name")).toBeNull();
+  fireEvent.change(about.getByLabelText("What it is for"), {
+    target: { value: "Lending, by month." },
+  });
+  fireEvent.click(about.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(2));
+  expect(put(1).revision).toBe(1);
+  expect(put(1).body.description).toBe("Lending, by month.");
+  expect(sent("POST")).toHaveLength(0);
+});
+
+test("QSD-MP2: it can be named, described and removed; a removal can be taken back", async () => {
+  keeping({ "boards/lending": draftOf("boards/lending") });
+  routes[`DELETE ${api}/drafts/boards/lending`] = () => [204, null];
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="at/boards/lending" editable />);
+  await screen.findByText(/Kept by the workspace, at boards\/lending/);
+  screen.getByRole("button", { name: "Name and path" });
+  screen.getByRole("button", { name: "Discard draft" });
+  await screen.findByText("Draft");
+  fireEvent.click(screen.getByRole("button", { name: "Discard draft" }));
+  await answer("Discard", undefined);
+  await waitFor(() => expect(sent("DELETE")).toHaveLength(1));
+});
+
+test("QSD-MP2: a dashboard removed in a draft says so and offers to keep it", async () => {
+  keeping({ "boards/lending": draftOf("boards/lending", { deleted: true, body: {} }) });
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="at/boards/lending" editable />);
+  await screen.findByText(/removed in your drafts/);
+  screen.getByRole("button", { name: "Keep this dashboard" });
+  expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+});
+
+test("QSD-MP2: a dashboard the repository defines says that changing it takes it over", async () => {
+  keeping({}, { ...kept, ownership: "code" });
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="at/boards/lending" editable />);
+  await screen.findByText(/defined by the code in the tenant's repository/);
+  screen.getByRole("button", { name: "Edit" });
+  // Removed in the code, not here.
+  expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
+});
+
+test("QSD-MP2: in production it is looked at, with nothing to change it with", async () => {
+  routes[`GET ${api}/dashboards/r1`] = () => [
+    200,
+    { ...mine, id: "r1", kind: "resource", path: "boards/lending", mine: false, shared: true },
+  ];
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="r1" />);
+  await screen.findByText(/Kept by the workspace, at boards\/lending/);
+  expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Name and path" })).toBeNull();
+  expect(calls.some((call) => call.url.includes("/drafts"))).toBe(false);
+});
+
+test("QSD-MP9: what a dashboard is for is written beside its name, shown under its title, and listed", async () => {
+  let stored: Any = { ...mine, description: "Everything held, by item." };
+  stored = { ...stored, body: { ...stored.body, description: "Everything held, by item." } };
+  routes[`GET ${api}/dashboards/d1`] = () => [200, stored];
+  routes[`PUT ${api}/dashboards/d1`] = (body) => {
+    stored = { ...stored, ...(body as object), revision: stored.revision + 1 };
+    return [200, stored];
+  };
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  // Under the title, with whose it is below it.
+  const lead = await screen.findByText("Everything held, by item.");
+  expect(lead.closest("header, div")).toBeTruthy();
+  await screen.findByText(/Yours\. Seen by/);
+  fireEvent.click(screen.getByRole("button", { name: "More" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Name and description…" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  expect((dialog.getByLabelText("Name") as HTMLInputElement).value).toBe("Stock");
+  fireEvent.change(dialog.getByLabelText("What it is for"), {
+    target: { value: "Held stock, by item." },
+  });
+  fireEvent.change(dialog.getByLabelText("Name"), { target: { value: "Stock on hand" } });
+  fireEvent.click(dialog.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  expect(put(0)).toMatchObject({ title: "Stock on hand", revision: 4 });
+  expect(put(0).body.description).toBe("Held stock, by item.");
+  expect(put(0).body.widgets).toHaveLength(mine.body.widgets.length);
+});
+
+test("QSD-MP9: the list shows what each dashboard is for under its name", async () => {
+  routes[`GET ${api}/dashboards`] = () => [
+    200,
+    { items: [{ ...mine, description: "Everything held, by item." }] },
+  ];
+  show(<Dashboards root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("Everything held, by item.");
+});

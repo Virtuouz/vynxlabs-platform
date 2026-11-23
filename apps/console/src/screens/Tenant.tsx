@@ -554,6 +554,7 @@ function WorkspaceDetail({
           key={rest}
           root={root}
           id={rest}
+          editable={workspace.data.type === "dev"}
           link={`/t/${tenantId}/workspaces/${workspaceId}`}
         />
       ) : tab === "dashboards" ? (

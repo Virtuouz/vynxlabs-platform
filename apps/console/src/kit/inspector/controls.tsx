@@ -80,6 +80,7 @@ import {
   isChoiceLike,
   resultNames,
   tableOfInput,
+  visualOf,
   withConfig,
 } from "./model.ts";
 import { TabsControl } from "./tabsControl.tsx";
@@ -142,7 +143,7 @@ export function columnOptions(
 ): Option[] {
   const input = of ? env.widget.data?.[of] : undefined;
   const named = tableOfInput(input, env.page, env.widgets);
-  const columns = columnsNamed(env.catalog, named);
+  const columns = columnsNamed(env.catalog, named, visualOf(input)?.joins);
   if (types) {
     return columns
       .filter((column) => offersType(types, column))

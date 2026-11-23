@@ -21,7 +21,7 @@ import {
 import { columnsByGrouping, groupability, sampleValue } from "./kit/inspector/grouping.ts";
 import { Inspector } from "./kit/inspector/Inspector.tsx";
 import { FormatRow } from "./kit/inspector/measureControls.tsx";
-import type { Catalog } from "./kit/inspector/model.ts";
+import { type Catalog, columnsNamed } from "./kit/inspector/model.ts";
 import { show } from "./testing.tsx";
 
 const catalog: Catalog = {
@@ -87,10 +87,12 @@ function Harness({
   start,
   definition,
   page,
+  using = catalog,
 }: {
   start: PageWidget;
   definition: typeof chart;
   page?: Page;
+  using?: Catalog;
 }) {
   const [widget, setWidget] = useState(start);
   return (
@@ -99,7 +101,7 @@ function Harness({
       definition={definition}
       surface="app"
       filters={[]}
-      catalog={catalog}
+      catalog={using}
       {...(page ? { page, pages: [page] } : {})}
       onChange={(next) => {
         written.push(next);
@@ -447,4 +449,75 @@ test("WID-M11: SQL written here keeps its numbered values, and shows them", asyn
   expect((panel().getByLabelText("Value of $1") as HTMLInputElement).value).toBe("7");
   fireEvent.change(panel().getByLabelText("Value of $1"), { target: { value: "9" } });
   expect(written.at(-1)?.data?.rows?.source).toEqual({ sql: "select $1::int", values: [9] });
+});
+
+// ----- WID-M10: Also from -----
+
+const withCustomers: Catalog = {
+  ...catalog,
+  tables: [
+    {
+      ...catalog.tables[0],
+      columns: [
+        ...(catalog.tables[0]?.columns ?? []),
+        { name: "customer", type: "reference", references: "customers" },
+      ],
+    } as Catalog["tables"][number],
+    {
+      name: "customers",
+      columns: [
+        { name: "name", type: "text", references: null },
+        { name: "city", type: "text", references: null },
+      ],
+    },
+  ],
+};
+
+test("WID-M10: a table the chosen one points to is offered as Also from, and its columns are chosen", async () => {
+  show(<Harness start={listWidget()} definition={list as never} using={withCustomers} />);
+  expect(panel().getByText("Also from")).toBeTruthy();
+  fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
+  expect(last().joins).toEqual(["customer"]);
+  const city = within(panel().getByRole("group", { name: "Columns from Customers" })).getByRole(
+    "button",
+    { name: "City" },
+  );
+  fireEvent.click(city);
+  expect(last().columns).toEqual([
+    "id",
+    "number",
+    "total",
+    "status",
+    "issued_at",
+    "customer",
+    "customer.city",
+  ]);
+  fireEvent.click(city);
+  expect(last().columns).not.toContain("customer.city");
+});
+
+test("WID-M10: the columns of a followed table are columns every other control can name", () => {
+  const names = columnsNamed(withCustomers, "invoices", ["customer"]).map((one) => one.name);
+  expect(names).toContain("customer.name");
+  expect(columnsNamed(withCustomers, "invoices").map((one) => one.name)).not.toContain(
+    "customer.name",
+  );
+});
+
+test("WID-M10: switching a joined table off takes its columns out, and a table with no reference offers nothing", async () => {
+  const start = listWidget();
+  start.data = {
+    rows: {
+      source: {
+        visual: { table: "invoices", joins: ["customer"], columns: ["number", "customer.name"] },
+      },
+    },
+  };
+  show(<Harness start={start} definition={list as never} using={withCustomers} />);
+  fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
+  expect(last().joins).toBeUndefined();
+  expect(last().columns).toEqual(["number"]);
+  cleanup();
+  show(<Harness start={listWidget()} definition={list as never} />);
+  expect(panel().queryByText("Also from")).toBeNull();
 });

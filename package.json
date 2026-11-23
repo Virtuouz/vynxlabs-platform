@@ -24,6 +24,7 @@
     "dev:console": "pnpm --filter @volvel/console dev",
     "e2e": "playwright test -c e2e",
     "docs:check": "tsc -b && node packages/docs/check.mjs --staleness && node packages/docs/generate.mjs && node packages/docs/check.mjs",
+    "docs:export": "tsc -b && pnpm --filter @volvel/docs build && node packages/docs/export.mjs",
     "docs:generate": "tsc -b && node packages/docs/generate.mjs",
     "release:check": "pnpm build && node scripts/release-check.mjs",
     "docs:screenshots": "SCREENSHOTS=1 playwright test -c e2e screenshots"

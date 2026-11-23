@@ -138,6 +138,25 @@ jobs:
       - name: Rehearse the release
         run: node scripts/release-check.mjs
 
+      # The documentation as a static site, for any host that serves files (packages/docs-site/EXPORT.md).
+      # Served at DOCS_EXPORT_BASE (a repository variable, `/docs/` when it is not set), with whole
+      # addresses in its sitemap when DOCS_URL is set. Kept as an artifact for the website to fetch.
+      - name: Export the documentation as a static site
+        env:
+          DOCS_BASE: ${{ vars.DOCS_EXPORT_BASE || '/docs/' }}
+          DOCS_ORIGIN: ${{ vars.DOCS_URL }}
+        run: |
+          origin=()
+          if [ -n "${DOCS_ORIGIN}" ]; then origin=(--origin "${DOCS_ORIGIN}"); fi
+          node packages/docs/export.mjs --out docs-export --base "${DOCS_BASE}" "${origin[@]}" \
+            --date "$(date -u +%F)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: docs-export
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Publish the packages
         if: vars.RELEASE_ENABLED == 'true'
         env:
@@ -164,7 +183,8 @@ jobs:
             volvel/volvel:${{ steps.version.outputs.tag }}
 
       # The website is another repository. It is told when there is a version to build
-      # its documentation from, once it exists to be told: set DOCS_SITE_REPOSITORY to it.
+      # its documentation from, once it exists to be told: set DOCS_SITE_REPOSITORY to it. The
+# dispatch names the run and the artifact (`docs-site`, the export) to fetch the site from.
       - name: Tell the website
         if: vars.RELEASE_ENABLED == 'true' && vars.DOCS_SITE_REPOSITORY != ''
         env:
@@ -173,4 +193,7 @@ jobs:
           gh api "repos/${{ vars.DOCS_SITE_REPOSITORY }}/dispatches" \
             -f event_type=volvel-docs \
             -f "client_payload[version]=${{ steps.version.outputs.version }}" \
-            -f "client_payload[tag]=${{ steps.version.outputs.tag }}"
+            -f "client_payload[tag]=${{ steps.version.outputs.tag }}" \
+            -f "client_payload[run]=${{ github.run_id }}" \
+            -f "client_payload[artifact]=docs-site" \
+            -f "client_payload[base]=${{ vars.DOCS_EXPORT_BASE || '/docs/' }}"

@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./search-query": {
+      "types": "./dist/search-query.d.ts",
+      "default": "./dist/search-query.js"
     }
   },
   "files": [

@@ -315,3 +315,4 @@ export type TestApp = Awaited<ReturnType<typeof startTestApp>>;
 /** The API's OpenAPI description, made with no database to connect to. */
 export const describeApi = (version = "0.0.0", config: Partial<Config> = {}) =>
   describe({ version, config: testConfig(config) });
+export { DEFAULT_THEME, themeCss } from "./kernel/apps/theme.js";

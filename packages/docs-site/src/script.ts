@@ -182,7 +182,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
 
   // A diagram is drawn by the instance's own drawing script, fetched only for a page that has one.
   if (document.querySelector("[data-vd-mermaid]")) {
-    import("/_platform/diagrams.js").then((drawing) => drawing.drawAll(document)).catch(() => {});
+    (data.search && data.search.kind === "static" ? import(data.platform + "diagrams.js") : import("/_platform/diagrams.js")).then((drawing) => drawing.drawAll(document)).catch(() => {});
   }
 
   // Whether a page helped: said without leaving the page. Without script, the form is sent as it is.
@@ -211,6 +211,56 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
         note.textContent = "Your answer could not be sent. Check your connection and try again.";
       }
     });
+  }
+
+  // What a search finds: from the server, or, on a site served as files, from the indexes it carries.
+  const fixed = data.search && data.search.kind === "static" ? data.search : null;
+  // A page's address: on a site served as files it ends in a slash, before any part of the page.
+  const to = (url) => {
+    if (!fixed) return base + url;
+    const [path, part] = url.split("#");
+    return base + (path && !path.endsWith("/") ? path + "/" : path) + (part === undefined ? "" : "#" + part);
+  };
+  const answerOf = async (asked, inside, type, signal) => {
+    if (fixed) {
+      const searching = await import(fixed.module);
+      return await searching.search(fixed.index, asked, { collection: inside, type });
+    }
+    const address = base + "_search.json?q=" + encodeURIComponent(asked) + (inside ? "&in=" + encodeURIComponent(inside) : "") + (type ? "&type=" + encodeURIComponent(type) : "");
+    const answer = await fetch(address, { signal, credentials: "same-origin" });
+    return answer.ok ? await answer.json() : null;
+  };
+
+  // The search page of a site served as files: the question is in the address, and answered here.
+  const results = document.querySelector("[data-static-results]");
+  if (fixed && results) {
+    const params = new URLSearchParams(location.search);
+    const asked = (params.get("q") || "").trim();
+    const field = document.querySelector("form.search-form input[name=q]");
+    if (field) field.value = asked;
+    const all = document.getElementById("vd-all-pages");
+    if (asked) {
+      if (all) all.hidden = true;
+      results.replaceChildren(make("p", { class: "muted", text: "Searching\u2026" }));
+      answerOf(asked, params.get("in") || "", params.get("type") || "").then((found) => {
+        const pages = found ? found.pages || [] : null;
+        if (pages === null) {
+          results.replaceChildren(make("p", { class: "muted", text: "The search did not answer. Try again later." }));
+          if (all) all.hidden = false;
+        } else if (pages.length === 0) {
+          results.replaceChildren(make("p", { class: "muted", text: "Nothing here matches \u201c" + asked + "\u201d." }));
+        } else {
+          results.replaceChildren(make("ul", { class: "results" }, pages.map((page) => make("li", {}, [
+            make("a", { href: to(page.url) }, [marked(page.title)]),
+            page.crumb ? make("small", { text: page.crumb }) : null,
+            ...page.places.slice(0, 2).map((place) => make("p", {}, [marked(place.words)])),
+          ]))));
+        }
+      }).catch(() => {
+        results.replaceChildren(make("p", { class: "muted", text: "The search did not answer. Try again later." }));
+        if (all) all.hidden = false;
+      });
+    }
   }
 
   // Search, as it is typed, in a dialog.
@@ -244,7 +294,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
         list.append(make("li", { role: "presentation" }, [group]));
       }
       for (const one of kept) {
-        group.append(make("li", { role: "presentation" }, [make("a", { class: "hit", href: base + one.url, id: id(), role: "option" }, [
+        group.append(make("li", { role: "presentation" }, [make("a", { class: "hit", href: to(one.url), id: id(), role: "option" }, [
           make("span", { class: "badge", "aria-hidden": "true", text: "\\u21ba" }),
           make("span", { class: "words" }, [make("span", { text: one.title }), one.crumb ? make("small", { text: one.crumb }) : null]),
         ])]));
@@ -256,11 +306,11 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     } else {
       for (const page of pages) {
         const words = make("span", { class: "words" }, [make("span", {}, [marked(page.title)]), page.crumb ? make("small", { text: page.crumb }) : null]);
-        list.append(make("li", { role: "presentation" }, [make("a", { class: "hit", href: base + page.url, id: id(), role: "option" }, [
+        list.append(make("li", { role: "presentation" }, [make("a", { class: "hit", href: to(page.url), id: id(), role: "option" }, [
           make("span", { class: "badge", "aria-hidden": "true", text: "\\u2630" }), words,
         ])]));
         for (const place of page.places) {
-          list.append(make("li", { role: "presentation" }, [make("a", { class: "place", href: base + place.url, id: id(), role: "option" }, [
+          list.append(make("li", { role: "presentation" }, [make("a", { class: "place", href: to(place.url), id: id(), role: "option" }, [
             make("b", { "aria-hidden": "true", text: place.type === "heading" ? "#" : "\\u2261" }),
             make("span", {}, [marked(place.words)]),
           ])]));
@@ -279,7 +329,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     active = -1;
     input.removeAttribute("aria-activedescendant");
     input.setAttribute("aria-expanded", "false");
-    say("The search did not answer.", make("a", { href: base + "_search?q=" + encodeURIComponent(asked) + (scope ? "&in=" + encodeURIComponent(scope) : "") + (kind ? "&type=" + encodeURIComponent(kind) : ""), text: "Open the full results" }));
+    say("The search did not answer.", make("a", { href: base + (data.search && data.search.kind === "static" ? "_search/" : "_search") + "?q=" + encodeURIComponent(asked) + (scope ? "&in=" + encodeURIComponent(scope) : "") + (kind ? "&type=" + encodeURIComponent(kind) : ""), text: "Open the full results" }));
   };
   const ask = () => {
     const asked = input.value.trim();
@@ -289,10 +339,8 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
       if (asking) asking.abort();
       asking = new AbortController();
       try {
-        const address = base + "_search.json?q=" + encodeURIComponent(asked) + (scope ? "&in=" + encodeURIComponent(scope) : "") + (kind ? "&type=" + encodeURIComponent(kind) : "");
-        const answer = await fetch(address, { signal: asking.signal, credentials: "same-origin" });
-        if (!answer.ok) { if (input.value.trim() === asked) failed(asked); return; }
-        const found = await answer.json();
+        const found = await answerOf(asked, scope, kind, asking.signal);
+        if (!found) { if (input.value.trim() === asked) failed(asked); return; }
         if (input.value.trim() === asked) show(found.pages || [], asked);
       } catch (error) {
         // A search that was replaced by the next key is not a failure.

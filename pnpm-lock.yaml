@@ -411,6 +411,9 @@ importers:
       '@volvel/docs-engine':
         specifier: workspace:*
         version: link:../docs-engine
+      '@volvel/docs-site':
+        specifier: workspace:*
+        version: link:../docs-site
       '@volvel/manifest':
         specifier: workspace:*
         version: link:../manifest
@@ -438,6 +441,9 @@ importers:
       '@volvel/markup':
         specifier: workspace:*
         version: link:../markup
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
 
   packages/manifest:
     dependencies:

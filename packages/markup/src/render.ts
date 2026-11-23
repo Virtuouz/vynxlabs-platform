@@ -49,6 +49,11 @@ export interface RenderOptions {
   /** Where a screenshot is served from, by its name. */
   screenshot?: (name: string) => string | null | undefined;
   /**
+   * Where the screenshot is served from for a dark page, by its name. When it gives one, both pictures
+   * are drawn and the page's own look shows one of them. Left out, a screenshot is one picture.
+   */
+  screenshotDark?: (name: string) => string | null | undefined;
+  /**
    * Marks each block drawn with the lines of the source it came from, as
    * `data-line` and, for a container, `data-end-line`: for an editor whose
    * preview follows its cursor. A served page leaves it out.
@@ -450,6 +455,21 @@ function component(node: Component, ctx: Context): Drawn[] {
       const alt = node.props.alt ?? "";
       if (!src || imageKind(src) === "refused") {
         return [el("p", { class: "vd-screenshot-missing" }, [alt])];
+      }
+      const dark = ctx.options.screenshotDark?.(node.props.name ?? "");
+      if (dark && dark !== src && imageKind(dark) !== "refused") {
+        return [
+          el("figure", { class: "vd-screenshot" }, [
+            el("img", { class: "vd-shot-light", src, alt, loading: "lazy" }),
+            el("img", {
+              class: "vd-shot-dark",
+              src: dark,
+              alt: "",
+              "aria-hidden": "true",
+              loading: "lazy",
+            }),
+          ]),
+        ];
       }
       return [el("figure", { class: "vd-screenshot" }, [el("img", { src, alt, loading: "lazy" })])];
     }

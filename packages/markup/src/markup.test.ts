@@ -745,3 +745,28 @@ describe("highlighted code", () => {
     expect(DOC_DARK_CSS).not.toMatch(/url\(|@import/);
   });
 });
+
+describe("a screenshot in both looks", () => {
+  const source = "::screenshot{name=console/deploy alt=Deploy}\n";
+  const draw = (more: Partial<RenderOptions>) => renderHtml(parse(source), { ...OPTIONS, ...more });
+
+  test("is one picture unless a dark one is given", () => {
+    expect(draw({})).toBe(
+      '<figure class="vd-screenshot"><img src="/assets/console/deploy.png" alt="Deploy" loading="lazy"/></figure>',
+    );
+  });
+
+  test("is two, and the page's look shows one", () => {
+    const html = draw({ screenshotDark: () => "/assets/console/deploy-dark.png" });
+    expect(html).toContain('class="vd-shot-light" src="/assets/console/deploy.png" alt="Deploy"');
+    expect(html).toContain('class="vd-shot-dark" src="/assets/console/deploy-dark.png" alt=""');
+    expect(html).toContain('aria-hidden="true"');
+    expect(DOC_CSS).toContain(".vd-shot-dark { display: none; }");
+    expect(DOC_DARK_CSS).toContain(".vd-shot-dark { display: block; }");
+    expect(DOC_DARK_CSS).toContain(".vd-shot-light:has(+ .vd-shot-dark) { display: none; }");
+  });
+
+  test("is one when there is no dark picture for it", () => {
+    expect(draw({ screenshotDark: () => null })).toBe(draw({}));
+  });
+});

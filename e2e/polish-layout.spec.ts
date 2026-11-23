@@ -102,14 +102,40 @@ test("a list's row actions stay inside the table at every width", async () => {
           document.querySelector("main table") as HTMLElement | null
         )?.parentElement?.getBoundingClientRect().right;
         if (edge === undefined) return [];
-        return [...document.querySelectorAll<HTMLElement>("[data-row-actions] button")]
-          .filter((button) => button.getBoundingClientRect().right > edge + 1)
-          .map((button) => button.textContent ?? "");
+        return (
+          [...document.querySelectorAll<HTMLElement>("[data-row-actions] button")]
+            // Past the table's edge, or past the window: at first view, with no sideways scroll to find it (phase 30 re-walk A).
+            .filter((button) => {
+              const right = button.getBoundingClientRect().right;
+              return right > edge + 1 || right > window.innerWidth + 1;
+            })
+            .map((button) => button.textContent ?? "")
+        );
       });
       if (clipped.length > 0) over.push(`${path} at ${width}: ${clipped.join(", ")}`);
     }
   }
   expect(over, "row actions that run past the table").toEqual([]);
+});
+
+/**
+ * Phase 30 re-walk E: a documentation page whose title is one long unbroken name
+ * (`@volvel/widgets/action`) breaks inside it at 390 px, and the page does not scroll sideways.
+ */
+test("a documentation page with a long unbroken title does not scroll sideways at 390 px", async () => {
+  await ctx.page.setViewportSize({ width: 390, height: 900 });
+  const wide: string[] = [];
+  for (const path of [
+    "/docs/develop/reference/sdk/widgets-action",
+    "/docs/develop/reference/sdk/widgets-page",
+  ]) {
+    await open(ctx.page, path);
+    const over = await ctx.page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    if (over > 0) wide.push(`${path}: ${over}px`);
+  }
+  expect(wide, "documentation pages wider than the window").toEqual([]);
 });
 
 test("no bordered box sits inside another", async () => {

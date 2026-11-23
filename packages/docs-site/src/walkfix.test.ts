@@ -42,6 +42,38 @@ describe("a served site at 390 px", () => {
     expect(DOCS_CSS).toMatch(/\.pager a \{[^}]*overflow-wrap: anywhere/);
   });
 
+  test("every heading and code span the frame draws breaks inside a word that has no break, so a long name never widens the page", () => {
+    const rules = [
+      ...DOCS_CSS.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^}]*)\}/g),
+    ].map((rule) => ({
+      selectors: (rule[1] as string).split(",").map((one) => one.trim()),
+      body: rule[2] as string,
+    }));
+    const breaking = new Set(
+      rules
+        .filter((rule) => /overflow-wrap:\s*anywhere/.test(rule.body))
+        .flatMap((r) => r.selectors),
+    );
+    // The frame's own headings and code spans (the page's body has its own rule, `.vd-doc`).
+    const drawn = new Set(
+      rules
+        .flatMap((rule) => rule.selectors)
+        .filter(
+          (one) =>
+            /^\.[a-z-]+( > p| h[1-6]| code| a)?$/.test(one) ||
+            /^\.[a-z-]+ (h[1-6]|code)$/.test(one),
+        )
+        .filter(
+          (one) =>
+            /(\bh[1-6]|\bcode)$/.test(one) && !one.startsWith(".vd-") && !one.startsWith(".finder"),
+        ),
+    );
+    expect(drawn.size).toBeGreaterThan(5);
+    const loose = [...drawn].filter((one) => !breaking.has(one));
+    expect(loose).toEqual([]);
+    expect(breaking.has(".lead h1")).toBe(true);
+  });
+
   test("no grid of the frame has a column that cannot shrink", () => {
     for (const line of DOCS_CSS.split("\n")) {
       for (const columns of line.matchAll(/grid-template-columns:\s*([^;}]*)/g)) {

@@ -2135,3 +2135,37 @@ test("item 29: Add row's file column is the inspector's button and name, not the
   fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
   within(dialog).getByText("No file chosen");
 });
+
+test("Phase 30 walk-fix F: a refusal with a code shown in Create table's dialog offers what the code means", async () => {
+  routes[`GET /api/v1${root}/tables`] = () => [200, { items: [] }];
+  routes[`PUT /api/v1${root}/resources/codes`] = () => [
+    409,
+    { status: 409, code: "path_taken", detail: 'Something is already at "codes".' },
+  ];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Create table" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "codes" } });
+  fireEvent.input(within(dialog).getByLabelText("First column"), { target: { value: "title" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await within(dialog).findByText(/already at "codes"/);
+  expect(within(dialog).getByRole("button", { name: "What does this mean?" })).toBeTruthy();
+});
+
+test("Phase 30 walk-fix F: a refusal with a code shown in Add row's sheet offers what the code means", async () => {
+  routes[`POST /api/v1${root}/rows/orders`] = () => [
+    409,
+    { status: 409, code: "draft_changed", detail: "Someone else saved this since you opened it." },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Add row" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(screen.getByLabelText("number", { selector: "input[name=number]" }), {
+    target: { value: "A-9" },
+  });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await within(dialog).findByText("Someone else saved this since you opened it.");
+  expect(within(dialog).getByRole("button", { name: "What does this mean?" })).toBeTruthy();
+});

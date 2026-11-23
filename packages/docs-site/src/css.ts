@@ -154,6 +154,9 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .crumbs li:not(:last-child)::after { content: ""; display: inline-block; flex: none; width: 6px; height: 6px; margin: 0 4px 0 10px; border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); opacity: 0.7; }
 .eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vx-action); }
 .lead h1 { margin: 0 0 8px; font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; }
+/* A name with no break in it (a package path such as @volvel/widgets/action) breaks at the edge of the page, never widens it. */
+.lead h1, .lead > p, .home h1, .home h2, .all-pages h2, .card h3, .related h3, .types h2, .related h2, .eyebrow, .crumbs a,
+.lead code, .card code, .recent code, .results code, .switcher code { overflow-wrap: anywhere; }
 .lead > p { margin: 0; color: var(--vx-ink-muted); font-size: 18px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .button {

@@ -12,7 +12,7 @@ import {
 } from "@volvel/ui";
 import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
-import { type ApiError, useLoad } from "./api.ts";
+import { type ApiError, useLoad, withCode } from "./api.ts";
 import { ask, noteWaiting, notify } from "./ask.tsx";
 import { type Needs, useNeeds } from "./kit/Can.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
@@ -368,7 +368,9 @@ export function CreateDialog({
         ),
       )}
       {error && !placed(error) ? (
-        <Notice tone="danger">{[error.message, unplaced(error)].filter(Boolean).join(" ")}</Notice>
+        <Notice tone="danger">
+          {withCode([error.message, unplaced(error)].filter(Boolean).join(" "), error)}
+        </Notice>
       ) : null}
       {roomy ? null : <div className="mt-1 flex justify-end gap-2">{buttons}</div>}
     </form>

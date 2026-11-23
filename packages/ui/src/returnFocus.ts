@@ -21,14 +21,24 @@ function noteOpener(): Opener | undefined {
  * the page (a Discard or a Keep removes the very button that was pressed), to the nearest thing
  * that held it and is still there, so the person stays where they were and Tab goes on from
  * there, rather than starting again at the top of the page. Nothing to go back to answers
- * `true`, the library's own choice.
+ * `true`, the library's own choice. When the focus already sits in another open dialog, it stays
+ * there (`false`).
  */
-export function useReturnFocus(open: boolean): () => HTMLElement | true {
+export function useReturnFocus(open: boolean): () => HTMLElement | boolean {
   const noted = useRef<Opener | undefined>(undefined);
   const was = useRef(false);
   if (open && !was.current) noted.current = noteOpener();
   was.current = open;
   return () => {
+    // Another dialog or sheet opened as this one closed (a question answered, and its answer
+    // shown in a dialog): the focus is in that one now, and is not taken back to the page behind it.
+    const on = document.activeElement;
+    if (
+      on?.closest(
+        '[role="dialog"]:not([data-ending-style]), [role="alertdialog"]:not([data-ending-style])',
+      )
+    )
+      return false;
     const opener = noted.current;
     if (!opener) return true;
     if (opener.element.isConnected) return opener.element;

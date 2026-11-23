@@ -10,6 +10,7 @@ import { consoleLink, kindName, objectHref } from "../kit/objects.tsx";
 import { LoadMore, usePagedList } from "../kit/paged.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
+import { Breakable } from "../kit/Truncate.tsx";
 import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { AccessReleases } from "./AccessReleases.tsx";
@@ -283,8 +284,12 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
             header: "Name",
             cell: (row) => (
               <span className="flex min-w-0 flex-col">
-                <span className="font-medium">{row.name || row.email}</span>
-                <span className="text-meta text-ink-muted sm:hidden">{row.email}</span>
+                <span className="font-medium">
+                  <Breakable>{row.name || row.email}</Breakable>
+                </span>
+                <span className="text-meta text-ink-muted sm:hidden">
+                  <Breakable>{row.email}</Breakable>
+                </span>
               </span>
             ),
           },

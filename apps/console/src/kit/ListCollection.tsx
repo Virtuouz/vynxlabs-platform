@@ -4,7 +4,7 @@ import { type CreateConfig, CreateDialog } from "../ListScreen.tsx";
 import { useUrlState } from "../router.tsx";
 import { type Needs, useNeeds } from "./Can.tsx";
 import { type CollectionColumn, CollectionView } from "./CollectionView.tsx";
-import { Inspector } from "./layout.tsx";
+import { Inspector, useWide } from "./layout.tsx";
 import { LoadMore, usePagedList } from "./paged.tsx";
 
 const LIST_URL = { q: { type: "string" }, item: { type: "string", push: true } } as const;
@@ -93,31 +93,50 @@ export function ListCollection<Row>({
       {create.action}
     </Button>
   ) : null;
-  const allColumns: CollectionColumn<Row>[] = rowActions
-    ? [
-        ...columns,
-        {
-          header: "Actions",
-          align: "end",
-          // Room for two buttons side by side; past that they wrap inside the cell, never past the table.
-          wide: true,
-          cell: (one) => (
-            // Pressing an action is not choosing the row.
-            // biome-ignore lint/a11y/noStaticElementInteractions: only stops the click reaching the row
-            // biome-ignore lint/a11y/useKeyWithClickEvents: the buttons inside take the keyboard
-            <span
-              data-row-actions
-              className="flex flex-wrap items-center justify-end gap-2"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <fieldset disabled={!can} className="contents">
-                {rowActions(one, list.reload)}
-              </fieldset>
-            </span>
-          ),
-        },
-      ]
-    : columns;
+  // On a phone a row keeps what says what it is, and its actions sit under that, where they are
+  // seen at first view; a column of them past the right edge would be reached only by a sideways
+  // scroll nobody is told about. From a tablet up they are the last column.
+  const roomy = useWide(640);
+  const actionsOf = (one: Row) => (
+    // Pressing an action is not choosing the row.
+    // biome-ignore lint/a11y/noStaticElementInteractions: only stops the click reaching the row
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the buttons inside take the keyboard
+    <span
+      data-row-actions
+      className={`flex flex-wrap items-center gap-2 ${roomy ? "justify-end" : "justify-start"}`}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <fieldset disabled={!can} className="contents">
+        {rowActions?.(one, list.reload)}
+      </fieldset>
+    </span>
+  );
+  const [first, ...rest] = columns;
+  const allColumns: CollectionColumn<Row>[] =
+    rowActions && first
+      ? [
+          roomy
+            ? first
+            : {
+                ...first,
+                cell: (one) => (
+                  <>
+                    {first.cell(one)}
+                    <div className="mt-2">{actionsOf(one)}</div>
+                  </>
+                ),
+              },
+          ...rest,
+          {
+            header: "Actions",
+            align: "end",
+            priority: 2,
+            // Room for two buttons side by side; past that they wrap inside the cell, never past the table.
+            wide: true,
+            cell: (one) => (roomy ? actionsOf(one) : null),
+          },
+        ]
+      : columns;
 
   return (
     <>

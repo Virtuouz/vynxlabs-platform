@@ -211,3 +211,14 @@ test("a field a step needs, left empty, is said with its step (FLW-09)", () => {
     "each needs an expression that gives the items to go through.",
   ]);
 });
+
+test("WLK-15: header names that differ only in case are one name, and only the first is saved", () => {
+  const rows = [
+    { name: "X-One", value: "1" },
+    { name: "x-one", value: "2" },
+  ];
+  expect(valueRowProblem(rows, 1, true)).toMatch(/used twice/);
+  expect(rowsToValues(rows, true)).toEqual({ "X-One": "1" });
+  // Other values are named exactly as typed.
+  expect(valueRowProblem(rows, 1, false)).toBeUndefined();
+});

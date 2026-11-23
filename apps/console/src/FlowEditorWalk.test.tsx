@@ -193,6 +193,24 @@ describe("the flow editor, as a person uses it", () => {
     );
   });
 
+  test("WLK-15: in Add step, Enter in the search adds the first match", async () => {
+    await openAt(
+      {
+        nodes: { start: manual, first: { type: "set", values: { a: "1" } } },
+        edges: [{ from: "start", to: "first" }],
+      },
+      "first",
+      "Values",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add step/ }));
+    const find = await screen.findByLabelText("Find a step");
+    fireEvent.change(find, { target: { value: "branch" } });
+    fireEvent.keyDown(find, { key: "Enter" });
+    const saved = await lastSaved();
+    expect(Object.values(saved.nodes).some((node) => node.type === "branch")).toBe(true);
+    expect(screen.queryByLabelText("Find a step")).toBeNull();
+  });
+
   test("renaming a Branch case past another's name keeps each connection with its case (FLW-08)", async () => {
     await openAt(
       {

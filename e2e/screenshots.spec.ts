@@ -1,6 +1,22 @@
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { CLOCK, fileName, missing, SHOTS, writeIndex } from "../packages/docs/screenshots.mjs";
+import { scenes as access } from "./scenes/access.ts";
+import { scenes as appBuilder } from "./scenes/app-builder.ts";
+import { scenes as apps } from "./scenes/apps.ts";
+import { scenes as basics } from "./scenes/basics.ts";
+import { scenes as configure } from "./scenes/configure.ts";
+import { scenes as docs } from "./scenes/docs.ts";
+import { scenes as extensions } from "./scenes/extensions.ts";
+import { scenes as flows } from "./scenes/flows.ts";
+import { scenes as instance } from "./scenes/instance.ts";
+import { scenes as operate } from "./scenes/operate.ts";
+import { scenes as queries } from "./scenes/queries.ts";
+import { scenes as releases } from "./scenes/releases.ts";
+import type { Built, Given, Scene } from "./scenes/scene.ts";
+import { scenes as scripts } from "./scenes/scripts.ts";
+import { scenes as sso } from "./scenes/sso.ts";
+import { scenes as widgets } from "./scenes/widgets.ts";
 import { signInWithPassword } from "./sign-in.ts";
 import { expect, type Page, test } from "./test.ts";
 
@@ -19,13 +35,46 @@ import { expect, type Page, test } from "./test.ts";
  * A picture of the list that was not taken fails the run.
  *
  * A page names a picture with `::screenshot{name=console/table-help alt="…"}`.
+ *
+ * Each area's shots are in `packages/docs/shots/<area>.mjs` and their scenes in
+ * `e2e/scenes/<area>.ts`. Only the scenes the shots taken need are built.
+ * `SCREENSHOTS_ONLY=console/queries-,console/flow` takes only the shots whose names start so,
+ * into `SCREENSHOTS_OUT` (a folder of your own; the shipped folder is left alone), and does
+ * not fail on the others: to see an area's pictures while writing it.
  */
 
 const ADMIN = {
   email: process.env.E2E_ADMIN_EMAIL ?? "admin@example.com",
   password: process.env.E2E_ADMIN_PASSWORD ?? "change-me-please",
 };
-const OUT = new URL("../packages/docs/assets/screenshots/", import.meta.url).pathname;
+const SHIPPED = new URL("../packages/docs/assets/screenshots/", import.meta.url).pathname;
+const ONLY = (process.env.SCREENSHOTS_ONLY ?? "").split(",").filter(Boolean);
+const OUT = ONLY.length
+  ? `${(process.env.SCREENSHOTS_OUT ?? "/tmp/volvel-screenshots").replace(/\/$/, "")}/`
+  : SHIPPED;
+const CHOSEN = SHOTS.filter(
+  (shot) => !ONLY.length || ONLY.some((one) => shot.name.startsWith(one)),
+);
+/** The scenes of every area, by name. */
+const SCENES: Record<string, Scene> = {
+  ...access,
+  ...appBuilder,
+  ...apps,
+  ...basics,
+  ...configure,
+  ...docs,
+  ...extensions,
+  ...flows,
+  ...instance,
+  ...operate,
+  ...queries,
+  ...releases,
+  ...scripts,
+  ...sso,
+  ...widgets,
+};
+/** Fernhill's people sign in with the seed's password (examples/fernhill/setup/setup.mjs). */
+const FERNHILL_PASSWORD = "fernhill-demo-2026";
 
 type Look = {
   role?: string;
@@ -101,7 +150,7 @@ const call = (page: Page, method: string, path: string, body?: unknown): Promise
 
 test("the pictures the documentation shows are taken", async ({ browser }) => {
   test.skip(process.env.SCREENSHOTS !== "1", "Taken only when asked: pnpm docs:screenshots.");
-  test.setTimeout(240_000);
+  test.setTimeout(Math.max(240_000, CHOSEN.length * 2 * 15_000 + 120_000));
   const first = await (await browser.newContext()).newPage();
   const page = first;
   await signInWithPassword(page, ADMIN.email, ADMIN.password);
@@ -241,56 +290,111 @@ test("the pictures the documentation shows are taken", async ({ browser }) => {
       ]).toString(),
     },
   });
-  const atOf: Record<string, string> = {
-    handbook: `/t/${tenant.id}/workspaces/${dev.id}`,
-    "visit-notes": `/t/${tenant.id}/workspaces/${sandbox.id}`,
+  const built: Record<string, Built> = {
+    handbook: { at: `/t/${tenant.id}/workspaces/${dev.id}` },
+    "visit-notes": { at: `/t/${tenant.id}/workspaces/${sandbox.id}` },
   };
+  // Fernhill as the release seeds it, when it is there. The administrator is not one of its
+  // members, so what is built in it is built as Maya Brooks, its tenant admin.
+  const found = (await call(page, "GET", "/tenants?limit=200")).items.find(
+    (one: { slug: string }) => one.slug === "fernhill",
+  );
+  let fernhill: Given["fernhill"];
+  let maya: Page | undefined;
+  if (found) {
+    const as = await (await browser.newContext()).newPage();
+    maya = as;
+    await signInWithPassword(as, "maya.brooks@fernhill.example", FERNHILL_PASSWORD);
+    fernhill = {
+      id: found.id as string,
+      workspaces: Object.fromEntries(
+        (await call(as, "GET", `/tenants/${found.id}/workspaces?limit=200`)).items.map(
+          (one: { slug: string; id: string }) => [one.slug, one.id],
+        ),
+      ),
+      call: (method, path, body) => call(as, method, path, body),
+    };
+  }
+  if (fernhill)
+    built.fernhill = { at: `/t/${fernhill.id}/workspaces/${fernhill.workspaces.sandbox}` };
+  const given: Given = {
+    page,
+    call: (method, path, body) => call(page, method, path, body),
+    stamp,
+    tenant: { id: tenant.id },
+    workspaces: { dev: dev.id, sandbox: sandbox.id },
+    fernhill,
+  };
+  // The scenes the chosen shots name, each built once, before any is taken.
+  for (const name of new Set(CHOSEN.map((shot) => shot.setup))) {
+    if (built[name]) continue;
+    expect(SCENES[name], `the scene "${name}" is not in e2e/scenes/*.ts`).toBeTruthy();
+    built[name] = await SCENES[name](given);
+  }
   await first.context().close();
-
-  // The scenes the list's `setup` names. Each is built above, once, before any is taken.
-  for (const shot of SHOTS) expect(atOf[shot.setup], `${shot.name}: unknown setup`).toBeTruthy();
+  await maya?.context().close();
 
   // A clean folder: a file left from an earlier run is never mistaken for one of this.
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
   const taken: Record<string, Record<string, string>> = {};
 
+  /** Who a shot's `as` names: the administrator, one of Fernhill's people, or one a scene made. */
+  const who = (shot: (typeof SHOTS)[number]) => {
+    const as = String(shot.as ?? "admin");
+    if (as === "admin") return ADMIN;
+    if (as.startsWith("fernhill:")) return { email: as.slice(9), password: FERNHILL_PASSWORD };
+    const person = built[shot.setup]?.people?.[as];
+    expect(person, `${shot.name}: "${as}" is not someone its scene made`).toBeTruthy();
+    return person as { email: string; password: string };
+  };
+
   for (const theme of ["light", "dark"] as const) {
-    const context = await browser.newContext({ colorScheme: theme, reducedMotion: "reduce" });
-    // The clock stands still on one day; timers still run, so the console loads as it does.
-    await context.clock.setFixedTime(new Date(CLOCK));
-    const shown = await context.newPage();
-    await signInWithPassword(shown, ADMIN.email, ADMIN.password);
-    for (const shot of SHOTS.filter((one) => one.themes.includes(theme))) {
-      await shown.setViewportSize(shot.viewport);
-      await shown.goto(`${atOf[shot.setup]}/${shot.address}`);
-      await shown.reload();
-      await ready(shown, shot.ready);
-      for (const step of shot.steps as Step[]) await act(shown, step);
-      await shown.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
-      const bytes = await shown.screenshot({
-        animations: "disabled",
-        caret: "hide",
-        maskColor: "#c9ced6",
-        mask: shot.mask.map((one) =>
-          typeof one === "string"
-            ? shown.locator(one)
-            : shown.getByRole(one.role as never).filter({ hasText: new RegExp(one.hasText) }),
-        ),
-      });
-      const file = fileName(shot.name, theme, bytes);
-      mkdirSync(dirname(`${OUT}${file}`), { recursive: true });
-      writeFileSync(`${OUT}${file}`, bytes);
-      taken[shot.name] = { ...taken[shot.name], [theme]: file };
+    for (const as of new Set(CHOSEN.map((shot) => `${who(shot).email}`))) {
+      const context = await browser.newContext({ colorScheme: theme, reducedMotion: "reduce" });
+      // The clock stands still on one day; timers still run, so the console loads as it does.
+      await context.clock.setFixedTime(new Date(CLOCK));
+      const shown = await context.newPage();
+      const person = CHOSEN.map(who).find((one) => one.email === as) as {
+        email: string;
+        password: string;
+      };
+      await signInWithPassword(shown, person.email, person.password);
+      for (const shot of CHOSEN.filter(
+        (one) => one.themes.includes(theme) && who(one).email === as,
+      )) {
+        await shown.setViewportSize(shot.viewport);
+        await shown.goto(
+          shot.address.startsWith("/") ? shot.address : `${built[shot.setup].at}/${shot.address}`,
+        );
+        await shown.reload();
+        await ready(shown, shot.ready);
+        for (const step of shot.steps as Step[]) await act(shown, step);
+        await shown.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => {});
+        const bytes = await shown.screenshot({
+          animations: "disabled",
+          caret: "hide",
+          maskColor: "#c9ced6",
+          mask: shot.mask.map((one) =>
+            typeof one === "string"
+              ? shown.locator(one)
+              : shown.getByRole(one.role as never).filter({ hasText: new RegExp(one.hasText) }),
+          ),
+        });
+        const file = fileName(shot.name, theme, bytes);
+        mkdirSync(dirname(`${OUT}${file}`), { recursive: true });
+        writeFileSync(`${OUT}${file}`, bytes);
+        taken[shot.name] = { ...taken[shot.name], [theme]: file };
+      }
+      await context.close();
     }
-    await context.close();
   }
 
   writeIndex(OUT, taken);
   // A picture the list asks for that was not taken fails the run, and so the release.
-  expect(missing(taken), "pictures of the list that were not taken").toEqual([]);
+  if (!ONLY.length) expect(missing(taken), "pictures of the list that were not taken").toEqual([]);
   const files = readdirSync(OUT, { recursive: true }).filter(
     (one) => String(one).endsWith(".png") && statSync(`${OUT}${one}`).size > 0,
   );
-  expect(files.length).toBe(SHOTS.reduce((sum, shot) => sum + shot.themes.length, 0));
+  expect(files.length).toBe(CHOSEN.reduce((sum, shot) => sum + shot.themes.length, 0));
 });

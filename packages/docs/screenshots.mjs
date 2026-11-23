@@ -6,11 +6,25 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import access from "./shots/access.mjs";
+import appBuilder from "./shots/app-builder.mjs";
+import apps from "./shots/apps.mjs";
+import basics from "./shots/basics.mjs";
+import { PHONE, THEMES, TIMES, VIEW } from "./shots/common.mjs";
+import configure from "./shots/configure.mjs";
+import docs from "./shots/docs.mjs";
+import extensions from "./shots/extensions.mjs";
+import flows from "./shots/flows.mjs";
+import instance from "./shots/instance.mjs";
+import operate from "./shots/operate.mjs";
+import queries from "./shots/queries.mjs";
+import releases from "./shots/releases.mjs";
+import scripts from "./shots/scripts.mjs";
+import sso from "./shots/sso.mjs";
+import widgets from "./shots/widgets.mjs";
 
 /** The day every picture is taken on, so a time on a screen is the same in each run. */
 export const CLOCK = "2026-03-02T10:00:00.000Z";
-
-export const THEMES = ["light", "dark"];
 
 /** The index that names the files taken: name -> { theme -> file }. */
 export const INDEX = "index.json";
@@ -30,20 +44,10 @@ export const INDEX = "index.json";
  *   mask     what changes between runs, painted over and never shown: a selector, or
  *            { role, hasText } for the elements of that role whose text matches the pattern.
  */
-const VIEW = { width: 1440, height: 900 };
-// A time the server wrote is the moment the scene was built, whatever the clock of the
-// browser says: it is painted over, as a <time> or as a cell that reads like one.
-const TIMES = [
-  "time",
-  // What the console itself marks as changing from one look to the next (the connection's state).
-  "[data-volatile]",
-  { role: "gridcell", hasText: "\\d{4}, \\d+:\\d\\d\\s[AP]M" },
-  // What the server chose, and so is not the same in each run: a row's ID, and the schema a table is stored in.
-  { role: "gridcell", hasText: "^[0-9a-f]{8}-[0-9a-f]{4}-" },
-  { role: "code", hasText: "^ws_" },
-];
+export { PHONE, THEMES, TIMES, VIEW };
 
-export const SHOTS = [
+/** The first shots: the Tables sample (phase 31 M1). */
+const FIRST = [
   {
     name: "console/table-help",
     address: "tables/orders",
@@ -152,6 +156,27 @@ export const SHOTS = [
     steps: [],
     mask: TIMES,
   },
+];
+
+// Each area's shots, in a file of its own beside this one (shots/<area>.mjs), so that the
+// areas are added to without touching each other. Their scenes are in e2e/scenes/<area>.ts.
+export const SHOTS = [
+  ...FIRST,
+  ...access,
+  ...appBuilder,
+  ...apps,
+  ...basics,
+  ...configure,
+  ...docs,
+  ...extensions,
+  ...flows,
+  ...instance,
+  ...operate,
+  ...queries,
+  ...releases,
+  ...scripts,
+  ...sso,
+  ...widgets,
 ];
 
 export const shotNames = () => SHOTS.map((shot) => shot.name);

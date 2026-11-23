@@ -5,6 +5,7 @@ import type { Me } from "./api.ts";
 import { monogram } from "./kit/brand.tsx";
 import { whereIs } from "./nav.ts";
 import { navigate } from "./router.tsx";
+import { ACCESS_TABS } from "./screens/Members.tsx";
 import { Shell } from "./Shell.tsx";
 import { show } from "./testing.tsx";
 import { applyThemeChoice } from "./theme.ts";
@@ -79,6 +80,10 @@ test("an address says which area and screen it is, and whether it is an editor",
   expect(whereIs("/t/t1/workspaces/w1/tables/orders", false).workbench).toBe(true);
   expect(whereIs("/t/t1/workspaces/w1/tables", false).workbench).toBe(false);
   expect(whereIs("/t/t1/roles", false)).toMatchObject({ area: "tenant", section: "members" });
+  // Every tab of Members & access lays itself out edge to edge, or one of them is inset (r-narrow 3).
+  for (const tab of ACCESS_TABS) {
+    expect(whereIs(`/t/t1/${tab.slug}`, false).workbench, tab.slug).toBe(true);
+  }
   expect(whereIs("/t/t1", false)).toMatchObject({ area: "tenant", section: "overview" });
   expect(whereIs("/", true).area).toBe("instance");
   expect(whereIs("/", false).area).toBe("tenants");

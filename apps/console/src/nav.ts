@@ -340,7 +340,7 @@ const WORKBENCHES: RegExp[] = [
 /** The same, for a tenant's screens. */
 const TENANT_WORKBENCHES: RegExp[] = [
   /^approvals$/,
-  /^(members|groups|roles|access|end-users|end-user-groups)$/,
+  /^(members|groups|roles|access|releases|end-users|end-user-groups)$/,
   /^audit$/,
 ];
 /** Instance screens that are lists beside an inspector. */

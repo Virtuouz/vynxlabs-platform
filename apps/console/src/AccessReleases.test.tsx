@@ -130,6 +130,20 @@ test("a release that waits says what it would do, and is approved after asking",
   );
 });
 
+test("from a tablet up the answers have a column wide enough for their buttons (r-narrow 3)", async () => {
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: true,
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  }));
+  show(<AccessReleases base={base} />);
+  const button = await screen.findByRole("button", { name: "Go back to this" });
+  const cell = button.closest("td") as HTMLElement;
+  const header = screen.getAllByRole("columnheader")[(cell.cellIndex as number) ?? -1];
+  expect(header?.className).toContain("w-44");
+});
+
 test("going back says it waits for a second person when it does, and that it applied when it did (REL-12)", async () => {
   // The answer of a server that does not say `waiting` (ACC-14) is worded here.
   rollbackAnswer = { status: 201, body: { id: "r9", number: 9, status: "awaiting_approval" } };

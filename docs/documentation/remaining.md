@@ -14,3 +14,5 @@ Each item was in a lane's brief and was not built, or was found by a lane. The f
 - WLK-09, WLK-11, WLK-15, WLK-17 items that t2-walk-* lanes do not finish (see their fixed files).
 - The `DraftClash` in `ResourceEditor.tsx` has no "Copy what I wrote" (t2-walk-shell).
 - A binding older than the 200 newest uploads still reads as its old kind (cfg2 limit; needs a column) (t2-walk-shell).
+- A retired table's `managedIn` is always `code` from the server (t2-walk-data).
+- `CreateDialog`s with no `done` still say "Created." (t2-walk-data).

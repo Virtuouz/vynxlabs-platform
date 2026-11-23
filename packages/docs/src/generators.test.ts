@@ -286,6 +286,14 @@ test("the reference's first page leads to every page made from a list, and a cha
   }
 });
 
+test("the metrics reference gives the address the route has: /api/v1/metrics", () => {
+  const source = readFileSync(join(__dirname, "../generators/lists.mjs"), "utf8");
+  const start = source.indexOf("function metricsPage()");
+  const page = source.slice(start, source.indexOf("\n}\n", start));
+  expect(page).toContain("/api/v1/metrics");
+  expect(page).not.toMatch(/at `\/metrics`/);
+});
+
 test("every field of every kind says what it is, and the floor is all of them (M9)", () => {
   const floor = JSON.parse(readFileSync(join(__dirname, "../coverage.json"), "utf8")).kinds;
   expect(floor).toBe(1);

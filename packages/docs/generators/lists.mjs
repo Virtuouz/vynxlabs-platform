@@ -671,10 +671,10 @@ function metricsPage() {
   return page(
     {
       title: "Metrics",
-      description: "Every series an instance serves at /metrics.",
+      description: "Every series an instance serves at /api/v1/metrics.",
     },
     [
-      "An instance serves its metrics in the Prometheus text format, at `/metrics`, to an operator who may read them. Each replica counts what it saw, and a Prometheus server adds the replicas up. What must agree across replicas, such as how many runs wait, is read from the database each time it is scraped. Every name begins `volvel_`.",
+      "An instance serves its metrics in the Prometheus text format, at `/api/v1/metrics`, to an operator who may read them. Each replica counts what it saw, and a Prometheus server adds the replicas up. What must agree across replicas, such as how many runs wait, is read from the database each time it is scraped. Every name begins `volvel_`.",
       "",
       "A series with `workspace` among its labels names the workspace by its slug, with `tenant` beside it. An instance may keep workspaces out of its labels, and then the series are added together.",
       "",

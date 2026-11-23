@@ -1353,3 +1353,39 @@ test("TAB-P6: a retired table of the repository says a deploy brings it back, an
   ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Bring back" })).toBeNull();
 });
+
+test("TAB-P7: a table's rules are seen as a group, of end users or of members, with the total that group would see", async () => {
+  editable();
+  routes["GET /api/v1/tenants/t1/end-users"] = () => [200, { items: [] }];
+  routes["GET /api/v1/tenants/t1/end-user-groups"] = () => [
+    200,
+    { items: [{ id: "g-end", name: "Customers" }] },
+  ];
+  routes["GET /api/v1/tenants/t1/groups"] = () => [
+    200,
+    { items: [{ id: "g-mem", name: "Billing" }] },
+  ];
+  routes[`GET /api/v1${root}/aggregate/orders`] = () => [
+    200,
+    { items: [{ values: { count: 7 } }] },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  const box = await screen.findByRole("combobox", { name: "See it as a group" });
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  expect(await screen.findByRole("option", { name: /Billing/ })).toBeTruthy();
+  fireEvent.click(await screen.findByRole("option", { name: /Customers/ }));
+  await waitFor(() =>
+    expect(
+      calls.some(
+        (call) =>
+          call.url.startsWith(`/api/v1${root}/rows/orders`) && call.url.includes("asGroup=g-end"),
+      ),
+    ).toBe(true),
+  );
+  expect(await screen.findByText("Someone in this group would see 7 rows in all.")).toBeTruthy();
+  expect(calls.some((call) => call.url === `/api/v1${root}/aggregate/orders?asGroup=g-end`)).toBe(
+    true,
+  );
+});

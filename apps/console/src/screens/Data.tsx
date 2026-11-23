@@ -2639,7 +2639,15 @@ function Definition({
           </div>
         )}
         {table.policy.type !== "open" && tenantBase ? (
-          <SeeItAs root={root} table={table.name} usersPath={`${tenantBase}/end-users?limit=200`} />
+          <SeeItAs
+            root={root}
+            table={table.name}
+            usersPath={`${tenantBase}/end-users?limit=200`}
+            groupsPaths={{
+              endUsers: `${tenantBase}/end-user-groups`,
+              members: `${tenantBase}/groups`,
+            }}
+          />
         ) : null}
       </section>
 

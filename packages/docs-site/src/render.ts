@@ -77,6 +77,8 @@ export interface SiteLook {
   logoHref?: string | undefined;
   /** Where the icons are, by size. Without it a page names no icon. */
   iconsHref?: string | undefined;
+  /** A script of the host's own, run before the page is drawn: the reader's choice of light or dark. */
+  scriptHref?: string | undefined;
 }
 
 /**
@@ -111,6 +113,8 @@ export interface SiteView {
   search?: { kind: "server" } | { kind: "static"; index: string };
   /** Whether a page's address ends in a slash, as a static site's does. */
   trailingSlash?: boolean;
+  /** The version of what the pages describe, shown at the foot of the navigation. Left out, none is. */
+  version?: string;
   /** Said across the top of every page: that this is a preview, and for whom. */
   notice?: string;
   /**
@@ -232,7 +236,9 @@ function side(
 ${brand(at)}
 <a class="find" href="${href(at, "_search")}" data-search>${icon("search", 16)}<span class="grow">Search</span><kbd class="key">⌘</kbd><kbd class="key">K</kbd></a>
 ${switcher}
-<nav aria-label="${attr(collection?.title ?? at.title)}">${tree}</nav>
+<nav aria-label="${attr(collection?.title ?? at.title)}">${tree}</nav>${
+    at.version ? `\n<p class="version">Version ${escapeHtml(at.version)}</p>` : ""
+  }
 </aside>`;
 }
 
@@ -272,7 +278,7 @@ function head(at: SiteView, title: string, noindex: boolean): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">${noindex || at.notice ? '\n<meta name="robots" content="noindex">' : ""}
 <title>${escapeHtml(title === site ? site : `${title} · ${site}`)}</title>
-<link rel="stylesheet" href="${attr(look.themeHref)}">
+<link rel="stylesheet" href="${attr(look.themeHref)}">${look.scriptHref ? `\n<script src="${attr(look.scriptHref)}"></script>` : ""}
 <link rel="stylesheet" href="${attr(docsAssetHref(platform, "css"))}">${iconLinks(look.iconsHref)}
 <script src="${attr(docsAssetHref(platform, "js"))}" defer></script>
 </head>`;
@@ -606,7 +612,7 @@ ${own}
 ${cards}
 ${recent}
 </main>
-<footer class="sitefoot"><p>${escapeHtml(at.title)}</p></footer>
+<footer class="sitefoot"><p>${escapeHtml(at.title)}${at.version ? ` · Version ${escapeHtml(at.version)}` : ""}</p></footer>
 ${data(at, { collection: "" })}
 </body>
 </html>

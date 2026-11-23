@@ -52,6 +52,7 @@ kbd.key {
 }
 .side .brand { padding: 4px 8px 6px; }
 .side .close { display: none; }
+.side .version { margin: auto 0 0; padding: 0 8px; font-size: 12px; color: var(--vx-ink-subtle); }
 .topbar {
   position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 12px 0 14px;
   background: var(--vx-canvas); border-bottom: 1px solid var(--vx-line);

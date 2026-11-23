@@ -7,7 +7,7 @@ import { fieldDescriptions } from "./generators/reference.mjs";
 import { HERE, loadDocs, report, VERSION } from "./load.mjs";
 import { readIndex } from "./screenshots.mjs";
 
-const { set, issues, assets, redirects } = loadDocs();
+const { set, issues, assets, redirects, sources } = loadDocs();
 if (issues.some((issue) => issue.severity === "error")) {
   report(issues);
   console.error(
@@ -20,6 +20,12 @@ const out = join(HERE, "dist");
 rmSync(out, { recursive: true, force: true });
 for (const [name, text] of packageOutput(set, { version: VERSION, productName: "Volvel" })) {
   const file = join(out, name);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, text);
+}
+// Each page as written, for `/docs/<page>.md` ("Copy as Markdown").
+for (const [path, text] of sources) {
+  const file = join(out, "md", `${path}.md`);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, text);
 }

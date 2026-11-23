@@ -13,3 +13,12 @@ export const DOCS_POLICY = [
   "form-action 'self'",
   "frame-ancestors 'self'",
 ].join("; ");
+
+/**
+ * What the product's own documentation may load: a docs app's, and no picture from another site, so
+ * that a page reads the same with no network. No other site may frame it.
+ */
+export const PRODUCT_DOCS_POLICY = DOCS_POLICY.replace(
+  "img-src 'self' https: data:",
+  "img-src 'self' data:",
+).replace("frame-ancestors 'self'", "frame-ancestors 'none'");

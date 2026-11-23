@@ -653,6 +653,19 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
   );
   // The key breaks ties, so paging never repeats or skips a row.
   if (target.key) order.push(sql`${sql.ref(target.key)} asc`);
+  else {
+    // With no key, every column breaks the tie, so the same rows come in the same order each time
+    // (a page by count would otherwise repeat or skip rows). A type with no order of its own is ordered as text.
+    const named = new Set(sorted.map(({ meta }) => meta.physicalName));
+    for (const meta of target.columns) {
+      if (named.has(meta.physicalName)) continue;
+      const ref = sql.ref(meta.physicalName);
+      const orderable = ["text", "integer", "number", "boolean", "date", "timestamp", "enum"].includes(
+        meta.type,
+      );
+      order.push(orderable ? sql`${ref} asc nulls last` : sql`${ref}::text asc nulls last`);
+    }
+  }
   const keyMeta = target.columns.find((one) => one.physicalName === target.key);
   // A key of type number is not exact in a double: such a table is paged by count, not after a row.
   const byKeyset = keyset(target, sort) && keyMeta !== undefined && keyMeta.type !== "number";

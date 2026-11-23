@@ -1028,10 +1028,10 @@ export const COLUMN_TYPES = [
 export type ColumnType = (typeof COLUMN_TYPES)[number];
 
 /**
- * The colours a value of an enum column can be given by name. Each is one
- * colour, drawn as the value's background in a light theme and a dark one,
+ * The colors a value of an enum column can be given by name. Each is one
+ * color, drawn as the value's background in a light theme and a dark one,
  * with black or white text over it, whichever is easier to read. Any other
- * colour is given as `#rrggbb`.
+ * color is given as `#rrggbb`.
  */
 export const ENUM_COLORS = {
   gray: "#6b7280",

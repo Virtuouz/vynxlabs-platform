@@ -241,6 +241,10 @@ export const queryRoutes =
                   "Whether the caller may run SQL of their own here, and write it into a " +
                   "dashboard's widget: whether they hold `sql:read`, which no wildcard gives.",
               }),
+              maySave: Type.Boolean({
+                description:
+                  "Whether the caller may keep a query as a draft: whether they hold `resource:write`.",
+              }),
             }),
           },
         },
@@ -308,8 +312,10 @@ export const queryRoutes =
             ],
           });
         }
-        const maySql = await ctx.allowed("sql:read", { tenantId: params.t, workspaceId: params.w });
-        return { tables, functions: [...ALLOWED_FUNCTIONS].sort(), maySql };
+        const at = { tenantId: params.t, workspaceId: params.w };
+        const maySql = await ctx.allowed("sql:read", at);
+        const maySave = await ctx.allowed("resource:write", at);
+        return { tables, functions: [...ALLOWED_FUNCTIONS].sort(), maySql, maySave };
       },
     );
 

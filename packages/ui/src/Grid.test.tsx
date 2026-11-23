@@ -26,6 +26,30 @@ const rows = [
 ];
 
 describe("grid", () => {
+  test("a screen reader is told rows that end at the count, with or without the filter row (TAB-39)", () => {
+    for (const filtering of [false, true]) {
+      const { container, unmount } = render(
+        <Grid
+          label="Rows of orders"
+          columns={columns}
+          rows={rows}
+          rowKey={(r) => r.id}
+          empty="None"
+          navigation="grid"
+          {...(filtering ? { onFilter: () => {} } : {})}
+        />,
+      );
+      const count = Number(container.querySelector("table")?.getAttribute("aria-rowcount"));
+      const indexes = Array.from(container.querySelectorAll("tbody tr")).map((row) =>
+        Number(row.getAttribute("aria-rowindex")),
+      );
+      // The heading row, and the filter row when there is one, come before the first row.
+      expect(indexes).toEqual(filtering ? [3, 4] : [2, 3]);
+      expect(Math.max(...indexes)).toBe(count);
+      unmount();
+    }
+  });
+
   test("with fill, the grid is the one scroller of the height left; without it, it stops at 70vh", () => {
     const grid = (fill?: boolean) => (
       <Grid

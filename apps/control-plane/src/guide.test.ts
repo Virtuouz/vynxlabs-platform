@@ -10,7 +10,7 @@ test("every series the metrics answer with is in the self-hosting guide (INS-29)
   const names = new Set<string>();
   for (const file of ["routes/execution.ts", "kernel/metrics.ts"]) {
     const source = readFileSync(join(here, file), "utf8");
-    for (const found of source.matchAll(/(?:# TYPE |")(platform_[a-z_]+)/g)) {
+    for (const found of source.matchAll(/(?:# TYPE |")(volvel_[a-z_]+)/g)) {
       names.add(found[1] as string);
     }
   }

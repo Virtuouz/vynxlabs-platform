@@ -180,7 +180,7 @@ const moveVisit = (of: "this" | "event", to: string, from: string, done: string)
   ],
 });
 
-/** A practice manager or Billing marks an invoice paid: greyed for anyone else, and refused by the server. */
+/** A practice manager or Billing marks an invoice paid: grayed for anyone else, and refused by the server. */
 const markPaid = (of: "this" | "event") => ({
   when: [{ field: "status", of, test: "is" as const, value: "unpaid" }],
   runBy: { groups: BILLING },
@@ -458,7 +458,7 @@ export const operations = defineInterface({
                 action: { steps: [{ do: "open", page: "new-invoice" }] },
               },
               {
-                // A flow, started from the page. Only practice managers may; others see it greyed.
+                // A flow, started from the page. Only practice managers may; others see it grayed.
                 id: "chase",
                 label: "Chase unpaid invoices",
                 tone: "quiet",

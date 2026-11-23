@@ -128,7 +128,7 @@ export interface Env {
 /**
  * Whether a column suits a place that names types. A place that asks for a choice (`enum`) is
  * given every column that is choice-like: text the server counted to a few values, as Conditions
- * and a table's badge colours count it.
+ * and a table's badge colors count it.
  */
 export function offersType(types: readonly string[], column: CatalogColumn): boolean {
   return types.includes(column.type) || (types.includes("enum") && isChoiceLike(column));

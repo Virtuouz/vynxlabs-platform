@@ -681,7 +681,7 @@ async function whoDecided(
     return `${who} ${what} this ${agoWords(step.finished_at)}${same ? ", as you meant to" : ""}.`;
   }
   if (step.flow_status !== "running") {
-    return `This request is no longer waiting: its run ${step.flow_status === "cancelled" ? "was cancelled" : "has ended"}.`;
+    return `This request is no longer waiting: its run ${step.flow_status === "cancelled" ? "was canceled" : "has ended"}.`;
   }
   return "This request timed out before anyone decided it.";
 }

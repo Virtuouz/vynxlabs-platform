@@ -32,6 +32,8 @@ export interface PromptOptions extends ConfirmOptions {
   /** Refuses an empty answer. On by default. */
   required?: boolean;
   multiline?: boolean;
+  /** The most characters the field takes. */
+  maxLength?: number;
   /**
    * Does what the answer is for, before the dialog closes. It resolves to a sentence to show
    * on the field, which keeps what was typed, or to nothing when it went through.
@@ -172,6 +174,7 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
                   label={asked.options.label}
                   value={text}
                   required={required}
+                  {...(asked.options.maxLength ? { maxLength: asked.options.maxLength } : {})}
                   {...(fieldError ? { error: fieldError } : {})}
                   {...(asked.options.hint ? { hint: asked.options.hint } : {})}
                   {...(asked.options.placeholder ? { placeholder: asked.options.placeholder } : {})}

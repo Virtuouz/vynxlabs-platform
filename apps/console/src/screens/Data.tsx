@@ -105,14 +105,14 @@ function newColumn(type: string, values: string | undefined) {
   };
 }
 
-/** One value an enum column offers, with what people read and the colour it is drawn on. */
+/** One value an enum column offers, with what people read and the color it is drawn on. */
 interface ColumnValue {
   value: string;
   label?: string;
   color?: string;
 }
 
-/** A value of an enum column as a chip: its label on its colour. One the column no longer offers is plain. */
+/** A value of an enum column as a chip: its label on its color. One the column no longer offers is plain. */
 function ValueOf({ column, value }: { column: RowColumn; value: string }) {
   const found = column.values?.find((one) => one.value === value);
   return <ValueChip color={enumColor(found?.color)}>{found?.label ?? value}</ValueChip>;
@@ -1992,7 +1992,7 @@ interface EditedValue {
   was?: string;
 }
 
-/** The values of an enum column: what each is called, the colour it is drawn on, and their order. */
+/** The values of an enum column: what each is called, the color it is drawn on, and their order. */
 function ValuesDialog({
   column,
   open,
@@ -2918,7 +2918,8 @@ function Definition({
           <SeeItAs
             root={root}
             table={table.name}
-            usersPath={`${tenantBase}/end-users?limit=200`}
+            usersPath={`${tenantBase}/end-users`}
+            columns={table.columns}
             groupsPaths={{
               endUsers: `${tenantBase}/end-user-groups`,
               members: `${tenantBase}/groups`,

@@ -5,6 +5,7 @@ import {
   CONTRAST_NEEDED,
   contrastRatio,
   Notice,
+  parseColor,
   TextField,
 } from "@volvel/ui";
 import { type CSSProperties, useState } from "react";
@@ -266,33 +267,60 @@ const PAIRS: [ink: string, ground: string, needs: "text" | "edge"][] = [
  * contrast and what it needs. It warns; saving is still allowed.
  */
 export function ContrastCheck({ values }: { values: Tokens }) {
-  const failing = PAIRS.flatMap(([ink, ground, needs]) => {
+  const failing: { ink: string; ground: string; ratio: number; needs: number }[] = [];
+  const unread: { ink: string; ground: string; why: string }[] = [];
+  for (const [ink, ground, needs] of PAIRS) {
     const one = values[ink];
     const two = values[ground];
-    if (!one || !two) return [];
-    const ratio = contrastRatio(one, two);
-    return ratio !== undefined && ratio < CONTRAST_NEEDED[needs]
-      ? [{ ink, ground, ratio, needs: CONTRAST_NEEDED[needs] }]
-      : [];
-  });
-  if (failing.length === 0) {
+    // A token left empty keeps the kit's own value, which is the kit's to get right.
+    if (!one || !two) continue;
+    // What a faint color is drawn on, in the end, is the canvas.
+    const ratio = contrastRatio(one, two, values.canvas || "#ffffff");
+    if (ratio === undefined) {
+      const bad = parseColor(one) === undefined ? ink : ground;
+      unread.push({ ink, ground, why: `${bad} is “${values[bad]}”` });
+    } else if (ratio < CONTRAST_NEEDED[needs]) {
+      failing.push({ ink, ground, ratio, needs: CONTRAST_NEEDED[needs] });
+    }
+  }
+  if (failing.length === 0 && unread.length === 0) {
     return <p className="m-0 text-meta text-ink-muted">Every pair checked is easy to read.</p>;
   }
   return (
-    <Notice tone="attention">
-      <p className="m-0 font-medium">
-        {failing.length === 1 ? "One pair is" : `${failing.length} pairs are`} hard to read:
-      </p>
-      <ul className="m-0 mt-1 pl-4">
-        {failing.map((one) => (
-          <li key={`${one.ink}-${one.ground}`}>
-            <code className="font-mono">{one.ink}</code> on{" "}
-            <code className="font-mono">{one.ground}</code>: {one.ratio.toFixed(2)}, needs{" "}
-            {one.needs}
-          </li>
-        ))}
-      </ul>
-    </Notice>
+    <>
+      {failing.length > 0 ? (
+        <Notice tone="attention">
+          <p className="m-0 font-medium">
+            {failing.length === 1 ? "One pair is" : `${failing.length} pairs are`} hard to read:
+          </p>
+          <ul className="m-0 mt-1 pl-4">
+            {failing.map((one) => (
+              <li key={`${one.ink}-${one.ground}`}>
+                <code className="font-mono">{one.ink}</code> on{" "}
+                <code className="font-mono">{one.ground}</code>: {one.ratio.toFixed(2)}, needs{" "}
+                {one.needs}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
+      {unread.length > 0 ? (
+        <Notice tone="plain">
+          <p className="m-0 font-medium">
+            {unread.length === 1 ? "One pair" : `${unread.length} pairs`} could not be checked. Use
+            a color written as a name, #hex, rgb() or hsl() to have them checked:
+          </p>
+          <ul className="m-0 mt-1 pl-4">
+            {unread.map((one) => (
+              <li key={`${one.ink}-${one.ground}`}>
+                <code className="font-mono">{one.ink}</code> on{" "}
+                <code className="font-mono">{one.ground}</code>: {one.why}
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      ) : null}
+    </>
   );
 }
 

@@ -557,6 +557,31 @@ test("a branding preview says which colors would be hard to read, and still lets
   expect(screen.getByText("2 pairs are hard to read:")).toBeTruthy();
 });
 
+test("the contrast check reads any color, and says which pairs it could not check (GOV-22)", () => {
+  const every = (value: string) =>
+    Object.fromEntries(Object.keys(KIT.tokens).map((token) => [token, value]));
+  // Every token the same color is not easy to read, whatever way the color is written.
+  for (const white of ["white", "hsl(0 0% 100%)", "#ffffffff", "rgb(255 255 255)"]) {
+    const { unmount } = render(<ContrastCheck values={{ ...KIT.tokens, ...every(white) }} />);
+    expect(screen.queryByText("Every pair checked is easy to read.")).toBeNull();
+    expect(screen.getByText(/pairs are hard to read/)).toBeTruthy();
+    unmount();
+  }
+  // A faint ink is judged as the faint ink it is, not as solid black.
+  render(
+    <ContrastCheck
+      values={{ ...KIT.tokens, ink: "rgba(0,0,0,0.05)", canvas: "#ffffff", surface: "#ffffff" }}
+    />,
+  );
+  expect(screen.getAllByText(/hard to read/).length).toBeGreaterThan(0);
+  cleanup();
+  // A value the check cannot read is said, not passed.
+  render(<ContrastCheck values={{ ...KIT.tokens, ink: "var(--brand)" }} />);
+  expect(screen.queryByText("Every pair checked is easy to read.")).toBeNull();
+  expect(screen.getByText(/could not be checked/)).toBeTruthy();
+  expect(screen.getAllByText(/var\(--brand\)/).length).toBeGreaterThan(0);
+});
+
 test("the end users screen keeps its search and the person open in the address, and Back closes them first", async () => {
   routes[`GET /api/v1${base}/end-users`] = () => [200, { items: [ada], nextCursor: null }];
   routes[`GET /api/v1${base}/end-users/u1`] = () => [200, ada];

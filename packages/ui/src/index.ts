@@ -16,7 +16,7 @@ export {
   SURFACE,
   seriesColors,
 } from "./chartTheme.ts";
-export { CONTRAST_NEEDED, contrastRatio, luminance } from "./contrast.ts";
+export { CONTRAST_NEEDED, contrastRatio, luminance, parseColor } from "./contrast.ts";
 export { DateInput, type DateInputProps } from "./DateInput.tsx";
 export { Details } from "./Details.tsx";
 export { Dialog } from "./Dialog.tsx";

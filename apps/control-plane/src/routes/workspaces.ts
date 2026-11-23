@@ -4,6 +4,7 @@ import { PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
 import { refuseDirectProductionWrite } from "../kernel/authoring.js";
 import { check } from "../kernel/authorize.js";
+import { refuseMissingTargets, refuseRetiringReferred } from "../kernel/data/apply.js";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -684,11 +685,23 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 `Something is already at "${path}". Choose another name, or change what is there.`,
               );
           }
-          return putResource(kernel, trx, audit, workspace, {
+          const saved = await putResource(kernel, trx, audit, workspace, {
             ...body,
             path,
             ...(version !== undefined ? { expectedVersion: version } : {}),
           });
+          // A deploy checks this once everything is in place; a table saved alone is checked now.
+          if (body.kind === "table") {
+            const { db: data } = await kernel.data.within(trx, workspace.tenantId);
+            await refuseMissingTargets(
+              data,
+              workspace.id,
+              path,
+              (body.body as { columns?: Record<string, { type?: string; references?: string }> })
+                .columns ?? {},
+            );
+          }
+          return saved;
         });
         return reply
           .code(result.created ? 201 : 200)
@@ -817,7 +830,20 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             }),
           paths: [path],
         });
-        await ctx.mutate((trx, audit) => deleteResource(trx, audit, workspace, path, kernel.hooks));
+        await ctx.mutate(async (trx, audit) => {
+          // A table that others refer to would leave every later deploy refused.
+          const kind = await trx
+            .selectFrom("resource")
+            .select("kind")
+            .where("workspace_id", "=", workspace.id)
+            .where("path", "=", path)
+            .executeTakeFirst();
+          if (kind?.kind === "table") {
+            const { db: data } = await kernel.data.within(trx, workspace.tenantId);
+            await refuseRetiringReferred(data, workspace.id, path);
+          }
+          await deleteResource(trx, audit, workspace, path, kernel.hooks);
+        });
         return reply.code(204).send(null);
       },
     );

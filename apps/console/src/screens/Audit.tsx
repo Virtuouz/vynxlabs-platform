@@ -4,13 +4,13 @@ import { useEffect, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { copyText } from "../ask.tsx";
 import { actionWords } from "../audit-words.ts";
+import { useAddressBox } from "../kit/addressBox.ts";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { stamp } from "../kit/format.ts";
 import { Inspector, KeyValues, SectionLabel, useWide, WIDE } from "../kit/layout.tsx";
 import { Tag, type TagTone } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
-import { useSearchParam } from "../kit/useSearchParam.ts";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, useUrlState } from "../router.tsx";
 
@@ -176,13 +176,20 @@ export function AuditTable({
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<ApiError>();
   const [loaded, setLoaded] = useState(false);
-  const [typed, setTyped] = useSearchParam(url.q, (q) => setUrl({ q }));
   const [closed, setClosed] = useState(false);
   const [linked, setLinked] = useState<Entry>();
   const wide = useWide(WIDE.inspector);
   const tenantId = /^\/tenants\/([^/]+)/.exec(path)?.[1];
   // Only a tenant's log can be narrowed by what it holds, and exported.
   const tenantLog = tenantId !== undefined;
+
+  // The text searched reaches the address, and the server, once typing pauses.
+  const [typed, setTyped] = useAddressBox(
+    url.q,
+    (text) => text ?? "",
+    (text) => text.trim() || undefined,
+    (next) => setUrl({ q: next }),
+  );
 
   const filters = new URLSearchParams();
   if (url.area) filters.set("area", url.area);

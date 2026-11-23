@@ -13,9 +13,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
+import { useAddressBox } from "../kit/addressBox.ts";
 import { useArrivals } from "../kit/arrivals.ts";
 import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
-import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
+import { CopyIcon, Identifier } from "../kit/copy.tsx";
 import {
   type DataColumn,
   DataTable,
@@ -34,7 +35,6 @@ import { Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { useTitleObject } from "../kit/title.ts";
-import { useSearchParam } from "../kit/useSearchParam.ts";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { Link, navigate, useUrlState } from "../router.tsx";
 import { useStreamConnected } from "../stream.ts";
@@ -203,10 +203,17 @@ export function RunsWorkbench({
       ? { key: url.sort, dir: url.dir === "asc" ? "asc" : "desc" }
       : undefined;
   const selected = url.run;
-  const [typed, setTyped] = useSearchParam(search, (q) => setUrl({ q }));
   const [tick, setTick] = useState(0);
   // Compact by default: a run is one line, and twenty fit a laptop's screen.
   const [density, setDensity] = useDensity("runs", "compact");
+
+  // What is typed reaches the address, and the list, once typing pauses.
+  const [typed, setTyped] = useAddressBox(
+    search,
+    (text) => text ?? "",
+    (text) => text.trim() || undefined,
+    (next) => setUrl({ q: next }),
+  );
 
   const from = windowStart(hours, tick);
   const query = new URLSearchParams({ limit: "100" });

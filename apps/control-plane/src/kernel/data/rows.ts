@@ -1,5 +1,5 @@
 import { type Kysely, newId, sql } from "@volvel/db";
-import type { TablePolicy } from "@volvel/manifest";
+import { hasNul, isCalendarDate, isIsoTime, type TablePolicy } from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
@@ -19,6 +19,8 @@ export interface ColumnMeta {
   writable: boolean;
   /** For an enum or an enum_list: the values a row may be given, in order. */
   values?: string[];
+  /** Values it had and no longer offers. A row that holds one may keep it, and is found by it. */
+  retired?: string[];
   /** For a reference: the table it points to. */
   references?: string;
 }
@@ -109,6 +111,7 @@ export async function describeTable(
         ...(column.options?.values
           ? { values: column.options.values.map((one) => one.value) }
           : {}),
+        ...(column.options?.retired?.length ? { retired: column.options.retired } : {}),
         ...(column.reference_table ? { references: column.reference_table } : {}),
       })),
     ],
@@ -292,6 +295,21 @@ export function translate(error: unknown, timeoutMs?: number): unknown {
   if (code === "22P02" || code === "22007" || code === "22008" || code === "22003") {
     return badRequest("A value does not fit its column.");
   }
+  // A character Postgres cannot store, text it cannot encode, a value too long to index, and a
+  // statement with more values than the protocol carries: the caller's values, not a fault here.
+  if (code === "22021" || code === "22P05") {
+    return badRequest("A value holds a character that cannot be stored.");
+  }
+  if (code === "54000" || code === "54001") {
+    return badRequest(
+      "A value is too long for a column that is unique or indexed. Shorten it, or take the rule off the column.",
+    );
+  }
+  if (code === "08P01") {
+    return badRequest(
+      "The request holds more values than one statement can carry. Send fewer rows.",
+    );
+  }
   return error;
 }
 
@@ -340,17 +358,17 @@ async function naming<T>(target: RowTarget, write: () => Promise<T>): Promise<T>
 // ----- Values -----
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 class Invalid extends Error {}
 
 /** Checks a value against its column's type and gives what to send to the database. */
-function toDatabase(column: ColumnMeta, value: unknown): unknown {
+function toDatabase(column: ColumnMeta, value: unknown, kept?: unknown): unknown {
   if (value === null || value === undefined) return null;
   const fail = (expected: string) => new Invalid(`must be ${expected}`);
   switch (column.type) {
     case "text":
       if (typeof value !== "string") throw fail("text");
+      if (hasNul(value)) throw fail("text without the character with code 0");
       return value;
     case "integer":
       if (!Number.isSafeInteger(value)) throw fail("a whole number");
@@ -362,25 +380,35 @@ function toDatabase(column: ColumnMeta, value: unknown): unknown {
       if (typeof value !== "boolean") throw fail("true or false");
       return value;
     case "timestamp":
-      if (typeof value !== "string" || Number.isNaN(Date.parse(value)))
-        throw fail("a date and time, such as 2026-01-31T09:30:00Z");
+      // ISO 8601 with its zone, and a moment that exists: never read in the server's own zone.
+      if (!isIsoTime(value))
+        throw fail("a date and time that exists, with its zone, such as 2026-01-31T09:30:00Z");
       return new Date(value).toISOString();
     case "date":
-      if (typeof value !== "string" || !DATE.test(value) || Number.isNaN(Date.parse(value)))
-        throw fail("a date, such as 2026-01-31");
+      if (!isCalendarDate(value)) throw fail("a day that exists, such as 2026-01-31");
       return value;
     case "json":
+      if (hasNul(value)) throw fail("json without the character with code 0");
       return JSON.stringify(value);
     case "enum":
-      if (typeof value !== "string" || !column.values?.includes(value)) {
+      if (
+        typeof value !== "string" ||
+        !(column.values?.includes(value) || (kept === value && column.retired?.includes(value)))
+      ) {
         throw fail(`one of: ${(column.values ?? []).join(", ")}`);
       }
       return value;
     case "enum_list": {
       const offered = column.values ?? [];
+      // A value the list no longer offers may stay in a row that holds it.
+      const holds = Array.isArray(kept) ? (kept as unknown[]) : [];
       if (
         !Array.isArray(value) ||
-        !value.every((one) => typeof one === "string" && offered.includes(one))
+        !value.every(
+          (one) =>
+            typeof one === "string" &&
+            (offered.includes(one) || (column.retired?.includes(one) && holds.includes(one))),
+        )
       ) {
         throw fail(`a list of these: ${offered.join(", ")}`);
       }
@@ -399,9 +427,23 @@ function toDatabase(column: ColumnMeta, value: unknown): unknown {
 
 function fromDatabase(column: ColumnMeta, value: unknown): unknown {
   if (value === null || value === undefined) return null;
-  if (column.type === "integer" || column.type === "number") return Number(value);
-  if (column.type === "timestamp")
-    return value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString();
+  if (column.type === "integer" || column.type === "number") {
+    // A number a double cannot hold exactly (a source's bigint or numeric) is given as the text
+    // the database wrote, so that two keys are never one number and NaN is not an empty cell.
+    const text = String(value);
+    const number = Number(text);
+    const exact =
+      Number.isFinite(number) &&
+      (column.type === "integer"
+        ? Number.isSafeInteger(number)
+        : text.replace(/\D/g, "").replace(/^0+/, "").length <= 15 || String(number) === text);
+    return exact ? number : text;
+  }
+  if (column.type === "timestamp") {
+    // A source's `infinity` is no moment a date can hold: it is shown as the word it is.
+    const moment = value instanceof Date ? value : new Date(String(value));
+    return Number.isNaN(moment.getTime()) ? String(value) : moment.toISOString();
+  }
   return value;
 }
 
@@ -527,8 +569,7 @@ function compileFilter(
   if (op === "has") {
     if (meta.type !== "enum_list" || typeof node.value !== "string")
       throw invalid(`"has" works on a list of values, with one value to look for`);
-    if (!meta.values?.includes(node.value))
-      throw invalid(`"${node.value}" is not one of the values of "${meta.name}"`);
+    // Any text: a row may still hold a value the list no longer offers, and is found by it.
     return sql`${reference} @> array[${node.value}]::text[]`;
   }
   if (meta.type === "enum_list")
@@ -554,7 +595,7 @@ function compileFilter(
   const operator = COMPARE[op];
   if (!operator)
     throw invalid(
-      `there is no operator "${op}". Use eq, ne, gt, gte, lt, lte, in, contains or is_null`,
+      `there is no operator "${op}". Use eq, ne, gt, gte, lt, lte, in, has, contains or is_null`,
     );
   if (node.value === null || node.value === undefined) {
     if (op === "eq") return sql`${reference} is null`;
@@ -610,7 +651,8 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
   // The key breaks ties, so paging never repeats or skips a row.
   if (target.key) order.push(sql`${sql.ref(target.key)} asc`);
   const keyMeta = target.columns.find((one) => one.physicalName === target.key);
-  const byKeyset = keyset(target, sort) && keyMeta !== undefined;
+  // A key of type number is not exact in a double: such a table is paged by count, not after a row.
+  const byKeyset = keyset(target, sort) && keyMeta !== undefined && keyMeta.type !== "number";
   // After the last row: past it in the sort, or level with it and past its key. Rows with no
   // value in the sort column come last, in key order.
   let after = sql`true`;
@@ -619,7 +661,7 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
     const key = sql.ref(keyMeta.physicalName);
     const keyValue = (() => {
       try {
-        return toDatabase(keyMeta, query.after?.at(-1));
+        return keyParam(keyMeta, query.after?.at(-1));
       } catch {
         throw invalid();
       }
@@ -637,6 +679,13 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
           if (by.meta.type === "timestamp" && typeof raw === "string") {
             if (Number.isNaN(Date.parse(raw))) throw new Invalid("a time");
             return sql`${raw}::timestamptz`;
+          }
+          // The cursor holds what the last row held, and a list may no longer offer it.
+          if (by.meta.type === "enum") return toDatabase({ ...by.meta, type: "text" }, raw);
+          if (by.meta.type === "enum_list") {
+            if (!Array.isArray(raw) || !raw.every((one) => typeof one === "string"))
+              throw new Invalid("a list");
+            return raw as string[];
           }
           return toDatabase(by.meta, raw);
         } catch {
@@ -907,10 +956,17 @@ function keyColumn(target: RowTarget): ColumnMeta {
   return key;
 }
 
+/** A key as the database is given it: a whole number past 2^53 stays text, so it names its own row. */
+function keyParam(key: ColumnMeta, raw: unknown): unknown {
+  if (key.type === "integer" && typeof raw === "string" && /^-?\d+$/.test(raw)) return raw;
+  if (key.type === "number" && typeof raw === "string" && /^-?\d+(\.\d+)?$/.test(raw)) return raw;
+  return toDatabase(key, raw);
+}
+
 function keyValue(target: RowTarget, id: string): unknown {
   const key = keyColumn(target);
   try {
-    return toDatabase(key, key.type === "integer" || key.type === "number" ? Number(id) : id);
+    return keyParam(key, id);
   } catch {
     throw notFound("The row");
   }
@@ -931,6 +987,7 @@ function validate(
   input: unknown,
   index: number | null,
   inserting: boolean,
+  held?: Row,
 ): Map<ColumnMeta, unknown> {
   const prefix = index === null ? "" : `/${index}`;
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
@@ -956,7 +1013,7 @@ function validate(
       });
     } else {
       try {
-        const value = toDatabase(meta, raw);
+        const value = toDatabase(meta, raw, held?.[meta.name]);
         if (value === null && meta.required && !(inserting && meta.hasDefault)) {
           issues.push({ path: `${prefix}/${name}`, message: "is required" });
         }
@@ -1023,14 +1080,21 @@ export async function insertRows(
     );
     return sql`(${sql.join([...(target.managed ? [sql`${newId()}`] : []), ...cells])})`;
   });
-  const result = await naming(target, () =>
-    sql<Row>`
-      insert into ${sql.id(target.schema, target.table)} (${sql.join(names)})
-      values ${sql.join(tuples)}
-      returning ${selectList(target)}
-    `.execute(db),
-  );
-  return result.rows.map((row) => shape(target, row));
+  // A statement carries at most 65,535 values, so a big batch goes in as several, in the
+  // one transaction the caller holds: all of it is inserted or none.
+  const perStatement = Math.max(1, Math.floor(60_000 / Math.max(names.length, 1)));
+  const written: Row[] = [];
+  for (let from = 0; from < tuples.length; from += perStatement) {
+    const result = await naming(target, () =>
+      sql<Row>`
+        insert into ${sql.id(target.schema, target.table)} (${sql.join(names)})
+        values ${sql.join(tuples.slice(from, from + perStatement))}
+        returning ${selectList(target)}
+      `.execute(db),
+    );
+    written.push(...result.rows);
+  }
+  return written.map((row) => shape(target, row));
 }
 
 export async function updateRow(
@@ -1039,7 +1103,18 @@ export async function updateRow(
   id: string,
   patch: unknown,
 ): Promise<Row> {
-  const values = validate(target, patch, null, false);
+  // A value a list no longer offers may stay in a row that holds it: the row is read for that.
+  const mayKeep =
+    typeof patch === "object" &&
+    patch !== null &&
+    target.columns.some((meta) => meta.retired && meta.name in patch);
+  const values = validate(
+    target,
+    patch,
+    null,
+    false,
+    mayKeep ? await getRow(db, target, id) : undefined,
+  );
   const assignments = [...values].map(
     ([meta, value]) => sql`${sql.id(meta.physicalName)} = ${bound(meta, value)}`,
   );

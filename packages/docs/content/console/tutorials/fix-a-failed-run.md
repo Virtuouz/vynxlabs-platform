@@ -33,11 +33,11 @@ You will have a run that failed because an outside service was down, you will kn
 
    The answer is `{"outage":false}`. From here on nothing is wrong with the service. The run is still failed.
 
-5. **Find the failed run as a person on call would.** Choose **Overview**. Under **NEEDS ATTENTION** it says how many runs failed in the last 24 hours, and "Open the failed runs to see which step and which log line." Press **Open failed runs**. The list of runs is narrowed to **Failed**. Find the row for `reminders/send` whose **Result** reads "TextLine answered 503: the gateway is down. 0 reminders went out first." and open it.
+5. **Find the failed run as a person on call would.** Choose **Overview**. Under **NEEDS ATTENTION** it says how many runs failed in the last 24 hours, and "Open the failed runs to see which step and which log line." Press **Open failed runs**. The list of runs is narrowed to **Failed**. Find the top row for `reminders/send` whose **Result** reads "TextLine answered 503: the gateway is down. 0 reminders went out first." (the column is cut short on a narrow window; the newest run is first). Press the row. A panel opens at the side with the same **Why it failed** text. Press **Open full view**.
 
 6. **Read why it failed.** On the run page, under **Why it failed**, read "TextLine answered 503: the gateway is down. 0 reminders went out first." Under it are what the 503 means, "The service failed on its side (503).", and what to do, "Usually passing: run it again later, or ask the service's owner if it keeps failing." The log says "The script logged nothing."
 
-7. **Compare it with the last success.** Under **Since it last worked** the page says when it last succeeded and which version it ran. It lists **Input**, which says "The same as the last success", **Version**, and **Took**, the time of this run and of that one. Press **Compare the source**. The page **Compare runs** reads "This run, against the last run that succeeded before it." If both runs used one version it says "The code is the same in both", so the input or the world changed, not the code.
+7. **Compare it with the last success.** Under **Since it last worked** the page says when it last succeeded and which version it ran. It lists **Input**, which says "The same as the last success", **Version**, which says "The same," and the version, and **Took**, the time of this run and of that one. The input and the version are the same, so nothing in the script changed. When the version differs, **Version** reads, for example, "v53 then, v54 now", and the button **Compare the source** opens **Compare runs**. Here the version is the same, so that button is not shown.
 
 8. **Run it again.** Go back to the failed run. Press **Re-run** and choose **With the same input**. A dialog asks "Run reminders/send again?", "With the same input, on version …, the one it ran." Press **Run again**. A new run page opens and says **Succeeded**. It says "Re-run of a run" beside its version, and that link goes back to the failed run.
 :::
@@ -45,6 +45,6 @@ You will have a run that failed because an outside service was down, you will kn
 ## What you built
 
 - A failed run of `reminders/send` and its re-run, which succeeded. Both are under **Operate**, **Runs**. The failed one stays as it was: a re-run is a new run, and it does not change the old one.
-- A way to read a failure: the sentence under **Why it failed**, the comparison under **Since it last worked**, and the comparison page.
+- A way to read a failure: the sentence under **Why it failed** and the comparison under **Since it last worked**.
 
 A run of a flow has **Retry from the failed step** where a script's run has **Re-run**; it runs the failed step and what follows, and keeps the steps that worked.

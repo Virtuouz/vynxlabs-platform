@@ -83,7 +83,7 @@ afterEach(() => {
 
 test("the context is read from the element the platform puts in the page", () => {
   setAppContext(undefined);
-  expect(() => appContext()).toThrow("was not served by the platform");
+  expect(() => appContext()).toThrow("was not served by Volvel");
   document.body.innerHTML = `<script type="application/json" id="vx-context">${JSON.stringify(context)}</script>`;
   expect(appContext().tenant.slug).toBe("acme");
 });

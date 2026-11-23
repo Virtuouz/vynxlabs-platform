@@ -42,6 +42,6 @@ Every response carries its trace in `x-trace-id`. A run and a flow run say their
 
 - **Nothing arrives.** If the endpoint does not answer, spans are dropped, never held back for long or sent twice: at most 2,000 wait, in batches of 200, flushed every 2 seconds with a 10 second timeout. The log says so once a minute.
 - **"OTEL_EXPORTER_OTLP_ENDPOINT must be an http or https address."** Give a full address.
-- **"OTEL_EXPORTER_OTLP_PROTOCOL must be http/json: the only one the platform speaks."** Remove the setting or use `http/json`.
+- **"OTEL_EXPORTER_OTLP_PROTOCOL must be http/json: the only one Volvel speaks."** Remove the setting or use `http/json`.
 
 Related: [Monitor an instance](monitor-an-instance), [Settings](../../reference/settings).

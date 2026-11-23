@@ -26,7 +26,7 @@ By the end you will have each kind of app of a repository open in your browser o
 
    ```text
    desk is at http://localhost:5174/
-   The page is served under the platform's content policy: no inline script, nothing from another site. A browser's console says what it refused; --no-strict turns this off.
+   The page is served under Volvel's content policy: no inline script, nothing from another site. A browser's console says what it refused; --no-strict turns this off.
    It reads and writes fernhill/apps-docs on http://localhost:8091, as maya.brooks@fernhill.example. Press Ctrl+C to stop.
    ```
 
@@ -67,7 +67,7 @@ The page is served under the policy a deployed app gets, so what it would refuse
 
 One thing differs from the instance: the dev server's own scripts carry a nonce made for the run, and `ws://localhost:*` and `ws://127.0.0.1:*` may be connected to, for reload. The nonce goes only on the dev server's scripts, so an inline script of yours is refused in dev as it is once deployed.
 
-`--no-strict` turns the policy off and says so: "The page is served without the platform's content policy (--no-strict), so it may do what a deployed app cannot." Use it to find out whether a refusal is the policy's.
+`--no-strict` turns the policy off and says so: "The page is served without Volvel's content policy (--no-strict), so it may do what a deployed app cannot." Use it to find out whether a refusal is the policy's.
 
 ## The result
 

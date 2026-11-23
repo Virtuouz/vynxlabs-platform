@@ -85,7 +85,7 @@ A bundle carries only the core steps a flow uses.
 
 ## The steps that come with Volvel
 
-Five steps are in the **Core** group. Their paths start with `core/`, which is kept for them: a deploy refuses a path under `core/` for anything else ("paths under core/ are kept for the platform's own nodes"). A core step is read-only in the console.
+Five steps are in the **Core** group. Their paths start with `core/`, which is kept for them: a deploy refuses a path under `core/` for anything else ("paths under core/ are kept for Volvel's own nodes"). A core step is read-only in the console.
 
 | Step | Path | Takes | What it does | Time allowed |
 | --- | --- | --- | --- | --- |

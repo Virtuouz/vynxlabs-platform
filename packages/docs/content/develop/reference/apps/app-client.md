@@ -4,7 +4,7 @@ description: Every export of @volvel/app, the package a code app uses to read ta
 subjects: [apps, app-client]
 ---
 
-`@volvel/app` is the package a code app imports to talk to the instance that serves it. Every call goes to the instance as the person using the app, over the page's own address, with the cookie the instance set. The person's permissions decide what each call may do: the client adds none. An app that is not served by Volvel, and is not served by [`volvel dev`](../../how-to/apps/run-an-app-while-you-write-it), has no context, and the first call throws "This page was not served by the platform. Open the app at its address, or run it with: volvel dev".
+`@volvel/app` is the package a code app imports to talk to the instance that serves it. Every call goes to the instance as the person using the app, over the page's own address, with the cookie the instance set. The person's permissions decide what each call may do: the client adds none. An app that is not served by Volvel, and is not served by [`volvel dev`](../../how-to/apps/run-an-app-while-you-write-it), has no context, and the first call throws "This page was not served by Volvel. Open the app at its address, or run it with: volvel dev".
 
 ## Context
 

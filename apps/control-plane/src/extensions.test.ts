@@ -931,13 +931,13 @@ describe("the core nodes, and nodes of a tenant's own", () => {
     // Nothing of a tenant's may sit where the platform's nodes do.
     const taken = await draft("core/mine", "variable", { type: "string" });
     expect(taken.status).toBe(400);
-    expect(JSON.stringify(taken.body)).toContain("kept for the platform's own nodes");
+    expect(JSON.stringify(taken.body)).toContain("kept for Volvel's own nodes");
     const uploaded = await alice.post(
       `${ws()}/bundles`,
       bundle((m) => [...m, script("core/http-request", "greet", {})]),
     );
     expect(uploaded.status).toBe(400);
-    expect(JSON.stringify(uploaded.body)).toContain("kept for the platform's own nodes");
+    expect(JSON.stringify(uploaded.body)).toContain("kept for Volvel's own nodes");
   });
 
   test("a flow drawn from core nodes reads and writes a table, calls out, sends mail and publishes", async () => {

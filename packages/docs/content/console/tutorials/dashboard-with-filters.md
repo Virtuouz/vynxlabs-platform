@@ -29,7 +29,7 @@ You will have a dashboard of your own with a figure, a chart and a table of appo
 
 8. **Add a table.** Press **Add to page**, and under **WORK WITH RECORDS** press **Table**. For **Source** choose **Appointments**. It follows the same 3 page filters. **On this page** now lists **Search and filter**, **Stat**, **Chart** and **Table**.
 
-9. **Finish editing.** Press **Done**. The page reads "Yours. Seen by: only you." The date control reads **Last 30 days**, the clinic box is empty, and the figure counts the appointments in the last 30 days: the walk saw 1,690 where **All time** gave 3,708.
+9. **Finish editing.** Press **Done**. The page reads "Yours. Seen by: only you." The date control reads **Last 30 days**, the clinic box is empty, and the figure counts only the appointments of the last 30 days, fewer than the number **All time** gives in step 10.
 
    ::screenshot{name=console/tut-visit-mix alt="The finished dashboard: a Starts menu and a Clinic box above a figure, a bar chart by clinic and a table of appointments"}
 

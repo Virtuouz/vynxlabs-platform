@@ -44,7 +44,7 @@ The window is per script or flow path, in one workspace. A failure of another sc
 
 ## Doing more than the default
 
-A run that fails for the last time also publishes the platform event `platform/run-failed`, with the run's `runId`, its `script` and its `error`; every payload is listed in [Platform events](../../reference/platform-events). An event trigger can listen for it and start a script of its own, with a `filter` to pick which failures count. This is separate from the alert: it fires for every last failure, with no ten-minute window, and only while the trigger is on and not paused.
+A run that fails for the last time also publishes the event `platform/run-failed`, with the run's `runId`, its `script` and its `error`; every payload is listed in [Platform events](../../reference/platform-events). An event trigger can listen for it and start a script of its own, with a `filter` to pick which failures count. This is separate from the alert: it fires for every last failure, with no ten-minute window, and only while the trigger is on and not paused.
 
 ```ts title="src/alerts.ts"
 import { defineEventTrigger } from "@volvel/sdk";

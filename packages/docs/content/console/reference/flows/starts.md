@@ -34,7 +34,7 @@ An optional input schema, drawn as fields: a name, a type, **required**, a descr
 
 | Field | What it takes |
 | --- | --- |
-| **Event** | The workspace's own events, then the platform's: `platform/run-succeeded`, `platform/run-failed`, `platform/run-finished`, `platform/flow-run-finished`, `platform/deployment-created`, `platform/row-changed`, each with its payload. See [Platform events](../../../develop/reference/platform-events). |
+| **Event** | The workspace's own events, then Volvel's: `platform/run-succeeded`, `platform/run-failed`, `platform/run-finished`, `platform/flow-run-finished`, `platform/deployment-created`, `platform/row-changed`, each with its payload. See [Platform events](../../../develop/reference/platform-events). |
 | **Only when (optional)** | An expression over `event.name` and `event.payload`. It starts only when it gives true. Empty, every event of this name starts it. |
 
 A refusal (a filter that fails, a payload that does not fit) is recorded as the reason on the trigger. An event started by a flow that an event started may go 10 deep.

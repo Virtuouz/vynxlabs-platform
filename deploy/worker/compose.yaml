@@ -32,6 +32,18 @@ services:
       # starts it again at once, so set this only where the container is started on demand.
       VOLVEL_WORKER_IDLE_EXIT: ${VOLVEL_WORKER_IDLE_EXIT:-}
     secrets: [worker_token]
+    # Healthy while the instance answered the worker's last request for work (it asks every
+    # 20 seconds at most). A worker that cannot reach the instance, or was refused, is not.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const age = Date.now() - require('fs').statSync(require('os').tmpdir() + '/volvel-worker-alive').mtimeMs; process.exit(age < 90000 ? 0 : 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
     # The worker keeps nothing: bundles are fetched again after a restart.
     read_only: true
     tmpfs:

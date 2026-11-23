@@ -36,3 +36,18 @@ Items: INS-MP3, 4, 5, 7, 9, 10, 11, 12; HOST-MP2, 3/4, 5, 7. Each test was seen 
 - Tests: `portability.test.ts` "an upload still waiting is listed after a reload ... (INS-MP11)" (404 before), `Environments.test.tsx` "an upload that waits is listed after a reload ...". An existing test now picks the check's URL by `/staged/`.
 - Siblings: CLI `tenant import` does not stage. The check's passphrase is never stored, so Open shows "not checked yet" until typed.
 - Walk: Import a tenant: upload, reload, Open, Throw away from the list; at 390 px; keyboard (Tab to Open/Throw away, Enter); copy as written.
+
+## HOST-MP3/4 (worker and worker host settings in compose)
+- Worker host: already done by host2 (HOST-11/20): `deploy/compose/compose.yaml` passes `RUN_SLOTS`, `RUN_MEMORY_FLOOR_MB`, `MANAGED_WORKERS_MAX`, `MANAGED_WORKER_UID/GID/USERS`, `WORKER_EGRESS_ALLOW`; shown by `compose-vars.test.ts` "the worker host gets the settings that size it and its workers", and `host-bin.test.ts` for `--max-workers`.
+- Standalone worker (the missing part): `deploy/worker/compose.yaml` passes `VOLVEL_WORKER_CONCURRENCY` and `VOLVEL_WORKER_IDLE_EXIT`; `deploy/worker/.env.example` names them. `packages/worker/src/bin.ts` now reads `VOLVEL_WORKER_CONCURRENCY` (new; as the idle-exit variable already was) and checks both (flag or variable) as positive whole numbers: exit 2 naming which, where a bad value became NaN.
+- Tests: `host-bin.test.ts` "VOLVEL_WORKER_CONCURRENCY that is not a whole number exits 2" and idle exit; `compose-vars.test.ts` "the standalone worker's compose passes what sizes it".
+- Line for CHANGELOG: new worker setting `VOLVEL_WORKER_CONCURRENCY`; a bad `--concurrency` or `--idle-exit` now stops the worker with exit 2.
+
+## HOST-MP5 (`--help`, `check-config`, `migrate`; an unknown word does not start the instance)
+- `apps/control-plane/src/commands.ts` (new: `commandOf`, `USAGE`) read at the top of `main.ts` before settings or database: `--help`/`-h`/`help` print the usage and exit 0; a word that is not a command exits 2 (it used to start the instance); `check-config` loads the settings, says every problem at once (exit 1) or "The settings are valid." and opens nothing; `migrate` migrates and exits; `rekey [--data-role]` and `recover-operator <email>` as before.
+- Tests: `commands.test.ts` (runs the built `dist/main.js`: `--help`, an unknown word, `check-config` bad and good).
+- Siblings: `volvel-start` (shell) passes its arguments to node unchanged, so `volvel-start dist/main.js --help` works. Docs line for `docs/self-hosting.md` and the CHANGELOG: `check-config`, `migrate` commands; a mistyped word is refused. Left out: `volvel-start --help` itself (the script runs `node-cp "$@"`: its first argument is the file).
+
+## HOST-MP7 (health a worker answers to)
+- Worker host: already done (HOST-10): the host touches `volvel-host-alive`, and compose's healthcheck reads it (`compose-vars.test.ts`).
+- Standalone worker: `packages/worker/src/worker.ts` touches `<tmp>/volvel-worker-alive` (option `heartbeatFile`) each time the control plane answers a claim, work or not; `deploy/worker/compose.yaml` has the healthcheck (90 s). Test: `worker.test.ts` "touches its heartbeat file when the control plane answers a request for work, work or not"; `compose-vars.test.ts` checks the healthcheck. Two older tests in `worker.test.ts` ("ends a script that ignores its time limit", "ends a canceled run's process") fail in this environment with and without the change.

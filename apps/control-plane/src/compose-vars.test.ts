@@ -63,6 +63,9 @@ describe("the standalone worker's compose passes what sizes it (HOST-MP3)", () =
       expect(worker, name).toMatch(new RegExp(`^ {6}${name}:`, "m"));
       expect(workerExample, name).toMatch(new RegExp(`^${name}=`, "m"));
     }
+    // Healthy while the instance answers the worker's request for work (HOST-MP7).
+    expect(worker).toMatch(/healthcheck:/);
+    expect(worker).toContain("volvel-worker-alive");
     for (const name of ["VOLVEL_IMAGE", "VOLVEL_URL"]) {
       expect(workerExample, name).toMatch(new RegExp(`^${name}=`, "m"));
     }

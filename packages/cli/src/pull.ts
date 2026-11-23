@@ -12,13 +12,12 @@ import { parseArgs } from "node:util";
 import {
   isFolderResourceFile,
   ontoWritten,
-  parseRepositoryConfig,
-  REPOSITORY_CONFIG,
   RESOURCE_FOLDER,
   resourceOfFile,
   sameResourceFile,
 } from "@volvel/manifest";
-import { type Io, loadSettings, locate, refusal, request } from "./cli.js";
+import { readRepositoryConfig } from "./build.js";
+import { CliError, type Io, loadSettings, locate, refusal, request } from "./cli.js";
 
 /** What the last pull wrote, by path under `platform/`. */
 export interface Pulled {
@@ -39,8 +38,20 @@ export const pulledFile = (directory: string): string =>
   join(directory, ".platform", "pulled.json");
 
 export async function readPulled(directory: string): Promise<Pulled | undefined> {
-  const text = await readText(pulledFile(directory));
-  return text ? (JSON.parse(text) as Pulled) : undefined;
+  return readState(pulledFile(directory));
+}
+
+/** What the last pull wrote. A record that cannot be read is said so, with how to start it afresh. */
+async function readState(file: string): Promise<Pulled | undefined> {
+  const text = await readText(file);
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text) as Pulled;
+  } catch {
+    throw new CliError(
+      `${file} is not valid JSON, so the files the last pull wrote are not known. Delete it and run pull again: files that differ will be kept, and pull --force takes the console's.`,
+    );
+  }
 }
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
@@ -96,9 +107,7 @@ export async function pullInto(
     files: { path: string; content: string; resource?: string }[];
   },
 ): Promise<PullReport> {
-  const before: Pulled | undefined = await readText(stateFile).then((text) =>
-    text ? (JSON.parse(text) as Pulled) : undefined,
-  );
+  const before = await readState(stateFile);
   // What another workspace's pull wrote says nothing about this one's files.
   const last = before?.workspace === workspace ? before.files : {};
   const report: PullReport = { written: [], removed: [], unchanged: 0, kept: [] };
@@ -224,11 +233,11 @@ export async function pull(args: string[], io: Io): Promise<number> {
       force: { type: "boolean" },
     },
   });
-  const settings = await loadSettings(io.env);
-  const { base, workspace } = await locate(settings, values.tenant, values.workspace);
   const directory = resolve(values.dir ?? ".");
   // A file under one of the repository's roots is named for its path, and is not made to say it.
-  const { config } = parseRepositoryConfig(await readText(join(directory, REPOSITORY_CONFIG)));
+  const config = await readRepositoryConfig(directory);
+  const settings = await loadSettings(io.env);
+  const { base, workspace } = await locate(settings, values.tenant, values.workspace);
   const query = new URLSearchParams({
     ...(values.deployed ? { drafts: "false" } : {}),
     ...(config.roots.length > 0 ? { roots: config.roots.join(",") } : {}),

@@ -12,6 +12,7 @@ import { type CommandName, usage } from "./commands.js";
 import { startDevServer } from "./dev.js";
 import { CliError } from "./errors.js";
 import { type Followed, followRun, Stopped } from "./follow.js";
+import { inputOf } from "./input.js";
 import { init, runLocally } from "./local.js";
 import { pull, pulledFile, readPulled } from "./pull.js";
 import { SCHEMA_FOLDER, writeEditorSchemas } from "./schemas.js";
@@ -126,6 +127,9 @@ async function whoami(settings: Settings) {
   }
   if (me.status !== 200)
     throw new CliError(me.body?.detail ?? `The instance answered ${me.status}.`);
+  if (!me.body?.principal || !Array.isArray(me.body.tenants)) {
+    throw new CliError(`${settings.url} did not answer like a platform instance. Check the URL.`);
+  }
   return me.body as {
     principal: { type: string; name: string | null; email: string | null };
     tenants: { slug: string; name: string }[];
@@ -161,6 +165,17 @@ async function login(args: string[], io: Io) {
   // writeFile keeps the mode of a file that already exists.
   await chmod(path, 0o600);
   io.out(`Signed in to ${settings.url} as ${describe(me.principal)}.`);
+}
+
+/** A flag that is a whole number within bounds. One reader for every such flag. */
+export function wholeNumber(flag: string, value: string, min: number, max?: number): number {
+  const number = /^\d+$/.test(value.trim()) ? Number(value) : Number.NaN;
+  if (!Number.isSafeInteger(number) || number < min || (max !== undefined && number > max)) {
+    throw new CliError(
+      `${flag} is a whole number${max === undefined ? ` of at least ${min}` : ` from ${min} to ${max}`}, not "${value}".`,
+    );
+  }
+  return number;
 }
 
 const directoryOption = { dir: { type: "string" as const } };
@@ -262,6 +277,10 @@ async function uploadFiles(settings: Settings, base: string, built: Built, io: I
         method: "PUT",
         headers: { authorization, "content-type": "application/octet-stream" },
         body: built.files.get(sha256) as Buffer,
+      }).catch(() => {
+        throw new CliError(
+          `Could not reach ${settings.url} to send a file of an app. Check the connection and run the command again: files already sent are kept.`,
+        );
       });
       if (!response.ok) throw await failure(response, "upload a file of an app");
       sent += 1;
@@ -439,13 +458,14 @@ async function dev(args: string[], io: Io) {
     allowPositionals: true,
     options: { ...directoryOption, ...targetOptions, port: { type: "string" as const } },
   });
+  const port = values.port === undefined ? 5174 : wholeNumber("--port", values.port, 1, 65535);
   const settings = await loadSettings(io.env);
   const { workspace, tenant } = await locate(settings, values.tenant, values.workspace);
   const me = await whoami(settings);
   const server = await startDevServer({
     directory: resolve(values.dir ?? "."),
     app: positionals[0],
-    port: values.port ? Number(values.port) : 5174,
+    port,
     instance: settings,
     tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name ?? tenant.slug },
     workspace: { id: workspace.id, slug: workspace.slug },
@@ -462,7 +482,7 @@ async function dev(args: string[], io: Io) {
   await server.close();
 }
 
-async function promote(args: string[], io: Io) {
+async function promote(args: string[], io: Io): Promise<number> {
   const { values } = parseArgs({
     args,
     options: {
@@ -486,6 +506,7 @@ async function promote(args: string[], io: Io) {
   io.out(
     `Bundle ${String(bundle.digest).slice(0, 12)}, version ${bundle.version} here, to ${where}.`,
   );
+  const breaking = (summary.breaking ?? []) as { message: string }[];
   if (!possible) {
     throw new CliError(
       [
@@ -497,10 +518,17 @@ async function promote(args: string[], io: Io) {
   if (values.preview) {
     io.out(`Promoting would leave ${where} with: ${counts(summary)}.`);
     for (const line of describeChanges(summary)) io.out(line);
+    const needsConfirmation =
+      breaking.length > 0 && target.type === "production" && !values["confirm-breaking"];
+    if (needsConfirmation) {
+      io.err(
+        "Promoting would be refused: it changes a name that something outside calls. Nothing was changed. Run it again without --preview and with --confirm-breaking to promote.",
+      );
+      return 4;
+    }
     io.out("Nothing was changed. Run it again without --preview to promote.");
-    return;
+    return 0;
   }
-  const breaking = (summary.breaking ?? []) as { message: string }[];
   if (breaking.length > 0 && target.type === "production" && !values["confirm-breaking"]) {
     throw new CliError(
       [
@@ -522,6 +550,18 @@ async function promote(args: string[], io: Io) {
     `Promoted to ${where} as version ${promoted.body.bundleVersion}: ${counts(promoted.body.summary)}.`,
   );
   for (const line of describeChanges(promoted.body.summary)) io.out(line);
+  // The release branch is committed after the promotion and never undoes it, so a failure is a warning.
+  const release = promoted.body.release as
+    | { status: string; branch: string | null; problem?: string }
+    | undefined;
+  if (release?.status === "done" && release.branch) {
+    io.out(`Committed to the release branch ${release.branch}.`);
+  } else if (release?.status === "failed") {
+    io.err(
+      `Warning: the promotion is done, but Git sync did not get the release${release.branch ? ` (${release.branch})` : ""}: ${release.problem ?? "no reason was given"}. Commit it again from Git sync in the console.`,
+    );
+  }
+  return 0;
 }
 
 /** The passphrase for an export file. Kept out of the command line, where it would be visible to others. */
@@ -573,6 +613,10 @@ async function tenant(args: string[], io: Io) {
       method: "POST",
       headers: { authorization, "content-type": "application/json" },
       body: JSON.stringify({ passphrase: secret, history: values.history ?? false }),
+    }).catch(() => {
+      throw new CliError(
+        `Could not reach ${settings.url}. Check the URL and that the instance is running.`,
+      );
     });
     if (!response.ok || !response.body) throw await failure(response, `export ${values.tenant}`);
     const file = resolve(values.out);
@@ -682,16 +726,10 @@ async function cancelInBulk(args: string[], io: Io) {
     },
   });
   if (values.queued && values.all) throw new CliError("Give --queued or --all, not both.");
+  const older = values["older-than"];
+  const olderThanSeconds = older === undefined ? undefined : wholeNumber("--older-than", older, 1);
   const settings = await loadSettings(io.env);
   const { base } = await locate(settings, values.tenant, values.workspace);
-  const older = values["older-than"];
-  const olderThanSeconds = older === undefined ? undefined : Number(older);
-  if (
-    olderThanSeconds !== undefined &&
-    (!Number.isInteger(olderThanSeconds) || olderThanSeconds < 1)
-  ) {
-    throw new CliError("--older-than is a whole number of seconds.");
-  }
   const window = olderThanSeconds ? { olderThanSeconds } : {};
   let total = 0;
   for (;;) {
@@ -829,23 +867,6 @@ async function logs(args: string[], io: Io): Promise<number> {
   }
 }
 
-/** The input a run is given: JSON on the command line, or a file of it with @. */
-async function inputOf(text: string | undefined): Promise<unknown> {
-  if (text === undefined) return {};
-  const raw = text.startsWith("@")
-    ? await readFile(resolve(text.slice(1)), "utf8").catch(() => {
-        throw new CliError(`There is no file at ${resolve(text.slice(1))}.`);
-      })
-    : text;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new CliError(
-      `--input must be JSON, or @ and a file of JSON, for example --input '{"customer":"ada"}'`,
-    );
-  }
-}
-
 /** Runs a script or flow on the platform from this build, in a dev workspace, and follows it. */
 async function runRemote(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseArgs({
@@ -980,10 +1001,7 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
     await deploy(rest, io);
     return 0;
   },
-  promote: async (rest, io) => {
-    await promote(rest, io);
-    return 0;
-  },
+  promote: (rest, io) => promote(rest, io),
   tenant: async (rest, io) => {
     await tenant(rest, io);
     return 0;
@@ -1001,6 +1019,14 @@ export async function run(argv: string[], io: Io): Promise<number> {
   try {
     if (command === undefined || command === "help" || command === "--help" || command === "-h") {
       io.out(usage());
+      return 0;
+    }
+    if (command === "--version" || command === "-v" || command === "version") {
+      io.out(`volvel ${await cliVersion()}`);
+      return 0;
+    }
+    if (Object.hasOwn(HANDLERS, command) && (rest.includes("--help") || rest.includes("-h"))) {
+      io.out(usage(command as CommandName));
       return 0;
     }
     if (!Object.hasOwn(HANDLERS, command)) {
@@ -1025,6 +1051,23 @@ export async function run(argv: string[], io: Io): Promise<number> {
       io.err((error as Error).message);
       return 2;
     }
-    throw error;
+    // Anything else is a fault of the CLI or a reply it did not expect: one line, and the trace on request.
+    const fault = error as Error;
+    io.err(
+      io.env.VOLVEL_DEBUG
+        ? (fault.stack ?? String(fault))
+        : `Unexpected: ${fault.message ?? String(fault)}. Run again with VOLVEL_DEBUG=1 for the trace.`,
+    );
+    return 1;
+  }
+}
+
+/** The version of this CLI, from the package.json beside `dist`. */
+async function cliVersion(): Promise<string> {
+  try {
+    const text = await readFile(new URL("../package.json", import.meta.url), "utf8");
+    return (JSON.parse(text) as { version?: string }).version ?? "unknown";
+  } catch {
+    return "unknown";
   }
 }

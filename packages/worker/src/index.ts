@@ -1,3 +1,4 @@
+export { buildContext } from "./context.js";
 export { WorkerHost, type WorkerHostOptions } from "./host.js";
 export {
   defaultFloorMb,

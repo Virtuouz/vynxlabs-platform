@@ -85,7 +85,7 @@ export const COMMANDS = [
     "promote",
     REPOSITORY,
     "promote --tenant <slug> --workspace <slug> [--preview] [--allow-delete <path>] [--confirm-breaking]",
-    "Activate this workspace's bundle in the workspace it is linked to. Nothing is rebuilt.",
+    "Activate this workspace's bundle in the workspace it is linked to. Nothing is rebuilt. With --preview, exits 4 when a production promotion would be refused for breaking changes without --confirm-breaking. A failed push to the release branch is a warning: the promotion stands and the exit is 0.",
   ),
 
   entry(
@@ -166,6 +166,7 @@ export const COMMAND_NOTES = [
   "build, run, dev, deploy and pull read the repository in the current directory, or --dir <path>.",
   "Create an API key in the console under your account menu.",
   "VOLVEL_URL and VOLVEL_TOKEN override the saved settings.",
+  "volvel --version prints the version. volvel <command> --help shows that command's lines.",
 ] as const;
 
 const COLUMN = 40;
@@ -185,11 +186,15 @@ function wrap(text: string, width: number): string[] {
 }
 
 /** What `volvel --help` prints. */
-export function usage(): string {
-  const out = [`Usage: ${COMMAND_NAME} <command>`];
+export function usage(only?: CommandName): string {
+  const out = [only ? `Usage: ${COMMAND_NAME} ${only}` : `Usage: ${COMMAND_NAME} <command>`];
   for (const group of COMMAND_GROUPS) {
+    const entries = COMMANDS.filter(
+      (command) => command.group === group && (only === undefined || command.command === only),
+    );
+    if (entries.length === 0) continue;
     out.push("", group);
-    for (const one of COMMANDS.filter((command) => command.group === group)) {
+    for (const one of entries) {
       const summary = wrap(one.summary.replace(/\.$/, ""), WIDTH - COLUMN);
       const head = `  ${one.usage}`;
       // A usage that fits beside its summary shares the line. A longer one takes its own.

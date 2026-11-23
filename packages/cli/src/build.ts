@@ -202,6 +202,15 @@ export async function appSources(options: BuildOptions): Promise<AppSource[]> {
 }
 
 /** Compiles a tenant repository: its manifests, its code, and its apps. */
+/** The repository's `volvel.yaml`, or a build that fails naming what is wrong in it. A build and a pull read it the same way. */
+export async function readRepositoryConfig(directory: string) {
+  const said = parseRepositoryConfig(
+    await readFile(join(resolve(directory), REPOSITORY_CONFIG), "utf8").catch(() => undefined),
+  );
+  if (said.problems.length > 0) throw new BuildError(said.problems);
+  return said.config;
+}
+
 export async function buildRepository(options: BuildOptions): Promise<Built> {
   const directory = resolve(options.directory);
   const entry = options.entry ?? "src/index.ts";
@@ -213,14 +222,11 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   // Resources written as files, by the console or by hand, wherever the repository keeps
   // them. `folder` is where the console writes, and is always read.
   const folder = options.resources ?? RESOURCE_FOLDER;
-  const said = parseRepositoryConfig(
-    await readFile(join(directory, REPOSITORY_CONFIG), "utf8").catch(() => undefined),
-  );
-  if (said.problems.length > 0) throw new BuildError(said.problems);
-  const docs = docsRoots(said.config, folder);
-  const parsed = parseRepositoryFiles(await resourceFiles(directory, said.config, docs), {
+  const config = await readRepositoryConfig(directory);
+  const docs = docsRoots(config, folder);
+  const parsed = parseRepositoryFiles(await resourceFiles(directory, config, docs), {
     folder,
-    roots: said.config.roots,
+    roots: config.roots,
     kinds: WORKSPACE_KINDS,
     docs,
   });

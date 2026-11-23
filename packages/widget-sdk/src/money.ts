@@ -1,4 +1,5 @@
 import type { ValueFormat } from "./index.js";
+import { usableLocale } from "./locale.js";
 
 /** What a column says of itself: enough to know whether it holds money. */
 export interface MoneyColumn {
@@ -34,7 +35,7 @@ export const formatOfColumn = (
 
 /** The marks a locale writes numbers with: its decimal mark and its grouping mark. */
 function marks(locale: string | undefined): { decimal: string; group: string } {
-  const parts = new Intl.NumberFormat(locale).formatToParts(1234567.5);
+  const parts = new Intl.NumberFormat(usableLocale(locale)).formatToParts(1234567.5);
   return {
     decimal: parts.find((one) => one.type === "decimal")?.value ?? ".",
     group: parts.find((one) => one.type === "group")?.value ?? ",",

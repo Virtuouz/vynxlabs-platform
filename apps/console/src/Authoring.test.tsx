@@ -118,6 +118,34 @@ test("a new script's first save and run keeps the editor, and shows the run it s
   ).toEqual([]);
 });
 
+test("a script written in the console can be given a place among the flow's steps (EXT-08)", async () => {
+  const puts: { body: { node?: unknown } }[] = [];
+  routes[`PUT ${base}/drafts/hello/greet`] = (body) => {
+    puts.push({ body: (body as { body: { node?: unknown } }).body });
+    return { ...(body as object), path: "hello/greet", revision: 1 };
+  };
+  history.replaceState(null, "", "/t/t1/workspaces/w1/scripts/new");
+  show(<AtAddress />);
+  const code = await screen.findByLabelText("Source of the new script");
+  fireEvent.change(screen.getByLabelText("Path"), { target: { value: "hello/greet" } });
+  // Nothing to choose until the script is given a name as a step.
+  expect(screen.queryByLabelText("Group")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Step name"), { target: { value: "Greet someone" } });
+  fireEvent.change(await screen.findByLabelText("Group"), { target: { value: "Greetings" } });
+  fireEvent.change(screen.getByLabelText("Icon"), { target: { value: "mail" } });
+  fireEvent.keyDown(code, { key: "s", metaKey: true });
+  await waitFor(() => expect(puts.length).toBeGreaterThan(0));
+  expect(puts.at(-1)?.body.node).toEqual({
+    label: "Greet someone",
+    category: "Greetings",
+    icon: "mail",
+  });
+  // Emptied, the script is no longer a step: the draft carries no `node`.
+  fireEvent.change(screen.getByLabelText("Step name"), { target: { value: "" } });
+  fireEvent.keyDown(code, { key: "s", metaKey: true });
+  await waitFor(() => expect(puts.at(-1)?.body.node).toBeUndefined());
+});
+
 test("only a first save keeps the editor: any other address opens a new one", () => {
   const at = (from: string, to: string) => nextEditorKey({ at: from, key: from }, to);
   expect(at("scripts/new", "scripts/edit/hello/greet")).toBe("scripts/new");

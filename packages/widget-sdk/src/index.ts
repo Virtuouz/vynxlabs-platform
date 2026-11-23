@@ -15,6 +15,8 @@
  * contract growing, for every widget.
  */
 
+import { usableLocale } from "./locale.js";
+
 /** Where a widget is offered. A dashboard only reads. */
 export const SURFACES = ["app", "dashboard"] as const;
 export type Surface = (typeof SURFACES)[number];
@@ -223,7 +225,11 @@ export interface WidgetDefinition {
   /** One line, said in "Add to page": "A trend or a comparison". */
   description: string;
   category: Category;
-  /** The name of an icon from the kit's set. */
+  /**
+   * The name of an icon from the kit's set: the names of the platform's widgets, the page icons
+   * (`PAGE_ICONS` in `@volvel/ui`) and `globe`, `radio` and `table-2`. The builder draws any
+   * other name as a puzzle piece.
+   */
   icon: string;
   surfaces: readonly Surface[];
   data: Readonly<Record<string, DataInputDeclaration>>;
@@ -658,8 +664,17 @@ export function numberOf(value: unknown): number | undefined {
   return undefined;
 }
 
-/** `12.5%`, `$1,234.56`, `1,204`, in US English. Undefined for a value that is not a number. */
-export function formatValue(value: unknown, format: ValueFormat | undefined): string | undefined {
+/**
+ * `12.5%`, `$1,234.56`, `1,204`, as the reader's locale writes them (US English where it is
+ * not known): `1.234,56 €` in German. Undefined for a value that is not a number.
+ * `locale` is the reader's, the browser's when left out.
+ */
+export function formatValue(
+  value: unknown,
+  format: ValueFormat | undefined,
+  locale?: string,
+): string | undefined {
+  const where = usableLocale(locale);
   const found = numberOf(value);
   if (found === undefined) return undefined;
   const scaled = format?.minorUnits ? found / 100 : found;
@@ -680,18 +695,22 @@ export function formatValue(value: unknown, format: ValueFormat | undefined): st
   }
   try {
     // The boards write a short number in lower case: $43.1k.
-    return new Intl.NumberFormat("en-US", options)
-      .format(scaled)
-      .replace(/(\d)([KMBT])$/, (_, digit: string, unit: string) => digit + unit.toLowerCase());
+    const written = new Intl.NumberFormat(where, options).format(scaled);
+    return where.startsWith("en")
+      ? written.replace(
+          /(\d)([KMBT])$/,
+          (_, digit: string, unit: string) => digit + unit.toLowerCase(),
+        )
+      : written;
   } catch {
     // A currency code the runtime does not know: the number, and the code after it.
-    return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(scaled)} ${format?.currency ?? ""}`.trim();
+    return `${new Intl.NumberFormat(where, { maximumFractionDigits: 2 }).format(scaled)} ${format?.currency ?? ""}`.trim();
   }
 }
 
 /** A number as a person reads it; anything else as it is, and nothing as a dash. */
-export function formatNumber(value: unknown, format?: ValueFormat): string {
-  const written = formatValue(value, format);
+export function formatNumber(value: unknown, format?: ValueFormat, locale?: string): string {
+  const written = formatValue(value, format, locale);
   if (written !== undefined) return written;
   return value === null || value === undefined ? "—" : String(value);
 }
@@ -740,4 +759,5 @@ export interface WidgetPack<View = unknown> {
   views: Readonly<Record<string, View>>;
 }
 
+export { readerLocale } from "./locale.js";
 export * from "./money.js";

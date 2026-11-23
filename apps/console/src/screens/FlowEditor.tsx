@@ -64,6 +64,7 @@ import { retryAfter } from "../kit/retry.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
 import { navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
+import { outlineIcon } from "./builder/widgetIcons.ts";
 import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
 import {
   FormDesigner,
@@ -90,6 +91,12 @@ interface FlowBody {
   layout?: Record<string, { x: number; y: number }>;
 }
 type CanvasNode = Node<{ id: string; node: FlowNode }>;
+
+/** A step's icon in the palette, from the kit's set; a name the set lacks is a puzzle piece. */
+function PaletteIcon({ name }: { name: string }) {
+  const Icon = outlineIcon(name);
+  return <Icon size={14} aria-hidden className="shrink-0 text-ink-muted" />;
+}
 
 const OTHERWISE = "otherwise";
 const NODE_ID = /^[a-z][a-z0-9_]*$/;
@@ -699,7 +706,7 @@ export function FlowEditor({
       path: string;
       description: string;
       inputSchema: PickableNode["input"];
-      node: { label: string; category?: string; takes?: string[] } | null;
+      node: { label: string; icon?: string; category?: string; takes?: string[] } | null;
     }[];
   }>(`${root}/scripts`);
   const core = useLoad<{ items: PickableNode[] }>("/core-nodes");
@@ -762,6 +769,7 @@ export function FlowEditor({
         .map((one) => ({
           path: one.path,
           label: one.node?.label ?? one.path,
+          ...(one.node?.icon ? { icon: one.node.icon } : {}),
           category: one.node?.category ?? (one.node ? "This workspace's" : "Scripts"),
           description: one.description,
           takes: one.node?.takes ?? [],
@@ -1534,7 +1542,10 @@ export function FlowEditor({
                             setAdding(false);
                           }}
                         >
-                          <span>{one.label}</span>
+                          <span className="flex items-center gap-1.5">
+                            {one.icon ? <PaletteIcon name={one.icon} /> : null}
+                            {one.label}
+                          </span>
                           {one.description ? (
                             <span className="truncate text-meta text-ink-subtle">
                               {one.description}

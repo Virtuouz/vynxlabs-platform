@@ -43,6 +43,9 @@ const EXPORT_SHAPE: Record<string, string> = {
   trigger_source: "execute",
 };
 
+/** Where a connector's own `test` is kept beside its `create` while the section is built. */
+const testKey = (entry: string) => `${entry}:test`;
+
 /** The kinds whose console-managed manifests carry source. */
 export const SOURCE_KINDS: readonly string[] = Object.keys(EXPORT_SHAPE);
 
@@ -144,7 +147,11 @@ function lockdown(sources: Source[], sdkEntry: string): Plugin {
       .map(
         (source, index) =>
           `import s${index}, * as m${index} from ${JSON.stringify(`vx-source:${source.file}`)};\n` +
-          `exports[${JSON.stringify(source.entry)}] = s${index};`,
+          `exports[${JSON.stringify(source.entry)}] = s${index};` +
+          // A connector may also export `test`: what its connections' Test button runs.
+          (source.kind === "connector"
+            ? `\nexports[${JSON.stringify(testKey(source.entry))}] = typeof m${index}.test === "function" ? m${index}.test : undefined;`
+            : ""),
       )
       .join("\n") + (scripts.length > 0 ? `\n${describer(sources)}` : "");
   // Files the SDK itself is made of, found by following its own imports.
@@ -275,7 +282,11 @@ export async function composeWithSources(
     sources
       .map(
         (source) =>
-          `export const ${source.entry} = { ${EXPORT_SHAPE[source.kind]}: __vx_console[${JSON.stringify(source.entry)}] };\n`,
+          `export const ${source.entry} = { ${EXPORT_SHAPE[source.kind]}: __vx_console[${JSON.stringify(source.entry)}]${
+            source.kind === "connector"
+              ? `, ...(__vx_console[${JSON.stringify(testKey(source.entry))}] ? { test: __vx_console[${JSON.stringify(testKey(source.entry))}] } : {})`
+              : ""
+          } };\n`,
       )
       .join("") +
     (sources.some((source) => source.kind === "script")

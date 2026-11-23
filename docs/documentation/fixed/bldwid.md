@@ -36,7 +36,7 @@ Commits are named by the row in their subject: `git log --grep "(BLD-02"`. No mi
 - **Test:** `packages/screens/src/navigation.test.tsx` > "the Help topic of what is open". **Changed:** `helpingPage` in `AppView.tsx`, used by `runtime/main.tsx`. The runtime entry itself is not rendered by a test.
 
 ## WID-08 Axis titles
-- **Tests:** `widgetOptions.test.tsx`, `inspector.test.tsx`. **Changed:** `xTitle`, `yTitle` in the chart's config (`chartSpec.ts`, schema, drawer rows); `x`, `y` stay the columns. Left: a control for choosing the x and y columns (WID-M6).
+- **Tests:** `widgetOptions.test.tsx`, `inspector.test.tsx`. **Changed:** `xTitle`, `yTitle` in the chart's config (`chartSpec.ts`, schema, drawn by their hints, shown when axis titles are on, in place of the drawer's own rows that wrote the columns); `x`, `y` stay the columns. Left: a control for choosing the x and y columns (WID-M6).
 
 ## WID-10 Several-choice and file fields
 - **Tests:** `core-actions.test.tsx` (ticks, no editor for a file), `form.test.tsx` (a list control, not a text box). **Changed:** `detail.tsx` (checkbox list with Save and Cancel; `file` not edited here), `form.tsx` (`enum_list` is a list control).
@@ -80,5 +80,6 @@ Commits are named by the row in their subject: `git log --grep "(BLD-02"`. No mi
 - **Test:** `actionModel.test.ts` ("typed by its schema"). `inputType` maps the schema's property type; the helper is tested, the drawer row is not rendered by a test.
 
 ## Found
+- `src/help/Help.test.tsx` > "/t/acme/workspaces/dev/dashboards/sales has the help data-dashboards-editor" fails on the merged tree: not this lane's (DAT-31 changed the dashboards' help topic).
 - Form draws a file column as a text box (WID-10).
 - `useCatalog` and `useGroupKeys` swallow their errors (BLD-03).

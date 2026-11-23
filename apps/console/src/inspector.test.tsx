@@ -203,9 +203,9 @@ test("an axis title is written as a title, never as the column the axis draws (W
     />,
   );
   fireEvent.click(tabByName("Display"));
-  fireEvent.click(screen.getByRole("button", { name: /^Along the bottom/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Title along the bottom/ }));
   const editor = await screen.findByRole("dialog");
-  fireEvent.change(within(editor).getByLabelText("Along the bottom"), {
+  fireEvent.change(within(editor).getByLabelText("Title along the bottom"), {
     target: { value: "By clinic" },
   });
   const config = (written.at(-1) as PageWidget).config;

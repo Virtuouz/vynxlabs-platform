@@ -10,7 +10,6 @@ import {
   DrawerGroup,
   DrawerRow,
   SegmentedControl,
-  TextField,
   type TileOption,
   TilePicker,
   ToggleRow,
@@ -490,39 +489,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
             }
           />
         )}
-        {mark !== "pie" && config.axisTitles !== false
-          ? (["x", "y"] as const).map((axis) => {
-              const titleKey = axis === "x" ? "xTitle" : "yTitle";
-              return (
-                <DrawerRow
-                  key={axis}
-                  label={axis === "x" ? "Along the bottom" : "Up the side"}
-                  value={
-                    typeof config[titleKey] === "string" && config[titleKey] !== "" ? (
-                      (config[titleKey] as string)
-                    ) : (
-                      <span className="text-ink-muted">Named from the data</span>
-                    )
-                  }
-                  editorTitle={axis === "x" ? "Title along the bottom" : "Title up the side"}
-                  editor={
-                    <TextField
-                      name={`${env.widget.id}-axis-${axis}`}
-                      label={axis === "x" ? "Along the bottom" : "Up the side"}
-                      required={false}
-                      maxLength={60}
-                      value={
-                        typeof config[titleKey] === "string" ? (config[titleKey] as string) : ""
-                      }
-                      onChange={(text) =>
-                        set(titleKey, text === "" ? undefined : text, "changing an axis title")
-                      }
-                    />
-                  }
-                />
-              );
-            })
-          : null}
+
         {mark === "pie" ||
         mark === "heatmap" ||
         groups.length > 1 ||

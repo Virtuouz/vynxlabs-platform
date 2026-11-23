@@ -79,7 +79,7 @@ export const COMMANDS = [
     "deploy",
     REPOSITORY,
     "deploy --tenant <slug> --workspace <slug> [--allow-delete <path>]",
-    "Build, upload and activate the bundle.",
+    "Build, upload and activate the bundle. Stops before uploading when it would delete console resources the repository has no file for, unless --allow-delete names each.",
   ),
   entry(
     "promote",

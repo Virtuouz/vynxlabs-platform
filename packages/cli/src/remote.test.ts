@@ -350,4 +350,33 @@ describe("pulling the console's resources", () => {
     expect(removed.out).toContain("removed  platform/notes/hello.flow.yaml");
     await expect(readFile(file, "utf8")).rejects.toThrow();
   }, 120_000);
+
+  test("a deploy that would delete console resources says so and changes nothing, until each is allowed (CLI-13)", async () => {
+    const flow = {
+      kind: "flow",
+      schemaVersion: 1,
+      body: {
+        nodes: { start: { type: "trigger", trigger: { type: "manual" } } },
+        edges: [],
+      },
+    };
+    await alice.put(`${base}/drafts/notes/keep`, flow);
+    await alice.put(`${base}/drafts/notes/stay`, flow);
+    expect((await cli(["pull", ...target, "--dir", repo])).code).toBe(0);
+    expect((await cli(["deploy", ...target, "--dir", repo])).code).toBe(0);
+    const bundles = async () => (await alice.get(`${base}/bundles`)).body.items.length;
+    const before = await bundles();
+
+    // The file is gone here by hand, and the console's resource is deployed.
+    await rm(join(folder(), "notes/keep.flow.yaml"));
+    const refused = await cli(["deploy", ...target, "--dir", repo]);
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("would delete 1 resource made in the console");
+    expect(refused.err).toContain("  - notes/keep");
+    expect(await bundles()).toBe(before);
+    expect((await alice.get(`${base}/resources/notes/keep`)).status).toBe(200);
+
+    const allowed = await cli(["deploy", ...target, "--dir", repo, "--allow-delete", "notes/keep"]);
+    expect(allowed.code, allowed.err).toBe(0);
+  }, 120_000);
 });

@@ -66,6 +66,9 @@ export interface DraftInput {
   create?: boolean | undefined;
 }
 
+const PRODUCTION_REFUSAL =
+  "Resources are edited in a dev workspace and reach production by promotion.";
+
 /** Drafts are for dev workspaces: production changes by deploy and promotion only. */
 async function devWorkspace(db: Db | Trx, workspace: WorkspaceRef) {
   const row = await db
@@ -74,13 +77,51 @@ async function devWorkspace(db: Db | Trx, workspace: WorkspaceRef) {
     .where("id", "=", workspace.id)
     .executeTakeFirstOrThrow();
   if (row.type !== "dev") {
+    throw new HttpError(409, "production_workspace", PRODUCTION_REFUSAL);
+  }
+  return row;
+}
+
+/**
+ * The guard for a direct write to a resource (`PUT` and `DELETE` on a path). A production
+ * workspace changes by a deploy or a promotion, which write through the kernel and not through
+ * this. A code-managed resource is kept in the repository, so no one writes or deletes it
+ * directly, nor makes one. A console-managed one may be written directly by a person whose role
+ * may promote to the workspace (`mayDeploy`, from `promotion:write`). The same rule as
+ * `devWorkspace`, so they answer alike.
+ */
+export async function refuseDirectProductionWrite(
+  db: Db | Trx,
+  workspace: WorkspaceRef,
+  write: {
+    mayDeploy: () => Promise<boolean>;
+    /** The paths the write touches: where it puts the resource, and where it moves it from. */
+    paths: string[];
+    /** The ownership the write gives. None for a delete. */
+    ownership?: "code" | "ui" | undefined;
+  },
+) {
+  const row = await db
+    .selectFrom("workspace")
+    .select("type")
+    .where("id", "=", workspace.id)
+    .executeTakeFirstOrThrow();
+  if (row.type === "dev") return;
+  const held = await db
+    .selectFrom("resource")
+    .select("ownership")
+    .where("workspace_id", "=", workspace.id)
+    .where("path", "in", write.paths)
+    .execute();
+  if (write.ownership === "code" || held.some((one) => one.ownership === "code")) {
     throw new HttpError(
       409,
       "production_workspace",
-      "Resources are edited in a dev workspace and reach production by promotion.",
+      "A code-managed resource is kept in the repository and changes in production by a deploy.",
     );
   }
-  return row;
+  if (!(await write.mayDeploy()))
+    throw new HttpError(409, "production_workspace", PRODUCTION_REFUSAL);
 }
 
 /** The bundle a workspace is running, or nothing for a workspace never deployed to. */

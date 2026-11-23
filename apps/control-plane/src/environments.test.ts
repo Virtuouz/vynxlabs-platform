@@ -1073,3 +1073,66 @@ describe("deleting a production workspace", () => {
     expect(entry.details).toMatchObject({ slug: "retired-prod", type: "production" });
   });
 });
+
+describe("a direct write to a production workspace's resources", () => {
+  const resourceBody = {
+    kind: "variable",
+    schemaVersion: 1,
+    ownership: "ui",
+    body: { default: "1" },
+  };
+
+  test("is refused for a member who may not promote, and allowed for one who may (REL-01)", async () => {
+    const roles = Object.fromEntries(
+      (
+        await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
+      ).map((role) => [role.name, role.id]),
+    );
+    const dev1 = await alice.post(`/tenants/${tenant}/members`, {
+      email: "rel01@acme.example",
+      name: "Rel",
+      password: PASSWORD,
+    });
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: prod,
+      principalType: "member",
+      principalId: dev1.body.id,
+      roleId: roles.developer,
+    });
+    const developer = await t.signIn("rel01@acme.example", PASSWORD);
+    const url = `${ws(prod)}/resources/direct-write`;
+
+    // The developer may write resources in production by role, yet production is not theirs.
+    const refused = await developer.put(url, resourceBody);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("production_workspace");
+    expect((await alice.get(url)).status).toBe(404);
+
+    // Someone who may promote there may still write, and delete, directly.
+    expect((await alice.put(url, resourceBody)).status).toBe(201);
+    expect((await developer.delete(url)).status).toBe(409);
+    expect((await alice.get(url)).status).toBe(200);
+    expect((await alice.delete(url)).status).toBe(204);
+  });
+
+  test("a code-managed resource there is changed by a deploy only, by anyone (REL-01)", async () => {
+    // Put there by a deploy, as a promotion does.
+    const code = bundle([manifest("variable", "from-code", { default: "1" })]);
+    expect((await deploy(alice, prod, code)).status).toBe(201);
+    const url = `${ws(prod)}/resources/from-code`;
+    expect((await alice.get(url)).body.ownership).toBe("code");
+    const refusals = [
+      await alice.put(url, { ...resourceBody, ownership: "code", body: { default: "2" } }),
+      await alice.put(url, resourceBody), // takes over a code path
+      await alice.put(`${ws(prod)}/resources/new-code`, { ...resourceBody, ownership: "code" }),
+      await alice.delete(url),
+    ];
+    for (const refused of refusals) {
+      expect(refused.status).toBe(409);
+      expect(refused.body.code).toBe("production_workspace");
+      expect(refused.body.detail).toContain("by a deploy");
+    }
+    expect((await alice.get(url)).body.ownership).toBe("code");
+    expect((await alice.get(`${ws(prod)}/resources/new-code`)).status).toBe(404);
+  });
+});

@@ -179,6 +179,15 @@ test("one who may not promote is offered to ask, with a note, and may withdraw w
   );
 });
 
+test("a pending request someone else made says who, has no withdraw button, and may be asked again (REL-03)", async () => {
+  preview.request = request({ mine: false, mayDecide: false });
+  promoteStep();
+  expect(await screen.findByText("Waiting")).toBeTruthy();
+  expect(screen.getByText(/by Dave/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Withdraw the request" })).toBeNull();
+  expect(screen.getByRole("button", { name: /Request promotion of v12/ })).toBeTruthy();
+});
+
 test("a declined request says who declined it and why; a promoter promotes as before", async () => {
   preview.request = request({
     status: "declined",

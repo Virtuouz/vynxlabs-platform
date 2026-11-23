@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startTestApp, type TestApp } from "@volvel/control-plane/testing";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { run, settingsPath } from "./cli.js";
+import { consoleResourcesLeft, run, settingsPath } from "./cli.js";
 
 let t: TestApp;
 let url: string;
@@ -77,4 +77,53 @@ test("help and unknown commands", async () => {
     code: 2,
     err: expect.stringContaining('Unknown command "explode"'),
   });
+});
+
+test("a saved key is sent only to the instance it was saved for (CLI-01)", async () => {
+  await cli(["login", "--url", url, "--token", token]);
+  const { createServer } = await import("node:http");
+  const seen: (string | undefined)[] = [];
+  const other = createServer((request, response) => {
+    seen.push(request.headers.authorization);
+    response.end(
+      JSON.stringify({ principal: { type: "member", name: "x", email: "x@y.test" }, tenants: [] }),
+    );
+  });
+  await new Promise<void>((done) => other.listen(0, "127.0.0.1", done));
+  const port = (other.address() as { port: number }).port;
+  try {
+    const elsewhere = `http://127.0.0.1:${port}`;
+    const refused = await cli(["whoami"], { VOLVEL_URL: elsewhere });
+    expect(refused.code).toBe(1);
+    expect(refused.err).toContain("VOLVEL_TOKEN");
+    expect(seen).toEqual([]);
+    // With its own key it goes there; the same instance with a trailing slash is the same.
+    await cli(["whoami"], { VOLVEL_URL: elsewhere, VOLVEL_TOKEN: "other-key" });
+    expect(seen).toEqual(["Bearer other-key"]);
+    expect((await cli(["whoami"], { VOLVEL_URL: `${url}/` })).code).toBe(0);
+  } finally {
+    await new Promise((done) => other.close(done));
+  }
+});
+
+test("login warns about a plain http address that is not this machine", async () => {
+  const result = await cli(["login", "--url", "http://203.0.113.9", "--token", "k"]);
+  expect(result.err).toContain("plain http");
+});
+
+test("a deploy names the console resources it would delete before it uploads (CLI-13)", () => {
+  const deployed = {
+    files: [{ path: "orders/size.variable.yaml" }, { path: "docs/guide/intro.md" }],
+    elsewhere: [{ resource: "lending/limit" }],
+  };
+  expect(consoleResourcesLeft(deployed, ["orders/size"], [])).toEqual([
+    "guide/intro",
+    "lending/limit",
+  ]);
+  expect(consoleResourcesLeft(deployed, ["orders/size"], ["guide/intro", "lending/limit"])).toEqual(
+    [],
+  );
+  expect(
+    consoleResourcesLeft(deployed, ["orders/size", "guide/intro", "lending/limit"], []),
+  ).toEqual([]);
 });

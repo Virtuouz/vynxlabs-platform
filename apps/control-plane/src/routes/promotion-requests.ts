@@ -63,6 +63,31 @@ export const PromotionRequest = Type.Object({
   mine: Type.Boolean(),
 });
 
+/**
+ * The requests this caller may see: their own, and any for a workspace where they may decide.
+ * The list and the promotion preview both show requests, so both ask here (a request holds
+ * the requester's private note).
+ */
+export async function visibleRequests(ctx: RequestContext, rows: Row[]) {
+  const decides = new Map<string, boolean>();
+  const visible: Row[] = [];
+  for (const row of rows) {
+    const mine =
+      row.requested_by_type === ctx.principal.type && row.requested_by_id === ctx.principal.id;
+    if (!decides.has(row.target_workspace_id)) {
+      decides.set(
+        row.target_workspace_id,
+        await ctx.allowed("promotion:write", {
+          tenantId: row.tenant_id,
+          workspaceId: row.target_workspace_id,
+        }),
+      );
+    }
+    if (mine || decides.get(row.target_workspace_id)) visible.push(row);
+  }
+  return visible;
+}
+
 /** Requests as the API shows them, with names for the people and places. */
 export async function describeRequests(kernel: Kernel, ctx: RequestContext, rows: Row[]) {
   const { db } = kernel;
@@ -284,23 +309,7 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
         if (query.status) rows = rows.where("status", "=", query.status);
         if (query.workspaceId) rows = rows.where("source_workspace_id", "=", query.workspaceId);
         const all = await rows.orderBy("created_at", "desc").limit(200).execute();
-        const visible: Row[] = [];
-        const decides = new Map<string, boolean>();
-        for (const row of all) {
-          const mine =
-            row.requested_by_type === ctx.principal.type &&
-            row.requested_by_id === ctx.principal.id;
-          if (!decides.has(row.target_workspace_id)) {
-            decides.set(
-              row.target_workspace_id,
-              await ctx.allowed("promotion:write", {
-                tenantId: params.t,
-                workspaceId: row.target_workspace_id,
-              }),
-            );
-          }
-          if (mine || decides.get(row.target_workspace_id)) visible.push(row);
-        }
+        const visible = await visibleRequests(ctx, all);
         // Someone with no standing in the tenant is told it is not there.
         if (visible.length === 0) await ctx.authorize("deployment:read", { tenantId: params.t });
         return { items: await describeRequests(kernel, ctx, visible) };

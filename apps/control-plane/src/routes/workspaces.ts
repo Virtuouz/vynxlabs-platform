@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@volvel/db";
 import { PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
+import { refuseDirectProductionWrite } from "../kernel/authoring.js";
 import { check } from "../kernel/authorize.js";
 import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
@@ -628,6 +629,15 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body: { create, version, ...body } }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
+        await refuseDirectProductionWrite(db, workspace, {
+          mayDeploy: () =>
+            ctx.allowed("promotion:write", {
+              tenantId: workspace.tenantId,
+              workspaceId: workspace.id,
+            }),
+          paths: [path, ...(body.renameFrom ? [body.renameFrom] : [])],
+          ownership: body.ownership,
+        });
         await requireStanding(kernel, ctx, workspace, [{ kind: body.kind, path, body: body.body }]);
         const result = await ctx.mutate(async (trx, audit) => {
           if (create) {
@@ -769,6 +779,14 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
+        await refuseDirectProductionWrite(db, workspace, {
+          mayDeploy: () =>
+            ctx.allowed("promotion:write", {
+              tenantId: workspace.tenantId,
+              workspaceId: workspace.id,
+            }),
+          paths: [path],
+        });
         await ctx.mutate((trx, audit) => deleteResource(trx, audit, workspace, path, kernel.hooks));
         return reply.code(204).send(null);
       },

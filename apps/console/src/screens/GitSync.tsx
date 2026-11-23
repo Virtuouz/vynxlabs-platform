@@ -237,7 +237,7 @@ export function GitSync({ root, link }: { root: string; link: string }) {
                           ? "Drafts from the console"
                           : commitMessage,
                     }),
-                  "Committed what is deployed and what is drafted, for a developer to pick up.",
+                  "Committed what is deployed and what is drafted, for a developer to pick up. A plain push leaves these files on the branch while their drafts are saved.",
                 )
               }
             >

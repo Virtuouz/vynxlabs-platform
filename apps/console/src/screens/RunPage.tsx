@@ -211,11 +211,26 @@ function RunHeader({
  */
 function EditInDev({ root, path, runId }: { root: string; path: string; runId: string }) {
   const dev = useDevWorkspace(root);
+  // Editing happens in the dev workspace, so that is where it is asked (a grant here is not one there).
+  const may = useNeeds(
+    dev
+      ? {
+          base: `${root.split("/workspaces/")[0]}/workspaces/${dev.id}`,
+          permission: "resource:write",
+          what: "this script",
+        }
+      : undefined,
+  );
   if (!dev) return null;
   const here = root.split("/workspaces/")[1] as string;
   const to = `${dev.link}/scripts/edit/${path}?fromRun=${encodeURIComponent(`${here}:${runId}`)}`;
   return (
-    <Button size="small" onClick={() => navigate(to)}>
+    <Button
+      size="small"
+      disabled={!may.can}
+      {...(may.reason ? { tooltip: may.reason } : {})}
+      onClick={() => navigate(to)}
+    >
       {dev.here ? "Edit with this input" : `Edit in ${dev.name}`}
     </Button>
   );

@@ -77,14 +77,14 @@ function matchPrincipal(principal: Principal) {
 
 /**
  * Whether `principal` is bound to anything in a workspace by itself: a script or
- * a flow there, but not the workspace. Such a binding lets an agent reach that
+ * a flow there, but not the workspace. With no workspace: anywhere in the tenant. Such a binding lets an agent reach that
  * workspace's MCP server for the tools it was given, without reading the rest.
  */
 export async function boundInside(
   db: Db | Trx,
   principal: Principal,
   tenantId: string,
-  workspaceId: string,
+  workspaceId?: string,
 ): Promise<boolean> {
   if (principal.type !== "member" && principal.type !== "service_account") return false;
   if (principal.type === "service_account" && principal.tenantId !== tenantId) return false;
@@ -92,7 +92,8 @@ export async function boundInside(
   const found = await sql`
     select 1 from binding b
     join resource r on r.id = b.resource_id
-    where b.scope_type = 'resource' and b.tenant_id = ${tenantId} and r.workspace_id = ${workspaceId}
+    where b.scope_type = 'resource' and b.tenant_id = ${tenantId}
+      and ${workspaceId === undefined ? sql`true` : sql`r.workspace_id = ${workspaceId}`}
       and b.principal_type <> 'anonymous' and ${matchPrincipal(principal)}
       and not exists (
         select 1 from tenant_member m

@@ -10,7 +10,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
-import { Can } from "../kit/Can.tsx";
+import { Can, useNeeds } from "../kit/Can.tsx";
 import { count } from "../kit/format.ts";
 import { ListCollection } from "../kit/ListCollection.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
@@ -370,16 +370,27 @@ export function WorkspaceAccess({
 }) {
   const held = useLoad<{ items: HeldHere[] }>(`${base}/bindings?workspaceId=${workspace.id}`);
   const [giving, setGiving] = useState(false);
+  const may = useNeeds({
+    base: `${base}/workspaces/${workspace.id}`,
+    permission: "binding:write",
+    what: "who holds a role here",
+  });
   return (
     <section aria-labelledby="workspace-access" className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 id="workspace-access" className="m-0 text-title">
           Access
         </h2>
-        <Button size="small" onClick={() => setGiving(true)}>
+        <Button
+          size="small"
+          disabled={!may.can}
+          {...(may.reason ? { tooltip: may.reason } : {})}
+          onClick={() => setGiving(true)}
+        >
           Give access
         </Button>
       </div>
+      {may.line}
       <Panel className="flex flex-col gap-2 p-4">
         <p className="m-0 text-ink-muted">
           Who holds a role in {workspace.name}. Access given to the whole tenant applies here too
@@ -411,6 +422,7 @@ export function WorkspaceAccess({
                     confirm={`Remove the ${one.roleName} role from ${one.principalLabel} in ${workspace.name}?`}
                     run={() => api.delete(`${base}/bindings/${one.id}`)}
                     onDone={held.reload}
+                    disabled={may.reason}
                   />
                 )}
               </li>

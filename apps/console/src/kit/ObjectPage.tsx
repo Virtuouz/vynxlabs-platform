@@ -15,6 +15,7 @@ export function ObjectPage({
   state,
   actions,
   meta,
+  line,
   tabs,
 }: {
   /** Where it is listed. The shell's breadcrumb leads back there now; kept for callers. */
@@ -25,6 +26,8 @@ export function ObjectPage({
   state?: ReactNode;
   actions?: ReactNode;
   meta?: ReactNode;
+  /** What this member may not do here and what it takes: the lines of `useNeeds`, shown under the head. */
+  line?: ReactNode;
   tabs: { id: string; label: string; content: ReactNode }[];
 }) {
   useTitleObject(title);
@@ -41,6 +44,7 @@ export function ObjectPage({
           after={meta}
         />
       </div>
+      {line}
       <Tabs
         label={`About ${title}`}
         value={tabs.some((one) => one.id === tab) ? tab : (tabs[0]?.id ?? "")}

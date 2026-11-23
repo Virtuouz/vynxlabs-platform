@@ -1007,6 +1007,7 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
   const [giving, setGiving] = useState(false);
   const may = useNeeds({ base, permission: "service_account:write", what: "this service account" });
   const [accessVersion, setAccessVersion] = useState(0);
+  const mayGive = useNeeds({ base, permission: "binding:write", what: "this account's access" });
   if (accounts.error) return <ErrorState error={accounts.error} onRetry={accounts.reload} />;
   if (!accounts.data) return <Loading />;
   if (!account) {
@@ -1091,10 +1092,16 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
                   <p className="m-0 text-ink-muted">
                     Everything this account may do in the tenant, where, and what gives it.
                   </p>
-                  <Button variant="primary" onClick={() => setGiving(true)}>
+                  <Button
+                    variant="primary"
+                    disabled={!mayGive.can}
+                    {...(mayGive.reason ? { tooltip: mayGive.reason } : {})}
+                    onClick={() => setGiving(true)}
+                  >
                     Give access
                   </Button>
                 </div>
+                {mayGive.line}
                 <EffectiveAccess
                   key={accessVersion}
                   base={base}

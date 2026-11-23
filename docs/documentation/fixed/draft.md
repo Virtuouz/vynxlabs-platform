@@ -74,3 +74,11 @@ Screens: App Builder list and builder, script editor, flow editor, a setting edi
 - `docs-apps.test.ts` "is refused when a page takes one of the product's own terms" fails on this branch independent of drafts.
 - A removal draft is saved with `body: {}`, so the draft endpoints and history hold no copy of the removed code; editors read the deployed resource for display.
 - Process: one `git stash`/`pop` was used early in the lane and popped another lane's stash (see report).
+
+## Second pass
+
+- FLW-09 editor half: `problemsAt` (`screens/FlowEditor.tsx`) now says an empty approval title, Fail message, branch condition, set value and For each items, each with its step. The shared form of a schema refusal: `packages/manifest/src/registry.ts` `ofTheNamedShape` keeps, for a `oneOf`/`anyOf`, only the errors of the shape the `const` discriminator names (a step's `type`), so a flow step refuses with one line naming the field, not the list of every shape. The draft itself saves with the unfinished step (server, first pass). Tests: `FlowEditor.test.tsx` "a field a step needs, left empty"; `RemoveDraft.test.tsx` "a step added with nothing chosen is saved with the rest"; `authoring.test.ts` deploy refusal is one error.
+- Flow canvas is read only for a removal draft: not draggable, not connectable, no delete key, Add step and Tidy up off, the step panel a disabled fieldset. Test: `RemoveDraft.test.tsx` "a flow drafted for removal is shown as deployed and cannot be changed".
+- `e2e/*.ts`: the 34 helpers (`call`/`ok`/`apiOf`) that PUT to `drafts/` now read the draft first and send its `revision` when the body names neither `revision` nor `create`. `examples/fernhill/setup/setup.mjs` already uses `create: true`; `scripts/` has no draft saves. Not run.
+- DAT-08 screen test rewritten to type into the editor, discard, and see the deployed text and a save with no revision.
+- Old-code check: the source files of this lane were put back to 8d4fa3e in my own worktree (no scratch worktree, which needs its own node_modules) and the new tests run: 13 failed, among them all the above except the FlowEditor.test.tsx and the new DAT-08 assertions, which were added after and fail by construction (new messages; deployed text). Files put back afterwards.

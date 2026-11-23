@@ -378,6 +378,13 @@ describe("where it is used", () => {
     fireEvent.click(await screen.findByText("Run a script"));
     const list = await screen.findByRole("list", { name: "To fix" });
     expect(list.textContent).toContain("has no script chosen");
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.click(await screen.findByText("For each"));
+    await waitFor(() =>
+      expect(screen.getByRole("list", { name: "To fix" }).textContent).toContain(
+        "needs a script or a flow to run for each item",
+      ),
+    );
     // The draft is saved with the unfinished step in it: nothing is held back.
     await waitFor(() => expect(sent("PUT")).toHaveLength(1), { timeout: 8000 });
     const saved = (sent("PUT")[0]?.body as { body: { nodes: Record<string, { type: string }> } })

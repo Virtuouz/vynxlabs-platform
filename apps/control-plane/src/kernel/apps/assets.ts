@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Bundle, BundleAsset } from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, HttpError } from "../errors.js";
+import { loadBundle } from "../execution/bundles.js";
 import type { Kernel } from "../kernel.js";
 
 /** The largest single file of an app. */
@@ -68,6 +69,21 @@ export async function missingAssets(
   return assets.filter((asset) => have.get(asset.sha256) !== asset.size);
 }
 
+/** A bundle naming files that were stored a while ago makes them young again, so they are not swept under it. */
+export async function touchAssets(db: Db | Trx, tenantId: string, assets: BundleAsset[]) {
+  const wanted = [...new Set(assets.map((asset) => asset.sha256))];
+  const stale = new Date(Date.now() - 86_400_000);
+  for (let from = 0; from < wanted.length; from += 500) {
+    await db
+      .updateTable("bundle_asset")
+      .set({ created_at: new Date() })
+      .where("tenant_id", "=", tenantId)
+      .where("sha256", "in", wanted.slice(from, from + 500))
+      .where("created_at", "<", stale)
+      .execute();
+  }
+}
+
 // App files never change once stored, so recently served ones are kept in memory.
 const CACHE_BYTES = 64 * 1024 * 1024;
 const cached = new Map<string, Buffer>();
@@ -103,4 +119,86 @@ export function appFiles(bundle: Bundle, appPath: string): Map<string, BundleAss
       .filter((asset) => asset.app === appPath)
       .map((asset) => [asset.path, asset]),
   );
+}
+
+/** A file nothing names is kept this long, and so is a bundle that names it: time to deploy it. */
+export const APP_FILE_GRACE_DAYS = 7;
+const SWEEP_BATCH = 500;
+/** Tenants that deployed since the last sweep. */
+const due = new Set<string>();
+
+/** Notes that a tenant deployed, so that the files its apps no longer name are looked at. */
+export function appFilesDue(tenantId: string) {
+  due.add(tenantId);
+}
+
+/**
+ * Removes the files of a tenant's apps that no bundle that can still be deployed names: the
+ * active bundle of each workspace, and every bundle of the last `APP_FILE_GRACE_DAYS` days.
+ * A file uploaded or named by an uploaded bundle within those days is kept too, since a build
+ * uploads its files before its bundle. Returns how many files went.
+ */
+export async function sweepAppFiles(kernel: Kernel, tenantId: string): Promise<number> {
+  const before = new Date(Date.now() - APP_FILE_GRACE_DAYS * 86_400_000);
+  const stale = await kernel.db
+    .selectFrom("bundle_asset")
+    .select(["sha256", "storage_key"])
+    .where("tenant_id", "=", tenantId)
+    .where("created_at", "<", before)
+    .orderBy("created_at")
+    .limit(SWEEP_BATCH)
+    .execute();
+  if (stale.length === 0) return 0;
+  const named = new Set<string>();
+  const bundles = await kernel.db
+    .selectFrom("bundle")
+    .select(["id", "storage_key"])
+    .where("tenant_id", "=", tenantId)
+    .where((eb) =>
+      eb.or([
+        eb("created_at", ">=", before),
+        eb(
+          "id",
+          "in",
+          eb
+            .selectFrom("workspace")
+            .select("active_bundle_id")
+            .where("tenant_id", "=", tenantId)
+            .where("active_bundle_id", "is not", null),
+        ),
+      ]),
+    )
+    .execute();
+  for (const bundle of bundles) {
+    for (const asset of (await loadBundle(kernel, bundle)).assets ?? []) named.add(asset.sha256);
+  }
+  let removed = 0;
+  for (const file of stale) {
+    if (named.has(file.sha256)) continue;
+    // Gone from the table first, and only then from storage: a row that names a missing object
+    // is worse than an object nothing names. A file touched since is no longer old.
+    const gone = await kernel.db
+      .deleteFrom("bundle_asset")
+      .where("tenant_id", "=", tenantId)
+      .where("sha256", "=", file.sha256)
+      .where("created_at", "<", before)
+      .executeTakeFirst();
+    if (Number(gone.numDeletedRows) === 0) continue;
+    await kernel.storage.remove(file.storage_key).catch(() => {});
+    removed += 1;
+  }
+  return removed;
+}
+
+/** Looks at the tenants that deployed since the last time. One that fails is tried at its next deploy. */
+export async function sweepDueAppFiles(kernel: Kernel) {
+  for (const tenantId of [...due]) {
+    due.delete(tenantId);
+    try {
+      const removed = await sweepAppFiles(kernel, tenantId);
+      if (removed > 0) kernel.log.info({ tenantId, removed }, "files no app names were removed");
+    } catch (error) {
+      kernel.log.warn({ err: error, tenantId }, "the files no app names could not be swept");
+    }
+  }
 }

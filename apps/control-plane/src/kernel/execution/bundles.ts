@@ -9,7 +9,7 @@ import {
   checkBundleManifests,
   validateJson,
 } from "@volvel/manifest";
-import { missingAssets } from "../apps/assets.js";
+import { missingAssets, touchAssets } from "../apps/assets.js";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { productNames } from "../docs/product.js";
 import { badRequest, HttpError } from "../errors.js";
@@ -100,6 +100,7 @@ export async function storeBundle(
   // A bundle names its apps' files by checksum. Each must already be here, or the
   // bundle could be deployed and then have nothing to serve.
   const absent = await missingAssets(trx, workspace.tenantId, bundle.assets ?? []);
+  if (absent.length === 0) await touchAssets(trx, workspace.tenantId, bundle.assets ?? []);
   if (absent.length > 0) {
     throw new HttpError(
       409,

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { sweepDueAppFiles } from "./kernel/apps/assets.js";
 import { DEFAULT_THEME } from "./kernel/apps/theme.js";
 import type { Message } from "./kernel/mail.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
@@ -1929,6 +1930,69 @@ describe("moving a tenant", () => {
     } finally {
       await b.stop();
     }
+  });
+});
+
+describe("files no app names any more (APP-17)", () => {
+  test("are swept after a deploy once they are a week old, and no sooner, and what is named stays", async () => {
+    const sweep = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "sweep",
+        name: "Sweep",
+        type: "production",
+      })
+    ).body.id as string;
+    const place = ws(sweep);
+    const page = (text: string) => Buffer.from(`<html><head></head><body>${text}</body></html>`);
+    const deployWith = async (content: Buffer) => {
+      const asset = { app: "site", path: "index.html", sha256: sha(content) };
+      expect(
+        (await alice.put(`${place}/bundle-assets/${asset.sha256}`, content)).status,
+      ).toBeLessThan(300);
+      const unsigned = {
+        formatVersion: 2 as const,
+        sdkVersion: "0.5.0",
+        core: { min: "0.0.0", below: "99.0.0" },
+        manifests: [manifest("app", "site", { title: "Site", entry: "index.html" })],
+        code: "export {};",
+        assets: [{ ...asset, size: content.length, contentType: "text/html" }],
+      };
+      const bundled = await alice.post(`${place}/bundles`, {
+        ...unsigned,
+        digest: bundleDigest(unsigned),
+      });
+      expect(bundled.status, JSON.stringify(bundled.body)).toBe(201);
+      const deployed = await alice.post(`${place}/deployments`, { bundleId: bundled.body.id });
+      expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+      return { sha: asset.sha256, bundleId: bundled.body.id as string };
+    };
+    const held = async (sha256: string) =>
+      (await alice.get(`${place}/bundle-assets/${sha256}`)).status === 200;
+
+    const first = await deployWith(page("first"));
+    const second = await deployWith(page("second"));
+    await sweepDueAppFiles(t.kernel);
+    // Young: the first is no longer named by the active bundle, but may be deployed again.
+    expect(await held(first.sha)).toBe(true);
+    // A week on, it is only the active bundle that names a file.
+    const old = new Date(Date.now() - 8 * 86_400_000);
+    await t.db
+      .updateTable("bundle")
+      .set({ created_at: old })
+      .where("workspace_id", "=", sweep)
+      .execute();
+    await t.db
+      .updateTable("bundle_asset")
+      .set({ created_at: old })
+      .where("tenant_id", "=", tenant)
+      .execute();
+    const third = await deployWith(page("third"));
+    await sweepDueAppFiles(t.kernel);
+    expect(await held(first.sha)).toBe(false);
+    expect(await held(second.sha)).toBe(false);
+    expect(await held(third.sha)).toBe(true);
+    // The files of other workspaces, which are also old, are named by theirs and stay.
+    expect(await held(sha(files.script?.content as Buffer))).toBe(true);
   });
 });
 

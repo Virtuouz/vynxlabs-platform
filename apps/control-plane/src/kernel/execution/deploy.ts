@@ -10,6 +10,7 @@ import {
   renderResourceFiles,
   toolNameOf,
 } from "@volvel/manifest";
+import { appFilesDue } from "../apps/assets.js";
 import type { Audit, Principal, Trx } from "../audit.js";
 import { recordWidgetQueries } from "../dashboard-queries.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
@@ -252,6 +253,8 @@ export async function deployBundle(
     confirmBreaking?: boolean;
   } = {},
 ) {
+  // What the apps no longer name is swept soon after: a deploy is what stops naming it.
+  appFilesDue(workspace.tenantId);
   const current = await trx
     .selectFrom("workspace")
     .select(["active_bundle_id", "type"])

@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@volvel/db";
+import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import { portalUrl } from "../kernel/apps/address.js";
@@ -546,7 +547,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: TenantParams,
           body: Type.Object({
             name: GroupName,
-            description: Type.Optional(Type.String({ maxLength: 500 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 201: Group, 202: Waiting },
         },
@@ -646,7 +647,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: GroupParams,
           body: Type.Object({
             name: Type.Optional(GroupName),
-            description: Type.Optional(Type.String({ maxLength: 500 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 200: Group, 202: Waiting },
         },

@@ -1,6 +1,7 @@
 import { Readable } from "node:stream";
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, type PrincipalType as PrincipalKind } from "@volvel/db";
+import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
 import { Type } from "typebox";
 import { keepingAnAdmin } from "../kernel/administer.js";
 import type { Audit, Db, Trx } from "../kernel/audit.js";
@@ -157,7 +158,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: TenantParams,
           body: Type.Object({
             name: RoleName,
-            description: Type.Optional(Type.String({ maxLength: 500 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
             permissions: Permissions,
           }),
           response: { 201: Role, 202: Waiting },
@@ -230,7 +231,7 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["permissions"],
           params: Type.Object({ t: Id, id: Id }),
           body: Type.Object({
-            description: Type.Optional(Type.String({ maxLength: 500 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
             permissions: Type.Optional(Permissions),
           }),
           response: { 200: Role, 202: Waiting },

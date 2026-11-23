@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { type DataLocation, newId } from "@volvel/db";
+import { ACCESS_DESCRIPTION_MAX } from "@volvel/manifest";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
 import { endSessions, keepingAnAdmin } from "../kernel/administer.js";
@@ -793,7 +794,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: TenantParams,
           body: Type.Object({
             name: Name,
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 201: Group, 202: Waiting },
         },
@@ -847,7 +848,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: GroupParams,
           body: Type.Object({
             name: Type.Optional(Name),
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 200: Group, 202: Waiting },
         },
@@ -1072,7 +1073,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: TenantParams,
           body: Type.Object({
             name: Name,
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 201: ServiceAccount, 202: Waiting },
         },
@@ -1124,7 +1125,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           params: Type.Object({ t: Id, id: Id }),
           body: Type.Object({
             name: Type.Optional(Name),
-            description: Type.Optional(Type.String({ maxLength: 300 })),
+            description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
           }),
           response: { 200: ServiceAccount, 202: Waiting },
         },

@@ -242,6 +242,7 @@ export {
   type TablePolicy,
 } from "./table.js";
 export {
+  ACCESS_DESCRIPTION_MAX,
   checkTenantResources,
   isTenantFile,
   isTenantKind,

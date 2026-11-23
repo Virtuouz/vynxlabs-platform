@@ -572,10 +572,13 @@ describe("going back, and asking a second person", () => {
     );
     expect((await decide(alice, "approve", other.body.id)).status).toBe(200);
     const late = await decide(bob, "approve", stale.body.id);
+    // It was marked superseded when the other applied (ACC-15), so it is not left saying it waits.
     expect(late.status).toBe(409);
-    expect(late.body.code).toBe("release_stale");
-    expect((await decide(bob, "withdraw", stale.body.id)).status).toBe(409);
-    expect((await decide(alice, "withdraw", stale.body.id)).body.status).toBe("withdrawn");
+    expect(late.body.detail).toContain("superseded");
+    expect(((await alice.get(`${at()}/releases`)).body.items as Any[])[1]).toMatchObject({
+      id: stale.body.id,
+      status: "superseded",
+    });
 
     // What the console changes waits the same way: a group made there is not there yet.
     const made = await alice.post(`/tenants/${tenant}/groups`, { name: "Night shift" });

@@ -40,3 +40,10 @@ Commits are named by the row in their subject: `git log --grep "(WID-01)"`.
 - **A person sees:** typing in an edit form is no longer undone by another widget's action or a flow kick-off; a field changed elsewhere that they had typed in is named.
 - **Walk:** an edit form beside a button that starts a flow; type in a field, press the button, wait 8 s; 1440/390, light/dark, keyboard, reload. Not run in a browser.
 - **Left out:** the note shares the "Nothing has changed yet" line and clears on the next edit.
+
+## WID-06 "Sort by clicking the heading" drawn on and doing nothing
+- **Test:** `packages/screens/src/tables.test.tsx` > "a heading sorts unless it is turned off, and not for a column with no order" (failed before: no heading button for an unset `sortable`); the older test now turns it off with `sortable: false`.
+- **Changed:** `packages/widgets-core/views/cells.tsx` (`sortableColumn`), `table.tsx` (the heading and the sorting both use it); schema comment in `packages/widgets-core/src/index.ts`. Unset means sortable, as the drawer and `tidyColumn` already say; json and enum_list columns never.
+- **Siblings looked at:** Dashboard tables (same view); the phone list is not sorted by heading; the drawer `ColumnEditor`/`columnModel` already read unset as on; console `Data.tsx:261` has the same json/enum_list rule.
+- **A person sees:** headings are buttons by default; "Sort by clicking the heading" off removes them.
+- **Walk:** a table with no `sortable`; click a heading three times; drawer toggle; 1440/390, keyboard Enter on a heading, reload. Not run in a browser.

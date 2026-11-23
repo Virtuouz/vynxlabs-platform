@@ -225,6 +225,22 @@ export function renderResourceFiles(
 }
 
 /**
+ * Whether a file in the resource folder, by its path under it, is one a pull writes: a
+ * resource's `.yaml` or `.ts`, or a page's Markdown under `docs/`. The inverse of the names
+ * `renderResourceFiles` gives.
+ */
+export function isFolderResourceFile(file: string): boolean {
+  return /\.(yaml|ts)$/.test(file) || (file.startsWith("docs/") && file.endsWith(".md"));
+}
+
+/** A resource's path from one of its files in the folder: the inverse of `renderResourceFiles`' names. */
+export function resourceOfFile(file: string): string {
+  if (file.startsWith("docs/") && file.endsWith(".md"))
+    return file.slice("docs/".length, -".md".length);
+  return file.replace(/\.[a-z_]+\.(yaml|ts)$/, "");
+}
+
+/**
  * The path a file's place gives its resource: what is left of its name under
  * the longest root that holds it. None when it is under no root, or when what
  * is left is not written as a path is.

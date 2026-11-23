@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
@@ -106,5 +106,48 @@ describe("a pull over files written by hand", () => {
       [{ path: "src/notes/hours.variable.yaml", content: limit("6") }],
     );
     expect(third).toMatchObject({ written: [], unchanged: 2 });
+  });
+});
+
+describe("a pull of pages and of a folder with files of its own", () => {
+  const own = mkdtempSync(join(tmpdir(), "vx-pull-pages-"));
+  afterAll(() => rmSync(own, { recursive: true, force: true }));
+  const folder = join(own, "platform");
+  const go = (
+    files: { path: string; content: string }[],
+    options: { force?: boolean; drafts?: { path: string; revision: number }[] } = {},
+  ) =>
+    pullInto(folder, pulledFile(own), "ws-1", files, options.force === true, options.drafts ?? []);
+  const page = { path: "docs/guide/intro.md", content: "# Intro\n" };
+
+  test("a page kept as it is here leaves its draft out, and one the console deleted is removed (CLI-02, CLI-03)", async () => {
+    await go([page]);
+    writeFileSync(join(folder, "docs/guide/intro.md"), "# Mine\n");
+    const kept = await go([{ ...page, content: "# Console\n" }], {
+      drafts: [{ path: "guide/intro", revision: 4 }],
+    });
+    expect(kept.kept.map((one) => one.path)).toEqual(["docs/guide/intro.md"]);
+    expect(JSON.parse(readFileSync(pulledFile(own), "utf8")).drafts).toEqual({});
+
+    // Pulled as it is, then deleted in the console: the file goes, so a deploy cannot bring it back.
+    writeFileSync(join(folder, "docs/guide/intro.md"), "# Intro\n");
+    await go([page], { force: true });
+    const gone = await go([]);
+    expect(gone.removed).toEqual(["docs/guide/intro.md"]);
+    expect(existsSync(join(folder, "docs/guide/intro.md"))).toBe(false);
+  });
+
+  test("--force removes only what a pull wrote (CLI-04)", async () => {
+    mkdirSync(join(folder, "helpers"), { recursive: true });
+    writeFileSync(join(folder, "helpers/format.ts"), "export const x = 1;\n");
+    writeFileSync(join(folder, "new.script.yaml"), "schemaVersion: 1\n");
+    const forced = await go([], { force: true });
+    expect(forced.removed).toEqual([]);
+    expect(existsSync(join(folder, "helpers/format.ts"))).toBe(true);
+    expect(existsSync(join(folder, "new.script.yaml"))).toBe(true);
+    expect(forced.kept.map((one) => one.path).sort()).toEqual([
+      "helpers/format.ts",
+      "new.script.yaml",
+    ]);
   });
 });

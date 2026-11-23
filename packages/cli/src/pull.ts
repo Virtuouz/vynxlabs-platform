@@ -10,10 +10,12 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { parseArgs } from "node:util";
 import {
+  isFolderResourceFile,
   ontoWritten,
   parseRepositoryConfig,
   REPOSITORY_CONFIG,
   RESOURCE_FOLDER,
+  resourceOfFile,
   sameResourceFile,
 } from "@volvel/manifest";
 import { type Io, loadSettings, locate, refusal, request } from "./cli.js";
@@ -54,7 +56,10 @@ async function walk(root: string, dir = root): Promise<string[]> {
   for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) found.push(...(await walk(root, full)));
-    else if (/\.(yaml|ts)$/.test(entry.name)) found.push(relative(root, full).split(sep).join("/"));
+    else {
+      const file = relative(root, full).split(sep).join("/");
+      if (isFolderResourceFile(file)) found.push(file);
+    }
   }
   return found;
 }
@@ -64,8 +69,6 @@ const readText = (file: string) => readFile(file, "utf8").catch(() => undefined)
 /** What to write over a file that is here: the change, put into the file as it was written. */
 const asWritten = (path: string, here: string | undefined, content: string) =>
   here !== undefined && path.endsWith(".yaml") ? ontoWritten(here, content) : content;
-/** A resource's path from one of its files: `orders/sync.script.ts` → `orders/sync`. */
-const stem = (file: string) => file.replace(/\.[a-z_]+\.(yaml|ts)$/, "");
 
 export interface PullReport {
   written: { path: string; how: "new" | "updated" }[];
@@ -127,7 +130,8 @@ export async function pullInto(
   for (const path of await walk(folder)) {
     if (wanted.has(path)) continue;
     const here = (await readText(join(folder, ...path.split("/")))) ?? "";
-    if (last[path] === sha(here) || force) {
+    // Only a file a pull wrote is the pull's to remove, `--force` or not.
+    if (last[path] === sha(here) || (force && path in last)) {
       await rm(join(folder, ...path.split("/")));
       report.removed.push(path);
     } else {
@@ -188,7 +192,10 @@ export async function pullInto(
     }
   }
   // A draft whose file was kept as it is here was not taken, and a deploy must not clear it.
-  const keptStems = new Set([...report.kept.map((one) => stem(one.path)), ...keptResources]);
+  const keptStems = new Set([
+    ...report.kept.map((one) => resourceOfFile(one.path)),
+    ...keptResources,
+  ]);
   const taken = Object.fromEntries(
     drafts
       .filter((draft) => !keptStems.has(draft.path))

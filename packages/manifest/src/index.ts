@@ -44,6 +44,7 @@ export {
   entryFor,
   fileOf,
   ignoredFolder,
+  isFolderResourceFile,
   isResourceFile,
   movedFile,
   ontoWritten,
@@ -57,6 +58,7 @@ export {
   type ResourceFile,
   renderRepositoryFiles,
   renderResourceFiles,
+  resourceOfFile,
   sameResourceFile,
 } from "./files.js";
 export {

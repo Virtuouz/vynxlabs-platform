@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
+import { resourceOfFile } from "@volvel/manifest";
 import { ACCESS_ACTIONS, tenantAccess } from "./access.js";
 import { BuildError, type Built, buildRepository, describeBundle } from "./build.js";
 import { type CommandName, usage } from "./commands.js";
@@ -33,15 +34,36 @@ export function settingsPath(env: Io["env"]): string {
   return join(base, "volvel", "config.json");
 }
 
-export async function loadSettings(env: Io["env"]): Promise<Settings> {
-  let saved: Partial<Settings> = {};
+const sameUrl = (a: string, b: string) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+
+async function savedSettings(env: Io["env"]): Promise<Partial<Settings>> {
   try {
-    saved = JSON.parse(await readFile(settingsPath(env), "utf8"));
+    return JSON.parse(await readFile(settingsPath(env), "utf8"));
   } catch {
     // Not signed in yet. The environment may still supply everything.
+    return {};
   }
+}
+
+/** The instance a command that sends no key talks to. */
+export async function loadUrl(env: Io["env"]): Promise<string> {
+  const url = env.VOLVEL_URL ?? (await savedSettings(env)).url;
+  if (!url)
+    throw new CliError("No instance chosen. Run: volvel login --url <url> --token <api key>");
+  return url;
+}
+
+export async function loadSettings(env: Io["env"]): Promise<Settings> {
+  const saved = await savedSettings(env);
   const url = env.VOLVEL_URL ?? saved.url;
-  const token = env.VOLVEL_TOKEN ?? saved.token;
+  // A saved token belongs to the instance it was saved for. It is sent only there.
+  const sameInstance = saved.url !== undefined && url !== undefined && sameUrl(url, saved.url);
+  const token = env.VOLVEL_TOKEN ?? (sameInstance ? saved.token : undefined);
+  if (url && !token && saved.token && !sameInstance) {
+    throw new CliError(
+      `The saved API key is for ${saved.url}, not ${url}. Set VOLVEL_TOKEN to a key for ${url}, or run: volvel login --url ${url} --token <api key>`,
+    );
+  }
   if (!url || !token) {
     throw new CliError("Not signed in. Run: volvel login --url <url> --token <api key>");
   }
@@ -125,6 +147,12 @@ async function login(args: string[], io: Io) {
     throw new CliError("--url must start with http:// or https://");
   }
   const settings = { url: values.url.replace(/\/+$/, ""), token: values.token };
+  const { protocol, hostname } = new URL(settings.url);
+  if (protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(hostname)) {
+    io.err(
+      `Warning: ${settings.url} is plain http, so the API key crosses the network unencrypted. Use https:// unless this is a network you trust.`,
+    );
+  }
   // Check the key before saving it, so a typo is caught now.
   const me = await whoami(settings);
   const path = settingsPath(io.env);
@@ -253,6 +281,47 @@ const allowDeleteOption = {
   "allow-delete": { type: "string" as const, multiple: true as const },
 };
 
+/**
+ * What a deploy of this repository would delete from what the console made: the resources the
+ * workspace runs from the console that the repository has no file for. Said before anything is
+ * uploaded, because the bundle speaks for the whole set.
+ */
+export function consoleResourcesLeft(
+  deployed: { files: { path: string }[]; elsewhere?: { resource?: string }[] },
+  bundlePaths: string[],
+  allowed: string[],
+): string[] {
+  const here = new Set(bundlePaths);
+  const allow = new Set(allowed);
+  const there = new Set([
+    ...deployed.files.map((file) => resourceOfFile(file.path)),
+    ...(deployed.elsewhere ?? []).flatMap((file) => (file.resource ? [file.resource] : [])),
+  ]);
+  return [...there].filter((path) => !here.has(path) && !allow.has(path)).sort();
+}
+
+async function refuseToDropConsoleResources(
+  settings: Settings,
+  base: string,
+  bundlePaths: string[],
+  allowed: string[],
+) {
+  const reply = await request(settings.url, `${base}/resource-files?drafts=false`, settings.token);
+  // Someone who may not read them all cannot tell, and the server decides as it always has.
+  if (reply.status !== 200) return;
+  const left = consoleResourcesLeft(reply.body, bundlePaths, allowed);
+  if (left.length === 0) return;
+  const shown = left.slice(0, 10).map((path) => `  - ${path}`);
+  if (left.length > shown.length) shown.push(`  and ${left.length - shown.length} more`);
+  throw new CliError(
+    [
+      `This deploy would delete ${left.length} ${left.length === 1 ? "resource" : "resources"} made in the console, because this repository has no file for ${left.length === 1 ? "it" : "them"}:`,
+      ...shown,
+      "Run `volvel pull` to bring them into platform/, or deploy again with --allow-delete <path> for each one that should go.",
+    ].join("\n"),
+  );
+}
+
 async function deploy(args: string[], io: Io) {
   const { values } = parseArgs({
     args,
@@ -264,6 +333,12 @@ async function deploy(args: string[], io: Io) {
   const { bundle } = built;
   for (const line of describeBundle(bundle)) io.out(line);
   for (const note of built.notes) io.out(`Note: ${note}`);
+  await refuseToDropConsoleResources(
+    settings,
+    base,
+    bundle.manifests.map((manifest) => manifest.path),
+    values["allow-delete"] ?? [],
+  );
   await uploadFiles(settings, base, built, io);
 
   const uploaded = await request(settings.url, `${base}/bundles`, settings.token, {
@@ -860,7 +935,7 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
     return 0;
   },
   status: async (_rest, io) => {
-    const { url } = await loadSettings(io.env);
+    const url = await loadUrl(io.env);
     const [instance, ready] = await Promise.all([
       request(url, "/instance"),
       request(url, "/readyz"),

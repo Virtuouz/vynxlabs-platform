@@ -18,6 +18,16 @@ function typeOf(schema) {
   return schema.type ?? "anything";
 }
 
+/** What the schema bounds a field to, in a sentence: "Minimum 1. Maximum 3600. Default 60." */
+function limitsOf(schema) {
+  const said = [];
+  if (schema.minimum !== undefined) said.push(`Minimum ${schema.minimum}.`);
+  if (schema.maximum !== undefined) said.push(`Maximum ${schema.maximum}.`);
+  if (schema.default !== undefined && typeof schema.default !== "object")
+    said.push(`Default ${JSON.stringify(schema.default).replace(/^"|"$/g, "")}.`);
+  return said.join(" ");
+}
+
 /**
  * Every field of a schema: where it is, what it is, whether it is needed and
  * what the schema says of it. A field inside a list or under any name has `*`
@@ -39,9 +49,11 @@ export function fieldsOf(schema, prefix = "", seen = new Map(), required = false
         type: typeOf(inner),
         required: needed,
         description: inner.description ?? "",
+        limits: limitsOf(inner),
       });
     } else {
       if (!found.description && inner.description) found.description = inner.description;
+      if (!found.limits) found.limits = limitsOf(inner);
       // Needed in one form and not in another is not needed.
       found.required = found.required && needed;
     }
@@ -63,7 +75,7 @@ export function fieldTable(fields) {
     "| --- | --- | --- | --- |",
     ...fields.map(
       (field) =>
-        `| \`${field.path}\` | ${cell(field.type)} | ${field.required ? "Yes" : ""} | ${cell(field.description)} |`,
+        `| \`${field.path}\` | ${cell(field.type)} | ${field.required ? "Yes" : ""} | ${cell(`${field.description} ${field.limits ?? ""}`.trim())} |`,
     ),
   ].join("\n");
 }

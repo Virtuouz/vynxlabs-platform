@@ -8,7 +8,10 @@ import { OWNED_TABLES, type OwnedTable } from "./tables.js";
 import { TAR_END, tarEntry } from "./tar.js";
 
 export const EXPORT_FORMAT = "volvel-tenant-export";
-export const EXPORT_FORMAT_VERSION = 1;
+/** What this instance writes. Format 1 held each member's password hash as a plain field. */
+export const EXPORT_FORMAT_VERSION = 2;
+/** What this instance reads. */
+export const READABLE_FORMAT_VERSIONS: readonly number[] = [1, 2];
 /** What an export never carries, said in the manifest so that whoever imports it knows what to make again. */
 export const NOT_CARRIED = [
   "API keys: create new ones on the instance the tenant moves to.",
@@ -17,6 +20,8 @@ export const NOT_CARRIED = [
   "Runs that were queued or in progress: a run belongs to the instance that started it.",
   "End users' sign-ins and unused invitation and reset links: people sign in again, with the password they had.",
   "Hostnames registered for apps: a name points at one instance. Register it again where the tenant arrives.",
+  "Passwords of members who also belong to another tenant or run the instance: their account is one for the whole instance, so it is not the tenant's to give away. They keep their password where they already have an account, and need a new one where they have none.",
+  "SCIM tokens: a directory is given a new one at the address the tenant arrives at.",
 ];
 
 export interface ExportManifest {
@@ -180,22 +185,69 @@ export async function* exportTenant(
       ),
     );
 
-    // The tenant's members, with the password hash each signs in with. They belong to
-    // the instance, so they travel as a list of their own and are matched by email on arrival.
-    yield* rows(
-      trx,
-      "members",
-      "member",
-      sql`select jsonb_build_object(
-            'id', m.id, 'name', m.name, 'email', m.email, 'email_verified', m.email_verified,
-            'image', m.image, 'created_at', m.created_at,
-            'password_hash', (select a.password from member_account a
-                              where a.member_id = m.id and a.provider_id = 'credential' limit 1)
-          )::text as line
-          from member m
-          where m.id in (select member_id from tenant_member where tenant_id = ${tenantId})
-          order by m.id`,
-    );
+    // The tenant's members. They belong to the instance, so they travel as a list of their own
+    // and are matched by email on arrival. A member's password hash is the account's, and the
+    // account is the whole instance's: it is sealed under the tenant's key, which only the
+    // passphrase opens, and only for a member who belongs here and nowhere else. A member who
+    // also belongs to another tenant, or runs the instance, travels without one.
+    const dataKey = kernel.vault.unwrapTenantKey(tenantId, key.wrapped_key);
+    const members = await sql<{
+      id: string;
+      name: string;
+      email: string;
+      email_verified: boolean;
+      image: string | null;
+      created_at: string;
+      password_hash: string | null;
+      elsewhere: boolean;
+    }>`select m.id, m.name, m.email, m.email_verified, m.image, to_jsonb(m.created_at) #>> '{}' as created_at,
+              (select a.password from member_account a
+               where a.member_id = m.id and a.provider_id = 'credential' limit 1) as password_hash,
+              (exists (select 1 from tenant_member o
+                       where o.member_id = m.id and o.tenant_id <> ${tenantId})
+               or exists (select 1 from binding b
+                          where b.principal_type = 'member' and b.principal_id = m.id
+                            and b.scope_type = 'instance')) as elsewhere
+       from member m
+       where m.id in (select member_id from tenant_member where tenant_id = ${tenantId})
+       order by m.id`.execute(trx);
+    {
+      let lines: string[] = [];
+      let bytes = 0;
+      let parts = 0;
+      const flush = function* () {
+        if (lines.length === 0) return;
+        yield* write(`members.${part(++parts)}.jsonl`, Buffer.from(`${lines.join("\n")}\n`));
+        lines = [];
+        bytes = 0;
+      };
+      for (const member of members.rows) {
+        const sealed =
+          member.password_hash && !member.elsewhere
+            ? kernel.vault
+                .encrypt(
+                  dataKey,
+                  { tenantId, workspaceId: "members", name: member.id },
+                  member.password_hash,
+                )
+                .toString("base64")
+            : null;
+        const line = JSON.stringify({
+          id: member.id,
+          name: member.name,
+          email: member.email,
+          email_verified: member.email_verified,
+          image: member.image,
+          created_at: member.created_at,
+          password_sealed: sealed,
+        });
+        lines.push(line);
+        bytes += line.length + 1;
+        if (bytes >= PART_BYTES) yield* flush();
+      }
+      yield* flush();
+      counts.member = members.rows.length;
+    }
 
     for (const entry of OWNED_TABLES) {
       if (entry.export === "never" || (entry.export === "history" && !options.history)) continue;

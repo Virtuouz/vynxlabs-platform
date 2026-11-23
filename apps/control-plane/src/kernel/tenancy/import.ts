@@ -6,7 +6,12 @@ import type { PassphraseWrappedKey } from "../crypto.js";
 import { restoreRules, restoreStructure, workspaceSchema } from "../data/apply.js";
 import { badRequest, conflict, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
-import { EXPORT_FORMAT, EXPORT_FORMAT_VERSION, type ExportManifest } from "./export.js";
+import {
+  EXPORT_FORMAT,
+  EXPORT_FORMAT_VERSION,
+  type ExportManifest,
+  READABLE_FORMAT_VERSIONS,
+} from "./export.js";
 import { removeStored } from "./remove.js";
 import { OWNED_TABLES } from "./tables.js";
 import { type TarIndexEntry, tarIndex, tarRead } from "./tar.js";
@@ -42,7 +47,10 @@ interface ExportedMember {
   email_verified: boolean;
   image: string | null;
   created_at: string;
-  password_hash: string | null;
+  /** Format 1: the hash as it was. */
+  password_hash?: string | null;
+  /** Format 2: the hash sealed under the tenant's key, or null when it was left out. */
+  password_sealed?: string | null;
 }
 
 /** An archive on disk that has been checked from end to end. */
@@ -75,9 +83,9 @@ async function check(file: FileHandle): Promise<Checked> {
     throw refuse("The export's list of contents cannot be read.");
   }
   if (manifest.format !== EXPORT_FORMAT) throw refuse("This file is not a tenant export.");
-  if (manifest.formatVersion !== EXPORT_FORMAT_VERSION) {
+  if (!READABLE_FORMAT_VERSIONS.includes(manifest.formatVersion)) {
     throw refuse(
-      `This export is in format ${manifest.formatVersion}. This instance reads format ${EXPORT_FORMAT_VERSION}.`,
+      `This export is in format ${manifest.formatVersion}. This instance reads formats ${READABLE_FORMAT_VERSIONS.join(" and ")}.`,
     );
   }
   const byPath = new Map(index.slice(0, -1).map((entry) => [entry.path, entry]));
@@ -370,10 +378,19 @@ export async function importTenant(
             updated_at: new Date(),
           })
           .execute();
-        if (member.password_hash) {
+        const hash =
+          member.password_hash ??
+          (member.password_sealed
+            ? kernel.vault.decrypt(
+                kernel.vault.unwrapTenantKey(tenantId, wrappedKey),
+                { tenantId, workspaceId: "members", name: member.id },
+                Buffer.from(member.password_sealed, "base64"),
+              )
+            : null);
+        if (hash) {
           await sql`
             insert into member_account (id, member_id, account_id, provider_id, password)
-            values (gen_random_uuid(), ${member.id}, ${member.id}, 'credential', ${member.password_hash})
+            values (gen_random_uuid(), ${member.id}, ${member.id}, 'credential', ${hash})
           `.execute(trx);
         }
         created += 1;

@@ -1,10 +1,10 @@
 # Tenant export format
 
-Format version 1. Last updated: 2026-11-12
+Format version 2. Last updated: 2026-11-22
 
 A tenant export is everything one tenant has on an instance, in one file. It is what makes the ownership promise something a tenant can act on: the file can be kept as it is, read without the platform, or imported into another instance.
 
-This document describes the file. It is a contract in the same sense as the manifest format and the worker protocol: a later version of the platform keeps reading format 1, or says clearly that it does not.
+This document describes the file. It is a contract in the same sense as the manifest format and the worker protocol: a later version of the platform keeps reading the formats before it, or says clearly that it does not. This version writes format 2 and reads formats 1 and 2.
 
 ## The file
 
@@ -63,7 +63,11 @@ The instance's own master key is never in an export.
 
 ## Members
 
-Members belong to an instance, not to a tenant, so they are not exported as platform rows. `members.NNNN.jsonl` lists each member of the tenant with `id`, `name`, `email`, `email_verified`, `image`, `created_at` and `password_hash`, the hash they sign in with.
+Members belong to an instance, not to a tenant, so they are not exported as platform rows. `members.NNNN.jsonl` lists each member of the tenant with `id`, `name`, `email`, `email_verified`, `image`, `created_at` and `password_sealed`.
+
+`password_sealed` is the hash the member signs in with, encrypted under the tenant's data key (the layout of a secret, with associated data `secret:<tenant id>:members:<member id>`), as base64. It is readable only with the export's passphrase. It is `null` for a member who also belongs to another tenant on the instance or holds access at the instance: that account belongs to the whole instance, so it is not the tenant's to give away. A member with no password is also `null`.
+
+Format 1 held `password_hash` here instead, the hash as a plain field, for every member. An import still reads it.
 
 ## End users
 
@@ -110,7 +114,7 @@ A resource, each of its versions, a draft and each kept version of a draft carry
 | Field | Meaning |
 | --- | --- |
 | `format` | `volvel-tenant-export` |
-| `formatVersion` | `1` |
+| `formatVersion` | `2` (this version also reads `1`) |
 | `coreVersion` | The version of the platform that wrote the file |
 | `migrationLevel` | Its database level |
 | `exportedAt` | When |
@@ -136,6 +140,7 @@ Never:
 - Operator access grants. They belong to the instance the tenant is leaving.
 - The queue. A run that was waiting is not carried. With history it arrives recorded as canceled.
 - End users' sign-ins, and invitation and reset links that were not used. People sign in again with the password they had, and staff make new links.
+- Passwords of members who also belong to another tenant or hold access at the instance.
 - Hostnames registered for apps. A name points at one instance, so it is registered again where the tenant arrives.
 - The instance master key.
 
@@ -147,7 +152,7 @@ An import:
 2. Requires `migrationLevel` to equal its own. An export from an older or newer version is refused, with both versions named.
 3. Opens the key with the passphrase, and wraps it again with its own master key.
 4. Refuses if the tenant's ID or slug is already taken there. A different slug can be given.
-5. Matches members by email. A member who already has an account there keeps it, with their own password, and every place the export names them is rewritten to name that account. Other members are created with the hash they had.
+5. Matches members by email. A member who already has an account there keeps it, with their own password, and every place the export names them is rewritten to name that account. Other members are created with the hash they had, opened from `password_sealed` (or read from `password_hash` in format 1). A member exported without a hash is created without a password.
 6. Loads every table, keeping every ID. Custom tables are built from the catalog exactly as it describes them, their rows loaded, and their rules put back.
 7. Sets every workspace's triggers to paused, pauses the repository's sync and every identity provider, and marks every identity provider's domains as not proved.
 8. Counts what arrived against `counts`. Any difference undoes the whole import.

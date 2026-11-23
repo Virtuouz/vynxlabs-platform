@@ -807,7 +807,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           required
           autoComplete="new-password"
           onChange={setPassphrase}
-          hint="At least 12 characters. It protects every secret in the file, and it is not stored: without it the secrets cannot be read. Pass it on separately from the file."
+          hint="At least 12 characters. It protects every secret in the file, and the password of each member who belongs to this tenant alone. It is not stored: without it they cannot be read. Pass it on separately from the file."
         />
         <TextField
           label="Passphrase again"
@@ -843,9 +843,11 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           </Button>
         </div>
         <p className="m-0 text-body-sm text-ink-muted">
-          The passphrase protects the secrets in the file. The rest of it, rows and files included,
-          can be read by anyone who has the file, so keep it somewhere safe. For a large tenant, use
-          the command line instead: <Code>{"volvel tenant export"}</Code>.
+          The passphrase protects the secrets and members' passwords in the file. A member who also
+          belongs to another tenant, or runs the instance, is exported without a password. The rest
+          of the file, rows and files included, can be read by anyone who has the file, so keep it
+          somewhere safe. For a large tenant, use the command line instead:{" "}
+          <Code>{"volvel tenant export"}</Code>.
         </p>
       </form>
     </Page>

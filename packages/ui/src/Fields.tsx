@@ -216,6 +216,8 @@ export interface TextFieldProps extends Common {
   showCount?: boolean;
   autoComplete?: string;
   disabled?: boolean;
+  /** Shown and selectable, not editable. */
+  readOnly?: boolean;
   onChange?: (value: string) => void;
 }
 

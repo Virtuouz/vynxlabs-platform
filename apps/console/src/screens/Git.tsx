@@ -14,6 +14,10 @@ interface Repository {
   url: string;
   defaultBranch: string;
   folder: string;
+  /** The folder in force, and whether it is the setting or `resources` of `volvel.yaml`, which wins. */
+  folderInForce?: string;
+  folderFrom?: "setting" | "volvel.yaml";
+  fileReadAt?: string | null;
   paused: boolean;
   verifiedAt?: string | null;
   releaseBranch?: string | null;
@@ -134,13 +138,27 @@ export function RepositorySettings({ base }: { base: string }) {
               hint="Never written to. Changes reach it by a pull request."
               onChange={setDefaultBranch}
             />
-            <TextField
-              name="folder"
-              label="Folder"
-              value={folder}
-              hint="Where resources made in the console are written."
-              onChange={setFolder}
-            />
+            {repository?.folderFrom === "volvel.yaml" ? (
+              <TextField
+                name="folder"
+                label="Folder"
+                value={repository.folderInForce ?? folder}
+                readOnly
+                hint="Set in volvel.yaml (resources). Change it there. Sync never builds code, so entry in that file is for the command line only."
+              />
+            ) : (
+              <TextField
+                name="folder"
+                label="Folder"
+                value={folder}
+                hint={
+                  repository && !repository.fileReadAt
+                    ? "Where resources made in the console are written. volvel.yaml has not been read yet: a resources folder named there wins after the next sync or check."
+                    : "Where resources made in the console are written. A resources folder named in volvel.yaml wins over this."
+                }
+                onChange={setFolder}
+              />
+            )}
           </div>
           <TextField
             name="username"

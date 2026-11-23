@@ -84,9 +84,10 @@ body:
 # volvel.yaml, at the repository's root
 roots: [src]
 ignore: [vendor]
+resources: conf
 ```
 
-The console edits these files wherever you keep them. With git sync, a change made in the console is committed to the file it came from, on the workspace's branch; a rename moves the file, or changes its `path:` if it says one. A resource made in the console is written under `platform/`.
+The console edits these files wherever you keep them. With git sync, a change made in the console is committed to the file it came from, on the workspace's branch; a rename moves the file, or changes its `path:` if it says one. A resource made in the console is written under `platform/`, or under the folder `resources` names in `volvel.yaml`. When the file names one, it wins over the Folder on the Repository page, which then shows it read-only. A `resources` that is not a folder inside the repository stops a pull and a push, and says so. `entry` is for the command line only: git sync never builds code.
 
 - A file is rewritten only when the resource was changed in the console. Then only what changed is rewritten, onto the file as you wrote it: your comments and your order stay, as above.
 - Without git sync, `volvel pull` writes the console's changes into the same files. It does not overwrite one you changed and never pulled unless you pass `--force`.

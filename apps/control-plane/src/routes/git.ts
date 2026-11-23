@@ -26,6 +26,18 @@ const Repository = Type.Object({
     description:
       "Where resources made in the console are written. A resource file kept anywhere else is written back where it is; nothing that is not a resource's file is touched.",
   }),
+  folderInForce: Type.String({
+    description:
+      "The folder resources made in the console are written to now: the `resources` that `volvel.yaml` names on the last branch read, else `folder`.",
+  }),
+  folderFrom: Type.Union([Type.Literal("setting"), Type.Literal("volvel.yaml")], {
+    description:
+      "Where `folderInForce` comes from. `volvel.yaml` wins over the setting (D65), and the setting is then not used.",
+  }),
+  fileReadAt: Type.Union([Type.String({ format: "date-time" }), Type.Null()], {
+    description:
+      "When a branch's `volvel.yaml` was last read, by a sync or a check. Null: not yet, so `folderFrom` is only the setting.",
+  }),
   paused: Type.Boolean({
     description:
       "True on a tenant imported from another instance, until the repository is saved again.",
@@ -87,10 +99,15 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       credential_kind?: string;
       release_branch?: string | null;
       tenant_branch?: string | null;
+      file_folder?: string | null;
+      file_read_at?: Date | null;
     }) => ({
       url: row.url,
       defaultBranch: row.default_branch,
       folder: row.folder,
+      folderInForce: row.file_folder ?? row.folder,
+      folderFrom: row.file_folder ? ("volvel.yaml" as const) : ("setting" as const),
+      fileReadAt: row.file_read_at ? iso(row.file_read_at) : null,
       paused: row.paused,
       verifiedAt: row.verified_at ? iso(row.verified_at) : null,
       credentialKind: row.credential_kind ?? "token",
@@ -142,6 +159,8 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "credential_kind",
             "release_branch",
             "tenant_branch",
+            "file_folder",
+            "file_read_at",
           ])
           .where("tenant_id", "=", params.t)
           .executeTakeFirst();

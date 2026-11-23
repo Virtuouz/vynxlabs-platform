@@ -1045,6 +1045,52 @@ describe("safety", () => {
     expect((await alice.get(`${ws()}/resources/pulls/new`)).status).toBe(200);
   });
 
+  test("the folder volvel.yaml names is where a push writes and a pull reads, and a bad one is said (D65)", async () => {
+    const folderOf = async () =>
+      (await alice.get(`/tenants/${tenant}/git-repository`)).body.repository;
+    commitOnBranch(
+      {
+        "volvel.yaml": "roots:\n  - platform\n  - src\nresources: conf\n",
+        "conf/yamlfolder/limit.variable.yaml": 'schemaVersion: 1\nbody:\n  default: "7"\n',
+      },
+      "Name the folder in the file",
+    );
+    const pulled = await alice.post(`${ws()}/git/pull`, {});
+    expect(pulled.body, JSON.stringify(pulled.body)).toMatchObject({ status: "done" });
+    expect((await alice.get(`${ws()}/resources/yamlfolder/limit`)).body.body).toEqual({
+      default: "7",
+    });
+    // The page is told which folder is in force, and that the file says it.
+    expect(await folderOf()).toMatchObject({
+      folder: "platform",
+      folderInForce: "conf",
+      folderFrom: "volvel.yaml",
+    });
+    // A resource made in the console is written there, and nowhere under the setting's folder.
+    await alice.put(`${ws()}/drafts/yamlfolder/other`, {
+      kind: "variable",
+      schemaVersion: 1,
+      body: { default: "9" },
+    });
+    expect((await alice.post(`${ws()}/changes/deploy`, {})).status).toBe(201);
+    const pushed = await alice.post(`${ws()}/git/push`, {});
+    expect(pushed.body, JSON.stringify(pushed.body)).toMatchObject({ status: "done" });
+    expect(sh(["show", "vx/dev:conf/yamlfolder/other.variable.yaml"], bare())).toContain('"9"');
+    expect(() => sh(["show", "vx/dev:platform/yamlfolder/other.variable.yaml"], bare())).toThrow();
+    // A folder that is not a folder is a problem on the pull and the push, not a quiet fallback.
+    commitOnBranch({ "volvel.yaml": "resources: ../outside\n" }, "A folder outside");
+    for (const verb of ["pull", "push"]) {
+      const refused = await alice.post(`${ws()}/git/${verb}`, {});
+      expect(refused.body.status, JSON.stringify(refused.body)).toBe("failed");
+      expect(refused.body.problem).toContain("volvel.yaml: resources");
+      expect(refused.body.problem).toContain("folder inside the repository");
+    }
+    // Taken out of the file, the setting's folder is in force again.
+    commitOnBranch({ "volvel.yaml": "roots:\n  - platform\n  - src\n" }, "Leave it to the page");
+    expect((await alice.post(`${ws()}/git/pull`, {})).body.status).not.toBe("failed");
+    expect(await folderOf()).toMatchObject({ folderInForce: "platform", folderFrom: "setting" });
+  });
+
   test("disconnecting leaves the repository as it is", async () => {
     const before = sh(["rev-parse", "vx/dev"], bare());
     expect((await alice.delete(`/tenants/${tenant}/git-repository`)).status).toBe(204);

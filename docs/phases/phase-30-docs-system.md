@@ -41,3 +41,6 @@ The owner asked for documentation of every screen and feature, the console and l
 | M11 | Static export |
 
 ## Findings
+
+- **D4 was decided but not built for members** (found by M0). Lane reset built it: a one-time link a tenant admin or operator makes. Its own rule, to confirm with the owner: from a tenant, a member who also belongs to another tenant or holds an instance role is refused (only an operator makes it).
+- **Five table findings were triaged real and never given to a lane** (TAB-30, 33, 34, 36, 37), found by M0's tables brief; with other untruths the briefs found, they go to lane truth.

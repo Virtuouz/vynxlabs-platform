@@ -3,6 +3,7 @@ import { api, type Me, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { ListCollection } from "../kit/ListCollection.tsx";
 import { KeyValues } from "../kit/layout.tsx";
+import { MemberResetLink } from "../kit/MemberResetLink.tsx";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { RemoveButton } from "../ListScreen.tsx";
@@ -125,7 +126,18 @@ export function InstanceMembers() {
         ],
         submit: (values) => api.post("/members", values),
       }}
-      rowActions={(row, reload) => <ToggleMember row={row} onDone={reload} />}
+      rowActions={(row, reload) => (
+        <>
+          {row.disabled ? null : (
+            <MemberResetLink
+              path={`/members/${row.id}/password-link`}
+              email={row.email}
+              needs={{ base: "/instance", permission: "member:write", what: "the members" }}
+            />
+          )}
+          <ToggleMember row={row} onDone={reload} />
+        </>
+      )}
       inspect={{
         title: (row) => row.name,
         eyebrow: () => "Member",

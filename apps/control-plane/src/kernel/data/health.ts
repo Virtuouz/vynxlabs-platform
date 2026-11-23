@@ -96,12 +96,17 @@ export async function recordHealth(
   };
 }
 
-/** Forgets what was found about a connection, which no longer says anything about it. */
-export async function forgetHealth(db: Db | Trx, workspaceId: string, path: string): Promise<void> {
+/** Forgets what was found about a connection or a data source, which no longer says anything about it. */
+export async function forgetHealth(
+  db: Db | Trx,
+  workspaceId: string,
+  path: string,
+  kind: "connection" | "data_source" = "connection",
+): Promise<void> {
   await db
     .deleteFrom("health_check")
     .where("workspace_id", "=", workspaceId)
-    .where("kind", "=", "connection")
+    .where("kind", "=", kind)
     .where("path", "=", path)
     .execute();
 }

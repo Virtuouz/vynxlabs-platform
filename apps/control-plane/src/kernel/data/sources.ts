@@ -4,7 +4,7 @@ import { checkHost, guardedLookup } from "../egress.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import { openRow, sealRow } from "../execution/sealed.js";
 import type { Kernel } from "../kernel.js";
-import type { ColumnMeta, RowTarget } from "./rows.js";
+import { type ColumnMeta, type RowTarget, translate } from "./rows.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: an external database has no schema known in advance
 type AnyDb = Kysely<any>;
@@ -161,6 +161,24 @@ export async function openSource(
   });
   pools.set(binding.id, { stamp, db: connection });
   return { db: connection, schema: config.schema ?? "public" };
+}
+
+/**
+ * Runs something against a bound source, turning what the source refuses or cannot do into the
+ * answers a caller can act on (a rows route, a widget and a script's run say the same words).
+ */
+export async function onSource<T>(
+  kernel: Kernel,
+  db: Db,
+  at: { tenantId: string; workspaceId: string },
+  path: string,
+  run: (source: Awaited<ReturnType<typeof openSource>>) => Promise<T>,
+): Promise<T> {
+  try {
+    return await run(await openSource(kernel, db, at.tenantId, at.workspaceId, path));
+  } catch (error) {
+    throw sourceFailure(path, translate(error));
+  }
 }
 
 export async function closeSource(bindingId: string) {

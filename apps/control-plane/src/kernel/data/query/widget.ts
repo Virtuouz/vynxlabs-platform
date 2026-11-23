@@ -13,6 +13,7 @@ import { resolveResource } from "../../resolve.js";
 import { loadCatalog } from "../apply.js";
 import type { CatalogTable } from "../plan.js";
 import { dayAfter, daysIn, type FilterValues, rangeOf } from "./filters.js";
+import { readParameters } from "./parameters.js";
 import {
   compileVisual,
   type ExtraCondition,
@@ -279,9 +280,15 @@ export async function inputQuery(
     return {
       ...(byKey ? { followed: { names: byKey.names, now: byKey.now } } : {}),
       text: saved.sql,
-      parameters: (saved.parameters ?? []).map(
-        (parameter) =>
-          given(parameter.name) ?? source.values?.[parameter.name] ?? parameter.default ?? null,
+      // As the saved query's own route reads them: a missing or misfit value is refused by name.
+      parameters: readParameters(
+        saved.parameters ?? [],
+        (name) => given(name) ?? source.values?.[name],
+        Object.keys(source.values ?? {}),
+        {
+          at: (name) => `/source/values/${name}`,
+          missing: (parameter) => `Choose ${parameter.label ?? parameter.name}.`,
+        },
       ),
     };
   }

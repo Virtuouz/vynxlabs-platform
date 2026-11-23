@@ -187,7 +187,7 @@ export const feesByDevice = defineQuery({
 - A table is named by its path, in double quotes when it has a `/` or a `-`: `"lending/loans"`.
 - A query reads. It cannot change a row, name a table that is not the workspace's, or call a function outside the list `GET …/queries/schema` gives.
 - Whoever runs it needs `data:read` on each table it names, and gets the rows each table's policy gives them. A query over an owner's table gives each person their own rows.
-- Two columns of the same name are one in the result: name them apart with `as`.
+- Two columns of the same name are both kept, in the order written, and a whole number too large for a double (over 2^53) comes back as text. Name columns apart with `as` when a page binds them by name. A table whose path is over 63 bytes can be put on a page but not written in SQL.
 
 **A dashboard** is a file: filters, and widgets that each ask a query. It deploys and promotes like any other resource, and whoever opens it gets the rows each table's policy gives them.
 
@@ -217,7 +217,7 @@ body:
       filters: [{ filter: lent, parameter: since, part: from }]
 ```
 
-- A widget's `source` is one of three: `visual` (a table, groups and measures, which the platform writes as SQL), `query` (a saved query by its path) or `sql` (written in the widget, which needs `sql:read` of whoever deploys it).
+- A widget's `source` is one of three: `visual` (a table, groups and measures, which the platform writes as SQL), `query` (a saved query by its path) or `sql` (written in the widget: a draft or a deploy made in the console needs `sql:read`, a repository deploy does not).
 - A widget is a `figure`, `chart`, `table`, `pivot` or `text`.
 - `at` is where a widget is on the page's twelve columns and how big: `x` and `y` are where it starts, `w` and `h` its size, in cells, and a row is 40 pixels tall. In the console the same thing is set by dragging. A widget with no `at` is laid in rows after the others, in order; `width` (3, 4, 6, 8 or 12), from before widgets had places, is still read.
 - `refresh` on the dashboard is how often its widgets ask again while it is on show, in minutes: `off`, 1, 5, 15 or 60. Left out, 5.

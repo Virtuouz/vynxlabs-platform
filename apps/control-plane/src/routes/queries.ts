@@ -5,7 +5,9 @@ import { Type } from "typebox";
 import { check } from "../kernel/authorize.js";
 import { loadCatalog } from "../kernel/data/apply.js";
 import { ALLOWED_FUNCTIONS } from "../kernel/data/query/allowed.js";
+import { readParameters } from "../kernel/data/query/parameters.js";
 import { checkFor, QUERY_ROWS, runQuery } from "../kernel/data/query/run.js";
+import { namedInSql } from "../kernel/data/query/view-name.js";
 import { workspaceCatalog, writeVisual } from "../kernel/data/query/widget.js";
 import { scopeFor } from "../kernel/data/rows.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
@@ -189,6 +191,10 @@ export const queryRoutes =
               tables: Type.Array(
                 Type.Object({
                   name: Type.String(),
+                  inSql: Type.Boolean({
+                    description:
+                      "Whether a query can name the table. A path of more than 63 bytes can be put on a page, and cannot be written in SQL.",
+                  }),
                   display: NullableString,
                   columns: Type.Array(
                     Type.Object({
@@ -266,6 +272,8 @@ export const queryRoutes =
           if (!allowed) continue;
           tables.push({
             name: table.name,
+            // A path too long for Postgres to keep whole cannot be written in SQL, only put on a page.
+            inSql: namedInSql(table.name),
             display: table.display ?? null,
             columns: [
               { name: "id", type: "uuid", references: null },
@@ -399,6 +407,11 @@ export const queryRoutes =
                     Type.Literal("removed"),
                     Type.Null(),
                   ]),
+                  renamedFrom: Type.Optional(
+                    Type.String({
+                      description: "The deployed path, when the draft renames the query.",
+                    }),
+                  ),
                 }),
               ),
             }),
@@ -408,13 +421,13 @@ export const queryRoutes =
       async ({ params }) => {
         const deployed = await db
           .selectFrom("resource")
-          .select(["path", "body", "ownership"])
+          .select(["path", "key", "body", "ownership"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "query")
           .execute();
         const drafts = await db
           .selectFrom("resource_draft")
-          .select(["path", "body", "deleted"])
+          .select(["path", "key", "body", "deleted"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "query")
           .execute();
@@ -423,6 +436,7 @@ export const queryRoutes =
           raw: unknown,
           ownership: string,
           draft: "new" | "changed" | "removed" | null,
+          renamedFrom?: string,
         ) => {
           const body = (raw ?? {}) as Partial<QueryBody>;
           return {
@@ -432,21 +446,26 @@ export const queryRoutes =
             parameters: body.parameters ?? [],
             ownership,
             draft,
+            ...(renamedFrom ? { renamedFrom } : {}),
           };
         };
         const items = [
           ...deployed.map((one) => {
-            const draft = drafts.find((candidate) => candidate.path === one.path);
+            // A draft is of the resource by its key: a rename's draft is at another path, and is
+            // the same query, listed at the path it is to have.
+            const draft = drafts.find((candidate) => candidate.key === one.key);
             // What is listed is what runs. The draft's own text is read from the draft.
+            const moved = draft && !draft.deleted && draft.path !== one.path;
             return item(
-              one.path,
+              moved ? draft.path : one.path,
               one.body,
               one.ownership,
               draft ? (draft.deleted ? "removed" : "changed") : null,
+              moved ? one.path : undefined,
             );
           }),
           ...drafts
-            .filter((one) => !one.deleted && !deployed.some((row) => row.path === one.path))
+            .filter((one) => !one.deleted && !deployed.some((row) => row.key === one.key))
             .map((one) => item(one.path, one.body, "ui", "new")),
         ].sort((a, b) => a.path.localeCompare(b.path));
         return { items };
@@ -517,31 +536,8 @@ export const queryRoutes =
         }
         const given = body.params ?? {};
         const declared = query.parameters ?? [];
-        const unknown = Object.keys(given).filter(
-          (name) => !declared.some((one) => one.name === name),
-        );
-        if (unknown.length > 0) {
-          throw badRequest("The query has no such parameter.", [
-            { path: `/params/${unknown[0]}`, message: `there is no parameter "${unknown[0]}"` },
-          ]);
-        }
-        const values = declared.map((parameter) => {
-          const value = given[parameter.name] ?? parameter.default ?? null;
-          if (value === null) {
-            if (parameter.required) {
-              throw badRequest("A parameter is missing.", [
-                { path: `/params/${parameter.name}`, message: "a value is required" },
-              ]);
-            }
-            return null;
-          }
-          const problem = misfit(parameter.type, value);
-          if (problem) {
-            throw badRequest("A parameter does not fit.", [
-              { path: `/params/${parameter.name}`, message: `must be ${problem}` },
-            ]);
-          }
-          return value;
+        const values = readParameters(declared, (name) => given[name], Object.keys(given), {
+          at: (name) => `/params/${name}`,
         });
         const scope = await scopeFor(
           kernel,
@@ -562,27 +558,3 @@ export const queryRoutes =
       },
     );
   };
-
-/** Why a value does not fit a parameter of this type, or nothing when it does. */
-function misfit(type: string, value: unknown): string | undefined {
-  switch (type) {
-    case "text":
-      return typeof value === "string" ? undefined : "text";
-    case "integer":
-      return Number.isSafeInteger(value) ? undefined : "a whole number";
-    case "number":
-      return typeof value === "number" && Number.isFinite(value) ? undefined : "a number";
-    case "boolean":
-      return typeof value === "boolean" ? undefined : "true or false";
-    case "date":
-      return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)
-        ? undefined
-        : "a date, such as 2026-01-31";
-    case "timestamp":
-      return typeof value === "string" && !Number.isNaN(Date.parse(value))
-        ? undefined
-        : "a date and time, such as 2026-01-31T09:30:00Z";
-    default:
-      return "something this parameter can hold";
-  }
-}

@@ -105,6 +105,7 @@ export {
   isThemeValue,
   MAX_SOURCE_LENGTH,
   PERMISSION_PATTERN,
+  parameterMisfit,
   platformKinds,
   QUERY_PARAMETER_TYPES,
   type QueryBody,

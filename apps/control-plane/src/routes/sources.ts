@@ -13,23 +13,15 @@ import {
   storeFile,
   toStoredFile,
 } from "../kernel/data/files.js";
-import { checkSource } from "../kernel/data/health.js";
-import {
-  deleteRow,
-  findRows,
-  getRow,
-  insertRows,
-  translate,
-  updateRow,
-} from "../kernel/data/rows.js";
+import { checkSource, forgetHealth } from "../kernel/data/health.js";
+import { deleteRow, findRows, getRow, insertRows, updateRow } from "../kernel/data/rows.js";
 import {
   bindSource,
   checkSourceConfig,
   closeSource,
-  openSource,
+  onSource as runOnSource,
   type SourceConfig,
   sourceConfigSchema,
-  sourceFailure,
   sourceTable,
   sourceTables,
 } from "../kernel/data/sources.js";
@@ -48,7 +40,8 @@ import {
   WorkspaceParams,
 } from "./shared.js";
 
-const TableName = Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$", maxLength: 63 });
+/** A table of the source as the source names it: it is looked up in the source's own list before it is used. */
+const TableName = Type.String({ minLength: 1, maxLength: 63 });
 const SourceRowsParams = Type.Object({ t: Id, w: Id, table: TableName, "*": Type.String() });
 const SourceRowParams = Type.Object({
   t: Id,
@@ -72,17 +65,11 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     const base = "/tenants/:t/workspaces/:w";
 
     /** Runs something against a bound source, turning its refusals into answers the caller can act on. */
-    async function onSource<T>(
+    const onSource = <T>(
       params: { t: string; w: string },
       path: string,
-      run: (source: Awaited<ReturnType<typeof openSource>>) => Promise<T>,
-    ) {
-      try {
-        return await run(await openSource(kernel, db, params.t, params.w, path));
-      } catch (error) {
-        throw sourceFailure(path, translate(error));
-      }
-    }
+      run: Parameters<typeof runOnSource<T>>[4],
+    ) => runOnSource(kernel, db, { tenantId: params.t, workspaceId: params.w }, path, run);
 
     // ----- Bindings -----
 
@@ -109,6 +96,13 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         const path = wildPath(params);
+        const bound = await db
+          .selectFrom("data_source_binding")
+          .select("id")
+          .where("workspace_id", "=", params.w)
+          .where("path", "=", path)
+          .executeTakeFirst();
+        if (!bound) throw notFound("A binding for the data source");
         const result = await checkSource(kernel, params.t, params.w, path);
         await ctx.mutate(async (_trx, audit) =>
           audit({
@@ -276,6 +270,8 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .where("workspace_id", "=", params.w)
             .where("path", "=", path)
             .executeTakeFirstOrThrow();
+          // What a check found says nothing about the address or password it did not try.
+          await forgetHealth(trx, params.w, path, "data_source");
           return row.id;
         });
         await closeSource(bindingId);
@@ -304,6 +300,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .returning("id")
             .executeTakeFirst();
           if (!row) throw notFound("The data source binding");
+          await forgetHealth(trx, params.w, path, "data_source");
           await audit({
             action: "data_source.unbound",
             targetType: "data_source",

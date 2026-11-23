@@ -1,12 +1,23 @@
 import type { Manifest, Marked, PageFile, PageHit } from "@volvel/docs-engine";
-import { resolveLink } from "@volvel/docs-engine";
+import { redirectedPath, resolveAsset, resolveLink } from "@volvel/docs-engine";
 import { Button, CheckboxField, Doc, Notice, Skeleton } from "@volvel/ui";
-import { ArrowLeft, ExternalLink, Link2, Search, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  House,
+  Link2,
+  Search,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { notify } from "../ask.tsx";
+import { Diagram } from "../diagrams/Diagram.tsx";
 import { useBrand } from "../kit/brand.tsx";
 import { useLook } from "../theme.ts";
-import { loadFields, loadManifest, loadPage, searchHelp } from "./content.ts";
+import { around } from "./around.ts";
+import { loadFields, loadManifest, loadPage, loadRedirects, searchHelp } from "./content.ts";
 import { PageLinkTo, useUnderlineTerms, useWorkspaceTerms } from "./glossary.tsx";
 import { closeHelp, openHelp, showPageHelp, useHelp } from "./store.ts";
 
@@ -37,15 +48,22 @@ function useLoaded<T>(load: (() => Promise<T>) | undefined, key: string): Loaded
   return loaded?.key === key ? loaded.result : { state: "loading" };
 }
 
-/** The page a topic's id or a page's path means, and the heading asked for. */
+/**
+ * The page a topic's id or a page's path means, and the heading asked for. An address that is
+ * neither is looked for among the pages that moved or went (`redirects`, with the manifest's own),
+ * so a link saved before a page moved still opens it.
+ */
 export function pageFor(
   manifest: Manifest,
   target: string | undefined,
+  redirects: Readonly<Record<string, string>> = {},
 ): { path: string; anchor?: string } | undefined {
   if (target === undefined) return undefined;
   const [ref = "", anchor] = target.split("#");
-  const path =
-    manifest.topics[ref] ?? (manifest.pages.some((page) => page.path === ref) ? ref : undefined);
+  const has = (path: string | undefined) =>
+    path !== undefined && manifest.pages.some((page) => page.path === path);
+  const moved = redirectedPath({ ...manifest.redirects, ...redirects }, ref);
+  const path = manifest.topics[ref] ?? (has(ref) ? ref : has(moved) ? moved : undefined);
   if (path === undefined) return undefined;
   return anchor ? { path, anchor } : { path };
 }
@@ -75,8 +93,20 @@ export function HelpPanel({
   const heading = useRef<HTMLHeadingElement>(null);
   const body = useRef<HTMLDivElement>(null);
 
+  // Where pages that went are led to: asked for with the manifest, and not waited on for a page that is there.
+  const moves = useLoaded(loadRedirects, "redirects");
   const ready = manifest?.state === "ready" ? manifest.value : undefined;
-  const shown = ready ? pageFor(ready, target ?? topic) : undefined;
+  const shown = ready
+    ? pageFor(ready, target ?? topic, moves?.state === "ready" ? moves.value : undefined)
+    : undefined;
+  // Set by whatever moves the reader to another page here, so that the page's heading takes focus
+  // when it is shown. Another screen's help appearing behind the reader is not a move.
+  const moved = useRef(false);
+  const go = useCallback((to: string) => {
+    moved.current = true;
+    // docs:dynamic a page the reader chose in the panel, from the build's own manifest or a link it checked
+    openHelp(to);
+  }, []);
   const page = useLoaded<PageFile>(
     shown ? () => loadPage(shown.path) : undefined,
     shown?.path ?? "",
@@ -95,6 +125,10 @@ export function HelpPanel({
       : undefined;
     if (at) at.scrollIntoView({ block: "start" });
     else body.current?.scrollTo?.({ top: 0 });
+    if (moved.current) {
+      moved.current = false;
+      heading.current?.focus({ preventScroll: true });
+    }
   }, [page?.state, shown?.path, shown?.anchor]);
 
   // Opened: the heading takes focus, so the keyboard and a screen reader are in the panel.
@@ -102,8 +136,13 @@ export function HelpPanel({
     heading.current?.focus();
   }, []);
 
+  const setting = useMemo(
+    () => (ready && shown ? around(ready, shown.path, (path) => `${INSIDE}${path}`) : undefined),
+    [ready, shown],
+  );
+
   const options = useMemo(() => {
-    if (!ready || !shown) return undefined;
+    if (!ready || !shown || !setting) return undefined;
     const set = {
       pages: new Map(ready.pages.map((one) => [one.path, one] as const)) as never,
       topics: ready.topics,
@@ -115,6 +154,14 @@ export function HelpPanel({
         if ("missing" in found) return null;
         return `${INSIDE}${found.path}${found.anchor ? `#${found.anchor}` : ""}`;
       },
+      // A picture kept beside the page is one of the build's files.
+      image: (src: string) => {
+        if (/^https?:/i.test(src)) return null;
+        const file = resolveAsset(shown.path, src);
+        return file ? `/help/assets/${file}` : null;
+      },
+      folder: setting.folder,
+      glossary: setting.glossary,
       field: (path: string) => (fields?.[path] ? { description: fields[path] as string } : null),
       // A picture taken for this version, in the look the console has now, when there is one:
       // otherwise the page says what it shows.
@@ -132,7 +179,7 @@ export function HelpPanel({
           : { short: term.short, href: `${INSIDE}${term.path}` };
       },
     };
-  }, [ready, shown, fields, look]);
+  }, [ready, shown, setting, fields, look]);
 
   const title =
     page?.state === "ready"
@@ -163,7 +210,10 @@ export function HelpPanel({
           <button
             type="button"
             aria-label="Back to the help for this page"
-            onClick={showPageHelp}
+            onClick={() => {
+              moved.current = true;
+              showPageHelp();
+            }}
             className="-ml-2 flex size-7 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
           >
             <ArrowLeft aria-hidden="true" size={16} />
@@ -176,6 +226,16 @@ export function HelpPanel({
         >
           {title}
         </h2>
+        {shown && shown.path !== "index" ? (
+          <button
+            type="button"
+            aria-label="Help home"
+            onClick={() => go("index")}
+            className="flex size-7 shrink-0 items-center justify-center rounded-control text-ink-muted hover:bg-sunken hover:text-ink"
+          >
+            <House aria-hidden="true" size={16} />
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label="Copy a link to this help"
@@ -214,11 +274,10 @@ export function HelpPanel({
             hits={hits}
             onOpen={(path) => {
               setQuery("");
-              // docs:dynamic a page path the reader chose from the search results
-              openHelp(path);
+              go(path);
             }}
           />
-        ) : !ready || page?.state === "loading" ? (
+        ) : !ready || page?.state === "loading" || (!shown && moves?.state === "loading") ? (
           <div className="flex flex-col gap-3" aria-busy="true">
             <Skeleton className="h-4 w-3/4" />
             <Skeleton className="h-4 w-full" />
@@ -237,6 +296,43 @@ export function HelpPanel({
           </Notice>
         ) : (
           <>
+            {setting && setting.trail.length > 1 ? (
+              <nav aria-label="Where this page is" className="mb-3">
+                <ol className="m-0 flex list-none flex-wrap items-center gap-x-1 gap-y-0.5 p-0 text-meta text-ink-muted">
+                  {setting.trail.map((crumb, at) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: a trail is a fixed run of one page
+                    <li key={`${crumb.title}:${at}`} className="flex min-w-0 items-center gap-1">
+                      {at > 0 ? <ChevronRight aria-hidden="true" size={14} /> : null}
+                      {crumb.path ? (
+                        <a
+                          href={`?help=${encodeURIComponent(crumb.path)}`}
+                          className="text-ink-muted underline-offset-2 hover:underline"
+                          onClick={(event) => {
+                            if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                            event.preventDefault();
+                            go(crumb.path as string);
+                          }}
+                        >
+                          {crumb.title}
+                        </a>
+                      ) : (
+                        <span
+                          {...(at === setting.trail.length - 1 ? { "aria-current": "page" } : {})}
+                          className={at === setting.trail.length - 1 ? "text-ink" : undefined}
+                        >
+                          {crumb.title}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </nav>
+            ) : null}
+            {shownEntry?.docType ? (
+              <p className="m-0 mb-1 text-label text-ink-subtle uppercase">
+                {TYPE_NAME[shownEntry.docType] ?? shownEntry.docType}
+              </p>
+            ) : null}
             {shownEntry?.since ? (
               <p className="m-0 mb-3 text-meta text-ink-muted">New in version {shownEntry.since}</p>
             ) : null}
@@ -251,13 +347,14 @@ export function HelpPanel({
                 <button
                   type="button"
                   className="border-0 bg-transparent p-0 text-action underline"
-                  // docs:dynamic a link inside a page of the help, which the build has checked
-                  onClick={() => openHelp(href.slice(INSIDE.length))}
+                  onClick={() => go(href.slice(INSIDE.length))}
                 >
                   More about {word}
                 </button>
               )}
               components={{
+                code: ({ value, lang }) =>
+                  lang === "mermaid" ? <Diagram source={value} /> : undefined,
                 link: ({ href, external, children }) =>
                   href.startsWith(INSIDE) ? (
                     <a
@@ -265,8 +362,7 @@ export function HelpPanel({
                       onClick={(event) => {
                         if (event.metaKey || event.ctrlKey || event.shiftKey) return;
                         event.preventDefault();
-                        // docs:dynamic as the link above
-                        openHelp(href.slice(INSIDE.length));
+                        go(href.slice(INSIDE.length));
                       }}
                     >
                       {children}
@@ -281,6 +377,45 @@ export function HelpPanel({
                   ),
               }}
             />
+            {setting && (setting.before || setting.after) ? (
+              <nav
+                aria-label="Pages before and after"
+                className="mt-6 grid grid-cols-2 gap-2 border-line border-t pt-4"
+              >
+                {setting.before ? (
+                  <PagerLink to={setting.before} side="before" go={go} />
+                ) : (
+                  <span />
+                )}
+                {setting.after ? <PagerLink to={setting.after} side="after" go={go} /> : null}
+              </nav>
+            ) : null}
+            {setting && setting.related.length > 0 ? (
+              <section aria-label="Related" className="mt-6 border-line border-t pt-4">
+                <h3 className="m-0 mb-2 text-label text-ink-subtle uppercase">Related</h3>
+                {setting.related.map((group) => (
+                  <div key={group.type} className="mb-2">
+                    <h4 className="m-0 mb-1 font-medium text-ink-muted text-meta">{group.label}</h4>
+                    <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                      {group.pages.map((one) => (
+                        <li key={one.path}>
+                          <a
+                            href={`?help=${encodeURIComponent(one.path)}`}
+                            onClick={(event) => {
+                              if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+                              event.preventDefault();
+                              go(one.path);
+                            }}
+                          >
+                            {one.title}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </section>
+            ) : null}
             {fromTeam.length > 0 ? (
               <section aria-label="From your team" className="mt-6 border-line border-t pt-4">
                 <h3 className="m-0 mb-2 text-label text-ink-subtle uppercase">From your team</h3>
@@ -297,6 +432,18 @@ export function HelpPanel({
         )}
       </div>
       <div className="flex shrink-0 flex-col gap-2 border-line border-t px-4 py-2">
+        {ready && shown ? (
+          // The same page, read in full, on this instance. A plain link, so a new tab keeps the panel's place.
+          <a
+            href={`/docs/${shownEntry?.url ?? ""}${shown.anchor ? `#${shown.anchor}` : ""}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-meta text-action"
+          >
+            Open in documentation
+            <ExternalLink aria-hidden="true" size={14} />
+          </a>
+        ) : null}
         {brand.docsUrl && ready && shown ? (
           // The web's copy may be of a newer version. The one here is of the version that is running.
           <a
@@ -318,6 +465,43 @@ export function HelpPanel({
         />
       </div>
     </div>
+  );
+}
+
+const TYPE_NAME: Record<string, string> = {
+  tutorial: "Tutorial",
+  "how-to": "How-to guide",
+  reference: "Reference",
+  explanation: "Explanation",
+};
+
+/** The step before or after a page in its folder. */
+function PagerLink({
+  to,
+  side,
+  go,
+}: {
+  to: { path: string; title: string };
+  side: "before" | "after";
+  go: (path: string) => void;
+}) {
+  return (
+    <a
+      href={`?help=${encodeURIComponent(to.path)}`}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey) return;
+        event.preventDefault();
+        go(to.path);
+      }}
+      className={`flex min-w-0 flex-col gap-0.5 rounded-control border border-line px-3 py-2 no-underline hover:bg-sunken ${side === "after" ? "col-start-2 items-end text-right" : ""}`}
+    >
+      <small className="flex items-center gap-1 text-ink-muted">
+        {side === "before" ? <ChevronLeft aria-hidden="true" size={14} /> : null}
+        {side === "before" ? "Previous" : "Next"}
+        {side === "after" ? <ChevronRight aria-hidden="true" size={14} /> : null}
+      </small>
+      <span className="max-w-full text-ink">{to.title}</span>
+    </a>
   );
 }
 

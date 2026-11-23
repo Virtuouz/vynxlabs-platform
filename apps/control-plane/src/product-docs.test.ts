@@ -56,7 +56,11 @@ function writeHelp(consoleDir: string, version: string, extra: Record<string, st
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, text);
   }
-  for (const name of ["assets/start/pic.png", `assets/screenshots/${SHOT}`, `assets/screenshots/${SHOT_DARK}`]) {
+  for (const name of [
+    "assets/start/pic.png",
+    `assets/screenshots/${SHOT}`,
+    `assets/screenshots/${SHOT_DARK}`,
+  ]) {
     const file = join(consoleDir, "help", name);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, PNG);

@@ -27,6 +27,53 @@ export interface OpenedPackage {
 }
 
 /**
+ * The set a manifest describes: every page's frontmatter, kind and subjects, the navigation, the
+ * terms. A page's tree is `treeOf(path)`, asked for when it is first used; left out, a page's tree
+ * is empty, which is all a caller needs who reads only titles, order and what pages are about
+ * (the console's help panel, which draws a page from its own file).
+ */
+export function setFromManifest(
+  manifest: Manifest,
+  treeOf: (path: string) => Root = () => ({ type: "root", v: TREE_VERSION, children: [] }),
+): DocSet {
+  const pages = new Map<string, DocEntry>();
+  const types: Record<string, DocType> = {};
+  const subjects: Record<string, string[]> = {};
+  for (const page of manifest.pages) {
+    const frontmatter: Frontmatter = {
+      title: page.title,
+      ...(page.description ? { description: page.description } : {}),
+      ...(page.topic ? { topic: page.topic } : {}),
+      ...(page.since ? { since: page.since } : {}),
+      ...(page.subjects ? { subjects: page.subjects } : {}),
+    };
+    const entry = { path: page.path, frontmatter } as DocEntry;
+    Object.defineProperty(entry, "tree", {
+      enumerable: true,
+      get: () => treeOf(page.path),
+    });
+    if (page.updated) entry.updated = page.updated;
+    pages.set(page.path, entry);
+    if (page.docType) types[page.path] = page.docType as DocType;
+    for (const subject of page.subjects ?? []) {
+      subjects[subject] = [...(subjects[subject] ?? []), page.path];
+    }
+  }
+
+  return {
+    pages,
+    nav: manifest.nav,
+    topics: manifest.topics,
+    terms: manifest.terms,
+    attachments: manifest.attachments,
+    extensions: manifest.extensions,
+    types,
+    subjects,
+    redirects: manifest.redirects ?? {},
+  };
+}
+
+/**
  * Opens the files `packageOutput` wrote, by a function that reads one by its name (`manifest.json`,
  * `pages/<path>.json`, `search.json`, `md/<path>.md`, `redirects.json`). The manifest is read at
  * once, a page's tree when the page is drawn, the search index when somebody searches. A file that
@@ -57,41 +104,8 @@ export function openPackage(read: (name: string) => string | undefined): OpenedP
     return tree;
   };
 
-  const pages = new Map<string, DocEntry>();
-  const types: Record<string, DocType> = {};
-  const subjects: Record<string, string[]> = {};
-  for (const page of manifest.pages) {
-    const frontmatter: Frontmatter = {
-      title: page.title,
-      ...(page.description ? { description: page.description } : {}),
-      ...(page.topic ? { topic: page.topic } : {}),
-      ...(page.since ? { since: page.since } : {}),
-      ...(page.subjects ? { subjects: page.subjects } : {}),
-    };
-    const entry = { path: page.path, frontmatter } as DocEntry;
-    Object.defineProperty(entry, "tree", {
-      enumerable: true,
-      get: () => treeOf(page.path),
-    });
-    if (page.updated) entry.updated = page.updated;
-    pages.set(page.path, entry);
-    if (page.docType) types[page.path] = page.docType as DocType;
-    for (const subject of page.subjects ?? []) {
-      subjects[subject] = [...(subjects[subject] ?? []), page.path];
-    }
-  }
-
-  const set: DocSet = {
-    pages,
-    nav: manifest.nav,
-    topics: manifest.topics,
-    terms: manifest.terms,
-    attachments: manifest.attachments,
-    extensions: manifest.extensions,
-    types,
-    subjects,
-    redirects: manifest.redirects ?? {},
-  };
+  const set = setFromManifest(manifest, treeOf);
+  const pages = set.pages as Map<string, DocEntry>;
 
   let moves: Record<string, string> | undefined;
   const redirects = () => {

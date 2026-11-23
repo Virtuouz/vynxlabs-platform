@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { apiFiles } from "./generators/api.mjs";
 import { LIST_LINKS, LIST_PAGES, listFiles } from "./generators/lists.mjs";
 import { generate, referenceIndex } from "./generators/reference.mjs";
+import { sdkFiles } from "./generators/sdk.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const GENERATED = join(HERE, "generated");
@@ -33,6 +34,7 @@ export async function expected() {
   const files = generate();
   for (const [name, text] of await apiFiles()) files.set(name, text);
   for (const [name, text] of listFiles()) files.set(name, text);
+  for (const [name, text] of sdkFiles()) files.set(name, text);
   files.set(
     "index.md",
     referenceIndex(

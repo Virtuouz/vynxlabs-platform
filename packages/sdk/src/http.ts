@@ -1,5 +1,6 @@
 import type { Connector } from "./extensions.js";
 
+/** The configuration of an `http` connection: its address, the headers sent with every request and how the credential is sent. */
 export interface HttpConfig {
   baseUrl: string;
   /** Sent with every request. Not for credentials. */
@@ -11,6 +12,7 @@ export interface HttpConfig {
     | { type: "basic"; username: string };
 }
 
+/** What a request of an `HttpClient` may say beside its path: the method, headers, a query and a body. */
 export interface HttpRequest {
   method?: string;
   headers?: Record<string, string>;
@@ -22,6 +24,7 @@ export interface HttpRequest {
   allowFailure?: boolean;
 }
 
+/** What an `HttpClient` gets back: the status, the headers, the body as text and a way to read it as JSON. */
 export interface HttpResponse {
   status: number;
   ok: boolean;
@@ -31,6 +34,7 @@ export interface HttpResponse {
   json<T = unknown>(): T;
 }
 
+/** What a script is given for an `http` or `oauth2` connection: requests to the connection's own address. */
 export interface HttpClient {
   request(path: string, options?: HttpRequest): Promise<HttpResponse>;
   get(path: string, options?: HttpRequest): Promise<HttpResponse>;
@@ -66,6 +70,7 @@ export class HttpError extends Error {
 /** How many redirects of one request are followed. */
 const MAX_REDIRECTS = 5;
 
+/** The built-in connector for any HTTP API. */
 export const httpConnector: Connector<HttpConfig, HttpClient> = {
   name: "http",
   configSchema: {

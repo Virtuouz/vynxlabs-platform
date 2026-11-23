@@ -47,6 +47,7 @@ export interface Recorded {
   files: { id: string; name: string; contentType: string; content: Uint8Array }[];
 }
 
+/** A script's context for a test: everything a run has, and what it recorded. */
 export type TestContext = ScriptContext & { recorded: Recorded };
 
 /** What a script declared it uses. A context made with no declaration allows what it is given. */

@@ -15,6 +15,7 @@ export interface SmtpConfig {
   username?: string;
 }
 
+/** A message to send through an `smtp` connection. */
 export interface MailMessage {
   /** One address or several. */
   to: string | string[];

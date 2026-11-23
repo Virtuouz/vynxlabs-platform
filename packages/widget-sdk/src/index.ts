@@ -19,10 +19,12 @@ import { readerLocale, usableLocale } from "./locale.js";
 
 /** Where a widget is offered. A dashboard only reads. */
 export const SURFACES = ["app", "dashboard"] as const;
+/** Where a widget may be put: on an app's page or on a dashboard. */
 export type Surface = (typeof SURFACES)[number];
 
 /** What a widget is for, which is how "Add to page" groups widgets. */
 export const CATEGORIES = ["records", "action", "understand", "organize", "content"] as const;
+/** The group a widget is offered under in the editor's list. */
 export type Category = (typeof CATEGORIES)[number];
 
 /** What "Add to page" calls each category. */
@@ -46,12 +48,15 @@ export const CATEGORY_TITLES: Record<Category, string> = {
  *   own route: decision 0007).
  */
 export const DATA_SHAPES = ["rows", "summary", "record", "approvals"] as const;
+/** The shape of what a widget reads: rows, a summary, one record or approvals. */
 export type DataShape = (typeof DATA_SHAPES)[number];
 
 /** Where a data input may come from. SQL is never offered on an app's page. */
 export const SOURCE_KINDS = ["table", "query", "sql", "approvals"] as const;
+/** Where a widget's data may come from: a table, a query, SQL or the workspace's approvals. */
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 
+/** One thing a widget reads: its shape, what it is called, whether it is needed and where it may come from. */
 export interface DataInputDeclaration {
   shape: DataShape;
   /** What the inspector calls it when a widget has more than one. Left out: "Source". */
@@ -73,8 +78,10 @@ export interface DataInputDeclaration {
  * - `nothing`.
  */
 export const EVENT_GIVES = ["record", "group", "nothing"] as const;
+/** What an event of a widget gives the action attached to it: a record, a group, or nothing. */
 export type EventGives = (typeof EVENT_GIVES)[number];
 
+/** One thing that can happen to a widget, such as a click, that an action may be attached to. */
 export interface EventDeclaration {
   gives: EventGives;
   /** Said in the Actions tab: "When a row is clicked". */
@@ -94,8 +101,10 @@ export interface CellSize {
  * - `hide`: not shown on phones.
  */
 export const PHONE_BEHAVIOURS = ["stack", "list", "hide"] as const;
+/** What a widget does on a narrow screen: stack, draw as a list, or hide. */
 export type PhoneBehaviour = (typeof PHONE_BEHAVIOURS)[number];
 
+/** A widget's size in the page's grid, and what it does on a phone. */
 export interface LayoutDeclaration {
   min: CellSize;
   default: CellSize;
@@ -110,8 +119,10 @@ export interface LayoutDeclaration {
 
 /** The inspector's tabs, in order. */
 export const TABS = ["data", "display", "actions", "rules"] as const;
+/** One of the inspector's tabs: data, display, actions or rules. */
 export type Tab = (typeof TABS)[number];
 
+/** What the inspector calls each tab. */
 export const TAB_TITLES: Record<Tab, string> = {
   data: "Data",
   display: "Display",
@@ -170,6 +181,7 @@ export const CONTROLS = [
   "sort",
   "limit",
 ] as const;
+/** One of the controls the inspector draws a setting with. */
 export type Control = (typeof CONTROLS)[number];
 
 /** How the inspector draws one setting. Kept on a config property as `x-volvel`. */
@@ -216,6 +228,7 @@ export interface ConfigSchema {
   additionalProperties?: false;
 }
 
+/** What a widget declares: its type and words, what it reads, its settings, its events and its size. The editor, the checks and the documentation are all drawn from it. */
 export interface WidgetDefinition {
   /** `pack/name`: `core/chart`. The pack `core` is the platform's, and `labs` its trials. */
   type: string;
@@ -261,7 +274,9 @@ export interface WidgetDefinition {
   role?: WidgetRole;
 }
 
+/** What the platform gives a widget beyond its data: to hold other widgets, or to set the page's filters. */
 export const WIDGET_ROLES = ["container", "filters"] as const;
+/** One of `WIDGET_ROLES`. */
 export type WidgetRole = (typeof WIDGET_ROLES)[number];
 
 const TYPE = /^[a-z][a-z0-9-]{0,30}\/[a-z][a-z0-9-]{0,40}$/;
@@ -386,6 +401,7 @@ export function mustGive(column: { required?: boolean | undefined; default?: unk
   return column.required === true && (column.default === undefined || column.default === null);
 }
 
+/** What a widget that reads rows is given: the columns and a page of rows, and a way to ask for the next. */
 export interface RowsData {
   shape: "rows";
   columns: readonly ColumnInfo[];
@@ -407,6 +423,7 @@ export interface RowsData {
   names?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
+/** What a widget that reads a summary is given: rows gathered into groups with the values worked out for each. */
 export interface SummaryData {
   shape: "summary";
   /** The breakdowns' columns, then the values', as the view should draw them. */
@@ -430,6 +447,7 @@ export interface SummaryData {
   trend?: readonly { at: string; value: number }[];
 }
 
+/** What a widget that reads one record is given: its columns and its values. */
 export interface RecordData {
   shape: "record";
   columns: readonly ColumnInfo[];
@@ -465,6 +483,7 @@ export interface ApprovalItem {
   };
 }
 
+/** What a widget that reads approvals is given: the steps of the workspace's flows that wait for a decision. */
 export interface ApprovalsData {
   shape: "approvals";
   /** Set when the requests are decided in the console and not here: where, and what it is called. */
@@ -475,6 +494,7 @@ export interface ApprovalsData {
   more: boolean;
 }
 
+/** What a view is given to draw, by the shape its data input declared. */
 export type WidgetData = RowsData | SummaryData | RecordData | ApprovalsData;
 
 /**
@@ -617,6 +637,7 @@ export interface FilterHost {
 
 /** What the inspector writes as a measure, a breakdown and a condition. The manifest checks them. */
 export const MEASURE_FUNCTIONS = ["count", "count_distinct", "sum", "avg", "min", "max"] as const;
+/** How long the periods are when a summary is broken down by a date or a time. */
 export const BREAKDOWN_CADENCES = ["day", "week", "month", "quarter", "year"] as const;
 
 /** What a measure is called in a sentence: "Sum of Total". */
@@ -629,6 +650,7 @@ export const MEASURE_WORDS: Record<(typeof MEASURE_FUNCTIONS)[number], string> =
   max: "Largest",
 };
 
+/** What each of the breakdown periods is called, as a title. */
 export const CADENCE_WORDS: Record<(typeof BREAKDOWN_CADENCES)[number], string> = {
   day: "Daily",
   week: "Weekly",

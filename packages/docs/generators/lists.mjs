@@ -735,6 +735,7 @@ export const LIST_LINKS = [
   "- [Audit actions](audit-actions): what the log records",
   "- [Platform events](platform-events): what the platform publishes",
   "- [Metrics](metrics): every series an instance serves",
+  "- [The SDK](sdk/index): every export of the packages a repository is written against",
 ];
 export const LIST_PAGES = [
   "widgets",
@@ -745,4 +746,5 @@ export const LIST_PAGES = [
   "audit-actions",
   "platform-events",
   "metrics",
+  "sdk",
 ];

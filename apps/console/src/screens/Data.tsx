@@ -2917,7 +2917,8 @@ function Definition({
           <SeeItAs
             root={root}
             table={table.name}
-            usersPath={`${tenantBase}/end-users?limit=200`}
+            usersPath={`${tenantBase}/end-users`}
+            columns={table.columns}
             groupsPaths={{
               endUsers: `${tenantBase}/end-user-groups`,
               members: `${tenantBase}/groups`,

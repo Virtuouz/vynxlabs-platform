@@ -273,6 +273,11 @@ describe("asking a question across tables", () => {
     expect((await frank.client.get(`${ws()}/queries/schema`)).body.maySql).toBe(false);
     expect((await run(frank.client, "select 1")).status).toBe(403);
   });
+
+  test("it says whether the caller may keep a query, so a screen offers Save only to those who may (DAT-24)", async () => {
+    expect((await alice.get(`${ws()}/queries/schema`)).body.maySave).toBe(true);
+    expect((await frank.client.get(`${ws()}/queries/schema`)).body.maySave).toBe(false);
+  });
 });
 
 describe("who may ask, and of which tables", () => {

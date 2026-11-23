@@ -1,8 +1,9 @@
-import { Button, ComboboxField, SelectField, TextField } from "@volvel/ui";
-import { useState } from "react";
+import { Button, ComboboxField, SelectField, showValue, TextField } from "@volvel/ui";
+import { useMemo, useState } from "react";
 import { useLoad } from "../api.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ErrorState } from "../kit/LoadState.tsx";
+import { usePagedList } from "../kit/paged.tsx";
 
 type Condition =
   | { everyone: true }
@@ -282,14 +283,38 @@ export function SeeItAs({
   table,
   usersPath,
   groupsPaths,
+  columns,
 }: {
   root: string;
   table: string;
+  /** The tenant's end users, a page at a time and searched on the server. */
   usersPath: string;
+  /** The table's columns, so a value is shown as its type shows it. */
+  columns?: { name: string; type: string }[];
   /** The tenant's lists of groups, of end users and of members: the ones the person may read are offered. */
   groupsPaths?: { endUsers: string; members: string };
 }) {
-  const users = useLoad<{ items: { id: string; email: string; groups: string[] }[] }>(usersPath);
+  const [typed, setTyped] = useState("");
+  // The server searches, so an end user past the first page is found by typing.
+  const users = usePagedList<{ id: string; email: string; groups: string[] }>(usersPath, {
+    search: typed,
+  });
+  // The person chosen stays in the list when a search no longer finds them.
+  const [picked, setPicked] = useState<{ id: string; email: string; groups: string[] }>();
+  // One list until the people change: a new one each time would have the field reset what is typed.
+  const options = useMemo(
+    () =>
+      [
+        ...(picked && !(users.items ?? []).some((user) => user.id === picked.id) ? [picked] : []),
+        ...(users.items ?? []),
+      ].map((user) => ({
+        value: user.id,
+        label: user.email,
+        ...(user.groups.length > 0 ? { hint: `In ${user.groups.join(", ")}` } : {}),
+      })),
+    [picked, users.items],
+  );
+  const typeOf = (name: string) => columns?.find((column) => column.name === name)?.type ?? "text";
   const endUserGroups = useLoad<{ items: GroupChoice[] }>(groupsPaths?.endUsers ?? null);
   const memberGroups = useLoad<{ items: GroupChoice[] }>(groupsPaths?.members ?? null);
   // One person or one group at a time: choosing one lets go of the other.
@@ -325,18 +350,27 @@ export function SeeItAs({
         <div className="min-w-0 max-w-sm flex-1">
           <ComboboxField
             label="See it as"
-            options={(users.data?.items ?? []).map((user) => ({
-              value: user.id,
-              label: user.email,
-              ...(user.groups.length > 0 ? { hint: `In ${user.groups.join(", ")}` } : {}),
-            }))}
+            options={options}
             value={as}
-            placeholder="Choose an end user"
-            hint="The rows this person would be given, by what is saved now."
+            placeholder="Search by email"
+            hint={
+              users.hasMore && !typed
+                ? "Type to find others: the list shows the first of them."
+                : "The rows this person would be given, by what is saved now."
+            }
+            empty={
+              users.loading || users.hasMore
+                ? "Loading…"
+                : typed
+                  ? "No end user matches that."
+                  : "This tenant has no end users yet."
+            }
             onChange={(next) => {
               setAs(next);
+              setPicked((users.items ?? []).find((user) => user.id === next) ?? picked);
               if (next) setGroup(undefined);
             }}
+            onSearch={setTyped}
           />
         </div>
         {groupsPaths ? (
@@ -367,6 +401,7 @@ export function SeeItAs({
           Someone in this group would see {counted} {counted === 1 ? "row" : "rows"} in all.
         </p>
       ) : null}
+      {users.error ? <ErrorState error={users.error} onRetry={users.reload} /> : null}
       {rows.error ? <ErrorState error={rows.error} onRetry={rows.reload} /> : null}
       {seen && rows.data ? (
         shown.length === 0 ? (
@@ -385,8 +420,7 @@ export function SeeItAs({
             columns={names.map((name) => ({
               header: name,
               truncate: true,
-              cell: (row) =>
-                row[name] === null || row[name] === undefined ? "" : String(row[name]),
+              cell: (row) => showValue(typeOf(name), row[name]),
             }))}
             footer={
               shown.length === 20 ? (

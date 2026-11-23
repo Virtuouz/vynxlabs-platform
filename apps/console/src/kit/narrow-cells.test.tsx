@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import { cleanup, screen } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { show } from "../testing.tsx";
 import { DataTable } from "./DataTable.tsx";
+import { ListCollection } from "./ListCollection.tsx";
 import { UsedBy } from "./references.tsx";
 import { Truncate } from "./Truncate.tsx";
 
@@ -48,4 +49,32 @@ test("a long path says all of itself in its title from the start, for a phone wi
   expect(document.querySelector("[title]")?.getAttribute("title")).toBe(
     "billing/invoices/overdue/record-payment",
   );
+});
+
+test("item 24: a list's row actions wrap inside a column that keeps room, and never sit in a line that cannot", async () => {
+  vi.stubGlobal(
+    "fetch",
+    async () => new Response(JSON.stringify({ items: [{ id: "a", n: "A" }], nextCursor: null })),
+  );
+  show(
+    <ListCollection<{ id: string; n: string }>
+      title="Things"
+      path="/things"
+      columns={[{ header: "Name", cell: (row) => row.n }]}
+      rowKey={(row) => row.id}
+      empty={{ title: "None" }}
+      rowActions={() => (
+        <>
+          <button type="button">Make a password reset link</button>
+          <button type="button">Disable</button>
+        </>
+      )}
+    />,
+  );
+  const header = await screen.findByRole("columnheader", { name: "Actions" });
+  expect(header.className).toContain("w-[14rem]");
+  const actions = document.querySelector("[data-row-actions]") as HTMLElement;
+  expect(actions.className).toContain("flex-wrap");
+  expect(actions.className).not.toContain("inline-flex");
+  vi.unstubAllGlobals();
 });

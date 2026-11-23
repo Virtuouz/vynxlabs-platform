@@ -306,6 +306,27 @@ test("with a run open, its own commands come first, and one that ends something 
   expect(rerun).toHaveBeenCalled();
 });
 
+test("item 29: typing the name of the open page's own command finds it", async () => {
+  const fire = vi.fn();
+  show(
+    <>
+      <Current
+        object={{
+          heading: "This schedule",
+          commands: [{ key: "fire", label: "Fire it now", run: fire }],
+        }}
+      />
+      <CommandPalette open onClose={() => {}} destinations={[]} tenantId={T} workspaceId={W} />
+    </>,
+  );
+  const box = await screen.findByRole("combobox");
+  fireEvent.change(box, { target: { value: "fire it" } });
+  const options = await screen.findAllByRole("option");
+  expect(options[0]?.textContent).toContain("Fire it now");
+  fireEvent.keyDown(box, { key: "Enter" });
+  expect(fire).toHaveBeenCalled();
+});
+
 test("what is pinned comes before what is recent, and ⌘P pins what is chosen", async () => {
   palette();
   type("reminders");

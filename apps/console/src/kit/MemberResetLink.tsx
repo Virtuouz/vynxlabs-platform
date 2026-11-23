@@ -65,20 +65,24 @@ export function MemberResetLink({
         {made ? (
           <div className="flex flex-col gap-3">
             {made.url ? (
-              <OneTimeSecret value={made.url} noun="link">
+              <OneTimeSecret value={made.url} noun="link" focusCopy>
                 <p className="m-0">
                   This instance sends no mail, so pass the link on yourself. It works once, until{" "}
-                  <Time value={made.expiresAt} mode="stamp" />.
+                  <Time value={made.expiresAt} mode="stamp" zone />.
                 </p>
               </OneTimeSecret>
             ) : (
               <p className="m-0">
                 It was emailed to {email}. It works once, until{" "}
-                <Time value={made.expiresAt} mode="stamp" />. You are not shown it.
+                <Time value={made.expiresAt} mode="stamp" zone />. You are not shown it.
               </p>
             )}
             <div className="flex justify-end">
-              <Button variant="primary" onClick={() => setMade(undefined)}>
+              <Button
+                variant="primary"
+                {...(made.url ? {} : { "data-autofocus": "" })}
+                onClick={() => setMade(undefined)}
+              >
                 Done
               </Button>
             </div>

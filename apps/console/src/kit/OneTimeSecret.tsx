@@ -11,6 +11,7 @@ export function OneTimeSecret({
   value,
   noun,
   onDone,
+  focusCopy = false,
   children,
 }: {
   value: string;
@@ -18,6 +19,8 @@ export function OneTimeSecret({
   noun: string;
   /** Takes it away. Without it, the value stays until the page is left. */
   onDone?: (() => void) | undefined;
+  /** Takes the focus on Copy, for a value shown in a dialog that opens on it. */
+  focusCopy?: boolean;
   /** More to say, such as a command that uses the value. */
   children?: ReactNode;
 }) {
@@ -41,7 +44,12 @@ export function OneTimeSecret({
         <code className="min-w-0 flex-1 rounded-control border border-line bg-surface px-2 py-1.5 font-mono text-code break-all select-all">
           {value}
         </code>
-        <CopyButton value={value} label={`Copy the ${noun}`} onCopied={() => setCopied(true)} />
+        <CopyButton
+          value={value}
+          label={`Copy the ${noun}`}
+          focused={focusCopy}
+          onCopied={() => setCopied(true)}
+        />
         {onDone ? (
           <Button size="small" variant="quiet" onClick={() => void done()}>
             Done

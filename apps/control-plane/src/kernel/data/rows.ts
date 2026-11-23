@@ -351,6 +351,8 @@ async function naming<T>(target: RowTarget, write: () => Promise<T>): Promise<T>
         409,
         "conflict",
         `Another row already has that value for "${column.name}".`,
+        // Names the field, so a form marks it.
+        [{ path: `/${column.name}`, message: "Another row already has this value." }],
       );
     throw error;
   }

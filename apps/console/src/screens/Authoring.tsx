@@ -881,7 +881,7 @@ export function ScriptEditor({
 
   const problemCount =
     markers.filter((marker) => marker.severity === "error").length +
-    buildIssues.filter((issue) => issue.file === `${path}.script.ts`).length;
+    buildIssues.filter((issue) => issue.file === `${path}.${kind}.ts`).length;
   const codeArea = (height: string) =>
     fromRepository ? (
       <RepositorySource root={root} path={path} />
@@ -1185,7 +1185,7 @@ export function ScriptEditor({
                     content: (
                       <ProblemList
                         markers={markers}
-                        build={buildIssues.filter((issue) => issue.file === `${path}.script.ts`)}
+                        build={buildIssues.filter((issue) => issue.file === `${path}.${kind}.ts`)}
                         onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
                       />
                     ),
@@ -1207,7 +1207,21 @@ export function ScriptEditor({
           }
         />
       ) : (
-        codeArea("34rem")
+        <>
+          {codeArea("34rem")}
+          {fromRepository ? null : (
+            <section aria-label="Problems" className="flex flex-col gap-2">
+              <h2 className="m-0 text-label text-ink-subtle uppercase">
+                {problemCount > 0 ? `Problems (${problemCount})` : "Problems"}
+              </h2>
+              <ProblemList
+                markers={markers}
+                build={buildIssues.filter((issue) => issue.file === `${path}.${kind}.ts`)}
+                onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
+              />
+            </section>
+          )}
+        </>
       )}
     </section>
   );

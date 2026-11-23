@@ -59,3 +59,10 @@
 - Left: Unpublish. Only a documentation app has a `published` flag, set in the repository. A console-made app has no switched-off state: taking it out of service is removing it (the Remove button, deployed with the next release). Adding a published flag to builder apps changes the app kind's schema; asked, not built.
 - The list shows deployed apps, so a removed one stays listed until its removal draft is deployed (the notice from the shared button says so).
 - Polish: states: loading, empty, no match, error; keyboard: search and chips are native; Walk: Apps at 390 px (toolbar wraps), inspector Remove, reload keeps nothing (search is not in the URL).
+
+## EXT-MP4 = EXT-12: Problems for extensions, with line jump
+- Test: `ExtensionProblems.test.tsx` "EXT-MP4: an extension's code that does not build lists where, in a Problems tab, each line a way to it" (own file, the editor stubbed as a text box: Monaco's stand-in depends on whether it has loaded, which made it flaky beside other editor tests). Failed before (no Problems).
+- Change: `apps/console/src/screens/Authoring.tsx`: the Problems list (`ProblemList`) is under the code of a connector and a trigger source too, with editor diagnostics and build errors; build errors are matched by `<path>.<kind>.ts`, not only `.script.ts` (the shared filter in `problemCount` and the script test pane both use it now). Each line jumps to its line in the editor.
+- Siblings: script test pane (same list, same filter); docs editor has its own "Problems" (DocEditor.tsx), untouched.
+- Left: nothing in the console raises a build error for a connector on save (only preview/deploy and a connection Test do), so the list shows editor diagnostics until a refused save names files; it is the same for scripts' saves.
+- Seen: "Problems" or "Problems (n)" under the code of an extension. Walk: connector editor at 390 px.

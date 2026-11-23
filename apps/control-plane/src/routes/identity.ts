@@ -974,7 +974,10 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return ctx.mutate(async (trx, audit) => {
           const member = await trx
             .updateTable("member")
-            .set({ disabled_at: body.disabled ? new Date() : null })
+            .set({
+              disabled_at: body.disabled ? new Date() : null,
+              disabled_by: body.disabled ? "hand" : null,
+            })
             .where("id", "=", params.id)
             .returning(["id", "name", "email", "created_at", "disabled_at"])
             .executeTakeFirst();

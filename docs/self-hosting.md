@@ -346,7 +346,7 @@ The whole file is checked before anything is written, and the tenant arrives ent
 
 Then, on the new instance:
 
-1. Sign in as one of the tenant's members. They have the passwords they had. Someone who already had an account there keeps that account and its password.
+1. Sign in as one of the tenant's members. They have the passwords they had, unless they also belong to another tenant or run the instance: such a member is exported without a password, because the account is the whole instance's. Someone who already had an account there keeps that account and its password.
 2. Create new API keys and worker credentials. They are never exported.
 3. Point whatever calls the tenant's webhooks at the new address. The part after the host is unchanged.
 4. Stop the tenant on the old instance: pause its workspaces' triggers there.

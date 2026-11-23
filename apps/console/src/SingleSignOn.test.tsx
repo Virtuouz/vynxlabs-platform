@@ -178,7 +178,8 @@ test("a provider is connected, tried out, given a domain, turned on and required
   // Requiring it says who keeps a password, and asks first.
   fireEvent.click(screen.getByRole("button", { name: "Require it" }));
   const said = await answer("Require it");
-  expect(said).toContain("operators of this instance keep theirs");
+  expect(said).toContain("operators of this instance keep their passwords");
+  expect(said).toContain("open sessions end now, except yours");
   await screen.findByRole("button", { name: "Stop requiring it" });
   expect(sent("PATCH")[1]?.body).toEqual({ enforce: true });
 

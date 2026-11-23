@@ -1,11 +1,13 @@
 import { X509Certificate } from "node:crypto";
-import { newId } from "@volvel/db";
+import { newId, sql } from "@volvel/db";
 import { generate } from "selfsigned";
 import { portalUrl } from "../apps/address.js";
 import type { Audit, Db, Trx } from "../audit.js";
 import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { decryptFor, encryptFor } from "../execution/bindings.js";
 import type { Kernel } from "../kernel.js";
+import { INSTANCE_ONLY_ROLE } from "../kinds.js";
+import { sameOrigin } from "../origin.js";
 import { membershipForProvider } from "../tenant/releases.js";
 import { readIdpMetadata } from "./metadata.js";
 
@@ -439,18 +441,31 @@ export interface ProviderInput {
   defaultRoleId?: string | null;
 }
 
-async function checkRole(trx: Trx, tenantId: string | null, roleId: string | null) {
+/**
+ * Whether a role can be the default role of a provider. A provider of the instance gives none:
+ * what the people who run the instance may do is given one person at a time. A tenant's gives
+ * its own roles and the built-in ones, never the instance's (`insertBinding` refuses it too).
+ * Whether the person saving it may give the role is the route's to ask: `binding:write`.
+ */
+export async function checkRole(trx: Trx, tenantId: string | null, roleId: string | null) {
   if (roleId === null) return;
+  if (tenantId === null) {
+    throw issue(
+      "/defaultRoleId",
+      "cannot be set on the instance's provider. Give the people who run the instance their access one by one.",
+    );
+  }
   const role = await trx
     .selectFrom("role")
-    .select(["id", "tenant_id", "workspace_id"])
+    .select(["id", "name", "tenant_id", "workspace_id"])
     .where("id", "=", roleId)
     .executeTakeFirst();
   // A built-in role, or one of the tenant's own that is not tied to a workspace.
   const usable =
     role &&
+    role.name !== INSTANCE_ONLY_ROLE &&
     role.workspace_id === null &&
-    (role.tenant_id === null || (tenantId !== null && role.tenant_id === tenantId));
+    (role.tenant_id === null || role.tenant_id === tenantId);
   if (!usable) throw issue("/defaultRoleId", "is not a role that can be given here");
 }
 
@@ -544,6 +559,8 @@ export async function updateProvider(
   audit: Audit,
   current: Provider,
   input: ProviderInput,
+  /** Whoever is saving it: their own sessions are not ended by requiring the provider. */
+  by?: { type: string; id: string | null },
 ): Promise<Provider> {
   const config =
     input.config === undefined
@@ -557,6 +574,19 @@ export async function updateProvider(
     if (current.protocol !== "oidc") throw badRequest("Only an OIDC provider has a client secret.");
     sealed = await sealSecrets(kernel, trx, current, { clientSecret: input.clientSecret });
   }
+  // A stored client secret was given for the issuer it was given with. An issuer at another
+  // address is not sent it: the secret is dropped unless given again.
+  const moved =
+    isOidc(current) &&
+    sealed === undefined &&
+    current.hasSecret &&
+    !sameOrigin(current.config.issuer, (config as OidcConfig).issuer);
+  // The provider's subjects are the issuer's own: another issuer may use the same subject for
+  // another person. What tied people to the old one is removed, and email ties them again.
+  const issuerChanged = isOidc(current)
+    ? current.config.issuer !== (config as OidcConfig).issuer
+    : current.protocol === "saml" &&
+      (current.config as SamlConfig).idpIssuer !== (config as SamlConfig).idpIssuer;
   const enabled = input.enabled ?? current.enabled;
   // Turning a provider off stops it being required too.
   const enforce = input.enforce ?? (enabled ? current.enforce : false);
@@ -568,7 +598,7 @@ export async function updateProvider(
     .set({
       ...(input.name !== undefined ? { name: input.name.trim() } : {}),
       config: JSON.stringify(config),
-      ...(sealed ? { secrets: sealed } : {}),
+      ...(sealed ? { secrets: sealed } : moved ? { secrets: null } : {}),
       enabled,
       enforce,
       ...(input.provision !== undefined ? { provision: input.provision } : {}),
@@ -581,7 +611,30 @@ export async function updateProvider(
     .returningAll()
     .executeTakeFirstOrThrow();
   const provider = toProvider(row);
+  if (moved && provider.enabled) {
+    throw new HttpError(
+      409,
+      "secret_needed",
+      "The issuer is at a new address, and the stored client secret is not sent there. Give the client secret again to save it.",
+    );
+  }
   await checkCanEnable(trx, provider);
+  if (issuerChanged) {
+    const removed = await trx
+      .deleteFrom("identity_link")
+      .where("provider_id", "=", provider.id)
+      .returning("id")
+      .execute();
+    if (removed.length > 0) {
+      await audit({
+        action: "identity_provider.links_removed",
+        targetType: "identity_provider",
+        targetId: provider.id,
+        tenantId: provider.tenantId,
+        details: { name: provider.name, removed: removed.length, why: "issuer_changed" },
+      });
+    }
+  }
 
   const sha1 = (value: OidcConfig | SamlConfig) => (value as SamlConfig).allowSha1 === true;
   const unasked = (value: OidcConfig | SamlConfig) =>
@@ -597,6 +650,7 @@ export async function updateProvider(
       enforce: provider.enforce,
       provision: provider.provision,
       secretChanged: sealed !== undefined,
+      ...(moved ? { secretDropped: true } : {}),
       ...(current.paused ? { resumed: true } : {}),
     },
   });
@@ -619,6 +673,10 @@ export async function updateProvider(
       {},
     ],
   ];
+  // Requiring the provider makes a password no way in for the people it covers. A password
+  // session that is open is a way in too, so those end now, except the one of whoever pressed it.
+  const ended =
+    !current.enforce && provider.enforce ? await endCoveredSessions(trx, provider, by) : undefined;
   for (const [changed, what, details] of notable) {
     if (!changed) continue;
     await audit({
@@ -626,10 +684,75 @@ export async function updateProvider(
       targetType: "identity_provider",
       targetId: provider.id,
       tenantId: provider.tenantId,
-      details: { name: provider.name, ...details },
+      details: {
+        name: provider.name,
+        ...details,
+        ...(what === "enforced" && ended !== undefined ? { sessionsEnded: ended } : {}),
+      },
     });
   }
   return provider;
+}
+
+/**
+ * Ends the sessions of the people a required provider covers: members with an email in a
+ * domain it has proved, or the end users of the tenant in one (every end user when it has
+ * proved none). The people who run the instance keep theirs, as they keep their passwords.
+ * Sessions made by signing in with the provider end too: those people sign in again with it.
+ * API keys and service accounts are left. Answers how many sessions ended.
+ */
+async function endCoveredSessions(
+  trx: Trx,
+  provider: Provider,
+  by: { type: string; id: string | null } | undefined,
+): Promise<number> {
+  const domains = [...(await provedDomains(trx, provider.id))];
+  const spared = by?.id ?? null;
+  if (provider.audience === "members") {
+    if (domains.length === 0) return 0;
+    const ended = await trx
+      .deleteFrom("member_session")
+      .where(
+        "member_id",
+        "in",
+        trx
+          .selectFrom("member")
+          .select("member.id")
+          .where(sql<boolean>`split_part(member.email, '@', 2) = any(${domains})`)
+          .where((eb) =>
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom("binding")
+                  .select("binding.id")
+                  .whereRef("binding.principal_id", "=", "member.id")
+                  .where("binding.principal_type", "=", "member")
+                  .where("binding.scope_type", "=", "instance"),
+              ),
+            ),
+          ),
+      )
+      .$if(spared !== null, (q) => q.where("member_id", "!=", spared as string))
+      .returning("id")
+      .execute();
+    return ended.length;
+  }
+  if (provider.tenantId === null) return 0;
+  const covered = trx
+    .selectFrom("end_user")
+    .select("end_user.id")
+    .where("end_user.tenant_id", "=", provider.tenantId)
+    .$if(domains.length > 0, (q) =>
+      q.where(sql<boolean>`split_part(end_user.email, '@', 2) = any(${domains})`),
+    );
+  const ended = await trx
+    .deleteFrom("app_session")
+    .where("tenant_id", "=", provider.tenantId)
+    .where("principal_type", "=", "end_user")
+    .where("principal_id", "in", covered)
+    .returning("id")
+    .execute();
+  return ended.length;
 }
 
 export async function deleteProvider(trx: Trx, audit: Audit, provider: Provider) {

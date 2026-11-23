@@ -12,7 +12,7 @@ import { challengeMet, challengeOf as domainChallenge } from "../kernel/apps/cha
 import { hostnameOf } from "../kernel/apps/hosts.js";
 import { actorOf, createHandoff, startAppSession, takeHandoff } from "../kernel/apps/sessions.js";
 import { cleanTheme, resolveTheme, themeCss } from "../kernel/apps/theme.js";
-import { writeAudit } from "../kernel/audit.js";
+import { type Trx, writeAudit } from "../kernel/audit.js";
 import { guardedFetch } from "../kernel/egress.js";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
@@ -724,12 +724,27 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .executeTakeFirst();
             if (!workspace) throw badRequest("That workspace is not in this tenant.");
           }
+          // Only a name that is proved or enabled belongs to a tenant. Until then anyone may
+          // register it, and the first to prove it holds it. Twice in one tenant is a mistake.
           const taken = await trx
             .selectFrom("app_domain")
-            .select("id")
+            .select(["id", "tenant_id"])
             .where("hostname", "=", hostname)
+            .where((eb) =>
+              eb.or([
+                eb("tenant_id", "=", params.t),
+                eb("verified_at", "is not", null),
+                eb("enabled", "=", true),
+              ]),
+            )
             .executeTakeFirst();
-          if (taken) throw conflict("That hostname is already registered on this instance.");
+          if (taken) {
+            throw conflict(
+              taken.tenant_id === params.t
+                ? "This tenant has already registered that hostname."
+                : "Another tenant has already proved or enabled that hostname on this instance.",
+            );
+          }
           const created = await trx
             .insertInto("app_domain")
             .values({
@@ -756,6 +771,25 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return reply.code(201).send(toDomain(row));
       },
     );
+
+    /** A name proved or enabled by one tenant cannot be proved or enabled by another. */
+    const refuseIfHeld = async (
+      trx: Trx,
+      domain: { id: string; tenant_id: string; hostname: string },
+    ) => {
+      const held = await trx
+        .selectFrom("app_domain")
+        .select("id")
+        .where("hostname", "=", domain.hostname)
+        .where("id", "!=", domain.id)
+        .where((eb) => eb.or([eb("verified_at", "is not", null), eb("enabled", "=", true)]))
+        .executeTakeFirst();
+      if (held) {
+        throw conflict(
+          "Another tenant has already proved or enabled that hostname on this instance. Ask its owner, or an operator of the instance, to remove it there first.",
+        );
+      }
+    };
 
     const DomainParams = Type.Object({ t: Id, id: Id });
     const findDomain = async (tenantId: string, id: string) => {
@@ -808,6 +842,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
         }
         const row = await ctx.mutate(async (trx, audit) => {
+          if (verified) await refuseIfHeld(trx, domain);
           const updated = await trx
             .updateTable("app_domain")
             .set({
@@ -870,6 +905,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .executeTakeFirst();
             if (!target) throw badRequest("No app has that path in the domain's workspace.");
           }
+          if (body.enabled) await refuseIfHeld(trx, domain);
           const updated = await trx
             .updateTable("app_domain")
             .set({

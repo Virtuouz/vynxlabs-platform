@@ -554,9 +554,11 @@ describe("exporting a tenant", () => {
     ]) {
       expect(text.includes(value), value).toBe(false);
     }
-    // What is there is ciphertext, and a password hash for each member.
+    // What is there is ciphertext, and a password hash for each member sealed under the
+    // tenant's key: none is a plain field (GOV-09).
     expect(text).toContain('"ciphertext"');
-    expect(text).toContain('"password_hash"');
+    expect(text).toContain('"password_sealed"');
+    expect(text).not.toContain('"password_hash"');
   });
 
   test("exporting is recorded, and leaves the tenant as it was", async () => {
@@ -1285,6 +1287,98 @@ describe("back again", () => {
     const here =
       await sql`select 1 from pg_namespace where nspname = ${workspaceSchema(main)}`.execute(a.db);
     expect(here.rows).toHaveLength(1);
+  });
+});
+
+describe("members' passwords in an export (GOV-09)", () => {
+  async function readArchive(bytes: Buffer): Promise<Map<string, Buffer>> {
+    const path = join(dir, `read-${Math.random()}.tar`);
+    await writeFile(path, bytes);
+    const file = await open(path);
+    try {
+      const out = new Map<string, Buffer>();
+      for (const entry of await tarIndex(file)) out.set(entry.path, await tarRead(file, entry));
+      return out;
+    } finally {
+      await file.close();
+    }
+  }
+  const membersOf = (files: Map<string, Buffer>): Any[] =>
+    (files.get("members.0001.jsonl") as Buffer)
+      .toString("utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+
+  test("a hash is sealed, and left out for a member who belongs elsewhere too", async () => {
+    // Carol also belongs to another tenant here, so her account is not this tenant's to give.
+    const side = (await a.admin.post("/tenants", { slug: "side", name: "Side" })).body.id as string;
+    const carol = await a.db
+      .selectFrom("member")
+      .select("id")
+      .where("email", "=", "carol@acme.example")
+      .executeTakeFirstOrThrow();
+    await a.db
+      .insertInto("tenant_member")
+      .values({ tenant_id: side, member_id: carol.id })
+      .execute();
+    const exported = await alice.post(`/tenants/${tenant}/exports`, { passphrase: PASSPHRASE });
+    expect(exported.status).toBe(200);
+    const members = membersOf(await readArchive(exported.bytes));
+    expect(members.every((member) => !("password_hash" in member))).toBe(true);
+    const sealed = Object.fromEntries(members.map((m) => [m.email, m.password_sealed]));
+    expect(sealed["carol@acme.example"]).toBeNull();
+    expect(typeof sealed["alice@acme.example"]).toBe("string");
+    const hashes = await sql<{ password: string }>`
+      select password from member_account where password is not null`.execute(a.db);
+    for (const { password } of hashes.rows) {
+      expect(exported.bytes.toString("latin1").includes(password)).toBe(false);
+    }
+    await a.db.deleteFrom("tenant_member").where("tenant_id", "=", side).execute();
+  });
+
+  test("an export in format 1, with its hashes as plain fields, is still imported", async () => {
+    const files = await readArchive(archive);
+    const hashes = new Map(
+      (
+        await sql<{ member_id: string; password: string }>`
+          select member_id, password from member_account where provider_id = 'credential'`.execute(
+          a.db,
+        )
+      ).rows.map((row) => [row.member_id, row.password]),
+    );
+    const old = membersOf(files).map(({ password_sealed: _gone, ...member }) => ({
+      ...member,
+      password_hash: hashes.get(member.id) ?? null,
+    }));
+    const body = Buffer.from(`${old.map((member) => JSON.stringify(member)).join("\n")}\n`);
+    files.set("members.0001.jsonl", body);
+    const manifest = JSON.parse((files.get("manifest.json") as Buffer).toString("utf8"));
+    manifest.formatVersion = 1;
+    for (const entry of manifest.entries) {
+      const content = files.get(entry.path) as Buffer;
+      entry.bytes = content.length;
+      entry.sha256 = createHash("sha256").update(content).digest("hex");
+    }
+    files.delete("manifest.json");
+    const bytes = Buffer.concat([
+      ...[...files].flatMap(([path, content]) => tarEntry(path, content)),
+      ...tarEntry("manifest.json", Buffer.from(JSON.stringify(manifest))),
+      TAR_END,
+    ]);
+    const c = await startTestApp();
+    try {
+      const imported = await c.admin.upload(
+        "/instance/tenant-imports",
+        bytes,
+        "application/x-tar",
+        { "x-export-passphrase": PASSPHRASE },
+      );
+      expect(imported.status, JSON.stringify(imported.body)).toBe(201);
+      expect((await c.signIn("carol@acme.example", PASSWORD)).get).toBeDefined();
+    } finally {
+      await c.stop();
+    }
   });
 });
 

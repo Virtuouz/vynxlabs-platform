@@ -677,8 +677,26 @@ function Settings({
       className="flex max-w-measure flex-col gap-3"
       onSubmit={async (event) => {
         event.preventDefault();
-        setBusy(true);
         setError(undefined);
+        // Subjects belong to the issuer that gave them: another issuer may use one for another
+        // person. Saying so first is what lets the ties go with the old one.
+        const moved = saml
+          ? (config.idpIssuer ?? "") !== (provider.config.idpIssuer ?? "")
+          : (config.issuer ?? "") !== (provider.config.issuer ?? "");
+        if (moved) {
+          const sure = await ask.confirm({
+            title: saml ? "Change the identity provider's entity ID?" : "Change the issuer?",
+            text: `The ties between people and this provider's sign-ins are removed. The next time each person signs in, they are found by their email again.${
+              saml
+                ? ""
+                : " A client secret stored for the old address is not sent to a new one: give it again if the address changes."
+            }`,
+            action: "Change it",
+            danger: true,
+          });
+          if (!sure) return;
+        }
+        setBusy(true);
         try {
           const { spCertificate: _ours, ...sent } = config;
           const saved = await api.patch<IdentityProvider>(root, {
@@ -1054,8 +1072,8 @@ function ProviderDetail({
                           title: "Require single sign-on?",
                           text:
                             provider.audience === "members"
-                              ? "Members with an email in this provider's proved domains can no longer sign in with a password. The operators of this instance keep theirs, so that a broken provider locks nobody out for good."
-                              : "End users this provider covers can no longer sign in with a password: those in its proved domains, or everyone when it has none.",
+                              ? "Members with an email in this provider's proved domains can no longer sign in with a password. Their open sessions end now, except yours, and they sign in again with the provider. The operators of this instance keep their passwords and sessions, so that a broken provider locks nobody out for good."
+                              : "End users this provider covers can no longer sign in with a password: those in its proved domains, or everyone when it has none. Their open sessions end now.",
                           action: "Require it",
                           danger: true,
                         },
@@ -1094,7 +1112,7 @@ function ProviderDetail({
                       provider.enforce
                         ? `It is required now, and stops being required: those ${who} can use a password again.`
                         : `Those ${who} can still use a password.`
-                    } Anyone who has no password needs one, or another provider, to get in.`,
+                    } Anyone who has no password needs one, or another provider, to get in. A directory that pushes people to it keeps pushing while it is off.`,
                     action: "Turn off",
                     danger: true,
                   });

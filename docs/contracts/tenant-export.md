@@ -6,7 +6,7 @@ A tenant export is everything one tenant has on an instance, in one file. It is 
 
 This document describes the file. It is a contract in the same sense as the manifest format and the worker protocol: a later version of the platform keeps reading formats 1 and 2, or says clearly that it does not.
 
-Format 2 differs from format 1 in one way: the list of contents is authenticated (see "The list of contents"). Format 1 stays importable, with every ownership check below but without that authentication, and the import's check says so.
+Format 2 differs from format 1 in two ways: the list of contents is authenticated (see "The list of contents"), and a member's password hash is sealed under the tenant's key, or left out. Format 1 stays importable, with every ownership check below but without that authentication, and the import's check says so.
 
 ## The file
 
@@ -65,7 +65,11 @@ The instance's own master key is never in an export.
 
 ## Members
 
-Members belong to an instance, not to a tenant, so they are not exported as platform rows. `members.NNNN.jsonl` lists each member of the tenant with `id`, `name`, `email`, `email_verified`, `image`, `created_at` and `password_hash`, the hash they sign in with.
+Members belong to an instance, not to a tenant, so they are not exported as platform rows. `members.NNNN.jsonl` lists each member of the tenant with `id`, `name`, `email`, `email_verified`, `image`, `created_at` and `password_sealed`.
+
+`password_sealed` is the hash the member signs in with, encrypted under the tenant's data key (the layout of a secret, with associated data `secret:<tenant id>:members:<member id>`), as base64. It is readable only with the export's passphrase. It is `null` for a member who also belongs to another tenant on the instance or holds access at the instance: that account belongs to the whole instance, so it is not the tenant's to give away. A member with no password is also `null`.
+
+Format 1 held `password_hash` here instead, the hash as a plain field, for every member. An import still reads it.
 
 ## End users
 
@@ -139,6 +143,7 @@ Never:
 - Operator access grants. They belong to the instance the tenant is leaving.
 - The queue. A run that was waiting is not carried. With history it arrives recorded as canceled.
 - End users' sign-ins, and invitation and reset links that were not used. People sign in again with the password they had, and staff make new links.
+- Passwords of members who also belong to another tenant or hold access at the instance.
 - Hostnames registered for apps. A name points at one instance, so it is registered again where the tenant arrives.
 - The instance master key.
 
@@ -150,7 +155,7 @@ An import:
 2. Requires `migrationLevel` to equal its own. An export from an older or newer version is refused, with both versions named.
 3. Opens the key with the passphrase, and wraps it again with its own master key. In format 2 it then checks `authentication`: a missing or wrong one refuses the file. A format 1 file has none, and the check screen says that nobody vouches for it.
 4. Refuses if the tenant's ID or slug is already taken there. A different slug can be given.
-5. Matches members by email. A member who already has an account there keeps it, with their own password, and every place the export names them is rewritten to name that account. Other members are created with the hash they had.
+5. Matches members by email. A member who already has an account there keeps it, with their own password, and every place the export names them is rewritten to name that account. Other members are created with the hash they had, opened from `password_sealed` (or read from `password_hash` in format 1). A member exported without a hash is created without a password.
 6. Loads every table, keeping every ID, and holds each row to the archive's own tenant, even for a file whose list is authenticated: a row whose `tenant_id` is not the tenant's (including no tenant, the instance), a row in a workspace not loaded from the file, a row of a table with no tenant of its own whose parent is not in the file, a binding of scope `instance`, a binding naming a role that is neither the tenant's nor built in (`operator_admin` is never), and a tenant member the member list does not name. Custom tables are held to catalog rows of the tenant, with valid names and column types, and a data file for a table the catalog lacks refuses the file. Custom tables are built from the catalog exactly as it describes them, their rows loaded, and their rules put back. Objects: only a key that a loaded row names (a `stored` column of its table) may be in `objects/`, and every key a row names must be there. An object already stored under that key is never replaced: the same content is left as it is, other content refuses the file. A failed import removes only the objects it wrote itself.
 7. Sets every workspace's triggers to paused, pauses the repository's sync and every identity provider, and marks every identity provider's domains as not proved.
 8. Counts what arrived against `counts`. Any difference undoes the whole import.

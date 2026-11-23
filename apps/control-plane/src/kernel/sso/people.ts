@@ -3,6 +3,7 @@ import { type Actor, type Audit, type Db, type Trx, writeAudit } from "../audit.
 import { createEndUser } from "../endusers.js";
 import { HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
+import { INSTANCE_ONLY_ROLE } from "../kinds.js";
 import { domainOfEmail, type Provider, provedDomains } from "./providers.js";
 
 /** What a provider said about the person who signed in, after its answer was checked. */
@@ -30,7 +31,8 @@ export type RefusalReason =
   | "email_not_trusted"
   | "no_account"
   | "not_in_tenant"
-  | "disabled";
+  | "disabled"
+  | "runs_instance";
 
 /** A sign-in that was refused, with a reason for the record and words for the person. */
 export class SsoRefusal extends Error {
@@ -172,6 +174,7 @@ export async function resolvePerson(
       }
     }
 
+    if (principalType === "member") await refuseInstanceMember(trx, provider, principalId, email);
     // One person has one subject at a provider. A second is someone else using their email.
     const other = await trx
       .selectFrom("identity_link")
@@ -224,8 +227,8 @@ export async function resolvePerson(
     if (member.disabled_at) {
       throw new SsoRefusal("disabled", "This account has been turned off.");
     }
+    await refuseInstanceMember(trx, provider, principalId, email ?? asserted.subject);
     if (tenantId !== null) await ensureTenantMember(trx, audit, provider, tenantId, principalId);
-    else if (created) await giveRole(trx, audit, provider, null, principalId);
   } else {
     const user = await trx
       .selectFrom("end_user")
@@ -270,6 +273,31 @@ export async function resolvePerson(
     groupsAdded: groups.added,
     groupsRemoved: groups.removed,
   };
+}
+
+/**
+ * Whether a person holds access at the instance. A tenant's provider does not sign them in:
+ * whoever runs a tenant's directory could otherwise sign in as an operator by an email in a
+ * domain they prove. An operator uses a password, or the instance's own provider.
+ */
+export async function holdsInstanceAccess(trx: Trx | Db, memberId: string): Promise<boolean> {
+  const held = await trx
+    .selectFrom("binding")
+    .select("id")
+    .where("scope_type", "=", "instance")
+    .where("principal_type", "=", "member")
+    .where("principal_id", "=", memberId)
+    .executeTakeFirst();
+  return held !== undefined;
+}
+
+async function refuseInstanceMember(trx: Trx, provider: Provider, memberId: string, who: string) {
+  if (provider.tenantId === null || !(await holdsInstanceAccess(trx, memberId))) return;
+  throw new SsoRefusal(
+    "runs_instance",
+    "This account runs the instance, and a tenant's sign-in does not open it. Sign in with your password or the instance's provider.",
+    `${who} holds access at the instance, and the provider belongs to a tenant.`,
+  );
 }
 
 /** The names of the pushed groups a person is in. */
@@ -334,7 +362,7 @@ async function ensureTenantMember(
   await giveRole(trx, audit, provider, tenantId, memberId);
 }
 
-/** Gives someone the provider's default role, where the provider is: a tenant, or the instance. */
+/** Gives someone the provider's default role in the tenant the provider is of. */
 export async function giveRole(
   trx: Trx,
   audit: Audit,
@@ -342,29 +370,30 @@ export async function giveRole(
   tenantId: string | null,
   memberId: string,
 ) {
-  if (!provider.defaultRoleId) return;
+  // The instance's provider gives no role, and no provider gives the instance's own: a
+  // default role saved before that was refused is left unused.
+  if (!provider.defaultRoleId || tenantId === null) return;
   const role = await trx
     .selectFrom("role")
     .select(["id", "name"])
     .where("id", "=", provider.defaultRoleId)
     .executeTakeFirst();
-  if (!role) return;
-  const scope = tenantId === null ? "instance" : "tenant";
-  let held = trx
+  if (!role || role.name === INSTANCE_ONLY_ROLE) return;
+  const held = trx
     .selectFrom("binding")
     .select("id")
-    .where("scope_type", "=", scope)
+    .where("scope_type", "=", "tenant")
+    .where("tenant_id", "=", tenantId)
     .where("principal_type", "=", "member")
     .where("principal_id", "=", memberId)
     .where("role_id", "=", role.id);
-  held = tenantId === null ? held : held.where("tenant_id", "=", tenantId);
   if (await held.executeTakeFirst()) return;
   const id = newId();
   await trx
     .insertInto("binding")
     .values({
       id,
-      scope_type: scope,
+      scope_type: "tenant",
       tenant_id: tenantId,
       workspace_id: null,
       resource_id: null,
@@ -379,7 +408,7 @@ export async function giveRole(
     targetType: "binding",
     targetId: id,
     tenantId: tenantId,
-    details: { scope, memberId, role: role.name, identityProvider: provider.name },
+    details: { scope: "tenant", memberId, role: role.name, identityProvider: provider.name },
   });
 }
 

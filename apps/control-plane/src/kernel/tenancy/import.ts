@@ -44,7 +44,10 @@ interface ExportedMember {
   email_verified: boolean;
   image: string | null;
   created_at: string;
-  password_hash: string | null;
+  /** Format 1: the hash as it was. */
+  password_hash?: string | null;
+  /** Format 2: the hash sealed under the tenant's key, or null when it was left out. */
+  password_sealed?: string | null;
 }
 
 /** An archive on disk that has been checked from end to end. */
@@ -554,10 +557,19 @@ export async function importTenant(
             updated_at: new Date(),
           })
           .execute();
-        if (member.password_hash) {
+        const hash =
+          member.password_hash ??
+          (member.password_sealed
+            ? kernel.vault.decrypt(
+                kernel.vault.unwrapTenantKey(tenantId, wrappedKey),
+                { tenantId, workspaceId: "members", name: member.id },
+                Buffer.from(member.password_sealed, "base64"),
+              )
+            : null);
+        if (hash) {
           await sql`
             insert into member_account (id, member_id, account_id, provider_id, password)
-            values (gen_random_uuid(), ${member.id}, ${member.id}, 'credential', ${member.password_hash})
+            values (gen_random_uuid(), ${member.id}, ${member.id}, 'credential', ${hash})
           `.execute(trx);
         }
         created += 1;

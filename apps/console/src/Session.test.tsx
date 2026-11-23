@@ -5,8 +5,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App } from "./App.tsx";
 import { api } from "./api.ts";
 import { resetPreferences } from "./prefs.ts";
-import { endSession } from "./session.ts";
 import { useNavigationGuard } from "./router.tsx";
+import { endSession } from "./session.ts";
 import { answer, show } from "./testing.tsx";
 
 /**
@@ -56,7 +56,9 @@ beforeEach(() => {
     "GET /api/v1/tenants?limit=50": () => [
       200,
       {
-        items: [{ id: "t1", slug: "acme", name: "Acme Corp", createdAt: "2026-11-11T00:00:00.000Z" }],
+        items: [
+          { id: "t1", slug: "acme", name: "Acme Corp", createdAt: "2026-11-11T00:00:00.000Z" },
+        ],
         nextCursor: null,
       },
     ],
@@ -148,7 +150,9 @@ test("SHL-07: the next person in the same tab is given none of the first person'
   const before = preferenceReads();
   fireEvent.input(screen.getByLabelText("Email"), { target: { value: PEOPLE.m2 } });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
-  fireEvent.input(await screen.findByLabelText("Password"), { target: { value: "right-password" } });
+  fireEvent.input(await screen.findByLabelText("Password"), {
+    target: { value: "right-password" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
   await screen.findByRole("heading", { name: "Tenants" });
   await waitFor(() => expect(preferenceReads()).toBeGreaterThan(before));
@@ -192,7 +196,9 @@ test("SHL-08: a session that ends in the middle of a save asks to sign in again,
   expect(screen.queryByRole("heading", { name: "Sign in" })).toBeNull();
   expect(saved).toEqual([]);
 
-  fireEvent.input(within(sheet).getByLabelText("Password"), { target: { value: "right-password" } });
+  fireEvent.input(within(sheet).getByLabelText("Password"), {
+    target: { value: "right-password" },
+  });
   ended = false;
   fireEvent.click(within(sheet).getByRole("button", { name: "Sign in" }));
   await screen.findByText("Saved: my unsaved words");
@@ -202,7 +208,13 @@ test("SHL-08: a session that ends in the middle of a save asks to sign in again,
 
 test("SHL-08: signing in again as someone else does not resume the page", async () => {
   const reload = vi.fn();
-  vi.stubGlobal("location", { ...window.location, reload, pathname: "/", search: "", href: "http://localhost/" });
+  vi.stubGlobal("location", {
+    ...window.location,
+    reload,
+    pathname: "/",
+    search: "",
+    href: "http://localhost/",
+  });
   routes["PUT /api/v1/draft"] = () => [401, { status: 401, detail: "Sign in." }];
   show(
     <>

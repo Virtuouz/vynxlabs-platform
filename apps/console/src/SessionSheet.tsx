@@ -1,12 +1,28 @@
 import { Button, Dialog, Notice, TextField } from "@volvel/ui";
 import { useEffect, useState } from "react";
-import { ApiError, api, invalidatePrefix, type Me } from "./api.ts";
+import { type ApiError, api, invalidatePrefix, type Me } from "./api.ts";
 import { clearSession } from "./clearSession.ts";
 import { renewed, sessionHolder } from "./session.ts";
 
 interface Ways {
   providers: { id: string; name: string; url: string }[];
   password: boolean;
+}
+
+/** Whoever the cookie names now: the same person resumes the page; another gets a clean one. */
+async function resume(): Promise<boolean> {
+  const response = await fetch("/api/v1/me", { credentials: "same-origin" });
+  if (!response.ok) return false;
+  const now = (await response.json()) as Me;
+  if (now.principal.id !== sessionHolder()) {
+    clearSession();
+    window.location.reload();
+    return true;
+  }
+  renewed();
+  // Reads that failed while the session was over are asked again.
+  invalidatePrefix("");
+  return true;
 }
 
 /**
@@ -32,28 +48,12 @@ export function SessionSheet({ email }: { email: string }) {
     };
   }, [email]);
 
-  /** Whoever the cookie names now: the same person resumes the page; another gets a clean one. */
-  const resume = async (): Promise<boolean> => {
-    const response = await fetch("/api/v1/me", { credentials: "same-origin" });
-    if (!response.ok) return false;
-    const now = (await response.json()) as Me;
-    if (now.principal.id !== sessionHolder()) {
-      clearSession();
-      window.location.reload();
-      return true;
-    }
-    renewed();
-    // Reads that failed while the session was over are asked again.
-    invalidatePrefix("");
-    return true;
-  };
-
   // Signing in with the organization's provider happens in another tab, so this page keeps its work.
   useEffect(() => {
     const back = () => void resume().catch(() => {});
     window.addEventListener("focus", back);
     return () => window.removeEventListener("focus", back);
-  }, [resume]);
+  }, []);
 
   const here = `${window.location.pathname}${window.location.search}`;
   return (

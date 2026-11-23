@@ -15,6 +15,7 @@ import {
 import type { ReactNode } from "react";
 import { useLoad } from "../api.ts";
 import { duration, hm } from "../kit/format.ts";
+import { formatCombo } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import { EmptyCanvas, NextStep, PageHeader, Panel, SectionLabel } from "../kit/layout.tsx";
 import { Junction, Wire } from "../kit/motifs.tsx";
@@ -201,7 +202,7 @@ function FirstRun({
       key: "run",
       done: counts.everRan === true,
       title: "A first run",
-      detail: "Run it from its editor with ⌘↵, or start it from the scripts list.",
+      detail: `Run it from its editor with ${formatCombo("Mod+Enter")}, or start it from the scripts list.`,
       to: `${link}/scripts`,
       action: "Scripts",
     },

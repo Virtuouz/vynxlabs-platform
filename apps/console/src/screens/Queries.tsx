@@ -5,6 +5,7 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { count } from "../kit/format.ts";
+import { formatCombo } from "../kit/keys.ts";
 import { ErrorState, Loading, LoadState } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { ReadTable } from "../kit/ReadTable.tsx";
@@ -429,7 +430,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
             </section>
           ) : !refusal ? (
             <p className="m-0 text-ink-muted">
-              Write a query and press Run, or ⌘↵ in the editor. Start with{" "}
+              Write a query and press Run, or {formatCombo("Mod+Enter")} in the editor. Start with{" "}
               <Code>select * from </Code> and the editor offers the tables.
             </p>
           ) : null}

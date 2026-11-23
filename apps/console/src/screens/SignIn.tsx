@@ -68,7 +68,8 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   const [busy, setBusy] = useState(false);
   // Single sign-on sends the person back to where they were: an app's `?return=`, or this console page.
   const here = `${window.location.pathname}${window.location.search}`;
-  const back = new URLSearchParams(window.location.search).get("return") ?? (here === "/" ? null : here);
+  const back =
+    new URLSearchParams(window.location.search).get("return") ?? (here === "/" ? null : here);
   const withReturn = (url: string) => (back ? `${url}?return=${encodeURIComponent(back)}` : url);
   const [reveal, setReveal] = useState(false);
   /** An owner signing in with a recovery code while their organization's sign-in is required. */
@@ -134,10 +135,10 @@ export function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
                     !ways
                       ? `We could not check how this address signs in. ${failure.message} Press Continue to try again.`
                       : failure.status === 401
-                      ? "That email and password do not match an account."
-                      : recovering && failure.status === 403
-                        ? "That recovery code is not right, or was already used. Each code works once."
-                        : failure.message,
+                        ? "That email and password do not match an account."
+                        : recovering && failure.status === 403
+                          ? "That recovery code is not right, or was already used. Each code works once."
+                          : failure.message,
                   );
                 } finally {
                   setBusy(false);

@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CommandPalette, ShortcutSheet } from "./kit/CommandPalette.tsx";
 import { Current } from "./kit/current.ts";
+import { openShortcuts } from "./kit/keys.ts";
 import { resetPreferences } from "./prefs.ts";
 import { show } from "./testing.tsx";
 
@@ -261,4 +262,20 @@ test("a search that failed says so, with its request ID, and can be tried again"
   fireEvent.click(screen.getByRole("button", { name: "Try again" }));
   expect(await screen.findByText("This workspace")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("with single keys off, the sheet marks only the shortcuts that turn off (SHL-03)", async () => {
+  localStorage.setItem("vx-pref:shortcuts.single-key", "false");
+  show(<ShortcutSheet />);
+  // F1 opens help; the sheet itself is opened with `?`, which is off, so it is asked for.
+  act(() => openShortcuts());
+  await screen.findByText("Keyboard shortcuts");
+  // Enter, Space and Shift+F10 still work, so they are not marked.
+  expect(screen.getByText("Open the row")).toBeTruthy();
+  expect(screen.getByText("Check the row (single keys off)")).toBeTruthy();
+  expect(screen.getByText("The menu for a step, or for the canvas")).toBeTruthy();
+  // These really are turned off.
+  expect(screen.getByText("Search this list (off)")).toBeTruthy();
+  expect(screen.getByText("Overview (off)")).toBeTruthy();
+  localStorage.clear();
 });

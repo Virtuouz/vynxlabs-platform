@@ -679,7 +679,7 @@ export function KitSheet() {
             <Button variant="dashed">+ Add a condition</Button>
             <Kbd>esc</Kbd>
             <Kbd>A</Kbd>
-            <Kbd>⌘K</Kbd>
+            <Kbd>{formatCombo("Mod+K")}</Kbd>
           </div>
           <div className="grid gap-3 md:grid-cols-4">
             <SelectField

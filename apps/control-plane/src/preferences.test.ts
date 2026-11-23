@@ -183,11 +183,14 @@ function consoleSources(dir: string): string[] {
 describe("the settings the console keeps (SHL-01, SHL-12)", () => {
   test("every key the console passes to usePreference is one the server keeps", async () => {
     const found = new Set<string>();
-    const call = /(?:usePreference(?:<[^(]*>)?|useKeptChoice)\(\s*(?:"([^"]+)"|`([^`]+)`|([A-Z_]+))/g;
+    const call =
+      /(?:usePreference(?:<[^(]*>)?|useKeptChoice)\(\s*(?:"([^"]+)"|`([^`]+)`|([A-Z_]+))/g;
     for (const file of consoleSources(join(__dirname, "../../console/src"))) {
       const source = readFileSync(file, "utf8");
       for (const match of source.matchAll(call)) {
-        const named = match[3] ? source.match(new RegExp(`const ${match[3]} = "([^"]+)"`))?.[1] : "";
+        const named = match[3]
+          ? source.match(new RegExp(`const ${match[3]} = "([^"]+)"`))?.[1]
+          : "";
         const key = match[1] ?? match[2] ?? named;
         if (!key) throw new Error(`Cannot read the key at ${file}: ${match[0]}`);
         found.add(key.replace(/\$\{[^}]*"none"[^}]*\}/g, "none").replace(/\$\{[^}]*\}/g, "abc"));

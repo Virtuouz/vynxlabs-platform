@@ -12,8 +12,10 @@ afterAll(async () => {
 });
 
 test("a member suspended in a tenant does not see it in the tenant list", async () => {
-  const kept = (await t.admin.post("/tenants", { slug: "kept", name: "Kept", addCreator: true })).body.id;
-  const left = (await t.admin.post("/tenants", { slug: "left", name: "Left", addCreator: true })).body.id;
+  const kept = (await t.admin.post("/tenants", { slug: "kept", name: "Kept", addCreator: true }))
+    .body.id;
+  const left = (await t.admin.post("/tenants", { slug: "left", name: "Left", addCreator: true }))
+    .body.id;
   const password = "a-good-long-password";
   let sam = "";
   for (const tenant of [kept, left]) {

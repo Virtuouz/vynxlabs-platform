@@ -1,11 +1,10 @@
 import { Notice } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { api, type Me, useLoad } from "./api.ts";
-import { clearSession } from "./clearSession.ts";
 import { notify } from "./ask.tsx";
+import { clearSession } from "./clearSession.ts";
 import { loadPreferences } from "./prefs.ts";
 import { confirmLeave, match, navigate, usePath } from "./router.tsx";
-import { beginSession, endSession, useSessionEnded } from "./session.ts";
 import { SessionSheet } from "./SessionSheet.tsx";
 import { Shell } from "./Shell.tsx";
 import { Account } from "./screens/Account.tsx";
@@ -18,6 +17,7 @@ import { KitSheet } from "./screens/KitSheet.tsx";
 import { NotFound } from "./screens/NotFound.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
+import { beginSession, endSession, useSessionEnded } from "./session.ts";
 
 const SingleSignOn = lazy(() =>
   import("./screens/SingleSignOn.tsx").then((m) => ({ default: m.SingleSignOn })),

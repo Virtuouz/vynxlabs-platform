@@ -15,6 +15,7 @@ import { AccessList } from "./screens/Members.tsx";
 import { EventPage } from "./screens/ObjectPages.tsx";
 import { OfferButton } from "./screens/OfferToAgent.tsx";
 import { EventsWorkbench, TriggersWorkbench } from "./screens/Operate.tsx";
+import { Release } from "./screens/Release.tsx";
 import { RetentionSettings } from "./screens/Retention.tsx";
 import { Roles } from "./screens/Roles.tsx";
 import { RunsWorkbench } from "./screens/Runs.tsx";
@@ -250,6 +251,26 @@ const FAMILIES: Family[] = [
     draw: () => <ConnectionGroups root={root} />,
   },
   {
+    family: "Release, Promote: Change where this promotes to",
+    control: "Change where this promotes to",
+    route: "PATCH /workspaces/:w (workspace:write at the workspace)",
+    scopes: WORKSPACE,
+    serves: (has) => has("workspace:write"),
+    draw: () => {
+      const place = { id: "w1", name: "Main", type: "dev", linkedWorkspaceId: "w2" };
+      return (
+        <Release
+          base={base}
+          root={root}
+          link={link}
+          workspace={place as never}
+          step="promote"
+          reload={() => {}}
+        />
+      );
+    },
+  },
+  {
     family: "Event page: Publish",
     control: /^Publish/,
     route: "POST /events (event:write at the workspace, not at one event)",
@@ -402,6 +423,35 @@ function serve(role: string, scope: Scope) {
             ],
           },
         ],
+      });
+    }
+    if (path.includes("/promotion-preview")) {
+      return body({
+        target: { id: "w2", name: "Clinics", type: "production", linkedWorkspaceId: null },
+        bundle: { digest: "a".repeat(64), version: 8 },
+        possible: true,
+        refusal: null,
+        summary: { created: 0, updated: 1, deleted: 0, data: [], changes: [], breaking: [] },
+        tried: { runs: 0, failed: 0, flowRuns: 0, flowRunsFailed: 0 },
+        triggers: 0,
+        canPromote: true,
+        request: null,
+      });
+    }
+    if (path === `${base}/workspaces`) {
+      return body({
+        items: [
+          { id: "w1", name: "Main", type: "dev", linkedWorkspaceId: "w2" },
+          { id: "w2", name: "Clinics", type: "production", linkedWorkspaceId: null },
+        ],
+      });
+    }
+    if (path.endsWith("/drift")) {
+      return body({
+        target: { id: "w2", name: "Clinics", type: "production", slug: "main" },
+        versions: { here: 8, there: 7 },
+        counts: { changed: 0, only_here: 0, only_there: 0, in_sync: 0 },
+        items: [],
       });
     }
     if (path === `${root}/alert-settings`) {

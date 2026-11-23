@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { Current } from "../kit/current.ts";
 import { ago } from "../kit/format.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
@@ -743,6 +744,11 @@ function PromoteStep({
   const [fromRun] = useUrlParam("fromRun");
   const [problem, setProblem] = useState<string>();
   const data = preview.data;
+  const moving = useNeeds({
+    base: root,
+    permission: "workspace:write",
+    what: "where this workspace promotes to",
+  });
   // Only production has agents that were told a name and cannot be told another at once.
   const breaking = breakingOf(data);
 
@@ -774,9 +780,18 @@ function PromoteStep({
         </Panel>
       </div>
 
-      {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
+      {preview.error ? (
+        // A workspace with nothing deployed is a state, not a failure to retry.
+        preview.error.status === 409 ? (
+          <Notice tone="plain">{preview.error.message}</Notice>
+        ) : (
+          <ErrorState error={preview.error} onRetry={preview.reload} />
+        )
+      ) : null}
       {!data ? (
-        <p className="text-ink-muted">Working out what promoting would do…</p>
+        preview.error ? null : (
+          <p className="text-ink-muted">Working out what promoting would do…</p>
+        )
       ) : (
         <PreviewPanels data={data} targetName={target.name} link={link} />
       )}
@@ -831,6 +846,12 @@ function PromoteStep({
             variant="promote"
             loading={busy}
             disabled={!data?.possible}
+            {...(!data && preview.error
+              ? {
+                  tooltip:
+                    "There is nothing to promote until this workspace has something deployed.",
+                }
+              : {})}
             onClick={async () => {
               const sure = await ask.confirm({
                 ...promoteConfirm(
@@ -890,7 +911,13 @@ function PromoteStep({
             <Rocket aria-hidden="true" size={16} /> {promoteLabel(target)}
           </Button>
         )}
-        <Button variant="quiet" onClick={() => navigate(`${link}/settings`)}>
+        {/* The link is changed by saving the workspace's settings: `workspace:write` of the workspace. */}
+        <Button
+          variant="quiet"
+          disabled={!moving.can}
+          {...(moving.reason ? { tooltip: moving.reason } : {})}
+          onClick={() => navigate(`${link}/settings`)}
+        >
           Change where this promotes to
         </Button>
       </div>

@@ -3,11 +3,11 @@ import { isErrorCode } from "@volvel/manifest";
 import {
   type Dialogs,
   DialogsProvider,
+  setFailureExplainer,
   type ToastOptions,
   ToastProvider,
   type Toasts,
   TooltipProvider,
-  setFailureExplainer,
   useDialogs,
   useToast,
 } from "@volvel/ui";

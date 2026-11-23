@@ -15,7 +15,9 @@ let explainer: ((words: string) => FailureHelp | undefined) | undefined;
  * a code for). A danger `Notice` of those words offers the way, as a toast does, so that a failure
  * shown in a dialog and one shown in a corner are told alike.
  */
-export function setFailureExplainer(find: ((words: string) => FailureHelp | undefined) | undefined) {
+export function setFailureExplainer(
+  find: ((words: string) => FailureHelp | undefined) | undefined,
+) {
   explainer = find;
 }
 

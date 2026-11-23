@@ -302,7 +302,7 @@ export function HelpPanel({
               // An address or an old link asked for a page this build does not have.
               <p className="m-0 text-ink-muted">
                 The help has no page called “{target}”.
-                {ownPage ? " This screen's own page is still there." : ""}
+                {ownPage ? " The page for this screen is still there." : ""}
               </p>
             ) : (
               <p className="m-0 text-ink-muted">There is no help for this screen yet.</p>

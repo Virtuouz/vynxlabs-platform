@@ -63,6 +63,7 @@ import { useBrand } from "../../kit/brand.tsx";
 import { useNeeds } from "../../kit/Can.tsx";
 import { putOnDraftNow, readDraft } from "../../kit/draftApi.ts";
 import { listOf } from "../../kit/format.ts";
+import { isTyping } from "../../kit/keys.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { removeWords } from "../../kit/RemoveDraftButton.tsx";
@@ -572,6 +573,7 @@ export function Docs({
 
   return (
     <section className="flex flex-col gap-5">
+      <RenameKey onRename={() => selected !== undefined && rename(selected)} />
       {editableHere ? may.line : null}
       <PageHeader
         title="Documentation"
@@ -1243,9 +1245,7 @@ export function NameEditor({
           options={[
             {
               value: "",
-              label: types.inherited
-                ? `Use the folder's (${DOC_TYPE_LABELS[types.inherited]})`
-                : "None",
+              label: types.inherited ? `Folder: ${DOC_TYPE_LABELS[types.inherited]}` : "None",
             },
             ...DOC_TYPES.map((one) => ({ value: one, label: DOC_TYPE_LABELS[one] })),
           ]}
@@ -1760,4 +1760,25 @@ export function folderItems(rows: readonly DocRow[], page: Pick<DocPage, "path">
     ...(row.page?.description ? { description: row.page.description } : {}),
     ...(row.kind === "folder" ? { folder: true } : {}),
   }));
+}
+
+/**
+ * F2 renames the page that is open, wherever focus is on the screen. The tree's own rows handle
+ * the key when they have focus, but a page chosen in the tree moves focus to the page's heading.
+ */
+function RenameKey({ onRename }: { onRename: () => void }) {
+  const latest = useRef(onRename);
+  latest.current = onRename;
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "F2" || event.defaultPrevented || event.isComposing) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      if (isTyping(event.target)) return;
+      event.preventDefault();
+      latest.current();
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, []);
+  return null;
 }

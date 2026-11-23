@@ -266,9 +266,9 @@ describe("making, copying and removing", () => {
     expect(one?.source).toContain("## Goal");
     expect(frontmatterOf(one?.source as string)).toEqual({ title: "Close" });
     // A folder with no type leaves the page as it was: a title and nothing under it.
-    expect(changes(planNewPage(typed, "handbook", { title: "Plain", name: "plain" }))[0]?.source).toBe(
-      "---\ntitle: Plain\n---\n",
-    );
+    expect(
+      changes(planNewPage(typed, "handbook", { title: "Plain", name: "plain" }))[0]?.source,
+    ).toBe("---\ntitle: Plain\n---\n");
   });
 
   test("a folder removed takes everything in it and leaves its folder's list", () => {

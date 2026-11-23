@@ -88,6 +88,17 @@ describe("every screen has help", () => {
     }
   });
 
+  test("no two sections of the navigation share a topic, so each opens its own page", () => {
+    const seen = new Map<string, string>();
+    for (const section of INSTANCE_SECTIONS) {
+      expect(
+        seen.get(section.help),
+        `${section.label} and ${seen.get(section.help)}`,
+      ).toBeUndefined();
+      seen.set(section.help, section.label);
+    }
+  });
+
   test("each editor names a topic of its own", () => {
     for (const editor of EDITORS) expect(topics.has(editor.help), editor.help).toBe(true);
   });

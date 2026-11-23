@@ -36,14 +36,18 @@ const titleOf = (html: string) => /<title>(.*?)<\/title>/.exec(html)?.[1];
 
 describe("a served site at 390 px", () => {
   test("the pager's columns may shrink, and a long title breaks instead of widening the page", () => {
-    expect(DOCS_CSS).toMatch(/\.pager \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/);
+    expect(DOCS_CSS).toMatch(
+      /\.pager \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/,
+    );
     expect(DOCS_CSS).toMatch(/\.pager a \{[^}]*overflow-wrap: anywhere/);
   });
 
   test("no grid of the frame has a column that cannot shrink", () => {
     for (const line of DOCS_CSS.split("\n")) {
       for (const columns of line.matchAll(/grid-template-columns:\s*([^;}]*)/g)) {
-        for (const track of (columns[1] as string).replace(/minmax\([^)]*\)|repeat\(.*\)/g, "").split(/\s+/)) {
+        for (const track of (columns[1] as string)
+          .replace(/minmax\([^)]*\)|repeat\(.*\)/g, "")
+          .split(/\s+/)) {
           expect(track, line).not.toMatch(/^[\d.]+fr$/);
         }
       }
@@ -71,7 +75,9 @@ describe("descriptions", () => {
   });
 
   test("a page's subtitle and a card draw them the same way", () => {
-    expect(docPage(at, "orders/index")).toContain("<p>Everything <code>@shop/orders</code> exports.</p>");
+    expect(docPage(at, "orders/index")).toContain(
+      "<p>Everything <code>@shop/orders</code> exports.</p>",
+    );
     expect(homePage(at)).toContain("Everything <code>@shop/orders</code> exports.");
     expect(docPage(at, "orders/index")).not.toContain("`");
   });
@@ -97,7 +103,9 @@ describe("names and places", () => {
 
   test("a collection's own page says where it is, and its pager does not lead into another collection", () => {
     const html = docPage(at, "stock/index");
-    expect(html).toContain('<ol class="crumbs" aria-label="Where this page is"><li><a href="/apps/shop/">Shop docs</a></li></ol>');
+    expect(html).toContain(
+      '<ol class="crumbs" aria-label="Where this page is"><li><a href="/apps/shop/">Shop docs</a></li></ol>',
+    );
     expect(html).not.toContain("<small>Previous");
     const last = docPage(at, "orders/reference/statuses");
     expect(last).not.toContain('class="next"');
@@ -123,7 +131,11 @@ describe("a site of typed pages", () => {
   });
 
   test("a site with no types has none on its home", () => {
-    const plain = buildApp(app, [doc("shop/index", "title: Shop"), doc("shop/a/b", "title: B")], {});
+    const plain = buildApp(
+      app,
+      [doc("shop/index", "title: Shop"), doc("shop/a/b", "title: B")],
+      {},
+    );
     expect(homePage({ ...at, set: plain.set })).not.toContain('class="types"');
   });
 

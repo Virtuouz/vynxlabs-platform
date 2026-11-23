@@ -512,11 +512,11 @@ export function docPage(at: SiteView, path: string): string {
     (folder) => folder.id !== "" && folder.index?.path !== path,
   );
   // A collection's own page is where its trail begins: it says it is under the site.
-  const landing = trailOf(set.nav, path).length === 1 && trail.length === 0 && collection?.id !== "";
-  const crumbs =
-    landing
-      ? `<ol class="crumbs" aria-label="Where this page is"><li><a href="${attr(at.base)}">${escapeHtml(at.title)}</a></li></ol>`
-      : trail.length > 0
+  const landing =
+    trailOf(set.nav, path).length === 1 && trail.length === 0 && collection?.id !== "";
+  const crumbs = landing
+    ? `<ol class="crumbs" aria-label="Where this page is"><li><a href="${attr(at.base)}">${escapeHtml(at.title)}</a></li></ol>`
+    : trail.length > 0
       ? `<ol class="crumbs" aria-label="Where this page is">${trail
           .map((folder) => {
             const to = folder.index ?? firstOf(folder);

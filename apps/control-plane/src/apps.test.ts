@@ -676,6 +676,37 @@ describe("end users", () => {
     expect(forEd.json().result.items.map((row: Any) => row.number)).toEqual(["A-1"]);
   });
 
+  test("a guest may not start a script or a flow, since they could never read the run (APP-02)", async () => {
+    const flowRole = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "guest_flow_starter",
+      permissions: ["flow_run:write"],
+    });
+    const scriptRole = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "guest_script_starter",
+      permissions: ["run:write"],
+    });
+    const bound = await Promise.all(
+      [scriptRole.body.id, flowRole.body.id].map(async (roleId) => {
+        const made = await alice.post(`/tenants/${tenant}/bindings`, {
+          workspaceId: prod,
+          principalType: "anonymous",
+          roleId,
+        });
+        expect(made.status, JSON.stringify(made.body)).toBe(201);
+        return made.body.id as string;
+      }),
+    );
+    const guest = browser(t, MAIN);
+    const base = `/api/v1/tenants/${tenant}/workspaces/${prod}`;
+    const script = await guest.post(`${base}/runs`, { script: "place-order", input: {} });
+    expect(script.status, JSON.stringify(script.body)).toBe(403);
+    expect(script.body.detail).toContain("Sign in");
+    const flow = await guest.post(`${base}/flow-runs`, { flow: "anything", input: {} });
+    expect(flow.status, JSON.stringify(flow.body)).toBe(403);
+    expect(flow.body.detail).toContain("Sign in");
+    for (const id of bound) await alice.delete(`/tenants/${tenant}/bindings/${id}`);
+  });
+
   test("sign-up is off until the tenant turns it on", async () => {
     const base = `/api/v1/tenants/${tenant}`;
     const visitor = browser(t, MAIN);

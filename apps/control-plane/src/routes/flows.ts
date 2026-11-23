@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { sql } from "@volvel/db";
 import { type FlowBody, PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
-import { badRequest, conflict, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, guestStart, HttpError, notFound } from "../kernel/errors.js";
 import { cancelFlowRuns } from "../kernel/execution/bulk-cancel.js";
 import { bundleManifest, payloadSchemas } from "../kernel/execution/bundles.js";
 import { redact } from "../kernel/execution/redact.js";
@@ -783,6 +783,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: params.w,
           resourceId: target?.id,
         });
+        if (ctx.principal.type === "anonymous") throw guestStart("flow");
         const started = await ctx.mutate(async (trx, audit) => {
           const result = await startFlowRun(kernel, trx, {
             tenantId: params.t,

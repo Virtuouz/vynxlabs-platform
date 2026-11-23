@@ -81,6 +81,8 @@ import {
   GrantsFields,
   InputSchemaField,
   MAX_TAGS,
+  type StartSettings,
+  switchStart,
   TagsField,
 } from "./FlowStepFields.tsx";
 import {
@@ -820,6 +822,7 @@ export function FlowEditor({
   const [testRunId, setTestRunId] = useState<string>();
   /** The steps added here from the palette: a schedule among them takes the workspace's zone. */
   const addedIds = useRef(new Set<string>());
+  const shelves = useRef(new Map<string, Map<string, StartSettings>>());
   const [testTrigger, setTestTrigger] = useState<string>();
   const [testAll, setTestAll] = useState(false);
   const [editedSinceTest, setEditedSinceTest] = useState(false);
@@ -1880,18 +1883,22 @@ export function FlowEditor({
                           { value: "webhook", label: "When its address is called" },
                           { value: "form", label: "When someone fills in its form" },
                         ]}
-                        onChange={(type) =>
+                        onChange={(type) => {
+                          // What the start was set to returns if it is changed back.
+                          const shelf = shelves.current.get(chosen.id) ?? new Map();
+                          shelves.current.set(chosen.id, shelf);
                           update(chosen.id, {
-                            trigger:
+                            trigger: switchStart(shelf, node.trigger as StartSettings, type, () =>
                               type === "schedule"
                                 ? { type, cron: "0 8 * * *" }
                                 : type === "event"
                                   ? { type, event: "" }
                                   : type === "form"
-                                    ? newForm()
+                                    ? (newForm() as unknown as StartSettings)
                                     : { type },
-                          })
-                        }
+                            ) as FlowNode["trigger"],
+                          });
+                        }}
                       />
                       {(node.trigger as { type: string }).type === "manual" ? (
                         <InputSchemaField

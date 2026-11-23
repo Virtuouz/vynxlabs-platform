@@ -164,6 +164,33 @@ function ExpressionLines({
   );
 }
 
+/** What a start is set to, whatever its kind. */
+export type StartSettings = { type: string } & Record<string, unknown>;
+
+/** The kinds of start that give their runs tags. */
+const TAGGING_STARTS = ["schedule", "webhook", "event"];
+
+/**
+ * Changes what a start is: the settings it had are put on `shelf` under its kind, and when
+ * it is changed back they return. A kind not seen before begins as `fresh` says, with the
+ * tags carried over where it takes tags. The shelf lives as long as the step is open.
+ */
+export function switchStart(
+  shelf: Map<string, StartSettings>,
+  current: StartSettings,
+  type: string,
+  fresh: () => StartSettings,
+): StartSettings {
+  shelf.set(current.type, current);
+  const back = shelf.get(type);
+  if (back) return back;
+  const made = fresh();
+  const tags = current.tags;
+  return Array.isArray(tags) && tags.length > 0 && TAGGING_STARTS.includes(type)
+    ? { ...made, tags }
+    : made;
+}
+
 /** The most tags a start may give a run. */
 export const MAX_TAGS = 10;
 

@@ -262,6 +262,21 @@ describe("the inspector of a flow's steps", () => {
     });
   });
 
+  test("changing how a flow starts and back keeps what that start had (FLW-31)", async () => {
+    const input = { type: "object", properties: { sku: { type: "string" } } };
+    await openAt(
+      { nodes: { start: { type: "trigger", trigger: { type: "manual", input } } }, edges: [] },
+      "start",
+      /What it takes, as JSON Schema/,
+    );
+    change("It starts", "event");
+    await screen.findByLabelText(/^Event/);
+    change("It starts", "manual");
+    await screen.findByText(/What it takes, as JSON Schema/);
+    const saved = await lastSaved();
+    expect(saved.nodes.start?.trigger).toEqual({ type: "manual", input });
+  });
+
   test("a signed webhook says what was signed, the timestamp header and how old a request may be (FLW-MP9)", async () => {
     await openAt(
       {

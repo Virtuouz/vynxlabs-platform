@@ -4,6 +4,7 @@ import { ApiError, api, type Me, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { count } from "../kit/format.ts";
+import { useWide } from "../kit/layout.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
@@ -115,6 +116,9 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
   const access = useLoad<{ approval: boolean; mayChange?: boolean }>(`${base}/access`);
   const [problem, setProblem] = useState<string>();
   const me = useLoad<Me>("/me");
+  // From a tablet up the answers have a column of their own. On a phone they sit under the text,
+  // where nothing is clipped, and the column is not drawn.
+  const wide = useWide(640);
   const approval = access.data?.approval ?? false;
   // The button that was pressed leaves the list once it is answered: focus goes to what is left of
   // the list, not to the page body.
@@ -190,6 +194,39 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
     } catch (error) {
       setProblem(failed(error));
     }
+  };
+  /** What can be done with a release: answer it, withdraw it, or go back to it. */
+  const actionsOf = (row: AccessRelease) => {
+    if (row.status === "awaiting_approval") {
+      if (!mayChange && !askedByMe(row))
+        return <span className="text-meta text-ink-muted">You may read this, not answer it.</span>;
+      if (askedByMe(row))
+        return (
+          <span className="inline-flex flex-col items-end gap-1">
+            <span className="text-meta text-ink-muted">
+              You asked for this. Someone else approves it.
+            </span>
+            <Button size="small" onClick={() => decide(row, "withdraw")}>
+              Withdraw
+            </Button>
+          </span>
+        );
+      return (
+        <span className="inline-flex flex-wrap justify-end gap-1">
+          <Button size="small" variant="primary" onClick={() => decide(row, "approve")}>
+            Approve
+          </Button>
+          <Button size="small" onClick={() => decide(row, "decline")}>
+            Decline
+          </Button>
+        </span>
+      );
+    }
+    return row.status === "applied" && mayChange ? (
+      <Button size="small" onClick={() => back(row)}>
+        Go back to this
+      </Button>
+    ) : null;
   };
   /** Every change of a release, whatever its status: the list shows three. */
   const showAll = (release: AccessRelease) =>
@@ -351,6 +388,16 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
                     </Button>
                   </span>
                 ) : null}
+                {/* On a phone the columns beside this one are not shown: who, when, and what to do. */}
+                {wide ? null : (
+                  <span className="mt-1 flex flex-col gap-1">
+                    <span className="text-meta text-ink-muted">
+                      {row.createdBy ?? ORIGIN[row.origin] ?? row.origin},{" "}
+                      <Time value={row.createdAt} mode="ago" />
+                    </span>
+                    <span className="flex flex-wrap gap-1">{actionsOf(row)}</span>
+                  </span>
+                )}
               </span>
             ),
           },
@@ -375,46 +422,9 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
             ),
           },
           { header: "When", priority: 2, cell: (row) => <Time value={row.createdAt} mode="ago" /> },
-          {
-            header: "",
-            align: "end",
-            cell: (row) => {
-              if (row.status === "awaiting_approval") {
-                if (!mayChange && !askedByMe(row))
-                  return (
-                    <span className="text-meta text-ink-muted">
-                      You may read this, not answer it.
-                    </span>
-                  );
-                if (askedByMe(row))
-                  return (
-                    <span className="inline-flex flex-col items-end gap-1">
-                      <span className="text-meta text-ink-muted">
-                        You asked for this. Someone else approves it.
-                      </span>
-                      <Button size="small" onClick={() => decide(row, "withdraw")}>
-                        Withdraw
-                      </Button>
-                    </span>
-                  );
-                return (
-                  <span className="inline-flex flex-wrap justify-end gap-1">
-                    <Button size="small" variant="primary" onClick={() => decide(row, "approve")}>
-                      Approve
-                    </Button>
-                    <Button size="small" onClick={() => decide(row, "decline")}>
-                      Decline
-                    </Button>
-                  </span>
-                );
-              }
-              return row.status === "applied" && mayChange ? (
-                <Button size="small" onClick={() => back(row)}>
-                  Go back to this
-                </Button>
-              ) : null;
-            },
-          },
+          ...(wide
+            ? [{ header: "", align: "end" as const, cell: (row: AccessRelease) => actionsOf(row) }]
+            : []),
         ]}
         empty={{
           title: "No releases yet",

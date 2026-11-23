@@ -419,6 +419,12 @@ export function EventPage({
               </Button>
             </>
           }
+          line={
+            <>
+              {mayPublish.line}
+              {may.line}
+            </>
+          }
           meta={
             <KeyValues
               rows={[
@@ -740,6 +746,7 @@ export function ScriptPage({
                 </Button>
               </>
             }
+            line={mayRun.line}
             meta={
               <span className="flex flex-col gap-1.5">
                 {script.description ? (

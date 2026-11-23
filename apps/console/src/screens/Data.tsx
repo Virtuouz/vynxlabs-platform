@@ -32,6 +32,7 @@ import { ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { useAddressBox } from "../kit/addressBox.ts";
+import { type Needs, useNeeds } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { count } from "../kit/format.ts";
 import { HealthCell } from "../kit/health.tsx";
@@ -150,6 +151,8 @@ interface RowsBrowserProps {
   filesPath?: string;
   /** Explains why rows cannot be changed, when they cannot. */
   readOnlyNote?: string;
+  /** What changing a row takes, and where: without it, rows are not changed and the line says so. */
+  needs?: Needs | undefined;
   /** What the table is, whatever it is called: its saved views are kept under this. */
   tableId?: string | undefined;
   /** Where the table's indexes are changed, when the person may: a read stopped for taking too long points there. */
@@ -294,9 +297,10 @@ function RowsBrowser(
     expanded?: Record<string, Record<string, unknown>>;
   }>(filterBroken ? null : `${props.rowsPath}?${query}`);
   const pageData = filterBroken ? undefined : page.data;
-  const canChange = rowPath !== null && keyColumn !== null;
+  const may = useNeeds(props.needs);
+  const canChange = rowPath !== null && keyColumn !== null && may.can;
   /** A row may be added to a table with no key: only changing and deleting need one. */
-  const canAdd = props.canAdd ?? canChange;
+  const canAdd = props.canAdd ?? (rowPath !== null && keyColumn !== null);
   const keyOf = (row: DataRow) => String(row[keyColumn ?? ""] ?? JSON.stringify(row));
   // Rows saved in place since this page was loaded. They are shown as saved without loading again.
   const [saved, setSaved] = useState<{ of: unknown; rows: Record<string, DataRow> }>();
@@ -384,6 +388,7 @@ function RowsBrowser(
   const fill = props.fill === true;
   return (
     <div className={`flex flex-col gap-3 ${fill ? "min-h-0 flex-1" : ""}`}>
+      {may.line}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         {props.lead}
         {/* What a read-only table says stands in the row. The keys are behind a button: two
@@ -487,7 +492,12 @@ function RowsBrowser(
             </Button>
           ) : null}
           {canAdd ? (
-            <Button variant="primary" onClick={() => setAdding(true)}>
+            <Button
+              variant="primary"
+              disabled={!may.can}
+              {...(may.reason ? { tooltip: may.reason } : {})}
+              onClick={() => setAdding(true)}
+            >
               Add row
             </Button>
           ) : null}
@@ -1770,6 +1780,12 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           {...(data.managedIn === "ui"
             ? { indexesAt: `${link}/tables/${data.name}?view=definition&at=indexes` }
             : {})}
+          needs={{
+            base: root,
+            permission: "data:write",
+            what: "the rows of this table",
+            resource: { kind: "table", path: data.name },
+          }}
           rowsPath={`${root}/rows/${data.name}`}
           rowPath={(key) => `${root}/row/${key}/${data.name}`}
           keyColumn="id"
@@ -3626,6 +3642,11 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
                   : null
               }
               keyColumn={table.key}
+              needs={{
+                base: root,
+                permission: "data_source:write",
+                what: "the rows of this table",
+              }}
               canAdd
               columns={table.columns}
               {...(table.key

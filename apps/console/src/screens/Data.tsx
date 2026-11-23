@@ -1865,10 +1865,13 @@ function BringBackButton({
   onDone: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  // Bringing a table back saves its definition again: `PUT resources/*` asks resource:write.
+  const need = useNeeds({ base: root, permission: "resource:write", what: "this table" });
   return (
     <Button
       size="small"
       loading={busy}
+      {...(need.can ? {} : { disabled: true, tooltip: need.reason })}
       onClick={async () => {
         setBusy(true);
         try {
@@ -1909,9 +1912,12 @@ function PurgeButton({
   onDone: () => void;
 }) {
   const what = column ? `the retired column "${column}"` : `the retired table "${table}"`;
+  // `POST table-purges` asks table:write, which a person who may edit definitions need not hold.
+  const need = useNeeds({ base: root, permission: "table:write", what: "retired data" });
   return (
     <RemoveButton
       label="Delete for good"
+      disabled={need.can ? undefined : need.reason}
       confirm={`Delete ${what} and everything in it? This is the one action that destroys data, and it cannot be undone.`}
       typeToConfirm={column ?? table}
       run={() =>

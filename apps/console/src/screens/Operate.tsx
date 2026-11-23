@@ -248,8 +248,10 @@ export function TriggersWorkbench({
   const list = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
   const { pause, resume } = useTriggerPause({ root, production, listPath: `${root}/triggers` });
   // What this person may do is asked before the controls are drawn (OPS-35).
-  const may = useMay(root, "trigger:write", "resource:write");
+  const may = useMay(root, "trigger:write", "resource:write", "run:write");
   const mayEdit = may("resource:write");
+  // Fire now is `POST /schedule-firings`, which asks run:write, not the permission to pause.
+  const mayFire = may("run:write");
   const noEdit = `It needs resource:write. ${askForAccess()}`;
   const mayPause = may("trigger:write");
   // The kind shown is in the address, so a reload or a link keeps it.
@@ -511,35 +513,41 @@ export function TriggersWorkbench({
               <Current
                 object={{
                   heading: "This trigger",
-                  commands: !mayPause
-                    ? []
-                    : open.paused
+                  commands: [
+                    ...(mayPause
+                      ? open.paused
+                        ? [
+                            {
+                              key: "resume",
+                              label: `Resume ${open.path}`,
+                              icon: CirclePlay,
+                              run: () => resume(open),
+                            },
+                          ]
+                        : [
+                            {
+                              key: "pause",
+                              label: `Pause ${open.path}…`,
+                              icon: CirclePause,
+                              run: () => pause(open),
+                            },
+                          ]
+                      : []),
+                    ...(mayFire &&
+                    !open.paused &&
+                    open.type === "schedule" &&
+                    !workspacePaused &&
+                    !open.pausedBy
                       ? [
                           {
-                            key: "resume",
-                            label: `Resume ${open.path}`,
-                            icon: CirclePlay,
-                            run: () => resume(open),
+                            key: "fire",
+                            label: "Fire it now",
+                            icon: Zap,
+                            run: () => fireNow(open),
                           },
                         ]
-                      : [
-                          {
-                            key: "pause",
-                            label: `Pause ${open.path}…`,
-                            icon: CirclePause,
-                            run: () => pause(open),
-                          },
-                          ...(open.type === "schedule" && !workspacePaused && !open.pausedBy
-                            ? [
-                                {
-                                  key: "fire",
-                                  label: "Fire it now",
-                                  icon: Zap,
-                                  run: () => fireNow(open),
-                                },
-                              ]
-                            : []),
-                        ],
+                      : []),
+                  ],
                   pin: {
                     kind: open.type === "schedule" ? "schedule" : "trigger",
                     ref: open.path,
@@ -601,10 +609,7 @@ export function TriggersWorkbench({
                           <Pencil aria-hidden="true" size={16} /> Edit
                         </Button>
                       )}
-                      {mayPause &&
-                      open.type === "schedule" &&
-                      !workspacePaused &&
-                      !open.pausedBy ? (
+                      {mayFire && open.type === "schedule" && !workspacePaused && !open.pausedBy ? (
                         <Button variant="primary" onClick={() => void fireNow(open)}>
                           <Zap aria-hidden="true" size={16} /> Fire now
                         </Button>

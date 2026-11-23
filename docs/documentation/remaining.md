@@ -28,3 +28,4 @@ Each item was in a lane's brief and was not built, or was found by a lane. The f
 - `objectHref("dashboard")` can open `dashboards/at/<path>`; the Changes list links a draft-only data source to an unbound page; a dashboard draft clash is a message, not DraftClash; Files borrows the help topic `data-tables` (t3-data).
 - The flow editor's list shows one fault per step; `JsonView` would read user data shaped `{stored: "runs/….json"}` as kept apart (t2-walk-flow).
 - `ACC-27`'s "others' operator grants" was not understood by its lane (t3-access).
+- Queries offers Name and path and Remove draft to people who may not use them; See it as shows references by ID (t4-data).

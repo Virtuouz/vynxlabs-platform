@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { FEEDBACK_COLUMNS, FEEDBACK_TABLE } from "@volvel/docs-engine";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -154,8 +157,18 @@ function browser() {
   return { get, form };
 }
 
+// The names the product's own help holds, as the console's build leaves them, so that no test
+// depends on a console having been built.
+let consoleDir: string;
+
 beforeAll(async () => {
-  t = await startTestApp();
+  consoleDir = mkdtempSync(join(tmpdir(), "vx-help-"));
+  mkdirSync(join(consoleDir, "help"));
+  writeFileSync(
+    join(consoleDir, "help", "manifest.json"),
+    JSON.stringify({ terms: { workspace: {} }, topics: { "data-tables": {} } }),
+  );
+  t = await startTestApp({ config: { consoleDir } });
   const roles = Object.fromEntries(
     (
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
@@ -189,6 +202,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await t?.stop();
+  if (consoleDir) rmSync(consoleDir, { recursive: true, force: true });
 });
 
 const HELP = "/apps/acme/main/help/";

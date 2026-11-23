@@ -80,7 +80,7 @@ export function PageHeader({
         bar
           ? "truncate text-title"
           : mono
-            ? `font-mono text-title ${compact ? "truncate" : "break-all"}`
+            ? `font-mono text-title ${compact ? "truncate" : "break-words"}`
             : size === "display-lg"
               ? "text-display-lg"
               : "text-display"

@@ -159,6 +159,12 @@ describe("the flow editor, as a person uses it", () => {
     await waitFor(() => expect(measured).toContain("route"));
   });
 
+  test("WLK-15: the state is said once in the header, not as a pill and again as a word", async () => {
+    await openAt({ nodes: { start: manual }, edges: [] }, "start", /Press Enter to rename/);
+    await screen.findByText("Deployed");
+    expect(screen.getAllByText("Deployed")).toHaveLength(1);
+  });
+
   test("renaming a webhook start keeps its address by the old name as its key (FLW-04)", async () => {
     await openAt(
       { nodes: { hook: { type: "trigger", trigger: { type: "webhook" } } }, edges: [] },

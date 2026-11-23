@@ -63,7 +63,7 @@ import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { retryAfter } from "../kit/retry.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
-import { type RunState, STATE_STROKE, StatePill, stateLabel, Tag } from "../kit/status.tsx";
+import { type RunState, STATE_STROKE, StatePill, Tag } from "../kit/status.tsx";
 import { navigate, useNavigationGuard, useUrlParam } from "../router.tsx";
 import { outlineIcon } from "./builder/widgetIcons.ts";
 import { ExpressionField, ExpressionPreview } from "./ExpressionField.tsx";
@@ -1454,7 +1454,7 @@ export function FlowEditor({
           : "Saving…"
     : savedAt
       ? `Draft saved ${ago(savedAt)}`
-      : stateLabel(state === "removed" ? "draft" : state);
+      : "";
 
   const keepViewport = (viewport: Viewport) => {
     if (!path) return;
@@ -1634,8 +1634,8 @@ export function FlowEditor({
                   >
                     <Background />
                     <Controls />
-                    {/* With the test panel open the canvas is short, and the map would cover the graph. */}
-                    {testing ? null : <MiniMap pannable zoomable />}
+                    {/* With the test panel open the canvas is short, and on a phone it is small: the map would cover the graph. */}
+                    {testing ? null : <MiniMap pannable zoomable className="max-sm:hidden" />}
                   </ReactFlow>
                 </NodeRuns.Provider>
               </NodeNames.Provider>

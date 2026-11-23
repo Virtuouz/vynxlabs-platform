@@ -13,7 +13,7 @@ The root address is also where the console opens. When you open `/` and you have
 
 The screen is reached from the rail: **Tenants** for a member, **Instance** then **All tenants** for an operator. F1 (**Help for this page**) opens the topic `tenants`.
 
-::screenshot{name=console/basics-tenants alt="The Tenants list with a search box, the columns Name, Slug and Workspaces, and the Create tenant button."}
+::screenshot{name=console/basics-tenants alt="The Tenants list with a search box, the columns Name, Slug, Workspaces and Created, and the row of the tenant the signed-in member belongs to."}
 
 ## Controls
 

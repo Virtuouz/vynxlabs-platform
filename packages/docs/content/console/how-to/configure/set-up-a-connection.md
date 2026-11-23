@@ -29,7 +29,7 @@ A connection set up in a production workspace is different: a new one cannot be 
 8. A new connection is declared in a draft. Open **Operate**, then **Deploy**, and press **Deploy 1 change**. The tag goes away when the version is deployed.
 :::
 
-::screenshot{name=console/configure-connection-sheet alt="The sheet for a new HTTP connection after Save: the name stock-prices, the address, the stored token with Replace and Remove, and the results Saved and Reached."}
+::screenshot{name=console/configure-connection-sheet alt="The sheet of the HTTP connection stock-prices after Save: its address, the stored token with Replace and Remove, and under Save and test the results Saved and a passed test."}
 
 ## The result
 

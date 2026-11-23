@@ -455,6 +455,9 @@ function bundle(
         ["use", "note"],
       ],
     ),
+    flow("quoting", { start: manual, span: set({ span: "duration(trigger.apiKey)" }) }, [
+      ["start", "span"],
+    ]),
     flow("cutting", { start: manual, half: set({ half: "trigger.text.substring(0, 2)" }) }, [
       ["start", "half"],
     ]),
@@ -911,6 +914,19 @@ describe("running a flow", () => {
     expect(step(again, "child").output).toEqual({
       stored: expect.stringContaining(`flow-runs/${retried.body.id}/`),
     });
+  });
+
+  test("an expression's failure that quotes a secret the run was given is masked in the lists too (mask2)", async () => {
+    const id = await start("quoting", { apiKey: "k-live-98765" });
+    const done = await finished(id);
+    expect(done.status).toBe("failed");
+    const listed = (await alice.get(`${ws()}/flow-runs`)).body.items.find(
+      (one: Any) => one.id === id,
+    );
+    expect(JSON.stringify(listed)).not.toContain("k-live-98765");
+    expect(JSON.stringify(done)).not.toContain("k-live-98765");
+    const activity = (await alice.get(`${ws()}/activity?q=${id}`)).body;
+    expect(JSON.stringify(activity)).not.toContain("k-live-98765");
   });
 
   test("a value the database cannot hold does not leave the run going for ever (FLW-02)", async () => {

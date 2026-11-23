@@ -403,6 +403,8 @@ export const INSTANCE_TABLES = [
   "member_session",
   "member_account",
   "member_verification",
+  // A link to choose a new password: the member's own, shared by every tenant they are in.
+  "member_password_token",
   // A member's own, like their password: shared by every tenant they are in.
   "member_recovery_code",
   // A member's own settings, shared by every tenant they are in.

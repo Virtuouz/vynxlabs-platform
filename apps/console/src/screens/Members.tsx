@@ -5,6 +5,7 @@ import { ask, notify } from "../ask.tsx";
 import { useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, KeyValues, SectionLabel } from "../kit/layout.tsx";
+import { MemberResetLink } from "../kit/MemberResetLink.tsx";
 import { consoleLink, kindName, objectHref } from "../kit/objects.tsx";
 import { LoadMore, usePagedList } from "../kit/paged.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
@@ -327,6 +328,11 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
                   >
                     View access
                   </Button>
+                  <MemberResetLink
+                    path={`${base}/members/${chosen.id}/password-link`}
+                    email={chosen.email}
+                    needs={{ base, permission: "member:write", what: "this tenant's members" }}
+                  />
                   <fieldset disabled={!may.can} className="contents">
                     <Button size="small" onClick={() => suspend(chosen)}>
                       {chosen.suspended ? "Resume" : "Suspend"}

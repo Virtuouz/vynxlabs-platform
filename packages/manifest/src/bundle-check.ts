@@ -1,4 +1,5 @@
 import {
+  assetPathProblem,
   type Bundle,
   type BundleManifest,
   keyOf,
@@ -452,6 +453,8 @@ export function checkBundleAssets(
         `assets: ${asset.path} belongs to "${asset.app}", which is not an app in this bundle.`,
       );
     }
+    const unnamed = assetPathProblem(asset.path);
+    if (unnamed) problems.push(`${asset.app} (app): ${unnamed}`);
     if (asset.path.startsWith(RESERVED_ASSET_PREFIX) || asset.path === "_") {
       problems.push(
         `${asset.app} (app): ${asset.path} is under "_", which the platform keeps for its own pages.`,

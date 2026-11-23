@@ -13,6 +13,7 @@ import { hostnameOf } from "../kernel/apps/hosts.js";
 import { actorOf, createHandoff, startAppSession, takeHandoff } from "../kernel/apps/sessions.js";
 import { cleanTheme, resolveTheme, themeCss } from "../kernel/apps/theme.js";
 import { type Trx, writeAudit } from "../kernel/audit.js";
+import { principalLabel } from "../kernel/binding-labels.js";
 import { guardedFetch } from "../kernel/egress.js";
 import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/errors.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
@@ -77,6 +78,26 @@ const Portal = Type.Object({
   portalUrl: Type.String({ description: "Where the tenant's end users sign in." }),
 });
 
+/** Bindings with the names of their members and end users, to which more joins are added. */
+const boundBindings = (db: Kernel["db"]) =>
+  db
+    .selectFrom("binding")
+    .leftJoin("member", (join) =>
+      join
+        .onRef("member.id", "=", "binding.principal_id")
+        .on("binding.principal_type", "=", "member"),
+    )
+    .leftJoin("end_user", (join) =>
+      join
+        .onRef("end_user.id", "=", "binding.principal_id")
+        .on("binding.principal_type", "=", "end_user"),
+    )
+    .leftJoin("principal_group", (join) =>
+      join
+        .onRef("principal_group.id", "=", "binding.principal_id")
+        .on("binding.principal_type", "=", "group"),
+    );
+
 const AppItem = Type.Object({
   id: Id,
   path: Type.String(),
@@ -90,6 +111,19 @@ const AppItem = Type.Object({
   bytes: Type.Integer(),
   access: Type.Array(Type.String(), {
     description: "Who is bound to a role at the app itself: anyone, every end user, or a name.",
+  }),
+  broaderAccess: Type.Array(
+    Type.Object({
+      scope: Type.Union([Type.Literal("workspace"), Type.Literal("tenant")]),
+      label: Type.String(),
+    }),
+    {
+      description:
+        "Who a binding at the workspace or at the tenant lets open this app, and every other app of the workspace: anyone, every end user, or a name.",
+    },
+  ),
+  published: Type.Boolean({
+    description: "False for a documentation app that is switched off: kept, and not served.",
   }),
   builtWith: Type.Union([Type.Literal("code"), Type.Literal("builder"), Type.Literal("docs")], {
     description:
@@ -291,30 +325,31 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .orderBy("hostname")
           .execute();
-        const bound = await db
-          .selectFrom("binding")
-          .leftJoin("member", (join) =>
-            join
-              .onRef("member.id", "=", "binding.principal_id")
-              .on("binding.principal_type", "=", "member"),
-          )
-          .leftJoin("end_user", (join) =>
-            join
-              .onRef("end_user.id", "=", "binding.principal_id")
-              .on("binding.principal_type", "=", "end_user"),
-          )
-          .leftJoin("principal_group", (join) =>
-            join
-              .onRef("principal_group.id", "=", "binding.principal_id")
-              .on("binding.principal_type", "=", "group"),
-          )
-          .select([
-            "binding.resource_id",
-            "binding.principal_type",
-            "member.email",
-            "end_user.email as end_user_email",
-            "principal_group.name as group_name",
-          ])
+        const named = (select: ReturnType<typeof boundBindings>) =>
+          select
+            .leftJoin("service_account", (join) =>
+              join
+                .onRef("service_account.id", "=", "binding.principal_id")
+                .on("binding.principal_type", "=", "service_account"),
+            )
+            .leftJoin("end_user_group", (join) =>
+              join
+                .onRef("end_user_group.id", "=", "binding.principal_id")
+                .on("binding.principal_type", "=", "end_user_group"),
+            )
+            .leftJoin("role", "role.id", "binding.role_id")
+            .select([
+              "binding.resource_id",
+              "binding.scope_type",
+              "binding.principal_type",
+              "member.email",
+              "end_user.email as end_user_email",
+              "principal_group.name as group_name",
+              "end_user_group.name as end_user_group_name",
+              "service_account.name as account_name",
+              "role.permissions as role_permissions",
+            ]);
+        const bound = await named(boundBindings(db))
           .where("binding.workspace_id", "=", params.w)
           .where("binding.scope_type", "=", "resource")
           .where(
@@ -323,6 +358,33 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             resources.map((resource) => resource.id),
           )
           .execute();
+        // A binding at the workspace or at the tenant reaches every app of the workspace. Only
+        // those that give the audiences of an app, and a role that lets them open apps, count.
+        const broader = (
+          await named(boundBindings(db))
+            .where("binding.tenant_id", "=", params.t)
+            .where((where) =>
+              where.or([
+                where.and([
+                  where("binding.scope_type", "=", "workspace"),
+                  where("binding.workspace_id", "=", params.w),
+                ]),
+                where("binding.scope_type", "=", "tenant"),
+              ]),
+            )
+            .where("binding.principal_type", "in", [
+              "anonymous",
+              "end_users",
+              "end_user",
+              "end_user_group",
+            ])
+            .execute()
+        )
+          .filter((binding) => binding.role_permissions?.includes("app:read"))
+          .map((binding) => ({
+            scope: binding.scope_type as "workspace" | "tenant",
+            label: principalLabel(binding),
+          }));
         const active = await db
           .selectFrom("workspace")
           .innerJoin("bundle", "bundle.id", "workspace.active_bundle_id")
@@ -350,6 +412,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               interface?: string;
               docs?: string;
               reads?: string[];
+              published?: boolean;
             };
             const files = assets.filter((asset) => asset.app === resource.path);
             return {
@@ -383,19 +446,11 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               interface: body.interface ?? null,
               docs: body.docs ?? null,
               reads: body.interface ? tablesOf(body.interface) : [...(body.reads ?? [])].sort(),
+              published: body.docs ? body.published !== false : true,
               access: bound
                 .filter((binding) => binding.resource_id === resource.id)
-                .map(
-                  (binding) =>
-                    binding.email ??
-                    binding.end_user_email ??
-                    binding.group_name ??
-                    (binding.principal_type === "anonymous"
-                      ? "anyone"
-                      : binding.principal_type === "end_users"
-                        ? "every end user"
-                        : binding.principal_type),
-                ),
+                .map(principalLabel),
+              broaderAccess: broader,
             };
           }),
         };
@@ -875,7 +930,8 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Enable or disable a hostname, or point it at another app",
           description:
             "Enabling needs a verified hostname. An operator of the instance may enable one " +
-            "that is not verified, for a name that exists only inside a network.",
+            "that is not verified, for a name that exists only inside a network; the tenant may " +
+            "then disable it and enable it again, until an operator disables it.",
           tags: ["domains"],
           params: DomainParams,
           body: Type.Object({
@@ -887,7 +943,9 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }) => {
         const domain = await findDomain(params.t, params.id);
-        if (body.enabled && !domain.verified_at && !(await ctx.allowed("instance:write", {}))) {
+        const operator = await ctx.allowed("instance:write", {});
+        // A name an operator enabled may be enabled again by the tenant that turned it off.
+        if (body.enabled && !domain.verified_at && !operator && !domain.enabled_by_operator) {
           throw new HttpError(
             409,
             "domain_not_verified",
@@ -910,6 +968,12 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .updateTable("app_domain")
             .set({
               ...(body.enabled !== undefined ? { enabled: body.enabled } : {}),
+              // An operator who enables an unverified name marks it, and who disables one
+              // takes the mark back.
+              ...(operator && body.enabled && !domain.verified_at
+                ? { enabled_by_operator: true }
+                : {}),
+              ...(operator && body.enabled === false ? { enabled_by_operator: false } : {}),
               ...(body.app !== undefined ? { app_path: body.app } : {}),
             })
             .where("id", "=", domain.id)

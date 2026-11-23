@@ -32,6 +32,16 @@ export const forbidden = (permission: string) =>
   new HttpError(403, "forbidden", `This needs the ${permission} permission.`);
 /** A 403 whose reason is a whole sentence, for what is not one permission's name. */
 export const forbiddenBecause = (sentence: string) => new HttpError(403, "forbidden", sentence);
+/**
+ * Someone not signed in may not start a script or a flow: they could never read the run
+ * back, nor follow it. A form of a page still starts them, for it needs no answer.
+ */
+export const guestStart = (what: "script" | "flow") =>
+  new HttpError(
+    403,
+    "forbidden",
+    `Sign in to start a ${what}. A run started by someone who is not signed in cannot be read back.`,
+  );
 export const unauthenticated = (detail = "Sign in or send an API key.") =>
   new HttpError(401, "unauthenticated", detail);
 export const badRequest = (detail: string, issues?: { path: string; message: string }[]) =>

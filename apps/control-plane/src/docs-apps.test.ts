@@ -1366,6 +1366,8 @@ describe("a docs site that is switched off", () => {
     // Its pages and its app are kept: the workspace still lists the app.
     const apps = (await alice.get(`${ws()}/apps`)).body.items;
     expect(apps.map((app: Any) => app.path)).toContain("help");
+    // ... and says it is not published, so the console shows no live link (APP-08).
+    expect(apps.find((app: Any) => app.path === "help").published).toBe(false);
     // The staff manual, which is not switched off, is still there for members.
     expect((await alice.get(`${ws()}/docs`)).body.apps.map((app: Any) => app.path)).toContain(
       "help",
@@ -1375,6 +1377,10 @@ describe("a docs site that is switched off", () => {
   test("is served again at the next deploy once it is switched on", async () => {
     const deployed = await deploy(withHelp({ published: true }));
     expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(
+      (await alice.get(`${ws()}/apps`)).body.items.find((app: Any) => app.path === "help")
+        .published,
+    ).toBe(true);
     expect((await browser().get(HELP)).status).toBe(200);
   });
 });

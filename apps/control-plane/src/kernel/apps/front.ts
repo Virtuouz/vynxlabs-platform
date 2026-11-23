@@ -109,8 +109,20 @@ const PAGE_POLICY = [
 /** Which pages a reader said whether they helped: short marks of them, kept in their own browser. */
 const VOTE_COOKIE = "vd_said";
 
-/** A file whose name carries a hash of its content never changes, so a browser may keep it. */
-const HASHED_NAME = /[-.][A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
+/**
+ * A file whose name carries a hash of its content never changes, so a browser may keep it.
+ * The platform knows the file's SHA-256, so a name is trusted when it holds the start of
+ * that digest, or has the shape a build tool gives (`-` or `.`, then exactly eight letters,
+ * digits, `-` or `_`, with at least one digit or capital, then the extension). A long word
+ * such as `logo-horizontal.svg` is not a hash: it can change at the next deploy.
+ */
+const BUILD_HASH = /[-.]([A-Za-z0-9_-]{8})\.[A-Za-z0-9]+$/;
+export function isHashedName(path: string, sha256: string): boolean {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  if (name.toLowerCase().includes(sha256.slice(0, 8).toLowerCase())) return true;
+  const hash = BUILD_HASH.exec(name)?.[1];
+  return hash !== undefined && /[0-9A-Z]/.test(hash);
+}
 const MAX_FORM_BYTES = 16 * 1024;
 /** A SAML answer is a signed document with certificates in it, in a form. */
 const MAX_SAML_BYTES = 512 * 1024;
@@ -778,8 +790,17 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         resourceId: row.id,
       });
       if (!decision.allowed) continue;
-      const body = row.body as { title?: string; description?: string; published?: boolean };
+      const body = row.body as {
+        title?: string;
+        description?: string;
+        published?: boolean;
+        interface?: string;
+        docs?: string;
+      };
       if (body.published === false) continue;
+      // An app written as code answers 503 where this instance cannot run it: not offered.
+      const generated = typeof body.interface === "string" || typeof body.docs === "string";
+      if (!generated && !kernel.hosts.runsCodeApps(place)) continue;
       apps.push({
         href: appBasePath(place, {
           tenantSlug: tenant.slug,
@@ -974,8 +995,12 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       runtime ?? appFiles(bundle, manifest.path);
     let asset = file === "" ? undefined : files.get(file);
     // An address that names no file is a screen of the app, which the page itself draws.
+    // A last part with a dot, such as `users/j.smith`, is a screen too when the browser asks
+    // for a page and no file has that name.
+    const wantsPage = String(request.headers.accept ?? "").includes("text/html");
     const isPage =
-      !asset && (file === "" || (body.fallback !== false && !/\.[A-Za-z0-9]+$/.test(file)));
+      !asset &&
+      (file === "" || (body.fallback !== false && (wantsPage || !/\.[A-Za-z0-9]+$/.test(file))));
     if (isPage) asset = files.get(entry);
     if (!asset) return missing();
 
@@ -1024,9 +1049,9 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
             name: principal.name ?? null,
             email: principal.email ?? null,
             ...(await endUserIdentity(db, tenant.id, principal)),
-            // A page made in the console shows some widgets only to some groups: a member's
-            // groups come too, named and keyed as an end user's are.
-            ...(generated && principal.type === "member" && principal.id
+            // A member's groups come too, named and keyed as an end user's are, to an app
+            // made in the console and to one written as code alike.
+            ...(principal.type === "member" && principal.id
               ? await memberGroups(db, tenant.id, principal.id)
               : {}),
           },
@@ -1042,7 +1067,9 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     reply.header("etag", etag).header(
       "cache-control",
       // Private: the file was served to someone who may open the app, and to no cache for others.
-      HASHED_NAME.test(asset.path) ? "private, max-age=31536000, immutable" : "private, no-cache",
+      isHashedName(asset.path, asset.sha256)
+        ? "private, max-age=31536000, immutable"
+        : "private, no-cache",
     );
     if (request.headers["if-none-match"] === etag) return reply.code(304).send();
     // The platform's own files are kept compressed too: the best one the browser takes is sent.

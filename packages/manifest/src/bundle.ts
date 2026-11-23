@@ -70,8 +70,26 @@ export const formatFor = <V extends 1 | 2 | 3 | 4>(
   manifests: readonly BundleManifest[],
 ): V | 4 => (manifests.some(needsFormat4) ? 4 : least);
 
-/** The longest path of a file inside an app, and what it may be made of. */
-export const ASSET_PATH_PATTERN = "^[A-Za-z0-9][A-Za-z0-9._@~-]*(/[A-Za-z0-9][A-Za-z0-9._@~-]*)*$";
+/**
+ * What a file's path inside an app may be made of: parts of letters, digits and `. _ @ ~ -`,
+ * each starting with a letter or a digit. A part may also start with `_` or `.` followed by one
+ * (such as a bundler's `_commonjsHelpers-1a2b.js`, or `.well-known/assetlinks.json`), but
+ * never be `.` or `..`, and the path never starts with `_/`, which the platform keeps.
+ */
+export const ASSET_PATH_PATTERN =
+  "^[_.]?[A-Za-z0-9][A-Za-z0-9._@~-]*(/[_.]?[A-Za-z0-9][A-Za-z0-9._@~-]*)*$";
+
+/** What is wrong with a file's path inside an app, said so that it can be renamed; or nothing. */
+export function assetPathProblem(path: string): string | undefined {
+  if (new RegExp(ASSET_PATH_PATTERN).test(path) && path.length <= 500) return undefined;
+  return (
+    `the file "${path}" has a name that cannot be served. Each part of a path is letters, digits ` +
+    `and . _ @ ~ - only (no spaces or accents), starts with a letter, a digit, or one _ or ., ` +
+    `and the whole path is 500 characters at most. Rename it: a file of public/ by its name, ` +
+    `and a file the build makes in build.rollupOptions.output (entryFileNames, chunkFileNames, ` +
+    `assetFileNames).`
+  );
+}
 
 /**
  * One file of an app. The bundle names it by checksum. The bytes are stored

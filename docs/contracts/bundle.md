@@ -19,6 +19,8 @@ A bundle is the unit of deploy: one workspace's manifests and its code, immutabl
 | 3 | Manifests with `ownership: "ui"`: the resources managed in the console. A format 3 bundle that carries one speaks for every console-managed resource of the workspace |
 | 4 | On a manifest: `key`, `title`, `mcp` and `source` |
 
+A file's `path` inside an app is made of parts separated by `/`. A part is letters, digits and `. _ @ ~ -`, and starts with a letter, a digit, or one `_` or `.` followed by one of those (so `_chunk.js` and `.well-known/assetlinks.json` are allowed; `.`, `..` and spaces are not). The path never starts with `_/`, which the platform keeps. A server that is not upgraded refuses a part that starts with `_` or `.`.
+
 ## What format 4 lets a manifest say
 
 | Field | Meaning | When it is left out |

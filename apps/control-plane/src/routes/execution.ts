@@ -10,7 +10,7 @@ import type { FastifyReply } from "fastify";
 import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
 import { forgetHealth } from "../kernel/data/health.js";
-import { badRequest, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, guestStart, HttpError, notFound } from "../kernel/errors.js";
 import { arrivingManifests } from "../kernel/execution/arriving.js";
 import { bindConnection, bindGroupMember } from "../kernel/execution/bindings.js";
 import {
@@ -1213,6 +1213,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: params.w,
           resourceId: target?.id,
         });
+        if (ctx.principal.type === "anonymous") throw guestStart("script");
         const result = await ctx.mutate(async (trx, audit) => {
           const started = await startRun(kernel, trx, {
             tenantId: params.t,

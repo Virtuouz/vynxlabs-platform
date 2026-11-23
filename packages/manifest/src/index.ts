@@ -1,6 +1,7 @@
 export * from "./action.js";
 export {
   ASSET_PATH_PATTERN,
+  assetPathProblem,
   Bundle,
   BundleAsset,
   BundleManifest,

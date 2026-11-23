@@ -617,11 +617,15 @@ describe("working locally", () => {
       expect(context).toMatchObject({
         api: "/api/v1",
         base: "/",
-        tenant: { slug: "acme" },
+        // No logo is set, so the app is told so and shows none (APP-10).
+        tenant: { slug: "acme", logo: false },
         app: { path: "public" },
+        // Sign-in pages are reached through this server, so a person comes back to it.
+        portal: "/portal/acme",
         principal: { email: "alice@acme.example" },
       });
       expect(page).toContain("/theme.css");
+      expect((await fetch(`${server.url}portal/acme/sign-in`)).status).toBe(200);
       // The page's source is served as it is, compiled on the way.
       expect((await fetch(`${server.url}main.tsx`)).status).toBe(200);
       // Its API calls reach the instance as the developer.

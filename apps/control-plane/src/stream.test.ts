@@ -405,6 +405,52 @@ describe("the run event stream", () => {
     full.close();
   });
 
+  test("a member who may read runs in another workspace still follows their own (APP-01)", async () => {
+    const beaId = (
+      await alice.post(`/tenants/${tenant}/members`, {
+        email: "bea@acme.example",
+        name: "bea",
+        password: PASSWORD,
+      })
+    ).body.id as string;
+    const reader = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "b_reader",
+      permissions: ["run:read", "workspace:read"],
+    });
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: b,
+      principalType: "member",
+      principalId: beaId,
+      roleId: reader.body.id,
+    });
+    const starter = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "a_starter",
+      permissions: ["workspace:read"],
+    });
+    const author = await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: a,
+      principalType: "member",
+      principalId: beaId,
+      roleId: starter.body.id,
+    });
+    expect(author.status, JSON.stringify(author.body)).toBe(201);
+    const bea = await t.signIn("bea@acme.example", PASSWORD);
+    const stream = await open(bea);
+    expect(stream.status).toBe(200);
+    await stream.next((one) => one.event === "ready");
+    const hers = await run(a);
+    await t.db
+      .updateTable("run")
+      .set({ started_by_type: "member", started_by_id: beaId, status: "running" })
+      .where("id", "=", hers)
+      .execute();
+    const others = await run(a);
+    expect(await stream.next((one) => one.data.id === hers)).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(stream.events.some((one) => one.data.id === others)).toBe(false);
+    stream.close();
+  });
+
   test("a change made through one replica reaches a stream held on another", async () => {
     const replica = new StreamHub(t.database, t.kernel.log);
     const seen: unknown[] = [];

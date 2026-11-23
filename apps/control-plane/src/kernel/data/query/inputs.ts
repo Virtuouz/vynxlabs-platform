@@ -889,7 +889,11 @@ export async function readWidget(
       if (visual) {
         const cut = (visual.groupBy ?? []).filter((group) => group.bucket !== undefined);
         if (cut.length > 0) {
-          wire.buckets = Object.fromEntries(cut.map((group) => [groupName(group), group.bucket]));
+          wire.buckets = Object.fromEntries(
+            cut.flatMap((group) =>
+              group.bucket ? [[groupName(group), group.bucket] as const] : [],
+            ),
+          );
           const first = cut[0];
           const filter = (input.filters ?? []).find((one) => one.column === first?.column);
           const range = filter ? rangeOf(request.values[filter.filter]) : undefined;

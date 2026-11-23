@@ -26,7 +26,7 @@ import { fireDueSchedules } from "./triggers.js";
 const RETENTION_EVERY_MS = 10 * 60_000;
 
 export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, intervalMs = 2000) {
-  let running = false;
+  const running = false;
   let swept = 0;
   let checked = 0;
   /** Data sources are reached at most once a minute here; each is due every ten. */
@@ -77,20 +77,77 @@ export function startBackground(kernel: Kernel, supervisor?: WorkerSupervisor, i
       ? ([["managed workers", () => supervisor.tick()]] as [string, () => Promise<unknown>][])
       : []),
   ];
-  const timer = setInterval(async () => {
-    if (running) return;
-    running = true;
-    for (const [name, step] of steps) {
-      await step().catch((error) =>
-        kernel.log.error({ err: error, step: name }, "a background step failed"),
-      );
-    }
-    running = false;
-  }, intervalMs);
+  const loop = startStepLoops(steps, kernel.log, { intervalMs });
   return {
     async stop() {
-      clearInterval(timer);
+      await loop.stop();
       await supervisor?.stop();
+    },
+  };
+}
+
+/** A step that runs longer than this is said to be late; it is still waited for, never run twice. */
+export const STEP_LIMIT_MS = 60_000;
+
+interface StepLog {
+  error(object: object, message: string): void;
+  warn(object: object, message: string): void;
+}
+
+/**
+ * Each step has a loop of its own and its own "still going" flag, so a step that waits (a data
+ * source that never answers, a store that is slow) delays only itself. A step past its limit is
+ * logged once per run, with the time it has taken so far. `stop()` ends the timers and waits
+ * for the steps in progress, for at most the limit, so the database is not closed under them.
+ */
+export function startStepLoops(
+  steps: [string, () => Promise<unknown>][],
+  log: StepLog,
+  options: { intervalMs: number; limitMs?: number },
+) {
+  const limitMs = options.limitMs ?? STEP_LIMIT_MS;
+  const going = new Map<string, Promise<unknown>>();
+  /** Steps that ran past their limit since the loops began. */
+  const late: Record<string, number> = {};
+  const timers = steps.map(([name, step]) => {
+    const tick = () => {
+      if (going.has(name)) return;
+      const started = Date.now();
+      const warning = setTimeout(() => {
+        late[name] = (late[name] ?? 0) + 1;
+        log.warn(
+          { step: name, limitMs, late: late[name] },
+          "a background step is taking longer than its limit; the others go on",
+        );
+      }, limitMs);
+      warning.unref();
+      const run = step()
+        .catch((error) =>
+          log.error(
+            { err: error, step: name, ms: Date.now() - started },
+            "a background step failed",
+          ),
+        )
+        .finally(() => {
+          clearTimeout(warning);
+          going.delete(name);
+        });
+      going.set(name, run);
+    };
+    return setInterval(tick, options.intervalMs);
+  });
+  return {
+    late,
+    async stop() {
+      for (const timer of timers) clearInterval(timer);
+      let give: NodeJS.Timeout | undefined;
+      await Promise.race([
+        Promise.allSettled([...going.values()]),
+        new Promise<void>((resolve) => {
+          give = setTimeout(resolve, limitMs);
+        }),
+      ]);
+      clearTimeout(give);
     },
   };
 }

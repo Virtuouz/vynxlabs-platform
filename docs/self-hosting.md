@@ -237,7 +237,7 @@ The worker host takes the same settings, as `--run-slots`, `--memory-floor` and 
 
 Plan on 2 GB for a machine that runs the control plane and scripts together. Give the database a dedicated CPU for anything past a trial: on a shared CPU it runs at full speed only until its burst credit is spent, and then every tenant's queries slow down together.
 
-`/api/v1/metrics` reports `platform_machine_running`, the scripts running on each machine, and `platform_memory_available_bytes`, this replica's free memory. Alert on a queue that keeps growing (`platform_queue_oldest_seconds`) rather than on full slots: full slots are the limit doing its work.
+`/api/v1/metrics` reports `volvel_machine_running`, the scripts running on each machine, and `volvel_memory_available_bytes`, this replica's free memory. Alert on a queue that keeps growing (`volvel_queue_oldest_seconds`) rather than on full slots: full slots are the limit doing its work.
 
 ### Sizing: the database
 
@@ -256,7 +256,7 @@ Every data request has a time limit. Past it, the statement is stopped and the r
 | `DATA_STATEMENT_TIMEOUT_MS` | 15000 | How long one data request may take |
 | `SQL_STATEMENT_TIMEOUT_MS` | 15000 | How long one query written in SQL may run before it is stopped |
 
-Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 2` connections; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `platform_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
+Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 2` connections; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `volvel_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
 
 ### When the database takes no writes
 
@@ -270,7 +270,7 @@ The instance checks every 10 seconds, and starts them again on its own once the 
 
 It also starts in this state: migrations are checked by reading alone when there are none to apply. An upgrade that brings migrations still needs a database that takes writes.
 
-Watch the database's disk, and alert well before it is full. `platform_database_size_bytes` in the metrics tracks the platform database's size. On Fly, extend the volume with `fly volumes extend`.
+Watch the database's disk, and alert well before it is full. `volvel_database_size_bytes` in the metrics tracks the platform database's size. On Fly, extend the volume with `fly volumes extend`.
 
 ### When work piles up
 
@@ -536,31 +536,31 @@ What waits, read from the database at each scrape, so every replica says the sam
 
 | Series | What it is |
 | --- | --- |
-| `platform_runs_queued`, `platform_runs_running` | Runs waiting, and in progress, on the whole instance |
-| `platform_queue_oldest_seconds` | How long the oldest due run has waited |
-| `platform_workspace_runs_queued{tenant,workspace,pool}` | Due runs waiting, by workspace and pool |
-| `platform_workspace_queue_oldest_seconds{tenant,workspace}` | The oldest wait, by workspace |
-| `platform_flow_runs{state}` | Flow runs in progress: `running`, `waiting_approval`, `waiting_time` |
-| `platform_tasks_queued{kind}` | Tasks waiting for a worker |
-| `platform_workers{kind}` | Workers heard from in the last minute, `managed` or `standalone` |
+| `volvel_runs_queued`, `volvel_runs_running` | Runs waiting, and in progress, on the whole instance |
+| `volvel_queue_oldest_seconds` | How long the oldest due run has waited |
+| `volvel_workspace_runs_queued{tenant,workspace,pool}` | Due runs waiting, by workspace and pool |
+| `volvel_workspace_queue_oldest_seconds{tenant,workspace}` | The oldest wait, by workspace |
+| `volvel_flow_runs{state}` | Flow runs in progress: `running`, `waiting_approval`, `waiting_time` |
+| `volvel_tasks_queued{kind}` | Tasks waiting for a worker |
+| `volvel_workers{kind}` | Workers heard from in the last minute, `managed` or `standalone` |
 
 What happened, counted by the replica that saw it. Each replica answers for its own; add them up across replicas, as Prometheus does with `sum`:
 
 | Series | What it is |
 | --- | --- |
-| `platform_runs_finished_total{tenant,workspace,state}` | Script runs that ended: `succeeded`, `failed`, `cancelled` |
-| `platform_run_duration_seconds{tenant,workspace}` | A histogram of how long runs took |
-| `platform_run_queue_wait_seconds{tenant,workspace}` | A histogram of how long runs waited for a worker, from when they were due |
-| `platform_flow_runs_finished_total{state}` | Flow runs that ended |
-| `platform_webhook_refusals_total{reason}` | Refused webhook requests: `signature`, `body`, `paused` |
-| `platform_alerts_total{outcome}` | Failure alerts `delivered`, `failed`, or `suppressed` as a repeat |
+| `volvel_runs_finished_total{tenant,workspace,state}` | Script runs that ended: `succeeded`, `failed`, `cancelled` |
+| `volvel_run_duration_seconds{tenant,workspace}` | A histogram of how long runs took |
+| `volvel_run_queue_wait_seconds{tenant,workspace}` | A histogram of how long runs waited for a worker, from when they were due |
+| `volvel_flow_runs_finished_total{state}` | Flow runs that ended |
+| `volvel_webhook_refusals_total{reason}` | Refused webhook requests: `signature`, `body`, `paused` |
+| `volvel_alerts_total{outcome}` | Failure alerts `delivered`, `failed`, or `suppressed` as a repeat |
 
 Requests, counted by each replica:
 
 | Series | What it is |
 | --- | --- |
-| `platform_http_requests_total{method,route,status}` | Requests answered. `route` is the route's pattern, such as `/api/v1/tenants/:t/workspaces/:w/runs`, never an address with an ID in it |
-| `platform_http_request_duration_seconds{method,route}` | How long they took. A worker waiting for work holds its request open, so its route is slow by design |
+| `volvel_http_requests_total{method,route,status}` | Requests answered. `route` is the route's pattern, such as `/api/v1/tenants/:t/workspaces/:w/runs`, never an address with an ID in it |
+| `volvel_http_request_duration_seconds{method,route}` | How long they took. A worker waiting for work holds its request open, so its route is slow by design |
 
 Workspaces are labeled by their slugs. On an instance with very many tenants, set `METRICS_WORKSPACE_LABELS=false`: the per-workspace queue series are left out, and the counted ones carry no tenant or workspace.
 

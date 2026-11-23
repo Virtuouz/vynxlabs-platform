@@ -164,9 +164,9 @@ export const observe = {
     labels: { method: string; route: string; status: string },
     seconds: number,
   ) {
-    metrics.inc("platform_http_requests_total", "Requests answered, by route and status.", labels);
+    metrics.inc("volvel_http_requests_total", "Requests answered, by route and status.", labels);
     metrics.observe(
-      "platform_http_request_duration_seconds",
+      "volvel_http_request_duration_seconds",
       "How long a request took to answer, by route.",
       { method: labels.method, route: labels.route },
       seconds,
@@ -179,14 +179,14 @@ export const observe = {
     state: "succeeded" | "failed" | "cancelled",
   ) {
     const labels = { workspace: run.workspace_id };
-    metrics.inc("platform_runs_finished_total", "Script runs that ended, by how.", {
+    metrics.inc("volvel_runs_finished_total", "Script runs that ended, by how.", {
       ...labels,
       state,
     });
     if (run.started_at) {
       const end = run.finished_at ?? new Date();
       metrics.observe(
-        "platform_run_duration_seconds",
+        "volvel_run_duration_seconds",
         "How long a script run took, from its first start to its end.",
         labels,
         (end.getTime() - run.started_at.getTime()) / 1000,
@@ -195,23 +195,23 @@ export const observe = {
   },
   runClaimed(metrics: Metrics, run: { workspace_id: string; due: Date }) {
     metrics.observe(
-      "platform_run_queue_wait_seconds",
+      "volvel_run_queue_wait_seconds",
       "How long a script run waited, from when it was due to when a worker took it.",
       { workspace: run.workspace_id },
       (Date.now() - run.due.getTime()) / 1000,
     );
   },
   flowRunEnded(metrics: Metrics, state: "succeeded" | "failed" | "cancelled") {
-    metrics.inc("platform_flow_runs_finished_total", "Flow runs that ended, by how.", { state });
+    metrics.inc("volvel_flow_runs_finished_total", "Flow runs that ended, by how.", { state });
   },
   webhookRefused(metrics: Metrics, reason: string) {
     metrics.inc(
-      "platform_webhook_refusals_total",
+      "volvel_webhook_refusals_total",
       "Requests to webhooks that were refused, by why.",
       { reason },
     );
   },
   alert(metrics: Metrics, outcome: "delivered" | "failed" | "suppressed") {
-    metrics.inc("platform_alerts_total", "Failure alerts, by what came of them.", { outcome });
+    metrics.inc("volvel_alerts_total", "Failure alerts, by what came of them.", { outcome });
   },
 };

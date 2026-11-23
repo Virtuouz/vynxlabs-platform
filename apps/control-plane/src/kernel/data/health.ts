@@ -120,6 +120,9 @@ export async function checkDueSources(kernel: Kernel, limit = 10): Promise<numbe
     order by h.checked_at nulls first
     limit ${limit}
   `.execute(kernel.db);
-  for (const row of due.rows) await checkSource(kernel, row.tenant_id, row.workspace_id, row.path);
+  // Together: a source that never answers holds only its own check, not the other nine.
+  await Promise.allSettled(
+    due.rows.map((row) => checkSource(kernel, row.tenant_id, row.workspace_id, row.path)),
+  );
   return due.rows.length;
 }

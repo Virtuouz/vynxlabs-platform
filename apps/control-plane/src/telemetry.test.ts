@@ -187,26 +187,26 @@ describe("the formats", () => {
 
   test("the metrics endpoint's text becomes the same series in OTLP", () => {
     const text = [
-      "# HELP platform_runs_queued Runs waiting for a worker.",
-      "# TYPE platform_runs_queued gauge",
-      "platform_runs_queued 3",
-      "# HELP platform_alerts_total Failure alerts.",
-      "# TYPE platform_alerts_total counter",
-      'platform_alerts_total{outcome="delivered"} 2',
-      'platform_alerts_total{outcome="said \\"no\\""} 1',
-      "# HELP platform_wait_seconds How long.",
-      "# TYPE platform_wait_seconds histogram",
-      'platform_wait_seconds_bucket{workspace="main",le="1"} 2',
-      'platform_wait_seconds_bucket{workspace="main",le="5"} 5',
-      'platform_wait_seconds_bucket{workspace="main",le="+Inf"} 6',
-      'platform_wait_seconds_sum{workspace="main"} 14.5',
-      'platform_wait_seconds_count{workspace="main"} 6',
+      "# HELP volvel_runs_queued Runs waiting for a worker.",
+      "# TYPE volvel_runs_queued gauge",
+      "volvel_runs_queued 3",
+      "# HELP volvel_alerts_total Failure alerts.",
+      "# TYPE volvel_alerts_total counter",
+      'volvel_alerts_total{outcome="delivered"} 2',
+      'volvel_alerts_total{outcome="said \\"no\\""} 1',
+      "# HELP volvel_wait_seconds How long.",
+      "# TYPE volvel_wait_seconds histogram",
+      'volvel_wait_seconds_bucket{workspace="main",le="1"} 2',
+      'volvel_wait_seconds_bucket{workspace="main",le="5"} 5',
+      'volvel_wait_seconds_bucket{workspace="main",le="+Inf"} 6',
+      'volvel_wait_seconds_sum{workspace="main"} 14.5',
+      'volvel_wait_seconds_count{workspace="main"} 6',
       "",
     ].join("\n");
     expect(readPrometheus(text).map((family) => [family.name, family.type])).toEqual([
-      ["platform_runs_queued", "gauge"],
-      ["platform_alerts_total", "counter"],
-      ["platform_wait_seconds", "histogram"],
+      ["volvel_runs_queued", "gauge"],
+      ["volvel_alerts_total", "counter"],
+      ["volvel_wait_seconds", "histogram"],
     ]);
     const [gauge, counter, histogram] = otlpMetrics(text, new Date(1000), new Date(2000)) as Any[];
     expect(gauge.gauge.dataPoints).toEqual([
@@ -370,10 +370,10 @@ describe("metrics", () => {
     // Requests are counted by the route's pattern and their status, and timed.
     const text = read.payload;
     expect(text).toMatch(
-      /^platform_http_requests_total\{method="POST",route="\/api\/v1\/tenants\/:t\/workspaces\/:w\/runs",status="201"\} [1-9]\d*$/m,
+      /^volvel_http_requests_total\{method="POST",route="\/api\/v1\/tenants\/:t\/workspaces\/:w\/runs",status="201"\} [1-9]\d*$/m,
     );
     expect(text).toMatch(
-      /^platform_http_request_duration_seconds_bucket\{method="POST",route="\/api\/v1\/tenants\/:t\/workspaces\/:w\/runs",le="\+Inf"\} [1-9]\d*$/m,
+      /^volvel_http_request_duration_seconds_bucket\{method="POST",route="\/api\/v1\/tenants\/:t\/workspaces\/:w\/runs",le="\+Inf"\} [1-9]\d*$/m,
     );
     // No address with an ID in it is a label.
     expect(text).not.toMatch(/route="[^"]*[0-9a-f]{8}-[0-9a-f]{4}/);
@@ -398,10 +398,10 @@ describe("metrics", () => {
         written.filter((name) => new RegExp(`^${name}(_bucket|_sum|_count)?[{ ]`, "m").test(text)),
       ),
     );
-    const requests = metrics.find((metric) => metric.name === "platform_http_requests_total");
+    const requests = metrics.find((metric) => metric.name === "volvel_http_requests_total");
     expect(requests.sum.isMonotonic).toBe(true);
     const duration = metrics.find(
-      (metric) => metric.name === "platform_http_request_duration_seconds",
+      (metric) => metric.name === "volvel_http_request_duration_seconds",
     );
     const point = duration.histogram.dataPoints[0];
     expect(point.bucketCounts).toHaveLength(point.explicitBounds.length + 1);

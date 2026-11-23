@@ -10,7 +10,7 @@ subjects: [access, members]
 
 ### Before you start
 
-You need `member:write`. You cannot suspend yourself.
+You need `member:write`. You cannot suspend yourself: "You cannot suspend yourself."
 
 :::steps
 1. Open **Members & access** and select the member.

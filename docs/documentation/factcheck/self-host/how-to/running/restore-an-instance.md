@@ -1,6 +1,6 @@
 # Fact-check: self-host/how-to/running/restore-an-instance.md
 
-Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the writer; the second agent's column is open.
+Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -12,3 +12,7 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the wr
 | A wrong `MASTER_KEY` stops boot. | run | writer, 2026-11-23 | holds |
 | Newer-database message text. | `packages/db/src/errors.ts:4-5` | writer, 2026-11-23 | holds |
 | The rate-limit table is unlogged. | `packages/db/migrations/0046_rate_limit.sql:4` | writer, 2026-11-23 | holds |
+
+## Second check (2026-11-23)
+
+Restored again in the Postgres upgrade run (5 expected errors, exit 1). fault: self-host restore exit status.

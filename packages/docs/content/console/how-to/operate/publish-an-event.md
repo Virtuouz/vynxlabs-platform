@@ -19,7 +19,7 @@ By the end you will have published an event with a payload, and seen what it sta
 :::steps
 1. Open **Operate**, then **Events**, and press **Publish an event**. On a declared event's own page, press **Publish it** instead: the event is already chosen.
 2. Under **Event** choose the event. Each is listed with its description.
-3. Fill in the payload. The fields are drawn from the event's schema; a required one is marked. **JSON**, under **How to give it**, takes the payload as JSON. If a value is refused, the dialog shows why at that field.
+3. Fill in the payload. The fields are drawn from the event's schema; a required one is marked. **JSON**, under **How to give it**, takes the payload as JSON. If a value is refused, the dialog shows why at that field, or, in the JSON view, above it with the path of the value ("/count: Enter a number.").
 4. Press **Publish**. In a production workspace the console first asks "Publish *name* in production?" and says "Every trigger that listens for it starts its work now, with real data." Press **Publish in production**.
 5. Read the notice: "Published. It started N run(s)." or "Published. Nothing listens for it, so it started nothing."
 :::
@@ -43,4 +43,4 @@ From a script, `ctx.events.publish` does the same, and so does `POST …/events`
 ## Related
 
 - [Events](../../reference/screens/operate/events): every control of the screen.
-- [Platform events](../../../develop/reference/operate/platform-events)
+- [Platform events](../../../develop/reference/platform-events)

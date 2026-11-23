@@ -14,3 +14,8 @@
 
 ## Not run
 A red row (Needs fixing) and **Show it**; **Try as … first** (no group rules); **Check again**; the 403 text; a user with only `interface:write`; **Open the published app** from Preview. These are from the code and their texts are in the record.
+
+## Second check, 2026-11-23 (second agent)
+- Instance http://localhost:8091 at commit `87000022` plus the working tree. Playwright headless. My own apps are named `chk2 …` (in Fernhill's Sandbox); no Fernhill app, table or person was changed. People: Maya Brooks (tenant admin); Abchk Maker (a member made for the check, App maintainer in Sandbox: `interface:write`, no `resource:write`); Abchk Dev (Developer in Sandbox: no `deployment:write`); Amara Okafor (viewer). Walked at 1440, 900, 768 and 390 px; light at all and dark at 1440, 768 (list, dialog, workbench) and 390 (list, workbench). A session reload was made for the rename and the page order.
+- Run now (was "not run"): a red row and **Show it**; **Try as … first**; **Check again** (preview request made to fail); the 403 text (a Developer without `deployment:write`); a member with only `interface:write` publishing; **Open the published app** in a Preview of a published app. The page gained the "Publish is off until these are fixed:" line and the row "Button on Y: needs label."
+- Seen and reported: a single failed check is listed twice and counted twice ("2 things to fix") in the check.

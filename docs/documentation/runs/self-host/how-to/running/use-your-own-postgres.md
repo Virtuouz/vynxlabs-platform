@@ -11,3 +11,7 @@ Not known.
 
 ## Not run
 Everything on this page: a second Postgres, `CREATEROLE` as a non-superuser, `sslmode=require`. The role the bundled Postgres uses is a superuser (`POSTGRES_USER=platform`).
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run: role with CREATEROLE (not superuser) owning an empty database: migrations, first operator, tenant, workspace, table and row all worked. Without CREATEROLE: 'Boot failed while migrating the database: Migration 12 (data) failed and was rolled back: permission denied to create role'. Wrong password: 'password authentication failed'. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

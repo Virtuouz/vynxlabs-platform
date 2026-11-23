@@ -15,7 +15,7 @@ A tenant's own members, who they are inside that tenant and what they may do, ar
 
 ## Controls
 
-The title is **All members**. The description reads "Every person with an identity on this instance, across all tenants."
+The title is **All members**. The description reads "Every person with an identity on this instance, across all tenants." The description shows the first time you open the screen. On later visits it is folded behind the **About All members** button (the circled i) beside the title.
 
 | Control | What it does |
 | --- | --- |
@@ -46,14 +46,14 @@ Choosing a row opens the inspector (eyebrow **Member**, title the name). It show
 | **Email** | Required. An email already on the instance is refused: "A member with that email already exists." |
 | **Initial password** | At least 12 characters (the field says "Use at least 12 characters." when it is shorter). The hint says "They can change it on their Account screen after signing in." |
 
-The new member belongs to no tenant and holds no role. A tenant admin adds them to a tenant, or an operator makes them an operator from [Operators](operators). The dialog's button is disabled while the instance is read only.
+The new member belongs to no tenant and holds no role. A tenant admin adds them to a tenant, or an operator makes them an operator from [Operators](operators). When it works the console says "Created." and the list shows the member. The dialog's button is disabled while the instance is read only.
 
 ### Actions in a row
 
 | Control | What it does |
 | --- | --- |
 | **Make a password reset link** | Shown for an active member other than yourself. Asks "Make a password reset link for EMAIL?" and explains: whoever opens the link chooses a new password for them, once, within two hours; using it ends all their other sign-ins; a link made before this one stops working; nobody sees the password. Press **Make the link**. Where the instance sends mail, the link is emailed to the member and the dialog "Password reset link" says "It was emailed to EMAIL. It works once, until TIME. You are not shown it." Where it does not send mail, the dialog shows the link once, to copy and pass on, and says "This instance sends no mail, so pass the link on yourself." Press **Done**. It is refused for a member who signs in only with an identity provider that has turned passwords off for them ("EMAIL signs in with PROVIDER, and passwords are turned off for them. There is no password to reset."). The action is audited as `member.password_link_created`; the link itself is never recorded. |
-| **Disable** | Asks "Disable EMAIL?": "They can sign in nowhere, in any tenant: their sessions end now and their API keys stop working. The account and what it holds are kept." Press **Disable**. If a tenant is left with nobody who can administer it, the result names those tenants ("EMAIL is disabled. These tenants now have no admin: NAMES. An operator can open access to each from its page."). Otherwise it says "EMAIL is disabled." |
+| **Disable** | Asks "Disable EMAIL?": "They can sign in nowhere, in any tenant: their sessions end now and their API keys stop working. The account and what it holds are kept. A tenant where they are the only admin is left with none until an operator opens access to it: the next message names those tenants." Press **Disable**. If a tenant is left with nobody who can administer it, the result names those tenants ("EMAIL is disabled. These tenants now have no admin: NAMES. An operator can open access to each from its page."). Otherwise it says "EMAIL is disabled." |
 | **Enable** | Shown on a disabled member. It enables the account at once, without asking, and says "EMAIL is enabled." |
 | "Change your own password on the Account screen." | Shown in place of the reset-link button on your own row. |
 | "You cannot disable your own account." | Shown in place of **Disable** on your own row. |

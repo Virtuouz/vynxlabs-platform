@@ -17,7 +17,7 @@ By the end you have read the help for the screen you are on, searched the rest o
 
 :::steps
 1. Press :kbd[F1], or :kbd[⌘/] (:kbd[Ctrl+/] elsewhere), or the question-mark button **Help for this page** in the header. The palette's **Help for this page** and the account menu's **Help for this page** do the same.
-2. The panel opens at the page for the screen you are on. On a wide screen it sits beside your work. On a tablet, or beside a list that has its inspector open, it lies over the right edge. On a phone it fills the screen.
+2. The panel opens at the page for the screen you are on, with its kind (such as Reference or How-to guide) above the text. On a wide screen it sits beside your work. On a tablet, or beside a list that has its inspector open, it lies over the right edge. On a phone it fills the screen.
 3. Press the same key again, press **Close help**, or press :kbd[Esc] while the focus is in the panel to close it.
 :::
 
@@ -26,13 +26,13 @@ By the end you have read the help for the screen you are on, searched the rest o
 :::steps
 1. Type in **Search the help**. Results list the pages that match, each with up to three places in it, and open at the heading. A search with no match says "Nothing in the help matches."
 2. Press a result. The page opens and the search clears.
-3. Use **Previous** and **Next** at the foot of a page to read on in order, the **Related** lists for pages of other kinds on the same subject, and the path above the title to go up. **Help home** goes to the first page.
-4. **Back to the help for this page** returns to the page for your screen after you have gone elsewhere.
+3. Use **Previous** and **Next** at the foot of a page to read on in order, the **Related** lists for pages of other kinds on the same subject, and the path above the title to go up. The house button, **Help home**, goes to the first page.
+4. The arrow before the title, **Back to the help for this page**, appears once you have gone to another page, and returns to the page for your screen.
 :::
 
 ## Share a page
 
-Press **Copy a link to this help**. A notice says "A link to this help is copied." The link opens the console at the same address with the help panel on that page, so the person who opens it must sign in. **Open in documentation** shows the same page in full, in a new tab, on this instance. Where the instance names a public documentation site, **Open this page online** opens the page there; the online copy may be of a newer version.
+Press **Copy a link to this help**. A notice says "A link to this help is copied." The link opens the console at the same address with the help panel on that page, so the person who opens it must sign in. **Open in documentation** shows the same page in full, in a new tab, on this instance. Where the operator has set the instance's documentation address (`DOCS_URL`), **Open this page online** opens the page there, under the running version; the online copy may be of a newer version.
 
 ## See your team's notes
 
@@ -48,4 +48,5 @@ The help panel shows the page that explains the screen, and the page's address, 
 | --- | --- | --- |
 | "There is no help for this screen yet." | The screen has no page of its own. | Press **Browse the help**. |
 | "The help has no page called “{name}”." | A link names a page this version does not have. | Press **Help for this screen**, or **Browse the help**. |
-| "The help could not be loaded." | The panel could not read the instance's help. | Reload the console; if it stays, tell an operator. |
+| "The help could not be loaded." followed by the reason | The panel could not read the instance's help. | Reload the console; if it stays, tell an operator. |
+| "This page of the help could not be loaded." followed by the reason | The index loaded and this one page did not. | Open another page and come back, or reload the console. |

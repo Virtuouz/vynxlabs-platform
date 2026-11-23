@@ -17,7 +17,7 @@ What each step and start takes is in [Flow steps](../../../reference/flows/steps
 | Control | What it does |
 | --- | --- |
 | Title | The flow's path, or "New flow" until it is saved. |
-| State pill | The flow's state: draft, deployed, repository, or **Removing**. |
+| State pill | The flow's state: **Draft**, **Deployed** (the draft is saved and matches the deployed version), **From the repository**, or **Removing**. |
 | "N to fix" | How many problems the flow has. See **To fix** below. |
 | Save state | One of the states in the table below. |
 | **Retry** | Appears after a save was given up. Tries to save again. |
@@ -112,7 +112,7 @@ In a **Branch**, a case is renamed with :kbd[Enter] or by leaving the field. A n
 | "The flow changed since this test." | The flow was edited after the test started. |
 | **Close the test panel** | The × button. |
 
-Choosing a step shows **Last test** in the inspector: its state, **Started**, **Took**, the error if there is one ("The flow carried on down its error path." when it was handled), how many items of a **For each** are done, **Output of** the step, its log, and **Test from <step>**. **Test from <step>** keeps what the steps before it did in this test and runs that step and what follows on the draft as it is now. It is not offered on the start.
+Choosing a step shows **Last test** in the inspector: its state, **Started**, **Took**, the error if there is one ("The flow carried on down its error path." when it was handled), how many items of a **For each** are done, the step's output with a **Copy** button, its log, and **Test from <step>**. **Test from <step>** keeps what the steps before it did in this test and runs that step and what follows on the draft as it is now. It is not offered on the start.
 
 ## Not in the editor
 

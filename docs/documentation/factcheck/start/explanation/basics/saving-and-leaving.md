@@ -20,3 +20,7 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | Which settings are kept and sent to the instance. | `apps/control-plane/src/routes/preferences.ts:17-22`; `prefs.ts:1-20` | writer | holds |
 | Preferences belong to a member, not an API key; no audit entry. | `routes/preferences.ts:44-52` | writer | holds |
 | Recent and the last place are kept only where you are a member. | `routes/search.ts:373-410`; `routes/identity.ts` (`/me/recent`) | writer | holds |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Strings found in the code: "Draft saved {time}", "Could not save. Trying again…", "Could not save.", "Not saved: someone else saved this flow" (`screens/FlowEditor.tsx:1695-1704`), "Not saved: {why}" (`screens/builder/EditorShell.tsx:28`), the **Unsaved changes** bar and "It cannot be saved now: the instance takes no changes." (`kit/SaveBar.tsx:74-84`), "Leave without saving?" with **Leave**/**Stay** (`ask.tsx:25-31`), **What does this mean?** (`ask.tsx:90`), the script editor's 3-second autosave (`screens/Authoring.tsx:492`), removing a step never asks (`screens/FlowEditor.tsx:1236`), notices 5 s / 3 at once (`Toast.tsx`), session 7 days. Run: Leave-without-saving on Branding (the writer's run) and the sign-out refusal and **Your session ended** dialog (see the sign-in record): both as the page says. The 10-second notice and the list of settings were checked against `routes/preferences.ts:15-17`. No correction.

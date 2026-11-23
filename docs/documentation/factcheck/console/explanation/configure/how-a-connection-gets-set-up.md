@@ -1,6 +1,6 @@
 # Fact-check: console/explanation/configure/how-a-connection-gets-set-up.md
 
-Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: not yet made.
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -16,3 +16,15 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second 
 | A credential does not follow another origin. | `apps/console/src/screens/ConnectionWizard.tsx:117-132; apps/control-plane/src/kernel/execution/bindings.ts:95` | writer, 2026-11-23 | holds |
 | Rename keeps bindings and the default alert; credentials sealed under the row. | `apps/control-plane/src/kernel/rename.ts:146-160; kernel/execution/sealed.ts:1-60` | writer, 2026-11-23 | holds (rename partly by code) |
 | Clone: variables always; Safety off copies; OAuth tokens not. | `apps/control-plane/src/kernel/tenancy/clone.ts:39-130; apps/console/src/screens/Environments.tsx:565-575` | writer, 2026-11-23 | holds |
+
+## Second check, 2026-11-23
+
+Checked by: second agent, 2026-11-23. Source commit `87000022`.
+
+| Claim | Source | Checked by | Result |
+| --- | --- | --- | --- |
+| Deploy notes and the `bindings_missing` text; `bindings_invalid` exists. | `kernel/execution/deploy.ts:115,642-643,664` | second agent, 2026-11-23 | holds. The note text quoted contains "bound", the code's own words: fault: configure, the "bound" words remain |
+| OAuth: authorization code with PKCE S256, 10 minutes for the member, refresh 2 minutes ahead; worker never gets the refresh token or the client secret; changing the authorization address forgets the sign-in. | `oauth.ts:23,25,175`; `routes/worker.ts:171-181`; `bindings.ts:78-90` | second agent, 2026-11-23 | holds; the forgetting seen on the instance |
+| A clone: variable values always; Safety on has no connection, group member or secret; off it has them, sealed again; an OAuth connection copied without its tokens. | `kernel/tenancy/clone.ts:59-110` | second agent, 2026-11-23 | holds; run on the instance (OAuth copy read Not connected) |
+| A test runs on a worker and waits up to 2 minutes. | `kernel/execution/tasks.ts:19-23` | second agent, 2026-11-23 | holds |
+| WORKER_EGRESS_ALLOW and EGRESS_ALLOW. | `self-host/reference/settings` (generated) | second agent, 2026-11-23 | holds as the writer recorded |

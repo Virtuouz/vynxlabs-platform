@@ -14,7 +14,7 @@ By the end you will have started a deployed script by hand, once now and once la
 - `run:write` in the workspace, or on the script. A workspace admin has it. See the [permissions reference](../../../administer/reference/permissions).
 - A worker for scripts. A run waits in **Queued** until one claims it.
 
-A guest of an app cannot start a script this way: the run is refused with "Sign in to start a script".
+A guest of an app, someone who is not signed in, cannot start a script this way. A guest whom the app's access lets start it is refused with "Sign in to start a script."
 
 ## Run it
 

@@ -38,9 +38,9 @@ The configuration says: patch is supported; filter is supported with at most 200
 
 A list takes `startIndex` (from 1) and `count`, at most 200 and 100 by default.
 
-A name or an external ID that is already used by someone else is refused as a clash. A push that would leave the tenant without an admin, or the instance without an operator, is refused with 409, and it shows under the refused pushes in the console. Nothing a refused push carried is kept: only its reason.
+A name or an external ID that is already used by someone else is refused as a clash: 409 with `scimType` `uniqueness`, such as "A user with the external ID ext-ana already exists." A push that would leave the tenant without an admin, or the instance without an operator, is refused with 409, and it shows under the refused pushes in the console. Nothing a refused push carried is kept: only its reason.
 
-Each change is in the audit log as made by `SCIM: <provider name>`, with the token's first characters.
+Each change is in the audit log with its `via` set to `scim`, the provider's name as `identityProvider` and the token's first characters as `token` in its details. The actor is the system, not a person.
 
 ## What the provider setup decides
 
@@ -52,7 +52,7 @@ Three settings of the provider say how a push is taken:
 
 ## What is not there
 
-Bulk operations, sorting, `etag` and changing a password are not supported, and the configuration says so. There is no SCIM route for anything but users and groups.
+Bulk operations, sorting, `etag` and changing a password are not supported, and the configuration says so. There is no SCIM route for anything but users and groups: a call to any other address, such as `…/Bulk`, is answered 404 in the API's usual problem body, not SCIM's error.
 
 ## How it fits
 

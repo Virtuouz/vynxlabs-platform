@@ -12,3 +12,6 @@
 ## What the run could not do
 - **The record could not be created**: there is no DNS zone here. So "Proved", "record gone", removing a proved domain, and "Another provider of members has already proved <domain>" were not run. Their text is from the code.
 - The same domain on the operators' provider (instance) shows "Proved" at once; that was run on the instance page: see the operators' page.
+
+## Second check, 2026-11-23 (second agent)
+- Run now in part: a domain of members (`acme.example`) added to a SAML provider showed **Not proved** with its record, and was marked proved in the database (there is no DNS here) to continue the require walk; the steps bar of the provider then said "Proved". The real check against DNS, "record gone" and the instance-wide uniqueness message were not run.

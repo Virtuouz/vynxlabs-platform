@@ -11,3 +11,7 @@
 
 ## The page got wrong
 - A bullet that said a deleted-and-deployed page could be promoted back was invented and removed. "A top-level folder cannot be moved" was too much: only dragging is closed to it; the page says so.
+
+## Second check, 2026-11-23 (second agent)
+
+Dragging was run (as in the Documentation screen's log): into a folder, above another page, Undo. F2 was run from the keyboard (title and file name fields, Escape closing). Not run: deleting a folder, link rewriting seen in a page, the redirect's status.

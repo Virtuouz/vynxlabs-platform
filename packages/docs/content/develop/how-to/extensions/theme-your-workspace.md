@@ -85,8 +85,8 @@ Open the stylesheet and look for your values: for Fernhill's Sandbox it holds `-
 
 ## If it does not work
 
-- **The deploy is refused with "a workspace can have one theme".** Two `defineTheme` calls exist in the repository. Keep one.
+- **The deploy is refused with "a workspace can have one theme".** Two `defineTheme` calls exist in the repository. The line starts with the path of the extra theme, such as `theme-two (theme):`, and the quoted path is the theme already there. Keep one.
 - **The deploy is refused with `/body/tokens/<token> must be a plain color, length or font list.`** The value has a character or a word that is not allowed, such as `url(...)` or `var(--x)`. Write the color itself.
-- **A token is refused as unknown.** The name is not one of the 27. `THEME_TOKENS` lists them.
+- **The deploy is refused with `/body/tokens must NOT have additional properties (shiny)`.** The name in the parentheses is not one of the 27 tokens. `THEME_TOKENS` lists them.
 - **Dark looks unchanged.** You set the color in `tokens` only. Set it in `dark` too.
 - **The console did not change.** A theme is for the workspace's apps. The console's look is set by the operator under **Console branding**.

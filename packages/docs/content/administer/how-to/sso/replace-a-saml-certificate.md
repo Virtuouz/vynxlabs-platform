@@ -48,4 +48,4 @@ If the **Provider's entity ID** is changed, by hand or by reading metadata that 
 | You see | Cause and fix |
 | --- | --- |
 | The read fails with a message | The address could not be read, or the file is not metadata. Nothing is changed. |
-| Sign-ins fail with "The identity provider's answer could not be accepted." after the provider changed over | The new certificate is not listed. List it, with the old one if it still signs. |
+| Sign-ins fail with "The identity provider's answer could not be accepted." after the provider changed over. **Try signing in** says the last try "did not pass" with "Invalid signature" | The new certificate is not listed. Read the metadata again, or list it, with the old one if it still signs. |

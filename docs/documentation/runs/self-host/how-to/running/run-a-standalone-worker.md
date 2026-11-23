@@ -11,3 +11,7 @@ The Compose file cannot reach `control-plane:8080` unless it joins a network tha
 
 ## Not run
 Step 2 (a script naming the pool, run on the worker), the console's Workers page, a run on the worker, `--token-stdin`.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run: credential with pool `plant`, worker from deploy/worker/compose.yaml (with a networks block), a draft script with `worker: "plant"` run through test-runs succeeded while the worker was up and stayed queued with the worker stopped. Merged in from the sso page: token options, uid 1000 note, ptrace warning. fault: sso/workers TASKS_SINCE (worker shows outdated at its own version). Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

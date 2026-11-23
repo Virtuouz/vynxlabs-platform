@@ -41,8 +41,10 @@ The diagram is drawn in the site's own colors, and again when the reader's theme
 | :kbd[+] or :kbd[=] and :kbd[-] | Zoom in and out |
 | :kbd[0] | Fit it to its box |
 | The arrow keys | Move it by a step |
+| Double-click | Fit it to its box |
+| The buttons **Zoom in**, **Zoom out** and **Fit the diagram** | The same, with the mouse or a finger |
 
-The keys work when the diagram has the focus.
+The keys work when the diagram has the focus. Scrolling over it without :kbd[⌘] or :kbd[Ctrl] scrolls the page and says "Use Ctrl + scroll to zoom" (⌘ on a Mac).
 
 ## The result
 
@@ -51,7 +53,8 @@ The diagram appears in the page and on the served site. A reader whose script is
 ## If it does not work
 
 - **The diagram is its source under `volvel dev`.** A local site does not draw diagrams.
-- **The diagram is its source on a served site.** The drawing code did not load, or the Mermaid in the block does not read. Fix the Mermaid in the editor's preview first.
+- **The diagram is its source on a served site.** The drawing code did not load. A site that has no script shows the source too.
+- **"This diagram does not read: …"** appears above the source. The Mermaid in the block has an error, and the line after the colon says what. Fix it in the editor's preview first.
 
 ## Related
 

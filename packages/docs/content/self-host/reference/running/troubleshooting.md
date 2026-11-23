@@ -15,7 +15,7 @@ Find the symptom, then the cause, then the page. Every message is as the instanc
 | "The database is at migration N but this build only knows migrations up to M. Run a newer image against this database." | An older image was started on a newer database. | Start the newer image. |
 | "Migration N (name) was applied with different contents than the file in this build." | A shipped migration changed. | Use the build the database was made by, or restore. |
 | The log says "boot failed" with "Unsupported state or unable to authenticate data" | `MASTER_KEY` is not the key that sealed the instance's data. | Set the right key, or both as a pair. [Rotate the master key](../../how-to/running/rotate-the-master-key). |
-| The instance stops naming the object store | `HeadBucket` answered something other than success or 404, such as 403. | Fix the bucket or the key. [Use your own object store](../../how-to/running/use-your-own-object-store). |
+| The log says "boot failed" with an error from the store, such as `UnknownError` | `HeadBucket` answered something other than success or 404, such as 403. | Fix the bucket or the key. [Use your own object store](../../how-to/running/use-your-own-object-store). |
 | "The instance has no members. Set BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD and restart ..." | No first operator was made. | Set both and restart. |
 
 ## Running
@@ -41,7 +41,7 @@ Find the symptom, then the cause, then the page. Every message is as the instanc
 | An app's address answers "Nothing here" | The workspace has no deployed bundle with that app. | Open the workspace's Apps tab. |
 | A registered hostname shows the console | The name is not enabled, or the proxy rewrites the `Host` header. | [Put a proxy in front](../../how-to/running/put-a-proxy-in-front). |
 | A staff sign-in from an app loops back to the console | The app's address is not `APPS_URL` or an enabled hostname of that tenant. | |
-| An app written as code says the instance has no address for apps | `APPS_URL` is not set. | Set it, or knowingly set `APPS_ON_CONSOLE_ADDRESS=true`. |
+| The Apps list says "Apps built in the repository are not served on this instance yet." | `APPS_URL` is not set. **Instance**, then **Health**, says "Not served yet: set APPS_URL". | Set it, or knowingly set `APPS_ON_CONSOLE_ADDRESS=true`. |
 
 ## Mail, imports and keys
 

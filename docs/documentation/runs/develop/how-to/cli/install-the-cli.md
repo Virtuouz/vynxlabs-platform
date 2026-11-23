@@ -17,3 +17,7 @@
 
 ## Not run
 Install from the npm registry (nothing is published). The `volvel dev` Vite refusal text was read from code only. A global install without `--prefix`.
+
+## Second check, 2026-11-23 (second agent)
+Instance http://localhost:8091 (same throwaway instance), CLI and SDK from fresh `pnpm pack` tarballs installed with npm into a scratch folder; no request left localhost. Tenant made for this check: `docs-cli-check` (operator grant for the operator admin), workspaces `cli-dev` (dev) promoting to `cli-live` (production), service accounts `ci-deployer` (`deployer` in both) and `ci-ship-only`. API keys made for the check were revoked or are of this tenant. Walked the console screens the page names at 390 px in dark (Account's API keys with the Create API key dialog; the tenant's Service accounts and a service account's Keys tab): no horizontal overflow of the page, reload not needed for the steps.
+- Packed the CLI, SDK and widgets tarballs again, installed them offline with npm into a folder, `volvel --version` printed `volvel 0.5.0`, and used the SDK tarballs in three repositories. Not run: a global install without `--prefix` (would write outside the scratch folder).

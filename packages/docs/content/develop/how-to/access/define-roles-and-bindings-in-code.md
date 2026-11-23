@@ -16,7 +16,7 @@ You declare a role and a binding in the repository's TypeScript so that they are
 :::steps
 1. Declare the role with `defineRole`, giving its `path`, the `name` bindings use, and its permissions.
 2. Declare who holds it with `defineBinding`, naming the role and the principal.
-3. Run `volvel deploy --tenant <slug> --workspace <slug>`.
+3. Export both from the repository's entry file (`src/index.ts`), then run `volvel deploy --tenant <slug> --workspace <slug>`. The output lists `role`, `binding` and the other resources made.
 :::
 
 ```ts title=src/access.ts
@@ -46,7 +46,7 @@ The binding is listed on the **Access** tab with the tag **From repository** and
 
 ### If it does not work
 
-A principal that does not exist, or a role that does not, is refused when the version is deployed, naming the path.
+A principal that does not exist, or a role that does not, is refused when the version is deployed: "Could not deploy to <workspace>. The binding refers to something that does not exist.", then a line such as `no group has the key "nobody" in this tenant` or `no role named "x" can be bound in this workspace`. The refusal does not name the file's path.
 
 ## Related
 

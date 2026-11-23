@@ -22,7 +22,7 @@ The list has a description line, **Connect a provider**, and a table.
 | **Name** | The name people see on the sign-in button ("Sign in with" and the name). A link that opens the provider. |
 | **For** | **Members** or **End users**. |
 | **Protocol** | **OIDC** or **SAML**. |
-| **State** | **on**, **off** or **paused**, and a **Required** tag when the provider is required. |
+| **State** | **On**, **Off** or **Paused**, and a **Required** tag when the provider is required. |
 
 | State of the list | What you see |
 | --- | --- |
@@ -32,7 +32,7 @@ The list has a description line, **Connect a provider**, and a table.
 
 ### Connect a provider
 
-**Connect a provider** opens the sheet "Connect an identity provider". It makes the provider **off**, then opens it so you can try it. A wrong OIDC issuer is refused at once, because the issuer's settings are read before the provider is saved.
+**Connect a provider** opens the sheet "Connect an identity provider". It makes the provider **Off**, then opens it so you can try it. A wrong OIDC issuer is refused at once, because the issuer's settings are read before the provider is saved.
 
 | Field | What it takes |
 | --- | --- |

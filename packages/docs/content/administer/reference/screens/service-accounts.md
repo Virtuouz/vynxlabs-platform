@@ -32,7 +32,7 @@ Shows the account's **Key** (the key code and repositories name it by, which nev
 
 "A key acts as the service account, with the access the account has been given."
 
-**Create API key** asks for a **Name** (for example "Deploy pipeline") and **Expires**: **Never**, **In 30 days**, **In 90 days** or **In a year**. The hint says "After this the key stops working, and you make a new one." The key is shown once, in a dialog with a copy control. Volvel keeps only a hash of it: a lost key is made again. A key starts with `vxk_`.
+**Create API key** asks for a **Name** (for example "Deploy pipeline") and **Expires**: **Never**, **In 30 days**, **In 90 days** or **In a year**. The hint says "After this the key stops working, and you make a new one." The key is shown once, in a notice above the keys table: "Copy this key now. It is shown only once, and cannot be read again.", with **Copy the key** and **Done**. Volvel keeps only a hash of it: a lost key is made again. A key starts with `vxk_`.
 
 | Column | What it shows |
 | --- | --- |
@@ -61,7 +61,7 @@ There is no rotate action and no scope for a key: a key holds what the account h
 | **Copy the settings** | Copies a JSON object `mcpServers` with one server named `volvel`, of type `http`, with the address and the header `Authorization: Bearer <one of this account's API keys>`. Put a key of the account in place of the placeholder. |
 | Notice | "An agent would be refused here: the account has no place in this workspace. Offer it a script or flow from that script's or flow's page, or give it a role here under Access." |
 | **Tools offered** | **Tool**, **What it does**, **It takes** (an argument that is not required ends with `?`; "Nothing" for none) and a button **Try** for each tool. Empty: "No tools. The account may start no script or flow here. Bind it to a role that may, in this workspace or on one script or flow." |
-| **Try** | Opens "Try <tool>": "The call is made as this account, with only what it may do. It is real: a script runs and a flow starts, with whatever effects they have. You are recorded as the one who asked." **Call it** shows the answer as "The agent would be told this." or "The agent would be told this failed." with **Try again** and **Done**. |
+| **Try** | Opens "Try <tool>": "The call is made as this account, with only what it may do. It is real: a script runs and a flow starts, with whatever effects they have. You are recorded as the one who asked." A choice **How to give it**, **Fields** or **JSON**, takes what the tool takes. **Call it** shows the answer as "The agent would be told this." or "The agent would be told this failed." with **Try again** and **Done**. |
 
 See [Let an agent run a script](../../how-to/access/let-an-agent-run-a-script) and the [MCP reference](../../../develop/reference/access/mcp).
 

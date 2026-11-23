@@ -24,3 +24,9 @@
 
 ## Not run
 `volvel init`, `volvel login`, a production workspace, 768 and 390 px, dark, keyboard only.
+
+## Second check, 2026-11-23 (second agent)
+
+- The page's step 7 now says what the command does ("a test run, nothing is deployed"). The CLI prints "from this build (preview, version N). Nothing was deployed." (`packages/cli/src/cli.ts:1170`), as in the first run.
+- 390 px dark and 768 px: the **Connections** screen (steps 3 and 4), **Secrets** and **Variables** show no page scroll; at 390 the sheet of a connection fits with its footer in view; Escape closes it and focus returns to the row's button.
+- Not run, and cannot be: nothing new. `volvel init` and `volvel login` stay as the first run left them (the repository was made by hand).

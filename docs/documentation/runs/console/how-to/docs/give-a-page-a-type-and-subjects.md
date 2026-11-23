@@ -7,3 +7,7 @@
 4. **Save draft** and a reload kept the type and the subjects.
 5. After a deploy the served page showed REFERENCE over the title. A site with one page shows no cards or Related.
 - Not run: cards and Related on a site with several types (read in code and `typed-*.html` goldens), the search window's **Kind of page** buttons, a page's own type over the folder's, **Use the folder's**, **Remove <subject>**, the offered subjects, 768 and 390 px, dark, keyboard.
+
+## Second check, 2026-11-23 (second agent)
+
+Pages of a how-to and an explanation type were deployed to a repository site: the home page showed **What do you want to do?** with a card for each ("1 page →"); the search window showed **Any kind**, **How-to guides** and **Explanations**. The warning for a typed page in an untyped folder read "…is a explanation, in a folder whose index says no type" (a wording fault of the product).

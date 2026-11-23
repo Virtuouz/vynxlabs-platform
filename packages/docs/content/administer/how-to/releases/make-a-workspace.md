@@ -46,6 +46,8 @@ A common shape is a dev workspace that promotes to a production workspace. A sec
 6. Press **Open the copy**.
 :::
 
+With **Safety** on, the sheet adds that the copy has no connections, data sources or secret values and cannot reach a real system until you set it up. With **Safety** off and something to copy, it says the connections, data sources, group members and secrets were copied and the copy can reach the same systems as the original.
+
 The copy is a dev workspace that promotes to the workspace it was made from, and its triggers start paused. A connection that signs in with OAuth is not signed in, even with Safety off: connect it again.
 
 ## Delete a workspace
@@ -68,5 +70,5 @@ The Workspaces list shows the new workspace, with its type and what it promotes 
 - **"That link would lead back to this workspace."** A chain of links cannot return to where it started.
 - **"A clone of this workspace is still being made."** Wait until it has finished.
 - **"N runs and N flow runs are still in progress."** Pause the triggers, let them finish or cancel them, then try again.
-- **Deleting a production workspace is refused.** It needs `workspace_production:write`, which no role holds until it is added to one by name. An administrator does not have it either.
+- **Deleting a production workspace is refused** with "This needs the workspace_production:write permission. …". It needs `workspace_production:write`, which no role holds until it is added to one by name. An administrator does not have it either.
 - **"Waiting for another clone to finish copying."** One clone copies rows at a time. It gives up after an hour.

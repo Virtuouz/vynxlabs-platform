@@ -1,6 +1,6 @@
 # Fact-check record: console/reference/screens/operate/git-sync
 
-Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer. Line numbers point at the block that holds the claim. `Rel` = `apps/console/src/screens/Release.tsx`, `Exec` = `apps/console/src/screens/Execution.tsx`, `Prom` = `apps/console/src/screens/Promotion.tsx`, `PConf` = `apps/console/src/screens/PromotionConfirm.tsx`, `Drift` = `apps/console/src/screens/Drift.tsx`, `GS` = `apps/console/src/screens/GitSync.tsx`, `Git` = `apps/console/src/screens/Git.tsx`, `Env` = `apps/console/src/screens/Environments.tsx`, `CPgit` = `apps/control-plane/src/kernel/git.ts`, `CProu` = `apps/control-plane/src/routes/`. "Checked by" is for the second agent: nothing here has been checked by one yet.
+Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer. Checked by: second agent, 2026-11-23. Every quoted label, message and permission of the page was matched against the console and control-plane source at HEAD (`87000022`) by script and by hand, and what depends on the screen was run on the instance http://localhost:8091 (see `docs/documentation/runs/...`).. Line numbers point at the block that holds the claim. `Rel` = `apps/console/src/screens/Release.tsx`, `Exec` = `apps/console/src/screens/Execution.tsx`, `Prom` = `apps/console/src/screens/Promotion.tsx`, `PConf` = `apps/console/src/screens/PromotionConfirm.tsx`, `Drift` = `apps/console/src/screens/Drift.tsx`, `GS` = `apps/console/src/screens/GitSync.tsx`, `Git` = `apps/console/src/screens/Git.tsx`, `Env` = `apps/console/src/screens/Environments.tsx`, `CPgit` = `apps/control-plane/src/kernel/git.ts`, `CProu` = `apps/control-plane/src/routes/`. "Checked by" is for the second agent: nothing here has been checked by one yet.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -24,3 +24,21 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 | Release commit route needs promotion:write | `CProu/git.ts:410` | writer | holds |
 | Permissions: read git:read; follow/unfollow/push git:write; pull deployment:write + code:write | `CProu/git.ts:138-300,340,535-590` | writer | holds |
 | Sync never builds code; no webhooks or schedule | `Git:228`, `CPgit:71-79` | writer | holds |
+
+## Second check (2026-11-23)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Follow a branch, default branch refused, first push creates branch from default | `kernel/git.ts:688,929`; run against a local git server | second agent, 2026-11-23 | checked, run |
+| Push, commit authored by the member, "Deploy from the console"; History row; Last agreed at commit | `git.ts`; run | second agent, 2026-11-23 | checked, run |
+| Pull deploys, version message "Pulled *commit* from *branch*" | `git.ts:1317`; run | second agent, 2026-11-23 | checked, run |
+| Changed on both sides: Push and Push with drafts disabled; Pull disabled until a choice; Keep workspace / Take branch / Undo; Kept tag | `GitSync.tsx`; run | second agent, 2026-11-23 | checked, run |
+| Push refused "Nothing was written: the branch changed. Pull first." only when a resource file changed on the branch (a README does not refuse) | `git.ts:996-1010`; run | second agent, 2026-11-23 | checked, run |
+| Push with drafts: message; drafted files then "Removed here" and a plain push answers "Already the same: nothing to write." | `git.ts`; run | second agent, 2026-11-23 | checked, run; fault: release/git-sync (the screen counts a drafted file as a change to push and shows it as removed here) |
+| After a pull, a resource new here stays under New here but is not counted, and Push stays disabled | run (lab sixth) | second agent, 2026-11-23 | fault: git-sync pull records the workspace's unpushed new resource as agreed (`git.ts:1340-1351`, `synced_said`); stated on the page as it is |
+| A volvel.yaml that moves the resources folder after the last sync makes a file changed there show as changed on both sides | run (stack/greetings/new) | second agent, 2026-11-23 | fault: git-sync base kept under the old folder (`sidesOf`); stated on the page as it is |
+| Change branch dialog and effect; Stop following dialog; follow again | `Git.tsx`; run | second agent, 2026-11-23 | checked, run |
+| Production: release branch card, "Commit to the release branch again", failed commit notice, nothing-to-write messages, retry after the server was back | `GitSync.tsx:567-665`; run (server stopped, then started) | second agent, 2026-11-23 | checked, run |
+| History lists a release commit as **Push** (kind is stored as push) | `git.ts:1666-1723`, `GitSync.tsx:476` | second agent, 2026-11-23 | fault: git-sync/history never shows **Release**; the page says what the screen does |
+| Branches state is the state the last push/pull/deploy left | `git.ts:1376` (markAhead), `git.ts` state writes; run | second agent, 2026-11-23 | checked, run |
+| Not run: Sync is paused (only a tenant imported from another instance), **Delete them anyway** after a pull, the 2000 files / 8 MB limit | - | second agent, 2026-11-23 | not run, said here |

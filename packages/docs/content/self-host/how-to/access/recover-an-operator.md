@@ -15,7 +15,7 @@ You make an account an operator again, with a new password, when no operator can
 
 :::steps
 1. Run `node dist/main.js recover-operator operator@example.com` with the same environment the instance uses.
-2. Copy the password it prints. It is printed once.
+2. Copy the password it prints: "<email> is an enabled operator admin. Its password is now: <password>". It is printed once.
 3. Sign in at the console with the email and that password, then change the password on **Account**.
 :::
 

@@ -17,7 +17,7 @@ The filter **Show** has five choices, each with a count: **Everyone**, **Members
 | --- | --- |
 | **Who** | The name, with the kind under it: **Member**, **Group**, **Service account**, **End user**, **Every end user**, **End-user group** or **Anyone**. |
 | **Role** | The role's name. |
-| **Where** | **Whole tenant**, a workspace's name, or for one thing a link to it ("Script `path` in <workspace>"). Hidden on a narrow window. |
+| **Where** | **Whole tenant**, a workspace's name, or for one thing a link to it ("script <path> in <workspace>": the kind in lowercase, then the path). Hidden on a narrow window. |
 | (end) | The tag **From repository** for a binding a repository defines, which is changed there. Otherwise **Remove**. |
 
 **Remove** asks "Remove the <role> role from <who>?" and removes the binding. Removing the last binding that lets someone change the tenant's access is refused: "That would leave the tenant with nobody who can change its access. Give someone else the tenant admin role first."

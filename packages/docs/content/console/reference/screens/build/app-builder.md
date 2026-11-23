@@ -45,7 +45,7 @@ A row can show more than one of these.
 
 | Field | What it takes |
 | --- | --- |
-| **Name** | The app's title, required, 100 characters at most. A counter shows "n of 100". |
+| **Name** | The app's title, required, 100 characters at most. A counter shows "n of 100". The field lets you type past 100; it then says "Use at most 100 characters. This is N.", and **Make the app** is refused with the manifest's own message. |
 | **Address** | Required. It is filled in from the name: lower-case letters, digits and dashes, 40 characters at most. Typing in it changes it, and the name no longer fills it in. The hint reads "The app's address ends with this. Lower-case letters, digits and dashes." |
 
 **Make the app** is off while the address is empty. It saves two drafts, an interface at `screens/<address>` with one empty page named after the app, and an app at `<address>` that serves it, then opens the workbench on the new interface. The address does not change when the app is renamed later.
@@ -67,7 +67,7 @@ The button at the end of a row depends on where the app stands. Each one asks fi
 | Deployed, with edits not published | **Discard draft**, next to **Remove** | Asks "Discard this draft?": "The app goes back to how it was last deployed. One that was never deployed is gone." Press **Discard**. The edits are thrown away and the deployed app is untouched. |
 | Deployed | **Remove** | Asks "Remove this app?": "This saves a draft that removes it. Nothing changes until that draft is deployed. The app's address stops serving it once that is deployed." If the app also has edits not published the text goes on: "The edits not published are replaced by the removal; to drop only them, use Discard draft." Press **Remove**. The interface and its app are drafted for removal together, and the row shows **Being removed**. |
 | Never published | **Discard draft** | Asks the same question as above. Because nothing was ever deployed, the app is gone from the list. |
-| **Being removed** | **Keep this app** | Asks "Keep this app?": "This throws away the draft that removes it. The app stays as it was last deployed." Press **Keep**. |
+| **Being removed** | **Keep this app** | Asks "Keep this app?": "This throws away the draft that removes it. The app stays as it was last deployed." Press **Keep**. The draft that removed the app is deleted, and so is any draft of its edits that the removal had replaced: the row goes back to the published version with no **Edits not published**. |
 | Managed in the repository | The text "Managed in the repository: the app is removed there." | No button: the console cannot remove an app the repository manages. |
 
 A removal is a draft like any other. The app is served until the draft is deployed from the **Deploy** screen, and it can be taken back with **Keep this app** until then.
@@ -76,9 +76,9 @@ A removal is a draft like any other. The app is served until the draft is deploy
 
 | State | What you see |
 | --- | --- |
-| Empty | "No apps made here yet", with the text "Make one over a table of this workspace. Tables are under Data." and **Make an app**. |
+| Empty | "No apps made here yet", with the text "Make one over a table of this workspace. Tables are under Data." and **Make an app**. A production workspace with no apps shows the same text without the button. |
 | Not loaded | The list's error state, with a retry. |
-| Read only | A line says you can see the workspace's apps, not change them, and that it needs `resource:write`, or `interface:write` alone. **Make an app** is disabled. |
+| Read only | A line says "You can see this workspace's apps, not change it. It needs resource:write, or interface:write alone." and whom to ask. **Make an app** is disabled, and **Rename**, **Remove** and **Discard draft** stay enabled: the server refuses them when the draft is saved. |
 | Production | The notice "Apps are built in a dev workspace and promoted. Here they can be opened." No buttons that change an app. |
 
 ## Permissions
@@ -89,7 +89,7 @@ A removal is a draft like any other. The app is served until the draft is deploy
 | **Make an app**, **Rename**, **Remove**, **Discard draft**, **Keep this app** | `resource:write` in the workspace, or `interface:write` alone. The screen disables only **Make an app**; the other buttons are refused when the draft is saved. |
 | Open the workbench | The list's permission to read. To change anything there you need the write permission above, in a dev workspace. See [the workbench](app-builder-editor). |
 
-The built-in role App maintainer holds `interface:*`, `data:read`, `data:write` and `app:read`, and builds and deploys these apps and nothing else. See the [permissions reference](../../../../administer/reference/permissions).
+The built-in role App maintainer holds `interface:*`, `workspace:read`, `table:read`, `data:read`, `data:write`, `app:read`, `dashboard:read` and `dashboard:write`. It has `interface:write` and not `resource:write`, so it makes, publishes and removes these apps, and nothing else of the workspace. See the [permissions reference](../../../../administer/reference/permissions).
 
 ## Related
 

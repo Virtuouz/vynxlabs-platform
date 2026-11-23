@@ -17,7 +17,7 @@ By the end you will have made a key, read your own account with it, and revoked 
 ## Make a key and use it
 
 :::steps
-1. Make the key in the console. Open **Account**, find **API keys** and press **Create API key**. Give it a **Name** that says where it will be used, such as "My laptop", and an expiry if you want one. The key is shown once. Copy it now: the console cannot show it again.
+1. Make the key in the console. Open **Account**, find **API keys** and press **Create API key**. Give it a **Name** that says where it will be used, such as "My laptop", and choose **Expires**: **Never**, **In 30 days**, **In 90 days** or **In a year**. The key is shown once. Press **Copy the key** now: the console cannot show it again, and **Done** without copying asks "Close without copying the key?".
 2. Keep the key where the program reads it, not in the program's text.
 
    ```bash
@@ -38,7 +38,7 @@ By the end you will have made a key, read your own account with it, and revoked 
      "$VOLVEL_URL/api/v1/tenants/$TENANT/workspaces"
    ```
 
-5. Revoke the key when it is not needed. In **Account**, press **Revoke** on its row and confirm. The key stops working at once. Through the API, `DELETE /api/v1/api-keys/<key id>` does the same and answers 204.
+5. Revoke the key when it is not needed. In **Account**, press **Revoke** on its row and press **Revoke** again to confirm. The row stays in the list and its status changes to **Revoked**. The key stops working at once. Through the API, `DELETE /api/v1/api-keys/<key id>` does the same and answers 204.
 :::
 
 ### Make the key through the API

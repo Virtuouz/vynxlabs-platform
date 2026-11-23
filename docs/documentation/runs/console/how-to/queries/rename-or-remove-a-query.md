@@ -14,3 +14,9 @@
 - After **Save as a draft** the screen stayed at `?query=<old path>` and said "There is no query at <old path>." with a notice "There is no saved query at …". The list showed the renamed query. It was the same 6 s later. After **Discard draft** on the renamed query the screen again said "There is no query at <new path>." Opening the right address worked. The page says so under If it does not work. Whether the cause is the dialog's closed event not firing in headless Chromium was not found out.
 ## Not run
 - A rename of a query that dashboards name, so the two lists were not seen. A repository query. Deploying the rename or the removal.
+
+## Second run, 2026-11-23 (second agent)
+- Instance http://localhost:8091 at commit `87000022`, headless Chromium. Done in a tenant of the checker's own, `qry31chk` (workspace Sandbox, dev): Ann Qry (`tenant_admin`), Vic Qry (`viewer`), Wes Qry (`app_maintainer`), a table `visits`, a data source on the local Postgres. Fernhill's people and data were not used.
+- A rename of a query that a dashboard names: `chk/all-visits` read by the kept dashboard `chk/board`; Used by listed it; Name and path with a new Path listed "This dashboard is saved as a draft with the new path: Chk week chk/board" (singular, added); **Save as a draft** showed the notice "A draft renames chk/all-visits to chk/all-visits-2." The Deploy screen listed the query (RENAMED from the old path) and the dashboard (CHANGED); deployed together; the dashboard still showed its table. The screen stayed at the old address and said "There is no query at chk/all-visits." again: reproduced, a product fault.
+- Remove: "Remove this query?"; Used by then listed both dashboards (one "in a draft"). Deploying the removal with the dashboard's draft: accepted; the dashboard's table then said "The query chk/all-visits-2 was not found."
+- Not run: a repository query; the 90-day end of an old path.

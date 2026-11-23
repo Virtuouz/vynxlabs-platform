@@ -24,7 +24,7 @@ It is reached from the account menu in the header (the circle with your initial)
 | **Expires** | How far off, or "Never". |
 | **Status** | **Active**, **Expired** or **Revoked**. |
 
-**Create API key** asks for a **Name** ("Where the key will be used.", for example "My laptop") and **Expires**: **Never**, **In 30 days**, **In 90 days** or **In a year**, with the hint "After this the key stops working, and you make a new one." The key is shown once in a dialog, with a copy control. **Revoke** asks "Revoke the key "<name>"? Anything using it stops working." Empty: "No API keys", "Create a key to sign in from the command line."
+**Create API key** asks for a **Name** ("Where the key will be used.", for example "My laptop") and **Expires**: **Never**, **In 30 days**, **In 90 days** or **In a year**, with the hint "After this the key stops working, and you make a new one." The key is shown once in a notice above the table: "Copy this key now. It is shown only once, and cannot be read again.", with **Copy the key** and **Done**. **Revoke** asks "Revoke the key "<name>"? Anything using it stops working." Empty: "No API keys", "Create a key to sign in from the command line."
 
 An administrator's keys for a service account are on the [Service accounts](../../../../administer/reference/screens/service-accounts) screen.
 
@@ -39,7 +39,7 @@ One field, **Name**, and **Save name**. It is shown "to the people you work with
 | Field | What it takes |
 | --- | --- |
 | **Current password** | Your password now. A wrong one answers "The current password is not right." |
-| **New password** | At least 12 characters: "Use at least 12 characters." |
+| **New password** | At least 12 characters. The field says "Use at least 12 characters." as you type, and **Change password** stays off until all three fields are filled, the new password is long enough and the two match. |
 | **New password again** | Must match: "The two do not match." |
 
 When it works: "Your password is changed. Your other sessions were signed out." If an administrator made you a password reset link, you set your new password on the page the link opens, not here.
@@ -59,9 +59,9 @@ When it works: "Your password is changed. Your other sessions were signed out." 
 
 ## Recovery codes
 
-Shown only to a tenant's owner. "You own a tenant. If your organization's sign-in breaks while it is required, a recovery code with your password lets you in once, to put it right. Each code works one time."
+Shown only to a tenant's owner: a member who holds `tenant_admin` at the tenant by a binding of their own (not through a group). "You own a tenant. If your organization's sign-in breaks while it is required, a recovery code with your password lets you in once, to put it right. Each code works one time."
 
-It shows **Codes left** ("None made yet" before the first) and **Made**. **Make recovery codes** (or **Make new codes**, which asks "Make new recovery codes?": "The codes you have now stop working. Keep the new ones somewhere safe that does not depend on your organization's sign-in.") shows the codes once, with **Copy all** and **I have kept them**, and the notice "Copy these codes now. They are not shown again." With two codes left or fewer, a notice says "Only N left." or "You have no codes left." and asks you to make new ones while you can still sign in.
+It shows **Codes left** ("None made yet" before the first) and **Made**. **Make recovery codes** (or **Make new codes**, which asks "Make new recovery codes?": "The codes you have now stop working. Keep the new ones somewhere safe that does not depend on your organization's sign-in.") makes 10 codes and shows them once, with **Copy all** and **I have kept them**, and the notice "Copy these codes now. They are not shown again." With two codes left or fewer, a notice says "Only N left." or "You have no codes left." and asks you to make new ones while you can still sign in.
 
 ## What I may do here
 

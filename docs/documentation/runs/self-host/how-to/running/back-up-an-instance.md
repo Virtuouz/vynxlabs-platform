@@ -11,3 +11,7 @@ None found in the commands. The run stopped the control plane before the dump as
 
 ## Not run
 The S3 copy, the tenant export, a scheduled backup.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Nothing further was run. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

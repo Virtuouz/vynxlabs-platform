@@ -18,3 +18,7 @@
 
 ## Not run
 `--url must start with http:// or https://` and the profile-name refusal were read from code. The page's addresses `volvel.example.com` and `staging.volvel.example.com` are illustrations: no such instance was reached. One `login` to `http://example.com` was sent by mistake while testing the plain-http warning (it answered, and the command refused it as not a Volvel instance); no key of value was in it (`--token x`).
+
+## Second check, 2026-11-23 (second agent)
+Instance http://localhost:8091 (same throwaway instance), CLI and SDK from fresh `pnpm pack` tarballs installed with npm into a scratch folder; no request left localhost. Tenant made for this check: `docs-cli-check` (operator grant for the operator admin), workspaces `cli-dev` (dev) promoting to `cli-live` (production), service accounts `ci-deployer` (`deployer` in both) and `ci-ship-only`. API keys made for the check were revoked or are of this tenant. Walked the console screens the page names at 390 px in dark (Account's API keys with the Create API key dialog; the tenant's Service accounts and a service account's Keys tab): no horizontal overflow of the page, reload not needed for the steps.
+- Re-ran login, a profile, `profiles`, file modes, logout twice, bad profile name, `--profile` without a name, a wrong key, `--url localhost`, and `VOLVEL_URL` of another address. All as the page says; nothing was changed. A real hosted address was not reachable (no internet), so the example addresses stay illustrations.

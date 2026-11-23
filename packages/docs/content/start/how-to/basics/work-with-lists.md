@@ -18,7 +18,7 @@ By the end you have narrowed the Runs list, put it in an order, kept that view u
 
 :::steps
 1. Open **Operate**, then **Runs**. Type in the **Search** box, which takes a path, a run ID, a tag or an error. The list follows when you stop typing. The address changes with every filter, so a reload or a link keeps it.
-2. Choose a **Kind** (**Scripts and flows**, **Scripts** or **Flows**), a **When** window (**Last hour**, **Last 24 hours**, **Last 7 days**, **Between…** or **Everything kept**) and a **Status**: one of the buttons **All**, **Failed**, **Running**, **Waiting for approval**, **Waiting for a time**, **Queued**, **Succeeded** or **Canceled**, each with its count. A filter that came from a link, such as one script's runs or one tag, shows as a button with a name like "Stop showing only runs tagged …"; press it to remove the filter.
+2. Choose a **Kind** (**Scripts and flows**, **Scripts** or **Flows**), a **When** window (**Last hour**, **Last 24 hours**, **Last 7 days**, **Between…**, which adds a **From** and a **To** date, or **Everything kept**) and a **Status**: one of the buttons **All**, **Failed**, **Running**, **Waiting for approval**, **Waiting for a time**, **Queued**, **Succeeded** or **Canceled**, each with its count. A filter that came from a link, such as one script's runs or one tag, shows as a button with a name like "Stop showing only runs tagged …"; press it to remove the filter.
 3. Press the header **Started** or **Duration**. The first press sorts up (▲), the second down (▼), the third puts the list back in its own order (↕). Other columns do not sort on Runs.
 4. Press **Columns**. Check a column to show it, and uncheck it to hide it. Move one with its arrows or by dragging. **Show every column** puts them all back, and **Done** closes the dialog. The first column stays.
 5. Press the **Row density** button and choose **Compact**, **Standard** or **Comfortable**. Runs start **Compact**.
@@ -29,7 +29,7 @@ By the end you have narrowed the Runs list, put it in an order, kept that view u
 :::steps
 1. Press the bookmark button, **Saved views**, and choose **Save this view…**.
 2. Name it in the box **Name** and press **Save**. A notice says "Saved as “{name}”. Only you see it in this menu; its link opens it for anyone."
-3. Change the filters and press the bookmark again. Its menu lists your views. Choose one to open it. **Save over “{name}”** keeps the changes under the same name, and **Rename “{name}”…** and **Delete “{name}”** change or remove it.
+3. Change the filters and press the bookmark again. Its menu lists your views. Choose one to open it. When the filters differ from the view you last chose, **Save over “{name}”** keeps the changes under the same name; a notice says "“{name}” now shows this." While a view is the one showing, its name is on the bookmark button, and **Rename “{name}”…** and **Delete “{name}”** change or remove it. Delete asks "Delete the view “{name}”?" first.
 4. Choose **Copy a link to this view** to send what you see to someone else. The link holds the filters, so it still works after you delete the view. It opens for anyone who may open the list.
 :::
 
@@ -39,12 +39,14 @@ You can keep 50 views for one list, each with a name of up to 80 characters that
 
 :::steps
 1. Check the box at the start of a row, or move to it with :kbd[j] and :kbd[k] and press :kbd[x] or :kbd[Space]. :kbd[⇧J] and :kbd[⇧K] check the rows as you move, and :kbd[⌘A] checks every row shown. The bar above the list says "{n} selected".
-2. Press an action in that bar. On Runs they are **Cancel** and **Run again**. A question names a few of the runs and asks you to confirm.
-3. When every item was done, a notice says so. When some were not, a dialog lists them with the reason and the request ID of each, and **Retry the {n} not done** tries only those again.
+2. Press an action in that bar. On Runs they are **Cancel** and **Run again**. A question names a few of the runs and asks you to confirm: **Cancel {n} runs?** or **Run {n} runs again?**.
+3. When every item was done, a notice says so. When some were not, the dialog **Canceling runs** says "{n} done, {m} not done" and lists those with the reason and the request ID of each. **Retry the {m} not done** (**Retry the one not done** for a single item) tries only those again. A run that had already ended, such as one that succeeded, is listed as not done with "The run already succeeded."
 4. **Clear**, or :kbd[Esc], unchecks the rows.
 :::
 
-More than 100 rows are sent in groups of 100, one after the other, and the answers are added up.
+Runs shows the first 100 rows and **Load more** adds the next. More than 100 checked rows are sent in groups of 100, one after the other, and the answers are added up.
+
+Two more buttons cancel runs by a rule instead of by row. **Cancel by age…** cancels the flow runs or script runs that have gone or waited longer than a length of time you set. **Cancel {n} queued** appears while script runs are queued.
 
 ## The result
 
@@ -54,8 +56,8 @@ The list shows what you narrowed it to, in the order you chose. Your view is in 
 
 | You see | Because | Do this |
 | --- | --- | --- |
-| "Nothing matches these filters" | The filters leave no row. | Press **Clear filters**, or widen **When**. |
-| "Nothing matches" with "Try fewer or other words." | A search found nothing. | Use fewer words. |
+| "Nothing matches these filters" | The filters or the search leave no row. | Press **Clear filters**, or widen **When**. |
+| "Nothing matches" with "Try fewer or other words." | On a list that has its own search box, such as Members, a search found nothing. | Use fewer words. |
 | "Could not load {the list}." with a Request ID | The list did not load. | Press **Try again**. A refusal that says you lack a permission has no retry: ask an owner or an administrator. |
 | The bar has no action | You may not run the action on these rows. | Ask for the permission the question names. |
 | The keys :kbd[j], :kbd[k] and :kbd[x] do nothing | Single-key shortcuts are off, or the focus is outside the table. | Turn them on in **Keyboard shortcuts**, and press :kbd[Tab] into the table. |

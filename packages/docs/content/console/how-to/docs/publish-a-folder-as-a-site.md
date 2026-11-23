@@ -36,9 +36,9 @@ A docs app is opened as any app is: by a binding that gives a role to a person, 
 
 | To | Choose | What happens |
 | --- | --- | --- |
-| Stop serving it for now | **Stop publishing…** then **Stop publishing** | After the next deploy readers are told there is nothing at its address. The pages and the app are kept. The badge reads **Site, not published**. |
+| Stop serving it for now | **Stop publishing…** then **Stop publishing** | The badge reads **Site, not published** at once. After the next deploy the address answers "Nothing here" and "There is no page at this address." The pages and the app are kept. |
 | Serve it again | **Publish again…** then **Publish again** | Served again after the next deploy, with its pages and address as they were. |
-| Remove its app | **Remove the site's app…** then **Remove** | Stops serving it after the next deploy. The pages stay, and the folder can be published again. |
+| Remove its app | **Remove the site's app…** then **Remove** | The folder shows no badge and offers **Publish as a site…** again, and the pages stay. The screen's **Deploy N changes** does not count this removal, so it is not deployed from the console: the site keeps being served. To take a site down from the console, use **Stop publishing…**. |
 
 Each says what it did, with an **Undo**.
 
@@ -50,7 +50,7 @@ The site's home page lists its collections and the pages updated most recently. 
 
 - **"Something already has that path."** Another page or app has the address. Choose another.
 - **"The address is lowercase letters, digits, hyphens and underscores: handbook."** Fix the address; it is checked as you type.
-- **The site says there is no page.** The site is not deployed, or it is **Site, not published** and answers that there is nothing at its address. A reader with no binding cannot open it.
+- **The site says "There is no page at this address."** The site is not deployed, or it was stopped and deployed as **Site, not published**. A reader with no binding cannot open it.
 - **The deploy is refused naming a page.** A page has a problem or takes a name the product keeps. See [Fix a page that takes a name the product keeps](fix-a-name-the-product-keeps).
 - **There is no "Publish as a site…" in the menu.** It is offered for top-level folders that are not already a site, in a dev workspace, to a member who may change pages.
 

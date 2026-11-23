@@ -18,3 +18,5 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Deleted tenant's earlier entries in the instance log, tagged | `apps/console/src/screens/Audit.tsx:325` | writer, run | |
 | Read-only refusal | `apps/console/src/kit/ReadOnly.tsx:28` | writer, code | |
 | An export needs export:write; grant as viewer lacks it | `apps/control-plane/src/routes/portability.ts:38` | writer, code | |
+
+Checked by: second agent, 2026-11-23. Re-run on the instance with my own tenants (see the run log): the delete dialog and its slug gate; export, delete, import with a wrong and a right passphrase, a slug, and a database location. Texts compared with the screen and the code (`Environments.tsx:1578, 1281, 1322-1333`; `routes/portability.ts:24`). fault: instance ("All 0 workspaces arrived" for a tenant with none; "Delete anyway" dialog without a full stop).

@@ -1,6 +1,6 @@
 # Fact-check record: console/how-to/scripts/test-a-script
 
-Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11-23. Paths are under `apps/console/src` unless they start with `apps/` or `packages`. "Checked by" holds the writer's check and is for the second agent to complete. CS = `screens/CodeSettings.tsx`, AU = `screens/Authoring.tsx`, OP = `screens/ObjectPages.tsx`, EX = `screens/Execution.tsx`, ID = `InputDialog.tsx`, OA = `screens/OfferToAgent.tsx`, RP = `screens/RunPage.tsx`, CP = `apps/control-plane/src`, SDK = `packages/sdk/src`, KINDS = `packages/manifest/src/kinds.ts`, WK = `packages/worker/src`.
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11-23. Paths are under `apps/console/src` unless they start with `apps/` or `packages`. Checked by: second agent, 2026-11-23. CS = `screens/CodeSettings.tsx`, AU = `screens/Authoring.tsx`, OP = `screens/ObjectPages.tsx`, EX = `screens/Execution.tsx`, ID = `InputDialog.tsx`, OA = `screens/OfferToAgent.tsx`, RP = `screens/RunPage.tsx`, CP = `apps/control-plane/src`, SDK = `packages/sdk/src`, KINDS = `packages/manifest/src/kinds.ts`, WK = `packages/worker/src`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -15,3 +15,6 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | Test runs deleted after seven days. | CP/kernel/execution/bundles.ts:194 | writer, read from the code 2026-11-23 | holds |
 | Read-only editor text. | AU:777 | writer, read from the code 2026-11-23 | holds |
 | Types are not checked at build. | packages/compose/src/index.ts:263-275 | writer, read from the code 2026-11-23 | holds |
+| Build with all drafts, on, with another draft that does not build: "The code written in the console does not build. scr-broken.script.ts:3: Unexpected "}""; Problems stays "No problems found." | AU:792-797,809 | second agent, run on the instance 2026-11-23 | holds |
+| Ctrl+Enter runs with the last run's input, not the typed one. | AU:344,584-586 | second agent, run on the instance 2026-11-23 | fault: scripts (new), see the editor's record |
+| At 768 and 390 px the code area is 5 px high. | kit/SplitPane.tsx | second agent, run on the instance 2026-11-23 | fault: scripts (new), see the editor's record |

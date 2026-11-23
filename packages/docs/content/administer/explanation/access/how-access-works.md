@@ -74,7 +74,7 @@ These are in every tenant. They cannot be changed; make a role of your own to al
 | --- | --- |
 | `tenant_admin` | `*:*`, and `sql:read`. |
 | `workspace_admin` | Most kinds in a workspace (apps, flows, scripts, tables, data, secrets, deployments, interface, docs, git and more), `binding:*` there, and reads of audit, members and groups. It has no `role:*` and no `access:write`, so it cannot make a role or ask for an access change, and no `code`, `portal`, `end_user` or `service_account`. |
-| `developer` | `*:read`, and writes of bundles, code, connections, dashboards, data, events, files, flow runs, resources, runs, secrets and variables, and `sql:read`. No deployment, promotion, approval, interface or doc write. |
+| `developer` | `*:read`, and writes of bundles, code, connections, dashboards, data, rows past the row policy (`data_all:write`), events, files, flow runs, resources, runs, secrets and variables, and `sql:read`. No deployment, promotion, approval, interface or doc write. |
 | `deployer` | `*:read`, `bundle:*`, `deployment:*` and `promotion:write`. |
 | `viewer` | `*:read`. |
 | `portal_user` | `app:read`, and `data:read` and `data:write`. |

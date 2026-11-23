@@ -21,7 +21,7 @@ By the end the tenant's portal, sign-in pages and apps show your logo and colors
 2. In **Theme**, fill the tokens you want under **Light**. Leave the rest empty: an empty token keeps the kit's value, shown as the placeholder **kit default**. The preview beside updates as you type, saved or not.
 3. Fill the same tokens under **Dark**, where a color is unset the kit's dark value stands. Lengths and fonts follow light.
 4. Read under each preview. "Every pair checked is easy to read." means nothing is below its minimum. Otherwise each pair is listed, for example "ink-muted on canvas: 1.47, needs 4.5". Change a color until it is 4.5 for text, or 3 for the edge of a control. A value it cannot read is listed as "could not be checked".
-5. Under **Logo**, choose **Upload a logo**. The logo is replaced at once, and the browser makes the tenant's icons from it.
+5. Under **Logo**, choose **Upload a logo** (**Replace the logo** when there is one). The notice "The logo is replaced." appears at once, and the browser makes the tenant's icons from it. **Remove logo** asks "Remove the logo? The sign-in pages show the tenant's name alone."
 6. Press **Save** in the bar. "Branding saved. The portal and apps show it from their next page."
 :::
 

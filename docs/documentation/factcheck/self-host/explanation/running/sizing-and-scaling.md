@@ -1,6 +1,6 @@
 # Fact-check: self-host/explanation/running/sizing-and-scaling.md
 
-Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the writer; the second agent's column is open.
+Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -13,3 +13,7 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the wr
 | 422 `too_slow` past the statement timeout; totals 5 s. | `apps/control-plane/src/kernel/data/rows.ts:776` | writer, 2026-11-23 | holds for the 5 s totals |
 | Defaults: pool 10, 10, `DATA_TENANT_CONNECTIONS` a third (at least 2), timeouts 15000. | generated settings reference (Database) | writer, 2026-11-23 | holds |
 | 1 GB container gets 3 slots, 2 GB gets 9. | `packages/worker/src/machine.test.ts` "a container held to 1 GB"; (2048-512)/160 = 9 | writer, 2026-11-23 | holds |
+
+## Second check (2026-11-23)
+
+Every claim read against the code and matched; commands and messages were also run in the drill (see the run log).

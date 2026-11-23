@@ -14,5 +14,18 @@
 ## The page got wrong (and was corrected)
 - No correction was needed from the run.
 
-## Not run
+## Not run by the writer
 Pausing a workspace under **Workspace settings** and the instance pause (both would change the shared Sandbox or the instance; their texts are from the code), checked-row **Pause**, a webhook answering 503 while paused, the form text.
+
+## Second check (2026-11-23)
+
+- Instance: http://localhost:8091, the throwaway instance (MAIL_CAPTURE_DIR set, so mail is read from its folder). Everything below ran in a workspace of my own: Operate check (a dev workspace) and Operate check live (a production workspace linked to it), in Fernhill's tenant, with scripts, flows, triggers, a secret and an HTTP connection of mine (deployed by the CLI from a repository of my own; the connection pointed to a listener of mine on localhost). Signed in as Maya Brooks, and as Devi Shah (not in the Practice managers group) where a second person was needed. Playwright, headless.
+
+- Paused `opchk/slack` with the reason "op-docs pause test": the inspector read "Paused just now by Maya Brooks: op-docs pause test. Nothing it would start is started until it is resumed."; a request answered 503 `trigger_paused` ("This webhook is paused, so it started nothing. Try again later."); **Resume**.
+- Batch: two rows checked; "Pause 2 triggers?" with the paths and **Why (shown to everyone here)**; **Pause**; both read **Paused**; **Resume** put both back.
+- **Configure**, **Workspace settings**: **Triggers are on**, **Pause triggers** acted at once with no question; the section then read **Triggers are paused**; the Triggers screen said "Every trigger here is paused. Resume them under Workspace settings." and every row read **Workspace paused**; a webhook answered 503 `workspace_paused`; **Resume triggers** put it back.
+- **Fire now** on a schedule opened a run named "Schedule opchk/nightly".
+- In the production workspace **New trigger** is disabled.
+- 390 px, light and dark: **Triggers** and the inspector stack, no horizontal scroll.
+
+Still not run: the instance pause (it would stop every tenant of the shared instance; its words are from the code), the form text.

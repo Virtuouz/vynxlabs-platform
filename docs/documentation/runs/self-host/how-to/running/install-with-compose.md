@@ -11,3 +11,7 @@ The first run failed on the worker host (empty `MANAGED_WORKER_UID`/`_GID`/`_USE
 
 ## Not run
 Step 5 (opening the console in a browser and creating a tenant: a tenant was made through the API) and step 6 (removing the bootstrap lines and `up -d` again). 768 and 390 px and dark do not apply to a terminal page.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run again with the page's `.env` including the three worker-user lines: all four services healthy. Overlap: the tutorials inventory lists 'Install on one machine'; no such tutorial page exists (self-host/tutorials/index.md has no pages), so this how-to is the one page. fault: self-host empty MANAGED_WORKER_* in Compose. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

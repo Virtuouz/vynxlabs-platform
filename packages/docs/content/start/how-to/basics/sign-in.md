@@ -43,9 +43,9 @@ A member cannot reset their own password from the sign-in card. Someone else mak
 - A tenant admin, who needs `member:write` on the tenant, makes it under **Members & access**: choose the member, and press **Make a password reset link** in the inspector. It works for a member who belongs to that tenant and to no other.
 - An operator makes it for any member in a row of **All members** under **Instance**.
 
-The link is emailed to you where the instance sends mail. Where it does not, the person who made it is shown it once and passes it on. Open it, choose a new password of at least 12 characters twice and press **Set password**. The link works once and runs out two hours after it was made. Choosing a password ends your other sign-ins. It is not made for a member who signs in only through an identity provider: their password lives there.
+The link is emailed to you where the instance sends mail. Where it does not, the person who made it is shown it once and passes it on. Open it, choose a new password of at least 12 characters twice and press **Set password**. The link works once and runs out two hours after it was made. Choosing a password ends your other sign-ins. It is refused for a member whose password is turned off because their organization's sign-in is required: their password lives there.
 
-An operator who cannot sign in at all, with no other operator to ask, is helped from the command line of the instance: `recover-operator <email>` turns that account on, makes it an operator admin and prints a new password once.
+An operator who cannot sign in at all, with no other operator to ask, is helped from the command line of the instance: `recover-operator <email>` turns that account on, makes it an operator admin and prints a new password once. Every earlier sign-in of that account ends.
 
 ## If your organization's sign-in is broken
 
@@ -57,7 +57,7 @@ When your organization requires its own sign-in, the card says "Your organizatio
 3. Press **Sign in with the recovery code**. You are in. Put the sign-in right, then make new codes.
 :::
 
-A recovery code works once, even if the password is wrong: a wrong password with a valid code still spends the code. Only a person who holds the `tenant_admin` role over a tenant can make codes, and they must make them while they can still sign in. **Back to your organization's sign-in** returns to the provider's button.
+A recovery code works once, even if the password is wrong: a wrong password with a valid code still spends the code, and the card says so. Only a person who holds the `tenant_admin` role over a tenant can make codes, and they must make them while they can still sign in. People who run the instance keep their passwords while their organization's sign-in is required, so they do not need codes. **Back to your organization's sign-in** returns to the provider's button.
 
 ## The result
 
@@ -70,7 +70,8 @@ You are signed in for 7 days on that browser. **Account** lists the sessions you
 | "That email and password do not match an account." | The password is wrong, the address has no account, or the account is turned off. The three read alike on purpose. | Check the address and the password. Ask an administrator whether the account is on. |
 | "We could not check how this address signs in. … Press Continue to try again." | The instance did not answer the first step. | Press **Continue** again. |
 | "That recovery code is not right, or was already used. Each code works once." | The code is wrong or spent. | Use another code. |
+| "That email and password do not match an account. The recovery code was used up by this try; use another code." | The code was right and the password was wrong. | Use another code, with the right password. |
+| "Too many requests. Please try again later." | Sign-in is limited to 20 attempts a minute from one address. | Wait a minute. |
 | A red notice such as "There is no account here for you yet. Ask your administrator for one." | Single sign-on sent you back with a reason. | The [sign-in screen reference](../../../console/reference/screens/account/sign-in) lists all fourteen with what to do. |
-| A refusal after many tries | Sign-in is limited to 20 attempts a minute from one address. | Wait a minute. |
 | "You could not be signed out. Check your connection and try again." | The sign-out request failed. | You are still signed in. Try again when the connection is back. |
-| The card **Your session ended** over a page | Your session is over (7 days, or ended from another browser). | Sign in again in the card; the page keeps what you typed. |
+| The dialog **Your session ended** over a page | Your session is over (7 days, or ended from another browser). | Type your **Password** in the dialog and press **Sign in**; the page keeps what you typed. A wrong password says "That password does not match this account." |

@@ -17,3 +17,12 @@
 
 ## Not run
 - **Withdraw the request**, the notice that the workspace moved on to a newer version, a request whose promotion is refused, and what the person who may promote sees when they open the step with a request pending.
+
+## Second run (2026-11-23, second agent)
+- Instance http://localhost:8091 (an older build than HEAD `87000022`: it still says "Not bound here" and shows the old nothing-to-promote state). Names of this run: tenant Rel git (`relgit`) with workspaces Git dev (`gdev`), Git prod (`gprod`), clones `gclone-*`; in Fernhill only the earlier Rel dev and Rel prod (Amara Okafor asked and withdrew; Maya Brooks deployed `rel-moved` to Rel dev, a request by Amara for v4 is still waiting there).
+- The git server: a bare repository (`acme.git`, default branch `main` with a README, and `empty.git`) served over HTTP on http://127.0.0.1:8099 by a 30-line node server in front of `git http-backend`, with the token as the Basic-auth password (`good-token`; `bad` gave 401, `forbidden` 403). The instance accepts `http://127.0.0.1` and `http://localhost` addresses (and EGRESS_ALLOW permits them); every other `http://` address is refused with "must start with https://". No TLS was needed.
+- Walked at 390 px (no horizontal overflow on Git sync, Repository, Promote, Deploy, Settings, Workspaces, production Git sync; Git sync's buttons stack and wrap) and in dark (Promote with the breaking-names notice, the rest scrolled without overflow); keyboard and reload as part of the steps.
+
+- Run in Fernhill's Rel dev (Amara asks, Maya decides): Amara asked for v4 (**Waiting**, "Asked just now by Dr. Amara Okafor for v4."), then **Withdraw the request**: it acted at once, with no question, and the form came back. She asked again ("Second ask"). Maya deployed a new version of Rel dev: Amara's line read "Asked 22s ago by Dr. Amara Okafor for v4. Rel dev has moved on to v5 since."; Maya's overview row read "… asks to promote v4 from Rel dev to Rel prod / 15s ago · “Second ask” · Rel dev is now at v5", and its sheet "Promote v4 to Rel prod?", "Rel dev has deployed v5 since. This promotes v4, what was asked for." Maya's own **Promote** step with the request pending showed "Dr. Amara Okafor asked for v4 to be promoted. Promoting here sends v4; the request is decided from the tenant's overview."
+- The request is still pending in Fernhill's Rel dev.
+- Not run: a request whose promotion is refused.

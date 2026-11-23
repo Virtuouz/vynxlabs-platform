@@ -17,3 +17,6 @@ Through the API the screen uses, on the instance's own provider (and deleted aft
 - The screen was seen empty only; the sheet and the tabs of an instance provider were not walked in a browser. The differences in the table of the screen page are from the code.
 - Creating people on first sign-in (and that they have no access) was not run.
 - That an enabled operator admin keeps a password after **Require it** was not tried.
+
+## Second check, 2026-11-23 (second agent)
+- The instance's **Single sign-on** screen was checked in the code against the page (the sentences the page quotes were found in `SingleSignOn.tsx` by script). Not run again: connecting a provider for operators and a first sign-in that creates a person.

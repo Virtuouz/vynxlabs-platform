@@ -87,7 +87,7 @@ To run a script on an instance without deploying it, `volvel run <script> --remo
 
 ## The result
 
-The script is tested without a worker and without a workspace, so a test is fast and runs in a pipeline. It does not test how the platform runs the script: limits, retries and masking are the platform's. See [How scripts run](../../explanation/scripts/how-scripts-run).
+The script is tested without a worker and without a workspace, so a test is fast and runs in a pipeline. It does not test how the instance runs the script: limits, retries and masking belong to the instance. See [How scripts run](../../explanation/scripts/how-scripts-run).
 
 ## If it does not work
 

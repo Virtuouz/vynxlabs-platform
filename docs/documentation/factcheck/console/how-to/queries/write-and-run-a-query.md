@@ -1,5 +1,7 @@
 # Fact-check record: console/how-to/queries/write-and-run-a-query
 
+Checked by: second agent, 2026-11-23.
+
 Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer. `Q` = `apps/console/src/screens/Queries.tsx`, `Data` = `apps/console/src/screens/Data.tsx`, `DB` = `apps/console/src/screens/Dashboards.tsx`, `RI` = `apps/console/src/screens/ResourceIdentity.tsx`, `RD` = `apps/console/src/kit/RemoveDraftButton.tsx`, `rq` = `apps/control-plane/src/routes/queries.ts`, `rs` = `apps/control-plane/src/routes/sources.ts`, `rd` = `apps/control-plane/src/routes/dashboards.ts`, `qry` = `apps/control-plane/src/kernel/data/query/`, `src` = `apps/control-plane/src/kernel/data/sources.ts`. The second agent's column is left for the second agent; "writer, run" means the writer saw it on the throwaway instance, "writer, code" that it was read from the code only.
 
 | Claim | Source (file:line) | Checked by | Result |
@@ -12,3 +14,10 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Path pattern (lowercase letters, digits, - and _, slashes) | `packages/manifest/src/envelope.ts:4` | writer, code | holds |
 | Taken name message | Q:498-515; `apps/console/src/ask.tsx` | writer, run | holds |
 | sql:read roles | `apps/console/src/builtinRoles.ts` | writer, code | holds |
+
+## Second check (2026-11-23, second agent)
+
+Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
+
+- Not-run items now run: a member without `sql:read` (Vic, viewer): both notices, the editor takes no typing, **Run** of the deployed query by name works; the Review and deploy screen (opens `/release`, deploys the draft alone, then v1); "Leave without saving?" (Stay, Leave); draft clash; 390 px and dark (no overflow); keyboard: Ctrl+Enter runs, Ctrl+S saves; Tab stays in the editor (Ctrl+M).
+- Corrected: an unnamed parameter is saved as `p1`; added Leave text, clash and Tab lines to If it does not work.

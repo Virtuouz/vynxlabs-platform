@@ -11,3 +11,7 @@ Not known.
 
 ## Not run
 The page's steps: an external bucket, a key with only the four rights, path style off for Amazon's S3.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run: an unknown bucket was created at start; a refused key stopped the instance with 'boot failed' and an error `UnknownError` (not naming the store): page corrected. A real external store and a key limited to four rights were not run. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

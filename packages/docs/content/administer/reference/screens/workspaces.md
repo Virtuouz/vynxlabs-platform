@@ -27,7 +27,7 @@ The description line says: "A workspace is a project or an environment. Each one
 | State | What you see |
 | --- | --- |
 | Empty | "No workspaces yet": "Start with a production workspace. Add a dev workspace linked to it when you want somewhere safe to make changes." |
-| Without `workspace:write` | A line "You can see this tenant's workspaces, not change them. It needs `workspace:write`." and who to ask. **Create workspace** is disabled. |
+| Without `workspace:write` | A line "You can see this tenant's workspaces, not change it. It needs `workspace:write`." and who to ask. **Create workspace** is disabled. |
 | Not loaded | The error state of the list, with a retry. |
 
 ## Create workspace

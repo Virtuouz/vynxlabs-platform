@@ -10,7 +10,7 @@ With `--json`, a command prints one JSON document on standard output and nothing
 
 | Command | Prints |
 | --- | --- |
-| `volvel whoami --json` | `{"url", "principal", "tenants"}`: the instance's address, the principal (`type`, `id`, `name`, `email`) and the tenants it may see (`id`, `slug`, `name`). |
+| `volvel whoami --json` | `{"url", "principal", "tenants"}`: the instance's address, the principal (`type`, `id`, `name`, `email`, and `nameFrom` for a member whose name an identity provider sets) and the tenants it may see (`id`, `slug`, `name`). |
 | `volvel status --json` | `{"url", "version", "migrationLevel", "ready", "failing"}`. `failing` lists the names of the checks that fail. The exit code is 1 when `ready` is `false`. |
 | `volvel deploy --json` | `{"workspace", "type", "version", "summary", "draftsSettled", "message"}`. `message` is there only when a note was given or defaulted. |
 | `volvel deploy --preview --json` | `{"preview": true, "workspace", "summary"}`. |

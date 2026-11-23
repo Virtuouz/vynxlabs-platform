@@ -15,3 +15,9 @@ Run on the end-user provider, which can be turned on here.
 - **Members**: a provider of members cannot be turned on here, so the member dialog, the recovery-code notice, the end of sessions, the operator's password and a recovery-code sign-in were not run. They are from the code.
 - Recovery codes (**Account**) were not made.
 - On the instance's provider (made through the API for acme.example) requiring was set and then lifted through the API; that an operator keeps a password was not tried by signing in.
+
+## Second check, 2026-11-23 (second agent)
+- Run now at 390 px in dark: a members' SAML provider (Keycloak) with a domain marked proved in the database (no DNS here), **Turn on**, then the reminder "Before you require single sign-on, owners should generate recovery codes in Account...", **Require it** with its dialog (it also says the operators keep their passwords and sessions), the tag **Required**, **Stop requiring it** with its own confirmation and "Passwords are allowed again."
+- Run now: **Account**, **Make recovery codes**: ten codes in a list, **Copy all**, "Copy these codes now. They are not shown again.", **I have kept them**; **Make new codes** asks "Make new recovery codes?".
+- The page got wrong: it did not say the stop is confirmed or that the dialog names the operators; added.
+- Still not run: signing in with a recovery code (needs a second owner with a password), a member's open sessions ending, and the audit entry's count. The operator's password was not tried.

@@ -11,3 +11,11 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 | A page deployed before the product took the name loses it silently; `issues` on GET …/docs. | apps/control-plane/src/routes/docs.ts:116-135, 250-262 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
 | Notes on the product's help: Add this page's notes to; shown under "From your team". | D/PageDetails.tsx:387-426; docs/sdk-guide.md:262 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
 | Term id in Terms it defines (Id) and `:term{id=}` uses. | D/PageDetails.tsx:264-336 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Every label, quoted message and limit in the page was searched for in the console and engine source by script, and the claims below were run on the instance http://localhost:8091 (a tenant of the checker's own, d31chk, a dev workspace and a production workspace; a doc writer and a tenant admin) at 1440 px light, with 390 px dark and 768 px for the screens.
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| The terms' and topic's refusal words, and `volvel-` refused by the build. | run: `volvel build` of a page with `topic: volvel-mine`; a deploy with `topic: build-docs` | second agent, 2026-11-23 | holds as written |

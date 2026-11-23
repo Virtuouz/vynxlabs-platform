@@ -15,5 +15,15 @@
 - The reference text of `validation_failed` says the response lists values "under `issues`"; the body uses `errors`. The page says `errors` (see the report: product wording).
 - A first draft said `busy` gives 2 seconds; the code gives 2 for a pool timeout and 5 for a statement timeout.
 
-## Not run
+## Second check (2026-11-23, second agent)
+
+The instance was http://localhost:8091 (a tenant of my own, `api-check2`, with a workspace `agent-ws`; keys and tokens revoked at the end).
+
+- Run now: `busy`, `read_only`, `workspace_paused`, 413.
+- Not run: 415 (not reachable on the webhook route), a 5xx, `busy` by a statement timeout (retry-after 5).
+
+The console key screen, the Agent tools tab and Members & access were walked at 1440 px, at 390 px and in dark (the key screen: create, one-time key, revoke; Agent tools: workspace choice, address, settings, Tools offered, Try): no overflow at 390 px, the settings block scrolls inside itself, dark has no contrast fault.
+
+## Not run (before the second check)
+
 `busy`, `read_only`, `workspace_paused`, 413, 415, a 5xx.

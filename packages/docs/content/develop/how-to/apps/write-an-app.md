@@ -11,7 +11,7 @@ By the end you will have an app in a tenant's repository that reads a table and 
 ## Before you start
 
 - A tenant repository (`volvel init` makes one) and the CLI signed in to the instance (`volvel login`). See [the CLI reference](../../reference/cli).
-- A dev workspace to deploy to, and `bundle:write` there. A deploy stops before it uploads anything if it would delete console resources the repository has no file for, so use a workspace you can spare while you try this.
+- A dev workspace to deploy to, and `bundle:write` there. A deploy stops before it uploads anything if it would delete console resources the repository has no file for, so use a workspace you can spare while you try this. A deploy also deletes what an earlier deploy of a repository made and this repository no longer defines, and it does not ask first: the output lists each as `deleted`, so deploy to a workspace whose other repository you do not need.
 - Node.js, and these in the repository's `package.json`: `@volvel/sdk`, `@volvel/app`, `@volvel/ui`, `react` and `react-dom` as dependencies, and `vite`, `@vitejs/plugin-react`, `@tailwindcss/vite` and `tailwindcss` as development dependencies. Without Vite the build stops and says to install it.
 - The table and the script the app uses. This page uses a table `visits` and a script `check-in`, which are in the first step.
 
@@ -101,7 +101,7 @@ By the end you will have an app in a tenant's repository that reads a table and 
 
    ```tsx title=apps/desk/main.tsx
    import { runScript, table, useQuery } from "@volvel/app";
-   import { Button, PageShell } from "@volvel/ui";
+   import { Button, PageShell, TextField } from "@volvel/ui";
    import { useState } from "react";
    import { createRoot } from "react-dom/client";
    import type { visits } from "../../src/index.ts";
@@ -112,7 +112,7 @@ By the end you will have an app in a tenant's repository that reads a table and 
      const [pet, setPet] = useState("");
      return (
        <PageShell title="Desk">
-         <input aria-label="Pet" value={pet} onChange={(event) => setPet(event.target.value)} />
+         <TextField label="Pet" value={pet} onChange={setPet} />
          <Button
            onClick={async () => {
              await runScript("check-in", { pet });

@@ -76,7 +76,7 @@ data: {}
 
 ## Limits
 
-- At most 5 streams for one caller, on one instance replica. A caller who may read no runs anywhere in the tenant, and so follows only their own, may hold 2. A further one is refused with 429 `too_many_streams`: close one first.
+- At most 5 streams for one caller, on one instance replica. A caller who may read no runs anywhere in the tenant, and so follows only their own, may hold 2. A further one is refused with 429 `too_many_streams`, "At most 5 streams may be open at once. Close one first."
 - What you may read is worked out once, when the stream opens. If a role is given or taken away, open a new connection to see the change.
 - When a member's sessions end, as when the account is disabled, their streams on that replica are closed.
 

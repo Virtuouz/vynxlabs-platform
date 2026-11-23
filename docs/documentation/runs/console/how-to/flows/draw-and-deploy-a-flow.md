@@ -15,3 +15,10 @@
 - The button is **Add a value**, not **Add**.
 - The state after a deploy is **Live**.
 Not reached: the "cannot be deployed alone" refusal, and the full toast text (only "Deployed" was read).
+
+## Second check, 2026-11-23 (second agent)
+
+On the walk instance, Maya Brooks, in a workspace of my own: Fernhill tenant, dev workspace `flows-check` (created with triggers running, so the shared Sandbox's paused triggers were not touched). Flows `flows-approve/mail`, `flows-hook/signed`, `flows-form/intake`, `flows-sched/tick`. Scripts in `/home/gplascencia/.local/share/volvel-walk/flows31/` (`h2.mjs` to `h15.mjs`, `w1.mjs`, `w2.mjs`).
+
+Corrected: the header's state pill reads **Deployed** after a deploy (the earlier "Live" was the connection indicator beside it). Seen at 1440 px, and at 390 px in light and dark (no sideways scroll, **Add step** and the header controls wrap). A reload of the editor showed the deployed flow with **Deployed**.
+Not run: the "cannot be deployed alone" refusal.

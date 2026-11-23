@@ -1,6 +1,6 @@
 # Fact-check record: develop/reference/releases/refusals
 
-Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer; nothing here has been checked by a second agent yet. Other pages of the area hold the line-by-line records of every label: `console/reference/screens/operate/releases`, `console/reference/screens/operate/git-sync`, `administer/reference/screens/repository`, `administer/reference/screens/workspaces`, `console/reference/screens/configure/settings`. `Dep` = `apps/control-plane/src/kernel/execution/deploy.ts`, `Auth` = `apps/control-plane/src/kernel/authoring.ts`, `CPgit` = `apps/control-plane/src/kernel/git.ts`.
+Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer. Checked by: second agent, 2026-11-23. Every quoted label, message and permission of the page was matched against the console and control-plane source at HEAD (`87000022`) by script and by hand, and what depends on the screen was run on the instance http://localhost:8091 (see `docs/documentation/runs/...`). Other pages of the area hold the line-by-line records of every label: `console/reference/screens/operate/releases`, `console/reference/screens/operate/git-sync`, `administer/reference/screens/repository`, `administer/reference/screens/workspaces`, `console/reference/screens/configure/settings`. `Dep` = `apps/control-plane/src/kernel/execution/deploy.ts`, `Auth` = `apps/control-plane/src/kernel/authoring.ts`, `CPgit` = `apps/control-plane/src/kernel/git.ts`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -19,3 +19,10 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 | Outcomes and suspected | `apps/control-plane/src/routes/git.ts:285-295,545-575` | writer | holds |
 | CLI flags --allow-delete, --confirm-breaking; promote --preview exits 4 | `packages/cli/src/commands.ts:106-119` | writer | holds |
 | The preview is the deploy carried out and taken back | `apps/control-plane/src/routes/authoring.ts:1030-1060` | writer | holds |
+
+## Second check (2026-11-23)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| bindings_missing/bindings_invalid wording uses "set up" at HEAD | `deploy.ts:115,136,681` (HEAD) | second agent, 2026-11-23 | corrected: the page said "bound" and "Bind it again"; fault: configure bound/bind words (the instance is an older build) |
+| bindings_missing, breaking_changes, rename_suspected, console_code_off, git_busy, git_paused statuses (409; console_code_off 403) | `deploy.ts`, `git.ts:489,940`, `authoring.ts`; run for four | second agent, 2026-11-23 | checked |

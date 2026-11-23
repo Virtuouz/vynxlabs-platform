@@ -67,7 +67,7 @@ The inspector has no **Remove**. A script is removed in its editor.
 
 A run set for later is listed as waiting until its time. A higher priority goes first when runs wait for a worker. **Run** starts it and opens the run. See [Run a script now or later](../../../how-to/scripts/run-a-script).
 
-A guest of an app cannot start a script: the run is refused with "Sign in to start a script".
+A guest of an app, someone who is not signed in, cannot start a script. A guest the app's access lets start it is refused with "Sign in to start a script." and a request with no sign-in at all with "Sign in or send an API key."
 
 ### States of the list
 
@@ -121,7 +121,7 @@ When the script has a draft, the tab shows the draft's settings and says so, wit
 
 **Change the settings** opens the same fields as the editor's Settings, except **What it does**, **Use as a flow step** and the input schema, which are only in the editor. **Save as a draft** keeps the change as a draft; nothing that runs changes until the draft is deployed, and the tab then says "Saved as a draft. It runs this way once it is deployed." **Cancel** leaves the form. Every field is in [Script settings](script-settings).
 
-**Change the settings** is not offered in a production workspace ("Settings change in a dev workspace and reach production by promotion.") or for a script the repository holds ("The repository holds this script: change its settings there."). Without `resource:write` it is grayed out with the reason.
+**Change the settings** is not offered in a production workspace ("Settings change in a dev workspace and reach production by promotion."). Without `resource:write` it is grayed out with the reason. A script the repository holds has its settings in `defineScript`: see [Scripts in code](../../../../develop/reference/scripts/define-script).
 
 ### Source
 

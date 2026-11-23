@@ -73,7 +73,7 @@ Deployed version 1 to try-it (dev): 3 created, 0 updated, 0 deleted, 0 unchanged
 4. In the sheet, type `http://127.0.0.1:4020` as the **Address**, choose **Authorization: Bearer** under **How the credential is sent**, and type `vs_demo_51be22` as the **Token or key**. Press **Save**. The sheet shows **Reached (200)** with the time it took. Press **Close**.
 5. Open **Secrets** and press **New secret**. Type `SUPPLIER_ACCOUNT` as the **Name** and `FERNHILL-CFG` as the **Value**, and press **New secret**. The row shows who set it and, under **Used by**, `stock/reorder`.
 6. Open **Variables**. The row `stock/reorder-quantity` shows **Default: 10**. Press **Set**, type `12` and press **Save**. The row shows `12`.
-7. Run the script in the workspace.
+7. Run this build of the script in the workspace. It is a test run, and nothing is deployed.
 
 ```bash
 volvel run stock/reorder --remote --tenant fernhill --workspace try-it --input '{"sku":"VAC-DHPP"}'

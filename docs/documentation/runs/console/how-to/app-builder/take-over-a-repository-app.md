@@ -10,3 +10,7 @@
 
 ## Not run
 A change and a publish after the take-over. That would move Fernhill's own app out of its repository on the shared instance; the page's claim about the next publish is the screen's own sentence plus `kernel/execution/deploy.ts:481`. The page is not presented as finished: the result after a publish was not seen.
+
+## Second check, 2026-11-23 (second agent)
+- Instance http://localhost:8091 at commit `87000022` plus the working tree. Playwright headless. My own apps are named `chk2 …` (in Fernhill's Sandbox); no Fernhill app, table or person was changed. People: Maya Brooks (tenant admin); Abchk Maker (a member made for the check, App maintainer in Sandbox: `interface:write`, no `resource:write`); Abchk Dev (Developer in Sandbox: no `deployment:write`); Amara Okafor (viewer). Walked at 1440, 900, 768 and 390 px; light at all and dark at 1440, 768 (list, dialog, workbench) and 390 (list, workbench). A session reload was made for the rename and the page order.
+- Not run: a change and a publish after the take-over. It would move a repository app of Fernhill's out of the repository, and the instance has no repository app of its own to use; the page's claim rests on the screen's sentence and `deploy.ts:490-497`. The page is not presented as finished.

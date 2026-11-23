@@ -14,3 +14,12 @@
 7. **Name and path** opened "Name and path of qry31/clinic-week" with Key, Path, Title (not saved).
 ## Not run
 - **Keep this dashboard** after a removal. Saving a rename. A repository dashboard. A production workspace. The refusals of a deploy. The draft clash. 390 px and dark.
+
+## Second run, 2026-11-23 (second agent)
+- Instance http://localhost:8091 at commit `87000022`, headless Chromium. Done in a tenant of the checker's own, `qry31chk` (workspace Sandbox, dev): Ann Qry (`tenant_admin`), Vic Qry (`viewer`), Wes Qry (`app_maintainer`), a table `visits`, a data source on the local Postgres. Fernhill's people and data were not used.
+- Kept Ann's dashboard as `chk/board`, deployed it; edited a Table to read a saved query (Where it reads from: Visits, All visits, Pets since, SQL written here); **Done** showed **Draft**.
+- Remove: "Remove this dashboard?" then **Removing** with the notice; **Keep this dashboard**: "Keep this dashboard? This throws away the draft that removes it. The dashboard stays as it was last deployed." and **Keep** put it back.
+- Rename: Name and path with Path `chk/board-2` and a Title; the page moved to the new address with "A draft renames chk/board to chk/board-2." and **Review and deploy**; deployed with the query rename.
+- Draft clash in the editor: two tabs; the second change said "Not saved: someone else saved this dashboard" and the notice with **Copy what I wrote** and **Load their version**.
+- Deploy refusals: a draft with a Stat and no source: `preview` and `deploy` answer 400 "The bundle's manifests are not valid" / "Stat needs a source to show". A deploy that removed the query a dashboard reads went through, and the widget said "The query chk/all-visits-2 was not found.": the page's claim that a table or query that is not there stops the deploy was wrong and was corrected, here and in the explanation page.
+- 390 px and dark: the dashboard and its editor. Not run: a repository dashboard (no repository in this tenant).

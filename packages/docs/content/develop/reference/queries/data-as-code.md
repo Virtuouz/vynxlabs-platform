@@ -117,7 +117,7 @@ A dashboard is `schemaVersion: 3`. Its body is `title`, `description`, `refresh`
 | `query` | A saved query, by path, with `values` for its parameters by name | The path is recorded with the query's key when the dashboard is deployed, so a rename does not break it. |
 | `sql` | SQL written in the widget, with `values` for `$1`, `$2` | On a dashboard only. A save from the console needs `sql:read` of whoever saves it. A repository deploy is not asked. |
 
-The file form, from the example `examples/higher-ed-devices/platform/reports/lending.dashboard.yaml`:
+The file form, shortened from the example `examples/higher-ed-devices/platform/reports/lending.dashboard.yaml` (the example has more widgets and filters, and its widgets sit lower on the grid):
 
 ```yaml title="platform/reports/lending.dashboard.yaml"
 schemaVersion: 3

@@ -1,5 +1,7 @@
 # Fact-check record: console/explanation/queries/how-a-query-is-answered
 
+Checked by: second agent, 2026-11-23.
+
 Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer. `Q` = `apps/console/src/screens/Queries.tsx`, `Data` = `apps/console/src/screens/Data.tsx`, `DB` = `apps/console/src/screens/Dashboards.tsx`, `RI` = `apps/console/src/screens/ResourceIdentity.tsx`, `RD` = `apps/console/src/kit/RemoveDraftButton.tsx`, `rq` = `apps/control-plane/src/routes/queries.ts`, `rs` = `apps/control-plane/src/routes/sources.ts`, `rd` = `apps/control-plane/src/routes/dashboards.ts`, `qry` = `apps/control-plane/src/kernel/data/query/`, `src` = `apps/control-plane/src/kernel/data/sources.ts`. The second agent's column is left for the second agent; "writer, run" means the writer saw it on the throwaway instance, "writer, code" that it was read from the code only.
 
 | Claim | Source (file:line) | Checked by | Result |
@@ -12,3 +14,9 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Parameters checked in the same words by screen, API, widget | qry/parameters.ts; kinds.ts:1210 | writer, code | holds |
 | A visual query asks no sql:read; days are the reader's | rq:322-345; visual.ts | writer, code | holds |
 | Source rows are the database's; not audited; list not total; a query cannot name them | rs:429; qry/parse.ts:283-295; Data.tsx sources | writer, code | holds |
+
+## Second check (2026-11-23, second agent)
+
+Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
+
+- Roles and permissions confirmed through the API with Vic (viewer) and Wes (app_maintainer) in tenant qry31chk: saved query by name works without `sql:read`, `POST queries/run` 403 "This needs the sql:read permission.", `queries/schema` works with `data:read`.

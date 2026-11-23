@@ -17,3 +17,7 @@
 - A link was not opened in another session.
 - Search by hostname and by email was not tried separately.
 - `sso.refused` was not read: no sign-in was refused through a provider that is on. Its action and fields are from the code.
+
+## Second check, 2026-11-23 (second agent)
+- Run now (1440 px, light): **Since** > **Between dates** with **From date** and **To date** (the end before the start gives "The end date is before the start date."); **Workspace** (lists **Every workspace** and `sso-dev`); the **Columns** icon button opens a dialog (Who, What was done, To, **Show every column**, **Done**); the **Saved views** icon button opens **Save this view…** and **Copy a link to this view**; **Show older entries** took the list from 50 to 99 rows. 390 px in dark: no horizontal scroll.
+- Not run: saving a view under a name; the copy-link toast.

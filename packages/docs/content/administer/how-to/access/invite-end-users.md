@@ -15,7 +15,7 @@ You need `end_user:write`. Inviting gives no access by itself: you also give acc
 :::steps
 1. Open **End users** and press **Invite an end user**.
 2. Type the **Email** and optionally the **Name**. If the tenant has hostnames of its own that are enabled, choose **On which address** the link should open.
-3. Press **Invite an end user**. The dialog **Invitation link** shows the link once, with **Copy link**. Where the instance sends mail it says "It was also emailed to them."; where it does not, "This instance sends no mail, so pass the link on yourself."
+3. Press **Invite an end user**. The dialog **Invitation link** shows the link once, with **Copy link** and the time it works until. Where the instance sends mail it says "It was also emailed to them."; where it does not, "This instance sends no mail, so pass the link on yourself."
 4. Give access: put them in a group of end users under the **Groups** tab (**People**, **Add an end user**) and give the group a role under **Access**, or open an app to them.
 5. For a table that shows each customer their own rows, select the person, press **Attributes** and add the attribute the table's rules use, such as `customer_id`.
 :::
@@ -38,7 +38,7 @@ Sign-up is off by default. The switch **People may create their own account** is
 ### If it does not work
 
 - The link says it was used or has run out: select the person and press **New invitation link** or **Password reset link** again.
-- An attribute name must be lowercase letters, digits and underscores, starting with a letter. A name given twice is refused at the field.
+- An attribute name must be lowercase letters, digits and underscores, starting with a letter. A name given twice is refused at the field: "<name> is given twice. Each name takes one value." A name with other characters is refused when you press **Save**, in a notice that begins "An attribute's name is lowercase letters, digits and underscores."
 
 ## Related
 

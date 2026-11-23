@@ -1,6 +1,6 @@
 # Fact-check: self-host/how-to/running/install-with-compose.md
 
-Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the writer; the second agent's column is open.
+Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -12,3 +12,7 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the wr
 | `readyz` answers `ready`; `instance` names version and migration level. | run: `{"coreVersion":"0.5.0","migrationLevel":99,...}` | writer, 2026-11-23 | holds |
 | Volumes `postgres` and `objectstore`. | `compose.yaml` volumes; run `docker compose config` | writer, 2026-11-23 | holds |
 | `check-config` via `run --rm --no-deps`. | run | writer, 2026-11-23 | holds |
+
+## Second check (2026-11-23)
+
+Run again with the page's `.env` including the three worker-user lines: all four services healthy. Overlap: the tutorials inventory lists 'Install on one machine'; no such tutorial page exists (self-host/tutorials/index.md has no pages), so this how-to is the one page. fault: self-host empty MANAGED_WORKER_* in Compose.

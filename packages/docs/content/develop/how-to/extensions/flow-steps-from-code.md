@@ -70,8 +70,8 @@ export const countAppointments = defineFlow({
 ## Use it in a flow
 
 :::steps
-1. Open a flow in the flow editor and press **Add step**. The list is grouped: the steps that come with Volvel under **Core**, then the workspace's steps under their **Group** (or **This workspace's**), then every other script under **Scripts**, by path.
-2. Choose the step. Its form is drawn from the script's input. A field uses the schema's `title`, `description`, `enum` and `default`. A field marked `"x-pick"` offers the workspace's tables, connections or events.
+1. Open a flow in the flow editor and press **Add step**. The list is grouped: **Starts**, **Steps** and **Logic** (the flow's own), the steps that come with Volvel under **Core**, then the workspace's steps under their **Group** (or **This workspace's**), then every other script under **Scripts**, by path.
+2. Choose the step. Its form is drawn from the script's input. A field uses the schema's `title`, `description`, `enum` and `default`. A field marked `"x-pick"` offers the workspace's tables, connections or events. The table list holds every table of the workspace, whether it is defined in the repository or was made in the console, and marks one that is only a draft "A draft, not yet deployed."
 3. **Its input** is **Field by field**, or **As one expression** that gives the whole input at once.
 :::
 
@@ -98,7 +98,7 @@ Five steps are in the **Core** group. Their paths start with `core/`, which is k
 ## If it does not work
 
 - **The step is not in the list.** The script needs a **Step name**, and the script must be deployed.
-- **A deploy is refused with "which does not take one".** The flow hands the script a connection, a table or an event the script does not list under `takes`. Add it under **A step may hand it**, or in `node.takes`.
-- **A deploy is refused with `refers to "<path>", which is not a table in this repository`.** The table named in `with` does not exist. Create it, or name another.
+- **A deploy is refused with "which does not take one".** The refusal reads `/body/nodes/count/with/tables/0 hands a table to the script "reports/count-rows", which does not take one. A script says what it takes with `node.takes`.` The flow hands the script a connection, a table or an event the script does not list under `takes`. Add it under **A step may hand it**, or in `node.takes`.
+- **A deploy is refused with `refers to "<path>", which is not a table in this repository`.** The table named in `with` is not defined in the tenant's repository. A table made in the console is not one, even though the step form lists it: a flow that hands a console table is refused with this text when it is deployed. Define the table with `defineTable`, or name another.
 - **The icon is a puzzle piece.** The name is not one the console knows. Choose one from the **Icon** list.
 - **The step form has no list of tables.** The input field has no `x-pick`, or the script's `takes` does not include it.

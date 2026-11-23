@@ -36,7 +36,7 @@ By the end the instance keeps bundles, uploaded files and large payloads in a bu
 
 ## If it does not work
 
-- **The instance stops at start naming the store.** Any answer to `HeadBucket` other than 404 stops it, such as 403 for a bucket that is not yours. Fix the bucket or the key.
+- **The instance stops at start and the log says "boot failed".** Any answer to `HeadBucket` other than 404 stops it, such as 403 for a bucket that is not yours or a key that is refused. The error is the store's own and may read only `UnknownError`. Fix the bucket or the key.
 - **A file is asked for and is missing.** The database names a file the store does not have. That is said when the file is asked for, and not before. It comes from a database and a store restored from different moments.
 
 Related: [Back up an instance](back-up-an-instance), [Settings](../../reference/settings).

@@ -19,3 +19,12 @@
 
 ## The page got wrong (and was corrected)
 - A first draft said **Enable** is refused for any name that is not verified. As an operator it was accepted; the page now says an operator may, and a tenant admin may not.
+
+## Second check, 2026-11-23 (second agent)
+- Walked at 390 px in dark and at 1440 px in light, as the operator admin, in tenant `sso-wave` (own names: hostname `p31.sso-wave.example`, pool `compose-pool`). No horizontal scroll at 390 px. The page now holds the content of `give-an-app-a-hostname` too (see below).
+- Run now: the sheet with an app in `sso-dev` (a row of kind app made for the test and removed after); **Check now** with no record ("Not verified. Last checked", the notice); the name marked verified in the database (no DNS here) then **Enable** ("Serving."); **Check now** again with no record: "Record found when verified, and not since", "The record has not been found since ...", the name still serves; **Change what it serves** to the portal; **Disable** ("Turn off p31.sso-wave.example?"), then **Remove** ("Remove p31.sso-wave.example?"), both confirmed.
+- Requests with the name in the Host header (not through the browser): unverified and off answers as the instance's own address; verified and off, and after Disable, answers 404 "This hostname is not served here. Its registration is turned off."; on answers the portal or the app; an operator enabling an unverified name is served (the sheet says "Serving."); `/api/v1/domain-check` answers while off.
+- API refusals seen: "That is not a hostname." for a name with no dot.
+- The page got wrong: state words were lower case (**on**, **verified**); they read **On**, **Verified**, **Not verified**. Merged from the apps page: the permission line, the list columns, the reach check, refusals for names, the apps list and inspector, the 308 on rename.
+- Still not run: a real TXT record (no DNS); a person without `instance:write` being refused at **Enable** (the operator admin holds it); "The record is there, but the hostname did not reach this instance from here" (no name resolves to this instance); a certificate warning.
+- Fault: an operator enabling an unverified name is served and the sheet says "Serving." The page says so. Marked "fault: sso unverified hostname" in the record.

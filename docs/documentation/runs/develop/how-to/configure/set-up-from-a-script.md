@@ -21,3 +21,9 @@
 
 ## Not run
 Step 3's console look at the result (done as part of the connections run: `stock-orders` shows **Set up here**, **Reached**). A service account's key. A production workspace. A connection group member by API.
+
+## Second check, 2026-11-23 (second agent)
+
+- Instance http://localhost:8091, workspace `cfg-chk` of my own, Maya's API key. The three `PUT` calls of the page (a connection with `auth: bearer`, a secret, a variable) answered 204 each against the instance; the clone and OAuth PUTs of the connection route accepted `credential` left out (kept) as the table says. A changed authorization address on an OAuth connection forgot its sign-in.
+- 390 px dark and 768 px: the **Connections**, **Variables** and **Secrets** screens the third step opens show no page scroll; the table of Connections scrolls inside its panel at 390.
+- Not run: a service account's key, a production workspace, a group member by API.

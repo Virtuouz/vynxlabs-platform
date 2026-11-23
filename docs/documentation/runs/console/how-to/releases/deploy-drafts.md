@@ -19,3 +19,15 @@
 ## Not run
 - Choosing some drafts, **Set aside**, **Earlier** and **Bring back**, the old-draft notice, and **This change only** in an editor were read from the code and not run.
 - The refusals other than the invalid manifest.
+
+## Second run (2026-11-23, second agent)
+- Instance http://localhost:8091 (an older build than HEAD `87000022`: it still says "Not bound here" and shows the old nothing-to-promote state). Names of this run: tenant Rel git (`relgit`) with workspaces Git dev (`gdev`), Git prod (`gprod`), clones `gclone-*`; in Fernhill only the earlier Rel dev and Rel prod (Amara Okafor asked and withdrew; Maya Brooks deployed `rel-moved` to Rel dev, a request by Amara for v4 is still waiting there).
+- The git server: a bare repository (`acme.git`, default branch `main` with a README, and `empty.git`) served over HTTP on http://127.0.0.1:8099 by a 30-line node server in front of `git http-backend`, with the token as the Basic-auth password (`good-token`; `bad` gave 401, `forbidden` 403). The instance accepts `http://127.0.0.1` and `http://localhost` addresses (and EGRESS_ALLOW permits them); every other `http://` address is refused with "must start with https://". No TLS was needed.
+- Walked at 390 px (no horizontal overflow on Git sync, Repository, Promote, Deploy, Settings, Workspaces, production Git sync; Git sync's buttons stack and wrap) and in dark (Promote with the breaking-names notice, the rest scrolled without overflow); keyboard and reload as part of the steps.
+
+- Run in Git dev: three drafts. Ticked one (**Choose lab/a1**): the panel offered **Deploy the 1 chosen**, **Set aside the 1 chosen** and **Choose none**. **Earlier** on a draft saved once: "No earlier versions yet."; on one saved twice: "Revision 1", "saved … ago", **Bring back** (it closed the sheet and made revision 1 the draft). **Set aside the 1 chosen**: "Set aside 1 draft?" "lab/a1. Each goes back to how it was last deployed; its draft stays in its history." A row's **Set aside**: "Set aside the draft of lab/a2?" "It goes back to how it was last deployed. The draft stays in its history, and can be brought back."
+- A draft table with one removed table and one new table of the same shape: the panel said "Deploying creates 1, changes 0 and removes 1. Table lab/animals created. Table lab/pets retired. Its rows are kept." and the deploy of every draft went through with no question.
+- A connection and a script that uses it, in a dev workspace: the panel showed "Not bound here, and the deploy still works" with "the connection "courier" is not bound in this workspace. A run that reaches it fails until it is set up." (HEAD words: "Not set up here …", "is not set up in this workspace"); the deploy said "Deployed as version 12: courier, lab/call."
+- In a script's editor, **Deploy**, **This change only**: "Deployed lab/solo2 as version 17." with **Promote to Git prod**; the other drafts stayed.
+- With code in the console off, a script draft was refused (`console_code_off`).
+- Not run: the old-draft notice (a draft saved over a day ago), the editor's "cannot be deployed alone" dialog.

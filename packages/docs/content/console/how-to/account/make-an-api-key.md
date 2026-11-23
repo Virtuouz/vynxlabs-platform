@@ -16,7 +16,7 @@ Any member may make keys. A key holds what you hold, and nothing narrower: there
 1. Open the account menu, choose **Account**, and find **API keys**.
 2. Press **Create API key**. Type a **Name** that says where it will be used, such as "My laptop".
 3. Choose **Expires**: **Never**, **In 30 days**, **In 90 days** or **In a year**.
-4. Press **Create API key** and copy the key from the dialog. It is shown once.
+4. Press **Create API key**. The key appears in a notice above the list of keys. Press **Copy**, then **Done**: it is shown once, and **Done** asks first if you have not copied it.
 5. Sign the command line in with `volvel login --url https://volvel.example.com --token <the key>`.
 :::
 

@@ -53,7 +53,7 @@ The items are done one at a time, in order, so a batch does not hit the database
 | `POST $WS/drafts/batch-discard` | `paths` of drafts. | What discarding one draft needs. The route asks `resource:read`. |
 | `POST /api/v1/tenants/<t>/approvals/batch` | `decision`: `approve` or `reject`; an optional `comment` of up to 2,000 characters; `approvals`: a list of `{workspaceId, flowRunId, node}`. | Who may decide is asked of each approval. |
 
-Each takes 1 to 100 items. The approvals route is open to anyone signed in and to a service account's key, and asks each approval's own route who may decide it. The `id` in the results of an approval is `<flow run id>/<node>`; in a draft it is the path.
+Each takes 1 to 100 items. The approvals route is open to anyone signed in and to a service account's key, and asks each approval's own route who may decide it. A rejection needs a `comment`: without one each item answers 400 "Say why it is rejected: the flow and its people read it." A service account whose role lacks `approval:write` has each item refused with 403 "This needs the approval:write permission." The `id` in the results of an approval is `<flow run id>/<node>`; in a draft it is the path.
 
 `POST $WS/drafts/batch` is not this kind of batch. It saves, moves and removes several pages of documentation as one change: every change is made or none is, and a stale `revision` refuses them all.
 
@@ -63,7 +63,7 @@ Each item has its own entry in the audit log, as if it had been done alone. `don
 
 ## If it does not work
 
-- **400 "The request body is not valid."** `errors` says which part. An `action` that is not in the table, more than 100 items, or an ID that is listed twice is refused, and nothing is done.
+- **400 "The request body is not valid."** `errors` says which part. An `action` that is not in the table, more than 100 items, or an ID that is listed twice in `ids` or `paths` is refused, and nothing is done. In the approvals route the same approval listed twice is tried twice: the first is decided and the second answers 409 "This approval is no longer waiting for a decision."
 - **A result says `ok: false` with 409.** The single action refused it, for example "The flow run already succeeded." Nothing else is wrong with the batch.
 - **A result says 404.** The item is not there, or you may not know it is.
 - **403 for the whole batch.** The key's owner lacks the permission the route itself asks, such as `run:read` for `runs/batch`.

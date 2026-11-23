@@ -21,12 +21,12 @@ By the end the tenant has a provider that people can use to sign in, tried once 
 1. Open **Tenant**, then **Single sign-on**, and press **Connect a provider**.
 2. Choose **Who signs in through it**: **Members, who use this console** or **End users, who use the tenant's apps**. This cannot be changed later.
 3. Leave **Protocol** at **OpenID Connect (OIDC)**. Give the provider a **Name**. It is what the button says: "Sign in with" and the name.
-4. Fill **Issuer** and **Client ID**. Fill **Client secret**, or leave it empty for a public client. Press **Connect**. If the issuer cannot be read, the sheet says why and nothing is saved. The provider opens, **off**.
+4. Fill **Issuer** and **Client ID**. Fill **Client secret**, or leave it empty for a public client. Press **Connect**. If the issuer cannot be read, the sheet says why and nothing is saved. The provider opens, **Off**.
 5. On **Set up**, under **1. Enter these at the provider**, copy the **Redirect address**. At the provider, register an application of the web kind with the authorization code flow, and give it that redirect address. Have it send the email, and a groups claim if you will map groups.
 6. Under **2. Try it**, press **Try signing in**. A new tab opens at the provider. Sign in there as one person. The tab says "The provider answered". Close it and press **Show the result** in the console.
 7. Read the result. **Subject**, **Email**, **Email verified**, **Name**, **Groups** and **Attributes** are what the provider sent. **Everything the provider sent** shows the raw claims. If **Email** or **Groups** is empty, open **Settings** and set the claim under **Which claims to read**: see [Map claims and groups](map-claims-and-groups).
 8. For members, open **Domains** and [prove an email domain](prove-an-email-domain). For end users this is optional.
-9. Press **Turn on**. The state is **on**, and a button "Sign in with <name>" is on the sign-in screen.
+9. Press **Turn on**. The state is **On**, and a button "Sign in with <name>" is on the sign-in screen.
 :::
 
 ::screenshot{name=administer/sso-provider-setup alt="A provider's Set up tab: the redirect address to enter at the provider, the sign-in address, and a Try signing in button with the facts the last try read."}
@@ -49,11 +49,11 @@ On **Settings**, changing **Issuer** asks "Change the issuer?". It removes the t
 
 ## After an import
 
-A provider that came with an imported tenant is **paused** and signs nobody in. Give the provider's administrator the **Redirect address** shown on **Set up**, which belongs to this instance, prove the domains again, then press **Turn on**.
+A provider that came with an imported tenant is **Paused** and signs nobody in. Give the provider's administrator the **Redirect address** shown on **Set up**, which belongs to this instance, prove the domains again, then press **Turn on**.
 
 ## The result
 
-The provider is listed with the state **on**. A person signs in with the button on the sign-in screen, and appears on the provider's **People** tab with the time of their last sign-in. They can still use a password until you [require single sign-on](require-single-sign-on).
+The provider is listed with the state **On**. A person signs in with the button on the sign-in screen, and appears on the provider's **People** tab with the time of their last sign-in. They can still use a password until you [require single sign-on](require-single-sign-on).
 
 ## If it does not work
 

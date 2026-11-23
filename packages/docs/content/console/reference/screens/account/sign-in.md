@@ -42,7 +42,7 @@ The text at the foot says "Use the account your administrator created for you, o
 | "That email and password do not match an account." | A wrong password, an address with no account, or an account that is turned off. They read the same on purpose. |
 | "That email and password do not match an account. The recovery code was used up by this try; use another code." | A recovery code was offered with a wrong password. The code is spent. |
 | "That recovery code is not right, or was already used. Each code works once." | The code does not match an unused code of the account. |
-| The server's own words | Any other refusal, for example a limit: sign-in is limited to 20 attempts a minute from one address. |
+| The server's own words | Any other refusal. Past the limit of 20 attempts a minute from one address, "Too many requests. Please try again later." |
 
 When single sign-on sends you back with a reason, a red notice shows it and the reason is taken out of the address so a reload does not show it again. There are fourteen:
 
@@ -80,7 +80,7 @@ A member whose password was reset gets a link to `/reset-password/{token}`. It n
 | **Set password** | Sets it. The page then says **Your password is set**: "Every other sign-in you had has ended. Sign in with the new password." with **Go to sign in**. |
 | A link that was used, or ran out | **Nothing to set here**: "This link has been used or has run out. Ask the person who gave it to you for a new one." with **Go to sign in**. |
 
-A link works once and runs out two hours after it was made. A tenant admin with `member:write` makes it for a member of that tenant who belongs to no other, and an operator makes it for any member; it is mailed where the instance sends mail and otherwise shown once to the person who made it. It is not made for a member who signs in only through an identity provider.
+A link works once and runs out two hours after it was made. A tenant admin with `member:write` makes it for a member of that tenant who belongs to no other, and an operator makes it for any member; it is mailed where the instance sends mail and otherwise shown once to the person who made it. It is refused for a member whose organization requires its own sign-in, with "{email} signs in with {provider}, and passwords are turned off for them. There is no password to reset."
 
 ## Your session ended
 

@@ -44,7 +44,7 @@ By the end you will have read rows with a filter, totalled them by a column, exp
    ```
 
 4. Sort with `sort=-weight_kg,pet`: column names separated by commas, a minus for downwards.
-5. Expand a reference. `expand=owner` (up to five columns, separated by commas) adds `expanded`, which gives what stands for each row the column points to.
+5. Expand a reference. `expand=owner` (up to five reference columns, separated by commas) adds `expanded` to the answer, beside `items`. For each column it maps the ID of each row pointed to onto what stands for it: `{"owner": {"<owner id>": "Ann"}}`. A column that is not a reference is refused with 400, "\"pet\" is not a reference column of api-visits.", and six columns with "At most five columns can be expanded."
 6. Page. See [Page through a list](page-through-a-list).
 :::
 
@@ -60,7 +60,7 @@ By the end you will have read rows with a filter, totalled them by a column, exp
 | `has` | A list-of-values column that holds the value. | `value` is one string. A list-of-values column takes only `has` and `is_null`. |
 | `is_null` | No value; with `"value": false`, any value. | |
 
-A column that does not exist, an operator that is not in the list, a `value` of the wrong type for the column, or a `contains` on a column that is not text is refused with 400 `validation_failed`, and `errors` names the part.
+A `has` on a column that is not a list of values answers `"has" works on a list of values, with one value to look for`, and an `in` of more than 200 values answers `"in" needs a list of 1 to 200 values`. A column that does not exist, an operator that is not in the list, a `value` of the wrong type for the column, or a `contains` on a column that is not text is refused with 400 `validation_failed`, and `errors` names the part.
 
 ## Total rows
 

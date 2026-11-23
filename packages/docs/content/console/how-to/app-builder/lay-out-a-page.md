@@ -33,7 +33,7 @@ A widget placed is selected, and its settings are on the right. A **Form** asks 
 4. To type exact numbers, press **⋯** in the settings, then **Layout**. **Column**, **Row**, **Width** and **Height** take the place in cells of twelve columns. A number past the widget's limit is kept at the limit, and the pane says so. **Back to settings** returns.
 :::
 
-A widget cannot be made smaller than it can be read, or larger than it can be drawn: a table is 4 to 12 wide and 4 to 40 high, a button 2 to 12 wide and 1 to 2 high. Widgets that would lie on one another move out of the way. **Undo** and :kbd[Ctrl]+:kbd[Z] take back a move, a size, a removal or a duplicate.
+A widget cannot be made smaller than it can be read, or larger than it can be drawn: a table is 4 to 12 wide and 4 to 40 high, a button 2 to 12 wide and 1 to 2 high. Widgets that would lie on one another move out of the way. **Undo** and :kbd[Ctrl]+:kbd[Z] take back a move, a size, a removal or a duplicate; the button says which, such as "Undo Moved Search and filter".
 
 A side sheet or modal is sized by the edge of its frame on the canvas, which snaps to **Small**, **Medium**, **Large**, **Extra large** or **Full**, or by **Size** in the page's settings.
 
@@ -51,7 +51,7 @@ A Section and Tabs each have a grid of twelve columns inside, and a widget in on
 ## Put buttons in a toolbar
 
 :::steps
-1. Add an **Action group** from **Take action**, or select a **Button** that has other buttons on the page and press **Group with other buttons…** under **Buttons together**. The dialog lists the other buttons with the ones on the same row checked: press **Group the buttons**. Each keeps its label, look and action, and the group takes the place of the button you started from.
+1. Add an **Action group** from **Take action**, or select a **Button** that has other buttons on the page and press **Group with other buttons…** under **Buttons together**. The dialog lists the other buttons of the page, those on the same row first, marked "(on the same row)" and already checked. Check the ones to join: **Group the buttons** is off until one is checked. Each button keeps its label, look and action, and the group, named **Actions**, takes the place of the button you started from. **Undo** takes the grouping back as one step.
 2. In the Action group's settings, add buttons to **Buttons**, up to 8. Each button has its own **Display**, **Actions** and **Rules**. Drag to reorder them.
 3. Under **Look**, choose **Line up** as **Left**, **Right** or **Spread**, and **Show up to** how many buttons show before the **⋯** menu, which holds the rest.
 :::

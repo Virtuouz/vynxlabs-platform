@@ -17,7 +17,7 @@ A managed Postgres turns itself read-only when its disk is nearly full. You can 
 The instance keeps serving what reads alone can:
 
 - `/api/v1/readyz` stays 200 and reports `"readOnly": true`, so the load balancer keeps sending traffic.
-- Tables, runs and the console can be read by members who are already signed in, and by API keys.
+- Tables, runs and the console can be read by members who are already signed in, and by API keys. An operator who reads inside a tenant under an access grant is answered 503 too, because each request under a grant is written to the tenant's audit log.
 - Changes, new sign-ins and new runs are answered 503 `read_only`, with `Retry-After`. A sign-in says "The database is taking no changes for now: its disk may be full, or it ...".
 - The queue, schedules and managed workers stop.
 

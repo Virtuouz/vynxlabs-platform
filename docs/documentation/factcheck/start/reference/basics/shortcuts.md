@@ -16,3 +16,7 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | Single-key checkbox; "(off)" and "(single keys off)" marks; Enter, Space, arrows, Home, End, Page, Shift+F10 stay on. | `kit/CommandPalette.tsx:973-1010`; `kit/keys.ts:66-80` | writer | holds (not run) |
 | A single key is ignored in a text field. | `kit/keys.ts:104-130` | writer | holds; run: ? in the Search box typed "?" and did not open the sheet |
 | Keys show as ⌘ ⇧ ⌥ on a Mac and Ctrl, Shift, Alt elsewhere. | `kit/keys.ts:190-238`; run (sheet read "Ctrl+K", "Shift+J") | writer, run | holds as run |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Compared with `kit/shortcuts.ts` row by row (every key and label), with `kit/keys.ts` for single keys (`isSingle`, `turnsOff`; the chord window `CHORD_MS = 1000`) and with `kit/DataTable.tsx:283-360` for the list keys (Home/End with ⌘ go to the first and last row, PageUp/PageDown, Enter, ⌘↵ new tab). Run at 390 px dark: `?` opened the sheet; its scopes and labels match; with **Single-key shortcuts** off the sheet marked "Search this list (off)", "Overview (off)" and "Move down or up the list (single keys off)" as the page says; `g` then `r` went to Runs with it on. Correction: the page said Enter, Space, arrows, Home, End, Page keys and Shift+F10 stay on; Esc and the function keys F1, F2 and Shift+F10 also stay on (`keys.ts:isSingle`). The sheet's own sentence names "?, /, j, k, x and the g shortcuts"; `a` is also a single key (the page keeps `a`).

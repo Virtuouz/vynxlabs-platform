@@ -14,3 +14,8 @@
 - **Include it** (history) was not run in the console; the command line was not run either, and `volvel` was not installed here.
 - The file was not imported anywhere.
 - The size of memory the browser uses for a large tenant is from the code and the screen's own advice.
+
+## Second check, 2026-11-23 (second agent)
+- Run now: `volvel tenant export --tenant sso-wave --out a.tar` with `VOLVEL_URL` and `VOLVEL_TOKEN` (an API key of the operator admin) and the CLI built from this tree: unset passphrase: "Set VOLVEL_EXPORT_PASSPHRASE to the passphrase for the export file. ..."; a 5-character one: "Could not export sso-wave. The request body is not valid." and "must NOT have fewer than 12 characters"; a good one: "Exported sso-wave to ... (0.1 MB)", "Run, flow and event history is not in it. Add --history to include it."; with `--history`: "It includes run, flow and event history." The archive lists `key.json`, `members.0001.jsonl`, `platform/...` and `manifest.json` last; the manifest says format 2, `coreVersion` 0.5.0.
+- Console at 390 px in dark: the **Export** screen, the two passphrase errors, a download `sso-wave-2026-11-23.tar`, the notice about API keys. With nothing typed **Export tenant** is not disabled and does nothing; the page now says so.
+- Not run: **Include it** in the console (the same request as the CLI's `--history`); an import of the file.

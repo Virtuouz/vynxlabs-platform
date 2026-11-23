@@ -22,7 +22,7 @@ By the end you have a file with everything the tenant has, sealed where it must 
 1. Open **Tenant**, then **Export**.
 2. Type a **Passphrase** and type it again in **Passphrase again**. "Use at least 12 characters." and "The two do not match." say what is wrong.
 3. Under **Run, flow and event history**, choose **Leave it out** or **Include it**.
-4. Press **Export tenant**. The button reads "Exporting…" and the browser downloads `<slug>-<date>.tar`.
+4. Press **Export tenant**. The button reads "Exporting…" and the browser downloads `<slug>-<date>.tar`, for example `sso-wave-2026-11-23.tar`.
 :::
 ::::
 ::::tab{label="Command line"}
@@ -30,7 +30,7 @@ By the end you have a file with everything the tenant has, sealed where it must 
 VOLVEL_EXPORT_PASSPHRASE='a passphrase of at least 12 characters' volvel tenant export --tenant fernhill --out fernhill.tar --history
 ```
 
-Leave `--history` off to leave the history out. Use this for a large tenant: the console's download is held in the browser's memory.
+The command prints `Exported <slug> to <file> (<size> MB).`, then says whether history is in it. Leave `--history` off to leave the history out. Use this for a large tenant: the console's download is held in the browser's memory.
 ::::
 :::
 
@@ -50,6 +50,8 @@ A file named `<slug>-<date>.tar` that any tar program lists, with `manifest.json
 
 | You see | Cause and fix |
 | --- | --- |
-| **Export tenant** is disabled | The passphrase is shorter than 12 characters or the two differ. |
+| **Export tenant** is disabled, or does nothing | The passphrase is shorter than 12 characters or the two differ. With nothing typed the button is on, and pressing it does nothing. |
+| `Set VOLVEL_EXPORT_PASSPHRASE to the passphrase for the export file.` | The command line reads the passphrase only from that variable. |
+| `Could not export <slug>. The request body is not valid.` and `must NOT have fewer than 12 characters` | The command line's passphrase is too short. |
 | A red notice after pressing it | The server's reason. A person without `export:write` sees "You can see this tenant's export, not change it. It needs `export:write`." |
 | The browser runs out of memory | Use the command line. |

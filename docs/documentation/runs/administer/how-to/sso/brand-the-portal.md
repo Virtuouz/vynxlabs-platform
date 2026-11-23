@@ -16,3 +16,8 @@
 - The portal and the apps were not opened to see the colors; only the saved values were read back.
 - A workspace `theme` resource overriding the tenant's was not made.
 - The 60 s and 300 s cache times are from the code.
+
+## Second check, 2026-11-23 (second agent)
+- Walked the Branding screen at 390 px in dark and at 1440 px in light, as the operator admin, in tenant `sso-wave` (own names: hostname `p31.sso-wave.example`, pool `compose-pool`). No horizontal scroll at 390 px.
+- Run now: **Upload a logo** with a 128 px PNG: the notice "The logo is replaced." and the label becomes **Replace the logo** and **Remove logo** is there; an SVG: "Choose a PNG, JPEG or WebP image."; a 600 KB file: "That image is 600.2 KB. A logo can be 512 KB at most."; the logo answers 200 `image/png` with `cache-control: public, max-age=300`; after a reload it is still there; **Remove logo** asks "Remove the logo? The sign-in pages show the tenant's name alone." and the screen returns to "No logo yet." The browser's icons were not read.
+- The page got wrong: nothing in the logo step except it did not say the notice or the removal; added.

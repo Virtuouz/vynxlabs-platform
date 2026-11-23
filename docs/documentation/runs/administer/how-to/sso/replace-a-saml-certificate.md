@@ -14,3 +14,8 @@
 - A real change of certificate was not made: Keycloak's realm key was not rotated, so "reading it again" returned what was there. That a sign-in signed by the old or the new certificate passes was not tried.
 - A changed entity ID, with its dialog and the removal of ties, was not run; the page's sentence is from the code and the audit action name.
 - The limit of 10 certificates was not tried.
+
+## Second check, 2026-11-23 (second agent)
+- Run now, against the dev Keycloak, realm `acme`: a try passed. A new active RSA key was added to the realm (priority 200). A try then did not pass: "Invalid signature" (reason `invalid_answer`). **Read the metadata** from the descriptor address ("Read the metadata again?" dialog) put two certificates in **Signing certificates**. A try passed the signature (it stopped at the domain, which was not proved then). The old certificate was removed by hand and saved: a try still passed the signature. The new key was left in the realm.
+- The page got wrong: the failure row said only "The identity provider's answer could not be accepted." The console's try says "did not pass" with "Invalid signature"; the sign-in screen has the first words. Both are on the page.
+- Still not run: a changed entity ID and its dialog; more than 10 certificates (from `providers.ts:398`).

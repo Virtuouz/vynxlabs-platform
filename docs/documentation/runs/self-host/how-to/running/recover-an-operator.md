@@ -11,3 +11,7 @@ None: the page was written after the run.
 
 ## Not run
 A disabled account, an account whose operator binding was removed, sign-in in a browser.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Nothing further was run. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

@@ -25,6 +25,8 @@ By the end an agent, or a script that speaks the Model Context Protocol, will ha
    ```
 
    The answer has `address`, `reachable` (false when the account may not connect to the workspace at all) and the `tools`.
+
+   **Try** on a tool opens "Try <tool name>", with the tool's fields (or **JSON**) and **Call it**. The call is made as the account and is real: a script runs or a flow starts. You are recorded as the one who asked. Through the API it is `POST …/service-accounts/<account id>/tool-calls` with `workspace`, `tool` and `arguments`, and it answers `tool`, `isError` and `result`. It needs `service_account:write`.
 2. Put the address and one of the account's keys in the agent's settings. For an agent that reads `mcpServers`:
 
    ```json
@@ -71,9 +73,10 @@ By the end an agent, or a script that speaks the Model Context Protocol, will ha
 - A tool for each script the account may start, named `run_` and the script's path with `/` as `__` and `-` as `_` (`hooks/echo` is `run_hooks__echo`), and a tool for each flow with a manual trigger it may start, named `start_` the same way. A script or flow may name its own tool. Up to 200 are offered, and a name is at most 64 characters.
 - A script's tool takes the script's own input schema. A flow's takes what its manual trigger declares. Each also takes an optional `idempotencyKey` (or the same name with underscores before it, when the script already uses that name).
 - `get_run` and `get_flow_run` read a run the agent started, or any run in the workspace when the account holds `run:read` or `flow_run:read`.
-- `list_approvals` and `decide_approval` are there when the account holds `approval:read` and `approval:write`. A rejection needs a comment.
+- `list_approvals` is there when the account holds `approval:read`, and `decide_approval` when it holds `approval:write`. `list_approvals` answers `approvals`, each with `flowRunId`, `node`, `flow`, `title`, `detail` and `waitingSince`. `decide_approval` takes `flowRunId`, `node`, `decision` (`approve` or `reject`) and an optional `comment`. A rejection without a comment is refused with "Say why it is rejected: the flow and its people read it." Deciding an approval that is no longer waiting answers "This approval is no longer waiting for a decision."
+- An approval whose step names who may decide it, by group, role or person, is never shown to a service account and cannot be decided by one: the answer is "Only the <group> group may decide this approval." An approval that names no one can be decided by an account that holds `approval:write`.
 - The tools are worked out for each request from what the account may do now, so a change of its roles shows on the next call.
-- A tool waits up to 25 seconds for its run to end, then answers with the run ID. A flow that is still running says so, and the agent reads it later with `get_flow_run`.
+- A tool waits up to 25 seconds for its run to end, then answers with the run ID, the status `running` and a `note`: "Still running. Call get_run with this runId to see how it ends." A flow that is still running says so in the same way, and the agent reads it later with `get_flow_run`. A flow that fails answers `isError` with the step and the reason.
 - A run or approval of another person is masked as it is on screen. The account's own are given as they are.
 
 Everything an agent does is the same as the API route that does it, with the same permission checks and the same audit log. The agent starts runs as the service account.

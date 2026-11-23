@@ -22,3 +22,7 @@
 
 ## The page got wrong (and was corrected)
 - It first said nothing about a try that reads everything right and still says "did not pass" because the domain is not proved. The run showed it, and the page now says so under "What a try tells you".
+
+## Second check, 2026-11-23 (second agent)
+- Run now: **Remove the stored client secret** (with the Keycloak client changed to public with PKCE): the provider shows no stored secret and a try reaches the answer ("The provider answered", then stops at the domain). A private issuer refused for want of `EGRESS_ALLOW` cannot be run: this instance allows loopback.
+- Walks of Entra ID, Okta and Google Workspace cannot be run offline; the page describes none of their screens.

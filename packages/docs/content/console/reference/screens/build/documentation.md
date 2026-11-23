@@ -19,7 +19,7 @@ Pages are changed in a :term[dev workspace]{id=dev-workspace} only. In a product
 
 In a dev workspace without the permission to change pages, the screen draws the same read-only and a line says "You can see this workspace's pages, not change it. It needs `resource:write`, or doc:write alone." followed by how to ask for access.
 
-A page kept in a folder of the repository's own is read here and changed there: it shows a **repository** label in the tree and has no **Edit**, **Rename**, **Move to…** or drag handle.
+A page kept in a folder of the repository's own is read here and changed there: it shows a **repository** label in the tree and has no pencil, no **More for** menu, no grip and no **Edit** button.
 
 ## The header
 
@@ -33,7 +33,7 @@ Below the header, a notice appears when pages take a term or a topic the product
 
 ## The tree of pages
 
-The panel above the tree has a box labeled **Filter pages**, which keeps the rows whose title matches, and a button that reads **Close every folder** or **Open every folder**. The tree is labeled **Pages**. Folders open and close; a folder with a page of its own (its `index.md`) opens that page when chosen.
+The panel above the tree has a box labeled **Filter pages**, which keeps the rows whose title matches, and a button that reads **Close every folder** or **Open every folder**. The tree is labeled **Pages**. Folders open and close; a folder with a page of its own (its `index.md`) opens that page when chosen. From the keyboard, :kbd[↑] and :kbd[↓] move between rows, :kbd[←] and :kbd[→] close and open a folder, :kbd[Enter] chooses a row, and :kbd[F2] renames the row that has the focus.
 
 Each row shows:
 
@@ -44,7 +44,7 @@ Each row shows:
 | Draft mark | A pen icon, with its words for a screen reader and as a tooltip: **Draft · not deployed** (the page changed since the deploy), **New · not deployed**, **To be removed**. A deployed page has none. |
 | Badge | **Site** on a top-level folder that is published; **Site, not published** on one whose site is switched off; **repository** on a page kept in the repository's own folder. |
 | Rename (pencil) | Labeled **Rename <title>**. Opens the row to edit. |
-| **More for <title>** | The row's menu, below. |
+| **More for <title>** | The row's menu, below. It opens with :kbd[Enter] on the button. |
 
 A page that is to be removed has a **Keep** button in place of the pencil and the menu.
 
@@ -60,7 +60,7 @@ A page that is to be removed has a **Keep** button in place of the pencil and th
 | **Turn on page feedback…** | A site that does not ask | Opens the feedback dialog. Detail: "Ask readers whether a page helped". |
 | **Turn off page feedback…** | A site that asks | Asks first; keeps the table and its answers. Detail: "Stop asking readers". |
 | **Stop publishing…** / **Publish again…** | A site | Switches the site off or on. Details: "Keeps its pages and its app" and "Served again once deployed". |
-| **Remove the site's app…** | A site | Stops serving it; the pages stay. |
+| **Remove the site's app…** | A site | Stops serving it; the pages stay. The screen does not count this removal in **Deploy N changes**: see [Questions the menu asks](#questions-the-menu-asks). |
 | **Delete…**, **Delete folder…** | Always | Asks you to type the file name. |
 
 ### New page and new folder
@@ -114,6 +114,8 @@ Every change to the tree is saved as drafts at once and says what it did, with a
 | **Keep** | "Keep <title>?" "This throws away the draft that removes it. The page stays as it was last deployed." | **Keep** |
 
 Each of these says what it did ("<site> will stop being served when you deploy." and so on) with an **Undo**, except **Delete** and **Keep**, which are taken back with **Keep** and by deleting again.
+
+**Remove the site's app…** makes a draft that removes the app. The folder then shows no **Site** badge and offers **Publish as a site…** again. **Deploy N changes** does not count the removal, so with no other change the button is not there, and a deploy of pages does not carry it: the site keeps being served. Stopping a site with **Stop publishing…** is carried by a deploy.
 
 ## The page beside the tree
 

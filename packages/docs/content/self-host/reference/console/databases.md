@@ -15,7 +15,7 @@ The screen is in the **Instance** area. F1 (**Help for this page**) opens the he
 
 ## Controls
 
-The title is **Database locations**. The description reads "Databases, other than the instance's own, where a tenant's custom tables can live. A tenant is placed in one when it is created or imported."
+The title is **Database locations**. The description reads "Databases, other than the instance's own, where a tenant's custom tables can live. A tenant is placed in one when it is created or imported." The description shows the first time you open the screen. On later visits it is folded behind the **About Database locations** button (the circled i) beside the title.
 
 | Control | What it does |
 | --- | --- |
@@ -60,7 +60,7 @@ The dialog says "Now DATABASE on HOST." and that the address is stored encrypted
 | **What it is for** | Optional. Changing only this connects to nothing. |
 | **New connection string** | Optional. Empty keeps the stored address. A new address points the name at another database. |
 
-A new address is refused unless the new database already holds every table and workspace of the tenants that keep tables under that name. The refusal reads "N tenant(s) keep their tables under "NAME", and that database does not hold them (N tables and N workspaces missing). Restore a copy of the tenants' database there first, or move the tenants." The result is "NAME is saved."
+A new address is refused unless the new database already holds every table and workspace of the tenants that keep tables under that name. The refusal reads "N tenants keep their tables under "NAME", and that database does not hold them (N tables and N workspaces missing). Restore a copy of the tenants' database there first, or move the tenants." The result is "NAME is saved."  With one tenant the sentence begins "1 tenant keeps their tables under".'
 
 A tenant cannot be pointed at another location after it is made. To move one, see [Move a tenant](../../how-to/instance/moving-a-tenant).
 

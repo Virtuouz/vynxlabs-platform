@@ -16,3 +16,8 @@
 
 ## Not run
 Files removed by a pull; a resource kept outside `platform/`; a damaged `pulled.json`; `--resources`; a missing `resource:read`.
+
+## Second check, 2026-11-23 (second agent)
+Instance http://localhost:8091 (same throwaway instance), CLI and SDK from fresh `pnpm pack` tarballs installed with npm into a scratch folder; no request left localhost. Tenant made for this check: `docs-cli-check` (operator grant for the operator admin), workspaces `cli-dev` (dev) promoting to `cli-live` (production), service accounts `ci-deployer` (`deployer` in both) and `ci-ship-only`. API keys made for the check were revoked or are of this tenant. Walked the console screens the page names at 390 px in dark (Account's API keys with the Create API key dialog; the tenant's Service accounts and a service account's Keys tab): no horizontal overflow of the page, reload not needed for the steps.
+- Ran: a console draft table pulled (new file), then deleted in the console and pulled (`removed`, `Pulled 0 files`), a hand-written file kept with and without `--force` (exit 1), `--resources nowhere`. Page unchanged.
+- Not run: a resource kept outside `platform/`; a damaged `pulled.json`; a missing `resource:read`.

@@ -17,3 +17,14 @@
 
 ## Not run
 - **Run script…** and **Start flow…** to the end (nothing was started), `>` with a run ID, "The search failed", the palette outside a tenant, and the phone width.
+
+## Second check, 2026-11-23
+
+Maya Brooks, Fernhill Sandbox, 1440 px light and 390 px dark.
+- `/` then **Run script…**: the picker listed the scripts; Backspace on the empty box went back to the list shown with nothing typed. `agent/clinic-day` with **Clinic** northside and **Run** made the run and opened its page (Succeeded, version 39).
+- `>` with the first 8 characters of that run's ID listed that run and the runs that began in the same minute.
+- **Start flow…** listed the manual flows. `flows-approve/discount` started and opened its run (Waiting for approval; it was left for its owner lane). `tut-approve`, a flow never deployed, was listed and refused with "The flow tut-approve was not found." (fault, recorded on the page).
+- The Run dialog also asks **Start** (**Now**/**Later**) and **Priority**: the page now says so.
+- The palette on the **Tenants** screen: only **Screens** and **Actions**. The search failure state was shown by answering the search request with an error: message, Request ID, **Try again**.
+- 390 px dark: the header button opened the palette; the Run dialog and the picker fit.
+Not run: keyboard-only from the first Tab (the shortcuts were pressed, the dialog's own focus order was not walked).

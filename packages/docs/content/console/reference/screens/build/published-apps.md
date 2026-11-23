@@ -30,7 +30,7 @@ The list has a description line, a search box and the **Built** filter above a t
 | **Open to** | Who is bound at the app, then who reaches every app through a binding at the workspace or the tenant. **Staff only** when no one is. The text is amber when the app is open to anyone. |
 | **Built** | The tag **App Builder**, **Documentation** or **Repository**. |
 
-**Open to** names people as the Share sheet does: "anyone", "every end user", an end-user group, a group of members or an email. A binding at the whole workspace or tenant to anyone, to every end user or to an end-user group whose role holds `app:read` is added as, for example, "anyone (whole tenant)". A binding at the workspace to members is not shown there. See [How access to an app works](../../../../develop/explanation/apps/app-access).
+**Open to** names people as the Share sheet does: "anyone", "every end user", an end-user group, a group of members or an email. A binding at the whole workspace or tenant to anyone, to every end user, to one end user or to an end-user group whose role holds `app:read` is added as, for example, "anyone (whole tenant)". A binding at the workspace to members is not shown there. See [How access to an app works](../../../../develop/explanation/apps/app-access).
 
 The list shows the apps of the deployed version. An app removed in the console stays listed until its removal draft is deployed.
 
@@ -40,7 +40,7 @@ The list shows the apps of the deployed version. An app removed in the console s
 | --- | --- |
 | Empty | "No apps yet", with the text "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here." |
 | Nothing matches | "No app matches", with "Clear the search or choose All." |
-| Repository apps cannot be served | A notice above the list: "Apps built in the repository are not served on this instance yet." It goes on to say that they run only at an address of their own, and that whoever runs the instance needs to set `APPS_URL`. It shows when the instance has no address for apps and the workspace has an app that is not made in the console. Apps made in the App Builder are served as usual. |
+| Repository apps cannot be served | A notice above the list: "Apps built in the repository are not served on this instance yet." It goes on to say that they run only at an address of their own, and to ask whoever runs the instance to set `APPS_URL`. It shows when the instance has neither `APPS_URL` nor `APPS_ON_CONSOLE_ADDRESS` set to `true` and the workspace has a repository app. Apps made in the App Builder and documentation apps are served as usual. Someone who opens a repository app's address on such an instance gets the page "This app is not served at this address" with status 503, which says the same. If you run the instance, `APPS_URL` is a second address for apps, a different host from the instance's own. |
 | Not loaded | The list's error state, with a retry. |
 
 ## The inspector
@@ -53,7 +53,7 @@ Choosing a row opens the inspector beside the list. Its title is the app's title
 | **Hostname**, **Hostname (off)** | One row for each hostname registered for the app. A hostname that is off is still linked here, and is left out of the list. |
 | **Built** | "In the App Builder (the interface's path)", "From the pages under (the folder)", or "In the repository". |
 | **Files** | Repository apps only: how many files the app has and their size. |
-| **Reads** | The tables the app is declared to read, or "Nothing declared". Only a repository app has a declared list (`reads` in `defineApp`); an app made in the App Builder shows the tables of its widgets under **What they can read** in the Share sheet instead. |
+| **Reads** | The tables the app reads, or "Nothing declared". For a repository app of files it is the list the code declares (`reads` in `defineApp`); for an app made from an interface it is the tables of the interface's widgets. A documentation app shows "Nothing declared". |
 | **Open to** | As in the list, or "Staff whose role lets them read this workspace" when no one else is bound. |
 
 When anyone may open the app without signing in, by a binding at the app, the workspace or the tenant, a notice says "Anyone with the address can open it, without signing in."
@@ -63,8 +63,8 @@ The inspector's footer:
 | Control | What it does |
 | --- | --- |
 | **Share** | Opens the [Share sheet](#the-share-sheet). Disabled, with a tooltip, without `binding:write`. |
-| **Remove** | Only for an app made in the console. Asks "Remove this app?" and says "This saves a draft that removes it. Nothing changes until that draft is deployed. Its address stops serving once that draft is deployed." Disabled without `resource:write`; for an App Builder app `interface:write` is enough, and for a documentation app `doc:write`. |
-| "Managed in the repository: the app is removed there." | Shown in place of **Remove** for a repository app. |
+| **Remove** | Only for an app the repository does not define (made in the console). Asks "Remove this app?" and says "This saves a draft that removes it. Nothing changes until that draft is deployed. Its address stops serving once that draft is deployed." Disabled without `resource:write`; for an App Builder app `interface:write` is enough, and for a documentation app `doc:write`. |
+| "Managed in the repository: the app is removed there." | Shown in place of **Remove** for an app the repository defines. That includes an App Builder app whose interface a repository file defines, which keeps its **App Builder** tag in the list. |
 | **Open the live app** | Opens the address in a new tab. Not shown for a documentation app that is switched off. |
 
 The screen has nothing to unpublish an app made in the console, to preview one, or to count files an app no longer names. Taking an app out of service is removing it. A documentation app has a draft preview at its address followed by `_draft/`. To try an app before you deploy it, use [`volvel dev`](../../../../develop/how-to/apps/run-an-app-while-you-write-it).
@@ -80,7 +80,7 @@ The sheet is titled "Share" followed by the app's title, with the app's address 
 | "Staff whose role lets them read this workspace" | A fixed row, marked "always". |
 | Rows tagged "under Access" | A binding at the workspace or the tenant that reaches every app: "(who) may open every app of the whole workspace" or "of the whole tenant". Read only. Change it under **Access**. |
 | One row for each binding at the app | The person or group, then "may read" (role `portal_reader`), "may read and change" (role `portal_user`), or "as (the role's name)". |
-| **Stop sharing** | Asks "Stop sharing (app) with (who)?" and names what goes with it: "They lose the app, and their access to its N tables goes with it." A table another shared app of the workspace reads, for the same people and the same role, stays; the text then adds "N table stays, for K other app that uses it" with the apps' names. |
+| **Stop sharing** | Asks "Stop sharing (app) with (who)?" and names what goes with it: "They lose the app, and their access to its N tables goes with it." A table another app of the workspace reads, shared with the same people and the same role, stays. The text then names it, as in "They lose the app. 1 table stays, for 1 other app that uses it: Board." When every table stays, the first sentence is only "They lose the app." |
 | The tag **From repository** | A binding made by the repository. It has no **Stop sharing**: change it there. |
 | "Nobody else yet." | No binding at the app. |
 
@@ -96,7 +96,7 @@ The bindings are made one after the other and are not undone if one fails: a fai
 
 ### What they can read
 
-One card for each table the app reads. It shows the table's name, a tag for its policy (**Row rules**, **open** or **owner**) and a sentence: "Of its rows, everyone it is shared with sees every row.", "each person sees the rows they own", or "the table's row rules decide, person by person". For a table with row rules or an owner rule, and for each group the app is shared with, a line reads "Someone in (group) sees N rows". It needs `data_all:read`; without it the count shows a dash. When the app was shared with anyone, a notice says "Anyone with the address can open it. Whatever its tables let everyone read is public."
+One card for each table the app reads. It shows the table's name, a tag for its policy (**Row rules**, **open** or **owner**) and a sentence: "Of its rows, everyone it is shared with sees every row.", "Of its rows, each person sees the rows they own." or "Of its rows, the table's row rules decide, person by person." When the table's policy cannot be read, the card says "Its policy is not known here." For a table with row rules or an owner rule, and for each group the app is shared with, a line reads "Someone in (group) sees N rows". It needs `data_all:read`; without it the count shows a dash. When the app was shared with anyone, a notice says "Anyone with the address can open it. Whatever its tables let everyone read is public."
 
 When there are no tables, the tab says why: for a repository app, "Its code declares no tables. Ask its developer to list them with `reads` in defineApp."; for a documentation app, "It serves pages of documentation, and reads no table."; for an App Builder app, "It shows no table."
 

@@ -48,7 +48,7 @@ Saving says "<path> is saved as a draft. It can be run by name once it is deploy
 | **Path** | Where the query is found, up to 255 characters. |
 | **Title** | What people read in lists, up to 200 characters. Empty is none. |
 
-**Save as a draft** is the one action. When the path changes, the dialog lists the dashboards that name the query: "These dashboards are saved as drafts with the new path" for dashboards kept by the console, and "These dashboards are the repository's, so they are not changed here" for the repository's, which find the query by its key until the path is changed in the repository. See [Rename or remove a query](../../../how-to/queries/rename-or-remove-a-query).
+**Save as a draft** is the one action. When the path changes, the dialog lists the dashboards that name the query: "These dashboards are saved as drafts with the new path" ("This dashboard is saved as a draft with the new path:" for one) for dashboards kept by the console, and "These dashboards are the repository's, so they are not changed here" for the repository's, which find the query by its key until the path is changed in the repository. After **Save as a draft** the screen stays at the old address and says "There is no query at <old path>." until you choose the query by its new path in **Saved queries**. See [Rename or remove a query](../../../how-to/queries/rename-or-remove-a-query).
 
 The button is off, with its reason as a tooltip, for a query defined in the repository's code ("It is defined in the repository's code. Change its path or title there, and give it key: …"), for one being removed, and while the editor has changes you have not saved ("Save the draft first.").
 
@@ -62,6 +62,7 @@ The editor is labeled **The query**. It completes tables, columns and functions 
 | :kbd[Ctrl+S] (:kbd[⌘S]) | Saves it, as **Save** or **Save as…** does. It does nothing on an empty editor. |
 | :kbd[Ctrl+K] (:kbd[⌘K]) | Opens the console's search and jump list. |
 | F1 | Opens help for the page. |
+| :kbd[Ctrl+M] | Monaco's own key: :kbd[Tab] then moves focus on instead of indenting, until you press :kbd[Ctrl+M] again. In the editor :kbd[Tab] indents and :kbd[Esc] does not leave it. |
 
 The editor is read-only for a query being removed and for someone who may not write SQL. The SQL it takes, and what it refuses, is in the [SQL reference](../../../../develop/reference/queries/sql-reference).
 
@@ -71,7 +72,7 @@ Under the editor, for a query that is open and not being removed, **What it is f
 
 A query has one parameter for each `$1`, `$2`, … in its text. Counting skips strings, comments and dollar-quoted text, and stops at 20.
 
-- A **field** for each parameter is shown under the editor. Its label is the parameter's label, else its name, else `$1`. A **Yes or no** parameter is a menu with **Not set**, **Yes** and **No**. A **date** is a date field. Others are text, with the type as a hint. A value that does not fit is said as you type, for example "Must be a whole number.", and **Run** sends nothing until it does. A parameter marked needed and left empty says "A value is needed." A field you leave empty starts as the parameter's default.
+- A **field** for each parameter is shown under the editor. Its label is the parameter's label, else its name, else `$1`. A parameter you did not name is saved as `p1`, `p2`, so a saved query's field reads **p1**. A **Yes or no** parameter is a menu with **Not set**, **Yes** and **No**. A **date** is a date field. Others are text, with the type as a hint. A value that does not fit is said as you type, for example "Must be a whole number.", and **Run** sends nothing until it does. A parameter marked needed and left empty says "A value is needed." A field you leave empty starts as the parameter's default.
 - **What each parameter is** is a panel under the fields, shown when the query has parameters. For each one it has **Name of parameter n**, **Type of parameter n**, **Label of parameter n**, **Default of parameter n** and **Parameter n is needed**. They are saved with the query. A save is refused while a name or default is wrong, and says so on the field.
 
 The fields, types and limits are in [Query parameters](../../queries/query-parameters).
@@ -100,7 +101,7 @@ Without `sql:read`, **Run** runs a deployed query by name. See Permissions.
 | A query not there | "There is no query at X." and a notice: "There is no saved query at X. It was discarded or removed, or the address is wrong. This is a new query." |
 | Removing | "This query is removed in your drafts. Nothing changes until that draft is deployed. The text shown is what is deployed now. Keep this query to take the removal back." The editor is read-only. |
 | Managed in the repository | "This query is managed in the tenant's repository. Saving a draft of it takes it over." |
-| Someone saved first | The draft-clash notice, with a choice between your text and theirs. |
+| Someone saved first | "Someone else saved this query after you opened it. Nothing of theirs was overwritten, and what you changed is still here, unsaved." with **Copy what I wrote** (puts your text on the clipboard) and **Load their version** (asks "Load their version?" and replaces what you changed). |
 | Cannot keep queries | "You can run queries here but not keep them: that takes the permission to write resources (`resource:write`). Ask whoever manages roles in this tenant." |
 | Production workspace | "Queries are written in a dev workspace and promoted to this one, so they are not saved here. They can be run by name once they are promoted." **Save** is off. |
 | Cannot write SQL | "You cannot write or run SQL: that takes the permission to read with SQL (`sql:read`), which a role has only when it names it." It goes on to say whether the open query can be run by name. |

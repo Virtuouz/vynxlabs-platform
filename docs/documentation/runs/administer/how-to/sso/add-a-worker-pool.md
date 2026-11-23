@@ -17,3 +17,9 @@
 
 ## Found
 - **The worker built from this repository (`packages/worker`, version 0.5.0) is shown "Older version, takes no tasks" by the instance of the same commit**, whose threshold is 0.6.0 (`routes/execution.ts` `TASKS_SINCE`). A reader who builds and runs the worker from this tree sees the warning at once. The page says what the screen says.
+
+## Second check, 2026-11-23 (second agent)
+- Run now at 390 px in dark: a credential for a new pool, then (see the standalone-worker log) a worker online for it. **Remove the pool** with its credential still active: "Revoke the credentials that serve this pool first." **Revoke**: `Revoke "compose-check"? A worker using it stops.`, the credential shows **Revoked**. **Remove the pool** then asks `Remove the pool "compose-pool"?`, "Scripts that name it wait until it is made again."
+- The page got wrong: the default-pool control is a button named **Let the instance run workers** or **Run only on our own workers**, not a switch; and the removal path was a single sentence.
+- Not run: a script naming the pool (no run taken by it); **Queue** rows for a pool.
+- Fault (`sso/workers`): the worker of this release (0.5.0) is shown **Older version**, "takes no tasks". The page says what the screen says; marked in the record.

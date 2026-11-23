@@ -70,7 +70,7 @@ The dialog's button is **Connect <path>** or **Connect database**. When it works
 | State | What you see |
 | --- | --- |
 | Empty | "No data sources yet", "Connect a Postgres database you already have. Its tables can then be browsed here and used by scripts.", with **Declare source** and **Connect database**. |
-| Read only | "You can see this workspace's data sources, not change it. It needs `data_source:write`." Every row action is disabled. |
+| Read only | "You can see this workspace's data sources, not change it. It needs `data_source:write`." **Declare source**, **Connect database**, **Connect**, **Test**, **Change** and **Remove from here** are disabled. **Edit** is a link and stays. |
 | Not loaded | The error with **Try again**. |
 
 ## A source's page
@@ -81,7 +81,8 @@ Its tables are listed on the left, and the chosen one is in the address as `?ite
 
 | State | What you see |
 | --- | --- |
-| Loading, or the source could not be reached | The page's loading state, or a notice with the reason and **Try again**. |
+| Loading, or the source could not be reached | The page's loading state, or a notice with the reason and **Try again**. A database that does not support SSL while **Encrypt the connection** is **Yes** gives the notice "Internal Server Error", while **Test** says "The server does not support SSL connections". |
+| A reader | **Test**, **Change** and **Remove from here** are offered. **Test** works. The other two are refused with "needs the data_source:write permission." |
 | The schema has no tables | "No tables found": "The database was reached, but the schema it is connected to has no tables." |
 
 ## What a source can be
@@ -101,7 +102,7 @@ Its tables are listed on the left, and the chosen one is in the address as `?ite
 | An idle connection is closed after | 30 seconds |
 | One statement may run | 15 seconds, not settable. A slower one says "The data source "<path>" took too long to answer." |
 | Session time zone | UTC |
-| Certificate | Checked when **Encrypt the connection** is **Yes**. There is no way to trust a private authority: choose **No**. |
+| Certificate | Checked when **Encrypt the connection** is **Yes**. There is no way to trust a private authority: choose **No**. A server that has no SSL at all fails with "The server does not support SSL connections". |
 | Addresses | Loopback, private, link-local, shared and reserved addresses are refused unless the operator lists them in `EGRESS_ALLOW`. A script's own network access is held separately, by the worker host. |
 
 A source's health is tested about every 10 minutes while it is connected, with a 5-second wait. A source that is down is said with the same words wherever it is read: "The data source "<path>" could not be reached. Check its address." (502), "…refused the user name or password.", "…has no database by that name.", "…does not let its user do that." and, with no password stored, "No password is set for the data source "<path>". Change it and type the password."
@@ -111,7 +112,7 @@ A source's health is tested about every 10 minutes while it is connected, with a
 | Action | Needs |
 | --- | --- |
 | See the list, open a source's page, browse its tables | `data_source:read` |
-| **Test** (the API) | `data_source:read`. The console disables **Test** without `data_source:write`. |
+| **Test** | `data_source:read`. The list disables **Test** without `data_source:write`; a source's own page offers it. |
 | **Connect**, **Connect database**, **Change**, **Remove from here**, add, change and delete a source's rows | `data_source:write` |
 | **Declare source**, **Edit**, and deploy a declaration | `resource:write` |
 | Put a source's table on a dashboard or an app page | `data_source:read` for the person who saves the page. Whoever looks at the page needs `data:read`. A repository deploy is not asked. |

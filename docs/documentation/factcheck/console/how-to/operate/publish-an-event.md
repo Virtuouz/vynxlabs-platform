@@ -4,8 +4,18 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
-| Dialog steps and notices. | apps/console/src/screens/PublishEvent.tsx:35-130 | writer, run on the instance 2026-11-23; second agent: pending | holds as run |
-| Production confirm. | apps/console/src/screens/PublishEvent.tsx:60-71 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
-| Publish it on an event's own page. | apps/console/src/screens/ObjectPages.tsx:395-420 | writer, read from the code 2026-11-23; second agent: pending | holds as read |
-| Events list row: From The API. | apps/console/src/screens/Operate.tsx:791-795 | writer, run on the instance 2026-11-23; second agent: pending | holds as run |
-| Listeners paused wording. | apps/console/src/screens/Operate.tsx:897-901,969-974 | writer, run on the instance 2026-11-23; second agent: pending | holds as run |
+| Dialog steps and notices. | apps/console/src/screens/PublishEvent.tsx:35-130 | writer, run on the instance 2026-11-23; second agent, 2026-11-23 (see the second check below) | holds as run |
+| Production confirm. | apps/console/src/screens/PublishEvent.tsx:60-71 | writer, read from the code 2026-11-23; second agent, 2026-11-23 (see the second check below) | holds as read |
+| Publish it on an event's own page. | apps/console/src/screens/ObjectPages.tsx:395-420 | writer, read from the code 2026-11-23; second agent, 2026-11-23 (see the second check below) | holds as read |
+| Events list row: From The API. | apps/console/src/screens/Operate.tsx:791-795 | writer, run on the instance 2026-11-23; second agent, 2026-11-23 (see the second check below) | holds as run |
+| Listeners paused wording. | apps/console/src/screens/Operate.tsx:897-901,969-974 | writer, run on the instance 2026-11-23; second agent, 2026-11-23 (see the second check below) | holds as run |
+
+## Second check (2026-11-23)
+
+Checked by: second agent, 2026-11-23. Run in a workspace of my own (Operate check, a dev workspace in Fernhill's tenant, with scripts, flows and triggers of mine deployed by the CLI, and a production workspace linked to it) (dev and production): the dialog, the JSON view, a refused payload, an event's own page, the production question.
+
+| Claim | Source | Result |
+| --- | --- | --- |
+| A refused value in the JSON view is shown as "/count: Enter a number." | run | corrected: added to step 3 |
+| Production: "Publish opchk/pinged in production?", "Every trigger that listens for it starts its work now, with real data.", Publish in production. | run | holds as run |
+| Link to the platform events points to the generated page. | docs:check | done |

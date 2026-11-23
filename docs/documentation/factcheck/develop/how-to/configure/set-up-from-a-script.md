@@ -1,6 +1,6 @@
 # Fact-check: develop/how-to/configure/set-up-from-a-script.md
 
-Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: not yet made.
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -15,3 +15,11 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second 
 | Group member PUT body. | `apps/control-plane/src/routes/execution.ts:2811-2830` | writer, 2026-11-23 | holds |
 | Account page has API keys. | `apps/console/src/screens/Account.tsx:499-502; Account.test.tsx:46` | writer, 2026-11-23 | holds |
 | Node 24 or later. | `package.json:7` | writer, 2026-11-23 | holds |
+
+## Second check, 2026-11-23
+
+Checked by: second agent, 2026-11-23. Source commit `87000022`.
+
+| Claim | Source | Checked by | Result |
+| --- | --- | --- | --- |
+| The script, its calls, bodies and limits; the failures listed. | run log; `routes/execution.ts`, `routes/workspaces.ts` | second agent, 2026-11-23 | holds; the script was run again on the instance (see the run log) |

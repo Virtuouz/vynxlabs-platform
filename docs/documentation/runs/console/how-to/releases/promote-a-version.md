@@ -19,3 +19,14 @@
 ## Not run
 - The release branch commit and its failure and retry (no repository), `bindings_missing`, `bindings_invalid`, `rename_suspected`, `breaking_changes` and the `?fromRun=` button. The page describes them from `Release.tsx`, `PromotionConfirm.tsx` and `deploy.ts`.
 - The CLI command.
+
+## Second run (2026-11-23, second agent)
+- Instance http://localhost:8091 (an older build than HEAD `87000022`: it still says "Not bound here" and shows the old nothing-to-promote state). Names of this run: tenant Rel git (`relgit`) with workspaces Git dev (`gdev`), Git prod (`gprod`), clones `gclone-*`; in Fernhill only the earlier Rel dev and Rel prod (Amara Okafor asked and withdrew; Maya Brooks deployed `rel-moved` to Rel dev, a request by Amara for v4 is still waiting there).
+- The git server: a bare repository (`acme.git`, default branch `main` with a README, and `empty.git`) served over HTTP on http://127.0.0.1:8099 by a 30-line node server in front of `git http-backend`, with the token as the Basic-auth password (`good-token`; `bad` gave 401, `forbidden` 403). The instance accepts `http://127.0.0.1` and `http://localhost` addresses (and EGRESS_ALLOW permits them); every other `http://` address is refused with "must start with https://". No TLS was needed.
+- Walked at 390 px (no horizontal overflow on Git sync, Repository, Promote, Deploy, Settings, Workspaces, production Git sync; Git sync's buttons stack and wrap) and in dark (Promote with the breaking-names notice, the rest scrolled without overflow); keyboard and reload as part of the steps.
+
+- Run in Git dev -> Git prod: with a connection that a script uses and nothing set up in Git prod, **Promote** showed "It cannot be promoted yet." "The workspace is missing something this bundle needs. Set up each one, then promote again." and the line `/connections/courier the connection "courier" is not bound in this workspace` with a **Set up** link (to the target's Connections, `?setup=courier`); **Promote to production** was disabled. Without the use: promoted ("Git prod now runs version 2. Committed to release/gprod.").
+- Removing the script in dev and promoting: the notice "This changes a name that something outside calls." "The tool run_lab__call is removed with its script. An agent that calls it will fail." and the dialog "Promote to Git prod?" with "It also changes what an agent calls: The tool run_lab__call is removed …" (not confirmed).
+- The release branch commit and its retry: see the sync log.
+- Product fault, as the instance shows it: a workspace with nothing deployed. HEAD already fixes it; the instance does not.
+- Not run: `bindings_invalid`, `?fromRun=`, the CLI.

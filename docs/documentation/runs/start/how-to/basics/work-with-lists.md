@@ -18,3 +18,14 @@
 
 ## Not run
 - The keys j, k, x, Shift+J, Ctrl+A, the confirmation of Cancel and Run again, a batch with failures and 100-row groups, **Save over**, **Rename**, the Between… dates and the "Nothing matches" states.
+
+## Second check, 2026-11-23
+
+Maya Brooks, Fernhill Sandbox, **Runs**. 1440 px light for the keys and the batches; 390 px dark for the toolbar, the saved-views menu and the selection bar. I made 3, then 3, then 108 script runs set to start in an hour (the API, `startAfter`) so they could be canceled; they and a few earlier ones are now Canceled in the Sandbox, and 8 are still waiting for an hour on.
+- Keys: Tab into the table, x, j, k, Space, Esc, Shift+J (three times: 4 selected), Ctrl+A (100 selected of 158), **Clear**.
+- **Cancel** on 3 waiting runs: the question "Cancel 3 runs?", done. A run canceled by the API after it was checked: the batch said "2 done, 1 not done" with "The run already cancelled."; **Retry the one not done** (and "Retry the 2 not done" for two finished runs, still refused: they had succeeded).
+- 100 rows checked and canceled: one request of 100. **Load more** to 110 rows, Ctrl+A, **Cancel**: two requests, 100 then 8, answers added.
+- **Run again** on two finished runs: "Run 2 runs again?" with the text on the page; the Succeeded count rose.
+- Saved views: saved, chose it, changed the filter and **Save over**, **Rename**, **Delete**; the notice and the questions as on the page.
+- **Between…** shows **From** and **To**. A search with no result and a status with no runs both showed "Nothing matches these filters".
+Not run: the **Row density** and **Columns** steps again (the writer ran them), and **Cancel by age…** itself.

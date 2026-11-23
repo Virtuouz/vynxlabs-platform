@@ -44,7 +44,7 @@ An ID older than the window is found only under **Everything kept** or **Between
 
 A canceled run reads **Canceled** and stays in the list, under the **Canceled** chip. A script run stops where it is: the worker stops it at its next check. A flow run stops with every step it has going. A run that has not started never starts. Canceling also publishes `platform/run-finished` for a script run, with the status `cancelled`.
 
-**Cancel runs by age** and **Cancel N queued** cancel up to 10,000 runs at a time. When more are left the notice says "N flow runs canceled. More are left: cancel again." or "N queued runs canceled. More are left: cancel again." Press the button again.
+**Cancel runs by age** and **Cancel N queued** cancel up to 10,000 runs at a time. When more are left the notice says "N flow runs canceled. More are left: cancel again.", "N script runs canceled. More are left: cancel again." or "N queued runs canceled. More are left: cancel again." Press the button again.
 
 ## If it does not work
 

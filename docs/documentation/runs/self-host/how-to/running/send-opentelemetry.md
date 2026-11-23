@@ -11,3 +11,7 @@ Not known.
 
 ## Not run
 Everything on this page.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run with a node OTLP/HTTP receiver: `/v1/metrics` and `/v1/traces` posted as JSON, header `x-api-key=k%25ey` arrived decoded (`k%ey`), a request with a traceparent joined that trace (x-trace-id equal), metrics every 2 s with OTEL_METRIC_EXPORT_INTERVAL=2000, series names as the Prometheus ones; a collector that is down logged `telemetry could not be sent` once (`telemetry.ts:259-337`). Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

@@ -14,5 +14,15 @@
 ## The page got wrong (and was corrected)
 - None found in this run.
 
-## Not run
+## Second check (2026-11-23, second agent)
+
+The instance was http://localhost:8091 (a tenant of my own, `api-check2`, with a workspace `agent-ws`; keys and tokens revoked at the end).
+
+- Run now: a change that waits (202), decision (approve, decline, withdraw), `own_release`, rollback (read and apply, with approval on and off), `volvel tenant pull`, `plan`, `release`, `approve`, `releases`, `approval`.
+- Not reproduced: `release_stale` (see the record: superseded comes first for every change made through a route).
+
+The console key screen, the Agent tools tab and Members & access were walked at 1440 px, at 390 px and in dark (the key screen: create, one-time key, revoke; Agent tools: workspace choice, address, settings, Tools offered, Try): no overflow at 390 px, the settings block scrolls inside itself, dark has no contrast fault.
+
+## Not run (before the second check)
+
 A change that waits (202), a decision, `own_release`, `release_stale`, rollback (read or apply), `volvel tenant plan`/`release`.

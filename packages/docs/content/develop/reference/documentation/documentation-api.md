@@ -21,14 +21,14 @@ The answer is as whoever writes sees the workspace: a draft is laid over the pag
 
 | Field | What it holds |
 | --- | --- |
-| `apps` | One entry for each docs app: `path`, `key` (the app's key, which a rename keeps), `title`, `docs` (the folder it serves), `feedback` (the table, or null), `published`, `body`, `url`, `preview` (the same address followed by `_draft/`). |
+| `apps` | One entry for each docs app: `path`, `key` (the app's key, which a rename keeps), `title`, `docs` (the folder it serves), `feedback` (the table, or null), `published`, `body`, `deployed`, `drafted`, `url`, `preview` (the same address followed by `_draft/`). |
 | `pages` | One entry for each page: `path`, `title`, `description`, `pages`, `topic`, `app`, `url`, `state` (`deployed`, `changed`, `new` or `removed`), `file` (the repository file, or null), `headings`, `terms`, `source` and `revision` (the draft's, to send back with a save; null without a draft). |
 | `issues` | Pages that take a term or a topic the product's own help has: `app`, `path`, `code`, `message`. A deploy refuses them, and one deployed before the product took the name loses it silently. |
 | `tables` | The workspace's tables as its writers see them. To someone who may read only the documentation, the tables its apps name and `docs-feedback`. |
 
 ## One page: `/docs/page/<path>`
 
-Answers `page` (as above), `source` (the draft when there is one, and what is deployed otherwise), `revision` and `deployedSource` (what is deployed, when a draft is over it). A path that is not a page is 404, "The page at <path>".
+Answers `page` (as above), `source` (the draft when there is one, and what is deployed otherwise), `revision` and `deployedSource` (what is deployed, when a draft is over it). A path that is not a page is 404, "The page at <path> was not found."
 
 To save the page, send `PUT` of the draft with the `revision` you were given: a save that names an older one is refused with 409 `draft_changed`, "Someone else saved this draft after you opened it. Reload it, then make your change again." A new page says `create: true`, and a path that is taken is 409 `path_taken`.
 

@@ -89,8 +89,8 @@ The check explains its answers:
 - **Allowed**: "<name> holds `x:y` everywhere in the tenant." or "only in: <places>."
 - When every source of the permission is an operator's access grant, it adds "It comes only from operator access, which ends when the grant does."
 - **Denied** because the member is suspended: "<name> is given `x:y`, but none of it counts while they are suspended. It counts again when they are resumed."
-- **Denied** for an explicit permission (`sql:read`, `workspace_production:write`) when they hold `*:*`: "<name> holds `*:*`, which gives every permission except those given by name, and `x:y` is one of those."
-- **Denied** otherwise: "<name> does not hold `x:y` anywhere."
+- **Denied** for an explicit permission (`sql:read`, `workspace_production:write`) when they hold `*:*` and no role lists it: "<name> holds `*:*`, which gives every permission except those given by name, and `x:y` is one of those. A role that lists it, bound to them or a group of theirs, would give it."
+- **Denied** otherwise: "<name> does not hold `x:y` anywhere. A role with it, bound to them or a group of theirs where it is needed, would give it."
 
 A line "A role they hold gives every permission except those given by name (`*:*`): each is listed with it." appears for a member who holds `*:*`.
 

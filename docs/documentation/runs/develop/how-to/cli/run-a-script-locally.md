@@ -20,3 +20,9 @@ In a repository with a connection `shop`, a secret `SHOP_NOTE` and a script `ord
 
 ## Not run
 `groups` in `local.json`; a connector the repository declares; the `smtp` message, the tables/sources/files messages, events and tags (read from `cli/local.ts`); `credential`.
+
+## Second check, 2026-11-23 (second agent)
+Instance http://localhost:8091 (same throwaway instance), CLI and SDK from fresh `pnpm pack` tarballs installed with npm into a scratch folder; no request left localhost. Tenant made for this check: `docs-cli-check` (operator grant for the operator admin), workspaces `cli-dev` (dev) promoting to `cli-live` (production), service accounts `ci-deployer` (`deployer` in both) and `ci-ship-only`. API keys made for the check were revoked or are of this tenant. Walked the console screens the page names at 390 px in dark (Account's API keys with the Create API key dialog; the tenant's Service accounts and a service account's Keys tab): no horizontal overflow of the page, reload not needed for the steps.
+- `groups` run with two local HTTP servers (members `north` with a label, `hq` without; a missing member; no group section), a connector the repository declares, `smtp`, tables, events and tags, `console.log`. Page corrected: `console.log` prints to the terminal (it said it was not collected); the `groups` bullet and the tags text were completed.
+- Link to testing now points at `develop/how-to/scripts/test-scripts-in-code`.
+- Not run: `files` and `sources` messages (same `notLocal` function as tables).

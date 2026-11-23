@@ -14,5 +14,15 @@
 ## The page got wrong (and was corrected)
 - None found in this run.
 
-## Not run
+## Second check (2026-11-23, second agent)
+
+The instance was http://localhost:8091 (a tenant of my own, `api-check2`, with a workspace `agent-ws`; keys and tokens revoked at the end).
+
+- Run now: the flow-run repeat (200), a 400 for a key over 200 characters.
+- Not run: a rename between the two requests, a guest's 403.
+
+The console key screen, the Agent tools tab and Members & access were walked at 1440 px, at 390 px and in dark (the key screen: create, one-time key, revoke; Agent tools: workspace choice, address, settings, Tools offered, Try): no overflow at 390 px, the settings block scrolls inside itself, dark has no contrast fault.
+
+## Not run (before the second check)
+
 The flow-run repeat (200), a rename between the two requests, a 400 for a key over 200 characters, a guest's 403.

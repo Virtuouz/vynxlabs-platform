@@ -17,5 +17,15 @@
 ## The page got wrong (and was corrected)
 - A first draft said a role given to a service account always waits for approval; the code and the run show it waits only at the tenant or a workspace, not at one resource.
 
-## Not run
+## Second check (2026-11-23, second agent)
+
+The instance was http://localhost:8091 (a tenant of my own, `api-check2`, with a workspace `agent-ws`; keys and tokens revoked at the end).
+
+- Run now: the console's **Create API key** and **Revoke** buttons.
+- Not run: a key made through an `Origin`-less browser, `sso_required`, a disabled owner, a binding at the workspace scope with approval on (the access run covers a tenant-scope binding).
+
+The console key screen, the Agent tools tab and Members & access were walked at 1440 px, at 390 px and in dark (the key screen: create, one-time key, revoke; Agent tools: workspace choice, address, settings, Tools offered, Try): no overflow at 390 px, the settings block scrolls inside itself, dark has no contrast fault.
+
+## Not run (before the second check)
+
 The console's **Create API key** and **Revoke** buttons, a key made through an `Origin`-less browser, `sso_required`, a disabled owner, a binding at the workspace scope with approval on.

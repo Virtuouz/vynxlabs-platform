@@ -26,3 +26,5 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Same IDs after import | `apps/control-plane/src/kernel/tenancy/import.ts:380` | writer, run (the tenant's ID is the same in tenant.exported and tenant.imported entries) | |
 | CLI import flags --slug --location | `packages/cli/src/cli.ts:880` | writer, code | |
 | Throw it away removes the file | `apps/console/src/screens/Environments.tsx:1512` | writer, run | |
+
+Checked by: second agent, 2026-11-23. Re-run on the instance with my own tenants (see the run log): the delete dialog and its slug gate; export, delete, import with a wrong and a right passphrase, a slug, and a database location. Texts compared with the screen and the code (`Environments.tsx:1578, 1281, 1322-1333`; `routes/portability.ts:24`). fault: instance ("All 0 workspaces arrived" for a tenant with none; "Delete anyway" dialog without a full stop).

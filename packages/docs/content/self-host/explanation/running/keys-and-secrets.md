@@ -19,7 +19,7 @@ A tenant's own secrets (secret values, connection credentials, data source passw
 
 Without the master key, no stored secret can be read again. Keep a copy somewhere that is not the instance's own disk. A wrong `MASTER_KEY` stops the instance at start, when it cannot open the data role's seed.
 
-**`AUTH_SECRET`** (at least 32 characters) signs sign-in cookies. The DNS records that prove a hostname or a single sign-on domain (`_vx-challenge`) are made from it. It seals nothing: API keys, bundles, secrets and runs do not depend on it.
+**`AUTH_SECRET`** (at least 32 characters) signs the console's sign-in cookies. The DNS records that prove a hostname or a single sign-on domain (`_vx-challenge`) are made from it. It seals nothing: API keys, bundles, secrets and runs do not depend on it.
 
 ## A second key
 

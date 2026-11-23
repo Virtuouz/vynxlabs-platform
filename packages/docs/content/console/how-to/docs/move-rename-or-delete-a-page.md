@@ -59,7 +59,7 @@ The tree shows the new place and name, with a draft mark. Press **Deploy N chang
 
 ## If it does not work
 
-- **"There is already something named <name> here."** A page or folder has that name in the folder. Choose another.
+- **"There is already something named <name> here."** (a move says "…named <name> in <folder>.") A page or folder has that name in the folder. Choose another.
 - **"A folder cannot go inside itself."** A folder cannot be moved into a folder under it.
 - **"A page goes in a folder. Top-level folders are the sites."** Pages are not made or moved to the top level.
 - **"Use lowercase letters, numbers, - and _."** Press **Use <name>** to take the suggested name.

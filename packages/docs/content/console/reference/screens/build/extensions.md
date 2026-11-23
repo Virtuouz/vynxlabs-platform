@@ -54,7 +54,7 @@ A row for a draft reads the draft itself, not what is deployed under the same pa
 | Failed | A red notice shows the server's message above the list. |
 | Empty | **No extensions yet**: "HTTP and mail connections need none. Write a connector when an outside system wants more than an address and a key, and a trigger source when a sender signs its requests in a way of its own, or has to be asked what is new." |
 
-In a production workspace the two buttons are not shown. Opening a row there shows its code read-only, with the notice "This is a production workspace. Connector is changed in" the dev workspace "and reaches production by promotion." (For a trigger source, **Trigger source** starts the sentence.) Extensions reach production when a version is promoted.
+In a production workspace the two buttons are not shown. Opening a row there shows its code read-only, with the notice "This is a production workspace. Connector is changed in <dev workspace name> and reaches production by promotion." The name is the linked dev workspace's; with none linked it reads "a dev workspace". For a trigger source, **Trigger source** starts the second sentence. Extensions reach production when a version is promoted.
 
 ## Permissions
 
@@ -71,5 +71,5 @@ With the switch off, a save or a deploy of code is refused with "Writing code in
 
 - [The extension editor](extension-editor): every field and control of the editor.
 - [Connections](../configure/connections): where a connection that uses a connector is set up and tested.
-- [Triggers](../operate/triggers): where a refusal by a trigger source is shown, as **Last refused**.
+- [Triggers](../operate/triggers): where what a trigger source gave and could not start is shown, as **Last refused**. A source that answers `{ accept: false }` leaves its reason only in its own run on **Runs**.
 - [Flow steps from code](../../../../develop/how-to/extensions/flow-steps-from-code): a script as a step.

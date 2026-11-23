@@ -12,7 +12,7 @@ By the end you will have a button on a page that starts a flow, shows its status
 
 - The app and the flow or script it starts are deployed to the workspace. This page uses the Desk app of [Write an app as code](write-an-app), a flow `welcome` with a manual trigger that takes `{pet}`, and the script `check-in`.
 - The people who use the app are signed in, and bound to start what the page starts: a role with `flow_run:write` at the flow, or `run:write` at the script. A flow run and a script run can be read by the person who started it. The built-in portal roles do not hold either permission: define one, as in [Write an app as code](write-an-app).
-- Whoever opens the app has to be signed in. A guest who starts a flow or a script gets 403, "Sign in to start a flow. A run started by someone who is not signed in cannot be read back." A form on a page can still start a run for a guest.
+- Whoever opens the app has to be signed in. A guest who starts a flow or a script, where a binding lets guests start it, gets 403, "Sign in to start a flow. A run started by someone who is not signed in cannot be read back." Where no binding does, the call is refused as not signed in (401). A form on a page can still start a run for a guest.
 
 ## Start a flow and follow it
 

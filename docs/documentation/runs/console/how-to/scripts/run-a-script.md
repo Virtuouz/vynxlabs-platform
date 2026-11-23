@@ -16,3 +16,8 @@
 
 ## Not run
 Cancel run on a running run (the script finishes in under a second), a masked input, a flow's step, a guest, dark theme, 768 and 390 px, keyboard-only.
+
+## Second check, 2026-11-23
+- Walked by the second agent, 2026-11-23, on http://localhost:8091 as Maya Brooks in Fernhill's Sandbox: the scripts list with its inspector, the run dialog, the script's page, its Settings form and the editor, in dark and light at 768 and 390 px (no sideways scroll, nothing cut off) and by keyboard (g then s; Enter on Run opens the dialog with the focus in it and Esc closes it and returns the focus to Run; Ctrl+Enter; Enter on the Settings summary opens it).
+- A guest start was run through the API, since no app here lets a guest start a script: an anonymous binding of `agent_runner` was made (it landed at the whole workspace, by a mistake in the request, and was deleted at once; the bindings list held no anonymous binding afterwards). An unsigned POST to `runs` answered 403 "Sign in to start a script. A run started by someone who is not signed in cannot be read back." Before the binding it answered 401 "Sign in or send an API key." The page now says both.
+- Still not run: Cancel run on a running run (the script ends in under a second), a masked input, a flow's step.

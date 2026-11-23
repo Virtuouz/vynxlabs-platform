@@ -16,3 +16,7 @@
 - The token dialog and **Revoke** were not driven in the console, only the API behind them; the texts are from the code.
 - Groups pushed, a hand-made group refused with 409, a member provider's push, the tie by `externalId`, and the paused-provider 403 were not run.
 - Keycloak has no SCIM sender, so the pushes were sent by hand.
+
+## Second check, 2026-11-23 (second agent)
+- Run now with curl against the end-users provider `Acme Keycloak portal`, with a token made for it: a wrong token, 401; `ServiceProviderConfig`; a user created (201) and found by `userName eq`; a filter with `co`: 400 with the page's message; no email: 400 with the page's message; `count=500` returns at most 200; a second user with the same external ID: 409 `uniqueness`; a group created with that user as a member; `active: false` by PATCH; `Bulk`: 404; the provider paused (set in the database): 403 with the page's words; a user and a group deleted (204).
+- Not run: a push to a provider of members, the tie by `externalId` to a sign-in, a push for a person who runs the instance.

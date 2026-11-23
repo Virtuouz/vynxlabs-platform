@@ -15,3 +15,11 @@
 - The retry question and the **Retry** button were not quoted.
 - The date and unit fields are **Amount** and **Unit**.
 Not reached: **Cancel by age** confirmed, a retry on another version, a sub-flow run, a conflict refusal.
+
+## Second check, 2026-11-23 (second agent)
+
+On the walk instance, Maya Brooks, in a workspace of my own: Fernhill tenant, dev workspace `flows-check` (created with triggers running, so the shared Sandbox's paused triggers were not touched). Flows `flows-approve/mail`, `flows-hook/signed`, `flows-form/intake`, `flows-sched/tick`. Scripts in `/home/gplascencia/.local/share/volvel-walk/flows31/` (`h2.mjs` to `h15.mjs`, `w1.mjs`, `w2.mjs`).
+
+Started `flows-approve/mail` and pressed **Cancel flow run**, then **Cancel flow run** in the dialog: the run ended **Canceled**. Read in the code: the retry refusals (routes/flows.ts:1230-1253). The run page was opened at 390 px, light and dark.
+Not run: **Cancel by age** confirmed (it cancels every going run in the workspace), a retry on another version, a sub-flow run.
+Fault noted: a canceled flow run publishes no `platform/flow-run-finished` although the generated events page says it is sent however the run ended.

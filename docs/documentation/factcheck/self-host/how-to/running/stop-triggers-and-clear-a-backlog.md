@@ -1,6 +1,6 @@
 # Fact-check: self-host/how-to/running/stop-triggers-and-clear-a-backlog.md
 
-Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the writer; the second agent's column is open.
+Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -10,3 +10,7 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the wr
 | `SCHEDULE_BACKLOG_LIMIT` 200, 0 is off. | `config.ts:352` | writer, 2026-11-23 | holds |
 | `volvel runs cancel --tenant --workspace [--queued|--all] [--older-than]`. | `packages/cli/src/commands.ts:187` | writer, 2026-11-23 | holds; not run |
 | **Cancel N queued** on Runs. | `apps/console/src/screens/Runs.tsx:875` | writer, 2026-11-23 | holds |
+
+## Second check (2026-11-23)
+
+Run: CLI `volvel instance triggers`, `pause --reason`, `resume`; with TRIGGERS_PAUSED=true the API keeps answering paused/byEnvironment true; `volvel runs cancel --queued` canceled 3 queued runs, `--older-than` 0, `--all` 0 and 0 flow runs. Console buttons exist (`InstanceTriggers.tsx`, `Runs.tsx:410`). A refused webhook was not run.

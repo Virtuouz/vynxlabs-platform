@@ -1,17 +1,14 @@
 # Run log: console/how-to/widgets/run-an-action-from-a-widget.md
 
-- Instance: http://localhost:8091, the throwaway instance seeded by `examples/fernhill/setup/setup.mjs`, commit `14f7d5b9` (branch phase-31-write-the-docs).
-- Signed in as Maya Brooks (tenant admin), Fernhill's Sandbox workspace, headless Playwright, light theme, 1440 px unless said. The app is `wdg Visits` (address `wdg-visits`) made in the App Builder for these runs.
-- The steps were run in pieces and the page written from what was seen; one end-to-end run of the finished text was not made.
+- Instance: http://localhost:8091, the throwaway instance seeded by `examples/fernhill/setup/setup.mjs`. Signed in as Maya Brooks (tenant admin), Fernhill's Sandbox workspace, headless Playwright. Second check, 2026-11-23.
+- App `wdg Choose` Table, steps 1 to 7 followed and published; served at 1440 px light. Mark done on A-7685 and A-7686 (Fernhill's Sandbox rows, now `done`; the booked group went 24 to 22 and the notice "Marked done." showed). The button was disabled on a done row (Only when Status is booked). A second action "Break it" was used once to put a row I had set to `bogus` back to `booked` (Status takes any text); then changed to an Update plus a Make a record with no fields: the error notice "Some of what was typed needs another look." showed and the Update was not saved. "Desk only" with Group Front desk was grayed for Maya and the publish check said "Try as Front desk first".
+- When a row is clicked > Do lists Do nothing, Open record detail, Go to a page, Run an action.
+- 390 px and dark: the served Table at 390 px light and dark (list view; row buttons are on hover or touch).
 
-## The steps as followed
-- Actions tab: "+ Row action" added "Action"; Says "Mark done"; Add a step menu: Ask to confirm, Update the record, Make a record, Remove the record, Run a flow, Run a script, Open a page, Show a message. Update the record: "The clicked appointment", + Set another field (the column list), Status becomes a value list (A value, Today, Now, The current user ..., Status of the clicked appointment ...). Value typed `done`.
-- Ask to confirm added as step 1; the canvas showed a preview "What people will see · step 1" with Cancel and Confirm. Stray extra actions made while exploring were removed with "Remove Action 2".
-- Published; in the served app a row's Mark done opened "Mark done for the appointment A-7687 of Willow on Dec 4?" with Cancel and Mark done. Pressing Mark done changed that appointment's status to `done` (this instance's Fernhill sandbox data), and the "booked" group count went from 25 to 24.
-
-## The page got wrong (and was corrected)
-- In the builder, the row's buttons are drawn grayed and cannot be pressed.
-- The confirm text says Dec 4 for a row the cell shows as Dec 3, 6:20 PM (product fault, in the report, not on the page).
+## What the page got wrong, and the correction
+- The rule under Only when… starts as "Current user is in billing"; the page now says how to make it a rule about the row.
+- The confirm text example now reads A-7685 of Rosie on Dec 3 (a 6:20 PM row still reads one day late: product fault).
+- A refused step saves nothing at all, not only that step.
 
 ## Not run
-Can be pressed when, Who can run it with a group, When it is done, say, Ask for a field, a flow or script step, When a row is clicked, the failure path, several rows.
+Ask for a field, Run a flow, Run a script, Open a page and Make a record with fields as steps (menu seen only); the 8-step limit.

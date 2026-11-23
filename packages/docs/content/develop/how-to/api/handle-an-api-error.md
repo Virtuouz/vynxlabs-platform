@@ -94,5 +94,6 @@ Your client takes the `status` and the `code` of every refusal, waits when told 
 ## If it does not work
 
 - **The body is not JSON.** A reverse proxy or a gateway answered. The instance always answers with `application/problem+json`.
+- **413 `payload_too_large`, "Request body is too large".** The request body is over the limit of the route. A webhook takes at most 1 MiB. Send less.
 - **400 "The filter must be JSON." or "The cursor is not valid."** A `filter` is a JSON string in the query, URL-encoded. A `cursor` is passed back as it was given. See [Page through a list](page-through-a-list).
 - **Which codes can this route answer?** The API reference lists the classes of answer for each route (400, 401, 403, 404, 5XX). It does not list the codes one route can answer: use the list of all codes.

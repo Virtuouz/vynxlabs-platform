@@ -17,3 +17,8 @@
 
 ## Not run
 Flow run, cancel, exit codes 1 and 3, a missing permission, `console_code_off`.
+
+## Second check, 2026-11-23 (second agent)
+Instance http://localhost:8091 (same throwaway instance), CLI and SDK from fresh `pnpm pack` tarballs installed with npm into a scratch folder; no request left localhost. Tenant made for this check: `docs-cli-check` (operator grant for the operator admin), workspaces `cli-dev` (dev) promoting to `cli-live` (production), service accounts `ci-deployer` (`deployer` in both) and `ci-ship-only`. API keys made for the check were revoked or are of this tenant. Walked the console screens the page names at 390 px in dark (Account's API keys with the Create API key dialog; the tenant's Service accounts and a service account's Keys tab): no horizontal overflow of the page, reload not needed for the steps.
+- Ran: a flow run (`waits`, an approval step) followed and canceled with `runs cancel --all` (exit 3); a script run canceled (exit 3, `Cancelled.`); a failed run (`Failed: Boom on purpose`, exit 1); Ctrl+C on `logs -f` (`Stopped following...`, exit 130); `runs cancel` with no queued runs, `--queued --all`, `--older-than 0`. No page change.
+- Not run: a missing permission; `console_code_off` (tenant switch left on).

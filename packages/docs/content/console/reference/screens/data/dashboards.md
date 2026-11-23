@@ -33,7 +33,7 @@ A person who may not read drafts sees dashboards as they are deployed.
 
 ### New dashboard
 
-**New dashboard** opens "New dashboard": "It is yours alone until you choose to share it." It asks for a **Name** of up to 100 characters and its button is **Make the dashboard**. A name that is too long says "Use at most 100 characters." on the field. It opens the new dashboard in the editor. A member may keep 20 dashboards in a workspace: at the limit it says "A member can keep 20 dashboards in a workspace. Delete one first."
+**New dashboard** opens "New dashboard": "It is yours alone until you choose to share it." It asks for a **Name** of up to 100 characters and its button is **Make the dashboard**. A name that is too long says "Use at most 100 characters. This is N." on the field, and the button is off. It opens the new dashboard in the editor. A member may keep 20 dashboards in a workspace: at the limit it says "A member can keep 20 dashboards in a workspace. Delete one first."
 
 ### States of the list
 
@@ -45,7 +45,7 @@ A person who may not read drafts sees dashboards as they are deployed.
 
 ## One dashboard, looked at
 
-The title is the dashboard's name. Under it is its description, or when it has none, a line about whose it is. That line says "Yours. Seen by: <who>." for your own, "<owner>'s, shared with you. You see the rows you may read." for another's, and "Kept by the workspace, at <path>. You see the rows you may read." for a resource. When a dashboard has a description, that line goes under it.
+The title is the dashboard's name. Under it is its description, or when it has none, a line about whose it is. That line says "Yours. Seen by: <who>." for your own (<who> is "only you", "everyone in this workspace", or the names of the groups written in lower case), "<owner>'s, shared with you. You see the rows you may read." for another's, and "Kept by the workspace, at <path>. You see the rows you may read." for a resource. When a dashboard has a description, that line goes under it.
 
 A line under it gives its freshness: "Last refreshed <time>" (or "Refreshing" while the first read is out, or "Nothing could be read"), then " · N widgets could not be read" when some failed, then "Refreshes every 5 minutes" or "Does not refresh by itself". The button **Refresh now** reads every widget again.
 

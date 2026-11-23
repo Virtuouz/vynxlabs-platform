@@ -21,3 +21,19 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | "Nothing matches “…”." / "Type to find something." / "The search failed. What is typed may still be there; try again." with Request ID and Try again. | `kit/CommandPalette.tsx:822-840`; run | writer, run | holds as run |
 | Recent keeps 20 per tenant, shows 8; only for a member; not drafts never deployed. | `routes/search.ts:293-420`; `recent.ts` | writer | holds |
 | Outside a tenant no search of objects. | `kit/CommandPalette.tsx:297-300` (`!tenantId`) | writer | holds |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. All rows re-read against `kit/CommandPalette.tsx`, `kit/shortcuts.ts` and `routes/search.ts`; run on the instance in Fernhill's Sandbox as Maya Brooks at 1440 px light and 390 px dark.
+
+| Claim | Source / run | Result |
+| --- | --- | --- |
+| `/` then Enter on **Run script…** lists deployed scripts; choosing one opens the dialog **Run {path}** with **Start** (**Now** / **Later**), **Priority**, the input in fields or **JSON**, buttons **Cancel** and **Run**; **Run** opened the run page (Succeeded). The page lacked Now/Later and Priority: added. | `kit/CommandPalette.tsx:378-430,921-944`; `InputDialog.tsx:76-130`; run | corrected |
+| **Start flow…** lists flows that have a manual trigger; the dialog is **Start {path}** with **Start flow** (**As JSON** when the flow takes no fields); **Start flow** opened the run (Waiting for approval). | `kit/CommandPalette.tsx:402-415`; run (`flows-approve/discount`) | holds as run |
+| A flow that was never deployed is listed in the picker, and **Start flow** says "The flow tut-approve was not found." | `kit/CommandPalette.tsx:402-415` (no filter on a deployed version, unlike scripts); run | fault: the flow picker lists a flow that was never deployed. Page row added. |
+| Backspace on an empty box leaves the picker; it returns to the list shown with nothing typed (Recent, Screens, Actions), not to the actions. | `kit/CommandPalette.tsx:794-795`; run | corrected |
+| `>` and the first 8 hex characters of a run ID: lists runs whose ID starts so (an ID begins with the time it was made, so runs within about a minute share 8). | `routes/search.ts:44-52,183-200`; run | holds as run; sentence added |
+| Outside a tenant (the **Tenants** screen) with nothing typed: **Screens** (your tenants, **Account**) and **Actions** (4: dark theme, API description, Help, Keyboard shortcuts); typing finds screens only. Note that opening `/` takes a returning member into a workspace, so use the rail's **Tenants** to see it. | `kit/CommandPalette.tsx:278,297-300`; run | holds as run |
+| "The search failed. What is typed may still be there; try again." with "Request ID" and **Try again** (the search request answered 500 in the browser). | `kit/CommandPalette.tsx:822-840`; run | holds as run |
+| Header button **Search or jump to…** opens the dialog at 390 px (header, no rail); the palette fits and scrolls. | run at 390 px dark | holds as run |
+| 12 pins (`slice(0, 12)`), 8 recent shown, 20 kept, 12 screens, 4 actions. | `kit/CommandPalette.tsx:260,702-704`; `routes/search.ts:100,320,427` | holds |

@@ -16,3 +16,5 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | Derived values: field, hover, ring, track, scrim, shadows, control height. | `packages/ui/src/tokens.css:159-214` | writer | holds for field, hover, ring, track, scrim; shadows and control height not re-read |
 | Console branding set by the operator; tenant Branding screen. | `nav.ts:206, 285`; `apps/control-plane/src/routes/branding.ts` | writer | holds |
 | Fernhill's theme values. | `examples/fernhill/src/apps.ts:1228-1236` | writer | holds |
+
+Checked by: second agent, 2026-11-23. Run on a dev workspace of my own (`ext31-dev`): the deploy, `theme.css` (all three blocks, `action-soft` kept from the tenant's branding), the second-theme, `url(`, `var(` and unknown-token refusals; the unknown-token text corrected on the page. The 27 tokens and their words checked against `packages/manifest/src/kinds.ts:1608-1636` (THEME_TOKENS, 27 entries, order differs from the page's table, which groups them; every name is in the table).

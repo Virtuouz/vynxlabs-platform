@@ -17,3 +17,7 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | What I may do here: own member page; description text. | `Shell.tsx:681-690`; run | writer, run | holds as run |
 | An API key has its member's permissions. | `screens/Account.tsx` (key panel text) | writer | holds |
 | The server decides again on each request. | `kit/Can.tsx:35-45` (comment) | writer | holds |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Strings found: "You can see {what}, not change it. It needs `{permission}`" with ", or … alone" (`kit/Can.tsx:187-188`), the two "Ask …" sentences (`api.ts:7-14`), "Nothing you can see needs you here" and "Some of this you cannot see" (`screens/Overview.tsx:510-511`), "Everything you may do in this tenant, where, and what gives it." (`screens/Access.tsx:288`), "Read only: this is the production workspace…" (`screens/builder/ReadOnly.tsx:34`), "Resources are edited in a dev workspace…" (`kernel/authoring.ts:75`), the "For operators" screen words (`screens/NotFound.tsx:32`), **What I may do here** (`Shell.tsx:684`; seen in the account menu on the instance). No correction.

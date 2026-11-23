@@ -13,9 +13,14 @@ The commands below were run as written from a shell with `CI`, `VOLVEL_URL` and 
 ## Before you start
 
 - A service account for the pipeline, and an API key for it. A key made under **Account** acts as you; a key of a service account acts as that account. Make it on the tenant's **Service accounts** page: **Create service account**, then **Create API key** on its **Keys** tab. That needs `service_account:write`. See the [service accounts reference](../../../administer/reference/screens/service-accounts).
-- The service account holds, in the dev workspace, a role with `bundle:write`, `deployment:write` and the reads: the built-in `deployer` role holds `*:read`, `bundle:*` and `deployment:*`. To promote it also needs `promotion:write` in the production workspace. `deployer` does not hold that one, so give the account another role there. See the [permissions reference](../../../administer/reference/permissions).
+- The service account holds, in the dev workspace, a role with `bundle:write`, `deployment:write` and the reads: the built-in `deployer` role holds `*:read`, `bundle:*`, `deployment:*` and `promotion:write`. To promote, the account needs `promotion:write` in the production workspace: give it `deployer` in both workspaces. A role without `promotion:write` is refused with "This needs the promotion:write permission." See the [permissions reference](../../../administer/reference/permissions).
 - The CLI can be installed in the job. Nothing is published to npm yet: until it is, the job needs the tarballs from [Install the command line](install-the-cli) in a place it can reach. After a release, `npm install --global @volvel/cli` does it.
+- A `package-lock.json` committed in the repository: `npm ci` refuses a folder without one, and `volvel init` does not write it. `npm install` makes it.
 - The repository's secrets `VOLVEL_URL` and `VOLVEL_TOKEN`: the address of the instance, and the key.
+
+:::alert[A service account's key is refused today]{type=warning}
+Every command that takes `--tenant` first lists the tenants of the person signed in, and the instance answers a service account's key with 403: `Could not list tenants. This is only for a person signed in, not for a service account's key.` `volvel whoami` and the API accept the key; `deploy`, `promote`, `rollback`, `run --remote` and `pull` do not. A key made under **Account** acts as you and works in a job, with everything you hold.
+:::
 
 ## The pipeline
 

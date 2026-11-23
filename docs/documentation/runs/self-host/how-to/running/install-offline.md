@@ -11,3 +11,7 @@ Not known.
 
 ## Not run
 Everything specific to this page.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run on one machine: `docker save` of the three images (609 MB), `docker load`, `up -d --wait --no-build` started the services from loaded images (control plane stopped only on a port clash with another stack). Two-machine transfer not run. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

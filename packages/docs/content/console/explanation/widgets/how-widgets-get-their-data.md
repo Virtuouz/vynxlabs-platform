@@ -44,7 +44,7 @@ A widget is never left blank without saying why. In the builder, a widget with n
 
 ## How a page stays current
 
-A page reads again after every action a person runs from it. When the action started a flow or a script, it reads again after one, three and eight seconds. A dashboard may refresh by itself every 1, 5, 15 or 60 minutes, or never, and it does not while it is being edited.
+A page reads again after every action a person runs from it. When the action started a flow or a script, it reads again after one, three and eight seconds. A dashboard refreshes by itself every 5 minutes unless it says 1, 15 or 60, or never, and it does not while it is being edited.
 
 ## What is not there
 

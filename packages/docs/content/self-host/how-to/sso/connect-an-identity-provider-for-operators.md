@@ -36,7 +36,7 @@ By the end the people who run the instance can sign in through your organization
 
 ## The result
 
-The provider is listed with the state **on**. A person whose email is in a domain, with an account, signs in with its button. A person with no account sees "There is no account here for you yet. Ask your administrator for one."
+The provider is listed with the state **On**. A person whose email is in a domain, with an account, signs in with its button. A person with no account sees "There is no account here for you yet. Ask your administrator for one."
 
 ## If it does not work
 

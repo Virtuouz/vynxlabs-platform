@@ -25,9 +25,9 @@ Version numbers belong to a workspace. The same bundle can be version 9 in a dev
 | Travels in a version | Stays in the workspace |
 | --- | --- |
 | Scripts, flows, apps, queries, table definitions and the other resources of the bundle. | Table rows and files: they are the data this workspace keeps. |
-| The names of the connections, secrets, variables and data sources a script uses. | What those names are bound to: a connection's settings, a secret's value, a variable's value. Each workspace has its own. |
+| The names of the connections, secrets, variables and data sources a script uses. | What those names are set up as here: a connection's settings, a secret's value, a variable's value. Each workspace has its own. |
 
-A deploy to a production workspace, and any promotion, is refused when the bundle uses something that has nothing bound in that workspace: "The workspace is missing something this bundle needs. Set up each one, then deploy again." (or "promote again"). A deploy to a dev workspace goes ahead and warns, and a run that reaches the missing thing fails with the same words. This is why the overview of a new workspace counts connections with "nothing bound here".
+A deploy to a production workspace, and any promotion, is refused when the bundle uses something that is not set up in that workspace: "The workspace is missing something this bundle needs. Set up each one, then deploy again." (or "promote again"). A deploy to a dev workspace goes ahead and warns, and a run that reaches the missing thing fails with the same words. This is why the overview of a new workspace says "{n} connections are not set up here".
 
 A trigger does not start work in a dev workspace until you resume it: a new dev workspace starts with its triggers paused, so that a schedule you try there does not run beside production's. Runs you start by hand still work.
 

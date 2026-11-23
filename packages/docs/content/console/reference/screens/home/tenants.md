@@ -77,7 +77,7 @@ The inspector's footer holds:
 | **Name** | The tenant's name. |
 | **Slug** | "Lowercase letters, digits and hyphens. It cannot be changed later." |
 | **Database location** | Optional. Leave empty for the instance's own database. It is chosen once. |
-| **Make me a member, as tenant admin** | On by default. Then you work inside the tenant as its own people do. Without it, you see inside only through an access grant, which ends and is recorded. |
+| **Make me a member, as tenant admin** | On by default. Then you work inside it as its own people do. Without it, you see inside only through an access grant, which ends and is recorded. |
 
 When it works the tenant opens, and a notice says "Tenant {name} is made." with the link **Open {name}**.
 

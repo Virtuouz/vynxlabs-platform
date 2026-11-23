@@ -19,7 +19,7 @@ By the end the tenant has a SAML provider that people can use to sign in, tried 
 :::steps
 1. Open **Tenant**, then **Single sign-on**, and press **Connect a provider**.
 2. Choose **Who signs in through it**, and under **Protocol** choose **SAML 2.0**. Give the provider a **Name**.
-3. Fill **Metadata address**, or paste the file into **Metadata**. A pasted file is used instead of the address. Press **Connect**. The sign-in address, the provider's entity ID and its signing certificates are read from the metadata. The provider opens, **off**.
+3. Fill **Metadata address**, or paste the file into **Metadata**. A pasted file is used instead of the address. Press **Connect**. The sign-in address, the provider's entity ID and its signing certificates are read from the metadata. The provider opens, **Off**.
 4. On **Set up**, under **1. Enter these at the provider**, find **Reply address (ACS)**, **Entity ID (audience)** and **Metadata address**. If the provider can read metadata, give it the **Metadata address**. Otherwise enter the other two.
 5. At the provider, have the service send three things: a name ID that lasts, the email, and the groups if you will map them. The name the provider calls an attribute is what you will type under **Which claims to read**. The usual names are tried when a field is empty: `email` or `mail` for the email, `name` or `displayName` for the name, and `groups` or `memberOf` for the groups.
 6. Open **Settings**. Under **Name ID format**, choose **Persistent** if the provider can send one, or **Email address** if it has no lasting one. Leave **Sign the requests sent to the provider** on unless the provider will not read signed requests. Press **Save** in the bar.

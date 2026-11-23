@@ -1,6 +1,6 @@
 # Fact-check record: administer/reference/screens/repository
 
-Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer; nothing here has been checked by a second agent yet. Line numbers point at the block that holds the claim. `Git` = `apps/console/src/screens/Git.tsx`, `Env` = `apps/console/src/screens/Environments.tsx`, `CPgit` = `apps/control-plane/src/kernel/git.ts`, `CProu` = `apps/control-plane/src/routes/`, `Rel` = `apps/console/src/screens/Release.tsx`.
+Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer. Checked by: second agent, 2026-11-23. Every quoted label, message and permission of the page was matched against the console and control-plane source at HEAD (`87000022`) by script and by hand, and what depends on the screen was run on the instance http://localhost:8091 (see `docs/documentation/runs/...`). Line numbers point at the block that holds the claim. `Git` = `apps/console/src/screens/Git.tsx`, `Env` = `apps/console/src/screens/Environments.tsx`, `CPgit` = `apps/control-plane/src/kernel/git.ts`, `CProu` = `apps/control-plane/src/routes/`, `Rel` = `apps/console/src/screens/Release.tsx`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -25,3 +25,14 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 | console_code_off refusal; `PATCH /tenants/:t { consoleCode }`, needs tenant:write; audited | `CProu/authoring.ts:211-225`, `CProu/tenants.ts:402-445` | writer | holds |
 | git:read for the repository, git:write for connect, save, check, disconnect | `CProu/git.ts:138,171,207,510` | writer | holds |
 | No CLI switch for code in the console | `packages/cli/src/commands.ts` (no command) | writer | holds (absence) |
+
+## Second check (2026-11-23)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Address accepts https, and http only at 127.0.0.1 or localhost | `git.ts:561-575`; run | second agent, 2026-11-23 | checked, run (corrected: the page said https only) |
+| Connect with a bad token, a forbidden token, a missing repository, an empty repository, a missing default branch: each message | `git.ts:165-190`; run against the local git server | second agent, 2026-11-23 | checked, run |
+| Connected message, Check the connection, "Stored · set … by …" with Replace, host-change hint and refusal, Disconnect dialog and its effect on Git sync | `Git.tsx`; run | second agent, 2026-11-23 | checked, run |
+| volvel.yaml (D65): Folder read only and showing the folder in force after a pull of a branch that has it; each operation reads the file from its own branch (check: default branch) | `git.ts:334,959,1211,1436`; run | second agent, 2026-11-23 | checked, run (corrected: the page said every operation uses the folder in force without saying where the file is read; the release branch used the Folder field because neither the release branch nor the default branch had a volvel.yaml) |
+| Without git:write: the line, fields disabled, Connect disabled | `Can.tsx`; run (Amara) | second agent, 2026-11-23 | checked, run |
+| Code in the console toggle: both dialogs (action buttons Turn off / Turn on), messages, `console_code_off` 403 on a script draft | `Git.tsx:280-330`, `authoring.ts`; run | second agent, 2026-11-23 | checked, run |

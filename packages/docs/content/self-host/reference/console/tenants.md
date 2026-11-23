@@ -21,7 +21,7 @@ An operator is not inside a tenant by default. **Open** on a tenant the operator
 
 ### The list
 
-The title is **Tenants**. The description reads "Every client organization on this instance. Opening one needs an access grant unless you are a member of it." Under it are a search box and, when at least one database location exists, the **Tables kept in** filter.
+The title is **Tenants**. The description reads "Every client organization on this instance. Opening one needs an access grant unless you are a member of it." The description shows the first time you open the screen. On later visits it is folded behind the **About Tenants** button (the circled i) beside the title. Under it are a search box and, when at least one database location exists, the **Tables kept in** filter.
 
 | Control | What it does |
 | --- | --- |
@@ -51,7 +51,7 @@ Its eyebrow is **Tenant** and its title is the tenant's name.
 | --- | --- |
 | **Slug** | The slug. |
 | **Workspaces** | The count. |
-| **Your access** | "A member", or "Through an operator access grant, which needs a reason". |
+| **Your access** | "A member", or "Not a member. Inside it you work through an operator access grant, which needs a reason". |
 | **Tables kept in** | A link to the location's row on the [Database locations](databases) screen, or "The instance's database". |
 | **Created** | The date and time. |
 | **ID** | The tenant's ID. |
@@ -74,7 +74,7 @@ The inspector's buttons, from the left:
 | --- | --- | --- |
 | **Open** | Opens the tenant. | Always. |
 | **Rename** | Asks for a new name in a dialog titled "Rename NAME" ("What people read in lists and the switcher. Its slug, SLUG, is in its addresses and stays."), with the field **Name** and the button **Rename**. The result is "OLD is now called NEW." A name of 1 to 200 characters. | When the server says the signed-in person may rename it. |
-| **Turn off code in the console** / **Turn on code in the console** | Asks first. Off: people can no longer save or test scripts, connectors and trigger sources in the console, in any workspace of the tenant. Drafts are kept and what is deployed keeps running. A tenant admin or an operator can turn it on again. Code from a repository is not affected. | When the server says the signed-in person may change the tenant. |
+| **Turn off code in the console** / **Turn on code in the console** | Asks first, with "Turn off code in the console for NAME?" or "Turn on code in the console for NAME?". Off: people can no longer save or test scripts, connectors and trigger sources in the console, in any workspace of the tenant. Drafts are kept and what is deployed keeps running. A tenant admin or an operator can turn it on again, and the dialog for that says "People with the code permission can write and test code in the console again." The result is "Code in the console is off for NAME." or "Code in the console is on for NAME." Code from a repository is not affected. | When the server says the signed-in person may change the tenant. |
 | **Delete** | Deletes the tenant. See [Delete a tenant](#delete-a-tenant). | Operators only. |
 
 **Rename** and the console-code switch are offered when the list says the person holds `tenant:write` in that tenant. For an operator, that is a tenant the operator belongs to or holds an open grant for. For any other tenant they are not drawn on this screen, although the API accepts the same change from an operator at the instance (`PATCH /tenants/{id}`).

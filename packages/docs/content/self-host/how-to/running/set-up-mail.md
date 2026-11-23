@@ -6,7 +6,7 @@ subjects: [install]
 
 ## Set up the instance's mail
 
-By the end the instance sends the mail it owns: end users' invitations and password-reset links, and approval mail for flows.
+By the end the instance sends the mail it owns: end users' invitations and password-reset links, a one-time link for a member's new password, and approval mail for flows.
 
 ## Before you start
 
@@ -44,7 +44,7 @@ A tenant sends mail from its flows through its own `smtp` connection, made by a 
 
 ## Try mail without a server
 
-`MAIL_CAPTURE_DIR=/some/folder` writes each message the instance would send to a file there, readable, and sends nothing. It overrides `SMTP_URL`. The instance warns in its log when it starts. It is for development and tests, never for an instance people use: the files hold one-time links. The Compose file does not pass `MAIL_CAPTURE_DIR`, so use it on an instance you start another way.
+`MAIL_CAPTURE_DIR=/some/folder` writes each message the instance would send to a file there (`To:`, `Subject:`, then the text), readable, and sends nothing. It overrides `SMTP_URL`, and **Instance**, then **Health**, says "Written to files, for development". The instance warns in its log when it starts. It is for development and tests, never for an instance people use: the files hold one-time links. The Compose file does not pass `MAIL_CAPTURE_DIR`, so use it on an instance you start another way.
 
 ## If it does not work
 

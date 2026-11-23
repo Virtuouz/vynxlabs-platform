@@ -14,7 +14,7 @@ You let an agent that speaks the Model Context Protocol start one script or flow
 - A flow is offered only when it has a manual trigger.
 
 :::steps
-1. Open the script or flow and press **Offer to an agent…**.
+1. For a script, open **Scripts**, the script, then **Open the code**, and press **Offer to an agent…** (the script's own page does not have it). For a flow, open the flow and press **Offer to an agent…**.
 2. Choose the **Service account** and press **Offer**. The account is given the **Agent runner** role on that script or flow alone. The dialog says an agent connecting with one of its keys is offered it as a tool, and shows **Address for the agent** with **Copy the address**.
 3. Open the account's page, then the **Agent tools** tab, and choose the workspace under **In the workspace**.
 4. Press **Copy the settings** and paste the JSON into the agent's settings. Replace `<one of this account's API keys>` with one of the account's keys.
@@ -52,7 +52,7 @@ The tool names, limits and the approval tools are in the [MCP reference](../../.
 ### If it does not work
 
 - **Offer to an agent…** is disabled without `binding:write` on that script or flow.
-- "This tenant has no service account yet": the dialog links to **Create a service account**.
+- "An agent connects as a service account, with one of its keys. This tenant has none yet.": the dialog links to **Create a service account**.
 - "No tools. The account may start no script or flow here.": offer one, or give the account a role that may start them.
 
 ## Related

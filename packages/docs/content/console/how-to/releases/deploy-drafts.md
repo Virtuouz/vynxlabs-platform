@@ -54,7 +54,7 @@ The **Deploy to dev** step lists the new version with your message. If the works
 ## If it does not work
 
 - **"These changes cannot be deployed yet."** The panel says why and names what it found. The codes and their fixes are in [Why a deploy or promotion is refused](../../../develop/reference/releases/refusals). A name with **Set up** beside it can be set up from there.
-- **"Not bound here, and the deploy still works."** This is a warning. The deploy goes ahead, and a run that reaches the missing connection, secret or variable fails until it is set up. A promotion would refuse it.
+- **"Not set up here, and the deploy still works."** This is a warning. The deploy goes ahead, and a run that reaches the missing connection, secret or variable fails until it is set up. A promotion would refuse it.
 - **Deploy is disabled.** The deploy would be refused. The panel says why. With no drafts at all the step says "Nothing waiting to be deployed".
 - **"Someone else saved this draft after you opened it."** Reload the editor and make the change again.
 - **Saving a script, connector or trigger source is refused: "Writing code in the console is turned off for this tenant."** Someone who may change the tenant turns it on under **Repository**.

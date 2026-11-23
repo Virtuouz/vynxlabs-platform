@@ -11,7 +11,7 @@ By the end the tenant has a repository, and dev workspaces can follow branches o
 ## Before you start
 
 - You hold `git:write`. A tenant admin does. See the [permissions reference](../../reference/permissions).
-- The repository exists, has a first commit on its default branch (a README will do), and has an HTTPS address.
+- The repository exists, has a first commit on its default branch (a README will do), and has an HTTPS address. A repository on the same machine as the instance may use `http://127.0.0.1` or `http://localhost`.
 - You have an access token that can read and write its contents: a fine-grained personal access token on GitHub, or a project access token on GitLab.
 - If the repository is on an internal host, the operator of the instance has allowed the instance to reach it.
 

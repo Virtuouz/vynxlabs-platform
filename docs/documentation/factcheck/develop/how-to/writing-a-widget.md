@@ -27,3 +27,7 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | slots draws "its places are drawn by the widget" unless registered. | `apps/console/src/kit/inspector/controls.tsx:470` | writer | holds |
 | Test command and 15 tests pass. | run: `npx vitest run src/goal.test.tsx` in packages/screens | writer, run | holds as run |
 | Add to page dialog; Goal under Understand data. | `apps/console/src/screens/builder/AddToPage.tsx:268`; `W:31-36` | writer | holds in code; not walked |
+
+Checked by: second agent, 2026-11-23. Checked in the code: 28 controls (`widget-sdk/src/index.ts:138-174`), type/name/version patterns (`:282-284`), Goal's labels, group "Progress", defaults and layout (`widgets-core/src/index.ts:1711-1850`), `core/goal` in `views/index.ts:44`, `CORE_WIDGETS` (`:2021`), the test file `packages/screens/src/goal.test.tsx`, the icon rule (`:241-246`). On the instance: **Add to page** groups are Work with records, Understand data, Take action, Organize and explain (`apps/console/src/screens/builder/AddToPage.tsx:16-21`); the page's earlier list of five category titles came from `CATEGORY_TITLES` and is not what the screen shows: corrected.
+
+

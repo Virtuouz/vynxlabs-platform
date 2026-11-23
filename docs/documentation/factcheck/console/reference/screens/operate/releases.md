@@ -1,6 +1,6 @@
 # Fact-check record: console/reference/screens/operate/releases
 
-Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer. Line numbers point at the block that holds the claim. `Rel` = `apps/console/src/screens/Release.tsx`, `Exec` = `apps/console/src/screens/Execution.tsx`, `Prom` = `apps/console/src/screens/Promotion.tsx`, `PConf` = `apps/console/src/screens/PromotionConfirm.tsx`, `Drift` = `apps/console/src/screens/Drift.tsx`, `GS` = `apps/console/src/screens/GitSync.tsx`, `Git` = `apps/console/src/screens/Git.tsx`, `Env` = `apps/console/src/screens/Environments.tsx`, `CPgit` = `apps/control-plane/src/kernel/git.ts`, `CProu` = `apps/control-plane/src/routes/`. "Checked by" is for the second agent: nothing here has been checked by one yet.
+Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer. Checked by: second agent, 2026-11-23. Every quoted label, message and permission of the page was matched against the console and control-plane source at HEAD (`87000022`) by script and by hand, and what depends on the screen was run on the instance http://localhost:8091 (see `docs/documentation/runs/...`).. Line numbers point at the block that holds the claim. `Rel` = `apps/console/src/screens/Release.tsx`, `Exec` = `apps/console/src/screens/Execution.tsx`, `Prom` = `apps/console/src/screens/Promotion.tsx`, `PConf` = `apps/console/src/screens/PromotionConfirm.tsx`, `Drift` = `apps/console/src/screens/Drift.tsx`, `GS` = `apps/console/src/screens/GitSync.tsx`, `Git` = `apps/console/src/screens/Git.tsx`, `Env` = `apps/console/src/screens/Environments.tsx`, `CPgit` = `apps/control-plane/src/kernel/git.ts`, `CProu` = `apps/control-plane/src/routes/`. "Checked by" is for the second agent: nothing here has been checked by one yet.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -32,3 +32,22 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 | Production: PUT/DELETE refused with production_workspace unless promotion:write and console-made; code-managed by deploy only | `apps/control-plane/src/kernel/authoring.ts:91-131` | writer | holds |
 | Permissions table: see/versions/preview `deployment:read`; deploy drafts `deployment:write` or `interface:write`/`doc:write` alone; code:write; console_code_off; deploy version `deployment:write`; promote `promotion:write` in target; request needs read in both | `CProu/authoring.ts:582-592,1020-1030`, `CProu/execution.ts:614,756,853,978-1010`, `CProu/promotion-requests.ts:209,286-335,367,492` | writer | holds |
 | Deployer holds promotion:write, Developer does not | `apps/control-plane/src/release.test.ts:161-195` | writer | holds (not re-read; note: Devi in Fernhill promotes because she also holds Deployer) |
+
+## Second check (2026-11-23)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Versions list: message "Pulled *commit* from *branch*" for a pull's version | `apps/control-plane/src/kernel/git.ts:1317`; run (v9 "Pulled cdee487 from console/dev") | second agent, 2026-11-23 | checked; added to the page |
+| Not set up here warning, "is not set up in this workspace" | `Release.tsx` (HEAD), `deploy.ts:115,136` | second agent, 2026-11-23 | checked at HEAD; fault: bound/bind words. The instance on 8091 is an older build and still says "Not bound here"; the page follows HEAD (commit 5d18392a) |
+| Nothing deployed: plain notice, Promote disabled with tooltip, no Try again | `Release.tsx` (HEAD, preview.error 409), `promote.ts:112` | second agent, 2026-11-23 | checked at HEAD; fault: releases/nothing to promote. The instance still shows the old state (Try again, spinner text, enabled Promote); not seen fixed |
+| Change where this promotes to needs workspace:write, disabled with reason | `Release.tsx` (HEAD, `useNeeds`) | second agent, 2026-11-23 | checked at HEAD; fault: releases/viewer sees the button. Not seen fixed on the instance |
+| Withdraw the request acts at once | run (Amara, Fernhill Rel dev) | second agent, 2026-11-23 | checked, run |
+| Waiting line "has moved on to v5 since"; sheet "has deployed v5 since. This promotes v4, what was asked for."; promoter's notice | `Promotion.tsx`; run | second agent, 2026-11-23 | checked, run |
+| Earlier sheet ("Revision 1", Bring back), row Set aside dialog, "Set aside 1 draft?", Deploy the 1 chosen | `Release.tsx`; run | second agent, 2026-11-23 | checked, run |
+| "Deployed as version N: paths." and "Deployed lab/solo2 as version 17." with Promote to *name* | `Release.tsx:249`, `kit/DeployMenu.tsx:80-95`; run | second agent, 2026-11-23 | checked, run |
+| Table summary "Table x created", "Table y retired. Its rows are kept."; a deploy of every draft does not stop for a rename | run | second agent, 2026-11-23 | checked, run |
+| rename_suspected on a version deploy/rollback: "Delete *path* in *workspace*?", Delete them and look again | `Execution.tsx:650-700`; run | second agent, 2026-11-23 | checked, run |
+| bindings_missing in the Promote step with a Set up link; breaking_changes notice and confirmation text | `deploy.ts`, `PromotionConfirm.tsx`; run | second agent, 2026-11-23 | checked, run |
+| Dev rollback: button **Roll back**, "Version 13 is what runs here now." | `Execution.tsx:650-700`; run | second agent, 2026-11-23 | checked, run |
+| Release branch commit: "Promoted version N to *slug*" commit; "Committed to release/gprod." | `git.ts:1641`; run (local git server) | second agent, 2026-11-23 | checked, run |
+| Not run: the old-draft notice (needs a draft saved over a day ago), **Not yet run here** (needs a bundle uploaded and never run) | - | second agent, 2026-11-23 | not run, said here |

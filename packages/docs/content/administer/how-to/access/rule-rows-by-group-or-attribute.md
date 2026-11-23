@@ -19,12 +19,12 @@ You decide who sees which rows of a table from the groups people are in, or from
 2. Open the table, then **Definition**, **Who sees rows**, and choose **Rules decide**.
 3. Add a rule. **Who** is **A group named in a column** (a row whose column holds the group's key is seen by people in the group) or **People with a matching attribute** (a row whose column equals the person's attribute).
 4. Choose **May**: **Read**, or **Read and change**. Press **Save who sees rows**.
-5. Use **See it as** and choose an end user to check what they see before you rely on it.
+5. Under the rules, use **See it as** and choose an end user (or **See it as a group** and choose a group) to check what they see, from what is saved. Take the person out of the group and look again: the list shrinks at once.
 :::
 
 ### Fernhill's rules
 
-In Fernhill, clinic staff are in a group per clinic and a row holds its clinic's key, so a rule "group named in the column `clinic`" gives each clinic its own rows. A pet portal client has the attribute `client_id`, and a rule "attribute `client_id` equals the column `code`" lets them read their own record.
+In Fernhill, clinic staff are in a group per clinic and a row holds its clinic's key, so a rule **A group named in a column** with the column `clinic` gives each clinic its own rows (the rule reads "People in the group named in clinic may read the row."). A pet portal client has the attribute `client_id`, and a rule **People with a matching attribute**, with the column `code` and the attribute `client_id`, lets them read their own record ("People whose client_id is in code may read the row.").
 
 ### The result
 

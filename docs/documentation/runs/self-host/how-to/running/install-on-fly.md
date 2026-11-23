@@ -11,3 +11,7 @@ Not known.
 
 ## Not run
 Everything.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Not run: no Fly account and no internet. The page matches deploy/fly/fly.toml and README.md line by line; the 1024 MB machine gives 3 run slots by the formula in `machine.ts:134`. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

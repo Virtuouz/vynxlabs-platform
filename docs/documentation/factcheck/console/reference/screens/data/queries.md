@@ -1,5 +1,7 @@
 # Fact-check record: console/reference/screens/data/queries
 
+Checked by: second agent, 2026-11-23.
+
 Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer. `Q` = `apps/console/src/screens/Queries.tsx`, `Data` = `apps/console/src/screens/Data.tsx`, `DB` = `apps/console/src/screens/Dashboards.tsx`, `RI` = `apps/console/src/screens/ResourceIdentity.tsx`, `RD` = `apps/console/src/kit/RemoveDraftButton.tsx`, `rq` = `apps/control-plane/src/routes/queries.ts`, `rs` = `apps/control-plane/src/routes/sources.ts`, `rd` = `apps/control-plane/src/routes/dashboards.ts`, `qry` = `apps/control-plane/src/kernel/data/query/`, `src` = `apps/control-plane/src/kernel/data/sources.ts`. The second agent's column is left for the second agent; "writer, run" means the writer saw it on the throwaway instance, "writer, code" that it was read from the code only.
 
 | Claim | Source (file:line) | Checked by | Result |
@@ -30,3 +32,14 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | List needs resource:read; run is audited sql.run (SQL, hash, tables, rows, never results); saved run is not audited | rq:114-170,399-402,496-510 | writer, code | holds |
 | Limits: SQL 20,000; rows 1,000/10,000; 5 MB; timeout 15 s default, 1 s–10 min | rq:130-133; qry/run.ts:21-23; `apps/control-plane/src/config.ts:350` | writer, code | holds |
 | A result's column order, same-name columns kept, big integers as text, UTC day | qry/run.ts:63-100,205-253 | writer, run | holds |
+
+## Second check (2026-11-23, second agent)
+
+Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
+
+- Confirmed on the instance (tenant qry31chk, a tenant of the checker's own; tenant_admin Ann, viewer Vic, app_maintainer Wes): a member without `sql:read` and `resource:write` (Vic) sees both notices word for word, the editor takes no typing, and **Run** of a deployed query by name works with a value typed in its field (3 rows). Wes (no `resource:read`) sees "Could not load saved queries. This needs the resource:read permission." and the rest of the screen works.
+- Confirmed: **Review and deploy** opens the Deploy screen (`/release`) with the draft and "Deploy 1 change"; the draft-clash notice reads "Someone else saved this query after you opened it. Nothing of theirs was overwritten, and what you changed is still here, unsaved." with **Copy what I wrote** and **Load their version** (page corrected); "Leave without saving?" with **Stay** and **Leave**; Ctrl+S in the editor saves, Ctrl+Enter runs; Ctrl+M turns Tab-indent off (added); an unnamed parameter is saved as `p1` (added, `Queries.tsx:149`).
+- Confirmed: Name and path lists "This dashboard is saved as a draft with the new path:" (singular, page corrected) and the rename deployed with its dashboard (Deploy screen shows RENAMED from the old path; the dashboard still ran).
+- fault: renaming a query leaves the screen at `?query=<old path>` and says "There is no query at <old path>." and "This is a new query." with the old text still in the editor (seen twice, not a headless artifact). The page says so under the rename steps. Revisit when fixed.
+- fault: Tab does not leave the editor and nothing on the screen says how (Ctrl+M, Monaco's own key); the page now gives it. A keyboard user has no hint.
+- Walked at 390 px and in dark: no horizontal overflow; header buttons wrap; the Name and path dialog reads in dark. Keyboard: Tab order reaches fields; the editor holds focus as above.

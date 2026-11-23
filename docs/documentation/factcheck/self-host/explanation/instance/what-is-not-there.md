@@ -20,3 +20,5 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | No drain command for triggers | `apps/control-plane/src/routes/instance-control.ts:21` | writer, code | |
 | Events kept, webhooks refused with 503 | `apps/control-plane/src/kernel/flows/events.ts:87` | writer, code | |
 | Audit Area filter lacks deleted tenants; no workspace filter or saved views at the instance | `apps/console/src/screens/Audit.tsx:184` | writer, run | |
+
+Checked by: second agent, 2026-11-23. Claims about the screens checked against the Run records of the pages they link to. fault: instance (the line "Rename and the console-code switch on every tenant row" describes a fault, the console hiding what the API accepts; revisit when it is fixed).

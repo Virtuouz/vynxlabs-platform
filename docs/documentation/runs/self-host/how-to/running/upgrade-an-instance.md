@@ -11,3 +11,7 @@ Not known.
 
 ## Not run
 An upgrade to a newer image, `up -d --build`, going back by restore with an older image.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Nothing further was run. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

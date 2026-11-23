@@ -29,7 +29,7 @@ A picture is `![alt](path)`.
 
 | Picture | Written as | What happens |
 | --- | --- | --- |
-| A file | `![The till](img/till.png)` | A file in the folder of pages, relative to the page that holds it: `docs/handbook/img/till.png` is `img/till.png` from `handbook/index`. It is checked: "The picture "…" is not there: no file at …". |
+| A file | `![The till](img/till.png)` | A file in the folder of pages, relative to the page that holds it: `docs/handbook/img/till.png` is `img/till.png` from `handbook/index`. It is checked by a deploy, not by `volvel build`: "The picture "…" is not there: no file at …". |
 | A web address | `![The till](https://example.com/till.png)` | Allowed on a served site. Not drawn offline, and not by `volvel dev`. |
 | Anything else | `http:` | Refused. |
 
@@ -47,7 +47,7 @@ A file is a picture when its name ends `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`,
 | Field | What it does |
 | --- | --- |
 | `key` | The page's identity when it is not its path: the path it had, so that it stays the same page with its history. Say it only when you move a page. A copy made in the console takes none. |
-| `moved_from` | The paths the page had, without `.md`, at most 20. A reader who follows an old address is taken here. It is written into the build's manifest, as `redirects`, and used when a site is exported as files. |
+| `moved_from` | The paths the page had, without `.md`, at most 20. A path is inside the site, as a link writes it: for the page `handbook/support/refunds`, in the site `handbook`, the page is `support/refunds`, and an old path is `support/returns`, not `handbook/support/returns`. A reader who follows an old address is taken here. It is written into the build's manifest, as `redirects`, and used when a site is exported as files. |
 
 A live docs app answers an old address from the alias made by a deployed rename in the console. It does not read `moved_from`. The field is checked, and a bad one is an error:
 

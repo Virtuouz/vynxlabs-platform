@@ -49,7 +49,7 @@ An empty value is a value. A script that reads a variable set to nothing gets an
 | Empty | "No variables yet". |
 | Loading | A loading line. |
 | Not loaded | The reason in a notice, with **Try again**. |
-| Read only | "You can see this workspace's variables, not change it. It needs `variable:write`." and whom to ask. **Set variable** is off with the tooltip "It needs variable:write." and so are the buttons of the rows. |
+| Read only | "You can see this workspace's variables, not change it. It needs `variable:write`." and whom to ask. **Set variable** is off with the tooltip "It needs variable:write." followed by whom to ask, and so are the buttons of the rows. |
 
 ## A variable's page
 

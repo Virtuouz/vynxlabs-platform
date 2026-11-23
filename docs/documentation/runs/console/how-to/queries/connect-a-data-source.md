@@ -19,3 +19,11 @@ A database `qry31src` was made in the instance's own Postgres (localhost:54329) 
 - The screen's text says "the platform" (list description, page description, Connect description). The page does not quote it.
 ## Not run
 - Encrypt **Yes** against a database that has a certificate. The refusals other than "could not be reached". A person with `data_source:read` only. A source in a production workspace. 390 px and dark. Removing the declaration: at the end of the run **Edit** > **Remove** ("Remove this data source? This saves a draft that removes it. Nothing changes until that draft is deployed.") was pressed and the removal deployed through the API.
+
+## Second run, 2026-11-23 (second agent)
+- Instance http://localhost:8091 at commit `87000022`, headless Chromium. Done in a tenant of the checker's own, `qry31chk` (workspace Sandbox, dev): Ann Qry (`tenant_admin`), Vic Qry (`viewer`), Wes Qry (`app_maintainer`), a table `visits`, a data source on the local Postgres. Fernhill's people and data were not used.
+- Encrypt **Yes** against a database with no SSL: Change to **Yes** was saved ("chk-loans was changed."); **Test**: **Failed**, "The server does not support SSL connections"; the source's page: "Internal Server Error" and **Try again**. Changed back to **No**: the stored password was dropped ("No password is set for the data source…"), as the page says; set again, **Reached** (10 ms). The page gained that line.
+- A member with `data_source:read` only (Vic): list: **Declare source**, **Connect database**, **Test**, **Change**, **Remove from here** disabled, **Edit** not. The source's page: **Test** "chk-loans: reached."; **Change** opens and is refused "needs the data_source:write permission."; **Add row** disabled with the read-only line. The page's last bullet was corrected.
+- 390 px and dark: Data sources list, Change drawer, source page: no horizontal overflow. At 390 px the Health cell is cut to "F…" and "tested…" and the row's buttons run past the card (a product fault, in the record). Dark reads well.
+- Keyboard: the Change drawer opened with focus on **Host**. Escape was not tried.
+- Not run: **Encrypt Yes** against a database that has a certificate (no TLS Postgres here, no internet); a source in a production workspace.

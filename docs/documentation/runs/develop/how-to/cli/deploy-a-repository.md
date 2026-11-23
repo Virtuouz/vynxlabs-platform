@@ -17,3 +17,8 @@
 
 ## Not run
 `rename_suspected`, `path_taken`, `kind_changed`, `incompatible_bundle`, `assets_missing` and `bindings_invalid` (texts from `deploy.ts` and `bundles.ts`); the size limits; the `The build failed:` list.
+
+## Second check, 2026-11-23 (second agent)
+Instance http://localhost:8091 (same throwaway instance), CLI and SDK from fresh `pnpm pack` tarballs installed with npm into a scratch folder; no request left localhost. Tenant made for this check: `docs-cli-check` (operator grant for the operator admin), workspaces `cli-dev` (dev) promoting to `cli-live` (production), service accounts `ci-deployer` (`deployer` in both) and `ci-ship-only`. API keys made for the check were revoked or are of this tenant. Walked the console screens the page names at 390 px in dark (Account's API keys with the Create API key dialog; the tenant's Service accounts and a service account's Keys tab): no horizontal overflow of the page, reload not needed for the steps.
+- Ran: bindings missing in dev (`Note:` lines) and production (refused), `--message` cut at 500, `--message ""`, a build failure, a rename with and without `key` (`renamed  script     hello -> hello-there`; without it deleted and created, no history so not refused). Page: "Bind it again" became "Set it up again"; the body-only-change sentence now begins "Today" (fault in the record).
+- Not run: `rename_suspected` with real history, `path_taken`, `kind_changed`, `assets_missing`, `bindings_invalid`, the size limits (texts match the code).

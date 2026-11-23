@@ -18,3 +18,6 @@
 ## Not run
 - A real DNS record: no name here resolves, so verification, **Enable** on a verified name, "Verified, record gone" and an operator's enable were not run. They are from code.
 - 390 px, dark, keyboard, reload of the details sheet (`?hostname=` is in the address).
+
+## Second check, 2026-11-23 (second agent)
+- The page was reduced to a pointer to `administer/how-to/sso/serve-an-app-on-your-own-hostname`; its steps, refusals and results moved there and were run there (see that run log). The record of this page describes what the page said before and is kept for the merged page's sources.

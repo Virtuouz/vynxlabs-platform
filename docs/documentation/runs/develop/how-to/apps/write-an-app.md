@@ -19,3 +19,9 @@
 ## Not run
 - Opening the deployed Desk app in a browser: the instance has no `APPS_URL`, so a repository app answers 503 here. The page's "The result" says so.
 - The page at 390 px, in dark, by keyboard.
+
+## Second check, 2026-11-23 (second agent)
+- From a new `volvel init` folder outside the checkout (CLI built from the repository, a key for Maya), wrote the page's files by extracting its code blocks, `volvel build` (6 files, 665 KB) and `volvel deploy --tenant fernhill --workspace apps-docs`: "App files: 6, 3 new." and "Deployed version 5 ... 0 created, 0 updated, 5 deleted, 9 unchanged." It deleted the earlier repository's board, guide and welcome (repository-owned, so no `--allow-delete` was asked).
+- Found: the page's `<input aria-label="Pet">` drew invisible in dark at 390 px. The page now uses `TextField`; the Desk page then showed label, field and button at 390 px in light and dark, no horizontal scroll, Tab reaches the field.
+- Opening the deployed app: a guest got 503 with the text naming `APPS_URL`; the page's "The result" says so.
+- Restored apps-docs afterwards with a second deploy (version 6: flow `welcome`, interface `screens/board` and apps `board` and `guide` created), so the share-an-app steps work again. Both API keys made for the check were revoked.

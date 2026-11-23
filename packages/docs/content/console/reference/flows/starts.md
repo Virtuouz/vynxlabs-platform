@@ -24,9 +24,9 @@ An optional input schema, drawn as fields: a name, a type, **required**, a descr
 | --- | --- |
 | Presets | **Every hour**, **Every day at 9:00**, **Weekdays at 9:00**, **Mondays at 9:00**, **The first of each month**, **Your own**. |
 | **When, as a cron line** | A cron line. The next five times are shown. |
-| **Time zone** | A new schedule takes the workspace's. |
+| **Time zone** | A new schedule takes the workspace's. A new schedule starts as `0 8 * * *`, every day at 8:00. |
 | **Skip a time while the run it started last is still going** | On by default for a flow's start. Off lets another run start. |
-| **Trigger source (optional)** | A trigger source of your own. A source that is only a draft is offered too. |
+| **Trigger source (optional)** | A trigger source of your own, listed when the workspace has one. A source that is only a draft is offered too. |
 
 **Fire now** is on the Triggers screen and in the command menu. It does not work while the schedule, its workspace or the instance is paused.
 
@@ -45,10 +45,10 @@ A refusal (a filter that fails, a payload that does not fit) is recorded as the 
 | --- | --- |
 | **The flow is given** | **The body of the request**, or **The whole request, headers included**. |
 | **The request is answered** | **At once, when the flow has started** (202 with `runId`), or **By the flow, with an Answer step**. The second holds the request up to 25 seconds, then answers 202 with the run's ID in the `x-flow-run` header. It needs an **Answer the request** step the start reaches, and cannot be checked by a trigger source. |
-| **Each request is checked** | **Not at all: the address is the secret**, **By a signature in a header**, or **By a trigger source of your own**. |
-| **Signature** | **HMAC SHA-256** or **HMAC SHA-1**. **Header it is sent in**, **Secret it was signed with**, **Written as** (**Hex** or **Base64**), **Text before it (optional)**. |
+| **Each request is checked** | **Not at all: the address is the secret**, **By a signature in a header**, or, when the workspace has a trigger source, **By a trigger source of your own**. |
+| **Signature** | **HMAC SHA-256** or **HMAC SHA-1**. **Header it is sent in** (`x-signature` to begin with), **Secret it was signed with** (one of the workspace's secrets), **Written as** (**Hex** or **Base64**), **Text before it (optional)**. |
 | **What the sender signed** | **The body of the request**, **The timestamp, a dot, then the body**, **v0, the timestamp, then the body**, or **Something else** with **The signed text**, where `{body}` and `{timestamp}` stand for the parts. |
-| Timestamp header, **How old a request may be** | When the signature covers a time. A request without it is refused. Empty means 5 minutes; up to a day. |
+| **Header the timestamp is sent in**, **How old a request may be** | The header holds when the request was sent, in seconds since 1970. It is required when what the sender signed includes the timestamp, and then a request without it is refused. **How old a request may be** is counted by it, and refuses an older one, or one from the future by as much. Left empty, 5 minutes; up to a day. |
 
 A webhook takes 120 requests a minute. A request that repeats an `idempotency-key` does not start another run. A bad signature answers 401. A paused webhook answers 503 with code `workspace_paused` when the workspace is paused, and `trigger_paused` when the webhook alone, or the whole instance, is.
 

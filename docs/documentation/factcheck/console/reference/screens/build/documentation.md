@@ -29,3 +29,21 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 | workspace_admin also holds `doc:*`. | apps/console/src/builtinRoles.ts:50-81 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
 | A page served by repository folder shows `repository` and cannot be edited, moved, dragged. | D/model.ts `movable`; D/Docs.tsx:1035, 1678 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
 | Preview with drafts is at `<site>_draft/`. | apps/control-plane/src/routes/docs.ts:260-270; kernel/apps/front.ts:845-850 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Every label, quoted message and limit in the page was searched for in the console and engine source by script, and the claims below were run on the instance http://localhost:8091 (a tenant of the checker's own, d31chk, a dev workspace and a production workspace; a doc writer and a tenant admin) at 1440 px light, with 390 px dark and 768 px for the screens.
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| Production lists and shows pages and offers no New folder, New page or Deploy; the editor address says the production notice and links "Edit it in <dev>". | apps/console/src/kit/objects.tsx:160-180; run as tenant admin and doc writer in a production workspace (empty list; /docs/new and /docs/edit/x/y) | second agent, 2026-11-23 | holds as written |
+| A doc writer in a dev workspace sees New folder, New page, the menu and Deploy; holds `doc:*`, `app:read`, `table:read`, `workspace:read`. | builtinRoles.ts:36; run as a doc writer | second agent, 2026-11-23 | holds as written |
+| The notice for no permission names `resource:write`, or doc:write alone. | apps/console/src/kit/Can.tsx:180-193 | second agent, 2026-11-23 | holds as written |
+| Dragging: a row into a folder ("Moved Alpha into Other." with Undo, then "Undone."), a row above another ("Put Beta in its new place." with Undo), a top-level folder cannot be dragged. | run: drag and drop with Playwright in a dev workspace | second agent, 2026-11-23 | holds as written |
+| A repository page has no pencil, no menu, no grip and no Edit; it has "Open as readers see it" and the notice "This page lives in the repository, at <file>…". | run: a page deployed from a repository (`volvel deploy`) | second agent, 2026-11-23 | corrected: the page said only Edit, Rename, Move to… and the grip were missing; the whole row has no buttons |
+| The keyboard: ↑ ↓ ← → Enter F2 on the tree; Enter opens the row's menu. | run, DocEditor and Docs.tsx tree | second agent, 2026-11-23 | added to the page |
+| Menu of a site folder: New page here, New folder here, Rename (F2), Move to…, Duplicate, Turn on page feedback…, Stop publishing…, Remove the site's app…, Delete folder…; a plain top-level folder adds Publish as a site… | run | second agent, 2026-11-23 | holds as written |
+| Stop publishing…, Publish again…: the badge changes at once (Site, not published), a deploy serves 404 and "Nothing here / There is no page at this address.", and again serves 200. | run on a console site; questions and buttons as in the table | second agent, 2026-11-23 | holds as written |
+| Remove the site's app… then Deploy N changes. | run: the app's removal is not counted: with no other change the button is not there, the folder shows no Site badge and offers Publish as a site… again, and the site still answers 200 after a deploy of a page change | fault: docs deploy of the app's removal (p31-faults.md, "docs") | corrected: the page now says the screen does not carry the removal; it does not describe this as intended |
+| Feedback dialog, deploy question with the table, Turn off page feedback and its deploy. | run on a console site | second agent, 2026-11-23 | holds as written |
+| A page with a problem notice "This page has N problem(s) and would not deploy as it is." | Docs.tsx:1703-1706 | second agent, 2026-11-23 | holds; the notice appears only when a problem is an error, and N counts all problems, warnings too (not described in the page) |

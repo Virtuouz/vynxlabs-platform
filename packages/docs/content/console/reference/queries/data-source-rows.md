@@ -20,7 +20,7 @@ A workspace table has these and a source's rows do not:
 
 ## The tables list
 
-The list on the left names each base table of the source's schema, sorted by name. It scrolls on its own, and on a phone it is a row of buttons above the rows. The chosen table is in the address as `?item=<table>`. A table named in the address that the source does not list is looked up in the source's own list and refused with "The table <table> in the data source <path> was not found." A table name is 1 to 63 bytes.
+The list on the left names each base table of the source's schema, sorted by name. It scrolls on its own, and on a phone it is a list above the rows that scrolls once it is taller than 8 rem. The chosen table is in the address as `?item=<table>`. A table named in the address that the source does not list is looked up in the source's own list and refused with "The table <table> in the data source <path> was not found." A table name is 1 to 63 bytes.
 
 ## Controls
 

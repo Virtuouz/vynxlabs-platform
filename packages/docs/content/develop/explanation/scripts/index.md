@@ -8,4 +8,4 @@ pages:
 
 The ideas behind scripts.
 
-- [How scripts run](how-scripts-run): what happens between a run being asked for and its result, and what the platform holds a script to.
+- [How scripts run](how-scripts-run): what happens between a run being asked for and its result, and what Volvel holds a script to.

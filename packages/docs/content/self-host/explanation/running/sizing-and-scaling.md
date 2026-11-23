@@ -53,7 +53,7 @@ Every tenant's table requests share one pool of connections per replica, on the 
 
 Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 3` connections: 2 more for the queue and 1 to listen for changes to runs. A dedicated database adds 5 and 5 for each replica, and a data source adds 4. Keep the total across replicas under the database's `max_connections`.
 
-`volvel_db_pool{pool,state}` shows each pool's open, idle and waiting connections. A `waiting` above 0 that does not go away means a pool too small or a database too slow.
+`volvel_db_pool{pool,state}` shows each pool's total, idle and waiting connections. A `waiting` above 0 that does not go away means a pool too small or a database too slow.
 
 ## Replicas
 

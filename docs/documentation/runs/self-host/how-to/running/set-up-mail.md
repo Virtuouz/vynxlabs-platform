@@ -11,3 +11,7 @@ Not known.
 
 ## Not run
 Sending mail, the approval mail, `MAIL_CAPTURE_DIR`.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run with a node SMTP sink on the execution network: `check-config`, `mail:true`, a member's password link arrived with the expected subject and text. Page gained the member password link (`member-resets.ts:37`). `MAIL_CAPTURE_DIR` run: file written, SMTP_URL ignored, warning logged. Approval mail not run; 48 h and 50 hold in code. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

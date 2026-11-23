@@ -8,7 +8,7 @@ When a sign-in through an identity provider is refused, the person is sent back 
 
 ## The reasons
 
-The person's words are those of the sign-in screen. The "member" column applies to people who use the console; an end user sees the sign-in page of the tenant's portal with the same reasons.
+The words in the **The person sees** column are those the console's sign-in screen shows a member. An end user who signs in at a tenant's portal sees a page titled "You could not be signed in" with the refusal's own short sentence instead, for example "This account has been turned off." or "There is no account here for you yet. Ask whoever looks after this for one.", and a link "Back to sign-in". The reason is the same.
 
 | Reason | The person sees | What it means, and what to do |
 | --- | --- | --- |

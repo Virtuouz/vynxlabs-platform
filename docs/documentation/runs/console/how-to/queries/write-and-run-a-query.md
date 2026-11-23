@@ -18,3 +18,13 @@
 - The brief's "Mod+Enter" is Ctrl+Enter on Linux; the page gives both forms.
 ## Not run
 - The **Review and deploy** screen. A person without `sql:read` (no member of Fernhill without it was available; Rowan Ellis has it). The "Leave without saving?" dialog. 390 px and dark.
+
+## Second run, 2026-11-23 (second agent)
+- Instance http://localhost:8091 at commit `87000022`, headless Chromium. Done in a tenant of the checker's own, `qry31chk` (workspace Sandbox, dev): Ann Qry (`tenant_admin`), Vic Qry (`viewer`), Wes Qry (`app_maintainer`), a table `visits`, a data source on the local Postgres. Fernhill's people and data were not used.
+- A member without `sql:read` (Vic, viewer): the Queries screen shows "You can run queries here but not keep them…" and "You cannot write or run SQL…This query is deployed, so it can be run by name."; the editor takes no typing; a deployed query opened as `queries?query=chk/pets-since` ran by name with the field set (3 rows). Its parameter field reads **p1** (an unnamed parameter is saved as `p1`: added to the page).
+- The query was saved by Ann as a draft; **Review and deploy** opened the **Deploy** screen with "Deploy 1 change"; deployed, the screen showed v1.
+- "Leave without saving?": text "Your changes to chk/pets-since are not saved.", **Stay**, **Leave** (added).
+- Draft clash: two tabs of Ann; the second save showed "Someone else saved this query after you opened it…" with **Copy what I wrote** and **Load their version** (added).
+- Keyboard: Ctrl+Enter in the editor ran the query, Ctrl+S saved it; Tab stayed in the editor; Ctrl+M then Tab moved on (added).
+- 390 px and dark: the Queries screen with a result: no overflow; Name and path dialog reads in dark.
+- Not run: none of the earlier list remains except 'a person who has `resource:write` but not `sql:read`' (the built-in roles have none).

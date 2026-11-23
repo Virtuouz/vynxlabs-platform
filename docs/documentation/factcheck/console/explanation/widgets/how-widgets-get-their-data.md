@@ -1,17 +1,19 @@
 # Fact-check record: console/explanation/widgets/how-widgets-get-their-data.md
 
-Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths are under `apps/console/src` unless they start with `apps/control-plane` or `packages`. Written by the writer; "Checked by" is for the second agent.
+Code as of the working tree of branch `phase-31-write-the-docs`, 2026-11-23. Paths are under `apps/console/src` unless they start with `packages` or `apps/control-plane`. Second check: every row below was read in the code and, where it says run, done on http://localhost:8091.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
-| Widgets declare shapes rows, summary, record, approvals. | `packages/docs/generated/develop/reference/widgets/*.md` ("What it reads") | writer | holds |
-| Sources: table, saved query, SQL on dashboards only, record/selected/own. An app page may read a saved query, not SQL. | `packages/manifest/src/page.ts:1105-1156` | writer, code only | not run |
-| Saved query / SQL parameters set in Data; "Choose <label>." | `kit/inspector/rowsItUses.tsx` (ConstantValues) | writer, code only | not run |
-| data_source:read and sql:read on save; reader needs data:read. | `apps/control-plane/src/kernel/pages/standing.ts:9-11,116-117` | writer, code only | holds |
-| Rules tab: "What rows each person receives is decided by the Appointments row rules." | run (Rules tab) | writer, run on the instance 2026-11-23 | holds as run |
-| Reader's zone sent on every read; UTC when none. | `packages/screens/src/useWidgetData.ts:75-76` | writer, code only | holds |
-| 1,000 default, 10,000 most, 5 MB; choices 200; download 10,000. | `apps/control-plane/src/kernel/data/query/run.ts:21-23`; `useWidgetData.ts:32` | writer, code only | holds |
-| Empty states: "Choose what it shows in Data.", "Nothing is set up here yet.", "Open a record to see it here.", "Choose a row in X to see it here.", "You may not see this.", Try again. | `packages/screens/src/PageView.tsx:677-686`; `Frame.tsx:282-290` | writer, code only | holds |
-| Page reads again after an action, at 1/3/8 s after a start; dashboard refresh Never/1/5/15/60. | `packages/screens/src/actions.tsx:691`; `packages/widget-sdk/src/page.ts:272-274` | writer, code only | not run |
-| Table reads 25, "Show 25 more". | run | writer, run on the instance 2026-11-23 | holds as run |
-| Not built: Pivot above three breakdowns, chart above six measures, form file, Form/Detail on dashboards. | `docs/documentation/inventory/widgets.md` (A, not built) | writer | from the inventory |
+| Widgets declare shapes rows, summary, record, approvals | `packages/docs/generated/develop/reference/widgets/*.md` | second agent, 2026-11-23 | holds |
+| Sources: table, saved query, SQL on dashboards only, record/selected/own; an app page may read a saved query, not SQL | `packages/manifest/src/page.ts:1105-1160` | second agent, 2026-11-23 | holds (code) |
+| data_source:read and sql:read when the page is saved; reader needs data:read | `apps/control-plane/src/kernel/pages/standing.ts:7-12,112-117` | second agent, 2026-11-23 | holds (code) |
+| Rules tab: "What rows each person receives is decided by the Appointments row rules." | run (Rules tab) | second agent, 2026-11-23 | holds as run (earlier run) |
+| Reader's zone sent with every read; UTC when none | `packages/screens/src/useWidgetData.ts:73-76`; `apps/control-plane/src/kernel/zones.ts:13-17` | second agent, 2026-11-23 | holds (code) |
+| Reads: 1,000 default, 10,000 most, about 5 MB; choices at most 200; a download takes up to 10,000 | `apps/control-plane/src/kernel/data/query/run.ts:21-23`; `inputs.ts:118,529`; `useWidgetData.ts:32` | second agent, 2026-11-23 | holds (code) |
+| Empty states and their words | `packages/screens/src/PageView.tsx:677-686`; `Frame.tsx:282-290` | second agent, 2026-11-23 | holds (code); "Choose what it shows in Data." seen in the builder |
+| Page reads again after an action, and at 1, 3 and 8 seconds after a start | `packages/screens/src/actions.tsx:691` | second agent, 2026-11-23 | holds (code) |
+| Dashboard refresh: off, 1, 5, 15, 60 minutes; default 5; none while editing | `packages/widget-sdk/src/page.ts:294-300`; `apps/console/src/screens/Dashboards.tsx:442-446` | second agent, 2026-11-23 | corrected: the page did not give the default |
+| Table reads 25 at a time, Show 25 more | run | second agent, 2026-11-23 | holds as run |
+| Not there: Pivot above three breakdowns, a chart above six measures, a form file, Form or Record detail on a dashboard | `widgets-core/src/index.ts:523,808` | second agent, 2026-11-23 | holds (code) |
+
+Checked by: second agent, 2026-11-23

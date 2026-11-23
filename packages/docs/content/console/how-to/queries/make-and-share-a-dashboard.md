@@ -46,7 +46,7 @@ Every change in the editor is saved as you make it: the toolbar says "Saved." Un
 3. Press **Done**. The choice is saved as you make it.
 :::
 
-The line under the name now says "Yours. Seen by: everyone in this workspace." People you shared it with can look at it and cannot change it, and each sees only the rows they may read. They need `dashboard:read` and `data:read`.
+The line under the name now says "Yours. Seen by: everyone in this workspace." For groups, it names them in lower case, such as "floor staff". People you shared it with can look at it and cannot change it, and each sees only the rows they may read. They need `dashboard:read` and `data:read`.
 
 ## Download what a widget shows
 
@@ -64,7 +64,7 @@ The dashboard is in the list under **Dashboards** as **Yours**, with **Seen by**
 
 - **New dashboard is missing.** You lack `dashboard:write`. The empty state says "Making one takes the dashboard:write permission, which your role does not have here."
 - **"A member can keep 20 dashboards in a workspace. Delete one first."** You are at the limit.
-- **The name is refused as too long.** "Use at most 100 characters."
+- **The name is refused as too long.** "Use at most 100 characters. This is 101." The button is off until it fits.
 - **The groups cannot be listed.** Without `group:read` the dialog says so and keeps who it is shown to. It can still be shown to everyone or kept to you.
 - **A widget says it reads what the workspace does not have.** A notice above the dashboard lists the table or query it names that is not there. The dashboard is kept as it is.
 - **The figure does not change when the table does.** It refreshes on the schedule, or when you press **Refresh now**. It does not refresh while the tab is hidden, nor while you edit; it reads once when the tab is shown again.

@@ -17,3 +17,5 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | Core steps: labels, paths, takes, time allowed, limit 1-1000 default 50, required fields, failOnError default. | `packages/nodes/src/index.ts:50-340` | writer | holds |
 | A bundle carries only the core steps a flow uses. | `packages/nodes/src/index.ts:1-10` | writer | holds |
 | Code sample type-checks against the SDK. | run: `tsc --noEmit -p examples/fernhill` with the sample added | writer, run | holds as run |
+
+Checked by: second agent, 2026-11-23. Run: the Code tab deploy, `does not take one` and `not a table in this repository` refusals, the palette order (Starts, Steps, Logic, Core, groups, Scripts), a flow test with the step. Corrected: the palette order, and the refusal for a console-made table (fault: the step form offers console tables that a deploy refuses; `packages/manifest/src/bundle-check.ts:226`).

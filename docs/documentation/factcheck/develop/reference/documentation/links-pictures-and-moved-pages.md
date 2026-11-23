@@ -16,3 +16,13 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 | `key` and `moved_from` fields and limits (20); a copy takes no key. | packages/docs-engine/src/schema.ts:73-80, 157-165; ops.ts:503-545 | writer, read in the code 2026-11-23 | holds as written |
 | moved_from errors moved_from_self, moved_from_exists, moved_from_duplicate. | set.ts:480-510 | writer, read in the code 2026-11-23 | holds as written |
 | A live docs app does not read moved_from (no use in apps/control-plane or docs-site render); it feeds the manifest and the export. | grep of `redirectedPath|\.redirects` finds only packages/docs-engine/src/{package,output,redirects}.ts, docs-site/src/export.ts and HelpPanel.tsx | writer, read in the code 2026-11-23 | holds as written |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Every label, quoted message and limit in the page was searched for in the console and engine source by script, and the claims below were run on the instance http://localhost:8091 (a tenant of the checker's own, d31chk, a dev workspace and a production workspace; a doc writer and a tenant admin) at 1440 px light, with 390 px dark and 768 px for the screens.
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| The refusals: a link out of the documentation, a topic nobody has, a scheme other than http, https and mailto, an empty link, `//`, an http picture, `#same-2`. | run: `volvel build` | second agent, 2026-11-23 | holds as written |
+| A picture that is not there is checked. | run: only the deploy checks it, not `volvel build` | second agent, 2026-11-23 | corrected |
+| `moved_from` errors. | run: self, exists, duplicate; paths are inside the site | second agent, 2026-11-23 | corrected: paths are inside the site |

@@ -12,7 +12,7 @@ A provider answers one question: who is this person, and what does the organizat
 
 A provider is made for one of two kinds of people. **Members** use the console and belong to the instance as a whole. **End users** belong to one tenant and use its apps and portal. The two are kept apart because the harm of a mistake differs: a member's account can be in many tenants, and an end user's is in one.
 
-A new provider is **off**. Nothing changes for anyone until someone turns it on, and the console lets you try a sign-in first without signing anybody in.
+A new provider is **Off**. Nothing changes for anyone until someone turns it on, and the console lets you try a sign-in first without signing anybody in.
 
 ## How a sign-in goes
 

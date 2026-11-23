@@ -15,3 +15,8 @@
 
 ## Not run
 Lists of connections, secrets, tables; the lane key; "cannot be deployed alone"; production; a repository script; dark theme, 768 and 390 px, keyboard-only.
+
+## Second check, 2026-11-23
+- Walked by the second agent, 2026-11-23, on http://localhost:8091 as Maya Brooks in Fernhill's Sandbox: the scripts list with its inspector, the run dialog, the script's page, its Settings form and the editor, in dark and light at 768 and 390 px (no sideways scroll, nothing cut off) and by keyboard (g then s; Enter on Run opens the dialog with the focus in it and Esc closes it and returns the focus to Run; Ctrl+Enter; Enter on the Settings summary opens it).
+- On a repository script (`messaging/send-sms`) the **Settings** tab shows **Change the settings**, where the code (`ownership !== "repository"`, the stored value being `code`) means to say "The repository holds this script: change its settings there." Product fault, reported; the page says only what is true of production.
+- Still not run: lists of connections, secrets and tables, the lane key, "cannot be deployed alone", a production workspace.

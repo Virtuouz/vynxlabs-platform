@@ -11,3 +11,7 @@ Not known.
 
 ## Not run
 Everything on this page. The effect on cookies is the library's: changing the value invalidates cookies signed with the old one.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run: new value, restart: the old cookie answered 401, a new sign-in 200; a short value: 'AUTH_SECRET must be at least 32 characters.' Page corrected: end users' and apps' sessions are random tokens stored hashed (`kernel/apps/sessions.ts`), not signed with AUTH_SECRET, so they stay signed in; `authSecret` is used only in `kernel/auth.ts` and `kernel/apps/challenge.ts`. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

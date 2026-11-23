@@ -14,5 +14,16 @@
 ## The page got wrong (and was corrected)
 - No correction was needed from the run.
 
-## Not run
+## Not run by the writer
 A request with a good signature (202), the Slack form with its timestamp, a paused webhook (503) and the sender-side headers of GitHub and Slack, which the page takes from what those senders document.
+
+## Second check (2026-11-23)
+
+- Instance: http://localhost:8091, the throwaway instance (MAIL_CAPTURE_DIR set, so mail is read from its folder). Everything below ran in a workspace of my own: Operate check (a dev workspace) and Operate check live (a production workspace linked to it), in Fernhill's tenant, with scripts, flows, triggers, a secret and an HTTP connection of mine (deployed by the CLI from a repository of my own; the connection pointed to a listener of mine on localhost). Signed in as Maya Brooks, and as Devi Shah (not in the Practice managers group) where a second person was needed. Playwright, headless.
+
+- A webhook with `verify` (`opchk/signed`) and its secret set in the workspace: a request with a good signature (`openssl dgst -sha256 -hmac … -hex` over the exact body) answered `202` with `{"runId":"…"}`; the run's page read "Webhook opchk/signed". The same `idempotency-key` twice returned the same `runId`.
+- The Slack form (`opchk/slack`, `signed: "v0:{timestamp}:{body}"`, `timestampHeader`, `toleranceSeconds: 300`): a signed form body with the current time answered `202`; a time 4,000 seconds old answered `401` "The request's timestamp is too far from now."; no timestamp answered `401` "The x-slack-request-timestamp header is missing or is not a time."
+- A paused webhook answered `503` `trigger_paused`; a paused workspace `503` `workspace_paused`.
+- Walked **Triggers** with the webhook chosen at 390 px, dark: **Webhook address**, **Copy address**, no horizontal scroll.
+
+Still not run: the sender-side headers of GitHub and Slack (from what those senders document; no internet).

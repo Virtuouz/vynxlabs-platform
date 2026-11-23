@@ -1,6 +1,6 @@
 # Fact-check record: console/explanation/releases/how-changes-move
 
-Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer; nothing here has been checked by a second agent yet. Other pages of the area hold the line-by-line records of every label: `console/reference/screens/operate/releases`, `console/reference/screens/operate/git-sync`, `administer/reference/screens/repository`, `administer/reference/screens/workspaces`, `console/reference/screens/configure/settings`. `Dep` = `apps/control-plane/src/kernel/execution/deploy.ts`, `Auth` = `apps/control-plane/src/kernel/authoring.ts`, `CPgit` = `apps/control-plane/src/kernel/git.ts`.
+Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer. Checked by: second agent, 2026-11-23. Every quoted label, message and permission of the page was matched against the console and control-plane source at HEAD (`87000022`) by script and by hand, and what depends on the screen was run on the instance http://localhost:8091 (see `docs/documentation/runs/...`). Other pages of the area hold the line-by-line records of every label: `console/reference/screens/operate/releases`, `console/reference/screens/operate/git-sync`, `administer/reference/screens/repository`, `administer/reference/screens/workspaces`, `console/reference/screens/configure/settings`. `Dep` = `apps/control-plane/src/kernel/execution/deploy.ts`, `Auth` = `apps/control-plane/src/kernel/authoring.ts`, `CPgit` = `apps/control-plane/src/kernel/git.ts`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -18,3 +18,9 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 | Release branch `<branch>/<slug>`; failure leaves promotion standing; commit again | `CPgit:1654-1658`, `Release.tsx:790-810` | writer | holds (not run) |
 | Take over from code, deploy from the repository takes it back | `Release.tsx:420-430` | writer | holds |
 | No webhooks and no scheduled sync; no workspace lock | `CPgit:71-79`, `Git:228`; absence | writer | holds (absence) |
+
+## Second check (2026-11-23)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Claims about Git: the release branch as a mirror, volvel.yaml wins over Folder | `git.ts:1641-1700` | second agent, 2026-11-23 | checked; the release branch reads volvel.yaml from its own branch |

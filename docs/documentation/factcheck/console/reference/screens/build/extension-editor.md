@@ -34,3 +34,5 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | Removing notice. | `Au:966-969` | writer, code | holds in code |
 | Clash notice and buttons. | `kit/DraftClash.tsx:25-70` | writer, code | holds in code |
 | Permissions resource:read, resource:write + code:write, deployment:write + code:write. | `apps/control-plane/src/routes/authoring.ts:483-486, 578-583, 639, 1109-1125, 1163` | writer | holds |
+
+Checked by: second agent, 2026-11-23. On the instance: the editor at 390 px in dark (no horizontal scroll), :kbd[Ctrl+S] and reload, the clash notice and the confirm dialog (`kit/DraftClash.tsx:15-62`), the refusal of a save with the tenant switch off, Settings fields for a trigger source, the starters (webhook source with `x-example`, poll source returning no items). Corrected: the clash row (**Load theirs**, **Copy what I wrote** copies the code only: `Authoring.tsx:1007-1011`). Strings checked by search in `apps/console/src`: path and name dialog, discard and keep questions, "Your changes to ... are not saved", the kept-in-this-browser notice. Not seen: **From the repository**, **Taken over**, Removing.

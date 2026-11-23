@@ -17,3 +17,13 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 | Undo from each message puts the pages back; page follows a move and back. | D/Docs.tsx:226-256, 854-894 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
 | The 90-day permanent redirect after a deployed rename or move; the old page before the deploy; no redirect in `_draft/`. | apps/control-plane/src/kernel/apps/front.ts:1290-1306; docs/documentation/fixed/p30-m4.md; run | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
 | Errors "There is already something named … here.", "A folder cannot go inside itself.", "A page goes in a folder. Top-level folders are the sites." | packages/docs-engine/src/ops.ts:366-380, 395-404, 459-463 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Every label, quoted message and limit in the page was searched for in the console and engine source by script, and the claims below were run on the instance http://localhost:8091 (a tenant of the checker's own, d31chk, a dev workspace and a production workspace; a doc writer and a tenant admin) at 1440 px light, with 390 px dark and 768 px for the screens.
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| Drag onto a folder, between rows, Undo, a top-level folder has no grip. | run | second agent, 2026-11-23 | holds as written |
+| Move refusals: "There is already something named <name> in <folder>." in a move, "…here." in a rename. | packages/docs-engine/src/ops.ts:360-460 | second agent, 2026-11-23 | corrected: the page gave only the "here" form |
+| After a deploy the old address redirects for 90 days (308). | run log of the writer (redirect followed); ops.ts and docs routes read | second agent, 2026-11-23 | holds; the 308 status was not read from a response here |

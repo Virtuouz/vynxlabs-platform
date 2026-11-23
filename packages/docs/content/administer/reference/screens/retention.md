@@ -22,7 +22,7 @@ Each field is labeled with the kind and "(days)", shows the instance's default a
 
 The defaults are those of an instance that has not changed them. An instance sets its own with the settings `RETENTION_RUNS_DAYS`, `RETENTION_EVENTS_DAYS`, `RETENTION_REFUSALS_DAYS` and `RETENTION_AUDIT_DAYS`, and the placeholder and "Now" show what applies. A number outside the allowed range is refused at the field: "A whole number of days from 90 to 3650."
 
-Finished tasks of the platform (reading schemas, sending alerts, trying connections) are kept 7 days, and there is no field for that. No hold exists that keeps one run or entry past its period.
+Finished tasks of Volvel itself (reading schemas, sending alerts, trying connections) are kept 7 days, and there is no field for that. No hold exists that keeps one run or entry past its period.
 
 ## Saving
 

@@ -89,7 +89,7 @@ Under the code, **Problems** (or **Problems (n)**) lists what the editor found a
 | Removing | **Removing**. "This connector is removed in your drafts. Nothing changes until that draft is deployed. The code shown is what is deployed now. Keep this connector to take the removal back." The button is **Keep this connector**, which asks "Keep this connector?" |
 | Production workspace | Read-only, with the notice that the extension is changed in the dev workspace and reaches production by promotion, and a link **Edit it in** the dev workspace. |
 | Taken over | A repository extension whose definition carries its own source, which the editor opens editable: "Saving a draft of this connector takes it over from the repository." |
-| Clash | "Someone else saved this connector after you opened it. Nothing of theirs was overwritten, and what you changed is still here, unsaved." The notice offers **Copy what I wrote** and **Load their version**, which asks "Load their version?" before it replaces what you changed. |
+| Clash | "Someone else saved this connector after you opened it. Nothing of theirs was overwritten, and what you changed is still here, unsaved." The notice offers **Copy what I wrote** and **Load their version**, which asks "Load their version?" (with "What you changed since you opened the connector is replaced by what they saved." and **Load theirs**) before it replaces what you changed. **Copy what I wrote** copies the code only. |
 | Failed save | A red notice with the server's words. A path already used shows under **Path**: "Something already exists at this path. Choose another, or open that one." |
 
 ## Permissions

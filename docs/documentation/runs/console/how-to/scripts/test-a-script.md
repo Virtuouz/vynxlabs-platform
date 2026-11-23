@@ -17,3 +17,11 @@
 
 ## Not run
 Dark theme, 768 and 390 px, keyboard-only, a second person's draft, the console switch.
+
+## Second check, 2026-11-23
+- Walked by the second agent, 2026-11-23, on http://localhost:8091 as Maya Brooks in Fernhill's Sandbox: the scripts list with its inspector, the run dialog, the script's page, its Settings form and the editor, in dark and light at 768 and 390 px (no sideways scroll, nothing cut off) and by keyboard (g then s; Enter on Run opens the dialog with the focus in it and Esc closes it and returns the focus to Run; Ctrl+Enter; Enter on the Settings summary opens it).
+- **Build with all drafts** was run: `scr-broken` was drafted with code that does not build, then `scr-greet` was tested with the box off (Succeeded) and on ("The code written in the console does not build. scr-broken.script.ts:3: Unexpected "}" Request ID …"). **Problems** of `scr-greet` stayed "No problems found." The page now says so.
+- The hint under the box reads "…so another draft that does not build stops the test."; the pages now use the same words.
+- :kbd[Ctrl+↵] was run: with the form filled in and no run made yet it refused with "The input does not match the script's schema. /input: must have required property 'name'", because it runs with the input of the last run (`testInput`, `{}` at first). After a run by button, a changed input was not the one it ran either. The page says to start with the button (product fault, reported).
+- At 768 and 390 px the code area of the editor is 5 px high; the test pane takes the room (product fault, reported). The page's "below it on a narrow window" is true of the order only.
+- Still not run: a second person's draft, the console switch (`console_code_off`).

@@ -1,6 +1,6 @@
 # Fact-check record: administer/reference/screens/workspaces
 
-Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer; nothing here has been checked by a second agent yet. Line numbers point at the block that holds the claim. `Git` = `apps/console/src/screens/Git.tsx`, `Env` = `apps/console/src/screens/Environments.tsx`, `CPgit` = `apps/control-plane/src/kernel/git.ts`, `CProu` = `apps/control-plane/src/routes/`, `Rel` = `apps/console/src/screens/Release.tsx`.
+Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer. Checked by: second agent, 2026-11-23. Every quoted label, message and permission of the page was matched against the console and control-plane source at HEAD (`87000022`) by script and by hand, and what depends on the screen was run on the instance http://localhost:8091 (see `docs/documentation/runs/...`). Line numbers point at the block that holds the claim. `Git` = `apps/console/src/screens/Git.tsx`, `Env` = `apps/console/src/screens/Environments.tsx`, `CPgit` = `apps/control-plane/src/kernel/git.ts`, `CProu` = `apps/control-plane/src/routes/`, `Rel` = `apps/console/src/screens/Release.tsx`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -14,3 +14,10 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 | New dev workspace starts with triggers paused, production not | `CProu/workspaces.ts:268,300` | writer, run (Settings said Triggers are paused) | holds |
 | workspace:write for create; delete production needs workspace_production:write | `CProu/workspaces.ts:260`, `CProu/workspaces.ts:560-590` | writer | holds |
 | A grant on one resource sees name, slug and type | `CProu/workspaces.ts:377` | writer | holds (not run) |
+
+## Second check (2026-11-23)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Without workspace:write the line reads "…, not change it." | `kit/Can.tsx:176-190`, `Tenant.tsx:380` | second agent, 2026-11-23 | corrected: the page said "not change them" |
+| Create workspace dialog, duplicate slug, bad slug messages, link | run (earlier) and `api.ts` | second agent, 2026-11-23 | checked |

@@ -15,7 +15,7 @@ You need `service_account:write`, and `binding:write` to give it a role.
 :::steps
 1. Open **Service accounts** and press **Create service account**. Type a **Name** (for example `ci`) and **What it is for**.
 2. The page of the account opens on **Keys**. Press **Create API key**, type a **Name** and choose **Expires**: **Never**, **In 30 days**, **In 90 days** or **In a year**.
-3. Copy the key from the dialog. It starts with `vxk_` and is shown once. Volvel keeps only a hash.
+3. Copy the key from the notice above the table (**Copy the key**), then press **Done**. It starts with `vxk_` and is shown once. Volvel keeps only a hash.
 4. Open the **Access** tab and press **Give access**. Choose a place and a role.
 :::
 

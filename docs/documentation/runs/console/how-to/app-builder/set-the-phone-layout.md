@@ -1,17 +1,14 @@
-# Run log: console/how-to/app-builder/set-the-phone-layout.md
+# Run log: console/how-to/app-builder/set-the-phone-layout.md (merged with the former widgets/lay-out-a-page-for-phones)
 
-- Instance: http://localhost:8091, the throwaway instance seeded by `examples/fernhill/setup/setup.mjs`, commit `5ebf1c80` (branch phase-31-write-the-docs) plus the working tree of the wave.
-- Signed in as Maya Brooks (`maya.brooks@fernhill.example`, tenant admin), in Fernhill's Sandbox (dev) workspace, at 1440 px, light theme, Playwright headless. No other width or theme was run. Apps made for the runs are named `abapp …`.
-- The steps were run in pieces (several scripts), then the page was written from what was seen. A single end-to-end run of the finished text was not made.
+- Instance: http://localhost:8091, the throwaway instance seeded by `examples/fernhill/setup/setup.mjs`. Signed in as Maya Brooks (tenant admin), Fernhill's Sandbox workspace, headless Playwright. Second check, 2026-11-23.
+- The finished text was run end to end once on a new app `wdg Phones Two` (Table, Chart, Text on Appointments) at 1440 px, light: Phone and Tablet (the tablet said "Drawn at 86 %"), the arrow keys between sizes, Priority 5 on the Chart (Chart first, "1 widget changed by hand"), Hide on phones for Client code, Hide for the Text ("Text is hidden on phones", "2 widgets changed by hand", publish check "Phone layout hides 1 widget"), Custom for the Table (Phone column, row, width, height), a mouse drag and a click-then-arrow-key move (both asked "Change the phone layout by hand?"; pressing Change the phone layout made the move), All automatic (banner back to no count, Text drawn again, Priority empty, Hide on phones kept).
+- Served result of `wdg Phones` (published): at 390 px light and dark the Chart first then the Table as a list without Client code; at 768 and 1440 the desktop places with every column.
+- Walked at 390 px: the sizes are behind the header's ⋯ (a radio group "Screen size"); Pages and widgets opens as a sheet; the Layout panel fits the settings sheet. In dark at 1440: the Layout panel and the "Text is hidden on phones" placeholder read well.
 
-## The steps as followed
-- **Phone** in the header: the page was drawn in the device frame; the line above it read "Phone layout is made from the desktop one."
-- Table selected, **⋯ > Layout**, **Smaller screens**: Tablet and Phone each **Automatic / Custom**, **On narrow screens** Automatic, Keep, Full, Stack, Hide, with "A small widget shares a row with the next small one; another takes the row.".
-- Phone **Custom**: fields Phone column, Phone row, Phone width, Phone height appeared; the line became "Phone layout is made from the desktop one. 1 widget changed by hand." with **All automatic**.
-- **Hide**: the page showed "Appointments is hidden on phones". The publish check then listed the amber row "Phone layout hides 1 widget" with "Appointments, on Appointments".
-- **All automatic**: the line went back to "Phone layout is made from the desktop one.".
+## What the run changed on the page
+- A move on the phone takes the priority of the widget it is put before (the page had said a move did not pass a higher priority).
+- All automatic on the phone also clears On narrow screens and Priority (the page had said only places).
+- The two source pages were merged; the widgets page was removed.
 
-## What the page got wrong, and the correction
-- Nothing differed in the steps that were run. Whether **All automatic** also resets a **Hide** under **On narrow screens** was not looked at; the page says only that it takes back the places set by hand (the banner counts widgets with a place of their own).
-- Not run: a drag on the phone, the question "Change the phone layout by hand?" (a drag is needed; its text is from `AppBuilder.tsx:288-298`), :kbd[↑] and :kbd[↓] on the phone, Tablet, and widths under 1024 px.
-- Copy to report: that question says 'Go back to automatic' in its Layout undoes that, and the Layout panel has no control of that name (it has **Automatic**, and the banner has **All automatic**).
+## Not run
+Tablet Custom places, Keep and Stack as results on a served phone, a widget that defaults to Hide.

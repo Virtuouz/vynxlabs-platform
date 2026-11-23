@@ -1,6 +1,6 @@
 # Fact-check: develop/reference/configure/connections-in-scripts.md
 
-Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: not yet made.
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -19,3 +19,14 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second 
 | .platform/local.json shape; defaults used; smtp not local; error texts. | `packages/cli/src/local.ts:11-17,72-105,124-126` | writer, 2026-11-23 | holds |
 | `volvel run --remote` runs in a workspace. | `packages/cli/src/commands.ts:86-90` | writer, 2026-11-23 | holds; run |
 | The CLI has no bind or secret command. | `packages/cli/src/commands.ts (list of commands)` | writer, 2026-11-23 | holds (absence) |
+
+## Second check, 2026-11-23
+
+Checked by: second agent, 2026-11-23. Source commit `87000022`.
+
+| Claim | Source | Checked by | Result |
+| --- | --- | --- | --- |
+| Refusal texts: group with oauth2; onFailure.notify; undeclared use; own base URL; local value; "Mail connections live in a workspace…". | `bundle-check.ts:334`; `routes/workspaces.ts:471`; `routes/worker.ts:621`; `sdk/src/http.ts:166`; `cli/src/local.ts:20-24,95,126` | second agent, 2026-11-23 | holds |
+| Up to 5 redirects, same origin only; 301/302 POST and 303 become GET. | `packages/sdk/src/http.ts:71,195-225` | second agent, 2026-11-23 | holds |
+| `.platform/local.json` shape (connections, groups, secrets, variables). | `packages/cli/src/local.ts:12-14,72` | second agent, 2026-11-23 | holds |
+| "To run in a workspace, use `volvel run … --remote`" runs this build as a test run, nothing deployed. | `packages/cli/src/cli.ts:1112-1170`, `commands.ts:89` | second agent, 2026-11-23 | holds as a command; the page now says what it runs. fault: configure, `volvel run --remote` runs the local build |

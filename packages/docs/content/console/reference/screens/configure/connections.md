@@ -61,7 +61,7 @@ Health is what the last test found. Nothing tests a connection on a schedule, ex
 The list reads its address for these values:
 
 - `?setup=<path>` or `?item=<path>` opens the sheet of that connection. A refused deploy or promotion links here with `?setup=`. A path with no connection says "There is no connection X here to set up."
-- `?oauth=connected` or `?oauth_error=…` with `&connection=<path>` is where the sign-in with a provider returns. The sheet of the connection opens with what the provider said.
+- `?oauth=connected` or `?oauth_error=…` with `&connection=<path>` is where the sign-in with a provider returns. The sheet of the connection opens with what the provider said, for example "The provider said no: access_denied." in part 4. The connection stays **Not connected yet**.
 
 The navigation item shows a badge, "N not set up", while connections wait. The workspace's **Overview** says "N connection has nothing bound here" or "N connections have nothing bound here", with a link to **Configure**.
 
@@ -100,9 +100,9 @@ Part 4 shows what happened, once the connection is saved:
 | Shown | Means |
 | --- | --- |
 | **Saved** | The settings and credential are stored in this workspace. |
-| **Connected**, **Not connected yet**, **Needs connecting again** (OAuth 2.0) | Whether a member has signed in to the provider. **Connect** or **Connect again** sends the browser to the provider. |
+| **Connected**, **Not connected yet**, **Needs connecting again** (OAuth 2.0) | Whether a member has signed in to the provider. **Connected** shows the scopes the provider gave. **Connect** or **Connect again** sends the browser to the provider. |
 | **Testing…**, then **Waiting for a worker…** after 20 seconds | A worker is trying the connection. A test waits up to 2 minutes for a worker, then fails with "No worker took it in time. Start a worker for this workspace, or let the instance start one." |
-| **Reached (200) in 55 ms.** | The test succeeded. |
+| **Reached (200) in 55 ms.** | The test succeeded. A mail connection has no status: "Reached in 6 ms." |
 | **Failed (HTTP 404): …** or **Failed: …** | The test failed, with the reason. For anything but OAuth 2.0 a button, **Change the token or key** (or the credential's name), takes you to the credential. |
 | **Not tested** with **Test** | Saved, not tested. A non-OAuth connection is tested as it is saved. An OAuth 2.0 connection is tested when the provider sends you back. **Test** is off until it is connected. |
 

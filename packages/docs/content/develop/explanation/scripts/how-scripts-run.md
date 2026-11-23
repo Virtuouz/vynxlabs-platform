@@ -1,6 +1,6 @@
 ---
 title: How scripts run
-description: What happens between a run being asked for and its result, what a script is held to, and what the platform does not check for you.
+description: What happens between a run being asked for and its result, what a script is held to, and what Volvel does not check for you.
 subjects: [scripts, runs]
 ---
 
@@ -69,7 +69,7 @@ Because a shown input can be masked, running again with a masked input asks you 
 
 A run that ends publishes `platform/run-finished` with its status for succeeded, failed and canceled, besides the older `platform/run-succeeded` and `platform/run-failed`. A script's run page lists the events the script published and what its failure alert did.
 
-## What the platform does not check
+## What Volvel does not check
 
 - That the script is safe to run twice.
 - That it reads only the rows it should: without `.as(...)` a script reaches every row of a table it declared.

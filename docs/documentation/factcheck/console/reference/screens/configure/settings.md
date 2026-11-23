@@ -1,6 +1,6 @@
 # Fact-check record: console/reference/screens/configure/settings
 
-Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer; nothing here has been checked by a second agent yet. Line numbers point at the block that holds the claim. `Git` = `apps/console/src/screens/Git.tsx`, `Env` = `apps/console/src/screens/Environments.tsx`, `CPgit` = `apps/control-plane/src/kernel/git.ts`, `CProu` = `apps/control-plane/src/routes/`, `Rel` = `apps/console/src/screens/Release.tsx`.
+Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Written by the page's writer. Checked by: second agent, 2026-11-23. Every quoted label, message and permission of the page was matched against the console and control-plane source at HEAD (`87000022`) by script and by hand, and what depends on the screen was run on the instance http://localhost:8091 (see `docs/documentation/runs/...`). Line numbers point at the block that holds the claim. `Git` = `apps/console/src/screens/Git.tsx`, `Env` = `apps/console/src/screens/Environments.tsx`, `CPgit` = `apps/control-plane/src/kernel/git.ts`, `CProu` = `apps/control-plane/src/routes/`, `Rel` = `apps/console/src/screens/Release.tsx`.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -22,3 +22,15 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 | Delete refused while clone running / runs in progress | `CProu/workspaces.ts:575-590`, `apps/control-plane/src/kernel/tenancy/remove.ts:18-29` | writer | holds (not run) |
 | Access section | `Env:362-460` | writer, run | holds |
 | Without workspace:write: line and disabled fields | `Env:277`, `Can.tsx:176-212` | writer | holds (not run) |
+
+## Second check (2026-11-23)
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Without workspace:write the line reads "…, not change it." | `kit/Can.tsx:176-190`; run (Amara) | second agent, 2026-11-23 | corrected: the page said "not change them" |
+| Without binding:write: Give access disabled, line "You can see who holds a role here, not change it. It needs binding:write." | `Environments.tsx:380-405`; run (Amara in Fernhill Rel dev) | second agent, 2026-11-23 | added to the page; checked, run |
+| Without workspace:read: only the notice "This needs the workspace:read permission. …" with request ID | run (a Fernhill locum, no role) | second agent, 2026-11-23 | added to the page; checked, run |
+| Run limit: an empty field keeps the limit, hint "Left empty, it stays at N." | `Environments.tsx` (HEAD, lines 233-245, 335-345) | second agent, 2026-11-23 | checked at HEAD; fault: releases/empty Runs at once. The instance on 8091 still refuses the empty field; page follows HEAD |
+| Clone with data: "Copied 22 resources, 1 row in 1 table and 0 files."; Safety off: "Its connections, data sources, group members and secrets were copied…"; Safety on sentence "…until you set it up" at HEAD | `Environments.tsx:575-590` (HEAD); run | second agent, 2026-11-23 | checked, run; fault: configure bound/bind words (the instance still says "until you bind it") |
+| Delete a production workspace: dialog text, button disabled until the slug is typed, refusal "This needs the workspace_production:write permission. …" | `Environments.tsx:150-165`; run | second agent, 2026-11-23 | checked, run |
+| Not run: the queued clone state (a second clone waiting; copying is too fast to hold), clone failure, Try again | - | second agent, 2026-11-23 | not run, said here |

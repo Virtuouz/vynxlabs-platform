@@ -1,6 +1,6 @@
 # Fact-check: administer/explanation/configure/how-secrets-are-kept.md
 
-Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: not yet made.
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -15,3 +15,13 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second 
 | Clone with Safety off opens and seals again. | `apps/control-plane/src/kernel/tenancy/clone.ts:73-90` | writer, 2026-11-23 | holds |
 | Masking: forms, `[redacted]`, 4-character rule, key names and schema marks; applied to the worker's log lines and error. | `apps/control-plane/src/kernel/execution/redact.ts:14-110; routes/worker.ts:434,594` | writer, 2026-11-23 | holds |
 | WORKER_EGRESS_ALLOW and EGRESS_ALLOW. | `apps/control-plane/src/config-vars.ts:292-334` | writer, 2026-11-23 | holds |
+
+## Second check, 2026-11-23
+
+Checked by: second agent, 2026-11-23. Source commit `87000022`.
+
+| Claim | Source | Checked by | Result |
+| --- | --- | --- | --- |
+| Master key 32 bytes base64 `MASTER_KEY`; AES-256-GCM; export passphrase at least 12 characters. | `config.ts:206-209`; `kernel/crypto.ts`; `routes/portability.ts:22` | second agent, 2026-11-23 | holds |
+| Masking: `[redacted]`; URL-encoded, JSON-escaped and base64 forms; under 4 characters only as a whole word; keys and `writeOnly` / `format: password` / `x-secret`. | `kernel/execution/redact.ts:6-47,87` | second agent, 2026-11-23 | holds |
+| The "cannot be read" 422, the signature text and the unset-secret record text. | `sealed.ts:77`; `triggers.ts:224,1360` | second agent, 2026-11-23 | holds |

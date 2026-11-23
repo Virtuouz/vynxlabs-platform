@@ -73,11 +73,11 @@ The same commands are in the command palette under **This trigger**: **Pause *pa
 
 #### Fire now
 
-**Fire now** starts one run of a schedule as its next time would, with its input, and leaves its next time where it is. It opens the run's page. It is offered for a schedule that is not paused, in a workspace whose triggers are not paused. The server also refuses, with "This schedule is paused, so it cannot be fired now. Resume it first.", "This workspace's triggers are paused, so this schedule cannot be fired now." or "Every trigger in this instance is paused, so this schedule cannot be fired now." A schedule that is only turned off may be fired, to try it. A schedule with a trigger source starts the source, and says "The source is still looking from the last time. Try again when it has finished." if it is busy. A flow's schedule node can be fired too.
+**Fire now** starts one run of a schedule as its next time would, with its input, and leaves its next time where it is. It opens the run's page, which names the schedule as what started it; the schedule's **Last fired** is not changed by it. It is offered for a schedule that is not paused, in a workspace whose triggers are not paused. The server also refuses, with "This schedule is paused, so it cannot be fired now. Resume it first.", "This workspace's triggers are paused, so this schedule cannot be fired now." or "Every trigger in this instance is paused, so this schedule cannot be fired now." A schedule that is only turned off may be fired, to try it. A schedule with a trigger source starts the source, and says "The source is still looking from the last time. Try again when it has finished." if it is busy. A flow's schedule node can be fired too.
 
 ### New schedule
 
-The **New schedule** sheet saves a draft that runs once it is deployed from the **Deploy** screen. **Path** (lower-case letters, digits, hyphens and underscores, in folders, such as `reports/daily`). Then:
+The **New schedule** sheet saves a draft (**Save draft**) that runs once it is deployed from the **Deploy** screen. **Path** (lower-case letters, digits, hyphens and underscores, in folders, such as `reports/daily`). Then:
 
 | Field | What it takes |
 | --- | --- |
@@ -90,6 +90,7 @@ The **New schedule** sheet saves a draft that runs once it is deployed from the 
 | **Time zone** | An IANA zone. The workspace's zone is offered; a schedule that names none runs in UTC. |
 | **Next times, in *zone*** | The next five times. |
 | **Skip a time while the run it started last is still going** | Whether to pass over a time while the last run goes. A schedule made here allows overlap unless this is checked; a flow's schedule node skips by default. |
+| **Tags for each run (optional)** | One expression to a line, over `trigger`, each giving a tag for the run. A tag is up to 64 characters of `a-z`, `0-9` and `_.:-`; an expression that fails leaves its tag out. Up to 10. |
 | **Input** | What it is given each time. |
 
 Where 200 or more runs are already queued in the workspace, a schedule skips that time and says so under **Backlog**. The limit is the operator's setting `SCHEDULE_BACKLOG_LIMIT`; 0 turns it off. A trigger source starts at most 100 runs a tick.
@@ -119,4 +120,4 @@ Where 200 or more runs are already queued in the workspace, a schedule skips tha
 - [Pause triggers](../../../how-to/operate/pause-triggers)
 - [Verify a signed webhook](../../../../develop/how-to/operate/verify-a-webhook)
 - [Events](events), [Runs](runs)
-- [Platform events](../../../../develop/reference/operate/platform-events)
+- [Platform events](../../../../develop/reference/platform-events)

@@ -26,7 +26,7 @@ By the end the people an app is shared with will see your draft: you will have t
 
 :::steps
 1. Press **Publish**. The builder saves what is unsaved and opens a panel with a heading: "Checking before you publish", then "Ready to publish", or "Not ready to publish: N things to fix". Its line says where it deploys: "Deploys to Sandbox for the first time. Nobody sees it until then." for a new app, else "Deploys to Sandbox. The live app keeps working until then." **N draft changes** beside the name opens the same panel.
-2. Read the rows. A green check is a pass, such as "All data sources found", "3 actions are complete" or "New appointment form is valid". An amber row, "Worth knowing", does not stop the publish. A red row, "Needs fixing", does. A row that has a place on the page has **Show it**, which closes the panel and selects the widget.
+2. Read the rows. A green check is a pass, such as "All data sources found", "3 actions are complete" or "New appointment form is valid". An amber row, "Worth knowing", does not stop the publish. A red row, "Needs fixing", does. A row that has a place on the page has **Show it**, which closes the panel and selects the widget. When something needs fixing the foot of the panel says "Publish is off until these are fixed:" and lists them.
 3. Under the rows, **N changes** lists what the publish changes against what people see, such as "Added page Appointments". When the app uses groups in its rules, **Try as** a group **first** closes the panel and sets **View as** to that group.
 4. When it says "Ready to publish", press **Publish N changes**. The panel closes and a notice says "Published. People who open the app now see this." with **Open the app**. The header's status reads "Published."
 :::
@@ -39,7 +39,8 @@ By the end the people an app is shared with will see your draft: you will have t
 | --- | --- | --- |
 | "N data sources not found", with the names | A table or query a widget reads does not exist. | Yes |
 | "N of M actions are not complete", with where | An action has no steps, opens a page that is gone, adds to a table that does not exist, has no flow or script chosen, names one that does not exist, or starts a flow or script without an input it needs. | Yes |
-| "N buttons with no label" | A button or row action has no words and no icon. | Yes |
+| "N buttons with no label" | A row action, or a button of an Action group, has no words and no icon. | Yes |
+| "Button on Y: needs label." | A **Button** widget has an empty **Says**. The same words are in the **N to fix** list beside the name. | Yes |
 | "X form can't save" | A form has no table, or asks for a column the table lacks. | Yes |
 | What saving or deploying refused, in the page's words | The control plane's own check, such as an action with no steps, or another resource this deploy carries. | Yes |
 | "X on Y shows nothing yet" | A List with nothing placed, a Pivot with no grid, or a Record detail with no record. | No |

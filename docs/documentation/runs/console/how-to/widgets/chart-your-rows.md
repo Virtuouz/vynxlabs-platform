@@ -1,19 +1,13 @@
 # Run log: console/how-to/widgets/chart-your-rows.md
 
-- Instance: http://localhost:8091, the throwaway instance seeded by `examples/fernhill/setup/setup.mjs`, commit `14f7d5b9` (branch phase-31-write-the-docs).
-- Signed in as Maya Brooks (tenant admin), Fernhill's Sandbox workspace, headless Playwright, light theme, 1440 px unless said. The app is `wdg Visits` (address `wdg-visits`) made in the App Builder for these runs.
-- The steps were run in pieces and the page written from what was seen; one end-to-end run of the finished text was not made.
+- Instance: http://localhost:8091, the throwaway instance seeded by `examples/fernhill/setup/setup.mjs`. Signed in as Maya Brooks (tenant admin), Fernhill's Sandbox workspace, headless Playwright. Second check, 2026-11-23.
+- App `wdg Chart` (address `wdg-chart`), a Chart on Appointments, 1440 px light: Measure window, Add another measure (Measure 2), For each window (cuts, Include weeks with no appointments), Split into colors, the Order group (Sorted by, Bars in order for Clinic, Show at most), Display: chart type tiles with their reasons, Several series with a second breakdown, Colors (App theme, Cool, Warm, Grays), Along the bottom, Show axis titles, Legend, Over time group, the Actions tab; Scatter with For each = Minutes available; with Pet weight lb (Also from) still "needs a number".
 
-## The steps as followed
-- Add to page > Chart (Understand data). Source Appointments: Data showed Measure "Count of rows", For each "Starts at · Weekly", Split into colors Nothing, "Reads as the number of appointments by week. Drawn as bars; 10 weeks.", Order: Sorted by As they come, Show at most All weeks.
-- For each window: "Good for grouping" columns with the number of values, "Other columns", "How often the dates are cut" Day/Week/Month/Quarter, "Include weeks with no appointments".
-- Add another measure added "Measure 2: Count of rows" in place; its window listed Count, Count of different, Sum, Average, Smallest, Largest and, for Average, "Column it works on" Minutes / Pet weight lb.
-- Display: Chart type tiles Bar, Bar sideways, Pie ("not for time" over a date), Line, Area, Heatmap ("needs a split"), Scatter; Numbers, Colors, Show values on bars, Show axis titles, Legend, Up the side "First value".
-- For each = Minutes: Scatter enabled; chosen: three points (20, 40 and 60 minutes).
-
-## The page got wrong (and was corrected)
-- A first draft told the reader that Add another measure opens a window; it adds "Measure 2" in the list and its settings open when it is pressed.
-- Line, Area and Pie notes are read from the screen; "Along the bottom" did not appear with one breakdown and was not run.
+## What the page got wrong, and the correction
+- Several series is under Chart type (not More options) and needs a second breakdown.
+- There are no title boxes; Show axis titles shows a line saying what is along the bottom and up the side.
+- Order has Sorted by as well as Bars in order.
+- The click on a point is on the Actions tab.
 
 ## Not run
-Split into colors, several series, stacked and side-by-side bars, Colors, Show axis titles with the title boxes, Compare, a measure beyond two, Show at most on a chart.
+A published scatter; stacked versus side-by-side drawn in the served app; Compare with the period before (needs a date filter).

@@ -15,7 +15,7 @@ Every tenant has a log of its own, on its [Audit log](../../../administer/refere
 
 ## Controls
 
-The title is **Instance audit log**. The description reads "Changes that belong to no tenant: members, operators and sign-ins. Each tenant has its own log." Entries come newest first, 50 at a time, with **Show older entries** below the list.
+The title is **Instance audit log**. The description reads "Changes that belong to no tenant: members, operators and sign-ins. Each tenant has its own log." The description shows the first time you open the screen. On later visits it is folded behind the **About Instance audit log** button (the circled i) beside the title. Entries come newest first, 50 at a time, with **Show older entries** below the list.
 
 ### The toolbar
 
@@ -37,7 +37,7 @@ Everything that narrows the list is in the address (`area`, `since`, `from`, `to
 | --- | --- |
 | **When** | The time, as a button that opens the entry. In your own clock. |
 | **Who** | The member, service account or API key that acted. |
-| **What was done** | A tag for the kind (**Create**, **Update**, **Delete**, **Execute**, **Read**), the action in words, and the action's own name in code style (`member.created`). The kind is read from how the action ends. A **Operator** tag marks an entry made under an operator access grant. A **Deleted tenant** tag marks an entry of a deleted tenant; hovering it gives the tenant's ID. |
+| **What was done** | A tag for the kind (**Create**, **Update**, **Delete**, **Execute**, **Read**), the action in words, and the action's own name in code style (`member.created`). The kind is read from how the action ends. An **Operator** tag marks an entry made under an operator access grant. A **Deleted tenant** tag marks an entry of a deleted tenant; hovering it gives the tenant's ID. |
 | **To** | What it was done to: its name, or its ID in code style when it has no name. |
 
 ### The entry inspector

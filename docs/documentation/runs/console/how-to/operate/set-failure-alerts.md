@@ -14,5 +14,17 @@
 ## The page got wrong (and was corrected)
 - The run showed that a run with retries stays **Queued** between attempts and is alerted only after the last one: the page says so under "If it does not work".
 
-## Not run
+## Not run by the writer
 **Send a test alert** and a post to a connection (the Sandbox's connections are stand-ins and nothing was chosen), two failures within ten minutes, a flow failure, a person without `workspace:write`.
+
+## Second check (2026-11-23)
+
+- Instance: http://localhost:8091, the throwaway instance (MAIL_CAPTURE_DIR set, so mail is read from its folder). Everything below ran in a workspace of my own: Operate check (a dev workspace) and Operate check live (a production workspace linked to it), in Fernhill's tenant, with scripts, flows, triggers, a secret and an HTTP connection of mine (deployed by the CLI from a repository of my own; the connection pointed to a listener of mine on localhost). Signed in as Maya Brooks, and as Devi Shah (not in the Practice managers group) where a second person was needed. Playwright, headless.
+
+- **Configure**, **Alerts**: chose `opchk/note` and a connection of mine (HTTP, to a listener on localhost), **Save**: "Alerts will go there from the next failure."; **Send a test alert**: "Sending…", then "The test alert was posted." The listener received `{"run":{"id":null,"error":"A test",…},"test":true,"text":"Test alert from operate-check. Alerts for failed runs will look like this."}`.
+- A script that always fails, run twice: one alert, then **Recent alerts** read "opchk/boom", "7s ago", **Posted**, "+1 more", the error and **The script it started**; the listener received `{"run":{"id","error","script","attempt","workspace"},"text":"Run failed: opchk/boom in operate-check. opchk boom: on purpose"}`; the first run's page read "The failure notification was posted." and "1 later failure was counted on this alert, not sent on its own."
+- A flow run that failed (rejected) was alerted: "The failure notification was posted."
+- Devi Shah (no workspace:write): **Save** disabled, the line "You can see where this workspace's alerts go, not change it. It needs workspace:write. …", **Send a test alert** still enabled.
+- 390 px dark: no horizontal scroll.
+
+Still not run: a post that fails, the handler that did not start.

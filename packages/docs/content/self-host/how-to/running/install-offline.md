@@ -15,7 +15,7 @@ By the end an instance runs on a machine that has no route to the internet. The 
 - The repository on both machines, or at least `deploy/compose/` on the second.
 
 :::alert[This page was written from the code and the Compose file]{type=info}
-The steps for the bundled images were run as `docker build` and `docker compose up` on one machine with the images present. The transfer between two machines with `docker save` and `docker load` was not run.
+The steps for the bundled images were run on one machine with the images present, including `docker save`, `docker load` and `up -d --wait --no-build`. A transfer to a second machine with no route to the internet was not run.
 :::
 
 ## Install

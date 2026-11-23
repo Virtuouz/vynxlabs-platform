@@ -23,13 +23,13 @@ There is no webhook from the repository and no scheduled sync. Push and pull hap
 
 | Field | What it takes |
 | --- | --- |
-| **Address** | The repository's HTTPS address, with no user name or token in it, for example `https://github.com/acme/platform.git`. At most 500 characters. If you change it to another host and leave the token empty, the hint says: "This is another host than the stored token was given for. Enter the access token again." |
+| **Address** | The repository's HTTPS address, with no user name or token in it, for example `https://github.com/acme/platform.git`. An `http://` address is accepted only for `127.0.0.1` or `localhost` (with or without a port), for a repository on the same machine. At most 500 characters. If you change it to another host and leave the token empty, the hint says: "This is another host than the stored token was given for. Enter the access token again." |
 | **Default branch** | The branch each workspace's branch starts from. Default `main`. "Never written to. Changes reach it by a pull request." The repository must have it. |
 | **Folder** | Where resources made in the console are written. Default `platform`. A path inside the repository: letters, digits, dots, dashes and underscores, with `/` between names; no `..`. See the folder in force below. |
 | **User name** | Sent with the token. The default is `x-access-token`; most hosts accept it. Bitbucket and some GitLab tokens need their own. It is not shown again, and it is kept when you leave the field empty. |
 | **Release branch** | Each promotion to a production workspace commits what it runs to `<release branch>/<workspace slug>`. A new connection starts with `release`. Empty: off. |
 | **Access branch** | Each access change is committed here, under `tenant/`, for a developer to merge. Never the default branch. Empty: off. |
-| **Access token** | A token that can read and write the repository's contents: a fine-grained personal access token on GitHub, a project access token on GitLab. It is stored encrypted and never shown again. Required to connect. When one is stored, the field says when it was set and by whom. |
+| **Access token** | A token that can read and write the repository's contents: a fine-grained personal access token on GitHub, a project access token on GitLab. It is stored encrypted and never shown again. Required to connect. When one is stored, the field says "Stored · set *when* by *who*", with **Replace** and "Stored encrypted. It is never shown." |
 
 A branch name is the name git accepts: letters, digits, `.`, `_`, `-` and `/`, at most 200 characters (150 for the release and access branches), no `..`, no `//`, and not ending in `/`, `.` or `.lock`.
 
@@ -43,7 +43,7 @@ A file at the repository's root, `volvel.yaml`, can say where the resource files
 | The file has not been read yet | The field is editable. The hint says: "Where resources made in the console are written. volvel.yaml has not been read yet: a resources folder named there wins after the next sync or check." |
 | The file names no `resources` | The field is editable. The hint says: "Where resources made in the console are written. A resources folder named in volvel.yaml wins over this." |
 
-Push, pull, the comparison, the release branch and the folders of documentation pages all use the folder in force. The file is read on a check of the connection and on each push and pull. Changing the address or the default branch forgets what the file said until it is read again.
+Push, pull, the comparison, the release branch and the folders of documentation pages all use the folder in force. Each reads the file from the branch it works on: a workspace's push and pull read it from that workspace's branch, a release commit from the release branch (from the default branch while the release branch does not exist yet), and **Check the connection** from the default branch. This page shows what the last read found, so a check of a default branch that has no `volvel.yaml` makes the field editable again. A release branch is a mirror of what production runs, and its files go under the folder that file names, or under **Folder** when the release branch holds no `volvel.yaml`. Changing the address or the default branch forgets what the file said until it is read again.
 
 A `resources` that is not a folder inside the repository, or climbs out of it with `..`, stops a pull and a push, with the message: "volvel.yaml: resources is "…", which is not a folder inside the repository. Name one, such as platform, or take resources out of the file to use the folder on the Repository page." There is no fallback to the **Folder** field.
 
@@ -73,7 +73,7 @@ Under the form, "The stored token last reached the repository … ago." tells wh
 
 | Message | When |
 | --- | --- |
-| "The repository's address must start with https:// and carry no user name or token." | The address is not an HTTPS address, or has a user name in it. |
+| "The repository's address must start with https:// and carry no user name or token." | The address is not an HTTPS address (or an http one at `127.0.0.1` or `localhost`), or has a user name in it. |
 | "An access token is needed to connect a repository." | A first connection with no token. |
 | "The address is at another host than the one the stored token was given for. Enter the access token again." | The host changed and no token was typed. |
 | "The folder is a path inside the repository, such as platform." | The folder is not one. |
@@ -85,7 +85,7 @@ Under the form, "The stored token last reached the repository … ago." tells wh
 | "The repository has no branch called *branch*. It has *names*: give one of them as the default branch." | The default branch is not there. |
 | "The repository could not be reached: *reason*" | Anything else, such as a host that does not answer. |
 
-A refused connection saves nothing and changes nothing. This page's states for a connected repository were described from the code; the instance this page was written on could not reach a remote repository.
+A refused connection saves nothing and changes nothing.
 
 ## States
 

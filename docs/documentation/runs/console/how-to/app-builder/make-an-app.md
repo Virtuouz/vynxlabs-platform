@@ -15,3 +15,7 @@
 - It first said to choose the table "if it says another table". The table select appears only after the list start is chosen and starts on the first table alphabetically; the step now says to choose Appointments.
 - The notice after a start is not text I could read in the run (it is a toast); the wording comes from `starters.ts:155-159`.
 - Not run: a taken address, the 20-page limit, a read-only user.
+
+## Second check, 2026-11-23 (second agent)
+- Instance http://localhost:8091 at commit `87000022` plus the working tree. Playwright headless. My own apps are named `chk2 …` (in Fernhill's Sandbox); no Fernhill app, table or person was changed. People: Maya Brooks (tenant admin); Abchk Maker (a member made for the check, App maintainer in Sandbox: `interface:write`, no `resource:write`); Abchk Dev (Developer in Sandbox: no `deployment:write`); Amara Okafor (viewer). Walked at 1440, 900, 768 and 390 px; light at all and dark at 1440, 768 (list, dialog, workbench) and 390 (list, workbench). A session reload was made for the rename and the page order.
+- Run now (was "not run"): a taken address ("Something already exists at this path…" under **Address**, nothing made); a name past 100. Not run: the 20-page limit (twenty pages were not made); a read-only user was run in the list screen's log.

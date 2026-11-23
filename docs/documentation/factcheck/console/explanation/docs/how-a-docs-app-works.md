@@ -18,3 +18,12 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 | A deployed rename or move leaves a permanent redirect for 90 days; a preview has none. | apps/control-plane/src/kernel/apps/front.ts:1290-1306; docs/documentation/fixed/p30-m4.md | writer, read in the code 2026-11-23 | holds as written |
 | The console has no picture upload and no search over all sites; an API route searches. | apps/control-plane/src/routes/docs.ts:333-383; grep of apps/console/src | writer, read in the code 2026-11-23 | holds as written |
 | A doc writer holds doc:* and may write pages, docs apps and the feedback table. | apps/control-plane/src/routes/authoring.ts:236-250; builtinRoles.ts:36 | writer, read in the code 2026-11-23 | holds as written |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Every label, quoted message and limit in the page was searched for in the console and engine source by script, and the claims below were run on the instance http://localhost:8091 (a tenant of the checker's own, d31chk, a dev workspace and a production workspace; a doc writer and a tenant admin) at 1440 px light, with 390 px dark and 768 px for the screens.
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| A site keeps no folder inside another, only top-level folders are offered; production is read only; a page of the repository is shown as repository; the deploy carries only documentation and the feedback table; stop/publish again are carried by a deploy. | run; workspace.ts:216-228 | second agent, 2026-11-23 | holds as written |
+| Contents list, Previous and Next, Last updated, Copy as Markdown, "New in version X", search with and without script. | packages/docs-site/src/render.ts:486-549 | second agent, 2026-11-23 | holds as written |

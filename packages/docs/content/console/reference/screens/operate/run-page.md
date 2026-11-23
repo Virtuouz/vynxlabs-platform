@@ -56,7 +56,7 @@ A step of a flow has none of the **Re-run** menu: its flow run is run again inst
 
 ### Header
 
-The same header with these changes: the flow's path; the state; how long it has lasted; **Retry of a run** and **Retried once** or **Retried N times**; **Cancel flow run** while it goes ("Cancel this flow run?", "Steps in progress are canceled too."); and a **Re-run** menu with, as they apply:
+The same header with these changes: the flow's path; the state; how long it has lasted; **Retry of a run** and **Retried once** or **Retried N times**; **Cancel flow run** while it goes ("Cancel this flow run?", "Steps in progress are canceled too.", then "Canceling. Steps that are running are stopped."); and a **Re-run** menu with, as they apply:
 
 | Item | When |
 | --- | --- |
@@ -92,7 +92,7 @@ When a run failed for the last time and the workspace or script says who to tell
 - **The failure handler's run**, a link to the run the handler script made.
 - "The failure handler did not start: *reason*".
 - "The failure notification was posted.", "The failure notification was not sent: *reason*" or "The failure notification is waiting for a worker to post it."
-- "N later failures were counted on this alert, not sent on its own."
+- "N later failures were counted on this alert, not sent on its own." ("1 later failure was counted…" for one.)
 - "No alert was sent: it is counted on the alert of an earlier failure, sent less than ten minutes before."
 
 How alerts are chosen is in [Failure alerts](../../../../develop/explanation/operate/failure-alerts).

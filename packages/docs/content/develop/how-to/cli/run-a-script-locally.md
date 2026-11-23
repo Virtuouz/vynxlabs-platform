@@ -53,7 +53,7 @@ By the end a script has run in your terminal, with the connection, secret and va
    ```
 
    - `connections`: by the connection's path. `config` is what the connection's connector takes; `credential` is its secret. The `http` and `oauth2` connectors of the SDK are used as they are, and a connector the repository declares is used from its own code.
-   - `groups`: for a script that calls `ctx.connections(group)`: the group's path, then each member's key, with `config`, `credential` and `label`. A member the file does not list is refused with `The group "shops" has no member "south" locally. Add it under groups in ...`.
+   - `groups`: for a script that calls `ctx.connections(group)`: the group's path, then each member's key, with `config`, `credential` and `label`. A member the file does not list is refused with `The group "shops" has no member "south" locally. Add it under groups in ...`. A group the file has no section for at all is refused with `The connection group "shops" has no local value. Add it to ...`. A member's `label` is what `keys()` reports, and is its key when you leave it out.
    - `secrets`: by name.
    - `variables`: by path. A variable the file does not list takes the `default` its definition has; one with neither is reported missing.
 4. Run it again. The script's log lines print first, as `info  Counted {"open":3,"note":"demo"}`, then the output, as `Output: {"open":3}`.
@@ -71,11 +71,11 @@ A local run has no workspace behind it, so:
 
 - **Tables, data sources and files** are not there. A script that calls `ctx.table(...)`, `ctx.source(...)` or `ctx.files` stops with a message that ends "Deploy to a dev workspace to try this script." Run it in a dev workspace: [Run a script on the instance](run-a-script-on-the-instance).
 - **Mail connections** (`smtp`) are not there. The message is "Mail connections live in a workspace, so they are not available to a local run. Deploy to a dev workspace to try this script."
-- **Events and tags** are printed, not delivered: `event orders/received {...} (not delivered: this is a local run)`.
-- **`console.log`** is not collected. Use `ctx.log`, which prints.
+- **Events and tags** are printed, not delivered: `event orders/received {...} (not delivered: this is a local run)` and `tags a, b (not kept: this is a local run)`.
+- **`console.log`** prints to your terminal as it is, with no level in front. Use `ctx.log` for lines like the ones above, with a level.
 - **Triggers do not fire.** A schedule, webhook or form does not start the script; you start it.
 
-To test a script without any of these, with fakes for tables and connections, see [Test a script](test-a-script).
+To test a script without any of these, with fakes for tables and connections, see [Test a script in code](../scripts/test-scripts-in-code).
 
 ## If it does not work
 

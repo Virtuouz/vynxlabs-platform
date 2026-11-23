@@ -38,6 +38,7 @@ If the tenant's repository has a release branch, the message adds "Committed to 
 - **A button "Delete them anyway".** The promotion would delete something that holds runs, rows or access and create something of the same kind. If it was renamed, give the new resource the old one's key. If not, press it, read "Delete *paths* in *name*?" and press **Delete them and look again**.
 - **"This changes a name that something outside calls."** The promotion to production would remove or rename a tool an agent calls. Each is listed. The confirmation names them, and by confirming you say you have read them.
 - **There is no promote button, but a request form.** You do not hold `promotion:write` in the target.
+- **"This workspace has nothing deployed, so there is nothing to promote."** Deploy something in the dev workspace first. **Promote to …** is disabled until then.
 - **"This version has not run here yet."** A notice, not a refusal. Try the version in the dev workspace first.
 
 ## From the command line

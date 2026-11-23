@@ -1,6 +1,6 @@
 # Fact-check: self-host/explanation/running/security-hardening.md
 
-Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the writer; the second agent's column is open.
+Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -9,3 +9,7 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the wr
 | Checklist item: Compose listens on `127.0.0.1:8080`. | `deploy/compose/compose.yaml` `VOLVEL_BIND:-127.0.0.1:8080` | writer, 2026-11-23 | holds |
 | `METRICS_TOKEN` at least 32 characters. | `apps/control-plane/src/config.ts:270` | writer, 2026-11-23 | holds |
 | Bootstrap settings removed after first start. | `apps/control-plane/src/kernel/bootstrap.ts:13-30` (does nothing once there is a member) | writer, 2026-11-23 | holds |
+
+## Second check (2026-11-23)
+
+Every claim read against the code and matched; commands and messages were also run in the drill (see the run log).

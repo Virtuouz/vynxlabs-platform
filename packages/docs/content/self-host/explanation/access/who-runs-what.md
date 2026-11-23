@@ -18,7 +18,7 @@ An operator makes tenants and members, and sees the instance's health, tenants a
 
 A binding at the instance never reaches inside a tenant. An operator gets into a tenant by opening an access grant: a built-in tenant role, for a time of 1 to 1440 minutes, with a reason of 3 to 500 characters. The tenant's admins see the grant, the reason and every request made under it, reads included. They can end it at any time. It ends by itself, and also when the operator is removed or disabled.
 
-This is a decision about who is trusted with what: the operator runs the machine but is not given the tenant's data by being an operator.
+This is a decision about who is trusted with what: the operator runs the machine but is not given the tenant's data by being an operator. One exception is the operator's own choice: the dialog that makes a tenant has the box **Make me a member, as tenant admin**, on by default. With it, the operator is a member of the new tenant like any other and holds `tenant_admin` there, with no grant. Without it, the grant is the only way in.
 
 ## How it fits
 

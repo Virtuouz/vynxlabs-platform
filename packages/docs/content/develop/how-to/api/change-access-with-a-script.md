@@ -88,13 +88,16 @@ Each entry in `errors` says which one, as `group/api-docs-readers`. With `allowD
 
 `PUT /api/v1/tenants/<t>/access/approval` with `{"required": true}` turns it on; it needs two people who hold `access:write`, and otherwise answers 409 `approval_needs_two`. With it on, an access change and every change to a group, a service account or a role waits.
 
-- Applying answers **202** with `"waiting": true`, the `number` and a `detail`. Nothing has changed. A plan says `"waits": true`.
-- Someone other than whoever asked decides it: `POST …/access/releases/<id>/decision` with `{"decision": "approve"}` or `"decline"`, and an optional `comment`. Approving your own change is refused with 409 `own_release`. A service account's key may not approve or decline: it is refused with 403.
-- Whoever asked can withdraw it with `"withdraw"`, with no permission but being the one who asked.
-- If the tenant's access changed after the request was made, approving it is refused with 409 `release_stale`: the change is no longer the one that was shown. Withdraw it and ask again.
+- Applying answers **202** with `"waiting": true`, the `id`, the `number`, `"status": "awaiting_approval"`, the `summary` and a `detail`. Nothing has changed. A plan says `"waits": true`. A change made through `POST …/bindings` or `POST …/service-accounts` answers 202 as well, with the same words but the change under `release` (`id`, `number`, `status`).
+- Someone other than whoever asked decides it: `POST …/access/releases/<id>/decision` with `{"decision": "approve"}` or `"decline"`, and an optional `comment`. Approving your own change is refused with 409 `own_release`. A service account's key may not approve or decline: it is refused with 403 "Only a member signed in as themselves approves or declines a change to access."
+- Whoever asked can withdraw it with `"withdraw"`, with no permission but being the one who asked, and that includes a service account's key that asked. Anyone else who tries is refused with 409 `conflict`, "Only whoever asked for an access change can withdraw it."
+- A change that is no longer waiting cannot be decided: the answer is 409 `conflict`, such as "This access change was withdrawn already."
+- When another access change is applied, the changes that waited and were asked of the access as it was are marked **superseded**, with a `comment` that names the change that did it. Approving one is refused with 409 `conflict`, "This access change was superseded already." Ask for it again. A change whose tenant access moved some other way, so that it would do something else than was shown, is refused with 409 `release_stale` instead: withdraw it and ask again.
 - With approval on, a role given straight to a member, or to every end user, applies at once and the screen says so. A role given to a group, a service account or a group of end users, at the tenant or a workspace, waits.
 
-The same history serves the console's **Access changes** tab. `GET …/access/releases/<id>/rollback` shows what going back to a change would do, and `POST` to the same address does it.
+The same history serves the console's **Access changes** tab. `GET …/access/releases/<id>/rollback` shows what going back to a change would do: `asks`, the `allowDelete` it needs, `warnings` and what it `removes`. `POST` to the same address, with a JSON body (`{}` will do), does it, as a new change with `origin` `rollback` and the message "Back to access change <number>". With approval on, a rollback that changes something waits like any other change, and one that would change nothing is applied at once.
+
+The command line does the same: `volvel tenant plan`, `release`, `releases`, `approve|decline|withdraw <number>`, `rollback <number>` and `approval [on|off]`, each with `--tenant <slug>`. A `release` with approval on says "waits for a second person" and prints the number to approve.
 
 ## The result
 

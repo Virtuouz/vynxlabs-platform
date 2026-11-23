@@ -10,7 +10,7 @@ A tenant can serve its apps on names of its own, and can have single sign-on bel
 
 Anyone can type a name into the console. If Volvel served `bank.example` for whoever asked first, one tenant could take another's name, or an attacker could have an app answer for a name it does not own. So a name is served only once its owner has agreed, and the only thing an owner can do that nobody else can is change that name's DNS.
 
-For each name Volvel works out a **record**: a TXT record at `_vx-challenge.<name>` with a value that begins `vx-domain=` and holds 40 hexadecimal characters. The value is a keyed hash of the tenant and the name, made with a secret of the instance. Only this tenant, on this instance, gets this value for this name. Publishing it says: whoever controls this name agrees that this tenant uses it. **Check now** asks DNS for the record. If it is there, the name is **verified**.
+For each name Volvel works out a **record**: a TXT record at `_vx-challenge.<name>` with a value that begins `vx-domain=` and holds 40 hexadecimal characters. The value is a keyed hash of the tenant and the name, made with a secret of the instance. Only this tenant, on this instance, gets this value for this name. Publishing it says: whoever controls this name agrees that this tenant uses it. **Check now** asks DNS for the record. If it is there, the name is **Verified**.
 
 One record serves both a hostname and an email domain, because both say the same thing about the same name. If the instance's secret is changed, every record changes, and names must be proved again.
 

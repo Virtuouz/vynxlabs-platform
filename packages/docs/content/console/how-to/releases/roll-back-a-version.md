@@ -19,7 +19,7 @@ By the end the workspace runs the version you chose. Runs in progress finish on 
 1. Open **Operate**, then **Versions** in a production workspace, or **Deploy** and the step **Deploy to dev** in a dev workspace.
 2. Find the version in **Versions of *workspace***. The row **Running in *workspace*** is what runs now.
 3. Press **Roll back to this version**. A version later than the one running, or one that never ran here, says **Deploy this version**.
-4. Read the question. "Roll back *workspace* to version N?" says what happens. In production the button is **Roll back in production**.
+4. Read the question. "Roll back *workspace* to version N?" says what happens. In production the button is **Roll back in production**; in a dev workspace it is **Roll back**.
 5. Press it.
 :::
 

@@ -7,3 +7,7 @@
 4. On the served page the form "Was this page helpful?" with **Yes** and **No**. **Yes** gave "Thank you for saying." The page on the Documentation screen then read "1 found it helpful · 0 didn't".
 - Not run: **Turn off page feedback…**, the 429 and 503 messages, a second browser, the table's rows (the Tables screen was not opened), a doc writer, 768 and 390 px, dark, keyboard only.
 - The `docs-feedback` table now exists in the Sandbox workspace of this throwaway instance.
+
+## Second check, 2026-11-23 (second agent)
+
+**Turn off page feedback…** was run on a console site: the question, then a deploy of 1 change; the site's `feedback` was null and the table `docs-feedback` remained. Not run: the 429 and 503 answers, a doc writer reading the counts.

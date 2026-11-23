@@ -19,3 +19,7 @@
 ## Not run
 - Deletion refused while runs are queued or running (the text is from the code, `remove.ts`).
 - A dark-theme or keyboard-only pass, and a 768 px or 390 px pass of the dialogs.
+
+## Second check, 2026-11-23 (second agent)
+- Deleted my own tenants `instance-chk2` (with one dev workspace and its tables in a database location that answered) and the imported `instance-chk3`: the dialog "Delete Instance Chk Two?" with the slug typed, **Delete tenant** enabled only on the exact slug; the row left the list. Run at 1440 px light and the dialogs not at 390 px. The refusal while runs are in progress and **Delete anyway** were not run again.
+- 390 px in dark and keyboard: the **All tenants** list, with the inspector reached by keyboard (Tab to the row), no horizontal scroll.

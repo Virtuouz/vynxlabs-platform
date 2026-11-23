@@ -6,11 +6,11 @@ subjects: [keys, secrets]
 
 ## Change AUTH_SECRET
 
-By the end `AUTH_SECRET` has a new value on every replica, and everyone has signed in again.
+By the end `AUTH_SECRET` has a new value on every replica, and everyone has signed in to the console again.
 
 ## Before you start
 
-- `AUTH_SECRET` signs sign-in cookies, and the records a hostname or a single sign-on domain is proved with (`_vx-challenge`) are made from it. It seals no stored secret: that is the master key's job.
+- `AUTH_SECRET` signs the console's sign-in cookies, and the records a hostname or a single sign-on domain is proved with (`_vx-challenge`) are made from it. It seals no stored secret: that is the master key's job.
 - Look at **Domains** of each tenant first. The record shown for a hostname or an email domain that is not yet verified is a new value after the change, and must be published again.
 - Do it at a quiet time, and tell people they will be asked to sign in.
 
@@ -23,7 +23,7 @@ By the end `AUTH_SECRET` has a new value on every replica, and everyone has sign
 
 ## The result
 
-Everyone signs in again: operators, tenants' members and end users. API keys, bundles, secrets and runs are not affected.
+Everyone who signed in to the console signs in again: operators and tenants' members. In the run for this page, the old cookie answered 401 and a new sign-in worked. API keys, bundles, secrets and runs are not affected. The sign-ins of end users and of members to a tenant's apps are not cookies signed with it (the instance keeps a hash of each), so they stay.
 
 ## If it does not work
 

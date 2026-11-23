@@ -16,3 +16,6 @@
 - Dotted claim names were not tried against a nested claim.
 - The access-change rows were not run (no repository in this tenant).
 - "Also read the user-info address" was not tried.
+
+## Second check, 2026-11-23 (second agent)
+- Not run again: a mapping that removes a person from a group, and the access-change rows (no repository). The limits (1,000 groups of up to 500 characters, 50 attributes, 20 scopes) were matched to `claims.ts:31`, `providers.ts:327` and `providers.ts:365`.

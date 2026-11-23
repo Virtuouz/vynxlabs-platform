@@ -21,7 +21,7 @@ By the end you will have run the draft of a script, read what it returned and lo
 1. Open **Build**, then **Scripts**. Press **New script**, type a **Path** such as `greet`, and under **Start from** choose **Greet someone**. To test a script that exists, choose its row and press **Open editor**.
 2. Change the code if you want to. The test pane is beside the code, on a narrow window below it.
 3. Under the test pane's input, fill in the form. For **Greet someone** it is **Name**. **Fields** and **JSON** switch between a form and JSON for the same input.
-4. Press **Save and run** (**Run the draft** when nothing is unsaved), or press :kbd[Ctrl+↵] (:kbd[⌘↵] on a Mac). A new script is saved first, and the editor's address changes to `scripts/edit/greet`.
+4. Press **Save and run** (**Run the draft** when nothing is unsaved). A new script is saved first, and the editor's address changes to `scripts/edit/greet`. :kbd[Ctrl+↵] (:kbd[⌘↵] on a Mac) runs the draft again with the input of the last run, not with what you have typed since, so start the first run with the button.
 5. Read the **Result** tab. It shows the state, **Succeeded** or **Failed**, how long the run waited and ran, then the tabs **Logs**, **Input and output** and **Details**. **Logs** holds the lines the script wrote with `ctx.log` and `console.log`. **Input and output** holds the input and what the script returned. **Events it published** at the foot says "None." when the script published no event.
 6. If it failed, the **Result** starts with **Why it failed**, the error, and when the error points at a line of your code, **Go to line N**. Press it: the cursor goes to that line.
 7. Open the **Problems** tab for what the editor finds as you type. Each item is a line and column and a message; press it to go there. **Problems (N)** counts them, and an item tagged **Build** is a refusal of the build. With none it says "No problems found."
@@ -35,7 +35,7 @@ By the end you will have run the draft of a script, read what it returned and lo
 
 By default a test builds this script's draft and the drafts it names. If the script calls a script you have also changed, that change is in the test. A draft of something else is left out, so it cannot break your test.
 
-To test as a deploy of everything would, check **Build with all drafts**. The test then builds every draft of the workspace, and a draft anywhere that does not build stops it.
+To test as a deploy of everything would, check **Build with all drafts**. The test then builds every draft of the workspace, and another draft that does not build stops it: the result shows "The code written in the console does not build." with that draft's file and line, and **Problems** does not list it, because it lists only this script's own errors.
 
 ### Start from a failed run
 

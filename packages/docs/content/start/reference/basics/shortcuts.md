@@ -8,7 +8,7 @@ Press :kbd[?] outside a text field, or choose **Keyboard shortcuts** in the acco
 
 ## Single keys
 
-A key that types something on its own (`?`, `/`, `j`, `k`, `x`, `a`, and the `g` shortcuts) is ignored while you type in a field, and can be turned off. In the sheet, the checkbox **Single-key shortcuts** turns them all off, for a screen reader or speech input that gets in their way. It is one of your settings. With it off, the sheet marks a row "(off)" when every key of it is off, and "(single keys off)" when some keys still work. Enter, Space, the arrows, Home, End, Page keys and Shift+F10 stay on, and so do the shortcuts that use ⌘, Ctrl or Alt.
+A key that types something on its own (`?`, `/`, `j`, `k`, `x`, `a`, and the `g` shortcuts) is ignored while you type in a field, and can be turned off. In the sheet, the checkbox **Single-key shortcuts** turns them all off, for a screen reader or speech input that gets in their way. It is one of your settings. With it off, the sheet marks a row "(off)" when every key of it is off, and "(single keys off)" when some keys still work. Enter, Space, the arrows, Home, End, the Page keys, Esc and the function keys (:kbd[F1], :kbd[F2], :kbd[⇧F10]) stay on, and so do the shortcuts that use ⌘, Ctrl or Alt.
 
 ## Everywhere
 

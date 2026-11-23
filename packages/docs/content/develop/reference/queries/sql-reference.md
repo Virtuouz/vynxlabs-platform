@@ -49,6 +49,7 @@ A table you may not read is refused by name: "The query reads the table "<name>"
 | `$0` | "A parameter is written $1, $2 and so on." |
 | Any other kind of expression the parser knows and this list does not | "<Kind> is not supported in a query." |
 | A syntax error | Postgres's own words, for example `syntax error at or near "="` |
+| A value that Postgres cannot read as the type it is cast to, such as `$1::date` given `nope` | "A value does not fit its column." (400, with no line or column) |
 
 A refusal comes with the **line and column** where it was found, counting from 1. The API answers 400 `The query cannot be run.` with the place in the error's `path`, `/sql/<line>:<column>`. The console shows "Line n, column n: …" and moves the editor there. A query that is allowed and fails in the database, such as a column that is not there or a division by zero, is a 400 with the database's own words.
 

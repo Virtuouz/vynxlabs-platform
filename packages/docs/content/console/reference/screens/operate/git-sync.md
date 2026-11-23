@@ -41,12 +41,14 @@ A workspace cannot follow the default branch: "A workspace cannot follow the def
 | The card **This workspace** | "N changed here": the files of resources that changed in the workspace since the two last agreed. "Last agreed … ago at *commit*" gives when and the commit. |
 | The card of the branch | The branch name, "N changed there", and its head commit with its message, author and time. If the branch does not exist: "The branch does not exist yet: the first push makes it." |
 | **Commit message** | Up to 500 characters; the default is "Deploy from the console". Used by **Push** and **Push with drafts**. |
-| **Push N change(s)** | Commits what is deployed here to the branch, in one commit authored by you. Disabled when nothing changed here, when a file changed on both sides, and when sync is paused. |
+| **Push N change(s)** | Commits what is deployed here to the branch, in one commit authored by you. Disabled when nothing changed here, when a file changed on both sides, and when sync is paused. A resource made here that was not on the branch when a pull ran stays under **New here** but is not counted in N after the pull, so **Push** stays disabled until that resource changes again; **Push with drafts** writes it. |
 | **Pull N change(s)** | Deploys what changed on the branch. Disabled when nothing changed there, while a conflict has no choice for each file, and when sync is paused. |
-| **Push with drafts** | Commits what is deployed and what is drafted, for a developer to pick up. The default message is "Drafts from the console". After it the screen says: "A plain push leaves these files on the branch while their drafts are saved." Disabled when a file changed on both sides. |
+| **Push with drafts** | Commits what is deployed and what is drafted, for a developer to pick up. The default message is "Drafts from the console". After it the screen says: "A plain push leaves these files on the branch while their drafts are saved." The drafted files then show under **Files that differ** as **Removed here**, and **Push** offers 1 change; pressing it answers "Already the same: nothing to write." Disabled when a file changed on both sides. |
 | **Delete them anyway** | Shown after a pull stopped at a deletion it took for a rename. Asks "Delete *paths* in this workspace?" and, on **Delete them and look again**, pulls again allowing those paths. |
 
-After a push or a pull the screen says what happened: "Committed what is deployed here to the branch.", "Deployed what changed on the branch.", "Already the same: nothing to write.", or the reason it was refused or failed. A push the branch refused says "Nothing was written: the branch changed. Pull first."
+After a push or a pull the screen says what happened: "Committed what is deployed here to the branch.", "Deployed what changed on the branch.", "Already the same: nothing to write.", or the reason it was refused or failed. A push the branch refused says "Nothing was written: the branch changed. Pull first." That happens when a resource file changed on the branch after the screen last compared, so a push from a screen that was open before a developer's commit is refused. A file that is not a resource (a README) changing on the branch does not refuse it: the push goes on top.
+
+A pull makes a version of the workspace whose message is "Pulled *commit* from *branch*" (*commit* is the first seven characters), shown in [Versions](releases).
 
 A pull takes at most 2000 files and 8 MB. A push and a pull take a lease on the workspace for at most 120 seconds, so that two cannot run together: the second is refused with `git_busy`.
 
@@ -60,7 +62,9 @@ When files changed on both sides, the section **Changed on both sides: choose fo
 | **Take branch** | Takes the branch's version on the next pull. |
 | **Undo** | Takes the choice back. |
 
-The chosen side is tagged **Kept**. A file that was removed on one side shows "(removed)". A pull needs a choice for every resource.
+The chosen side is tagged **Kept**: after **Take branch** it is the branch's side that carries the tag. A file that was removed on one side shows "(removed)". A pull needs a choice for every resource.
+
+When `volvel.yaml` moved the resources folder after the last sync, a file that was then changed on the branch shows as changed on both sides, because the last sync remembers it under its old folder. Choose **Take branch** for it.
 
 ### Files that differ
 
@@ -68,13 +72,13 @@ When nothing is in conflict, **Files that differ** lists each file with a tag: *
 
 ### History
 
-**History** lists the last 50 pushes and pulls of this workspace, newest first: the kind (**Push**, **Pull**, **Release**), the outcome tag (`done`, `nothing`, `refused`, `failed`), the commit's first seven characters, the message and when. Empty: "Nothing has been pushed or pulled here yet."
+**History** lists the last 50 pushes and pulls of this workspace, newest first: the kind (**Push** or **Pull**; the commit to a release branch after a promotion is listed as **Push**), the outcome tag (`done`, `nothing`, `refused`, `failed`), the commit's first seven characters, the message and when. Empty: "Nothing has been pushed or pulled here yet."
 
 ### Branches
 
 **Branches** lists each workspace of the tenant: its name, its branch, a tag **Follows** (a dev workspace) or **Release** (a production workspace), its state, and the last error in red. A workspace with no branch says "Follows none", or "No release branch" for a production workspace.
 
-A workspace's state is `never` (followed, never synced), `synced`, `ahead`, `behind`, `conflict` or `error`.
+A workspace's state is `never` (followed, never synced), `synced`, `ahead`, `behind`, `conflict` or `error`. It is the state the last push, pull or deploy left, not a fresh comparison: a deploy makes it `ahead`, a push the branch refused `behind`, a pull that stopped at a conflict `conflict`, a failed push or pull `error`, and a developer's commit on the branch changes nothing here until the screen compares or someone pushes or pulls. The side panel shows the same state beside **Git sync**.
 
 ## A production workspace
 

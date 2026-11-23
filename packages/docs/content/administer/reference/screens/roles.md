@@ -42,7 +42,7 @@ A role from a repository says in its sheet "This role comes from the tenant's re
 | **Description** | Optional, 500 characters at most. |
 | **Permissions** | The picker, below. |
 
-**Create role** (or **Save**) is disabled until at least one permission is ticked. When it works the notice says "The role <name> is made. Give it to people under Access." or "The role <name> is saved. Everyone who holds it has the new permissions." A name already in use, or a name that breaks the rule, is refused at the field.
+**Create role** (or **Save**) is disabled until at least one permission is ticked. When it works the notice says "The role <name> is made. Give it to people under Access." or "The role <name> is saved. Everyone who holds it has the new permissions." A name that breaks the rule is refused at the field ("Use only lowercase letters, digits and underscores."). A name already in use is refused in a notice above the buttons: "This tenant already has a role named <name>."
 
 ### The permission picker
 

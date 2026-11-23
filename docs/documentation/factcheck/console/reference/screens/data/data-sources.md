@@ -1,5 +1,7 @@
 # Fact-check record: console/reference/screens/data/data-sources
 
+Checked by: second agent, 2026-11-23.
+
 Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer. `Q` = `apps/console/src/screens/Queries.tsx`, `Data` = `apps/console/src/screens/Data.tsx`, `DB` = `apps/console/src/screens/Dashboards.tsx`, `RI` = `apps/console/src/screens/ResourceIdentity.tsx`, `RD` = `apps/console/src/kit/RemoveDraftButton.tsx`, `rq` = `apps/control-plane/src/routes/queries.ts`, `rs` = `apps/control-plane/src/routes/sources.ts`, `rd` = `apps/control-plane/src/routes/dashboards.ts`, `qry` = `apps/control-plane/src/kernel/data/query/`, `src` = `apps/control-plane/src/kernel/data/sources.ts`. The second agent's column is left for the second agent; "writer, run" means the writer saw it on the throwaway instance, "writer, code" that it was read from the code only.
 
 | Claim | Source (file:line) | Checked by | Result |
@@ -24,3 +26,14 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Audit actions bound/rebound/unbound/checked; rows not audited | rs:80-95,205-290,429 | writer, code | holds |
 | Password and config copied on workspace clone | `apps/control-plane/src/kernel/tenancy/clone.ts:125-148` | writer, code | holds |
 | A page that puts a source's table on it needs data_source:read of whoever saves | `apps/control-plane/src/kernel/pages/standing.ts:1-14,100-120` | writer, code | holds |
+
+## Second check (2026-11-23, second agent)
+
+Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
+
+- Confirmed on the instance (tenant qry31chk): list columns and row actions; **Encrypt the connection** starts at **Yes**; Change keeps the connection's current value (shows **No** for a source connected without SSL); Yes against a database without SSL: **Test** says Failed with "The server does not support SSL connections" (added to the page; `sourceFailure` does not map it, so it is the driver's own words); changing Yes to No dropped the stored password ("No password is set for the data source …"), as the page says.
+- Corrected: for a member with `data_source:read` only (Vic) the list's **Declare source**, **Connect database**, **Test**, **Change** and **Remove from here** are disabled, but **Edit** (a link) is not, and on the source's own page **Test**, **Change** and **Remove from here** are enabled: **Test** reaches the database ("chk-loans: reached."), **Change** is refused with "needs the data_source:write permission.". Page now says this.
+- fault: the source's own page offers **Change** and **Remove from here** to a reader (the list disables them); the server refuses.
+- fault: with **Encrypt the connection** Yes against a database without SSL, `GET data-source-tables/<path>` answers 500 `internal_error` and the source's page says only "Internal Server Error"; **Test** says the reason. `sourceFailure` (`kernel/data/sources.ts:196`) does not map the driver's SSL error.
+- fault: at 390 px the row's **Health** reads "F…" and "tested…" (cut) and the buttons run past the card's edge ("Chang", "Remove from he"); the page has no overflow but the row is clipped.
+- Numbers confirmed in `packages/db/src/external.ts:50-53` (4 connections, 30 s idle, 5 s connect, 15 s statement, UTC) and `sources.ts:22-31` (field limits, schema pattern). Walked at 390 and dark: Change drawer reads in both; the source's page has no overflow.

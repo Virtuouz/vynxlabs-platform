@@ -28,7 +28,7 @@ By the end you will have a query that counts Fernhill's visits by clinic from a 
    order by visits desc
    ```
 
-   A field appears under the editor for `$1`, labeled `$1`.
+   A field appears under the editor for `$1`, labeled `$1`. Until you name a parameter in the next step, it is saved as `p1` and a saved query's field reads **p1**.
 3. Open **What each parameter is**. Set **Name of parameter 1** to `since`, **Type of parameter 1** to `date`, **Label of parameter 1** to `From` and **Default of parameter 1** to a day, such as `2026-09-01`. The field above now reads **From** and holds that day.
 4. Leave **Rows to return** at 1000, or set a whole number from 1 to 10,000.
 5. Press **Run**, or :kbd[Ctrl+Enter] (:kbd[⌘↵]). A line under the fields says "3 rows · 25 ms · read appointments" with the time the run took, and a table shows `clinic` and `visits`.
@@ -39,7 +39,7 @@ By the end you will have a query that counts Fernhill's visits by clinic from a 
 
 :::steps
 1. Press **Save as…**. The dialog "Save this query" asks for **Name, such as reports/fees**. Type a path and press **Save**. Use lowercase letters, digits, dashes and underscores, with a slash between parts.
-2. A notice says "<path> is saved as a draft. It can be run by name once it is deployed." with **Review and deploy**. The header now shows the path and **Draft, never deployed**.
+2. A notice says "<path> is saved as a draft. It can be run by name once it is deployed." with **Review and deploy**, which opens the **Deploy** screen. The header now shows the path and **Draft, never deployed**.
 3. Type a line in **What it is for**, up to 500 characters, and press **Save**. It is shown beside the query in **Saved queries**.
 4. To deploy it, press **Review and deploy** and follow the **Deploy** screen of the workspace. A query is not used by a dashboard until it is deployed.
 :::
@@ -61,5 +61,7 @@ The query is in **Saved queries** with its path and description. **Used by** say
 - **The editor is read-only and a notice says you cannot write or run SQL.** You lack `sql:read`. A deployed query with no unsaved change can still be run by name.
 - **Save as… is off.** The editor is empty, or you lack `resource:write`, or the workspace is a production workspace: queries are written in a dev workspace and promoted.
 - **"Something already exists at this path. Choose another, or open that one."** The name is taken. The dialog keeps what you typed.
-- **"Leave without saving?"** You pressed **New query** or chose another query with text you have not saved. **Stay** keeps it.
+- **"Leave without saving?"** You pressed **New query** or chose another query with text you have not saved: "Your changes to <path> are not saved." **Stay** keeps it, **Leave** drops it.
+- **"Someone else saved this query after you opened it."** Someone saved the draft first. Nothing of theirs was overwritten. **Copy what I wrote** keeps your text, then **Load their version**.
+- **Tab does not leave the editor.** In the editor :kbd[Tab] indents. :kbd[Ctrl+M] turns that off, and on again.
 - **The result says "and there were more: the result was cut short".** More rows than **Rows to return**, or more than 5 MB. Raise the number up to 10,000, or add `where` or `limit` to the query.

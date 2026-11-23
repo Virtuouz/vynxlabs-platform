@@ -14,3 +14,8 @@
 
 ## Not run
 **Continue** (an account already offered), a tenant with no service account, an instance without the role, a draft-only script (the button is not drawn; seen on the list only through the code), a connection of an agent to the address, dark theme, 768 and 390 px, keyboard-only.
+
+## Second check, 2026-11-23
+- Walked by the second agent, 2026-11-23, on http://localhost:8091 as Maya Brooks in Fernhill's Sandbox: the scripts list with its inspector, the run dialog, the script's page, its Settings form and the editor, in dark and light at 768 and 390 px (no sideways scroll, nothing cut off) and by keyboard (g then s; Enter on Run opens the dialog with the focus in it and Esc closes it and returns the focus to Run; Ctrl+Enter; Enter on the Settings summary opens it).
+- **Continue** was run: **Offer to an agent…** on `scr-greet`, which `api-docs-agent` already holds. The dialog opened with that account chosen, the sentence "It is offered to this account already. Continue to see where the agent connects." and **Continue**; it led to "api-docs-agent may now run the script scr-greet, and nothing else here…", the address, **Copy the address**, "Keys and tools of api-docs-agent" and **Done**.
+- Still not run: a tenant with no service account, an instance without the role, an agent connecting to the address.

@@ -25,10 +25,10 @@ Every filter is the server's, so it searches the whole log the tenant keeps, not
 | **From date**, **To date** | Appear with **Between dates**. A day starts at 00:00 and ends at 23:59 where you are. If the end is before the start: "The end date is before the start date." |
 | **Workspace** | **Every workspace**, or one. |
 | **More filters** | Opens **Who** (**Anyone**, or a person, with how many entries), **Action** (**Any action**, or one, with a count) and **Done to** (**Anything**, or a kind of thing, with a count). The button shows how many of the three are set, "More filters (2)". The three lists are made from the entries in the range chosen above them. |
-| **Columns** | Shows or hides **Who**, **What was done** and **To**. **When** always shows. |
-| **Saved views** | Keeps the filters and columns under a name, as on other lists. |
+| **Columns** | An icon button, tooltip "Choose and order the columns". Its dialog lists **Who**, **What was done** and **To**, each to show, hide or move, with **Show every column** and **Done**. **When** always shows. |
+| **Saved views** | An icon button. Its menu has **Save this view…** and **Copy a link to this view**, and once a view is saved, its name, rename, delete and save-over entries, as on other lists. |
 | **CSV** | Downloads the entries that match the filters. See below. |
-| **Show older entries** | Appears under the list when there are more. A page holds 50. |
+| **Show older entries** | Appears under the list when there are more. A page holds 50, and each press adds 50. |
 | Clear filters | On an empty result, clears every filter at once. |
 
 When a link set **Done to** to one thing, a line says "Everything about <name>" with **Show everything**.

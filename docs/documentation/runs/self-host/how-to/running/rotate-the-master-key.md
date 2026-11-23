@@ -11,3 +11,7 @@ None: the page was written after the run.
 
 ## Not run
 Several replicas; a tenant that holds its own secrets.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run with two replicas (second one `compose run`): both with old/new, then A swapped while B stayed: B still read tenant rows; tenant key counted under current after a secret was written; `rekey` printed zero rewrapped, exit 0. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

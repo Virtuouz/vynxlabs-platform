@@ -28,3 +28,16 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 | Starter text of a new page: title, empty description, "Write here." | D/DocEditor.tsx:60-62 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
 | Preview shows type eyebrow, cards, related and the page's product terms. | D/DocEditor.tsx:556-591; D/Served.tsx | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
 | Production workspace shows the notice at /docs/edit. | apps/console/src/screens/Tenant.tsx:590-604 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Every label, quoted message and limit in the page was searched for in the console and engine source by script, and the claims below were run on the instance http://localhost:8091 (a tenant of the checker's own, d31chk, a dev workspace and a production workspace; a doc writer and a tenant admin) at 1440 px light, with 390 px dark and 768 px for the screens.
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| The Insert list: Callout, Tabs, Steps, Details, Code tabs, File tree, Pages in this folder, Glossary, Field under Blocks and Term, Key under Inline; Tab only inside Tabs; nothing inside Code tabs; "Inserts at the cursor, inside tab “One”."; / opens it on a line; Esc closes and returns to the source; a search with no match says "Nothing is called that." | apps/console/src/kit/markdown/insert.ts:55-75, MarkdownEditor.tsx:480-580; run | second agent, 2026-11-23 | added the empty state and the keys; the rest holds |
+| "Cursor in tabs › tab “One”"; Source/Split/Preview; Split hidden below 1024 px; Page details a tab beside the source. | MarkdownEditor.tsx:300-380; run at 1440 and 390 | second agent, 2026-11-23 | holds as written |
+| Ln and Col, "No problems" / "N problem(s)", "This page would deploy as it is.", Save draft (Ctrl+S) with "Saved as a draft. Deploy it from Documentation when it is ready.", Discard, "Unsaved changes", Close instead of Done while unsaved. | DocEditor.tsx:130-140, 460-500, 630-690; run | second agent, 2026-11-23 | holds as written |
+| A mermaid block is drawn in the preview, and "This diagram does not read: Parse error on line 2:" with the source when it is wrong. | apps/console/src/diagrams/draw.ts; run | second agent, 2026-11-23 | holds |
+| Page details limits (Title 120, Topic 80, Description 500, Icon 40, subject 80, five subjects, terms 50, also written 10, about 50, extends 20). | apps/console/src/screens/docs/PageDetails.tsx; packages/docs-engine/src/schema.ts:48-161 | second agent, 2026-11-23 | holds as written |
+| Layout at 768 and 390 px, light and dark; no horizontal scroll; Source and Preview only at 390. | run, screenshots read | second agent, 2026-11-23 | holds |

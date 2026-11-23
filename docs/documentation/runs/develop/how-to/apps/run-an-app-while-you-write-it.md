@@ -19,3 +19,6 @@
 ## Not run
 - The page at 390 px, in dark, by keyboard (these are the developer's own pages).
 - `volvel dev` against a production workspace.
+
+## Second check, 2026-11-23 (second agent)
+- `volvel dev desk --port 5181` with 5181 busy printed "desk is at http://localhost:5182/". The page, with a check-in, at 390 px light, 390 px dark and 1440 px dark: no overflow. The browser warned "invalid source: 'ws://[::1]:*'" (fault listed) and a 403 for the font `/@fs/.../packages/ui/fonts/geist-latin.woff2` (the checkout's folder is outside Vite's allowed paths; the page draws with a fallback font). A 429 on a stream is the earlier note.

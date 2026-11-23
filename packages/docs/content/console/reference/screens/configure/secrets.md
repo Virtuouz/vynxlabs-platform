@@ -41,7 +41,7 @@ A name starts with a letter or an underscore, has letters, digits and underscore
 | Empty | "No secrets yet", with "Store API keys and passwords here. Resources refer to a secret by its name." and **New secret**. |
 | Loading | A loading line. |
 | Not loaded | The reason in a notice, with **Try again**. |
-| Read only | "You can see this workspace's secrets, not change it. It needs `secret:write`." and whom to ask. **New secret** is off with the tooltip "It needs secret:write." and so is **Delete**. |
+| Read only | "You can see this workspace's secrets, not change it. It needs `secret:write`." and whom to ask. **New secret** is off with the tooltip "It needs secret:write." followed by whom to ask, and so is **Delete**. |
 
 ## A secret's page
 

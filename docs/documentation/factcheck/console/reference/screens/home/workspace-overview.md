@@ -15,3 +15,17 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Paths a
 | Permissions: workspace:read for the summary; failed runs run:read/flow_run:read; approvals approval:read; connections connection:read; drafts resource:read; git git:read; workers worker:read; triggers trigger:read. | `apps/control-plane/src/routes/summary.ts:100-135,160-300`; `routes/operations.ts:375`; `routes/execution.ts:1832` | writer | holds |
 | Version and linked workspace are hidden from a person who reaches only inside. | `routes/summary.ts:300-318` | writer | holds |
 | Failed counts a flow run once, not its steps. | `routes/summary.ts:160-190` | writer | holds |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Run as Maya on the Sandbox overview at 1440 px light, 768 px dark and 390 px dark; compared with `screens/Overview.tsx`.
+
+| Claim | Source / run | Result |
+| --- | --- | --- |
+| Header: **Overview**, the name, **Dev**, **Triggers paused**, **Running v47**, **Review changes** (a dev workspace with drafts). | run | holds as run |
+| Needs attention rows seen: "8 runs failed in the last 24 hours" (**Open failed runs**), "2 runs are waiting for you" (**Decide**), "18 drafts not deployed" (**Review**), "Triggers are paused" (**View settings**). The connection row and the empty sentence are in the source as "{n} connection is/connections are not set up here" and "…everything set up." (commit 5d18392a). The page said "nothing bound here" and "everything bound": corrected to the source. fault: configure "bound"/"bind" words remain on the Overview (the instance is an older build and still says "nothing bound here"; seen on a production workspace of another lane). | `screens/Overview.tsx:377-390,520`; run | corrected |
+| Runs card: Succeeded 30, Failed 8, In progress 10, Median time 8.5 s, a chart with a table for screen readers, **All runs**. | run | holds as run |
+| Deploy: **Draft** 18, Sandbox v47, Clinics v1, "Clinics runs a different bundle. Promote to bring it up to date.", **Deployments**. | `screens/Overview.tsx:588-589`; run | holds as run |
+| What starts work here: the first 8 triggers with their kind, target and "Workspace paused", "Fires once when resumed", **All triggers**. | run | holds as run |
+| At 390 px dark the page is 481 px wide inside a 390 px column: the right of the Needs attention rows (the buttons) and of the Runs card is cut off and the column scrolls sideways. At 768 px it fits. | run (`main` scrollWidth 481, clientWidth 390) | fault: new, the workspace overview overflows at 390 px; not yet in the faults list. |
+| Permissions table, First steps, States. | the writer's citations | holds (not re-run: First steps shows only while nothing has run; Maya's Sandbox has runs) |

@@ -21,3 +21,5 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | Deploying code also needs code:write; deploy needs deployment:write. | `apps/control-plane/src/routes/authoring.ts:1109-1125` (description), `:1163-1164` | writer | holds |
 | The switch is on Repository > Code in the console; changing needs tenant:write. | `screens/Git.tsx:280-310`; `apps/control-plane/src/routes/tenants.ts:405`, `:398` | writer | holds |
 | Triggers shows "Last refused". | `screens/Operate.tsx:661` | writer | holds |
+
+Checked by: second agent, 2026-11-23. On the instance (1440 and 390 px dark, Ext31 dev and Clinics): the list, columns, states Deployed and Draft, the empty state text, no buttons in a production workspace. Corrected: the production notice (`kit/objects.tsx:160-176`: the linked dev workspace's name or "a dev workspace"), and the Related line about Last refused (a source's `accept: false` is not shown there). Not seen: a row **From the repository**.

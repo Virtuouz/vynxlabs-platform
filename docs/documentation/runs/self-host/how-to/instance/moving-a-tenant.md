@@ -20,3 +20,8 @@
 - The command-line export and import (`volvel tenant export`, `volvel tenant import`) and a second instance. The "after" list is from the code and from `docs/self-hosting.md`, not run.
 - An import into a database location, a member without a password, a format 1 export, a file over 50 GiB, "staged elsewhere" (one replica only), a wrong passphrase.
 - A dark-theme, keyboard-only or phone-width pass.
+
+## Second check, 2026-11-23 (second agent)
+- Ran what the first pass listed as not run: an import into a database location (a throwaway database `instchk_loc` registered as `inst-chk-db`: the result said "Its custom tables are in the database location "inst-chk-db"." and the row on **All tenants** said `inst-chk-db` under **Tables kept in**) and a wrong passphrase ("The passphrase does not open it"; **Import tenant** stayed disabled). The workspace line was singular ("The workspace arrived with its triggers paused. Resume it when the instance it came from has stopped."). The deleted and imported tenants were removed again and the location and its database dropped.
+- Still not run: the command line export and import, a second instance, a format 1 export, a member created without a password, a file over 50 GiB, "staged elsewhere".
+- 390 px in dark and keyboard on **Import a tenant**: no horizontal scroll, Tab reaches the file input, the passphrase and the buttons with a visible focus ring.

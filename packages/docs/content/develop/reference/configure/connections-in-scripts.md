@@ -101,7 +101,7 @@ const clinic = await ctx.connections("clinics").get(input.clinic);
 }
 ```
 
-A variable with a default in the code needs no entry. A connection, secret or group member with none fails: "The connection "X" has no local value. Add it to …". `http` and `oauth2` connections and your own connectors run locally. `smtp` does not. To run in a workspace, use `volvel run <script> --remote --tenant <slug> --workspace <slug>`.
+A variable with a default in the code needs no entry. A connection, secret or group member with none fails: "The connection "X" has no local value. Add it to …". `http` and `oauth2` connections and your own connectors run locally. `smtp` does not. To run this build in a dev workspace, with that workspace's own settings, use `volvel run <script> --remote --tenant <slug> --workspace <slug>`. It is a test run of what is on your machine: nothing is deployed, and the deployed version does not run.
 
 ## What is not there
 

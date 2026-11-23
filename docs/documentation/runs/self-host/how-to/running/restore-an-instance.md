@@ -11,3 +11,7 @@ The first draft said to restore with `--exit-on-error`. It stops at the first po
 
 ## Not run
 Under another database name (`restore.test.ts` holds it), a rotated key, a dedicated database, the Health screen in a browser.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Restored again in the Postgres upgrade run (5 expected errors, exit 1). fault: self-host restore exit status. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

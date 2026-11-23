@@ -31,7 +31,7 @@ By the end a script that names your pool runs only on workers that signed in wit
 
 ## Take a pool away
 
-A pool with a credential that is not revoked cannot be removed: "Revoke the credentials that serve this pool first." Revoke each credential: "A worker using it stops." Then use the row's **Remove the pool**. Scripts that name it wait until it is made again.
+A pool with a credential that is not revoked cannot be removed: "Revoke the credentials that serve this pool first." Revoke each credential: **Revoke** asks `Revoke "<name>"? A worker using it stops.` and the credential shows **Revoked**. Then open the pool's row menu and choose **Remove the pool**. It asks `Remove the pool "<name>"?` and says "Scripts that name it wait until it is made again."
 
 ## If it does not work
 
@@ -39,7 +39,7 @@ A pool with a credential that is not revoked cannot be removed: "Revoke the cred
 | --- | --- |
 | "No worker online" with a warning | Workspaces use the pool and no worker is up. Start the worker, and check it reaches the instance. |
 | **Not made** next to a pool name | A script names a pool nobody made here. Add it with that name. |
-| **Older version** and "takes no tasks" beside a worker | The worker is older than 0.6.0. It takes no tasks of the platform. Update it. |
+| **Older version** and "takes no tasks" beside a worker | The worker is older than 0.6.0. It takes none of the tasks Volvel itself sets. Update it. |
 | Scripts wait in **Queue** | No online worker holds a credential for their pool and workspace. |
 
-The switch under the table, **Let the instance run workers**, is about the default pool only. See [Worker pools](../../explanation/sso/worker-pools).
+The button under the table, **Let the instance run workers** (or **Run only on our own workers** while it is on), is about the default pool only. See [Worker pools](../../explanation/sso/worker-pools).

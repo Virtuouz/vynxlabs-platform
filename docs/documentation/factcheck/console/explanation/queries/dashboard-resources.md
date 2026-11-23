@@ -1,5 +1,7 @@
 # Fact-check record: console/explanation/queries/dashboard-resources
 
+Checked by: second agent, 2026-11-23.
+
 Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer. `Q` = `apps/console/src/screens/Queries.tsx`, `Data` = `apps/console/src/screens/Data.tsx`, `DB` = `apps/console/src/screens/Dashboards.tsx`, `RI` = `apps/console/src/screens/ResourceIdentity.tsx`, `RD` = `apps/console/src/kit/RemoveDraftButton.tsx`, `rq` = `apps/control-plane/src/routes/queries.ts`, `rs` = `apps/control-plane/src/routes/sources.ts`, `rd` = `apps/control-plane/src/routes/dashboards.ts`, `qry` = `apps/control-plane/src/kernel/data/query/`, `src` = `apps/control-plane/src/kernel/data/sources.ts`. The second agent's column is left for the second agent; "writer, run" means the writer saw it on the throwaway instance, "writer, code" that it was read from the code only.
 
 | Claim | Source (file:line) | Checked by | Result |
@@ -15,3 +17,9 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Renaming a query drafts the console's dashboards; discard sets them aside unless changed | RI:55-90; brief D (dashboard-follow test) | writer, code | holds (the page's text of discard is from the test) |
 | Repository dashboards: takeover and no Remove | DB:850; RD:60-80 | writer, code | holds |
 | Reader needs dashboard:read and data:read; saver needs sql:read / data_source:read | standing.ts:1-14,84-120 | writer, code | holds |
+
+## Second check (2026-11-23, second agent)
+
+Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
+
+- Corrected: "it may name only tables, queries and sources that exist" (see keep-a-dashboard-as-a-resource); the rename keeping the dashboard running and the dialog's list confirmed on the instance.

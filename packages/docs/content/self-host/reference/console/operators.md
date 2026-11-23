@@ -15,7 +15,7 @@ The **Operators** screen lists the members who run the instance and adds or remo
 
 ## Controls
 
-The title is **Operators**. The description reads "Members who run this instance. An operator manages tenants and members, and sees inside a tenant only through an access grant."
+The title is **Operators**. The description reads "Members who run this instance. An operator manages tenants and members, and sees inside a tenant only through an access grant." The description shows the first time you open the screen. On later visits it is folded behind the **About Operators** button (the circled i) beside the title.
 
 | Control | What it does |
 | --- | --- |

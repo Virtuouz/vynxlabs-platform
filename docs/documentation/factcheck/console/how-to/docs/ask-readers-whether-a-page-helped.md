@@ -16,3 +16,12 @@ Lines are current at commit `14f7d5b9` (branch phase-31-write-the-docs). Paths a
 | A deploy refuses a site whose table is not there or lacks the columns. | docs/sdk-guide.md:325; packages/docs-engine/src/workspace.ts:63-80 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
 | A doc writer may draft and deploy only this table. | apps/control-plane/src/routes/authoring.ts:236-250 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
 | The helpful line needs a deployed site that asks and a reader of the table. | D/Docs.tsx:1588-1600, 1634-1639 | writer, run on the instance 2026-11-23 at 1440 px, light | holds as written |
+
+## Second check
+
+Checked by: second agent, 2026-11-23. Every label, quoted message and limit in the page was searched for in the console and engine source by script, and the claims below were run on the instance http://localhost:8091 (a tenant of the checker's own, d31chk, a dev workspace and a production workspace; a doc writer and a tenant admin) at 1440 px light, with 390 px dark and 768 px for the screens.
+
+| Claim | Source or run | Checked by | Result |
+| --- | --- | --- | --- |
+| Turn on (three drafts), the deploy question with the table, Turn off page feedback and "Deploy 1 change", the app's feedback becomes null and the table stays. | run on a console site | second agent, 2026-11-23 | holds as written |
+| 30 answers a minute for an address and workspace; the cookie lasts a year; 429 and 503 words. | front.ts:184, 1203, 1242, 1253 | second agent, 2026-11-23 | holds as written |

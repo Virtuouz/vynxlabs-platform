@@ -1,6 +1,6 @@
 # Fact-check: administer/reference/configure/who-can-change-what.md
 
-Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: not yet made.
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -13,3 +13,14 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second 
 | No `workspace:read`: "This needs the workspace:read permission." | `seen as Sam Reyes on the walk instance` | writer, 2026-11-23 | holds; seen |
 | The console shows the buttons if it cannot learn what is held. | `apps/console/src/kit/Can.tsx:113-125` | writer, 2026-11-23 | holds |
 | A grant on one resource counts. | `apps/control-plane/src/routes/workspaces.ts:320-366` | writer, 2026-11-23 | holds |
+
+## Second check, 2026-11-23
+
+Checked by: second agent, 2026-11-23. Source commit `87000022`.
+
+| Claim | Source | Checked by | Result |
+| --- | --- | --- | --- |
+| Role table: viewer `*:read`; developer `*:read` plus connection, secret, variable, resource, run write; deployer `*:read`; workspace_admin and tenant_admin; no `workspace:write` for a developer. | `apps/console/src/builtinRoles.ts:11-82` | second agent, 2026-11-23 | holds |
+| `workspace_production:write` is given only by name. | `routes/environments.ts:249-253,286` | second agent, 2026-11-23 | holds |
+| Send a test alert needs `connection:write`. | `routes/alerts.ts:159-162` | second agent, 2026-11-23 | holds |
+| What a reader sees: the read-only lines, the group buttons not turned off. | `kit/Can.tsx`; `Execution.tsx:1574-1713` | second agent, 2026-11-23 | holds; fault: configure, group member buttons are not gated; the Overview and Alerts rows are the other checkers' |

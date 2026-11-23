@@ -42,7 +42,7 @@ By the end the workspace runs an earlier version of its code. A rollback is a de
 
 - **Resources made in the console.** A rollback puts code back. Tables, flows and other resources made in the console keep their current state. To make the instance hold the console's resources as they are, it makes a new version that holds the earlier code with them. The command then names that new number, and says `runs version N again` with the new N, not the one you asked for. Run `volvel rollback 3` in a workspace that has console resources and the line may read `runs version 5 again`.
 - **Data.** Rows, runs and history are not touched.
-- **What differs between the versions.** A resource the earlier version had and the current one dropped is created again, and one only the current version has is deleted. The command lists them as a deploy does: going back from a version that added a variable shows `deleted  variable   greeting`. The command has no `--allow-delete`.
+- **What differs between the versions.** A resource the earlier version had and the current one dropped is created again, and one only the current version has is deleted. The command lists them as a deploy does: going back from a version that added a variable shows `deleted  variable   greeting`. A table the earlier version lacks is retired, and the command says `Table notes retired. Its rows are kept.` The command has no `--allow-delete`.
 - **How far back.** The instance lists the newest 100 versions of a workspace. An older one cannot be named: the command says `has no version N among its newest 100` and lists the ten newest numbers, ending `and older ones`.
 
 ## The result

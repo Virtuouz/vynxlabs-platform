@@ -32,7 +32,7 @@ When people sign in through an identity provider that sends groups, the group ca
 - **Rename** changes the name. The key made from the first name never changes, so access given to the group and code that names it are not touched.
 - **Describe** sets what the group is for (500 characters at most).
 - **Delete** removes the group and the access given to it. A group an identity provider made has these buttons off, with the reason: change it at the provider.
-- To take someone out, open **Members** and press **Take out**. They keep what is given to them directly or through other groups.
+- To take someone out, open **Members** and press **Take out** beside them, then confirm "Take <email> out of <group>?". They keep what is given to them directly or through other groups.
 
 ### If it does not work
 

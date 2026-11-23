@@ -12,7 +12,7 @@ By the end you will have a connector or a trigger source deployed in a dev works
 
 - You are signed in and a dev workspace is open, such as Fernhill's Sandbox. Production workspaces change by promotion only.
 - You need `resource:write`, `code:write` and `deployment:write` in the workspace. See the [permissions reference](../../../administer/reference/permissions).
-- The tenant's switch **Code in the console** is on. If it is off, saving is refused with "Writing code in the console is turned off for this tenant." A tenant admin turns it on under **Repository**.
+- The tenant's switch **Code in the console** is on. If it is off, saving is refused with "Writing code in the console is turned off for this tenant. Code is deployed from its repository. Someone who may change the tenant can turn it on under Repository." A tenant admin turns it on under **Repository**.
 - You know what the extension is for. If you are not sure you need one, read [What an extension is](../../../develop/explanation/extensions/what-an-extension-is) first. HTTP, mail and OAuth 2.0 connections need none.
 
 ## Write a connector
@@ -41,13 +41,17 @@ The **New connection** panel on the **Connections** screen offers only HTTP, mai
 6. Name it. For a webhook source, open **Build**, **All resources**, **New**, **Trigger**. Under **It starts the script** choose **When its address is called**, choose **The script it starts**, set **Each request is checked** to **By a trigger source of your own**, and choose the source under **Trigger source**. For a poll source, open **New**, **Schedule**, set when it runs, and choose the source under **Trigger source (optional)**. Press **Save draft**, then deploy it.
 :::
 
-A trigger source is offered in these lists once it exists as a draft or deployed, and only if its mode fits: a webhook is offered the sources handed requests, a schedule the ones handed ticks.
+A trigger source is offered in these lists once it exists as a draft or deployed, and only if its mode fits: a webhook is offered the sources handed requests, a schedule the ones handed ticks. The schedule's **Trigger source (optional)** field is not drawn at all until a source for a schedule exists. The schedule form still asks for the input of the script it starts. On each tick the source runs first, and the script starts once for each item it gives back.
 
 ## The result
 
 The **Extensions** list shows the extension with the state **Deployed** and, for a trigger source, **Trigger source for a webhook** or **Trigger source for a schedule**. A connection of your connector shows **Reached** on **Connections** once **Test** passes. A trigger that names a trigger source appears on **Triggers**.
 
-Nobody starts a trigger source by hand. It runs when a request reaches the webhook or the schedule ticks. A refusal is shown on **Triggers** as **Last refused**.
+Nobody starts a trigger source by hand. It runs when a request reaches the webhook or the schedule ticks. Each of its runs is on **Runs**, under the source's path, with what it answered as the result: `{"input":{...}}` when it let a request through, `{"accept":false,"reason":"..."}` when it refused one. A webhook answers `202` with the run's ID in both cases. A run of the script it starts follows only when the source let something through.
+
+A source that answers `{ accept: false }` starts nothing and leaves nothing on **Triggers**: its reason is only in its own run. **Last refused** on **Triggers** is for what could not start: the input the source gave does not fit the script's input ("what it was given does not fit what it starts"), the signature, the body or a trigger that was paused. It keeps the latest one, and a later success does not clear it. **Last fired** changes when something started.
+
+In a dev workspace every trigger starts paused: **Triggers** says "Every trigger here is paused." Press **Resume triggers** under **Workspace settings** before you try a webhook or a schedule.
 
 Deploy to a production workspace by promotion: after the toast, press **Promote to** the linked workspace.
 
@@ -59,6 +63,6 @@ Deploy to a production workspace by promotion: after the toast, press **Promote 
 - **"<path> cannot be deployed alone"** with a line such as `connectors/shop.connector.ts:1 Code written in the console may import only @volvel/sdk and node: modules, not "lodash".` The code imports something else, or does not build. The same line is under the code in **Problems**. Put shared code and packages in the repository, or remove the import.
 - **A trigger source or connector is not offered** when you choose a kind or a source. It must exist as a draft or be deployed, and for a trigger source its mode must fit what names it.
 - **"Writing code in the console is turned off for this tenant."** Ask a tenant admin to turn on **Code in the console** under **Repository**.
-- **The editor says "Someone else saved this connector after you opened it."** Choose **Copy what I wrote**, then **Load their version**.
+- **The editor says "Someone else saved this connector after you opened it."** Choose **Copy what I wrote**, which copies the code (not the settings), then **Load their version** and confirm **Load theirs** ("What you changed since you opened the connector is replaced by what they saved."). Until then nothing of theirs is overwritten and what you wrote stays on the screen, unsaved.
 
 For every field, see [the extension editor](../../reference/screens/build/extension-editor) and [Extensions](../../reference/screens/build/extensions).

@@ -75,12 +75,12 @@ ignore:
   - scratch
 ```
 
-With that file, `volvel build` of a repository that holds `src/lending/items.table.yaml` and `handbook/support/refunds.md` lists the table `lending/items` and the doc `support/refunds`, and does not read `scratch/`.
+With that file, `volvel build` of a repository that holds `src/lending/items.table.yaml` and `handbook/support/refunds.md` (a page with a title) lists the table `lending/items` and the doc `support/refunds`, and does not read `scratch/`.
 
 - `roots`, `ignore` and `docs` are lists of folders as text. A leading `./` or `/` and a trailing `/` are dropped.
 - `entry` and `resources` are one path as text, inside the repository. A path with `..` in it is refused, and the build says that the path "cannot climb out of" the repository.
 - A flag of a command wins over the file: `--entry <file>` and `--resources <folder>`. `pull` takes only `--resources`.
-- If `resources` names a folder other than `platform`, that folder is the one that always gives paths; a `platform/` folder is then just a folder. A resource file in it is outside every folder that gives a path, and the build says so: `platform/cli-ideas.table.yaml: is outside every folder that gives a resource its path (console). Say its path in the file, as path: <path>, or keep it under one of them.`
+- If `resources` names a folder other than `platform`, that folder is the one that always gives paths; a `platform/` folder is then just a folder. A resource file in it is outside every folder that gives a path, and the build says so, naming the folder that does give paths (here `other`): `platform/cli-ideas.table.yaml: is outside every folder that gives a resource its path (other). Say its path in the file, as path: <path>, or keep it under one of them.`
 - When the workspace follows a Git branch, the instance reads `volvel.yaml` too. A `resources` there decides where Git sync writes, and the Repository page shows the folder as read-only. `entry` is for the CLI only: the instance never builds code.
 
 ## What is never read
@@ -92,7 +92,7 @@ With that file, `volvel build` of a repository that holds `src/lending/items.tab
 
 - A resource file is `<path>.<kind>.yaml`, for example `lending/items.table.yaml`. The path and the kind come from the name, so they cannot disagree.
 - A script, a connector and a trigger source may also have a `.ts` of the same name beside the YAML, which holds its code. No other kind pairs with a `.ts`. Files like `vite.config.ts` or `orders.test.ts` belong to no resource.
-- A page is `<path>.md` under a folder of pages.
+- A page is `<path>.md` under a folder of pages. It starts with its title between two lines of `---` (`title: ...`); a page without them fails the build with `A page starts with its title between two lines of "---"`.
 - Inside a YAML file the keys are `schemaVersion` (a whole number from 1) and `body` (a mapping), which are required, and `key`, `path` and `title`, which are optional. Any other key is an error naming the file: `has keys other than key, path, title, schemaVersion and body`.
 - A path is lowercase letters, digits, hyphens and underscores, in folders. One path names one resource across all kinds.
 - A file of an app: each part of its name may begin with one `_` or `.` followed by a letter or digit. `.` and `..` are refused, with a message that names the file and the rule.

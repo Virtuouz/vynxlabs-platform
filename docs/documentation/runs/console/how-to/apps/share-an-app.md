@@ -22,3 +22,9 @@ Deployed a repository with the table `visits`, the script `check-in`, the flow `
 ## Not run
 - Opening a repository app (Desk) as a person: this instance has no address for apps, so it answers 503. The opening was run with the App Builder app Board.
 - The kept-table sentence of **Stop sharing** (two apps reading one table), the group row counts under **What they can read** (needs a table with row rules), and **Share** at 390 px, in dark, by keyboard or after a reload.
+
+## Second check, 2026-11-23 (second agent)
+- Ran the kept-table sentence: Board (App Builder, from files) and Desk (repository) both read `visits`; shared both with End users in Front desk, Read; **Stop sharing** on Desk asked "They lose the app. 1 table stays, for 1 other app that uses it: Board." and after confirming Board's binding at `visits` was still there.
+- A guest on a public app: Board shared with Anyone, without signing in opened at `/apps/fernhill/apps-docs/board/` at 200 without a session; Desk answered 503 "This app is not served at this address" (no `APPS_URL`).
+- Share sheet at 390 px and in dark, by keyboard (Enter on **Share**, Escape) and after a reload: no overflow; fault: focus is lost after Escape. The shares made for the run were removed.
+- Cannot run here: a repository app opened as a person (needs `APPS_URL`, a second host).

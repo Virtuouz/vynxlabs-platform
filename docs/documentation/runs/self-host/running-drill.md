@@ -61,3 +61,7 @@ Not run: recovering an account that was disabled, or that had lost its operator 
 
 ## Teardown
 At the end: `docker compose -p p31worker down -v`, `-p p31restore down -v`, `-p p31host down -v`; the scratch folders hold `.env` files of throwaway keys.
+
+## Second check (2026-11-23)
+
+Multiple runs added by the second agent: a proxy (node), SMTP (node sink), OTLP (node receiver), Postgres 16 to 18, two-replica rotation, AUTH_SECRET change, CLI emergency stop, read-only with a member, a dedicated database, a non-superuser database owner, a standalone worker with a pool. Not run: Caddy/nginx, a real SMTP server, Fly, a second machine for the offline transfer, a Postgres 17 image, an external object store. Findings: change-auth-secret wrongly said end users sign in again; the object-store refusal does not name the store; operators under a grant get 503 on a read-only database.

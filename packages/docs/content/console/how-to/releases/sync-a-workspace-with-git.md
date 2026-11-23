@@ -32,7 +32,7 @@ The first push creates the branch from the default branch.
 3. Press **Push N changes**.
 :::
 
-The console says "Committed what is deployed here to the branch." A push commits only what is deployed. To send drafts too, press **Push with drafts**; a plain push afterwards leaves those files on the branch while their drafts are saved.
+The console says "Committed what is deployed here to the branch." The commit is authored by you, and **Last agreed** now names its first seven characters. A push commits only what is deployed. To send drafts too, press **Push with drafts**; a plain push afterwards leaves those files on the branch while their drafts are saved.
 
 ## Pull what changed
 
@@ -41,7 +41,7 @@ The console says "Committed what is deployed here to the branch." A push commits
 2. Press **Pull N changes**.
 :::
 
-The console says "Deployed what changed on the branch." A pull deploys, so it can be refused as a deploy is.
+The console says "Deployed what changed on the branch." A pull deploys, so it can be refused as a deploy is. It makes a new version of the workspace, whose message in **Deploy** reads "Pulled *commit* from *branch*".
 
 ## Settle a file changed on both sides
 
@@ -54,6 +54,12 @@ When a resource changed on both sides, **Changed on both sides: choose for each*
 
 **Keep workspace** writes nothing to Git until the next push.
 
+## Where the files are
+
+Resources made in the console are written to the **Folder** of the Repository page, `platform` by default. If `volvel.yaml` at the repository's root names `resources`, that folder is used instead, and the Repository page shows it read only after the next push or pull. Files a developer keeps elsewhere in the repository are read where they are.
+
+If `volvel.yaml` moves the folder after a sync, a file that then changes on the branch shows as changed on both sides. Choose **Take branch** for it.
+
 ## Change or stop following
 
 - **Change branch** asks "Follow another branch?" and compares against the branch you name as if the workspace had never synced. Nothing on either branch changes.
@@ -61,7 +67,7 @@ When a resource changed on both sides, **Changed on both sides: choose for each*
 
 ## A production workspace
 
-A production workspace has no branch to follow. Its **Git sync** shows the release branch, `<release branch>/<workspace slug>`, with the last result. After a failed commit, press **Commit to the release branch again**.
+A production workspace has no branch to follow. Its **Git sync** shows the release branch, `<release branch>/<workspace slug>`, with the last result. After a failed commit, the page says "The last promotion is live, but its commit did not reach the release branch. Commit it again below." Press **Commit to the release branch again**. It says "Committed what runs here to *branch*.", or "*branch* already has what runs here: nothing to write." when the branch is current.
 
 ## The result
 
@@ -69,7 +75,7 @@ A production workspace has no branch to follow. Its **Git sync** shows the relea
 
 ## If it does not work
 
-- **"Nothing was written: the branch changed. Pull first."** A file changed on the branch since the last sync. Pull, then push.
+- **"Nothing was written: the branch changed. Pull first."** A resource file changed on the branch after the screen last compared. Pull, then push.
 - **"Another push or pull of this workspace is in progress. Try again in a moment."** A push or pull holds the workspace for up to 120 seconds.
 - **"Sync is paused for this tenant."** Save the repository's settings to turn it on.
 - **A button "Delete them anyway" after a pull.** The pull would delete something that holds runs, rows or access, and create something of the same kind. If it was renamed, give the new file the old one's key as its first line, `key: <the old key>`. If not, press the button and confirm.

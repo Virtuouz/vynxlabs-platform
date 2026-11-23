@@ -14,5 +14,17 @@
 ## The page got wrong (and was corrected)
 - The brief says a script's connection reads Bound / Not bound; the screen says **Set up here** / **Not set up here**. The page uses the screen's words.
 
-## Not run
+## Not run by the writer
 The retry question's list ("Runs again:" and so on), **On another version…**, a checked-row **Run again**, a flow run again with other input, a run with a start time in the past ("Choose a time that has not passed." is from the code), a trigger source's run.
+
+## Second check (2026-11-23)
+
+- Instance: http://localhost:8091, the throwaway instance (MAIL_CAPTURE_DIR set, so mail is read from its folder). Everything below ran in a workspace of my own: Operate check (a dev workspace) and Operate check live (a production workspace linked to it), in Fernhill's tenant, with scripts, flows, triggers, a secret and an HTTP connection of mine (deployed by the CLI from a repository of my own; the connection pointed to a listener of mine on localhost). Signed in as Maya Brooks, and as Devi Shah (not in the Practice managers group) where a second person was needed. Playwright, headless.
+
+- On a failed flow run (a rejected approval): **Re-run** listed Retry from the failed step…, Again from the start, Again, with other input…, On another version…, On the version deployed now. **Retry from the failed step…** asked "Retry from the failed step?" with "Runs again: ask, after. Kept as it was: nothing. On version 2, with the same input." After a new deploy the menu also had "Retry from the failed step on v3 (deployed now)…" and its question read "On version 3, the one deployed now, with the same input."
+- **On another version…**: **Version** v2 "(deployed now)" and v1; **Run** From the failed step / Every step again, from the start; **Cancel**, **Continue**.
+- The script's **Run** dialog, **Start** Later: a past **Starts at** gave "Choose a time that has not passed."; priority 500 gave "Priority is a whole number from -100 to 100."
+- Checked-row **Run again** on two canceled runs: "Run 2 runs again?", two new runs.
+- 390 px dark: the run page's **Re-run** menu and its dialogs fit.
+
+Still not run: a flow run again with other input (its dialog), a trigger source's run.

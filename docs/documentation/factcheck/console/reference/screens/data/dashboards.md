@@ -1,5 +1,7 @@
 # Fact-check record: console/reference/screens/data/dashboards
 
+Checked by: second agent, 2026-11-23.
+
 Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer. `Q` = `apps/console/src/screens/Queries.tsx`, `Data` = `apps/console/src/screens/Data.tsx`, `DB` = `apps/console/src/screens/Dashboards.tsx`, `RI` = `apps/console/src/screens/ResourceIdentity.tsx`, `RD` = `apps/console/src/kit/RemoveDraftButton.tsx`, `rq` = `apps/control-plane/src/routes/queries.ts`, `rs` = `apps/control-plane/src/routes/sources.ts`, `rd` = `apps/control-plane/src/routes/dashboards.ts`, `qry` = `apps/control-plane/src/kernel/data/query/`, `src` = `apps/control-plane/src/kernel/data/sources.ts`. The second agent's column is left for the second agent; "writer, run" means the writer saw it on the throwaway instance, "writer, code" that it was read from the code only.
 
 | Claim | Source (file:line) | Checked by | Result |
@@ -22,3 +24,12 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Addresses dashboards/<id>, dashboards/at/<path>, ?edit=1, ?f= | DB:96-100,215 | writer, run | holds |
 | Permissions: dashboard:read list/view; dashboard:write create/save/delete; members only | rd:238-300,344-500 | writer, code | holds |
 | Members only; kept dashboards open to whoever has dashboard:read | rd:67-72,155-175 | writer, code | holds |
+
+## Second check (2026-11-23, second agent)
+
+Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
+
+- Confirmed on the instance (tenant qry31chk): New dashboard dialog and its texts; the name over 100 characters says "Use at most 100 characters. This is 101." and the button is off (page corrected); the 21st dashboard of a member is refused "A member can keep 20 dashboards in a workspace. Delete one first." (API 409 `limit_reached`, and in the dialog); Share lists the groups, a group is chosen at once and "Seen by" follows; ticking everyone hides the groups; the refresh timer (Every minute) re-read the widgets (Stat 3 to 4) while the tab was open; a reload kept the editor's changes; a member with `dashboard:read` only (Vic) sees the list note, "Making one takes the dashboard:write permission…", and a dashboard shared with everyone as "Ann Qry's, shared with you. You see the rows you may read." with no Share, Edit or menu.
+- fault: the line under a dashboard reads "Yours. Seen by: floor staff." for the group "Floor staff": `Dashboards.tsx:766` lowercases the names. The page says so. Revisit when fixed.
+- Kept as a resource, removed ("Removing" and the notice), kept again, renamed (Name and path, page moved to the new address with "A draft renames … to …"), and a draft clash in the editor ("Not saved: someone else saved this dashboard"; **Copy what I wrote** and **Load their version** are offered in the dashboard editor).
+- Walked at 390 and dark: list, dashboard, Share and editor have no horizontal overflow.

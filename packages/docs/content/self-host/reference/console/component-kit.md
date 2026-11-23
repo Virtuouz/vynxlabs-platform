@@ -52,13 +52,13 @@ The sections are on one page, in this order. Each has a small heading in capital
 | --- | --- |
 | **Dialog**, **Side sheet** (in **The boards' parts**) | Open a sample dialog and a sample side sheet, which close again. They save nothing. |
 | A tree node, a segmented control, a switch, tabs, a filter chip | Change in place, so you can see their selected states. |
-| The page's own **Color theme** button | Switches the console between light and dark. The kit is drawn in the theme that is on. |
+| The shell's **Color theme** menu (the icon at the foot of the left rail) | Chooses **Match the system**, **Light** or **Dark**. It is on every screen, not part of this one. The kit is drawn in the theme that is on. |
 
 ## Which parts are not in `@volvel/ui`
 
 The sheet draws two kinds of part. Most are in the `@volvel/ui` package, which an app can install. Some belong to the console alone and cannot be imported from `@volvel/ui`:
 
-- Page and layout: the page header, the section label, the empty canvas, the filter chips, the stepper, the list of facts, the next-step line, and the settings rows.
+- Page and layout: the page header, the section label, the empty canvas, the filter chips, the stepper, the list of facts the sheet draws (`KeyValues`; `@volvel/ui` has its own, different `Facts`), the next-step line, and the settings rows. The panel (`Panel`) is in `@volvel/ui`.
 - Data and status: the list (`DataTable`), the state pill, the environment tag, the tag, the monospace text, the time, the truncated text, the columns menu and the identifier with a copy button.
 - Motifs: the signal path, port brackets, the inset rule and junctions.
 - Editing: the save bar, the secret field, the pane splitter and the difference view.

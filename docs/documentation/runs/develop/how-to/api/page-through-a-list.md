@@ -12,5 +12,15 @@
 ## The page got wrong (and was corrected)
 - None found in this run.
 
-## Not run
+## Second check (2026-11-23, second agent)
+
+The instance was http://localhost:8091 (a tenant of my own, `api-check2`, with a workspace `agent-ws`; keys and tokens revoked at the end).
+
+- Run now: the caps of bundles, deployments, clones and promotion requests were read from `openapi.json` descriptions.
+- Not run: files (200), a table with no key or a multi-column sort.
+
+The console key screen, the Agent tools tab and Members & access were walked at 1440 px, at 390 px and in dark (the key screen: create, one-time key, revoke; Agent tools: workspace choice, address, settings, Tools offered, Try): no overflow at 390 px, the settings block scrolls inside itself, dark has no contrast fault.
+
+## Not run (before the second check)
+
 A list that answers `{items}` with no cursor (clones, bundles, deployments, promotion requests, files): the caps on the page are copied from the inventory and the code's `listOf` calls, not read from an answer. A table with no key or a multi-column sort (offset cursor).

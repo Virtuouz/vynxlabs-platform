@@ -14,3 +14,7 @@ None. This page is not run, and is not presented as finished: a run on a throwaw
 
 ## Not run
 - Pause (with and without a Why), the paused notice, Resume, the paused-by-environment state, the CLI, the workspace pill and Overview card for the instance's pause, a webhook refused with 503.
+
+## Second check, 2026-11-23 (second agent)
+- Still NOT run, on purpose: this instance is never paused (the owner's rule), so **Pause every trigger**, **Resume triggers** and `volvel instance triggers` were not used. The page is written from the code and the CLI's source (`cli.ts:1215-1223`: "Triggers are running.", "Triggers are running again.", "Every trigger is paused. Runs already queued or going carry on.", "Why: ..."), and the page is not presented as run. It needs a throwaway instance that may be paused.
+- Seen again: **Instance > Triggers** in the running state at 390 px in dark (no horizontal scroll, **Pause every trigger** reachable by Tab).

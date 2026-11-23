@@ -22,3 +22,17 @@
 - A password reset link: the instance sends no mail and the link was not opened. The refusal for a provider-only member was read in code.
 - "You could not be signed out" and the **Your session ended** card.
 - `recover-operator`.
+
+## Second check, 2026-11-23
+
+Instance as above, tenant `basics-chk` of my own. A member `owner@basics-chk.example` (tenant admin), a SAML provider row `Basics IdP` with `basics-chk.example` proved, made in the database; **Enforce** switched on and off in the database. 390 px dark for the sign-in card, the recovery form, the account sheet and the sign-out refusal; 1440 px light for the session dialog; 768 px was not needed here.
+- Provider on, password allowed: the card shows **Sign in with Basics IdP** above the Password field and **Sign in with a password**.
+- Recovery codes: **Account**, **Make recovery codes**: ten codes shown once ("Codes left 10"). With the provider required: the card says "Your organization requires its own sign-in. There is no password to enter here." and **Use a recovery code**. A wrong code, a right code with a wrong password (code spent), the same code again, then a right code with the right password: each message as on the page; the last signed in.
+- Password reset: the link for the owner was refused with the provider required ("signs in with Basics IdP, and passwords are turned off for them. There is no password to reset."); with the provider off it was emailed (written to the mail capture file); opened it asked for a password, refused 5 characters and a mismatch, set one, said "Your password is set", and the second visit said "Nothing to set here". The older session of the same member was signed out.
+- `recover-operator owner@basics-chk.example` printed a new password and said earlier sign-ins ended.
+- Sign out with the request refused (browser route): notice "You could not be signed out. Check your connection and try again."; still signed in.
+- Session ended: a 401 given to one request made the dialog **Your session ended** open; a wrong password gave "That password does not match this account."; the right one closed it.
+- Rate limit: the walk itself reached "Too many requests. Please try again later." (20 a minute from one address).
+- Careless step: I deleted all of Maya's session rows in the instance's database to test the card, which signed out other lanes' browsers; they sign in again.
+
+Still not run: the redirect to a real identity provider and back; it cannot be done here (no hosted provider).

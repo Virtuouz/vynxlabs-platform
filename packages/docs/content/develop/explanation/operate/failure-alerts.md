@@ -42,6 +42,23 @@ Failures of one script, or one flow, within ten minutes of an alert are counted 
 
 The window is per script or flow path, in one workspace. A failure of another script sends its own alert.
 
+## Doing more than the default
+
+A run that fails for the last time also publishes the platform event `platform/run-failed`, with the run's `runId`, its `script` and its `error`; every payload is listed in [Platform events](../../reference/platform-events). An event trigger can listen for it and start a script of its own, with a `filter` to pick which failures count. This is separate from the alert: it fires for every last failure, with no ten-minute window, and only while the trigger is on and not paused.
+
+```ts title="src/alerts.ts"
+import { defineEventTrigger } from "@volvel/sdk";
+
+export const onFailed = defineEventTrigger({
+  path: "ops/on-run-failed",
+  event: "platform/run-failed",
+  script: "ops/tell-the-channel",
+  filter: "event.payload.script == 'billing/chase-one'",
+});
+```
+
+The script is given the event's payload as its input. The `filter` is a CEL expression over `event`. A filter that fails, or a payload that does not fit the script's input, skips that trigger and records a refusal on it, shown as **Last refused** on the [Triggers](../../../console/reference/screens/operate/triggers) screen.
+
 ## What is left to others
 
 Volvel does not page anyone by itself, and has no built-in mail or chat integration for alerts. It starts a script you wrote and posts to a connection you set up: what happens next, such as texting an on-call person, is that script's or that service's.
@@ -50,4 +67,4 @@ Volvel does not page anyone by itself, and has no built-in mail or chat integrat
 
 - [Alerts](../../../console/reference/screens/configure/alerts)
 - [The run page](../../../console/reference/screens/operate/run-page)
-- [Platform events](../../reference/operate/platform-events): listen for `platform/run-failed` to do more.
+- [Platform events](../../reference/platform-events): the payload of `platform/run-failed` and the others.

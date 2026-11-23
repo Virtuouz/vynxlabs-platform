@@ -63,7 +63,7 @@ For a record page, side sheet or modal. **Opens on** has one field, **Table of i
 
 ## Order and removal
 
-- **Reorder.** Drag a row by its grip, or point at it or focus it and use the arrows. The order is the order of the app's menu. The arrows are not drawn with one page, and not while the workbench is read only.
+- **Reorder.** Drag a row by its grip, or point at it or focus it and use the arrows (**Move … up**, **Move … down**). The order is the order of the app's menu. Neither the grip nor the arrows are drawn with one page, or while the workbench is read only.
 - **Remove a page.** **⋯** at the top of the page's settings, then **Remove page**. It is not offered when the page is the only one. It asks "Remove the page" and its name: "Its widgets go with it. Nothing in any table is touched." If a button or a row click on another page opens this page, the question names each ("Mark paid, on Money") and says it will open nothing until you change it, with a link to each that takes you there. The publish check also fails an action that opens a page that is gone.
 - **Undo.** Adding, moving and removing a page are each one change.
 

@@ -1,6 +1,6 @@
 # Fact-check: self-host/explanation/running/egress-and-offline.md
 
-Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the writer; the second agent's column is open.
+Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -10,3 +10,7 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the wr
 | `WORKER_EGRESS_ALLOW` is for the worker host, empty by default, needs NET_ADMIN. | `deploy/compose/compose.yaml` worker-host environment; `config-vars.ts` WORKER_VARS | writer, 2026-11-23 | holds |
 | The OAuth callback is `<PUBLIC_URL>/api/v1/oauth/connections/callback`. | `docs/self-hosting.md`; console wizard | writer, 2026-11-23 | carried; not re-read |
 | No telemetry, update check or license check; mail only with `SMTP_URL`. | `SECURITY.md` "Defaults worth knowing" | writer, 2026-11-23 | holds as policy |
+
+## Second check (2026-11-23)
+
+Every claim read against the code and matched; commands and messages were also run in the drill (see the run log).

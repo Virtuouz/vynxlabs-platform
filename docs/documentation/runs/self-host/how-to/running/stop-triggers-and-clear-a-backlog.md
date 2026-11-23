@@ -11,3 +11,7 @@ Not known.
 
 ## Not run
 The console's **Pause every trigger** and **Resume triggers**, `TRIGGERS_PAUSED`, `volvel instance triggers`, `volvel runs cancel`, **Cancel N queued**, a backlog.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run: CLI `volvel instance triggers`, `pause --reason`, `resume`; with TRIGGERS_PAUSED=true the API keeps answering paused/byEnvironment true; `volvel runs cancel --queued` canceled 3 queued runs, `--older-than` 0, `--all` 0 and 0 flow runs. Console buttons exist (`InstanceTriggers.tsx`, `Runs.tsx:410`). A refused webhook was not run. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

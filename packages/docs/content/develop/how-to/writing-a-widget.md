@@ -80,7 +80,7 @@ A widget is two halves. The **definition** is data and holds no browser code: th
    npx vitest run packages/screens/src/goal.test.tsx
    ```
 
-8. **Look at it.** Open an app in **App Builder**, press **Add to page**, and find the widget under its category. Goal is in **Understand data** with "How far a number is toward a target". Add it, point it at a table, and set it up in the inspector. Reload, and look at it in light and dark and at phone width.
+8. **Look at it.** Open an app in **App Builder**, press **Add to page** (or :kbd[A]), and find the widget under its category. Goal is in **Understand data** with "How far a number is toward a target". Add it, point it at a table, and set it up in the inspector. Reload, and look at it in light and dark and at phone width.
 :::
 
 ## The result
@@ -96,7 +96,7 @@ The Goal widget in the builder has a Data tab with a source, a **Value** and **O
 | Field | Says |
 | --- | --- |
 | `type`, `version` | `pack/name` and `x.y.z`. |
-| `title`, `description`, `category`, `icon` | What **Add to page** shows. A category is `records`, `action`, `understand`, `organize` or `content`, shown as **Work with records**, **Take action**, **Understand data**, **Organize** and **Content**. The icon is a platform widget's name, a page icon, or `globe`, `radio` or `table-2`; any other name draws a puzzle piece. |
+| `title`, `description`, `category`, `icon` | What **Add to page** shows. A category is `records`, `action`, `understand`, `organize` or `content`. **Add to page** groups them as **Work with records**, **Understand data**, **Take action** and **Organize and explain**, which holds both `organize` and `content`. The icon is a platform widget's name, a page icon, or `globe`, `radio` or `table-2`; any other name draws a puzzle piece. |
 | `surfaces` | `app`, `dashboard`, or both. |
 | `data`, `dataHints` | What it reads, and the Data tab's controls for each input, in order. |
 | `config`, `words`, `defaults`, `initialData` | What can be set, what each setting is, what the widget is when it is added, and a source a widget starts with. |

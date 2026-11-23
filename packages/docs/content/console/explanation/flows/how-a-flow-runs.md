@@ -63,7 +63,7 @@ What a flow gives back is what its last steps gave, by name. A last step that ha
 
 An expression has its own limits: see [Expressions in a flow](../../reference/flows/expressions). A deploy that has a schedule and its flow applies them in kind order, so the schedule may be at an earlier path than the flow.
 
-When a run is canceled it publishes `platform/run-finished` with the status `cancelled`.
+Canceling a flow run cancels the script runs that are going in it. Each of those publishes `platform/run-finished` with the status `cancelled`. A flow run canceled by a person, from the console, the API or **Cancel by age**, publishes no `platform/flow-run-finished`: that event is sent when a flow run finishes by itself.
 
 ## Related
 

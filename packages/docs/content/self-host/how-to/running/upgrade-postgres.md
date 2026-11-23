@@ -8,9 +8,7 @@ subjects: [database, upgrade]
 
 By the end the instance runs on a newer Postgres major version. The instance does not care which major version it runs on, only that the version is 16 or later. Moving is a restore into a new server.
 
-:::alert[Written from the code, not run]{type=warning}
-The steps below were not run as a major-version upgrade. The dump, the restore into an empty server and the first start are the same steps that [Restore an instance](restore-an-instance) ran.
-:::
+This procedure was run on a Compose stack from Postgres 16 to Postgres 18, with a tenant, a table and rows: the three rows read after the move, and a new row was accepted. Other major versions were not run.
 
 ## Before you start
 
@@ -27,7 +25,14 @@ The steps below were not run as a major-version upgrade. The dump, the restore i
 4. Check `GET /api/v1/readyz` and **Instance**, then **Health**, then open a tenant's table.
 :::
 
-With the bundled Postgres in Compose, the data lives in a volume of its own: dump from the old container, change the image tag in the Compose file, remove the volume, start the new container and restore.
+With the bundled Postgres in Compose, the data lives in a volume of its own. Stop the control plane and the worker host, then dump with the new version's client, over the Compose network, so the dump is made before the old container goes:
+
+```bash
+docker run --rm --network <project>_data -e PGPASSWORD=<POSTGRES_PASSWORD> -v "$PWD":/out \
+  postgres:18 pg_dump -h postgres -U platform --no-owner -Fc platform -f /out/platform.dump
+```
+
+Then stop and remove the `postgres` container, remove the volume `<project>_postgres`, change the image tag in the Compose file, start only `postgres`, and restore as in [Restore an instance](restore-an-instance) (`pg_restore ... --no-owner`, which ends with the five expected `vxd_` errors and exit status 1). Start everything.
 
 ## The result
 

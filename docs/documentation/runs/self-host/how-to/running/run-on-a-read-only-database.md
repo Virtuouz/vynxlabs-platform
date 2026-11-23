@@ -11,3 +11,7 @@ The first draft said writes return "within the minute"; in the run they returned
 
 ## Not run
 A database whose disk is full; an upgrade with migrations on a read-only database.
+
+## Second check (2026-11-23)
+
+On the checker's own stack (`-p p31chk`, port 18590, torn down after). Run: with a tenant member, reads (me, tenants, workspaces, runs, resources, rows, stream) 200 and a write or new sign-in 503 read_only. An operator reading inside a tenant under an access grant got 503 (each request under a grant is audited): added to the page. Key screens walked at 390 px and in dark on that stack (Health, Triggers, Database locations): no horizontal overflow, labels as the page says.

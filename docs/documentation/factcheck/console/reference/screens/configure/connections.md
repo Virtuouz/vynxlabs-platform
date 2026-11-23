@@ -1,6 +1,6 @@
 # Fact-check: console/reference/screens/configure/connections.md
 
-Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: not yet made.
+Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second check: Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -37,3 +37,28 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs). Second 
 | Permissions: read `connection:read`; write `connection:write`; Test `connection-tests` `connection:write`; declare new also `resource:write`. | `apps/control-plane/src/routes/execution.ts:2580,2911,2970,3006; apps/console/src/screens/Execution.tsx:789-791` | writer, 2026-11-23 | holds |
 | Read-only line and disabled row buttons; group buttons not gated. | `apps/console/src/ListScreen.tsx:420-440; kit/Can.tsx:176-245` | writer, 2026-11-23 | holds; seen as Devi on Settings (same component); groups per inventory "Left" |
 | Role contents: developer, workspace_admin, viewer. | `apps/console/src/builtinRoles.ts:19-82` | writer, 2026-11-23 | holds |
+
+## Second check, 2026-11-23
+
+Checked by: second agent, 2026-11-23. Source commit `87000022`.
+
+| Claim | Source (file:line) | Checked by | Result |
+| --- | --- | --- | --- |
+| Row, page and sheet strings of the screen (columns, tags, Health states, Test / Change / Set up / Remove from here, empty and read-only texts, sheet title, description, parts 1 to 4, Save / Save again, Saved, Testing…, Not tested, Test again, Change the token or key). | `apps/console/src/screens/Execution.tsx:741-960`, `ConnectionWizard.tsx:59-78,354-597` | second agent, 2026-11-23 | holds; read line by line |
+| Kind offers built-in kinds only; Provider, Directory (tenant), Redirect address. | `ConnectionWizard.tsx:81-134,423-481` | second agent, 2026-11-23 | holds; seen in the sheet |
+| Test waits 2 minutes for a worker; Waiting for a worker… after 20 seconds; the refusal text. | `kernel/execution/tasks.ts:19-23,236`; `apps/console/src/tasks.ts:11` | second agent, 2026-11-23 | holds |
+| Key pattern `^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`, label up to 200. | `routes/execution.ts:2664,2822` | second agent, 2026-11-23 | holds (the writer's open point is closed) |
+| Group section strings, buttons, columns, Not declared texts; no Change for an undeclared group's members. | `Execution.tsx:1574-1713` | second agent, 2026-11-23 | holds |
+| OAuth round trip: Save shows Saved, Not connected yet, Connect, Not tested, Test off; Connect goes to the provider and back; the sheet reopens showing Connected (with the scopes the provider gave), Reached (200) in 41 ms.; with the provider refusing, part 4 says "The provider said no: access_denied." and the connection stays Not connected yet; changing the authorization address forgets the sign-in (the row reads Not connected). | `kernel/execution/oauth.ts:175,252`; `bindings.ts:78-90` | second agent, 2026-11-23 | run on the instance against a stand-in provider on 127.0.0.1:4021 (authorize with PKCE S256, token, userinfo); added to the page |
+| A mail test says "Reached in 6 ms." (no status), connects and signs in and sends no mail (the stand-in SMTP server saw EHLO, AUTH, QUIT only); a wrong password gives "Invalid login: 535 5.7.8 Bad credentials". | `packages/worker/src/smtp.ts:22-30`; `ConnectionWizard.tsx:148-174` | second agent, 2026-11-23 | run; added to the page |
+| Tooltip and read-only texts follow `askForAccess`. | `kit/Can.tsx:176-245` | second agent, 2026-11-23 | holds |
+| A Developer has `connection:write`, `resource:write`, `run:write` and every `:read`; Workspace admin `connection:*`, `resource:*`; Viewer every `:read`. | `apps/console/src/builtinRoles.ts:19-82` | second agent, 2026-11-23 | holds |
+| Seen at 390 px (dark) and 768 px (light): no page scroll; the table scrolls inside its panel and shows the first columns; the sheet fits. Escape closes the sheet and focus returns to the button that opened it. | walk | second agent, 2026-11-23 | holds |
+
+Sentences that describe a fault (revisit when the fix lands):
+
+- "For an HTTP connection the reason is 'HTTP 404: https://… answered 404.'" and **Failed (HTTP 404)**: fault: configure, HTTP Test asks the base address itself and reads 404 as Failed.
+- "The buttons for groups are not turned off for a person who may only read": fault: configure, connection-group member buttons are not gated.
+- "The workspace's **Overview** says 'N connection has nothing bound here'": fault: configure, the "bound" words remain.
+- Test of a Mail connection that is new and not deployed: fault: configure (new), the worker route reads the kind from the deployed declaration only and treats an undeclared connection as HTTP (`apps/control-plane/src/routes/worker.ts:168-170`), so the test fails with "Cannot read properties of undefined (reading 'endsWith')". Stated on the how-to page.
+- Connections' New connection panel offers HTTP, Mail and OAuth 2.0 only: fault: extensions (the wizard should offer the workspace's connectors).

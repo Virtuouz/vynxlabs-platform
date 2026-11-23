@@ -1,5 +1,7 @@
 # Fact-check record: console/reference/queries/data-source-rows
 
+Checked by: second agent, 2026-11-23.
+
 Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Written by the page's writer. `Q` = `apps/console/src/screens/Queries.tsx`, `Data` = `apps/console/src/screens/Data.tsx`, `DB` = `apps/console/src/screens/Dashboards.tsx`, `RI` = `apps/console/src/screens/ResourceIdentity.tsx`, `RD` = `apps/console/src/kit/RemoveDraftButton.tsx`, `rq` = `apps/control-plane/src/routes/queries.ts`, `rs` = `apps/control-plane/src/routes/sources.ts`, `rd` = `apps/control-plane/src/routes/dashboards.ts`, `qry` = `apps/control-plane/src/kernel/data/query/`, `src` = `apps/control-plane/src/kernel/data/sources.ts`. The second agent's column is left for the second agent; "writer, run" means the writer saw it on the throwaway instance, "writer, code" that it was read from the code only.
 
 | Claim | Source (file:line) | Checked by | Result |
@@ -16,3 +18,10 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Not audited: the routes say so | rs:429,488,518 | writer, code | holds |
 | Read only line "You can see the rows of this table, not change it. It needs data_source:write." | `apps/console/src/kit/Can.tsx:176-191`; Data:3848-3860 | writer, code | holds |
 | Errors: unreachable 502, refused 502, slow 504 | src:200-236 | writer, run | holds (unreachable seen) |
+
+## Second check (2026-11-23, second agent)
+
+Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
+
+- Confirmed on the instance: filter boxes, Keys, Compact rows, Add row (disabled for a reader), "N rows on this page", the read-only line, the Row inspector with key above "Row", Save row, Delete row, at 1440, 390 and dark; Add row needs `id` (as the page says).
+- Corrected: on a phone the table list is a list above the rows that scrolls beyond 8 rem (`Data.tsx` nav `max-h-32`), not a row of buttons.

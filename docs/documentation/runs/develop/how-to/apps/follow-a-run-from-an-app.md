@@ -18,3 +18,7 @@
 ## Not run
 - A guest on a public app, `useRun`, `runFlow`, and the 2-second polling observed by timing. The `live` flag was not printed.
 - 390 px, dark, keyboard.
+
+## Second check, 2026-11-23 (second agent)
+- A guest on a public app: bound `anonymous` to `starts_runs` at flow `welcome` and script `check-in`, then called `POST flow-runs` and `POST runs` without a session: both 403 "Sign in to start a flow/script. A run started by someone who is not signed in cannot be read back." With no such binding the call is 401 (page corrected). The bindings were removed afterwards.
+- Not run: `useRun`, `runFlow`, the 2-second polling by timing.

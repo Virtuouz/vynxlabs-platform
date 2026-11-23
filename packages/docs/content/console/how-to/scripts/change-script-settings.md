@@ -35,6 +35,6 @@ The script's inspector in the list shows the new **Timeout** and **Retries**, an
 
 - **A field is refused.** The message is under the field: a number outside its range, or a **One lane for each value of** key that is not `input.` followed by field names.
 - **"{path} cannot be deployed alone."** The deploy cannot go ahead on its own: the console says why and lists what to set up. Press **Review all drafts** and read the list.
-- **Change the settings is not offered.** The workspace is production, or the repository holds the script. The tab says which.
+- **Change the settings is not offered.** The workspace is production. The tab says so. A script the repository holds has its settings in `defineScript`: see [Scripts in code](../../../develop/reference/scripts/define-script).
 - **Change the settings is grayed out.** You lack `resource:write`.
 - **"One lane for each value of" is disabled.** Set **Runs at once** first.

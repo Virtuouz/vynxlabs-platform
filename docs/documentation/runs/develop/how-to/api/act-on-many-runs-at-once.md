@@ -13,5 +13,15 @@
 ## The page got wrong (and was corrected)
 - The inventory names the routes ("runs, flow-runs, …") without their actions; the page gives each route's actions from the code (the runs batch cancels or runs again, it does not start).
 
-## Not run
+## Second check (2026-11-23, second agent)
+
+The instance was http://localhost:8091 (a tenant of my own, `api-check2`, with a workspace `agent-ws`; keys and tokens revoked at the end).
+
+- Run now: `approvals/batch`, `drafts/batch`, a batch over 100 items, a service account's key on a batch.
+- Not run: nothing from the list.
+
+The console key screen, the Agent tools tab and Members & access were walked at 1440 px, at 390 px and in dark (the key screen: create, one-time key, revoke; Agent tools: workspace choice, address, settings, Tools offered, Try): no overflow at 390 px, the settings block scrolls inside itself, dark has no contrast fault.
+
+## Not run (before the second check)
+
 `approvals/batch`, `drafts/batch`, a batch over 100 items, a service account's key on any batch.

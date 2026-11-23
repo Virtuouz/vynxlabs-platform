@@ -19,10 +19,10 @@ The list has a search box, the filter chips and a table. **New flow** is in the 
 | Control | What it does |
 | --- | --- |
 | **New flow** | Opens the editor on a new flow. Dev workspaces only. |
-| **Find by path or purpose** | Keeps the flows whose path or description contains what you type, ignoring capitals. The text is in the address (`q`). |
+| **Find a flow** (its box says "Find by path or purpose") | Keeps the flows whose path or description contains what you type, ignoring capitals. The text is in the address (`q`). |
 | **All**, **Failed in 24 hours**, **Waiting**, **Drafted** | Chips, each with a count. **Failed in 24 hours** keeps flows with a failed run in the last 24 hours. **Waiting** keeps flows with a run waiting for a person. **Drafted** keeps flows with a saved draft. The choice is in the address (`filter`). |
 
-A note above the list says "N runs are waiting for a person." with a link, **Decide**, to the Approvals screen. It counts runs waiting at an approval step. A run waiting at a **Wait** step or on a sub-flow is not counted.
+A note above the list says "N runs are waiting for a person." ("1 run is waiting for a person." for one) with a link, **Decide**, to the Approvals screen. It counts runs waiting at an approval step. A run waiting at a **Wait** step or on a sub-flow is not counted.
 
 | Column | What it shows |
 | --- | --- |
@@ -67,7 +67,7 @@ The title is the flow's path, with its description under it. Documentation pages
 | Control | What it does | Shown when |
 | --- | --- | --- |
 | **Edit** | Opens the editor. | Dev workspace, and you have `resource:write`. |
-| **Offer to an agent** | Opens "Offer to an agent": lets a service account start this flow, and nothing else, and gives the address an agent connects to. | The flow has a start **By hand**, and you have `flow_run:write`. |
+| **Offer to an agent…** | Opens "Offer to an agent": lets a service account start this flow, and nothing else, and gives the address an agent connects to. | The flow has a start **By hand**, and you have `flow_run:write`. |
 | **Start flow** | Opens a form drawn from the manual start's input, titled "Start" and the path, with the button **Start flow**. When it is sent, the new run's page opens. | The flow has a start **By hand**, and you have `flow_run:write`. |
 
 The command menu (:kbd[⌘K]) has "Start <path>…", "Edit the flow" and "See its runs" for the flow you are on.

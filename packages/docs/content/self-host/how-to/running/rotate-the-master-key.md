@@ -6,7 +6,7 @@ subjects: [keys, secrets]
 
 ## Rotate the master key
 
-By the end every value the master key seals is sealed with a new key, and the old one is no longer set. This procedure was run on a Compose stack for this page, with one replica.
+By the end every value the master key seals is sealed with a new key, and the old one is no longer set. This procedure was run on a Compose stack for this page, with one replica and with two.
 
 ## Before you start
 

@@ -54,7 +54,7 @@ When the review has more than one draft, none is chosen, and some were saved mor
 | --- | --- |
 | Summary | "Deploying creates N, changes N and removes N." followed by what happens to tables, if anything. While it is worked out: "Checking what a deploy would do…". |
 | **These changes cannot be deployed yet.** | Shown when the deploy would be refused. It gives the reason and a list of what it names. A path that can be set up, such as a connection, a variable, a secret or a data source, has a **Set up** link. The codes are in [Why a deploy or promotion is refused](../../../../develop/reference/releases/refusals). |
-| **Not bound here, and the deploy still works** | A warning listed per item, such as "the connection "x" is not bound in this workspace. A run that reaches it fails until it is set up." A dev workspace deploys with something unbound. |
+| **Not set up here, and the deploy still works** | A warning listed per item, such as "the connection "x" is not set up in this workspace. A run that reaches it fails until it is set up." A dev workspace deploys with something not set up. |
 | **What changed** (optional) | A message kept with the version. When the workspace follows a branch, it is the commit message. At most 500 characters. |
 | **Deploy N change(s)** / **Deploy the N chosen** | Deploys. Disabled while the deploy would be refused. |
 | **Set aside the N chosen** | With some drafts chosen. Asks "Set aside N drafts?" and sets them aside, 100 at a time. |
@@ -81,7 +81,7 @@ When it works, the screen moves to **Deploy to dev**, and a message says "Deploy
 | Part | What it shows or does |
 | --- | --- |
 | **v*N*** | The version number. Numbers belong to the workspace: version 4 in production need not be version 4 in dev. |
-| Message | The message given when it was deployed, or "Promoted" for a version a promotion brought, or "No message". |
+| Message | The message given when it was deployed, "Promoted" for a version a promotion brought, "Pulled *commit* from *branch*" for a version a Git pull made (*commit* is the first seven characters), or "No message". |
 | Author · time | Who deployed it, and when. |
 | **Running in *name*** | One tag for each workspace of the tenant that now runs the same bundle, found by its digest. |
 | **Deploy this version** or **Roll back to this version** | On every version that is not the one running. A version earlier than the one running says **Roll back to this version**; any other says **Deploy this version**. |
@@ -110,7 +110,9 @@ A promotion sends the version that runs here. It does not send drafts, and it do
 
 "Creates N, changes N, renames N and removes N." (renames only when there are some), then one line per resource: a tag (**created**, **updated**, **renamed**, **deleted**), the old path for a rename, the path and the kind. After the list, the changes to tables, or "No table changes."
 
-If the promotion would be refused, a notice says **It cannot be promoted yet.** with the reason and the list of what it names, as for a deploy.
+If the promotion would be refused, a notice says **It cannot be promoted yet.** with the reason and the list of what it names, as for a deploy. For `bindings_missing` the list is each connection, secret, variable or data source with a **Set up** link that opens the target workspace.
+
+A workspace with nothing deployed has no promotion to work out. The step shows the two cards and a plain notice, "This workspace has nothing deployed, so there is nothing to promote.", with no **Try again** and no "Working out what promoting would do…". **Promote to …** is disabled, with the tooltip "There is nothing to promote until this workspace has something deployed."
 
 | Control | What it does |
 | --- | --- |
@@ -130,10 +132,10 @@ Under them, one of three: a notice "This version has not run here yet. Try it be
 
 | Control | What it does |
 | --- | --- |
-| **Promote to production** or **Promote to *name*** | Shown to someone who may promote to the target. The label says "production" for a production workspace and the workspace's name otherwise. It asks "Promote to *name*?" and says "*Name* starts running version N at once. Runs in progress there finish on the version they started with." (with "It also changes what an agent calls: …" when there are such changes). It is disabled while the promotion would be refused. |
-| **Change where this promotes to** | Opens the workspace's settings, where **Promotes to** is set. |
+| **Promote to production** or **Promote to *name*** | Shown to someone who may promote to the target. The label says "production" for a production workspace and the workspace's name otherwise. It asks "Promote to *name*?" and says "*Name* starts running version N at once. Runs in progress there finish on the version they started with." (with "It also changes what an agent calls: …" when there are such changes). It is disabled while the promotion would be refused, and while the workspace has nothing deployed. |
+| **Change where this promotes to** | Opens the workspace's settings, where **Promotes to** is set. It needs `workspace:write` in this workspace; without it the button is disabled and its tooltip says what it needs. |
 
-When it works, the screen says "*Name* now runs version N." For a promotion to production with a release branch it adds "Committed to *branch*." If that commit failed it adds "The release branch was not updated: *reason*." with **Try again from Git sync**, a link to the production workspace's Git sync. A message offers **Open *name***. If you came from a failed run (`?fromRun=`) it offers **Run the failed run again on v*N*** instead.
+When it works, the screen says "*Name* now runs version N." (N is the number in the target's own list, which can differ from the one in the dev workspace.) For a promotion to production with a release branch it adds "Committed to *branch*." If that commit failed it adds "The release branch was not updated: *reason*." with **Try again from Git sync**, a link to the production workspace's Git sync. A message offers **Open *name***. If you came from a failed run (`?fromRun=`) it offers **Run the failed run again on v*N*** instead.
 
 ### Request a promotion
 
@@ -143,7 +145,7 @@ Someone who may not promote to the target sees a section **Promoting to *name***
 | --- | --- |
 | **A note for whoever decides (optional)** | Up to 1000 characters. |
 | **Request promotion of v*N*** | Asks for the version that runs here now. A new request replaces any pending request for the same two workspaces, whoever made it. |
-| **Withdraw the request** | Shown on your own pending request only. Someone else's pending request is not shown to a person who may not promote. |
+| **Withdraw the request** | Shown on your own pending request only. It acts at once, with no question, and the form comes back. Someone else's pending request is not shown to a person who may not promote. |
 
 The request's state is shown as a line: **Waiting** ("Asked … ago by *name* for v*N*."; it adds "*Workspace* has moved on to v*N* since." when it has), **Promoted** ("v*N*, by *name* …") or **Declined** ("v*N*, by *name* …" and the reason as a quotation). A request that was withdrawn or replaced shows nothing.
 
@@ -208,6 +210,7 @@ There is no workspace lock. The editors show a notice on a production resource, 
 | A script, connector or trigger source draft | also code in the console switched on for the tenant: otherwise `console_code_off` |
 | **Deploy this version**, **Roll back to this version** | `deployment:write` |
 | **Promote to …** | `promotion:write` in the workspace promoted to |
+| **Change where this promotes to** | `workspace:write` in this workspace |
 | **Request promotion**, **Withdraw the request** | `deployment:read` in both workspaces; withdrawing needs to be the person who asked |
 | **Promote** or **Decline…** in a request | `promotion:write` in the workspace promoted to |
 | See drift | `deployment:read` |

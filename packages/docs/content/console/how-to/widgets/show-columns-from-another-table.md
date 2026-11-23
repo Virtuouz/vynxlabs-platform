@@ -10,7 +10,7 @@ By the end the Fernhill appointments Table shows a column of the pet each appoin
 
 ## Before you start
 
-- A Table (or List, Chart or Pivot) on an app page that reads a table with a column that points to another table. An appointment's **Pet** column points to a pet. See [Choose what a widget shows](choose-what-a-widget-shows) for the first steps. The App Builder needs `resource:write` or `interface:write`.
+- A Table (or a List, Chart, Pivot, Stat or Goal) on an app page that reads a table with a column that points to another table. An appointment's **Pet** column points to a pet. See [Choose what a widget shows](choose-what-a-widget-shows) for the first steps. The App Builder needs `resource:write` or `interface:write`.
 - Whoever opens the app needs `data:read`. Hiding a column is not security: see [How widgets get their data](../../explanation/widgets/how-widgets-get-their-data).
 
 ## Follow a reference
@@ -21,7 +21,7 @@ By the end the Fernhill appointments Table shows a column of the pet each appoin
 3. Press **Breed**. It is checked.
 4. Open **Display**, press **+ Column** and choose **Pet breed**. The column is drawn after the others. A column of another table is named after the reference, then the column: **Pet breed**.
 5. The other table's columns are now also offered by **Only include**, **Sorted by**, **Group rows by** and, in a Chart, **For each** and the measures.
-6. To stop following the table, press the chip again.
+6. To stop following the table, press the chip again. The conditions and sorts that used its columns are taken away with it. A column you added in **Display** stays in that list: remove it there.
 :::
 
 ## The result

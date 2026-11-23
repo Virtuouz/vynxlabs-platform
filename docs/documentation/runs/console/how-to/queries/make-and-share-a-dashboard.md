@@ -20,3 +20,13 @@
 
 ## Not run
 - Choosing groups. The 20-dashboard limit. A person with only `dashboard:read`. Refresh by timer. 390 px, dark and a reload after editing.
+
+## Second run, 2026-11-23 (second agent)
+- Instance http://localhost:8091 at commit `87000022`, headless Chromium. Done in a tenant of the checker's own, `qry31chk` (workspace Sandbox, dev): Ann Qry (`tenant_admin`), Vic Qry (`viewer`), Wes Qry (`app_maintainer`), a table `visits`, a data source on the local Postgres. Fernhill's people and data were not used.
+- Choosing groups: Share listed Floor staff and Front desk; picking Floor staff saved at once and the line read "Yours. Seen by: floor staff." (the name is written in lower case: a product fault, noted on the page). Ticking everyone hid the group list.
+- The 20-dashboard limit: 20 made through the API, the 21st refused 409 "A member can keep 20 dashboards in a workspace. Delete one first."; in the dialog the same text. A 101-character name: "Use at most 100 characters. This is 101." and the button off (page corrected).
+- `dashboard:read` only (Vic): the list says "You can see this workspace's dashboards, not change it. It needs dashboard:write." and, with nothing of his own, "Making one takes the dashboard:write permission…"; a dashboard shared with everyone showed "Ann Qry's, shared with you. You see the rows you may read." with no Share, Edit or menu.
+- Refresh by timer: Refreshes set to Every minute; a row added through the API; 80 s later "Last refreshed" had moved a minute and the Stat read 4 instead of 3.
+- Reload after editing: kept Every minute and the Stat. Keyboard: the key A opens Add to page; "Stat" and Enter places it.
+- 390 px and dark: dashboard, list, Share, editor. At 390 px the editor's toolbar is behind "More: undo, redo and the screen size" and the canvas scrolls sideways within itself; no page overflow.
+- Not run: download of a file in this tenant (done in the first run on Fernhill).

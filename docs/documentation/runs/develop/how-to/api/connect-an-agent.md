@@ -13,5 +13,15 @@
 - The inventory gives the console's call route as `…/tools/call`; the code gives `POST …/service-accounts/<id>/tool-calls`. The page names it only in the permissions line.
 - The server calls itself `platform:<slug>` (see the report).
 
-## Not run
+## Second check (2026-11-23, second agent)
+
+The instance was http://localhost:8091 (a tenant of my own, `api-check2`, with a workspace `agent-ws`; keys and tokens revoked at the end).
+
+- Run now: the console's Agent tools tab (address, settings, Tools offered, Try → "Try <tool>", Call it) at 1440, 390 and dark; `list_approvals` and `decide_approval`; a flow tool; a service account with `workspace:read`; `reachable: false`.
+- Not run: nothing from the list.
+
+The console key screen, the Agent tools tab and Members & access were walked at 1440 px, at 390 px and in dark (the key screen: create, one-time key, revoke; Agent tools: workspace choice, address, settings, Tools offered, Try): no overflow at 390 px, the settings block scrolls inside itself, dark has no contrast fault.
+
+## Not run (before the second check)
+
 The console's **Agent tools** tab and **Try**, `list_approvals` and `decide_approval`, a flow tool, a service account with `workspace:read`, `reachable: false`.

@@ -34,7 +34,7 @@ By the end the repository's resources are in a dev workspace as a new version, a
    Nothing was changed. Run it again without --preview to deploy.
    ```
 
-   The first lines are what `volvel build` lists. The counts are of resources and tables. The list names resources whose definitions change. When only the body of a script's `run` changed, the script is counted `unchanged`, although the version is a new bundle with the new code. A preview that the instance would refuse ends with `It cannot be deployed.` and the reasons, and the exit code is 1. `--preview` uploads the app files of the repository and stores the bundle as one made only to try, which the instance removes after 7 days; it changes no resource.
+   The first lines are what `volvel build` lists. The counts are of resources and tables. The list names resources whose definitions change. Today, when only the body of a script's `run` changed, the script is counted `unchanged`, although the version is a new bundle with the new code. A preview that the instance would refuse ends with `It cannot be deployed.` and the reasons, and the exit code is 1. `--preview` uploads the app files of the repository and stores the bundle as one made only to try, which the instance removes after 7 days; it changes no resource.
 2. Deploy, with a note kept beside the version:
 
    ```bash
@@ -82,7 +82,7 @@ By the end the repository's resources are in a dev workspace as a new version, a
 ## If it does not work
 
 - **`The workspace is missing something this bundle needs. Set up each one, then deploy again.`** Followed by lines like `the connection "shop" is not bound in this workspace` and `the secret "SHOP_NOTE" is not set in this workspace`. The command never asks for the missing values. A **dev** workspace takes the deploy and says the same things as `Note:` lines: a run that reaches the unbound connection fails. A **production** workspace refuses it, as does any promotion. Set each one up in the workspace's **Connections** and **Secrets**, then deploy again.
-- **`Something bound in this workspace does not fit the connector this bundle gives it.`** A binding was made for another connector or another shape of settings. Bind it again. Dev refuses this too.
+- **`Something bound in this workspace does not fit the connector this bundle gives it.`** A binding was made for another connector or another shape of settings. Set it up again. Dev refuses this too.
 - **`This deploy would delete something that holds history or data, and create something of the same kind.`** The deploy looks like a rename done by deleting one resource and creating another, which would cut the new one off from the old one's rows and history. Give the new definition the old one's `key`, or allow the deletion by name with `--allow-delete <path>`. See [Names and moves](../../explanation/cli/code-or-files).
 - **`... cannot be deployed: that is the path of the ... with the key ...`.** Two resources want one path. Paths are one namespace across every kind.
 - **`A resource cannot change kind: give this one a key of its own.`** A resource with the same key was another kind.

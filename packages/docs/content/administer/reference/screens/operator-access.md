@@ -6,7 +6,7 @@ moved_from:
   - tenant/operator-access
 ---
 
-The people who run the instance are operators. An operator is not a member of a tenant and sees inside it only through an access grant: time-limited, with a reason the tenant's admins can read. The nav item **Operator access** is the tenant's record of every grant. Its description line reads "Every time the people who run this instance opened access to your tenant, and why. You can end an active grant at any time." F1 (**Help for this page**) opens the topic `tenant-operator-access`.
+The people who run the instance are operators. An operator is not a member of a tenant, unless the operator made the tenant with the box **Make me a member, as tenant admin** on, and otherwise sees inside it only through an access grant: time-limited, with a reason the tenant's admins can read. The nav item **Operator access** is the tenant's record of every grant. Its description line reads "Every time the people who run this instance opened access to your tenant, and why. You can end an active grant at any time." F1 (**Help for this page**) opens the topic `tenant-operator-access`.
 
 ## The list
 
@@ -30,14 +30,14 @@ An operator who opens a tenant they have no grant on sees "You have no access to
 | Field | What it takes |
 | --- | --- |
 | **Reason** | 3 to 500 characters, for example "Support ticket 1042". "Shown to the tenant's admins." |
-| **Access level** | A built-in tenant role. **viewer (read only)** comes first. `operator_admin` is not offered. |
+| **Access level** | A built-in tenant role: **viewer (read only)**, **developer**, **workspace_admin** or **tenant_admin**. `operator_admin` is not offered. |
 | **Duration** | **1 hour**, **4 hours**, **24 hours** or **Other**. **Other** asks for **Minutes**, a whole number from 1 to 1440 (24 hours). |
 
 The dialog says "Access is time-limited. The tenant's admins see this grant, your reason, and everything you do under it."
 
 ### The strip
 
-While an operator has a grant, a strip under the header says **Operator access** as <role> until <time>, with the reason and "Everything you do here is recorded for the tenant." It has **End now** and **Hide**. After **Hide**, the header shows a mark **Operator** with when it ends, whose menu has **Show the notice** and **End access now**. A grant that cannot be ended says so: the strip stays as it was true.
+While an operator has a grant, a strip under the header says **Operator access** as <role> until <time>, with the reason and "Everything you do here is recorded for the tenant." It has **End now** and **Hide**. After **Hide**, the header shows a mark **Operator** with "· ends in 1h" (the time left), whose menu has **Show the notice** and **End access now**. A grant that cannot be ended says so: the strip stays as it was true.
 
 ### The audit trail
 

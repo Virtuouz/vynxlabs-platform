@@ -13,3 +13,10 @@ Flow `flows-orders/handle`, opened in the editor.
 - It named an "Output of" label; the screen shows the output with **Copy**. It now says so.
 - It did not mention **As JSON**. Added.
 Not reached: "The flow changed since this test." (an edit that changed nothing did not show it), a refused test, and **Build with all drafts** turned on.
+
+## Second check, 2026-11-23 (second agent)
+
+On the walk instance, Maya Brooks, in a workspace of my own: Fernhill tenant, dev workspace `flows-check` (created with triggers running, so the shared Sandbox's paused triggers were not touched). Flows `flows-approve/mail`, `flows-hook/signed`, `flows-form/intake`, `flows-sched/tick`. Scripts in `/home/gplascencia/.local/share/volvel-walk/flows31/` (`h2.mjs` to `h15.mjs`, `w1.mjs`, `w2.mjs`).
+
+Walked the editor's **Test** panel on `flows-approve/mail` at 390 px, in dark: "Test the draft", **Build with all drafts**, **As JSON**; nothing overflowed sideways. The test mail subject was read in the code (`[Test] Approval needed: <title>`), not triggered.
+Not run: "The flow changed since this test." after a real edit; **Build with all drafts** turned on.

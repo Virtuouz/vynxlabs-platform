@@ -1,6 +1,6 @@
 # Fact-check: self-host/explanation/running/architecture.md
 
-Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the writer; the second agent's column is open.
+Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -13,3 +13,7 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the wr
 | Start order: command word, settings, migrate, read-only check, app, rekey/recover-operator, bucket, bootstrap, rotation, listen, loop, then `writer.watch`. | `apps/control-plane/src/main.ts:12-171` | writer, 2026-11-23 | holds |
 | The writer rechecks whether the database takes writes every 10 s. | `apps/control-plane/src/writer.ts:11` (`WRITABLE_CHECK_MS = 10_000`) | writer, 2026-11-23 | holds |
 | Only the control plane joins `data`; a script cannot reach the database. | `deploy/compose/compose.yaml` (worker-host `networks: [execution]`) | writer, 2026-11-23 | holds |
+
+## Second check (2026-11-23)
+
+Every claim read against the code and matched; commands and messages were also run in the drill (see the run log).

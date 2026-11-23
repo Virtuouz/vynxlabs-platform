@@ -22,7 +22,7 @@ By the end a version you built is promoted, or you know why it was not. A person
 3. Press **Request promotion of v*N***.
 :::
 
-The section then shows **Waiting**: "Asked … ago by *you* for v*N*." You may press **Withdraw the request** while it waits. Only the person who asked can withdraw it.
+The section then shows **Waiting**: "Asked … ago by *you* for v*N*." If the dev workspace deploys again, the line adds "*Workspace* has moved on to v*N* since." You may press **Withdraw the request** while it waits. It acts at once, with no question, and the form comes back. Only the person who asked can withdraw it.
 
 If you ask again, the new request replaces the pending one for the same two workspaces.
 
@@ -31,7 +31,7 @@ If you ask again, the new request replaces the pending one for the same two work
 :::steps
 1. Open the tenant's **Overview**. The section **Promotion requests** lists what waits for you: who asks, which version, from where to where, when, and the note.
 2. Press **Review**. The sheet shows what the version would change.
-3. To promote, press **Promote** and confirm "Promote v*N* to *name*?". It promotes the version that was asked for, even if the workspace has moved on.
+3. To promote, press **Promote** and confirm "Promote v*N* to *name*?". It promotes the version that was asked for, even if the workspace has moved on. Someone who opens the **Promote** step instead sees "*Name* asked for v*N* to be promoted. Promoting here sends v*N*; the request is decided from the tenant's overview."
 4. To refuse, press **Decline…**, give a reason, and press **Decline**. The reason is required.
 :::
 

@@ -21,7 +21,7 @@ The screen opens with two paragraphs: a hostname serves one app at its root, or 
 | --- | --- |
 | **Hostname** | The name. It is a link to the served address while the hostname is on. |
 | **Serves** | "The portal and every app", or the app's path, with "in" and the workspace's name. |
-| **State** | **on** or **off**, and **verified**, **unverified**, or **Verified, record gone**. |
+| **State** | **On** or **Off**, and **Verified**, **Not verified**, or **Verified, record gone**. |
 | **Last check** | "Passed <time>", the reason the last check failed, "Not checked yet", or "Verified <time>; record gone since <time>". |
 | **Details** | Opens the hostname's sheet. |
 
@@ -55,12 +55,12 @@ The footer has **Remove**, **Disable** or **Enable**, and **Check now**.
 
 | Button | What it does |
 | --- | --- |
-| **Check now** | Asks DNS for the TXT record. Found: the hostname is verified. |
+| **Check now** | Asks DNS for the TXT record. Found: the hostname is verified. It then asks the instance, through the hostname, for its check address; if that does not answer, a notice says "The record is there, but the hostname did not reach this instance from here. Check where it points, and its certificate." The name stays verified. |
 | **Enable** | Starts serving. Needs the hostname verified; see below. |
-| **Disable** | Asks "Turn off <hostname>?" The hostname stops answering, and sign-ins made at that hostname end. The record stays. |
+| **Disable** | Asks "Turn off <hostname>?" The hostname stops answering, and sign-ins made at that hostname end. The record stays. A verified name that is off answers 404, "This hostname is not served here. Its registration is turned off." |
 | **Remove** | Asks "Remove <hostname>?" The app is no longer served there, and sign-ins made at that hostname end. |
 
-Enabling a hostname that is not verified is refused: "This hostname is not verified yet, so it cannot be enabled. Create the TXT record shown here, wait for DNS to carry it, and press Check now. For a name that exists only inside a network and cannot be checked from here, ask an operator of this instance to enable it." An operator of the instance, who holds `instance:write`, can enable an unverified name; the tenant can then enable and disable it as usual.
+Enabling a hostname that is not verified is refused: "This hostname is not verified yet, so it cannot be enabled. Create the TXT record shown here, wait for DNS to carry it, and press Check now. For a name that exists only inside a network and cannot be checked from here, ask an operator of this instance to enable it." An operator of the instance, who holds `instance:write`, can enable an unverified name. The instance then serves it, and the step says "Serving." The tenant can then disable it and enable it again, until an operator disables it.
 
 ### Steps and what they say
 

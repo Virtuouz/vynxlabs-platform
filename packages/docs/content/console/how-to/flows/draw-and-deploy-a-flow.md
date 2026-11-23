@@ -36,7 +36,7 @@ By the end you will have a flow that runs on a deployed version.
 
 ## The result
 
-The header's state pill says **Live**. The flow is on the **Flows** list with **vN** in **State**, and no **Draft** tag. Runs from now on use that version; a run that was already going keeps the version it started on. To start it, open the flow and press **Start flow** (a start **By hand**), or see [Start a flow](start-a-flow).
+The header's state pill says **Deployed**. The flow is on the **Flows** list with **vN** in **State**, and no **Draft** tag. Runs from now on use that version; a run that was already going keeps the version it started on. To start it, open the flow and press **Start flow** (a start **By hand**), or see [Start a flow](start-a-flow).
 
 ## If it does not work
 

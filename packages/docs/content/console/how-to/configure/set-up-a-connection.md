@@ -39,9 +39,9 @@ The test is kept as the row's **Health**: **Reached**, with how long ago. It is 
 
 ## Other kinds
 
-**Mail (SMTP).** The settings are **Mail server**, **Port** (587 when empty), **Security** (**starttls**, **tls** or **none**; port 465 expects `tls`), **Sent from** and **User name**. The credential is **Password**. **Test** connects to the server and signs in. It sends no mail.
+**Mail (SMTP).** The settings are **Mail server**, **Port** (587 when empty), **Security** (**starttls**, **tls** or **none**; port 465 expects `tls`), **Sent from** and **User name**. The credential is **Password**. **Test** connects to the server and signs in. It sends no mail. A mail connection that is new and not yet deployed fails its test with "Cannot read properties of undefined (reading 'endsWith')": deploy it as in step 8, then press **Test**.
 
-**OAuth 2.0.** Choose a **Provider**: **Google**, **Microsoft** or **Another provider**. A provider fills in the addresses and scopes. Register an app with the provider, add the **Redirect address** the sheet shows (use **Copy**) to it, and type the app's **Client ID** in the settings and its secret as the **Client secret**. Press **Save**, then **Connect**. The provider asks you to agree and sends you back to the console, which tests the connection. The fields are in [Connectors](../../../develop/reference/connectors).
+**OAuth 2.0.** Choose a **Provider**: **Google**, **Microsoft** or **Another provider**. A provider fills in the addresses and scopes. Register an app with the provider, add the **Redirect address** the sheet shows (use **Copy**) to it, and type the app's **Client ID** in the settings and its secret as the **Client secret**. Press **Save**, then **Connect**. The provider asks you to agree and sends you back to the console, which tests the connection and shows **Connected**. If the provider refuses, part 4 says so, for example "The provider said no: access_denied." The fields are in [Connectors](../../../develop/reference/connectors).
 
 ## Change or remove a connection
 

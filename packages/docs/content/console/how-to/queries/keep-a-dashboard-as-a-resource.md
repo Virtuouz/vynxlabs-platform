@@ -46,7 +46,7 @@ The dashboard is a resource: it has a path and a key, and is promoted to the lin
 ## If it does not work
 
 - **"Something already exists at this path."** The path is taken. The dialog keeps what you typed.
-- **The deploy refuses it.** A deployed dashboard must be finished: a widget with no source, or a table or query that is not there, stops the deploy. The **Deploy** screen lists each. A dashboard of your own is saved while unfinished and says what it reads that the workspace lacks.
+- **The deploy refuses it.** A deployed dashboard must be finished: a widget that needs a source and has none ("Stat needs a source to show") stops the deploy, with "The bundle's manifests are not valid." The **Deploy** screen lists each. A table or a query that is not there does not stop it: the widget says "The query <path> was not found." and the line under the title counts it among the widgets that could not be read. A dashboard of your own is saved while unfinished and says what it reads that the workspace lacks.
 - **"This dashboard is defined by the code in the tenant's repository. Changing it here saves a draft that takes it over…"** The repository defines it. Editing here takes it over: once deployed it is a file that the console and the repository both edit. Remove its definition from the code, or the next deploy from the repository takes it back. **Remove** is not offered: the repository removes it.
 - **Edit is not there.** The workspace is a production workspace, or the dashboard is being removed.
 - **Someone else saved the draft first.** The draft-clash notice offers your version or theirs.

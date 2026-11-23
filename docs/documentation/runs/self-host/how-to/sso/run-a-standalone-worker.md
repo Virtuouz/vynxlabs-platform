@@ -13,3 +13,10 @@
 - **The Compose file** was not run: no image of the instance is built here. Its options and the `worker-token` secret are from the files `deploy/worker/compose.yaml` and `.env.example`.
 - `--concurrency`, `--idle-exit` and the `ptrace_scope` warning were not seen (the machine's setting was not read).
 - The worker in this tree is 0.5.0 and the instance shows it as "Older version": see the pool page's run.
+
+## Second check, 2026-11-23 (second agent)
+- Run now, the Compose way: `deploy/worker/compose.yaml` copied to a folder of its own, `.env` with `VOLVEL_IMAGE=volvel/volvel:docs` and `VOLVEL_URL=http://localhost:8091`, `worker-token` with a credential made for a pool `compose-pool` (mode 600), `docker compose up -d`. One change that a reader on another machine would not need: a second file gave the service `network_mode: host`, because the instance listens on the host's localhost. The log said `worker started`; **Workers** showed the pool "1 online" and the worker "compose-check" with version 0.5.0; the container became healthy after about a minute; `docker compose stop` ended it ("worker exiting: stopped"). The container's user is `node`, uid 1000; a file mode 600 owned by another uid is "Permission denied" to it (tried with `--user 1001`), so the page now says to give the file to uid 1000.
+- Seen at 390 px in dark and 1440 px in light: **Workers** with the pool and credentials tables; no horizontal scroll.
+- Not run: `--token-stdin` as a command (the image was used instead of a built `volvel-worker` on the host); a machine with `ptrace_scope` 0.
+- Fault (`sso/workers`): the worker shows **Older version**, "takes no tasks" (0.5.0 < 0.6.0).
+- Also noted: `self-host/how-to/running/run-a-standalone-worker` covers the same job as this page. Not mine to merge; reported.

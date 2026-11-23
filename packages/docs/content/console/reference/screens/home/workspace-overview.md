@@ -45,11 +45,11 @@ A list of what wants a person. Each row has a button. Rows that do not apply are
 | "The branch and this workspace both changed the same files" | Git sync has a conflict. | **Resolve** |
 | "{n} run is waiting for you" or "{n} runs are waiting for you" | Approvals you may decide. The detail adds "{n} more wait for someone else" when there are others. | **Decide** |
 | "{n} run is waiting for someone else to decide" (or "runs are") | Approvals wait, and none is yours. | **See who** (Approvals with the others shown) |
-| "{n} connection has nothing bound here" or "{n} connections have nothing bound here" | A connection resource of the workspace is bound to nothing. | **Configure** |
+| "{n} connection is not set up here" or "{n} connections are not set up here" | A connection of the workspace has nothing set up in it. | **Configure** |
 | "{n} draft not deployed" or "{n} drafts not deployed" | Drafts exist. | **Review** |
 | "Triggers are paused" or "Triggers are paused by the instance" | The workspace, or the instance, holds triggers. A dev workspace says it starts this way. | **View settings** |
 
-When no row applies the section says "Nothing needs you here", with "No failed runs in the last 24 hours, nothing waiting, everything bound." When it applies only because you may not read some counts, it says "Nothing you can see needs you here". When rows are shown and some counts are hidden, one more row says "Some of this you cannot see", with "You cannot see {failed runs, approvals, connections, drafts}. Ask an administrator for read access if you need them." A workspace that shows First steps and has no row to show leaves this section out.
+When no row applies the section says "Nothing needs you here", with "No failed runs in the last 24 hours, nothing waiting, everything set up." When it applies only because you may not read some counts, it says "Nothing you can see needs you here". When rows are shown and some counts are hidden, one more row says "Some of this you cannot see", with "You cannot see {failed runs, approvals, connections, drafts}. Ask an administrator for read access if you need them." A workspace that shows First steps and has no row to show leaves this section out.
 
 ## Runs, last 24 hours
 
@@ -80,7 +80,7 @@ Opening the overview needs `workspace:read`. What it counts is read separately, 
 | --- | --- |
 | Failed runs | `run:read` or `flow_run:read`. Each adds its own failures. |
 | Approvals waiting | `approval:read`. "Waiting for you" counts the ones you may decide. |
-| Connections with nothing bound | `connection:read` |
+| Connections not set up | `connection:read` |
 | Drafts | `resource:read` |
 | Git conflict | `git:read` |
 | First steps: scripts and flows | `resource:read` |

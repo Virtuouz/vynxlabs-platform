@@ -19,3 +19,5 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 | Events kept, started by nothing | `apps/control-plane/src/kernel/flows/events.ts:87` | writer, code | |
 | Runs already queued or going carry on | `apps/control-plane/src/routes/instance-control.ts:21` | writer, code | |
 | Read only refusal 503 read_only | `apps/control-plane/src/kernel/errors.ts:61` | writer, code | |
+
+Checked by: second agent, 2026-11-23. Not run on the instance, by the owner's rule that this instance is never paused: every claim is from the code (`InstanceTriggers.tsx`, `routes/execution.ts:3768-3790`, `kernel/execution/triggers.ts:764-774, 946, 1204-1218`, `cli.ts:1215-1223`) and the code was re-read; the run log says so. No claim was changed.

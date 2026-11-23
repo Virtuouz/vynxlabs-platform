@@ -20,7 +20,7 @@ By the end you will have renamed a query as a draft, seen which dashboards the r
 1. Open **Data**, then **Queries**, and choose the query in **Saved queries**.
 2. Press **Name and path**. The dialog "Name and path of <path>" shows the **Key**, which never changes, then **Path** and **Title**.
 3. Type the new **Path**, and a **Title** if you want a name for lists. Titles are up to 200 characters.
-4. Read the list under the fields when the path changes. "These dashboards are saved as drafts with the new path" names the dashboards the console keeps: each is saved as a draft whose widgets name the new path. "These dashboards are the repository's, so they are not changed here" names the repository's dashboards, which find the query by its key until the path is changed in the repository.
+4. Read the list under the fields when the path changes. "These dashboards are saved as drafts with the new path" ("This dashboard is saved as a draft with the new path:" when there is one) names the dashboards the console keeps: each is saved as a draft whose widgets name the new path. "These dashboards are the repository's, so they are not changed here" names the repository's dashboards, which find the query by its key until the path is changed in the repository.
 5. Press **Save as a draft**. A notice says "A draft renames <old> to <new>." with **Review and deploy**.
 6. Choose the query by its new path in **Saved queries**. It lists "Renamed from <old>, once deployed." and carries the **Draft** pill.
 7. Deploy the query, and the dashboards it drafted, from the **Deploy** screen. Nothing changes for anyone until then.

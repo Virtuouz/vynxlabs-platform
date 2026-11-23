@@ -1,6 +1,6 @@
 # Fact-check: self-host/explanation/running/managed-workers-and-isolation.md
 
-Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the writer; the second agent's column is open.
+Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: second agent, 2026-11-23.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -15,3 +15,7 @@ Written at commit `14f7d5b9`. Lines are those of that commit. Checked by: the wr
 | `MANAGED_WORKER_USER` is `own` (default) or `same`. | `generated settings reference`; `config.ts` | writer, 2026-11-23 | holds |
 | A managed worker's credential lasts 24 h; idle exit 60 s; lease wait 20 s, 25 s at most; alive 90 s. | `supervisor.ts:67,213`; `routes/worker.ts:119,297`; `kernel/execution/workers.ts:213` | writer, 2026-11-23 | holds |
 | No sandbox; `kernel.yama.ptrace_scope` warning. | `SECURITY.md` section "What it does not protect against" | writer, 2026-11-23 | holds as the policy says; the warning text was not exercised |
+
+## Second check (2026-11-23)
+
+Every claim read against the code and matched; commands and messages were also run in the drill (see the run log).

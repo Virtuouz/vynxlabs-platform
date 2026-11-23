@@ -87,8 +87,26 @@ By the end you will have started a script by sending a signed request to its web
 - The signature is checked on the raw bytes you sent, so sign the same string you send. `hmac-sha256` and `hmac-sha1` are supported, written in `hex` (the default) or `base64`. `prefix` is what comes before the signature in the header, and `signed` says what was signed: `{body}` and `{timestamp}` stand for the raw body and the timestamp header, and `{body}` is the default.
 - With `timestampHeader` set, a request whose timestamp is further from now than `toleranceSeconds` (300 if left out, at most 86,400) is refused, so that a captured request cannot be sent again later.
 - The `idempotency-key` header (1 to 200 characters) makes a repeated delivery harmless: it answers 202 with the same `runId`. See [Start a run safely twice](start-a-run-safely-twice).
-- A flow whose trigger says `respond: flow` holds the request open for up to 25 seconds so that the flow can answer it, and answers 202 if the flow has said nothing by then. A flow's answer carries the flow run's ID in `x-flow-run`.
+- A flow whose trigger says `respond: flow` holds the request open for up to 25 seconds so that the flow can answer it, and answers 202 with the `runId` if the flow has said nothing by then. That includes a flow that failed before it answered: the 202 comes at once. A flow's answer carries the flow run's ID in `x-flow-run`; the 202 does not.
 - The address is limited to 120 requests a minute for each caller address: see [how rate limits work](../../explanation/api/how-rate-limits-work).
+
+## Answer from the flow
+
+A flow can answer the request itself. The trigger says `respond: "flow"` and a respond step gives the `status`, `headers` and `body`, each an expression over `trigger`. The first respond step that runs is the answer, and the flow carries on after it.
+
+```ts
+export const answerNow = defineFlow({
+  path: "check/answer-now",
+  nodes: {
+    hook: trigger.webhook({ respond: "flow" }),
+    answer: step.respond({ status: 201, headers: { "x-check": "'yes'" }, body: "{'got': trigger.a}" }),
+    after: step.set({ after: "'carried on'" }),
+  },
+  edges: [["hook", "answer"], ["answer", "after"]],
+});
+```
+
+A request of `{"a": 1}` answers `201` with the body `{"got":1}`, the header `x-check: yes` and `x-flow-run`. A form body `a=7` gives `{"got":"7"}`, because a form's fields are text. A flow that waits longer than 25 seconds before it answers gets the 202 at 25 seconds.
 
 ## The result
 
@@ -101,4 +119,5 @@ The webhook answers 202 and a `runId`. The run is queued and starts on a worker.
 - **503 `trigger_paused`.** This webhook is paused, or every trigger in the instance is. Resume it. A sender that retries gets through then.
 - **503 `workspace_paused`.** The workspace's triggers are paused. A dev workspace starts that way.
 - **400.** The body could not be read, for example JSON that does not parse.
+- **413 `payload_too_large`.** The body is more than 1 MiB (1,048,576 bytes).
 - **429 `rate_limited`.** More than 120 requests a minute from one address. Wait for `retry-after`.

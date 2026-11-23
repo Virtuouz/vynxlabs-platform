@@ -771,7 +771,7 @@ function behindColumns(
   wire: WireData,
   held: { format?: unknown; measured?: string[] },
 ): { columns?: { column: string; format?: unknown }[] } {
-  if (!held.format || !held.measured?.length) return {};
+  if (!held.format || !held.measured?.length || wire.shape !== "rows") return {};
   return {
     columns: wire.columns.map((one) => ({
       column: one.name,

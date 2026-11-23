@@ -43,6 +43,14 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
     for (const path of body.uses.sources ?? []) need.sources.add(path);
     if (body.onFailure?.notify) need.connections.add(body.onFailure.notify);
   }
+  // A trigger source reads what it names as a script does, on every request or tick.
+  for (const manifest of manifests) {
+    if (manifest.kind !== "trigger_source") continue;
+    const uses = (manifest.body as { uses?: Partial<ScriptBody["uses"]> }).uses;
+    for (const path of uses?.connections ?? []) need.connections.add(path);
+    for (const name of uses?.secrets ?? []) need.secrets.add(name);
+    for (const path of uses?.variables ?? []) need.variables.add(path);
+  }
   // A webhook that checks signatures needs the secret it checks them against.
   for (const manifest of manifests) {
     if (manifest.kind === "trigger") {

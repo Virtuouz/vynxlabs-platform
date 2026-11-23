@@ -505,6 +505,13 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
     );
   });
 
+  test("a source that names a secret nobody bound is refused at deploy, not at its first request", async () => {
+    const refused = await deploy(sourced(), prod, ["greet", "send"]);
+    expect(refused.status, JSON.stringify(refused.body)).toBe(409);
+    expect(refused.body.code).toBe("bindings_missing");
+    expect(JSON.stringify(refused.body)).toContain("PAYMENTS_SIGNING");
+  });
+
   test("a webhook's request goes to its source, which decides what starts", async () => {
     await alice.put(`${ws()}/secrets/PAYMENTS_SIGNING`, { value: "whsec_test_1" });
     // The connections of the earlier bundle are no longer declared, and what was bound to them stays.

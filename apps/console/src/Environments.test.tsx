@@ -262,9 +262,9 @@ const staged = (more: Partial<typeof inspection> = {}) => ({
 });
 
 test("an import is uploaded and checked first, then imported with its passphrase in a header", async () => {
-  routes["GET /api/v1/instance/database-locations"] = () => [
+  routes["GET /api/v1/instance/database-locations/names"] = () => [
     200,
-    { items: [{ name: "acme-db", host: "db.internal", database: "acme" }] },
+    { items: [{ name: "acme-db", description: "" }] },
   ];
   routes["POST /api/v1/instance/tenant-imports/staged"] = () => [201, staged()];
   routes["GET /api/v1/instance/tenant-imports/staged/s1"] = () => [
@@ -305,7 +305,7 @@ test("an import is uploaded and checked first, then imported with its passphrase
   const check = sent("GET").find((call) => call.url.startsWith("/api/v1/instance/tenant-imports"));
   expect(check?.url).toBe("/api/v1/instance/tenant-imports/staged/s1?slug=acme-2");
   expect(check?.headers["x-export-passphrase"]).toBe("the passphrase");
-  await screen.findByText(/acme-db: acme on db.internal/);
+  await screen.findByRole("option", { name: "acme-db" });
   fireEvent.change(screen.getByLabelText("Where its custom tables go"), {
     target: { value: "acme-db" },
   });
@@ -329,7 +329,7 @@ test("an import is uploaded and checked first, then imported with its passphrase
 });
 
 test("an upload kept by another replica is said so, and asked for again", async () => {
-  routes["GET /api/v1/instance/database-locations"] = () => [200, { items: [] }];
+  routes["GET /api/v1/instance/database-locations/names"] = () => [200, { items: [] }];
   routes["POST /api/v1/instance/tenant-imports/staged"] = () => [201, staged()];
   routes["GET /api/v1/instance/tenant-imports/staged/s1"] = () => [
     409,
@@ -366,4 +366,45 @@ test("a workspace cannot be given an empty name", async () => {
   expect(await screen.findByText("A workspace needs a name.")).toBeTruthy();
   fireEvent.click(await screen.findByRole("button", { name: "Save" }));
   expect(sent("PATCH")).toHaveLength(0);
+});
+
+test("a verdict made for another slug or passphrase does not enable the import, the check is made again, and the form starts over (INS-12)", async () => {
+  routes["GET /api/v1/instance/database-locations/names"] = () => [200, { items: [] }];
+  routes["POST /api/v1/instance/tenant-imports/staged"] = () => [
+    201,
+    staged({ passphraseOk: true, slugTaken: false }),
+  ];
+  let here = false;
+  routes["GET /api/v1/instance/tenant-imports/staged/s1"] = () => [
+    200,
+    staged({ passphraseOk: true, slugTaken: false, tenantPresent: here }),
+  ];
+  routes["DELETE /api/v1/instance/tenant-imports/staged/s1"] = () => [204, null];
+  show(<TenantImport />);
+  const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
+  fireEvent.input(screen.getByLabelText("Its passphrase"), { target: { value: "the passphrase" } });
+  fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });
+  fireEvent.submit(screen.getByLabelText("Export file").closest("form") as HTMLFormElement);
+  await screen.findByText("Acme Corp");
+  const importButton = () =>
+    screen.getByRole("button", { name: "Import tenant" }) as HTMLButtonElement;
+  expect(importButton().disabled).toBe(false);
+  // Typing a slug makes the verdict old: the button is off at once, and the check runs by itself.
+  fireEvent.input(screen.getByLabelText("Slug on this instance"), { target: { value: "other" } });
+  expect(importButton().disabled).toBe(true);
+  await waitFor(() =>
+    expect(
+      sent("GET").some((call) => call.url.endsWith("/tenant-imports/staged/s1?slug=other")),
+    ).toBe(true),
+  );
+  await waitFor(() => expect(importButton().disabled).toBe(false));
+  // The tenant is here already: the answer says so, and the button stays off.
+  here = true;
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await screen.findByText("This tenant is on this instance already");
+  expect(importButton().disabled).toBe(true);
+  // Throwing it away leaves nothing of what was typed.
+  fireEvent.click(screen.getByRole("button", { name: "Throw it away" }));
+  await screen.findByRole("button", { name: "Upload and check" });
+  expect((screen.getByLabelText("Its passphrase") as HTMLInputElement).value).toBe("");
 });

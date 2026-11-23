@@ -1014,7 +1014,7 @@ function Check({ ok, children }: { ok: boolean | null; children: ReactNode }) {
 }
 
 export function TenantImport() {
-  const locations = useLoad<{ items: Location[] }>("/instance/database-locations");
+  const locations = useLoad<{ items: { name: string }[] }>("/instance/database-locations/names");
   const [file, setFile] = useState<File>();
   const [passphrase, setPassphrase] = useState("");
   const [slug, setSlug] = useState("");
@@ -1023,6 +1023,8 @@ export function TenantImport() {
   const [problem, setProblem] = useState<string>();
   const [staged, setStaged] = useState<Staged>();
   const [report, setReport] = useState<ImportReport>();
+  /** What the verdict on the screen was made with: a changed slug or passphrase makes it old. */
+  const [checkedWith, setCheckedWith] = useState<{ slug: string; passphrase: string }>();
   const step = report ? "done" : staged ? "inspect" : "upload";
 
   const lost = (error: unknown) => {
@@ -1058,7 +1060,35 @@ export function TenantImport() {
     !inspection.problem &&
     inspection.levelMatches &&
     inspection.passphraseOk === true &&
-    !inspection.slugTaken;
+    !inspection.tenantPresent &&
+    !inspection.slugTaken &&
+    checkedWith?.slug === slug &&
+    checkedWith.passphrase === passphrase;
+  const recheck = () =>
+    run(async () => {
+      if (!staged) return;
+      const answer = await withPassphrase<Staged>(
+        "GET",
+        `/instance/tenant-imports/staged/${staged.id}${query({ slug })}`,
+        passphrase,
+      );
+      setStaged(answer);
+      setCheckedWith({ slug, passphrase });
+    });
+  // The check is made again a moment after the slug or the passphrase stops changing.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only what was typed starts it
+  useEffect(() => {
+    if (!staged || !passphrase || working) return;
+    if (checkedWith?.slug === slug && checkedWith.passphrase === passphrase) return;
+    const timer = setTimeout(() => void recheck(), 600);
+    return () => clearTimeout(timer);
+  }, [slug, passphrase, staged?.id, checkedWith]);
+  const startOver = () => {
+    setSlug("");
+    setLocation("");
+    setPassphrase("");
+    setCheckedWith(undefined);
+  };
 
   return (
     <Page
@@ -1106,7 +1136,14 @@ export function TenantImport() {
             <Button variant="primary" onClick={() => navigate(`/t/${report.tenant.id}/workspaces`)}>
               Open the tenant
             </Button>
-            <Button onClick={() => setReport(undefined)}>Import another</Button>
+            <Button
+              onClick={() => {
+                setReport(undefined);
+                startOver();
+              }}
+            >
+              Import another
+            </Button>
           </div>
         </div>
       ) : staged && inspection ? (
@@ -1214,7 +1251,7 @@ export function TenantImport() {
                 );
                 setReport(body);
                 setStaged(undefined);
-                setPassphrase("");
+                startOver();
                 setFile(undefined);
               });
             }}
@@ -1245,26 +1282,13 @@ export function TenantImport() {
                 { value: "", label: "The instance's own database" },
                 ...(locations.data?.items ?? []).map((item) => ({
                   value: item.name,
-                  label: `${item.name}: ${item.database} on ${item.host}`,
+                  label: item.name,
                 })),
               ]}
             />
             {problem ? <Notice tone="danger">{problem}</Notice> : null}
             <div className="flex flex-wrap gap-2">
-              <Button
-                disabled={working}
-                onClick={() =>
-                  run(async () =>
-                    setStaged(
-                      await withPassphrase<Staged>(
-                        "GET",
-                        `/instance/tenant-imports/staged/${staged.id}${query({ slug })}`,
-                        passphrase,
-                      ),
-                    ),
-                  )
-                }
-              >
+              <Button disabled={working} onClick={() => void recheck()}>
                 Check again
               </Button>
               <Button type="submit" variant="primary" loading={working} disabled={!ready}>
@@ -1277,6 +1301,7 @@ export function TenantImport() {
                   run(async () => {
                     await api.delete(`/instance/tenant-imports/staged/${staged.id}`);
                     setStaged(undefined);
+                    startOver();
                   })
                 }
               >
@@ -1299,6 +1324,7 @@ export function TenantImport() {
                   passphrase,
                 ),
               );
+              setCheckedWith({ slug: "", passphrase });
             });
           }}
         >

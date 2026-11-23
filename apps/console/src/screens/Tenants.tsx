@@ -141,7 +141,7 @@ export function Tenants({ me }: { me: Me }) {
                   placeholder: "The instance's own database",
                   hint: "Leave empty for the instance's own database. It is chosen once.",
                   choose: {
-                    path: "/instance/database-locations",
+                    path: "/instance/database-locations/names",
                     option: (item: { name: string }) => ({ value: item.name, label: item.name }),
                   },
                 },

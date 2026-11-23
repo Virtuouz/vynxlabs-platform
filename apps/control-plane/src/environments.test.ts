@@ -874,6 +874,58 @@ describe("worker pools", () => {
 });
 
 describe("database locations", () => {
+  test("one address that cannot be opened is said on its own row, and the names alone are a light list (INS-14)", async () => {
+    const extra = await createTestDatabase();
+    try {
+      await t.admin.put("/instance/database-locations/good", {
+        connectionString: extra.connectionString,
+      });
+      await t.db
+        .insertInto("database_location")
+        .values({
+          name: "sealed-by-another-key",
+          description: "",
+          connection_encrypted: Buffer.from("not something this instance sealed at all, no"),
+        })
+        .execute();
+      await t.db
+        .insertInto("database_location")
+        .values({
+          name: "gone",
+          description: "",
+          connection_encrypted: t.kernel.data.seal(
+            "gone",
+            "postgres://nobody:nothing@127.0.0.1:1/none",
+          ),
+        })
+        .execute();
+      const listed = await t.admin.get("/instance/database-locations");
+      expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+      const byName = new Map(listed.body.items.map((one: Any) => [one.name, one]));
+      expect(byName.get("good")).toMatchObject({ reachable: true, problem: null });
+      expect(byName.get("gone")).toMatchObject({ reachable: false });
+      expect(byName.get("sealed-by-another-key")).toMatchObject({
+        reachable: false,
+        host: "",
+        problem: "Its address cannot be opened with this instance's master key.",
+      });
+      const names = await t.admin.get("/instance/database-locations/names");
+      expect(names.status, JSON.stringify(names.body)).toBe(200);
+      expect(names.body.items.map((one: Any) => one.name)).toEqual([
+        "gone",
+        "good",
+        "sealed-by-another-key",
+      ]);
+      await t.db
+        .deleteFrom("database_location")
+        .where("name", "in", ["gone", "sealed-by-another-key"])
+        .execute();
+      await t.admin.delete("/instance/database-locations/good");
+    } finally {
+      await extra.drop();
+    }
+  });
+
   test("an operator registers one, sees whether it answers, and removes it", async () => {
     const extra = await createTestDatabase();
     try {

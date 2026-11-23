@@ -52,31 +52,71 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           select data_location ->> 'ref' as name, count(*) as n from tenant
           where data_location ->> 'kind' = 'dedicated' group by 1
         `.execute(db);
-        const items = [];
-        for (const row of rows) {
-          const address = kernel.vault.openForInstance(
-            `database-location:${row.name}`,
-            row.connection_encrypted,
-          );
-          const problem = await kernel.data
-            .location(row.name)
-            .then((store) => store.ping())
-            .then(
+        // One row that cannot be read or reached is that row's problem, not the page's, and the
+        // rows are asked together so that unreachable hosts are waited for once.
+        const items = await Promise.all(
+          rows.map(async (row) => {
+            const tenants = Number(used.rows.find((entry) => entry.name === row.name)?.n ?? 0);
+            let address: string;
+            try {
+              address = kernel.vault.openForInstance(
+                `database-location:${row.name}`,
+                row.connection_encrypted,
+              );
+            } catch {
+              return {
+                name: row.name,
+                description: row.description,
+                host: "",
+                database: "",
+                tenants,
+                reachable: false,
+                problem: "Its address cannot be opened with this instance's master key.",
+                updatedAt: iso(row.updated_at),
+              };
+            }
+            const problem = await kernel.data.probe(row.name, address).then(
               () => null,
               (error: Error) => error.message,
             );
-          items.push({
-            name: row.name,
-            description: row.description,
-            ...shown(address),
-            tenants: Number(used.rows.find((entry) => entry.name === row.name)?.n ?? 0),
-            reachable: problem === null,
-            problem,
-            updatedAt: iso(row.updated_at),
-          });
-        }
+            return {
+              name: row.name,
+              description: row.description,
+              ...shown(address),
+              tenants,
+              reachable: problem === null,
+              problem,
+              updatedAt: iso(row.updated_at),
+            };
+          }),
+        );
         return { items };
       },
+    );
+
+    app.get(
+      "/instance/database-locations/names",
+      {
+        config: { access: access.instance("instance:read") },
+        schema: {
+          summary: "The names of the registered databases",
+          description:
+            "For a list to choose from. It does not open any database, so it answers at once, whatever state they are in.",
+          tags: ["instance"],
+          response: {
+            200: Type.Object({
+              items: Type.Array(Type.Object({ name: Type.String(), description: Type.String() })),
+            }),
+          },
+        },
+      },
+      async () => ({
+        items: await db
+          .selectFrom("database_location")
+          .select(["name", "description"])
+          .orderBy("name")
+          .execute(),
+      }),
     );
 
     /**

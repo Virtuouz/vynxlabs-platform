@@ -59,8 +59,9 @@ test("the list and one tenant say whether the caller may rename it (SHL-11)", as
 });
 
 test("an operator who is not in a tenant is told they may change it when the route lets them (P31)", async () => {
-  const id = (await t.admin.post("/tenants", { slug: "outside", name: "Outside", addCreator: false }))
-    .body.id;
+  const id = (
+    await t.admin.post("/tenants", { slug: "outside", name: "Outside", addCreator: false })
+  ).body.id;
   const row = (await t.admin.get("/tenants")).body.items.find(
     (one: { id: string }) => one.id === id,
   );

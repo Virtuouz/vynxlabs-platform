@@ -107,12 +107,17 @@ describe("Queries save on the draft they opened", () => {
     routes[`PUT ${api}/drafts/reports/fees`] = () => [200, { revision: 1 }];
     history.replaceState(null, "", "/?query=reports/fees");
     show(<Queries root={root} link={link} />);
+    const box = (await screen.findByLabelText("The query")) as HTMLTextAreaElement;
+    // It opens as its draft, not as what is deployed.
+    await waitFor(() => expect(box.value).toBe("select 99"));
+    fireEvent.change(box, { target: { value: "select 99 -- typed since" } });
     fireEvent.click(await screen.findByRole("button", { name: "Discard draft" }));
     await answer("Discard");
-    await waitFor(() => expect(document.querySelector(".view-lines, textarea")).toBeTruthy());
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull());
+    // The discarded text is gone from the editor: it shows the query as deployed again.
+    await waitFor(() => expect(box.value).toBe("select 1"));
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
     await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+    expect(sent("PUT")[0]?.body).toMatchObject({ body: { sql: "select 1" } });
     expect(sent("PUT")[0]?.body).not.toHaveProperty("revision");
   });
 });

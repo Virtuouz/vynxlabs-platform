@@ -268,7 +268,11 @@ describe("drafts", () => {
     // Not a flow at all: still refused.
     expect((await draft("flows/notaflow", { nodes: [] }, "flow")).status).toBe(400);
     const deploy = await alice.post(`${ws()}/changes/deploy`, { paths: ["flows/unfinished"] });
-    expect(deploy.status).toBeGreaterThanOrEqual(400);
+    expect(deploy.status).toBe(400);
+    // It names the step and the field, and none of the shapes the step is not.
+    expect(deploy.body.errors).toEqual([
+      { path: "flows/unfinished (flow)", message: expect.stringContaining("/body/nodes/run/script ") },
+    ]);
     expect((await alice.get(`${ws()}/drafts/flows/unfinished`)).status).toBe(200);
     expect((await alice.delete(`${ws()}/drafts/flows/unfinished`)).status).toBe(204);
   });

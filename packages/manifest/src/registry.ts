@@ -46,8 +46,39 @@ function messageOf(error: ErrorObject): string {
   return `${error.message ?? "is invalid"}${extra}`;
 }
 
+/**
+ * A value that must be one of several shapes (a step of a flow, by its `type`) is refused with
+ * the faults of every shape it is not. Only the shape its discriminator names is what a person
+ * can mend: the errors of a branch that fails on a `const` (the `type` itself) are dropped, with
+ * the "must match exactly one schema" that sums them up. When no branch is named, all stay.
+ */
+function ofTheNamedShape(errors: ErrorObject[]): ErrorObject[] {
+  const drop = new Set<ErrorObject>();
+  for (const sum of errors) {
+    if (sum.keyword !== "oneOf" && sum.keyword !== "anyOf") continue;
+    const open = `${sum.schemaPath}/`;
+    const inside = (error: ErrorObject) =>
+      error.schemaPath.startsWith(open) &&
+      (error.instancePath === sum.instancePath ||
+        error.instancePath.startsWith(`${sum.instancePath}/`));
+    const branches = new Map<string, ErrorObject[]>();
+    for (const error of errors) {
+      if (!inside(error)) continue;
+      const branch = error.schemaPath.slice(open.length).split("/")[0] as string;
+      branches.set(branch, [...(branches.get(branch) ?? []), error]);
+    }
+    const wrong = [...branches.values()].filter((group) =>
+      group.some((error) => error.keyword === "const"),
+    );
+    if (wrong.length === 0 || wrong.length === branches.size) continue;
+    drop.add(sum);
+    for (const group of wrong) for (const error of group) drop.add(error);
+  }
+  return errors.filter((error) => !drop.has(error));
+}
+
 function toIssues(errors: ErrorObject[] | null | undefined, prefix = ""): ManifestIssue[] {
-  return (errors ?? []).map((error) => ({
+  return ofTheNamedShape(errors ?? []).map((error) => ({
     path: `${prefix}${error.instancePath}` || "/",
     message: messageOf(error),
   }));

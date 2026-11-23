@@ -152,12 +152,29 @@ export function valueFromKey(key: string, before?: ActionValue): ActionValue {
   return before && "value" in before ? before : { value: "" };
 }
 
-/** A typed value as it is stored: a number where it reads as one, true and false as booleans. */
-export function typedConstant(text: string): unknown {
+/**
+ * A typed value as it is stored. By the column's type when it is known: text stays text ("007"),
+ * a number is a number, yes and no are booleans, a several-choice column is a list. With no type
+ * (a flow's or a script's input) it is read as it looks: a number, true and false, else text.
+ */
+export function typedConstant(text: string, type?: string): unknown {
   const trimmed = text.trim();
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-  if (trimmed === "true") return true;
-  if (trimmed === "false") return false;
+  const number = /^-?\d+(\.\d+)?$/.test(trimmed);
+  if (type === undefined) {
+    if (number) return Number(trimmed);
+    if (trimmed === "true") return true;
+    if (trimmed === "false") return false;
+    return text;
+  }
+  if (type === "number" || type === "integer") return number ? Number(trimmed) : text;
+  if (type === "boolean") return trimmed === "true" ? true : trimmed === "false" ? false : text;
+  if (type === "enum_list")
+    return trimmed === ""
+      ? []
+      : trimmed
+          .split(",")
+          .map((one) => one.trim())
+          .filter(Boolean);
   return text;
 }
 

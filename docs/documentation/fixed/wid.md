@@ -73,3 +73,10 @@ Commits are named by the row in their subject: `git log --grep "(WID-01)"`.
 - **Changed:** `packages/widgets-core/views/pivot.tsx`: `turn` keeps each heading as its stored value (`Turned.columns`, `rows[].headers` are `unknown`), keyed by JSON so an empty group, the text "—", 3 and "3" are four headings; the words still come from `headingWords`; `cellClick` carries the stored values.
 - **Siblings looked at:** the drawer's small grid does not call `turn`; chart points already give stored values. The server side (`inputs.ts` null is "is empty") needs no change.
 - **A person sees:** Rows behind an empty group or a numbered heading finds those rows.
+
+## WID-13 An action's typed value of digits or "true" was kept as a number or boolean, whatever the column
+- **Test:** `apps/console/src/kit/inspector/actionModel.test.ts` (new; the first test failed before: `typedConstant("007","text")` was 7).
+- **Changed:** `kit/inspector/actionModel.ts` (`typedConstant(text, type?)`: by the column's type; a several-choice column is a list), `kit/inspector/actionControls.tsx` (`ValuePicker` takes `type`; the "set a column to" site passes the column's).
+- **Siblings looked at:** the flow and script input rows (`actionControls.tsx` ~565) pass no type and still read the text as it looks: the control does not know the input's type there (the schema's `properties` could give it; left, see Found). Condition values and filter "Starts as" use other controls.
+- **A person sees:** "Code becomes 007" is stored "007" and runs.
+- **Found:** flow and script inputs are typed by how the text looks; their schemas' property types (`FlowChoice.manualInput`, `ScriptChoice.inputSchema`) could be passed as `type` the same way.

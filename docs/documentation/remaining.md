@@ -17,3 +17,5 @@ Each item was in a lane's brief and was not built, or was found by a lane. The f
 - A retired table's `managedIn` is always `code` from the server (t2-walk-data).
 - `CreateDialog`s with no `done` still say "Created." (t2-walk-data).
 - The manual start's input schema is a raw JSON box, and invalid text is lost when another step is chosen; "To fix" does not check that an approver group still exists (t3-flow-editor).
+- The instance audit log has no CSV and no single-entry route; Recent does not remember apps, triggers and schedules (t3-account).
+- The Health screen opens the help topic `instance-databases`; it needs its own (`instance-health`) once phase 31 writes the page (t3-instance).

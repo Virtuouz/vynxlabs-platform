@@ -696,7 +696,12 @@ test("no string a person reads is in British spelling", () => {
           }
         }
       });
+    }
+  }
+  expect(found).toEqual([]);
+});
 
+/**
  * The word is "flow", never "workflow", in anything a person sees (vocabulary, VOC-01..16).
  * Code names and stored values stay: the lucide `Workflow` icon is not text, and a search
  * alias that lets an old habit find a card says so with `search-alias:` on its line.

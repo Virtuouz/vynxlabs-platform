@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { EffectiveAccess } from "./screens/Access.tsx";
 import { EndUsers } from "./screens/EndUsers.tsx";
 import { AttributesDialog, EndUserGroups, Groups } from "./screens/Groups.tsx";
 import { MemberList } from "./screens/Members.tsx";
@@ -374,4 +375,42 @@ test("ACC-26: a workspace's role called agent_runner does not stand for the buil
   );
   // The account holds a role of that name, not the built-in one: it is still to be offered.
   expect(await screen.findByRole("button", { name: "Offer" })).toBeTruthy();
+});
+
+test("ACC-27: someone who holds everything is told a permission given by name is not part of it", async () => {
+  routes.push((method, url) =>
+    method === "GET" && url.includes("/access/member/m1")
+      ? [
+          200,
+          {
+            principal: {
+              type: "member",
+              id: "m1",
+              name: "erin",
+              email: null,
+              suspended: false,
+              groups: [],
+            },
+            sources: [
+              {
+                source: "binding",
+                id: "b1",
+                role: { id: "r", name: "tenant_admin", permissions: ["*:*"] },
+                scope: { type: "tenant" },
+                through: { type: "direct" },
+                expiresAt: null,
+                counts: true,
+              },
+            ],
+            permissions: [],
+          },
+        ]
+      : undefined,
+  );
+  show(<EffectiveAccess base={base} tenantId="t1" principalType="member" id="m1" />);
+  fireEvent.change(await screen.findByLabelText("Find or check a permission"), {
+    target: { value: "sql:read" },
+  });
+  const checked = screen.getAllByRole("status").find((one) => /Denied/.test(one.textContent ?? ""));
+  expect(checked?.textContent).toContain("is one of those. A role that lists it");
 });

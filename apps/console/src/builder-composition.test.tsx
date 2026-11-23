@@ -651,6 +651,7 @@ test("+ Page starts a list of a table in one step, opens it, and Undo takes all 
   const dialog = within(await screen.findByRole("dialog", { name: "Add a page" }));
   fireEvent.click(await dialog.findByRole("radio", { name: /A list of Invoices/ }));
   expect((dialog.getByLabelText("Name of the page") as HTMLInputElement).value).toBe("Invoices");
+  expect((dialog.getByLabelText("Name of the page") as HTMLInputElement).maxLength).toBe(100);
   await waitFor(() =>
     expect(
       (dialog.getByRole("button", { name: "Add the page" }) as HTMLButtonElement).disabled,

@@ -178,7 +178,11 @@ export const queryRoutes =
       {
         // Whoever builds a query from menus needs this as much as whoever writes one. It gives
         // only the tables the caller may read rows of, so it asks for nothing more than that.
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `data:read`, and lists only the tables the caller may read.",
+          ),
+        },
         schema: {
           summary: "What a query can name: tables, their columns, and the functions allowed",
           description:
@@ -312,7 +316,11 @@ export const queryRoutes =
     app.get(
       `${base}/queries/visual`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at each table the query reads, and each table's row policy applies.",
+          ),
+        },
         schema: {
           summary: "Run a query built from menus, and read its result",
           description:
@@ -475,7 +483,11 @@ export const queryRoutes =
     app.get(
       `${base}/queries/saved/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `data:read` at the workspace or the table, for each table the query reads. Its row policy applies.",
+          ),
+        },
         schema: {
           summary: "Run a query the workspace keeps, and read its result",
           description:

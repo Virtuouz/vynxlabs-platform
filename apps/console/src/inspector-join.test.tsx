@@ -147,6 +147,18 @@ test("a section piece is placed by its order among the groups, and hides what it
   off();
 });
 
+test("a condition on the page's record or the current user is spoken as that, not as days (WID-23)", () => {
+  const column = { name: "client", type: "reference", references: "clients" };
+  const own = (value: object) => ({ column: "client", op: "eq" as const, value }) as never;
+  expect(sentenceOf(own({ record: "client" }), column)).toEqual({
+    before: "Client is",
+    value: "this record's client",
+  });
+  expect(sentenceOf(own({ user: "id" }), column).value).toBe("the current user");
+  // Untouched, the value is kept as it was written.
+  expect(fromEditor(toEditor(own({ user: "id" }), column))).toEqual([own({ user: "id" })]);
+});
+
 test("a date is spoken as 'is in the last' and 'is between', and what is stored round-trips", () => {
   const column = { name: "issued_at", type: "timestamp", references: null };
   expect(operatorsFor("date").map((one) => one.test)).toEqual(

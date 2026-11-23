@@ -3,8 +3,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import type { PageFilter, PageWidget } from "@volvel/manifest";
 import type { WidgetDefinition } from "@volvel/widgets";
-import { chart, pivot, stat } from "@volvel/widgets-core";
-import { goal } from "@volvel/widgets-labs";
+import { chart, goal, pivot, stat } from "@volvel/widgets-core";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { show } from "../../../testing.tsx";
@@ -132,9 +131,9 @@ beforeEach(() => {
 afterEach(cleanup);
 
 test("the registry knows the four widgets and nothing else", () => {
-  for (const type of ["core/chart", "core/stat", "core/pivot", "labs/goal"]) {
+  for (const type of ["core/chart", "core/stat", "core/pivot", "core/goal"]) {
     // The goal previews its bar above everything, as a section of its own.
-    expect(drawerSections(type, "data")).toHaveLength(type === "labs/goal" ? 2 : 1);
+    expect(drawerSections(type, "data")).toHaveLength(type === "core/goal" ? 2 : 1);
     expect(drawerSections(type, "display")).toHaveLength(1);
     expect(drawerSections(type, "rules")).toHaveLength(0);
   }
@@ -400,7 +399,7 @@ test("stat display: the caption is the stat's own, and numbers have their picker
 
 const thisMonth = (config?: Record<string, unknown>) =>
   widgetOf(
-    "labs/goal",
+    "core/goal",
     "value",
     { measures: [{ fn: "sum", column: "total", as: "sum_total" }] },
     { format: { style: "currency" }, target: 200000, ...config },
@@ -417,7 +416,7 @@ test("goal data: a preview, then Value, Goal and Over", () => {
 test("the goal is a fixed amount, or a column of the table", async () => {
   show(<Harness start={thisMonth()} definition={goal} tab="data" />);
   fireEvent.click(screen.getByRole("button", { name: /^Goal/ }));
-  fireEvent.change(await screen.findByRole("spinbutton", { name: "Amount" }), {
+  fireEvent.change(await screen.findByRole("textbox", { name: /Amount/ }), {
     target: { value: "300000" },
   });
   expect(last().config?.target).toBe(300000);
@@ -436,6 +435,21 @@ test("the goal is a fixed amount, or a column of the table", async () => {
   expect(visualOf(last(), "value").measures).toEqual([
     { fn: "sum", column: "total", as: "sum_total" },
   ]);
+});
+
+test("a goal over a column kept in cents is typed in dollars (WID-26)", async () => {
+  show(
+    <Harness
+      start={thisMonth({ format: { style: "currency", currency: "USD", minorUnits: true } })}
+      definition={goal}
+      tab="data"
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /^Goal/ }));
+  fireEvent.change(await screen.findByRole("textbox", { name: /Amount/ }), {
+    target: { value: "60000" },
+  });
+  expect(last().config?.target).toBe(6000000);
 });
 
 test("Over follows one of the page's date filters", async () => {
@@ -508,6 +522,17 @@ test("pivot data: the columns can be cut by another period", async () => {
   ]);
 });
 
+test("pivot data: a third breakdown goes between rows and columns, and can be removed (WID-M7)", async () => {
+  show(<Harness start={visits()} definition={pivot} tab="data" />);
+  fireEvent.click(screen.getByRole("button", { name: "Then by" }));
+  const groups = visualOf(last(), "rows").groupBy ?? [];
+  expect(groups).toHaveLength(3);
+  expect(groups[0]).toEqual({ column: "clinic" });
+  expect(groups[2]).toEqual({ column: "issued_at", bucket: "month" });
+  expect(screen.getByRole("button", { name: /^Then by/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /^Columns/ }).textContent).toContain("Issued at");
+});
+
 test("pivot display: shading and the two totals, shown unless switched off", () => {
   show(<Harness start={visits()} definition={pivot} tab="display" />);
   // A new pivot is shaded, as board 15 draws it; the switch turns it off.
@@ -548,4 +573,24 @@ test("registered, the chart's display tab draws its own pieces and not the gener
   expect(panel.getAllByRole("heading", { name: "Chart type" })).toHaveLength(1);
   expect(panel.getByRole("radio", { name: /^Pie/ })).toBeTruthy();
   expect(panel.getAllByRole("switch", { name: "Show values on bars" })).toHaveLength(1);
+});
+
+test("a stat on a page with several date ranges says which one it compares across (WID-M8)", async () => {
+  const paid: PageFilter = { ...dateFilter, name: "paid", label: "Paid" };
+  show(<Harness start={unpaid()} definition={stat} tab="display" filters={[dateFilter]} />);
+  fireEvent.click(screen.getByRole("switch", { name: "Compare with the period before" }));
+  expect(screen.queryByLabelText("Compare across")).toBeNull();
+  cleanup();
+  show(
+    <Harness
+      start={unpaid({ compare: true, compareTo: "issued" })}
+      definition={stat}
+      tab="display"
+      filters={[dateFilter, paid]}
+    />,
+  );
+  const across = screen.getByLabelText("Compare across") as HTMLSelectElement;
+  expect([...across.options].map((one) => one.text)).toEqual(["Issued", "Paid"]);
+  fireEvent.change(across, { target: { value: "paid" } });
+  expect(last().config).toMatchObject({ compare: true, compareTo: "paid" });
 });

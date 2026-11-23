@@ -148,6 +148,7 @@ export const iconRoutes =
         config: { access: access.tenant("portal:write") },
         schema: {
           summary: "Remove a tenant's icons",
+          description: "The tenant's apps go back to the instance's icons. Audited.",
           tags: ["branding"],
           params: Type.Object({ t: Id }),
           response: { 204: NoContent },

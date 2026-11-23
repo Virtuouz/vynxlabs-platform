@@ -77,12 +77,18 @@ type Kind =
   | "boolean"
   | "enum"
   | "reference"
+  | "file"
   | "json";
+
+/** A column that holds a list of values: marked so, or a several-choice column. */
+const holdsList = (column: FormColumn) =>
+  column.multiple === true || column.type.toLowerCase() === "enum_list";
 
 function kindOf(column: FormColumn): Kind {
   const type = column.type.toLowerCase();
   if (type === "reference") return "reference";
-  if (type === "enum") return "enum";
+  if (type === "file") return "file";
+  if (type === "enum" || type === "enum_list") return "enum";
   if (type === "boolean") return "boolean";
   if (type === "date") return "date";
   if (type === "timestamp") return "timestamp";
@@ -135,11 +141,12 @@ function schemaOf(column: FormColumn, kind: Kind): JsonSchema {
       one = { enum: (column.values ?? []).map((value) => value.value) };
       break;
     case "json":
+    case "file":
       return {};
     default:
       one = { type: "string" };
   }
-  return column.multiple ? { type: "array", items: one } : one;
+  return holdsList(column) ? { type: "array", items: one } : one;
 }
 
 const isEmpty = (value: unknown) =>
@@ -158,6 +165,20 @@ const jsonText = (value: unknown) =>
     : typeof value === "string"
       ? value
       : JSON.stringify(value, null, 2);
+
+/** A moment as the reader's clock writes it, `2026-03-09T14:30`: what a time field is given. */
+export function localTime(instant: string): string {
+  const at = new Date(instant);
+  if (Number.isNaN(at.getTime())) return instant;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}T${two(at.getHours())}:${two(at.getMinutes())}`;
+}
+
+/** What the reader typed on their clock, as the moment it is: ISO 8601 in UTC, which the rows take. */
+export function instantOf(typed: string): string {
+  const at = new Date(typed);
+  return Number.isNaN(at.getTime()) ? typed : at.toISOString();
+}
 
 /** Today as the page reads it: the day on the clock of the browser, as its date filters do. */
 export function today(now = new Date()): string {
@@ -513,7 +534,7 @@ function FormBody({
         />
       );
     }
-    if (column.multiple && kind === "enum") {
+    if (holdsList(column) && kind === "enum") {
       const options: Option[] = (column.values ?? []).map((one) => ({
         value: one.value,
         label: one.label ?? one.value,
@@ -533,6 +554,16 @@ function FormBody({
       );
     }
     switch (kind) {
+      case "file":
+        // A form cannot take a file to a row yet: said at the field, never a box to type an id in.
+        return (
+          <div key={name} data-form-file={name} className="flex min-w-0 flex-col gap-1">
+            <span className="text-label font-medium text-ink">{label}</span>
+            <p className="m-0 text-body-sm text-ink-muted">
+              A file cannot be added in a form. Add it to the row in the table.
+            </p>
+          </div>
+        );
       case "boolean":
         return (
           <CheckboxField
@@ -612,9 +643,9 @@ function FormBody({
             key={name}
             {...common}
             withTime
-            timeZone="UTC"
-            value={typeof held === "string" ? held : ""}
-            onChange={(next) => set(name, next === "" ? undefined : next)}
+            // Typed on the reader's clock and kept as the moment it is, with its zone (D21).
+            value={typeof held === "string" ? localTime(held) : ""}
+            onChange={(next) => set(name, next === "" ? undefined : instantOf(next))}
           />
         );
       case "longtext":
@@ -680,7 +711,7 @@ function FormBody({
             <div className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-4 @[34rem]/cell:grid-cols-2">
               {section.fields.map((field) => {
                 const { kind, column } = info(field);
-                const whole = kind === "longtext" || kind === "json" || column.multiple === true;
+                const whole = kind === "longtext" || kind === "json" || holdsList(column);
                 return (
                   <div
                     key={field.column}

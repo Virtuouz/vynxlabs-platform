@@ -256,6 +256,29 @@ describe("the Documentation screen", () => {
     expect(location.pathname).toBe(`${link}/docs/handbook/support/index`);
   });
 
+  test("says when a page takes a name the product's own help has", async () => {
+    docs();
+    expect(await row("Handbook")).toBeTruthy();
+    expect(screen.queryByText(/the product's own help has/)).toBeNull();
+    cleanup();
+    const clashing = {
+      ...list(),
+      issues: [
+        {
+          app: "help",
+          path: "handbook/faq",
+          code: "term_reserved",
+          message: 'The term "workspace" is one of the product\'s own.',
+        },
+      ],
+    };
+    routes[`GET /api/v1${root}/docs`] = () => [200, clashing];
+    docs();
+    expect((await screen.findByText(/the product's own help has/)).textContent).toContain(
+      "handbook/faq",
+    );
+  });
+
   test("a row says its file's name, under its title, and a draft says so right of it", async () => {
     docs();
     expect((await row("Refund an order")).textContent).toContain("refunds.md");

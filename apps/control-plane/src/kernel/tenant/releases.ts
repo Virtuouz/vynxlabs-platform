@@ -223,7 +223,7 @@ export async function currentAccess(db: Db | Trx, tenantId: string): Promise<Ten
     select r.name as role, b.principal_type as type,
       coalesce(g.key, s.key, e.key) as key, w.slug as workspace
     from binding b
-    join role r on r.id = b.role_id
+    join role r on r.id = b.role_id and r.workspace_id is null
     left join principal_group g on b.principal_type = 'group' and g.id = b.principal_id
     left join service_account s on b.principal_type = 'service_account' and s.id = b.principal_id
     left join end_user_group e on b.principal_type = 'end_user_group' and e.id = b.principal_id
@@ -248,8 +248,13 @@ function plan(
   current: readonly TenantResource[],
   asks: readonly AccessAsk[],
   full: boolean,
+  madeByProvider: readonly TenantResource[] = [],
 ): { steps: Step[]; unchanged: number } {
-  const there = new Map(current.map((resource) => [identity(resource), resource]));
+  // What an identity provider made is compared with, so that a repository that keeps it as it is
+  // changes nothing, and is never removed.
+  const there = new Map(
+    [...madeByProvider, ...current].map((resource) => [identity(resource), resource]),
+  );
   const steps: Step[] = [];
   let unchanged = 0;
   const wanted = new Set<string>();
@@ -724,6 +729,8 @@ export interface ReleaseRequest {
   allowDelete?: readonly string[] | undefined;
   /** Set when a second person approved it, or when it is only being tried. */
   approved?: boolean;
+  /** What the person who asked is told, as the release's warnings: what was left out and why. */
+  notes?: readonly string[];
 }
 
 /** When the change is asked with a service account's key: the member who made that key. */
@@ -775,7 +782,18 @@ export async function releaseAccess(
       }),
     );
   }
-  const { steps, unchanged } = plan(current, request.asks, request.scope === "full");
+  const byProvider = await providerManaged(trx, tenantId);
+  for (const ask of request.asks) {
+    const [kind, key] =
+      ask.op === "delete" ? [ask.kind, ask.key] : [ask.resource.kind, ask.resource.key];
+    if (ask.op === "put" || !byProvider.some((one) => one.kind === kind && one.key === key)) {
+      continue;
+    }
+    throw conflict(
+      `The ${kind.replaceAll("_", " ")} ${key} is made by the identity provider. Remove it there.`,
+    );
+  }
+  const { steps, unchanged } = plan(current, request.asks, request.scope === "full", byProvider);
   if (request.scope === "full") {
     const unsaid = steps
       .filter((step): step is Extract<Step, { op: "delete" }> => step.op === "delete")
@@ -817,8 +835,8 @@ export async function releaseAccess(
 
   if (waits) {
     // What it would do is worked out now, for whoever is asked, and again when they answer.
-    const summary = previewSteps(current, steps, unchanged);
-    summary.warnings.push(...undone);
+    const summary = previewSteps([...byProvider, ...current], steps, unchanged);
+    summary.warnings.push(...(request.notes ?? []), ...undone);
     await trx
       .insertInto("tenant_release")
       .values({
@@ -853,11 +871,12 @@ export async function releaseAccess(
     deleted: 0,
     unchanged,
     changes: [],
-    warnings: [...undone],
+    warnings: [...(request.notes ?? []), ...undone],
   };
   await keepingAnAdmin(trx, tenantId, async () => {
     for (const step of steps) await applyStep(trx, audit, tenantId, step, current, summary);
   });
+  if (steps.length > 0) await supersede(trx, audit, tenantId, id, number);
   await trx
     .insertInto("tenant_release")
     .values({
@@ -891,7 +910,6 @@ export async function releaseAccess(
       deleted: summary.deleted,
     },
   });
-  await supersedeWaiting(trx, audit, tenantId, id);
   if (steps.length > 0) {
     applied.set(id, { tenantId, number, message: request.message ?? null, at: Date.now() });
   }
@@ -937,18 +955,72 @@ async function editsUndone(trx: Trx, tenantId: string, steps: readonly Step[]): 
 }
 
 /** Groups and service accounts an identity provider made: a binding may name them. */
-async function providerManaged(trx: Trx, tenantId: string): Promise<TenantResource[]> {
+async function providerManaged(trx: Db | Trx, tenantId: string): Promise<TenantResource[]> {
   const found: TenantResource[] = [];
   for (const kind of ["group", "end_user_group", "service_account"] as const) {
     const rows = await trx
       .selectFrom(TABLE[kind])
-      .select(["key", "name"])
+      .selectAll()
       .where("tenant_id", "=", tenantId)
       .where("managed_by", "=", "provider")
       .execute();
-    for (const row of rows) found.push({ kind, key: row.key, body: { title: row.name } });
+    for (const row of rows) {
+      const values = "sso_values" in row ? [...(row.sso_values as string[])].sort() : [];
+      found.push({
+        kind,
+        key: row.key,
+        body: {
+          title: row.name,
+          ...(row.description ? { description: row.description } : {}),
+          ...(values.length > 0 ? { membership: { sso: { values } } } : {}),
+        },
+      });
+    }
   }
   return found;
+}
+
+/**
+ * A change that waited was asked of the access as it was then. When another change applies and
+ * the access is no longer that, the first can never be approved: it is marked so, with the
+ * release that made it so, rather than left to say "waits" for ever.
+ */
+async function supersede(
+  trx: Trx,
+  audit: Audit,
+  tenantId: string,
+  appliedId: string,
+  number: number,
+): Promise<void> {
+  const waiting = await trx
+    .selectFrom("tenant_release")
+    .select(["id", "number", "content"])
+    .where("tenant_id", "=", tenantId)
+    .where("status", "=", "awaiting_approval")
+    .where("id", "<>", appliedId)
+    .forUpdate()
+    .execute();
+  if (waiting.length === 0) return;
+  const now = fingerprint(await currentAccess(trx, tenantId));
+  for (const one of waiting) {
+    if ((one.content as { base: string }).base === now) continue;
+    await trx
+      .updateTable("tenant_release")
+      .set({
+        status: "superseded",
+        decided_at: new Date(),
+        comment: `Release ${number} changed the tenant's access after this was asked for. Ask for it again.`,
+      })
+      .where("id", "=", one.id)
+      .execute();
+    await audit({
+      action: "access.release_superseded",
+      targetType: "tenant_release",
+      targetId: one.id,
+      tenantId,
+      details: { number: one.number, by: number },
+    });
+  }
 }
 
 function previewSteps(
@@ -1055,7 +1127,12 @@ export async function decideRelease(
     base: string;
   };
   const current = await currentAccess(trx, tenantId);
-  const { steps, unchanged } = plan(current, content.asks, content.scope === "full");
+  const { steps, unchanged } = plan(
+    current,
+    content.asks,
+    content.scope === "full",
+    await providerManaged(trx, tenantId),
+  );
   // What was asked to be approved was a change to the access as it then was. If anything
   // moved since, whoever approves would be approving something they were not shown.
   if (content.base !== fingerprint(current)) {
@@ -1087,6 +1164,7 @@ export async function decideRelease(
     })
     .where("id", "=", release.id)
     .execute();
+  if (steps.length > 0) await supersede(trx, audit, tenantId, release.id, release.number);
   await audit({
     action: "access.released",
     targetType: "tenant_release",
@@ -1102,7 +1180,6 @@ export async function decideRelease(
       deleted: summary.deleted,
     },
   });
-  await supersedeWaiting(trx, audit, tenantId, release.id);
   applied.set(release.id, {
     tenantId,
     number: release.number,
@@ -1110,39 +1187,6 @@ export async function decideRelease(
     at: Date.now(),
   });
   return { id: release.id, number: release.number, status: "applied", summary };
-}
-
-/**
- * A release that waits was asked for against the access as it was then. When the access
- * changes, a waiting release that was asked against another state can no longer be approved
- * as shown: it is marked superseded, so the history says so and the list stops offering it.
- */
-async function supersedeWaiting(trx: Trx, audit: Audit, tenantId: string, exceptId: string) {
-  const waiting = await trx
-    .selectFrom("tenant_release")
-    .select(["id", "number", "content"])
-    .where("tenant_id", "=", tenantId)
-    .where("status", "=", "awaiting_approval")
-    .where("id", "<>", exceptId)
-    .forUpdate()
-    .execute();
-  if (waiting.length === 0) return;
-  const now = fingerprint(await currentAccess(trx, tenantId));
-  for (const one of waiting) {
-    if ((one.content as { base?: string }).base === now) continue;
-    await trx
-      .updateTable("tenant_release")
-      .set({ status: "superseded", decided_at: new Date() })
-      .where("id", "=", one.id)
-      .execute();
-    await audit({
-      action: "access.release_superseded",
-      targetType: "tenant_release",
-      targetId: one.id,
-      tenantId,
-      details: { number: one.number, supersededBy: exceptId },
-    });
-  }
 }
 
 /** The whole set an earlier release left, asked for again: going back to it. */
@@ -1160,12 +1204,56 @@ export async function rollbackAsks(db: Db | Trx, tenantId: string, releaseId: st
   const current = await currentAccess(db, tenantId);
   // A snapshot made before bindings had keys of their own may hold two under one name: it is read
   // by what each binding gives, and given keys of today.
-  const snapshot = withUniqueBindingKeys(release.snapshot);
+  const all = withUniqueBindingKeys(release.snapshot);
+  // What a release named may be gone since: a workspace, a role, a group an identity provider made.
+  // That is left out, and said, rather than making every release before it a way nobody can go.
+  const workspaces = new Set(
+    (
+      await db.selectFrom("workspace").select("slug").where("tenant_id", "=", tenantId).execute()
+    ).map((row) => row.slug),
+  );
+  const roleNames = new Set(
+    (
+      await db
+        .selectFrom("role")
+        .select("name")
+        .where("workspace_id", "is", null)
+        .where((eb) => eb.or([eb("tenant_id", "=", tenantId), eb("tenant_id", "is", null)]))
+        .execute()
+    ).map((row) => row.name),
+  );
+  for (const one of all) if (one.kind === "tenant_role") roleNames.add(one.key);
+  const principals = new Set(
+    [...all, ...(await providerManaged(db, tenantId))].map((one) => `${one.kind} ${one.key}`),
+  );
+  const warnings: string[] = [];
+  const snapshot = all.filter((one) => {
+    if (one.kind !== "tenant_binding") return true;
+    const body = one.body as {
+      role: string;
+      principal: { type: string; key: string };
+      workspace?: string;
+    };
+    const gone = [
+      ...(body.workspace && !workspaces.has(body.workspace)
+        ? [`the workspace ${body.workspace} is gone`]
+        : []),
+      ...(roleNames.has(body.role) ? [] : [`the role ${body.role} is gone`]),
+      ...(principals.has(`${body.principal.type} ${body.principal.key}`)
+        ? []
+        : [`the ${body.principal.type.replaceAll("_", " ")} ${body.principal.key} is gone`]),
+    ];
+    if (gone.length === 0) return true;
+    warnings.push(`Not given again: ${labelOf(one)}, because ${gone.join(" and ")}.`);
+    return false;
+  });
   const kept = new Set(snapshot.map(identity));
   const removed = current.filter((one) => !kept.has(identity(one)));
   return {
     /** What going back removes, each as a name a person reads. */
     removes: removed.map((one) => ({ kind: one.kind, key: one.key, label: labelOf(one) })),
+    /** What it leaves out because it no longer exists. */
+    warnings,
     number: release.number,
     asks: snapshot.map((resource): AccessAsk => ({ op: "put", resource })),
     // Going back removes what was made since. That is what going back means, so each is allowed.

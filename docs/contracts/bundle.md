@@ -21,6 +21,21 @@ A bundle is the unit of deploy: one workspace's manifests and its code, immutabl
 
 A file's `path` inside an app is made of parts separated by `/`. A part is letters, digits and `. _ @ ~ -`, and starts with a letter, a digit, or one `_` or `.` followed by one of those (so `_chunk.js` and `.well-known/assetlinks.json` are allowed; `.`, `..` and spaces are not). The path never starts with `_/`, which the platform keeps. A server that is not upgraded refuses a part that starts with `_` or `.`.
 
+## The core range
+
+Every bundle says which cores run it, as `core: { min, below }`: the lowest core version it runs on, and the first it does not. A core older than `min` refuses it (the instance is behind). A core inside the range runs it. A core at or past `below` still runs it when `min` is no older than the oldest range that core supports (`bundleCompatibility` in `packages/manifest/src/bundle.ts`), which is what lets an instance be upgraded before every tenant rebuilds; for an older bundle it says the bundle is too old and must be built again.
+
+## Sources
+
+Two optional fields carry source text beside `code`, so the console can show a script's TypeScript and point a failure at its line. Neither changes what runs. A bundle that leaves them out is valid in every format, and a reader that does not know them refuses the bundle as it refuses any unknown field.
+
+| Field | Holds |
+| --- | --- |
+| `sources` | `files`: the repository's own TypeScript, as `path` (relative to the repository root) and `content`, never a dependency's files; and `map`, a version 3 source map from `code` to those files, without their contents. At most 2000 files, and 4 MiB of text in all: beyond that the sources are left out |
+| `consoleSources` | The code written in the console: `files` (`<path>.<kind>.ts` and its `content`), `line` (how many lines of `code` come before the console's compiled code, which sits after the repository's) and `map` for that part alone |
+
+The digest covers both when they are there.
+
 ## What format 4 lets a manifest say
 
 | Field | Meaning | When it is left out |

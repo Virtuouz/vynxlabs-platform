@@ -583,6 +583,14 @@ export function Docs({
           ) : null
         }
       />
+      {data.issues?.length ? (
+        <Notice tone="attention">
+          {data.issues.length === 1 ? "A page takes" : `${data.issues.length} pages take`} a term or
+          a topic that the product's own help has, so a site leaves it out and a deploy is refused:{" "}
+          {[...new Set(data.issues.map((issue) => issue.path))].join(", ")}. Give it another id in
+          the page.
+        </Notice>
+      ) : null}
       {data.pages.length === 0 && data.apps.length === 0 && !editing ? (
         <EmptyState
           title="No documentation yet"

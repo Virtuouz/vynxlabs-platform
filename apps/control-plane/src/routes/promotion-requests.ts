@@ -7,6 +7,7 @@ import { publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import { AnyObject, Id, iso, isoOrNull, NullableString, Time, WorkspaceParams } from "./shared.js";
 
 type Status = "pending" | "promoted" | "declined" | "withdrawn" | "superseded";
@@ -281,7 +282,11 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
     app.get(
       "/tenants/:t/promotion-requests",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Lists the requests the caller may decide and the ones they made. A caller with neither needs `deployment:read` in the tenant to be answered.",
+          ),
+        },
         schema: {
           summary: "Promotion requests one may decide, and one's own",
           description:
@@ -301,7 +306,7 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
             ),
             workspaceId: Type.Optional(Id),
           }),
-          response: { 200: Type.Object({ items: Type.Array(PromotionRequest) }) },
+          response: { 200: listOf(PromotionRequest, 200) },
         },
       },
       async ({ ctx, params, query }) => {
@@ -319,7 +324,9 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
     app.get(
       "/tenants/:t/promotion-requests/:id/preview",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs `deployment:read` in the workspace the request is for."),
+        },
         schema: {
           summary: "What deciding a promotion request would do",
           description: "The promotion preview of the bundle the request pinned.",
@@ -357,7 +364,7 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
     app.post(
       "/tenants/:t/promotion-requests/:id/decision",
       {
-        config: { access: access.custom },
+        config: { access: access.custom("Needs `promotion:write` in the workspace promoted to.") },
         schema: {
           summary: "Promote what was asked for, or decline it",
           description:
@@ -481,9 +488,12 @@ export function promotionRequestRoutes(kernel: Kernel): FastifyPluginAsyncTypebo
     app.delete(
       "/tenants/:t/promotion-requests/:id",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs to be the person, or the key, that made the request."),
+        },
         schema: {
           summary: "Withdraw a promotion request one made",
+          description: "Takes the request back before anyone decides it. Audited.",
           tags: ["deploys"],
           params: RequestParams,
           response: { 204: Type.Null() },

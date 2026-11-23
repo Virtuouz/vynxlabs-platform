@@ -1,7 +1,7 @@
 import { Button, ComboboxField, Notice, SelectField, SideSheet } from "@volvel/ui";
 import { useEffect, useState } from "react";
-import { type ApiError, api, useLoad } from "../api.ts";
-import { notify } from "../ask.tsx";
+import { api, useLoad } from "../api.ts";
+import { failureText, notify } from "../ask.tsx";
 
 interface Principal {
   type: "member" | "group" | "service_account" | "end_user" | "end_user_group";
@@ -31,6 +31,7 @@ export function GiveAccess({
   onClose,
   onGiven,
   who,
+  inWorkspace,
 }: {
   /** The tenant's API address. */
   base: string;
@@ -39,11 +40,18 @@ export function GiveAccess({
   onGiven: () => void;
   /** Someone already chosen, such as the service account whose page this is opened from. */
   who?: { type: Principal["type"]; id: string; label: string };
+  /**
+   * Access given at this one workspace only, for someone who may give it there and nowhere else:
+   * the roles and the people to choose from are read at the workspace.
+   */
+  inWorkspace?: { id: string; name: string };
 }) {
   const [typed, setTyped] = useState("");
   const [query, setQuery] = useState("");
   const [principal, setPrincipal] = useState<string>();
-  const [workspaceId, setWorkspaceId] = useState("");
+  const [chosenWorkspace, setWorkspaceId] = useState("");
+  const workspaceId = inWorkspace?.id ?? chosenWorkspace;
+  const at = inWorkspace ? `&workspaceId=${inWorkspace.id}` : "";
   const [roleId, setRoleId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
@@ -53,13 +61,13 @@ export function GiveAccess({
   }, [typed]);
   const found = useLoad<{ items: Principal[] }>(
     open && !who
-      ? `${base}/principals?limit=10${query ? `&q=${encodeURIComponent(query)}` : ""}`
+      ? `${base}/principals?limit=10${query ? `&q=${encodeURIComponent(query)}` : ""}${at}`
       : null,
   );
   const workspaces = useLoad<{ items: { id: string; name: string }[] }>(
-    open ? `${base}/workspaces` : null,
+    open && !inWorkspace ? `${base}/workspaces` : null,
   );
-  const roles = useLoad<{ items: Role[] }>(open ? `${base}/roles?limit=200` : null);
+  const roles = useLoad<{ items: Role[] }>(open ? `${base}/roles?limit=200${at}` : null);
   // A role defined in a workspace is offered only there.
   const usable = (roles.data?.items ?? []).filter(
     (role) => !role.workspaceId || role.workspaceId === workspaceId,
@@ -115,14 +123,16 @@ export function GiveAccess({
                 const role = usable.find((one) => one.id === roleId)?.name ?? "the role";
                 const name =
                   who?.label ?? options.find((one) => one.value === chosen)?.label ?? "They";
-                const where = workspaces.data?.items.find((one) => one.id === workspaceId)?.name;
+                const where =
+                  inWorkspace?.name ??
+                  workspaces.data?.items.find((one) => one.id === workspaceId)?.name;
                 notify.success(
                   `${name} holds ${role}${where ? ` in ${where}` : " in the whole tenant"}.`,
                 );
                 onGiven();
                 close();
               } catch (error) {
-                setProblem((error as ApiError).message);
+                setProblem(failureText(error));
               } finally {
                 setBusy(false);
               }
@@ -151,19 +161,26 @@ export function GiveAccess({
             empty={found.loading ? "Looking…" : "Nobody by that name."}
           />
         )}
-        <SelectField
-          name="workspaceId"
-          label="Where"
-          value={workspaceId}
-          options={[
-            { value: "", label: "The whole tenant" },
-            ...(workspaces.data?.items ?? []).map((one) => ({ value: one.id, label: one.name })),
-          ]}
-          onChange={(next) => {
-            setWorkspaceId(next);
-            setRoleId(undefined);
-          }}
-        />
+        {inWorkspace ? (
+          <div className="flex flex-col gap-1">
+            <span className="text-body-sm font-medium">Where</span>
+            <span>{inWorkspace.name}</span>
+          </div>
+        ) : (
+          <SelectField
+            name="workspaceId"
+            label="Where"
+            value={workspaceId}
+            options={[
+              { value: "", label: "The whole tenant" },
+              ...(workspaces.data?.items ?? []).map((one) => ({ value: one.id, label: one.name })),
+            ]}
+            onChange={(next) => {
+              setWorkspaceId(next);
+              setRoleId(undefined);
+            }}
+          />
+        )}
         <SelectField
           name="roleId"
           label="Role"
@@ -180,6 +197,9 @@ export function GiveAccess({
           onChange={(next) => setRoleId(next || undefined)}
         />
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
+        {/* Nothing to choose from is said with its reason, not shown as an empty list. */}
+        {roles.error ? <Notice tone="danger">{failureText(roles.error)}</Notice> : null}
+        {found.error ? <Notice tone="danger">{failureText(found.error)}</Notice> : null}
       </div>
     </SideSheet>
   );

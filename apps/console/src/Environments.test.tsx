@@ -180,6 +180,16 @@ test("an export needs the passphrase typed twice the same", async () => {
   expect(sent("POST")).toHaveLength(0);
 });
 
+test("a short export passphrase is refused in words, not by the browser's bubble", async () => {
+  show(<TenantExport base={base} slug="acme" />);
+  fireEvent.input(screen.getByLabelText("Passphrase"), { target: { value: "too short" } });
+  fireEvent.input(screen.getByLabelText("Passphrase again"), { target: { value: "too short" } });
+  expect(screen.getByRole("alert").textContent).toBe("Use at least 12 characters.");
+  fireEvent.click(screen.getByRole("button", { name: "Export tenant" }));
+  expect(sent("POST")).toHaveLength(0);
+  expect(screen.getByRole("alert").textContent).toBe("Use at least 12 characters.");
+});
+
 const inspection = {
   problem: null,
   tenant: { id: "t9", slug: "acme", name: "Acme Corp" },

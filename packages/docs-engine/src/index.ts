@@ -33,6 +33,12 @@ export {
   titleOf,
 } from "./page.js";
 export {
+  type MovedPage,
+  type RedirectProblem,
+  redirectedPath,
+  redirectMap,
+} from "./redirects.js";
+export {
   ABOUT_KINDS,
   type About,
   type AboutKind,
@@ -67,6 +73,7 @@ export {
   nameOf,
   ordered,
   type PageRef,
+  PRODUCT_PREFIX,
   pagesInOrder,
   resolveAsset,
   resolveLink,

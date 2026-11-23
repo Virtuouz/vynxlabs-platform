@@ -108,7 +108,7 @@ function explained(error: unknown): ToastOptions {
   if (!(error instanceof ApiError) || !isErrorCode(error.code)) return {};
   const code = error.code;
   return {
-    action: { label: "What does this mean?", onClick: () => openHelp(`reference/errors#${code}`) },
+    action: { label: "What does this mean?", onClick: () => openHelp(`errors#${code}`) },
   };
 }
 

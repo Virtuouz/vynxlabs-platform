@@ -64,6 +64,9 @@ export interface DocSet {
   extensions: Record<string, string[]>;
 }
 
+/** Every new term and topic of the product's own help starts with this, so none of a tenant's can collide with it. */
+export const PRODUCT_PREFIX = "volvel-";
+
 export const UNCATEGORIZED = "Uncategorized";
 
 export interface BuildOptions {
@@ -71,6 +74,11 @@ export interface BuildOptions {
   reservedTerms?: Iterable<string>;
   /** Topics that belong to the product. A page may not take one of them, and may extend one. */
   reservedTopics?: Iterable<string>;
+  /**
+   * Names that begin with this are the product's too, whether or not this version of it has one:
+   * the product starts every new term and topic with it, so a tenant's can never collide.
+   */
+  reservedPrefix?: string;
   /** Terms defined somewhere else that a page here may use: another layer's. */
   knownTerms?: Iterable<string>;
   /** Whether a file beside the pages is there, by its path under the docs root. Left out, pictures are not checked. */
@@ -373,6 +381,8 @@ export function buildDocSet(
   // Topics, terms, attachments and extensions.
   const reservedTerms = new Set(options.reservedTerms ?? []);
   const reservedTopics = new Set(options.reservedTopics ?? []);
+  const prefixed = (name: string) =>
+    options.reservedPrefix !== undefined && name.startsWith(options.reservedPrefix);
   const topics: Record<string, string> = {};
   const terms: Record<string, Term> = {};
   const attachments: Record<string, string[]> = {};
@@ -381,7 +391,7 @@ export function buildDocSet(
   for (const entry of byPath) {
     const { topic } = entry.frontmatter;
     if (topic !== undefined) {
-      if (reservedTopics.has(topic)) {
+      if (reservedTopics.has(topic) || prefixed(topic)) {
         error(
           entry.path,
           "topic_reserved",
@@ -396,7 +406,7 @@ export function buildDocSet(
       } else topics[topic] = entry.path;
     }
     for (const term of entry.frontmatter.terms ?? []) {
-      if (reservedTerms.has(term.id)) {
+      if (reservedTerms.has(term.id) || prefixed(term.id)) {
         error(
           entry.path,
           "term_reserved",

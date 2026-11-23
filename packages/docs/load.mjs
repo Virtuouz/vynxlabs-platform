@@ -2,7 +2,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildDocSet, pagePath, readPage } from "@volvel/docs-engine";
+import { buildDocSet, frontmatterOf, pagePath, readPage, redirectMap } from "@volvel/docs-engine";
 
 export const HERE = dirname(fileURLToPath(import.meta.url));
 export const VERSION = JSON.parse(readFileSync(join(HERE, "package.json"), "utf8")).version;
@@ -29,6 +29,9 @@ export function loadDocs() {
   const issues = [];
   const entries = [];
   const assets = new Set();
+  // Where pages were, read from the frontmatter as written, so that a page that moved is
+  // understood by any version of the schema.
+  const moved = [];
   for (const { folder, under } of ROOTS) {
     for (const file of filesUnder(folder)) {
       const name = join(under, relative(folder, file)).split("\\").join("/");
@@ -51,14 +54,33 @@ export function loadDocs() {
         });
         continue;
       }
-      const read = readPage(named.path, readFileSync(file, "utf8"), { profile: "product" });
+      const text = readFileSync(file, "utf8");
+      const was = frontmatterOf(text)?.moved_from;
+      if (Array.isArray(was)) {
+        moved.push({ path: named.path, movedFrom: was.filter((one) => typeof one === "string") });
+      }
+      const read = readPage(named.path, text, { profile: "product" });
       entries.push(read.entry);
       issues.push(...read.issues);
     }
   }
   const built = buildDocSet(entries, { asset: (path) => assets.has(path) });
   issues.push(...built.issues);
-  return { set: built.set, issues, assets };
+  // Pages that were deleted are said in a file: old path to the page that answers for it.
+  const file = join(HERE, "redirects.json");
+  const deleted = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : {};
+  const { redirects, problems } = redirectMap(new Set(built.set.pages.keys()), moved, deleted);
+  for (const one of problems) {
+    issues.push({
+      path: one.path,
+      line: 1,
+      column: 1,
+      code: one.code,
+      message: one.message,
+      severity: "error",
+    });
+  }
+  return { set: built.set, issues, assets, redirects };
 }
 
 export function report(issues) {

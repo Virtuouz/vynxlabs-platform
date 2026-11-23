@@ -4,6 +4,7 @@ import {
   type DocIssue,
   frontmatterOf,
   nameProblem,
+  PRODUCT_PREFIX,
   planMove,
   planRename,
   setFrontmatter,
@@ -173,6 +174,7 @@ export function DocEditor({
     if (!list.data) return undefined;
     const workspaceTerms = termsOf(list.data).map((term) => term.id);
     return checkPageAmong(inApp(app, where) || "untitled", typed, indexOf(list.data, app), {
+      reservedPrefix: PRODUCT_PREFIX,
       ...(product
         ? { reservedTerms: Object.keys(product.terms), reservedTopics: Object.keys(product.topics) }
         : {}),

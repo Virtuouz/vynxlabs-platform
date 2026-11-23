@@ -1038,6 +1038,17 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (body.disabled && ctx.principal.id === params.id) {
           throw badRequest("You cannot disable your own account.");
         }
+        // Already as asked: nothing changes, so nothing is written and nothing is audited.
+        const now = await kernel.db
+          .selectFrom("member")
+          .select(["id", "name", "email", "created_at", "disabled_at"])
+          .where("id", "=", params.id)
+          .executeTakeFirst();
+        if (!now) throw notFound("The member");
+        if ((now.disabled_at !== null) === body.disabled) {
+          ctx.mutated = true;
+          return { ...toMember(now), tenantsWithoutAdmin: [] };
+        }
         return ctx.mutate(async (trx, audit) => {
           const done = await setMemberDisabled(
             trx,

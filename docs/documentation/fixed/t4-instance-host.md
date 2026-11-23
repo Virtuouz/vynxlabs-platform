@@ -31,3 +31,9 @@ Items: INS-10, 15, 22, 25, 27, 28; HOST-16, 19, 28, 30.
 ## Found
 - `guide.test.ts` "every series ... (INS-29)" fails on the phase branch: the series are `volvel_*` now and the test looks for `platform_*`. Not this lane's.
 - `kernel/data/query/visual.test.ts` "a joined column of a table it follows ..." fails here (date-bound parameters); not touched by this lane.
+
+## INS-27
+- `routes/identity.ts` `PATCH /members/:id`: a member already as asked (disabled again, enabled again) answers 200 with no write and no audit entry (`ctx.mutated = true`, as other routes that change nothing). `routes/permissions.ts` `DELETE /tenants/:t/access-grants/:id`: a grant already ended answers 204 with no second `access_grant.revoked`. `CO/screens/Instance.tsx`: `ToggleMember` shows "You cannot disable your own account." in place of Disable on your own row; Operators' remove button on your own row reads "Remove yourself" and confirms "Remove yourself as an operator? You lose the Instance area at once, and another operator has to add you back."
+- Tests: `access-guards.test.ts` "disabling a disabled account, or enabling an enabled one ... (INS-27)", "ending an access grant that has ended writes no second entry (INS-27)"; `Account.test.tsx` "your own row on All members offers no Disable ... (INS-27)", "removing yourself as an operator says it is you (INS-27)". All failed before.
+- Siblings: SCIM already skips a no-change (`kernel/sso/scim.ts:552`); `ToggleMember` is used only by All members; the tenant's own members list (`Members.tsx`) removes through another route, not changed. Removing yourself is not refused by the server (it keeps one operator).
+- Walk: Instance > All members (own row text, at 390 px the row action cell wraps), Instance > Operators (own row button, confirm sheet). States: `/me` still loading shows Disable until it answers (the server refuses it with its message). Keyboard: unchanged. Reload: fine.

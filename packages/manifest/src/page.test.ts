@@ -306,6 +306,16 @@ describe("records and actions (phase 26)", () => {
     ]);
   });
 
+  it("narrowing the page needs an event that gives a group", () => {
+    const narrowing = {
+      steps: [{ do: "narrow", filter: "f", from: "clinic" }],
+    };
+    const board = checkDashboard({ widgets: [{ ...rows, on: { rowClick: narrowing } }] }, tableOf);
+    expect(board.map((one) => one.message)).toContain(
+      "narrows the page by what was clicked, and this event clicks no group (a point or a cell does)",
+    );
+  });
+
   it("a record page says the table of its record", () => {
     const body = app([rows]);
     const { record: _record, ...nameless } = detailPage;

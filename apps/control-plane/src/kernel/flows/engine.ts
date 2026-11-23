@@ -82,10 +82,15 @@ const isActive = (step: StepRow) => ACTIVE.includes(step.status);
 const stepKey = (node: string, item = "") => `${node}\u0000${item}`;
 
 /**
- * Starts a flow run in the caller's transaction: one trigger firing. Starting
- * again with the same idempotency key returns the first run.
+ * What starting a flow would refuse, found out without starting it: the flow is in the bundle,
+ * it has a manual trigger (or the named one), and the input is what that trigger takes. A page's
+ * action asks this before its data is saved, and a start asks it again.
  */
-export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowRun) {
+export async function checkFlowStart(
+  kernel: Kernel,
+  trx: Trx | Kernel["db"],
+  request: StartFlowRun,
+) {
   const workspace = await trx
     .selectFrom("workspace")
     .select(["id", "active_bundle_id"])
@@ -142,7 +147,19 @@ export async function startFlowRun(kernel: Kernel, trx: Trx, request: StartFlowR
       );
     }
   }
+  return { request, workspace, bundle, manifest, body, alias, triggerNode };
+}
 
+/**
+ * Starts a flow run in the caller's transaction: one trigger firing. Starting
+ * again with the same idempotency key returns the first run.
+ */
+export async function startFlowRun(kernel: Kernel, trx: Trx, startRequest: StartFlowRun) {
+  const { request, bundle, manifest, body, alias, triggerNode } = await checkFlowStart(
+    kernel,
+    trx,
+    startRequest,
+  );
   // By the key the bundle gives it: the flow may have been renamed since that bundle.
   const resource = await trx
     .selectFrom("resource")

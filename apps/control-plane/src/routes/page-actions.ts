@@ -66,7 +66,12 @@ export function pageActionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               message: Type.Optional(Type.String()),
               changed: Type.Optional(Type.Integer()),
               started: Type.Optional(
-                Type.Integer({ description: "How many scripts and workflows it started." }),
+                Type.Integer({ description: "How many scripts and flows it started." }),
+              ),
+              notStarted: Type.Optional(
+                Type.Array(Type.Object({ do: Type.String(), path: Type.String() }), {
+                  description: "What could not be started after the data was saved.",
+                }),
               ),
             }),
           },

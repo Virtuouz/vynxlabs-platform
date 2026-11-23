@@ -320,8 +320,12 @@ export function DetailView({
   const wanted = Number(config.across);
   const across: 1 | 2 | 3 = wanted === 1 || wanted === 3 ? wanted : 2;
   const editable = config.edit === true && !building && act !== undefined;
+  // The server edits only the fields shown: a hidden one is read, not changed, here.
   const canEdit = (column: string) =>
-    editable && !SYSTEM_COLUMNS.has(column) && !NOT_EDITABLE.has(infoOf(column)?.type ?? "text");
+    editable &&
+    !all.some((field) => field.column === column && field.hidden) &&
+    !SYSTEM_COLUMNS.has(column) &&
+    !NOT_EDITABLE.has(infoOf(column)?.type ?? "text");
   const saveField = async (column: string, value: unknown): Promise<string | undefined> => {
     const outcome = await act?.("config/edit", { record: id, inputs: { [column]: value } });
     if (!outcome || outcome.ok) return undefined;

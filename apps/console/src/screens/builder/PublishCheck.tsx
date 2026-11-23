@@ -10,6 +10,7 @@ import { useGroupKeys } from "./groupKeys.ts";
 import {
   type CheckItem,
   checksFor,
+  inputsNeededOf,
   mostAffectedGroup,
   problemAt,
   problemWords,
@@ -93,6 +94,7 @@ export function PublishCheck({
       queries: loading ? undefined : new Set(catalog.queries.map((query) => query.path)),
       flows: new Set(lists.flows.map((flow) => flow.path)),
       scripts: new Set(lists.scripts.map((script) => script.path)),
+      inputsNeeded: inputsNeededOf(lists.flows, lists.scripts),
       groups: keyed.loaded ? keyed.groups.map((group) => group.key) : undefined,
       approvalFlows: new Map(
         lists.everyFlow.map((flow) => [flow.path, { title: flow.title, asks: flow.asks }]),

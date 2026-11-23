@@ -225,6 +225,10 @@ export function columnsToShow(
   }));
 }
 
+/** Whether clicking the heading sorts the column: unless the maker turned it off, and not for what has no order. */
+export const sortableColumn = (spec: ColumnSpec, info: ColumnInfo | undefined): boolean =>
+  spec.sortable !== false && info?.type !== "json" && info?.type !== "enum_list";
+
 export const isNumeric = (info: ColumnInfo | undefined) =>
   info?.type === "number" || info?.type === "integer";
 

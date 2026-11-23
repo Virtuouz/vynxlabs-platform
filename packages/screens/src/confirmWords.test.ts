@@ -77,3 +77,18 @@ describe("the words of a confirmation", () => {
     expect(nounOf(undefined)).toBe("record");
   });
 });
+
+describe("several records", () => {
+  test("say how many, and do not name the first", () => {
+    const words = confirmWords({
+      label: "Remove",
+      table: "invoices",
+      row: { number: "INV-1" },
+      count: 2,
+    });
+    expect(words.title).toBe("Remove 2 invoices?");
+    expect(confirmWords({ label: "Mark paid", table: "categories", count: 3 }).title).toBe(
+      "Mark paid for 3 categories?",
+    );
+  });
+});

@@ -25,6 +25,15 @@ export function nounOf(table: string | undefined): string {
   return base.endsWith("s") && !base.endsWith("ss") ? base.slice(0, -1) : base;
 }
 
+/** A table's name for several of its rows: `appointments` as "appointments", `category` as "categories". */
+export function nounsOf(table: string | undefined): string {
+  const base = (table?.split("/").pop() ?? "").replace(/_/g, " ").trim();
+  if (base === "") return "records";
+  if (base.endsWith("s") && !base.endsWith("ss")) return base;
+  if (/[^aeiou]y$/.test(base)) return `${base.slice(0, -1)}ies`;
+  return /(s|x|ch|sh)$/.test(base) ? `${base}es` : `${base}s`;
+}
+
 export interface ConfirmFacts {
   /** What the widget read, for a column's type and the name a reference points at. */
   columns?: readonly { name: string; type: string }[] | undefined;
@@ -42,10 +51,13 @@ export interface ConfirmInput {
   table?: string | undefined;
   row?: Row | undefined;
   facts?: ConfirmFacts | undefined;
+  /** How many records the action runs on, when several: none of them stands for the rest. */
+  count?: number | undefined;
 }
 
 /** How the record is told apart, in words: its code, who it is for, and when. */
 function recordWords(input: ConfirmInput): string {
+  if (input.count !== undefined && input.count > 1) return `${input.count} ${nounsOf(input.table)}`;
   const noun = nounOf(input.table);
   const row = input.row;
   if (!row) return `this ${noun}`;

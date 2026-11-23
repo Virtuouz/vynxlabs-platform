@@ -118,7 +118,7 @@ export const table = defineWidget({
             align: { enum: ["auto", "right"] },
             // `fixed` gives the column one width, with long values cut short.
             width: { enum: ["auto", "fixed"] },
-            // Clicking its heading sorts the rows shown (the rows read, in the browser).
+            // Clicking its heading sorts the rows shown (the rows read, in the browser). On unless `false`; never for a json or several-choice column.
             sortable: { type: "boolean" },
             // A total row at the bottom: the sum of the rows shown.
             total: { type: "boolean" },

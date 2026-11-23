@@ -228,7 +228,7 @@ export function FieldsList({
               />
             ) : null}
           </DrawerBlock>
-          {type === "Number" ? (
+          {type === "Number" || type === "Money" ? (
             <NumberFormatRow
               label="Format"
               value={open.format as Parameters<typeof NumberFormatRow>[0]["value"]}
@@ -277,13 +277,15 @@ export function FieldsList({
         <BackHead onBack={() => setEditing(undefined)} title={sectionOpen} kind="Section" />
         <Group label="Section">
           <DrawerBlock>
-            <TextField
-              name={`${env.widget.id}-section-name`}
-              label="Name"
-              required={false}
-              value={sectionOpen}
-              maxLength={60}
-              onChange={(to) => {
+            <SectionName
+              id={`${env.widget.id}-section-name`}
+              name={sectionOpen}
+              others={
+                rows
+                  .map((row) => row.section)
+                  .filter((one) => one && one !== sectionOpen) as string[]
+              }
+              onRename={(to) => {
                 rename(to);
                 // The list is found again by the new name.
                 setEditing(`${SECTION}${to}`);
@@ -407,4 +409,45 @@ export function FieldsList({
 function swap(row: FieldRow, to: string): FieldRow {
   const { section: _before, ...rest } = row;
   return to ? { ...rest, section: to } : rest;
+}
+
+/**
+ * A section's name, held here while it is typed: the section is renamed once what is typed is a
+ * name no other section has. An emptied box, or a name another section holds, writes nothing, so
+ * the fields never lose their section while it is retyped.
+ */
+function SectionName({
+  id,
+  name,
+  others,
+  onRename,
+}: {
+  id: string;
+  name: string;
+  others: readonly string[];
+  onRename: (to: string) => void;
+}) {
+  const [draft, setDraft] = useState(name);
+  const trimmed = draft.trim();
+  const problem =
+    trimmed === ""
+      ? "A section needs a name."
+      : others.includes(trimmed)
+        ? `${trimmed} is another section's name.`
+        : undefined;
+  return (
+    <TextField
+      name={id}
+      label="Name"
+      required={false}
+      value={draft}
+      maxLength={60}
+      {...(problem ? { error: problem } : {})}
+      onChange={(to) => {
+        setDraft(to);
+        const next = to.trim();
+        if (next !== "" && !others.includes(next) && next !== name) onRename(next);
+      }}
+    />
+  );
 }

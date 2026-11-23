@@ -19,15 +19,31 @@ export function afterSaving(submit: Action | undefined): { close: boolean; say: 
   return { close: steps.some((one) => one.do === "close"), say: say?.text ?? "" };
 }
 
-/** The submit with its closing and its notice set; the steps before them are kept. */
+/**
+ * The submit with its closing and its notice set. The steps stay where they are: the close and the
+ * first message are changed or taken away in place; one that is not there yet is added before the
+ * first step that opens a page (so a close never closes the page just opened), else at the end.
+ */
 export function withAfterSaving(
   submit: Action | undefined,
   next: { close: boolean; say: string },
 ): Action {
-  const kept = (submit?.steps ?? []).filter((one) => one.do !== "close" && one.do !== "message");
-  const steps: Step[] = [...kept];
-  if (next.say.trim()) steps.push({ do: "message", text: next.say, tone: "success" });
-  if (next.close) steps.push({ do: "close" });
+  let steps: Step[] = [...(submit?.steps ?? [])];
+  const at = steps.findIndex((one) => one.do === "message");
+  if (!next.say.trim()) {
+    if (at >= 0) steps.splice(at, 1);
+  } else if (at >= 0) {
+    steps[at] = { ...(steps[at] as Extract<Step, { do: "message" }>), text: next.say };
+  }
+  const has = steps.some((one) => one.do === "close");
+  if (!next.close) steps = steps.filter((one) => one.do !== "close");
+  const adding: Step[] = [];
+  if (next.say.trim() && at < 0) adding.push({ do: "message", text: next.say, tone: "success" });
+  if (next.close && !has) adding.push({ do: "close" });
+  if (adding.length > 0) {
+    const open = steps.findIndex((one) => one.do === "open");
+    steps.splice(open >= 0 ? open : steps.length, 0, ...adding);
+  }
   return { ...(submit ?? { steps: [] }), steps };
 }
 

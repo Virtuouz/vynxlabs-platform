@@ -158,12 +158,25 @@ export function seenByTag(
 }
 
 /** A confirmation's text, with `{column}` filled from the record it is about. */
-export function fillText(text: string, row: Row | undefined, label: (column: string) => string) {
-  return text.replace(/\{([a-z][a-z0-9_]*)\}/g, (_all, column: string) => {
+export function fillText(
+  text: string,
+  row: Row | undefined,
+  label: (column: string) => string,
+  /** Several records: no one of them stands for the rest, so what is said of "its" column is left out. */
+  several = false,
+) {
+  const filled = text.replace(/\{([a-z][a-z0-9_]*)\}/g, (_all, column: string) => {
+    if (several) return "";
     const value = row?.[column];
     if (value === undefined || value === null || value === "") return row ? "" : "this record";
     return label(String(value));
   });
+  return several
+    ? filled
+        .replace(/ {2,}/g, " ")
+        .replace(/ +([?.,!:;])/g, "$1")
+        .trim()
+    : filled;
 }
 
 /** What asked fields are, as a form's schema: typed, with the ones that must be given listed. */
@@ -329,7 +342,13 @@ export function useActions(host: ActionsHost): {
           say(step.text, step.tone ?? "success");
         } else if (step.do === "narrow") {
           const value = request.group?.[step.from];
-          values = { ...values, [step.filter]: value ?? null };
+          // A group with no value (rows with none set) gives nothing to narrow by: the page is
+          // left as it is, and it is said, rather than widened.
+          if (value === undefined || value === null) {
+            say("Those rows have no value to narrow the page by.", "info");
+            continue;
+          }
+          values = { ...values, [step.filter]: value };
           now.onFilterValues(values);
         } else if (step.do === "rows") {
           // A clicked point gives its group; a number that isn't broken down (a stat) gives
@@ -340,6 +359,9 @@ export function useActions(host: ActionsHost): {
       }
       const closing = response.message ?? action.done;
       if (!said && closing) say(closing);
+      // Saved, but what it was to start did not start: said apart, in the words of an error.
+      for (const one of response.notStarted ?? [])
+        say(`Saved. The ${one.do} ${one.path} could not be started.`, "danger");
       now.refresh();
       // A script or a workflow is started and not waited for: what it changes is read as it lands.
       if (response.started) {
@@ -436,7 +458,27 @@ export function useActions(host: ActionsHost): {
               held.resolve({ ok: false, cancelled: true });
               setAsking(undefined);
             }}
-            submit={(inputs) => call(held.request, held.action, inputs)}
+            submit={async (inputs) => {
+              // What the form typed goes with what the confirmation asked for.
+              const given = { ...held.request.inputs, ...inputs };
+              try {
+                await call(held.request, held.action, given);
+              } catch (error) {
+                // A refusal of what the form holds is the form's to draw, beside the field.
+                const asked = new Set((held.action.confirm?.ask ?? []).map((one) => one.name));
+                const fields = error instanceof ActionError ? error.fields : undefined;
+                if (
+                  held.request.inputs &&
+                  fields &&
+                  Object.keys(fields).some((name) => !asked.has(name))
+                ) {
+                  held.resolve({ ok: false, message: errorWords(error), fields });
+                  setAsking(undefined);
+                  return;
+                }
+                throw error;
+              }
+            }}
           />
         )}
       </Closing>
@@ -506,6 +548,7 @@ function Confirmation({
   onCancel(): void;
 }) {
   const confirm = asking.action.confirm;
+  const several = (asking.request.records?.length ?? 0) > 1;
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ActionError | Error>();
   const words = confirmWords({
@@ -518,10 +561,11 @@ function Confirmation({
         }
       : undefined,
     table: tableOfWidget(asking.request.widget) ?? asking.request.table,
-    row: asking.request.row,
+    row: several ? undefined : asking.request.row,
     facts: asking.request.facts,
+    count: several ? asking.request.records?.length : undefined,
   });
-  const text = words.text ? fillText(words.text, asking.request.row, label) : undefined;
+  const text = words.text ? fillText(words.text, asking.request.row, label, several) : undefined;
   const ask = confirm?.ask ?? [];
   const go = async (inputs: Record<string, unknown>) => {
     setBusy(true);
@@ -544,7 +588,7 @@ function Confirmation({
     <Dialog
       open={open}
       onClose={() => !busy && onCancel()}
-      title={fillText(words.title, asking.request.row, label)}
+      title={fillText(words.title, asking.request.row, label, several)}
       {...(text ? { description: text } : {})}
     >
       {failure && Object.keys(fields).length === 0 ? (

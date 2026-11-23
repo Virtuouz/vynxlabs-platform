@@ -287,6 +287,31 @@ function bundle(): Bundle {
         nodes: { start: { type: "trigger", trigger: { type: "manual" } } },
         edges: [],
       }),
+      // A flow and a script that refuse an input without `why`, to start from an action.
+      manifest("flow", "flows/strict", {
+        nodes: {
+          start: {
+            type: "trigger",
+            trigger: {
+              type: "manual",
+              input: {
+                type: "object",
+                required: ["why"],
+                properties: { why: { type: "string" } },
+              },
+            },
+          },
+        },
+        edges: [],
+      }),
+      manifest("script", "strict-script", {
+        entry: "strict",
+        input: { type: "object", required: ["why"], properties: { why: { type: "string" } } },
+        output: { type: "object" },
+        timeoutSeconds: 30,
+        retries: { limit: 0, delaySeconds: 0, backoff: false },
+        uses: { connections: [], secrets: [], variables: [] },
+      }),
       manifest("interface", "screens/invoices", screen),
       manifest("dashboard", "boards/by-team", board),
       manifest("app", "billing", { title: "Invoices", interface: "screens/invoices" }),
@@ -802,6 +827,72 @@ describe("a flow", () => {
   });
 });
 
+describe("a flow or script that refuses its input", () => {
+  const rows = async () =>
+    (await alice.get(`${ws()}/rows/invoices?limit=500`)).body.items.length as number;
+  /** A button that makes a row, then starts what `start` says, with nothing to give it. */
+  const trying = async (start: object) => {
+    const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
+      kind: "interface",
+      schemaVersion: 2,
+      body: {
+        ...screen,
+        pages: screen.pages.map((page) =>
+          page.id === "inv"
+            ? {
+                ...page,
+                widgets: [
+                  button("makeandstart", 0, {
+                    steps: [
+                      { do: "update", record: "this", set: { note: { value: "started" } } },
+                      { do: "create", table: "invoices", set: { number: { value: "INV-X" } } },
+                      start,
+                    ],
+                  }),
+                ],
+              }
+            : page,
+        ),
+      },
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+  };
+
+  test("a flow whose input is refused saves nothing, pressed once or twice", async () => {
+    await trying({ do: "flow", path: "flows/strict" });
+    const id = await invoice();
+    const before = await rows();
+    for (const _ of [1, 2]) {
+      const refused = await press(alice, "makeandstart", id, { draft: true });
+      expect(refused.status).toBe(400);
+      expect(JSON.stringify(refused.body)).toContain("does not match what the flow");
+    }
+    expect(await rows()).toBe(before);
+    expect((await rowOf(id)).note ?? null).toBeNull();
+    expect((await alice.get(`${ws()}/flow-runs?flow=flows/strict`)).body.items).toHaveLength(0);
+  });
+
+  test("a script whose input is refused saves nothing", async () => {
+    await trying({ do: "script", path: "strict-script" });
+    const id = await invoice();
+    const before = await rows();
+    const refused = await press(alice, "makeandstart", id, { draft: true });
+    expect(refused.status).toBe(400);
+    expect(await rows()).toBe(before);
+    expect((await rowOf(id)).note ?? null).toBeNull();
+  });
+
+  test("what is given is checked as it will be sent", async () => {
+    await trying({ do: "flow", path: "flows/strict", input: { why: { value: "late" } } });
+    const id = await invoice();
+    const before = await rows();
+    const done = await press(alice, "makeandstart", id, { draft: true });
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect(done.body.started).toBe(1);
+    expect(await rows()).toBe(before + 1);
+  });
+});
+
 describe("a draft", () => {
   const draftOf = (extra: object[]) => ({
     ...screen,
@@ -1107,5 +1198,54 @@ describe("edit in place of a record detail", () => {
     expect(noEdit.status).toBe(404);
     expect((await edit(ivy, await invoice(), {})).status).toBe(400);
     expect((await rowOf(id)).total).toBe(10);
+  });
+});
+
+describe("a detail of the user's own record", () => {
+  beforeAll(async () => {
+    const row = await t.db
+      .selectFrom("resource")
+      .select(["id", "body"])
+      .where("kind", "=", "interface")
+      .where("path", "=", "screens/invoices")
+      .executeTakeFirstOrThrow();
+    const body = row.body as unknown as { pages: { id: string; widgets: object[] }[] };
+    body.pages
+      .find((page) => page.id === "inv")
+      ?.widgets.push({
+        id: "mine",
+        type: "core/detail",
+        at: { x: 0, y: 14, w: 6, h: 6 },
+        data: { record: { source: { own: { table: "invoices", by: "paid_by" } } } },
+        config: {
+          fields: [{ column: "number" }],
+          actions: [
+            {
+              id: "note",
+              label: "Note it",
+              action: {
+                steps: [{ do: "update", record: "event", set: { note: { value: "noted" } } }],
+              },
+            },
+          ],
+        },
+      });
+    await t.db
+      .updateTable("resource")
+      .set({ body: JSON.stringify(body) })
+      .where("id", "=", row.id)
+      .execute();
+  });
+  const note = (id: string) =>
+    act(ivy, { widget: "mine", at: "config/actions/0/action", records: { event: id } });
+
+  test("a button runs on the user's own record, and on no one else's, even one they may read", async () => {
+    const theirs = await invoice({ paid_by: "someone@else.example" });
+    const mine = await invoice({ paid_by: "IVY@customer.example" });
+    expect((await note(theirs)).status).toBe(404);
+    expect((await rowOf(theirs)).note ?? null).toBeNull();
+    const done = await note(mine);
+    expect(done.status, JSON.stringify(done.body)).toBe(200);
+    expect((await rowOf(mine)).note).toBe("noted");
   });
 });

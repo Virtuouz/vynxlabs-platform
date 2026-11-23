@@ -181,6 +181,14 @@ export function compileVisual(
       // Compared as text, so one list serves a column of any kind.
       return `${at.sql}::text = any (${bind(one.value.map(String))}::text[])`;
     }
+    // Not an operator a manifest can write (the schema does not list it): the server's own, for the
+    // row that is the user's own, whose email is the same whatever its capitals.
+    if ((one.op as string) === "ieq") {
+      if (typeof one.value !== "string") {
+        throw new VisualRefused(`${path}/value`, `"ieq" needs text to compare with`);
+      }
+      return `lower(${at.sql}::text) = lower(${bind(one.value)})`;
+    }
     if (one.op === "contains") {
       if (typeof one.value !== "string") {
         throw new VisualRefused(`${path}/value`, `"contains" needs text to look for`);

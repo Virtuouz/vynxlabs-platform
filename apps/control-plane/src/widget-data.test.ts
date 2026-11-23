@@ -1450,6 +1450,16 @@ describe("a record from the row chosen, or the user's own", () => {
     expect(his.body.inputs.record.record).toMatchObject({ amount: 32 });
   });
 
+  test("the user's own row is found whatever the capitals of the email held", async () => {
+    const made = await alice.post(`${ws()}/rows/payments`, {
+      rows: [{ invoice: ids["INV-2"], amount: 33, owner: "Mia.Shouting@Customer.example" }],
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const mia = (await endUser("mia.shouting@customer.example", "finance")).browser;
+    const mine = await asked(mia, onPage("mine_own"), "/api/v1");
+    expect(mine.body.inputs.record.record).toMatchObject({ amount: 33 });
+  });
+
   test("with no row of their own, it is empty and says so", async () => {
     const none = await asked(alice, onPage("mine_own"));
     expect(none.status, JSON.stringify(none.body)).toBe(200);

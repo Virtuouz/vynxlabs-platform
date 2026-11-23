@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Eye, Pencil, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { count } from "../../kit/format.ts";
 import type { Catalog } from "../../kit/inspector/model.ts";
+import { useViewer } from "../../viewer.ts";
 import { pageClient } from "./client.ts";
 import { views } from "./registry.ts";
 import { type FilterValues, PageView } from "./renderer.ts";
@@ -135,6 +136,7 @@ export function SheetPreviewHost({
     if (pick) setChosen(pick.id);
   }, [pick]);
   const sample = useSampleRecords(root, page, catalog, chosen);
+  const viewer = useViewer(root);
   const [values, setValues] = useState<FilterValues>({});
   const named = JSON.stringify(source);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `named` is `source` as one value
@@ -184,6 +186,8 @@ export function SheetPreviewHost({
           record={sample.record}
           pages={pages}
           over
+          foldKey={`sheet.${root}.${page.id}`}
+          {...(viewer ? { user: viewer, groupNames: viewer.groupNames ?? {} } : {})}
         />
       ) : (
         <p className="m-0 text-body-sm text-ink-muted">

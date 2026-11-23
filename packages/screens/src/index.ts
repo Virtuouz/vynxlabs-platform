@@ -15,6 +15,7 @@ export {
   DEFAULT_CONFIRM_TITLE,
   isDefaultTitle,
   nounOf,
+  nounsOf,
 } from "./confirmWords.ts";
 export { Frame, nameOf } from "./Frame.tsx";
 export {

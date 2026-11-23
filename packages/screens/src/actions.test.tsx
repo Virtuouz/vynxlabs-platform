@@ -112,11 +112,15 @@ function TableView(props: WidgetViewProps<Record<string, unknown>> & Extra) {
     </div>
   );
 }
-function PointsView({ data, emit }: WidgetViewProps) {
+function PointsView({ data, emit, title }: WidgetViewProps) {
   return (
     <button
       type="button"
-      onClick={() => emit("pointClick", { group: { status: "open" } })}
+      onClick={() =>
+        emit("pointClick", {
+          group: { status: title === "empty" ? null : "open" },
+        })
+      }
       data-has={data.totals ? "yes" : "no"}
     >
       Point
@@ -224,6 +228,24 @@ describe("confirming an action", () => {
     expect(await screen.findByText("Marked paid.")).toBeTruthy();
     await waitFor(() => expect(client.read.mock.calls.length).toBeGreaterThan(reads));
     await waitFor(() => expect(screen.getByTestId("outcome").textContent).toBe('{"ok":true}'));
+  });
+
+  test("an action saved but not started says so, and the page is read again", async () => {
+    const client = clientOf({
+      client: [],
+      started: 0,
+      notStarted: [{ do: "flow", path: "flows/ping" }],
+    });
+    show([withAction(markPaid)], client);
+    await screen.findByText("INV-1");
+    const reads = client.read.mock.calls.length;
+    fireEvent.click(screen.getByLabelText("Act on INV-1"));
+    await screen.findByText("Mark paid?");
+    fireEvent.click(screen.getByRole("button", { name: "Mark paid" }));
+    expect(
+      await screen.findByText("Saved. The flow flows/ping could not be started."),
+    ).toBeTruthy();
+    await waitFor(() => expect(client.read.mock.calls.length).toBeGreaterThan(reads));
   });
 
   test("Cancel runs nothing and says so to the view", async () => {
@@ -401,6 +423,32 @@ describe("the browser's steps", () => {
       expect(onFilterValues).toHaveBeenCalledWith({ month: "2026-11", status: "open" }),
     );
     expect(client.act).toHaveBeenCalledWith("points", "on/pointClick", { records: {} });
+  });
+
+  test("narrow on a group with no value leaves the page as it is, and says so", async () => {
+    const client = clientOf({ client: [{ do: "narrow", filter: "status", from: "status" }] });
+    const points: PageWidget = {
+      id: "points",
+      type: "test/points",
+      at,
+      title: "empty",
+      data: {
+        totals: {
+          source: {
+            visual: {
+              table: "invoices",
+              measures: [{ fn: "count" }],
+              groupBy: [{ column: "status" }],
+            },
+          },
+        } as never,
+      },
+      on: { pointClick: { steps: [{ do: "narrow", filter: "status", from: "status" }] } },
+    };
+    const { onFilterValues } = show([points], client, {}, { month: "2026-11" });
+    fireEvent.click(await screen.findByText("Point"));
+    expect(await screen.findByText("Those rows have no value to narrow the page by.")).toBeTruthy();
+    expect(onFilterValues).not.toHaveBeenCalled();
   });
 
   test("rows opens a side sheet of the rows behind the group, drawn by the table", async () => {

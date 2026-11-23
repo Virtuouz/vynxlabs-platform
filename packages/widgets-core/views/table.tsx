@@ -6,6 +6,7 @@ import {
   type ColumnSpec,
   cellOf,
   columnsToShow,
+  sortableColumn,
   headingOf,
   isNumeric,
   isRight,
@@ -334,7 +335,9 @@ export function TableView(props: WithSelected<TableConfig>) {
   const pressable = listensTo(props, "rowClick");
   const actions = config.rowActions ?? [];
   const buttons = config.buttons ?? [];
-  const sortable = sort && shown.some(({ spec }) => spec.column === sort.column && spec.sortable);
+  const sortable =
+    sort &&
+    shown.some(({ spec, info }) => spec.column === sort.column && sortableColumn(spec, info));
   // Sorting is of the rows read: the rows shown, in the browser.
   const ordered =
     sortable && !remote ? sortedBy(rows.rows, rows, sort.column, sort.descending) : rows.rows;
@@ -486,7 +489,7 @@ export function TableView(props: WithSelected<TableConfig>) {
               ) : null}
               {shown.map(({ spec, info }) => {
                 const text = headingOf(spec, rows);
-                const sorting = spec.sortable && !building;
+                const sorting = sortableColumn(spec, info) && !building;
                 const on = sorting && sort?.column === spec.column ? sort : undefined;
                 return (
                   <th

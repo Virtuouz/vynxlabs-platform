@@ -111,9 +111,12 @@ describe("a table's columns", () => {
 
   test("clicking a sortable heading sorts the rows shown, then reverses, then clears", () => {
     draw("core/table", {
-      columns: [{ column: "number" }, { column: "total", sortable: true }],
+      columns: [
+        { column: "number", sortable: false },
+        { column: "total", sortable: true },
+      ],
     });
-    // A heading that is not sortable is not a button.
+    // A heading the maker turned off is not a button.
     expect(screen.queryByRole("button", { name: "Sort by Number" })).toBeNull();
     const sort = screen.getByRole("button", { name: /total/i });
     expect(bodyOrder()).toEqual(["INV-9338", "INV-9339", "INV-9340"]);
@@ -126,6 +129,12 @@ describe("a table's columns", () => {
     expect(bodyOrder()).toEqual(["INV-9338", "INV-9340", "INV-9339"]);
     fireEvent.click(sort);
     expect(bodyOrder()).toEqual(["INV-9338", "INV-9339", "INV-9340"]);
+  });
+
+  test("a heading sorts unless it is turned off, and not for a column with no order", () => {
+    draw("core/table", { columns: [{ column: "number" }, { column: "total" }] });
+    expect(screen.getByRole("button", { name: /total/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /number/i })).toBeTruthy();
   });
 
   test("while building, a heading raises the column event and does not sort", () => {

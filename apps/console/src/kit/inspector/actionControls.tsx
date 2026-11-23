@@ -111,6 +111,7 @@ export function actionContext(env: Env): ActionContext {
     eventTable: raisesRecord ? own : undefined,
     defaultRef: raisesRecord || !thisTable ? "event" : "this",
     groupEvent: events.some((one) => one.gives === "group"),
+    rowsEvent: events.some((one) => one.gives === "group") || env.widget.type === "core/stat",
     openAs: kind === "sheet" ? "sheet" : kind === "modal" ? "modal" : "page",
     columnsOf,
   };
@@ -127,10 +128,13 @@ function ValuePicker({
   asked,
   onChange,
   optional,
+  type,
 }: {
   id: string;
   label: string;
   value: ActionValue | undefined;
+  /** The type of the column the value goes into, when it goes into one: what is typed is stored as that. */
+  type?: string | undefined;
   ctx: ActionContext;
   asked: readonly AskedField[];
   /** `undefined` takes the value away: only offered where a value may be left out. */
@@ -164,7 +168,7 @@ function ValuePicker({
           placeholder="Value"
           required={false}
           value={value.value === undefined || value.value === null ? "" : String(value.value)}
-          onChange={(text) => onChange({ value: typedConstant(text) }, `${id}:value`)}
+          onChange={(text) => onChange({ value: typedConstant(text, type) }, `${id}:value`)}
         />
       ) : null}
     </div>
@@ -278,6 +282,7 @@ function FieldSetter({
               value={value}
               ctx={ctx}
               asked={asked}
+              type={columns.find((one) => one.name === name)?.type}
               onChange={(next, key) => next && onChange({ ...set, [name]: next }, key)}
             />
           </ChipEditor>

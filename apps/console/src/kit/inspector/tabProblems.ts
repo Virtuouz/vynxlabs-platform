@@ -30,6 +30,7 @@ import type { Tab, WidgetDefinition } from "@volvel/widgets";
 import {
   actionProblem,
   actionsOf,
+  inputsNeededOf,
   type Known,
   nameAlong,
   problemWords,
@@ -109,6 +110,7 @@ export function actionFix(
       queries: undefined,
       flows: new Set((world.flows ?? []).map((one) => one.path)),
       scripts: new Set((world.scripts ?? []).map((one) => one.path)),
+      inputsNeeded: inputsNeededOf(world.flows, world.scripts),
       groups: undefined,
     },
     (world.pages ?? []).length > 0,
@@ -242,6 +244,7 @@ export function tabProblems(input: TabProblemInput): TabProblem[] {
     queries: undefined,
     flows: new Set((input.flows ?? []).map((one) => one.path)),
     scripts: new Set((input.scripts ?? []).map((one) => one.path)),
+    inputsNeeded: inputsNeededOf(input.flows, input.scripts),
     groups: undefined,
   };
   for (const one of actionsOf(widget)) {

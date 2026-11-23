@@ -1,4 +1,11 @@
 import { imageKind, linkKind, type Node, TERM_RESOURCES, topicOf, walk } from "@volvel/markup";
+import {
+  type DocType,
+  diataxisIssues,
+  effectiveType,
+  folderType,
+  MAX_SUBJECTS,
+} from "./diataxis.js";
 import { type DocEntry, type DocIssue, titleOf } from "./page.js";
 import { ABOUT_KINDS, type AboutKind, type TermDefinition } from "./schema.js";
 
@@ -23,6 +30,8 @@ export interface PageRef {
   url: string;
   title: string;
   description?: string;
+  /** The page's type, when it has one: never for a folder's index. */
+  docType?: DocType;
 }
 
 export interface Folder {
@@ -62,6 +71,12 @@ export interface DocSet {
   attachments: Record<string, string[]>;
   /** A topic of the product's help to the paths of the pages that add notes to it. */
   extensions: Record<string, string[]>;
+  /** A typed page's path to its type: its own, or its folder's. Empty when the site has no types. */
+  types: Record<string, DocType>;
+  /** A subject to the paths of the pages that name it. */
+  subjects: Record<string, string[]>;
+  /** A path a page used to have, to the path it has now. */
+  redirects: Record<string, string>;
 }
 
 export const UNCATEGORIZED = "Uncategorized";
@@ -88,7 +103,7 @@ export function urlOf(path: string): string {
   return path.endsWith("/index") ? path.slice(0, -"/index".length) : path;
 }
 
-function ref(entry: DocEntry): PageRef {
+function ref(entry: DocEntry, docType?: DocType): PageRef {
   const made: PageRef = {
     type: "page",
     path: entry.path,
@@ -96,6 +111,7 @@ function ref(entry: DocEntry): PageRef {
     title: entry.frontmatter.title,
   };
   if (entry.frontmatter.description) made.description = entry.frontmatter.description;
+  if (docType) made.docType = docType;
   return made;
 }
 
@@ -286,6 +302,15 @@ export function buildDocSet(
   const pages = new Map<string, DocEntry>();
   for (const entry of entries) pages.set(entry.path, entry);
 
+  // Types: a page's own, else its folder's. An index is a landing page and has none.
+  const types: Record<string, DocType> = {};
+  const own = (path: string) => pages.get(path)?.frontmatter.type;
+  for (const path of [...pages.keys()].sort()) {
+    const found = effectiveType(path, own);
+    if (found) types[path] = found;
+  }
+  const refOf = (entry: DocEntry) => ref(entry, types[entry.path]);
+
   // Structure.
   const folders = new Set<string>();
   for (const path of pages.keys()) {
@@ -324,7 +349,7 @@ export function buildDocSet(
     if (!here) return [];
     const prefix = folder === "" ? "" : `${folder}/`;
     const items: (PageRef | Folder)[] = [
-      ...here.pages.map(ref),
+      ...here.pages.map(refOf),
       ...[...here.folders].map((name) => folderAt(`${prefix}${name}`)),
     ];
     const index = indexOf(folder);
@@ -355,13 +380,13 @@ export function buildDocSet(
     };
     if (index?.frontmatter.icon) made.icon = index.frontmatter.icon;
     if (index?.frontmatter.description) made.description = index.frontmatter.description;
-    if (index) made.index = ref(index);
+    if (index) made.index = refOf(index);
     return made;
   };
 
   const nav: Nav = { collections: [] };
   const home = pages.get("index");
-  if (home) nav.home = ref(home);
+  if (home) nav.home = refOf(home);
   const top = itemsOf("");
   for (const item of top) if (item.type === "folder") nav.collections.push(item);
   const loose = top.filter((item): item is PageRef => item.type === "page");
@@ -439,8 +464,59 @@ export function buildDocSet(
     }
   }
 
+  // Subjects, and where moved pages used to be.
+  const subjects: Record<string, string[]> = {};
+  const redirects: Record<string, string> = {};
+  for (const entry of byPath) {
+    for (const subject of (entry.frontmatter.subjects ?? []).slice(0, MAX_SUBJECTS)) {
+      subjects[subject] = [...(subjects[subject] ?? []), entry.path];
+    }
+    for (const old of entry.frontmatter.moved_from ?? []) {
+      if (old === entry.path) {
+        error(
+          entry.path,
+          "moved_from_self",
+          `moved_from lists "${old}", which is this page's own path.`,
+        );
+      } else if (pages.has(old)) {
+        error(
+          entry.path,
+          "moved_from_exists",
+          `moved_from lists "${old}", and there is a page at that path. A path that is still a page cannot lead somewhere else: take it out of moved_from, or move that page.`,
+        );
+      } else if (redirects[old] !== undefined) {
+        error(
+          entry.path,
+          "moved_from_duplicate",
+          `moved_from lists "${old}", which ${redirects[old]} also lists. An old path leads to one page.`,
+        );
+      } else redirects[old] = entry.path;
+    }
+  }
+
+  // Types and subjects, said for what they are: warnings.
+  for (const entry of byPath) {
+    issues.push(
+      ...diataxisIssues(entry, {
+        type: types[entry.path],
+        folderTyped: folderType(entry.path, own) !== undefined,
+        subjectUses: (subject) => subjects[subject]?.length ?? 0,
+      }),
+    );
+  }
+
   // Links, pictures and terms, now that every page and topic is known.
-  const set: DocSet = { pages, nav, topics, terms, attachments, extensions };
+  const set: DocSet = {
+    pages,
+    nav,
+    topics,
+    terms,
+    attachments,
+    extensions,
+    types,
+    subjects,
+    redirects,
+  };
   const knownTerms = new Set([
     ...reservedTerms,
     ...(options.knownTerms ?? []),
@@ -526,4 +602,65 @@ export function glossaryOf(set: DocSet, path: string, scope: "collection" | "sit
     (term) =>
       scope === "site" || collection === undefined || term.path.startsWith(`${collection}/`),
   );
+}
+
+/** The most related pages shown of one type. */
+export const RELATED_PER_TYPE = 4;
+
+/**
+ * The pages of other types that are about the same things as a page: those
+ * that share its `subjects`, or the resources it is `about`. For each type,
+ * the pages with the most in common first, then those in the page's own
+ * collection, then in the order of the navigation. An untyped page, and a
+ * folder's index, have none.
+ */
+export function relatedTo(
+  set: Pick<DocSet, "pages" | "nav" | "types">,
+  path: string,
+): Partial<Record<DocType, PageRef[]>> {
+  const mine = set.types[path];
+  const entry = set.pages.get(path);
+  if (!mine || !entry) return {};
+  const keys = (page: DocEntry): Set<string> => {
+    const out = new Set<string>();
+    for (const subject of (page.frontmatter.subjects ?? []).slice(0, MAX_SUBJECTS)) {
+      out.add(`subject:${subject}`);
+    }
+    for (const about of page.frontmatter.about ?? []) {
+      for (const kind of ABOUT_KINDS) {
+        const target = about[kind];
+        if (target !== undefined) out.add(resourceKey(kind, target));
+      }
+    }
+    return out;
+  };
+  const wanted = keys(entry);
+  if (wanted.size === 0) return {};
+  const order = pagesInOrder(set.nav);
+  const place = new Map(order.map((one, at) => [one.path, at] as const));
+  const collection = (at: string) => (at.includes("/") ? (at.split("/")[0] as string) : "");
+  const found: { page: PageRef; shared: number; same: boolean; at: number }[] = [];
+  for (const other of order) {
+    const type = set.types[other.path];
+    if (!type || type === mine || other.path === path) continue;
+    const page = set.pages.get(other.path);
+    if (!page) continue;
+    let shared = 0;
+    for (const key of keys(page)) if (wanted.has(key)) shared++;
+    if (shared === 0) continue;
+    found.push({
+      page: other,
+      shared,
+      same: collection(other.path) === collection(path),
+      at: place.get(other.path) ?? 0,
+    });
+  }
+  found.sort((a, b) => b.shared - a.shared || Number(b.same) - Number(a.same) || a.at - b.at);
+  const out: Partial<Record<DocType, PageRef[]>> = {};
+  for (const { page } of found) {
+    const type = set.types[page.path] as DocType;
+    const list = out[type] ?? [];
+    if (list.length < RELATED_PER_TYPE) out[type] = [...list, page];
+  }
+  return out;
 }

@@ -150,6 +150,7 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .crumbs a { color: inherit; text-decoration: none; }
 .crumbs a:hover { color: var(--vx-ink); }
 .crumbs li + li::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); opacity: 0.7; }
+.eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vx-action); }
 .lead h1 { margin: 0 0 8px; font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; }
 .lead > p { margin: 0; color: var(--vx-ink-muted); font-size: 18px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
@@ -236,6 +237,14 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .card ul { margin: 0 0 16px; padding: 14px 0 0; list-style: none; border-top: 1px solid var(--vx-line); font-size: 14px; }
 .card li a { display: block; padding: 4px 0; color: var(--vx-ink); text-decoration: none; }
 .card li a:hover { color: var(--vx-action); }
+.types, .related { margin-top: 40px; }
+.types h2, .related h2 { margin: 0 0 14px; font-size: 20px; }
+.related { padding-top: 24px; border-top: 1px solid var(--vx-line); }
+.related section { margin-top: 14px; }
+.related h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--vx-ink-muted); }
+.related ul { margin: 0; padding: 0; list-style: none; }
+.related li a { display: block; padding: 4px 0; color: var(--vx-ink); text-decoration: none; }
+.related li a:hover { color: var(--vx-action); }
 .card .more { margin-top: auto; font-size: 13px; font-weight: 500; text-decoration: none; }
 .recent { margin: 0; padding: 0; list-style: none; border: 1px solid var(--vx-line); border-radius: 14px; background: var(--vx-surface); overflow: hidden; }
 .recent li + li { border-top: 1px solid var(--vx-line); }

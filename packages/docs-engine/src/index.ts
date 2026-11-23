@@ -1,5 +1,18 @@
 export { type AmongOptions, checkPageAmong, type PageIndex } from "./among.js";
 export {
+  DIATAXIS_CODES,
+  DOC_TEMPLATES,
+  DOC_TYPE_LABELS,
+  DOC_TYPE_SUMMARIES,
+  DOC_TYPES,
+  type DocType,
+  diataxisIssues,
+  effectiveType,
+  folderType,
+  isDocType,
+  MAX_SUBJECTS,
+} from "./diataxis.js";
+export {
   type Change,
   childrenOf,
   inverseOf,
@@ -68,6 +81,8 @@ export {
   ordered,
   type PageRef,
   pagesInOrder,
+  RELATED_PER_TYPE,
+  relatedTo,
   resolveAsset,
   resolveLink,
   resourceKey,
@@ -103,4 +118,5 @@ export {
   type ResourceLike,
   resourceChecker,
   type WorkspaceOptions,
+  workspaceDocsWarnings,
 } from "./workspace.js";

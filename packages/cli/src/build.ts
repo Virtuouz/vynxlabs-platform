@@ -5,7 +5,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Environment } from "@marcbachmann/cel-js";
 import { ComposeError, composeBundle, coreNodesFor } from "@volvel/compose";
-import { checkWorkspaceDocs } from "@volvel/docs-engine";
+import { checkWorkspaceDocs, workspaceDocsWarnings } from "@volvel/docs-engine";
 import {
   type Bundle,
   type BundleManifest,
@@ -177,6 +177,8 @@ export interface Built {
   bundle: Bundle;
   /** What the build did that whoever builds should know, and that stopped nothing. */
   notes: string[];
+  /** What the documentation could be better at: shown, and never a reason to stop. */
+  warnings: string[];
   /** By checksum. Each is uploaded before the bundle that lists it. */
   files: Map<string, Buffer>;
 }
@@ -315,6 +317,7 @@ export async function buildRepository(given: BuildOptions): Promise<Built> {
       bundle: { ...unsigned, digest: bundleDigest(unsigned) },
       files: built.files,
       notes: resolved.rewritten,
+      warnings: workspaceDocsWarnings(manifests),
     };
   }
   // Console-managed code is compiled and joined on exactly as the control plane does it.
@@ -326,6 +329,7 @@ export async function buildRepository(given: BuildOptions): Promise<Built> {
       bundle: { ...rest, digest: bundleDigest(rest) },
       files: built.files,
       notes: resolved.rewritten,
+      warnings: workspaceDocsWarnings(manifests),
     };
   } catch (error) {
     if (error instanceof ComposeError) {

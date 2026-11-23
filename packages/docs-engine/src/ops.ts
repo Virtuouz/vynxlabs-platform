@@ -1,4 +1,5 @@
 import { linkKind, parse, topicOf, walk } from "@volvel/markup";
+import { DOC_TEMPLATES, type DocType, folderType } from "./diataxis.js";
 import { frontmatterOf, setFrontmatter, splitFrontmatter, titleOf } from "./page.js";
 import { resolveLink } from "./set.js";
 
@@ -117,9 +118,18 @@ export function orderOf(pages: readonly PageSource[], folder: string): string[] 
     .map((one) => one.name);
 }
 
-/** A page's source with a new folder page's frontmatter, and nothing written under it. */
-export function newPageSource(title: string): string {
-  return setFrontmatter("", { title }) ?? `---\ntitle: ${JSON.stringify(title)}\n---\n`;
+/**
+ * A new page's source: its title, and nothing written under it. Given a type,
+ * the page starts from that type's template, with `type:` on it only when the
+ * folder does not already say it (`inherited`).
+ */
+export function newPageSource(title: string, type?: DocType, inherited?: DocType): string {
+  const top = setFrontmatter("", {
+    title,
+    ...(type && type !== inherited ? { type } : {}),
+  });
+  const head = top ?? `---\ntitle: ${JSON.stringify(title)}\n---\n`;
+  return type ? `${head}\n${DOC_TEMPLATES[type]}` : head;
 }
 
 /**
@@ -434,7 +444,7 @@ export function planRename(
 export function planNewPage(
   pages: readonly PageSource[],
   folder: string,
-  next: { title: string; name: string },
+  next: { title: string; name: string; type?: DocType },
 ): Plan {
   if (next.title.trim() === "") return { problem: "A title is needed." };
   const problem = nameProblem(next.name);
@@ -450,7 +460,17 @@ export function planNewPage(
           : `There is already something named ${next.name} here.`,
     };
   }
-  return { changes: [{ path, source: newPageSource(next.title.trim()), created: true }] };
+  const source = newPageSource(
+    next.title.trim(),
+    next.type,
+    next.type
+      ? folderType(
+          path,
+          (at) => frontmatterOf(pages.find((page) => page.path === at)?.source ?? "")?.type,
+        )
+      : undefined,
+  );
+  return { changes: [{ path, source, created: true }] };
 }
 
 /**

@@ -129,6 +129,9 @@ export async function request(
   return { status: response.status, body };
 }
 
+/** What an instance from before types, subjects and moves says of a page that uses them. */
+const OLDER_INSTANCE = /There is no "(type|subjects|moved_from)" (here|in )/;
+
 /** Explains a refused request in the server's own words, including each named problem. */
 export function refusal(reply: ApiReply, doing: string): CliError {
   if (reply.status === 401) {
@@ -138,7 +141,17 @@ export function refusal(reply: ApiReply, doing: string): CliError {
     (problem) => `  - ${problem.message}`,
   );
   const detail = reply.body?.detail ?? `The instance answered ${reply.status}.`;
-  return new CliError([`Could not ${doing}. ${detail}`, ...problems].join("\n"));
+  const lines = [`Could not ${doing}. ${detail}`, ...problems];
+  // An instance from before a page could say these refuses the key, and says it by name.
+  const older = ((reply.body?.errors ?? []) as { message: string }[]).some((problem) =>
+    OLDER_INSTANCE.test(problem.message),
+  );
+  if (older || OLDER_INSTANCE.test(String(detail))) {
+    lines.push(
+      "A page uses a key that this instance may not know: the instance may be older than this CLI. Upgrade the instance, or take type, subjects and moved_from out of the pages' top.",
+    );
+  }
+  return new CliError(lines.join("\n"));
 }
 
 /** `--json` on a command: its one answer is a JSON document on stdout, and no other line is. */
@@ -249,7 +262,9 @@ const buildOptionsOf = (values: { dir?: string; entry?: string; resources?: stri
 async function build(args: string[], io: Io) {
   const { values } = parseArgs({ args, options: placesOption });
   const directory = resolve(values.dir ?? ".");
-  const { bundle } = await buildRepository(buildOptionsOf(values));
+  const built = await buildRepository(buildOptionsOf(values));
+  const { bundle } = built;
+  for (const warning of built.warnings) io.err(`Warning: ${warning}`);
   const file = join(directory, ".platform", "bundle.json");
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(bundle));
@@ -427,6 +442,7 @@ async function deploy(args: string[], io: Io) {
   const message = await messageFor(values.message, resolve(values.dir ?? "."), io.env);
   for (const line of describeBundle(bundle)) say.out(line);
   for (const note of built.notes) say.out(`Note: ${note}`);
+  for (const warning of built.warnings) io.err(`Warning: ${warning}`);
   // The drafts the last pull took into platform/ are deployed with it: the console can let them go.
   const directory = resolve(values.dir ?? ".");
   const pulled = await readPulled(directory);

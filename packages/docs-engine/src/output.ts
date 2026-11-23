@@ -15,11 +15,16 @@ export interface Manifest {
     topic?: string;
     since?: string;
     updated?: string;
+    /** For a typed page: its type, and what it is about. */
+    docType?: string;
+    subjects?: string[];
   }[];
   topics: Record<string, string>;
   terms: Record<string, Term>;
   attachments: Record<string, string[]>;
   extensions: Record<string, string[]>;
+  /** For a site with pages that moved: an old path to the page's path now. */
+  redirects?: Record<string, string>;
   /**
    * The names of the screenshots that were taken for this version. A page that
    * shows one that is not here shows what the picture would have been of.
@@ -54,6 +59,8 @@ export function manifestOf(set: DocSet, version: string): Manifest {
           ...(topic ? { topic } : {}),
           ...(since ? { since } : {}),
           ...(entry.updated ? { updated: entry.updated } : {}),
+          ...(set.types[path] ? { docType: set.types[path] } : {}),
+          ...(entry.frontmatter.subjects?.length ? { subjects: entry.frontmatter.subjects } : {}),
         },
       ];
     }),
@@ -61,6 +68,7 @@ export function manifestOf(set: DocSet, version: string): Manifest {
     terms: set.terms,
     attachments: set.attachments,
     extensions: set.extensions,
+    ...(Object.keys(set.redirects).length > 0 ? { redirects: set.redirects } : {}),
   };
 }
 

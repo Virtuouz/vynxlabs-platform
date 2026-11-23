@@ -1254,16 +1254,26 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       }
       return redirect(reply, `${at.base}${urlOf(page)}#feedback`);
     }
-    const asked = request.query as { q?: unknown; in?: unknown } | undefined;
+    const asked = request.query as { q?: unknown; in?: unknown; type?: unknown } | undefined;
     const query = String(asked?.q ?? "").slice(0, 200);
     if (at.file === "_search") {
-      return send(200, searchPage(drawn, query, docs.search.search(query, 30)));
+      const type = typeof asked?.type === "string" ? asked.type.slice(0, 40) : undefined;
+      return send(
+        200,
+        searchPage(drawn, query, docs.search.search(query, 30, type ? { type } : {})),
+      );
     }
     if (at.file === "_search.json") {
       const collection = typeof asked?.in === "string" ? asked.in.slice(0, 255) : undefined;
       return sendJson(
         reply,
-        searchAnswer(drawn, docs.search.grouped(query, collection ? { collection } : {})),
+        searchAnswer(
+          drawn,
+          docs.search.grouped(query, {
+            ...(collection ? { collection } : {}),
+            ...(typeof asked?.type === "string" ? { type: asked.type.slice(0, 40) } : {}),
+          }),
+        ),
       );
     }
     const markdown = pageMarkdown(docs.built.set, at.file, (page) =>
@@ -1362,15 +1372,24 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
         .header("referrer-policy", "same-origin")
         .header("cache-control", "no-store")
         .send(body);
-    const asked = request.query as { q?: unknown; in?: unknown } | undefined;
+    const asked = request.query as { q?: unknown; in?: unknown; type?: unknown } | undefined;
     const query = String(asked?.q ?? "").slice(0, 200);
     if (file === "_search" || file === "_search.json") {
       const index = loadSearchIndex(buildSearchIndex(set));
-      if (file === "_search") return send(200, searchPage(drawn, query, index.search(query, 30)));
+      const type = typeof asked?.type === "string" ? asked.type.slice(0, 40) : undefined;
+      if (file === "_search") {
+        return send(200, searchPage(drawn, query, index.search(query, 30, type ? { type } : {})));
+      }
       const collection = typeof asked?.in === "string" ? asked.in.slice(0, 255) : undefined;
       return sendJson(
         reply,
-        searchAnswer(drawn, index.grouped(query, collection ? { collection } : {})),
+        searchAnswer(
+          drawn,
+          index.grouped(query, {
+            ...(collection ? { collection } : {}),
+            ...(type ? { type } : {}),
+          }),
+        ),
         true,
       );
     }

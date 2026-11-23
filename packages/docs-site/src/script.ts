@@ -216,7 +216,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
   // Search, as it is typed, in a dialog.
   const triggers = [...document.querySelectorAll("[data-search]")];
   if (triggers.length === 0 || typeof HTMLDialogElement === "undefined") return;
-  let dialog, input, list, note, count, chips, active = -1, scope = data.collection || "", timer, asking;
+  let dialog, input, list, note, count, chips, active = -1, scope = data.collection || "", kind = "", timer, asking;
   const items = () => [...list.querySelectorAll("a")];
   const activate = (index) => {
     const all = items();
@@ -279,7 +279,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
     active = -1;
     input.removeAttribute("aria-activedescendant");
     input.setAttribute("aria-expanded", "false");
-    say("The search did not answer.", make("a", { href: base + "_search?q=" + encodeURIComponent(asked) + (scope ? "&in=" + encodeURIComponent(scope) : ""), text: "Open the full results" }));
+    say("The search did not answer.", make("a", { href: base + "_search?q=" + encodeURIComponent(asked) + (scope ? "&in=" + encodeURIComponent(scope) : "") + (kind ? "&type=" + encodeURIComponent(kind) : ""), text: "Open the full results" }));
   };
   const ask = () => {
     const asked = input.value.trim();
@@ -289,7 +289,7 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
       if (asking) asking.abort();
       asking = new AbortController();
       try {
-        const address = base + "_search.json?q=" + encodeURIComponent(asked) + (scope ? "&in=" + encodeURIComponent(scope) : "");
+        const address = base + "_search.json?q=" + encodeURIComponent(asked) + (scope ? "&in=" + encodeURIComponent(scope) : "") + (kind ? "&type=" + encodeURIComponent(kind) : "");
         const answer = await fetch(address, { signal: asking.signal, credentials: "same-origin" });
         if (!answer.ok) { if (input.value.trim() === asked) failed(asked); return; }
         const found = await answer.json();
@@ -321,10 +321,25 @@ export const DOCS_SCRIPT = `${ENHANCE_SCRIPT}
         chips.append(chip);
       }
     }
+    // A site with typed pages can be searched by what the reader is doing.
+    const kinds = make("div", { class: "chips", role: "group", "aria-label": "Kind of page" });
+    if ((data.types || []).length > 0) {
+      for (const one of [{ id: "", title: "Any kind" }, ...data.types]) {
+        const chip = make("button", { type: "button", text: one.title, "aria-pressed": String(one.id === kind) });
+        chip.addEventListener("click", () => {
+          kind = one.id;
+          for (const other of kinds.children) other.setAttribute("aria-pressed", String(other === chip));
+          ask();
+          input.focus();
+        });
+        kinds.append(chip);
+      }
+    }
     const key = (text) => make("kbd", { class: "key", text });
     dialog = make("dialog", { class: "finder", "aria-label": "Search" }, [
       make("div", { class: "bar" }, [make("span", { "aria-hidden": "true", text: "\\u2315" }), input, close]),
       chips.children.length > 0 ? chips : null,
+      kinds.children.length > 0 ? kinds : null,
       make("div", { class: "results" }, [list, note]),
       make("div", { class: "keys" }, [
         make("span", {}, [key("\\u2191"), key("\\u2193"), document.createTextNode(" Move")]),

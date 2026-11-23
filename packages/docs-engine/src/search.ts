@@ -17,6 +17,8 @@ interface Indexed {
   description: string;
   /** The page's top-level folder: what search can be narrowed to. Empty for a page in none. */
   collection: string;
+  /** The page's type, stored and never searched. Empty for a page with none. */
+  docType: string;
   headings: string;
   /** For a section: its heading, and what a link to it ends in. */
   heading: string;
@@ -54,6 +56,8 @@ export interface PageHit {
   title: Marked;
   description: string;
   collection: string;
+  /** The page's type, when it has one. */
+  docType?: string;
   places: PlaceHit[];
 }
 
@@ -66,6 +70,7 @@ const OPTIONS = {
     "title",
     "description",
     "collection",
+    "docType",
     "heading",
     "anchor",
     "text",
@@ -119,6 +124,7 @@ export function buildSearchIndex(set: DocSet, options: { productName?: string } 
       title: entry.frontmatter.title,
       description: entry.frontmatter.description ?? "",
       collection,
+      docType: set.types[path] ?? "",
     };
     const parts = sections(entry.tree);
     index.add({
@@ -208,18 +214,25 @@ export function mark(text: string, terms: readonly string[]): Marked {
 /** Reads an index back, to ask it questions. */
 export function loadSearchIndex(json: string): {
   /** Pages, best first: for a page of results. */
-  search(query: string, limit?: number): SearchHit[];
+  search(query: string, limit?: number, options?: { type?: string }): SearchHit[];
   /** Pages, best first, each with the places on it: for results as they are typed. */
-  grouped(query: string, options?: { collection?: string; limit?: number }): PageHit[];
+  grouped(
+    query: string,
+    options?: { collection?: string; type?: string; limit?: number },
+  ): PageHit[];
 } {
   const index = MiniSearch.loadJSON<Indexed>(json, OPTIONS);
   return {
-    search(query, limit = 20) {
+    search(query, limit = 20, options = {}) {
       if (query.trim() === "") return [];
       return (
         index
           // An index built before sections were indexed holds pages alone, and says no kind.
-          .search(query, { filter: (hit) => hit.kind !== "section" })
+          .search(query, {
+            filter: (hit) =>
+              hit.kind !== "section" &&
+              (options.type === undefined || hit.docType === options.type),
+          })
           .slice(0, limit)
           .map((hit) => ({
             path: hit.path as string,
@@ -235,8 +248,12 @@ export function loadSearchIndex(json: string): {
       if (asked === "") return [];
       const words = asked.split(/\s+/);
       const found = index.search(asked, {
-        ...(options.collection !== undefined
-          ? { filter: (hit) => hit.collection === options.collection }
+        ...(options.collection !== undefined || options.type !== undefined
+          ? {
+              filter: (hit) =>
+                (options.collection === undefined || hit.collection === options.collection) &&
+                (options.type === undefined || hit.docType === options.type),
+            }
           : {}),
       });
       const pages = new Map<string, PageHit>();
@@ -254,6 +271,7 @@ export function loadSearchIndex(json: string): {
             title: mark(String(own?.title ?? ""), terms),
             description: String(own?.description ?? ""),
             collection: hit.collection as string,
+            ...(hit.docType ? { docType: hit.docType as string } : {}),
             places: [],
           };
           pages.set(path, page);

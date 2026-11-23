@@ -521,6 +521,29 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           indexes?: string[][];
         };
         const schema = workspaceSchema(params.w);
+        // A retired table has no definition, but the indexes the platform made on it are still
+        // there. They are read from where they are, so that bringing the table back keeps them.
+        if (!resource && table.status === "retired") {
+          const kept = await sql<{ columns: string[] }>`
+            select array_agg(a.attname::text order by k.ord) as columns
+            from pg_index i
+            join pg_class c on c.oid = i.indrelid
+            join pg_class ic on ic.oid = i.indexrelid
+            join pg_namespace n on n.oid = c.relnamespace
+            cross join lateral unnest(i.indkey) with ordinality as k(attnum, ord)
+            join pg_attribute a on a.attrelid = c.oid and a.attnum = k.attnum
+            where n.nspname = ${schema} and c.relname = ${table.physicalName}
+              and ic.relname like 'ix\\_%'
+            group by ic.relname
+            order by ic.relname
+          `.execute(data);
+          const names = new Map(table.columns.map((column) => [column.physicalName, column]));
+          const found = kept.rows
+            .map((row) => row.columns.map((physical) => names.get(physical)))
+            .filter((list) => list.every((column) => column?.status === "active"))
+            .map((list) => list.map((column) => (column as { name: string }).name));
+          if (found.length > 0) defined.indexes = found;
+        }
         const count = await sql<{
           n: string;
         }>`select count(*) as n from ${sql.id(schema, table.physicalName)}`.execute(data);

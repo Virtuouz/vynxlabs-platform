@@ -1,4 +1,4 @@
-import { DOC_CSS, type Root } from "@volvel/markup";
+import { DOC_CSS, DOC_DARK_CSS, highlightCode, type Root } from "@volvel/markup";
 import { type Components, type ReactOptions, renderReact } from "@volvel/markup/react";
 import { CircleCheck, Info, OctagonAlert, TriangleAlert } from "lucide-react";
 import { type ReactNode, useMemo, useRef, useState } from "react";
@@ -154,6 +154,7 @@ export function Doc({ tree, more, asServed, components, ...rest }: DocProps) {
   const drawn = useMemo(() => {
     if (asServed) {
       return renderReact(tree, {
+        highlight: highlightCode,
         ...options,
         components: { ...servedComponents(more), ...components },
       });
@@ -180,6 +181,7 @@ export function Doc({ tree, more, asServed, components, ...rest }: DocProps) {
       );
     };
     return renderReact(tree, {
+      highlight: highlightCode,
       ...options,
       components: { ...KIT, term: drawTerm, ...components },
     });
@@ -187,7 +189,7 @@ export function Doc({ tree, more, asServed, components, ...rest }: DocProps) {
   return (
     <div className={asServed ? "vd-doc vd-served" : "vd-doc"}>
       <style href="volvel-doc" precedence="default">
-        {DOC_CSS + THEMED}
+        {DOC_CSS + DOC_DARK_CSS + THEMED}
       </style>
       {drawn}
     </div>

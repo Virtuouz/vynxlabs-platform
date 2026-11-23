@@ -8,7 +8,9 @@ import {
   COMPONENTS,
   containersAt,
   DOC_CSS,
+  DOC_DARK_CSS,
   ENHANCE_SCRIPT,
+  highlightCode,
   linkKind,
   type Node,
   PROFILES,
@@ -644,5 +646,102 @@ describe("a glossary and a diagram", () => {
     expect(html).toBe(
       '<figure class="vd-mermaid" data-vd-mermaid="1"><pre class="vd-mermaid-source"><code class="language-mermaid">graph TD\n  A --&gt; B</code></pre></figure>',
     );
+  });
+});
+
+describe("the product's own pages", () => {
+  test("may list a folder and a glossary", () => {
+    const source = "::pages\n\n::glossary{scope=site}\n";
+    expect(validate(parse(source), "product", { source })).toEqual([]);
+    const html = renderHtml(parse(source), {
+      profile: "product",
+      folder: () => [{ title: "Errors", href: "errors", description: "What went wrong." }],
+      glossary: () => [
+        { id: "rma", term: "RMA", short: "A return.", href: "rma", page: "Returns" },
+      ],
+    });
+    expect(html).toContain("Errors");
+    expect(html).toContain("A return.");
+  });
+
+  test("show a picture that is a file beside the page, through the resolver that serves it", () => {
+    const html = renderHtml(parse("![Tables](./tables.png)\n"), {
+      profile: "product",
+      image: (src) => `/docs/_assets/${src.replace("./", "")}`,
+    });
+    expect(html).toContain('src="/docs/_assets/tables.png"');
+  });
+});
+
+describe("highlighted code", () => {
+  const source = "```ts\nconst a = 'x'; // note\n```\n";
+
+  test("is code as it was without a highlighter", () => {
+    expect(renderHtml(parse(source))).toBe(
+      '<pre data-lang="ts"><code class="language-ts">const a = \'x\'; // note</code></pre>'.replace(
+        /'/g,
+        "&#x27;",
+      ),
+    );
+  });
+
+  test("is drawn as the highlighter gives it, in classes and never in styles", () => {
+    const html = renderHtml(parse(source), { highlight: highlightCode });
+    expect(html).toContain('<span class="hljs-keyword">const</span>');
+    expect(html).toContain('<span class="hljs-string">&#x27;x&#x27;</span>');
+    expect(html).toContain('<span class="hljs-comment">// note</span>');
+    expect(html).toContain('class="language-ts"');
+    expect(html).not.toContain("style=");
+  });
+
+  test("keeps every character of the code, and escapes it", () => {
+    const code = 'if (a < b && c) { return "</code><script>"; }';
+    const html = renderHtml(parse(`\`\`\`js\n${code}\n\`\`\`\n`), { highlight: highlightCode });
+    expect(html).not.toContain("<script>");
+    expect(
+      html
+        .replace(/<[^>]+>/g, "")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, "&"),
+    ).toContain(code);
+  });
+
+  test("leaves a language it does not know, and a diagram, as they were", () => {
+    const plain = renderHtml(parse("```cobol\nMOVE 1 TO A\n```\n"), { highlight: highlightCode });
+    expect(plain).toBe(renderHtml(parse("```cobol\nMOVE 1 TO A\n```\n")));
+    const diagram = "```mermaid\ngraph TD; A-->B\n```\n";
+    expect(renderHtml(parse(diagram), { highlight: highlightCode })).toBe(
+      renderHtml(parse(diagram)),
+    );
+  });
+
+  test("is the same in HTML and in React", () => {
+    const tree = parse(source);
+    const html = renderHtml(tree, { highlight: highlightCode });
+    const react = renderToStaticMarkup(
+      renderReact(tree, { highlight: highlightCode }) as ReactElement,
+    );
+    expect(react).toContain('<span class="hljs-keyword">const</span>');
+    expect(react).toContain('<span class="hljs-comment">// note</span>');
+    expect(html).toContain('<span class="hljs-comment">// note</span>');
+  });
+
+  test("covers the languages the documentation is written in", () => {
+    const spans = (lang: string, code: string) =>
+      renderHtml(parse(`\`\`\`${lang}\n${code}\n\`\`\`\n`), { highlight: highlightCode });
+    expect(spans("yaml", "name: fern # x\nitems:\n  - 1")).toContain('hljs-attr">name');
+    expect(spans("json", '{"a": [1, true, null]}')).toContain('hljs-number">1');
+    expect(spans("sh", "pnpm add x # run\necho $HOME")).toContain('hljs-comment"># run');
+    expect(spans("tsx", "export const A = () => <b>1</b>;")).toContain('hljs-keyword">export');
+  });
+
+  test("has a light and a dark style, classes only, for the page and the help to share", () => {
+    expect(DOC_CSS).toMatch(/\.vd-doc \.hljs-keyword/);
+    expect(DOC_CSS).toMatch(/\.vd-doc \.hljs-string/);
+    expect(DOC_DARK_CSS).toMatch(/--vd-tok-keyword/);
+    expect(DOC_DARK_CSS).toContain('[data-theme="dark"]');
+    expect(DOC_DARK_CSS).not.toMatch(/url\(|@import/);
   });
 });

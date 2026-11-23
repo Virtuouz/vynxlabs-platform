@@ -271,7 +271,7 @@ export const COMPONENTS: readonly ComponentSpec[] = [
       },
       additionalProperties: false,
     },
-    profiles: ["docs"],
+    profiles: ["product", "docs"],
   },
   {
     name: "pages",
@@ -282,7 +282,7 @@ export const COMPONENTS: readonly ComponentSpec[] = [
       "The pages and folders of the folder this page is in, each with what it is for. A folder's own page with nothing written in it shows this.",
     label: "none",
     props: { type: "object", properties: {}, additionalProperties: false },
-    profiles: ["docs"],
+    profiles: ["product", "docs"],
   },
 ];
 

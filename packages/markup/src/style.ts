@@ -381,4 +381,29 @@ export const DOC_CSS = `
 @media (prefers-reduced-motion: reduce) {
   .vd-doc *, .vd-doc *::before, .vd-doc *::after { transition-duration: 0.01ms !important; }
 }
+/* Highlighted code: classes drawn by the server, colored here. Light values; DOC_DARK_CSS has the dark ones. */
+.vd-doc .hljs-keyword, .vd-doc .hljs-literal { color: var(--vd-tok-keyword, #a21caf); }
+.vd-doc .hljs-literal { color: var(--vd-tok-literal, #0e7490); }
+.vd-doc .hljs-string { color: var(--vd-tok-string, #15803d); }
+.vd-doc .hljs-number { color: var(--vd-tok-number, #9a3412); }
+.vd-doc .hljs-comment { color: var(--vd-tok-comment, #5c5c5c); font-style: italic; }
+.vd-doc .hljs-attr, .vd-doc .hljs-property { color: var(--vd-tok-attr, #1d4ed8); }
+.vd-doc .hljs-built_in, .vd-doc .hljs-variable { color: var(--vd-tok-name, #0e7490); }
+`;
+
+/**
+ * The colors of highlighted code on a dark page. Not part of `DOC_CSS`, which styles only what is inside a page:
+ * this one says when the page is dark, as the theme's own tokens do (the system, unless `data-theme` says otherwise).
+ */
+export const DOC_DARK_CSS = `
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .vd-doc {
+    --vd-tok-keyword: #e879f9; --vd-tok-literal: #67e8f9; --vd-tok-string: #86efac;
+    --vd-tok-number: #fdba74; --vd-tok-comment: #a3a3a3; --vd-tok-attr: #93c5fd; --vd-tok-name: #67e8f9;
+  }
+}
+:root[data-theme="dark"] .vd-doc {
+  --vd-tok-keyword: #e879f9; --vd-tok-literal: #67e8f9; --vd-tok-string: #86efac;
+  --vd-tok-number: #fdba74; --vd-tok-comment: #a3a3a3; --vd-tok-attr: #93c5fd; --vd-tok-name: #67e8f9;
+}
 `;

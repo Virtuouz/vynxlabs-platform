@@ -382,14 +382,19 @@ export const DOC_CSS = `
 @media (prefers-reduced-motion: reduce) {
   .vd-doc *, .vd-doc *::before, .vd-doc *::after { transition-duration: 0.01ms !important; }
 }
-/* Highlighted code: classes drawn by the server, colored here. Light values; DOC_DARK_CSS has the dark ones. */
-.vd-doc .hljs-keyword, .vd-doc .hljs-literal { color: var(--vd-tok-keyword, #a21caf); }
-.vd-doc .hljs-literal { color: var(--vd-tok-literal, #0e7490); }
-.vd-doc .hljs-string { color: var(--vd-tok-string, #15803d); }
-.vd-doc .hljs-number { color: var(--vd-tok-number, #9a3412); }
-.vd-doc .hljs-comment { color: var(--vd-tok-comment, #5c5c5c); font-style: italic; }
-.vd-doc .hljs-attr, .vd-doc .hljs-property { color: var(--vd-tok-attr, #1d4ed8); }
-.vd-doc .hljs-built_in, .vd-doc .hljs-variable { color: var(--vd-tok-name, #0e7490); }
+/* Highlighted code: Prism's classes, drawn by the server, colored here. Light values; DOC_DARK_CSS has the dark ones. */
+.vd-doc .token.keyword, .vd-doc .token.atrule, .vd-doc .token.important { color: var(--vd-tok-keyword, #a21caf); }
+.vd-doc .token.boolean, .vd-doc .token.constant, .vd-doc .token.symbol { color: var(--vd-tok-literal, #0e7490); }
+.vd-doc .token.string, .vd-doc .token.char, .vd-doc .token.attr-value, .vd-doc .token.inserted, .vd-doc .token.regex { color: var(--vd-tok-string, #15803d); }
+.vd-doc .token.number, .vd-doc .token.unit, .vd-doc .token.hexcode { color: var(--vd-tok-number, #9a3412); }
+.vd-doc .token.comment, .vd-doc .token.prolog, .vd-doc .token.doctype, .vd-doc .token.cdata { color: var(--vd-tok-comment, #5c5c5c); font-style: italic; }
+.vd-doc .token.property, .vd-doc .token.attr-name, .vd-doc .token.key, .vd-doc .token.selector, .vd-doc .token.tag { color: var(--vd-tok-attr, #1d4ed8); }
+.vd-doc .token.function, .vd-doc .token.class-name, .vd-doc .token.builtin, .vd-doc .token.variable, .vd-doc .token.title { color: var(--vd-tok-name, #0e7490); }
+.vd-doc .token.deleted { color: var(--vd-tok-deleted, #b91c1c); }
+.vd-doc .token.bold, .vd-doc .token.title { font-weight: 600; }
+.vd-doc .token.italic { font-style: italic; }
+.vd-doc .token.operator, .vd-doc .token.punctuation { color: inherit; }
+.vd-doc pre code mark.vd-line-mark { display: inline-block; min-width: 100%; color: inherit; background: color-mix(in srgb, var(--vd-tok-attr, #1d4ed8) 14%, transparent); box-shadow: inset 2px 0 0 var(--vd-tok-attr, #1d4ed8); }
 `;
 
 /**
@@ -402,13 +407,13 @@ export const DOC_DARK_CSS = `
   :root:not([data-theme="light"]) .vd-doc .vd-screenshot .vd-shot-light:has(+ .vd-shot-dark) { display: none; }
   :root:not([data-theme="light"]) .vd-doc {
     --vd-tok-keyword: #e879f9; --vd-tok-literal: #67e8f9; --vd-tok-string: #86efac;
-    --vd-tok-number: #fdba74; --vd-tok-comment: #a3a3a3; --vd-tok-attr: #93c5fd; --vd-tok-name: #67e8f9;
+    --vd-tok-number: #fdba74; --vd-tok-comment: #a3a3a3; --vd-tok-attr: #93c5fd; --vd-tok-name: #67e8f9; --vd-tok-deleted: #fca5a5;
   }
 }
 :root[data-theme="dark"] .vd-doc .vd-screenshot .vd-shot-dark { display: block; }
 :root[data-theme="dark"] .vd-doc .vd-screenshot .vd-shot-light:has(+ .vd-shot-dark) { display: none; }
 :root[data-theme="dark"] .vd-doc {
   --vd-tok-keyword: #e879f9; --vd-tok-literal: #67e8f9; --vd-tok-string: #86efac;
-  --vd-tok-number: #fdba74; --vd-tok-comment: #a3a3a3; --vd-tok-attr: #93c5fd; --vd-tok-name: #67e8f9;
+  --vd-tok-number: #fdba74; --vd-tok-comment: #a3a3a3; --vd-tok-attr: #93c5fd; --vd-tok-name: #67e8f9; --vd-tok-deleted: #fca5a5;
 }
 `;

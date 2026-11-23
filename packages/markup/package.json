@@ -4,7 +4,10 @@
   "type": "module",
   "description": "One page of documentation: Markdown to a checked tree, drawn as React, HTML or plain text. Nothing in it runs as code.",
   "license": "Apache-2.0",
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/prism.js",
+    "./dist/prism-manual.js"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

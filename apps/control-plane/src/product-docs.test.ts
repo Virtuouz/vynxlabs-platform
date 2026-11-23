@@ -97,7 +97,7 @@ describe("the product's documentation at /docs", () => {
     expect(page.body).toContain("The first page");
     expect(page.body).toContain("zebra crossing");
     // Highlighted by classes, not styles; the instance's version is at the foot of the navigation.
-    expect(page.body).toContain("hljs-");
+    expect(page.body).toContain("token keyword");
     expect(page.body).toContain("Version 4.5.6");
     expect((await get(t, "/docs")).statusCode).toBe(308);
     expect((await get(t, "/docs")).headers.location).toBe("/docs/");

@@ -322,28 +322,30 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspace.id,
           rows.map((row) => row.key),
         );
+        // What runs is found by the resource's key, which a rename does not change, so a draft
+        // at a new path is described against the resource it moves, not as a new one.
         const deployed = new Map(
           rows.length === 0
             ? []
             : (
                 await db
                   .selectFrom("resource")
-                  .select(["path", "body"])
+                  .select(["key", "body"])
                   .where("workspace_id", "=", workspace.id)
                   .where(
-                    "path",
+                    "key",
                     "in",
-                    rows.map((row) => row.path),
+                    rows.map((row) => row.key),
                   )
                   .execute()
-              ).map((row) => [row.path, row.body as Record<string, unknown>]),
+              ).map((row) => [row.key, row.body as Record<string, unknown>]),
         );
         return {
           items: rows.map((row) => ({
             ...summarize(row, owned.get(row.key)),
             about: describeChange(
               row.kind,
-              deployed.get(row.path),
+              deployed.get(row.key),
               row.deleted ? undefined : (row.body as Record<string, unknown>),
             ),
           })),

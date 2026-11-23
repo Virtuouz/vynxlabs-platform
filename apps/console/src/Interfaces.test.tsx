@@ -261,7 +261,10 @@ test("widgets are added and removed, and what is wrong is said before anything c
   expect(await screen.findByText("No app serves this yet, so nobody can open it.")).toBeTruthy();
 
   const addChart = async () => {
-    fireEvent.click(screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement);
+    // A person's click puts focus on the button: the dialog gives it back to that button when it closes.
+    const opener = screen.getAllByRole("button", { name: "Add to page" })[0] as HTMLElement;
+    opener.focus();
+    fireEvent.click(opener);
     const dialog = within(await screen.findByRole("dialog", { name: "Add to page" }));
     fireEvent.click(dialog.getByRole("button", { name: /Chart/ }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -372,8 +375,8 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
     200,
     {
       items: [
-        { id: "r1", name: "portal_reader" },
-        { id: "r2", name: "portal_user" },
+        { id: "r1", name: "portal_reader", builtin: true },
+        { id: "r2", name: "portal_user", builtin: true },
       ],
     },
   ];
@@ -388,6 +391,7 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
         principalType: made.principalType,
         principalId: made.principalId ?? null,
         principalLabel: "finance",
+        roleId: "r1",
         roleName: "portal_reader",
         managedByResource: false,
       },

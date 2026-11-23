@@ -400,12 +400,12 @@ export function Domains({ base }: { base: string }) {
                     href={row.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="font-medium break-all text-action"
+                    className="font-medium break-words text-action"
                   >
                     {row.hostname}
                   </a>
                 ) : (
-                  <span className="font-medium break-all">{row.hostname}</span>
+                  <span className="font-medium break-words">{row.hostname}</span>
                 ),
             },
             {

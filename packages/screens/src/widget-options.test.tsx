@@ -377,7 +377,7 @@ describe("record detail options", () => {
   test("edit: a click opens an editor, Enter saves through config/edit, Escape cancels", async () => {
     const client = clientOf({ record });
     render(<Page client={client} widgets={[detail({ edit: true })]} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Edit Total" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit Total/ }));
     const field = (await screen.findByLabelText("Total")) as HTMLInputElement;
     expect(field.type).toBe("number");
     fireEvent.change(field, { target: { value: "20" } });
@@ -389,7 +389,7 @@ describe("record detail options", () => {
     // The edited record is `this`, never an `event`, whatever the detail's record came from.
     expect(JSON.stringify(call[2])).toContain('"records":{"this":"a"}');
     // Escape leaves without saving.
-    fireEvent.click(await screen.findByRole("button", { name: "Edit Note" }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Edit Note/ }));
     const note = await screen.findByLabelText("Note");
     fireEvent.keyDown(note, { key: "Escape" });
     await waitFor(() => expect(screen.queryByLabelText("Note")).toBeNull());
@@ -399,6 +399,6 @@ describe("record detail options", () => {
   test("without edit a field is not pressable", async () => {
     render(<Page client={clientOf({ record })} widgets={[detail({})]} />);
     await screen.findByRole("heading", { name: /INV-1/ });
-    expect(screen.queryByRole("button", { name: "Edit Total" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Edit Total/ })).toBeNull();
   });
 });

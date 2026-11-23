@@ -162,7 +162,7 @@ describe("money edited in place in a detail", () => {
         act={act}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Edit Total" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit Total/ }));
     const box = screen.getByLabelText("Total") as HTMLInputElement;
     expect(box.value).toBe("65.00");
     fireEvent.change(box, { target: { value: "123.45" } });
@@ -190,7 +190,7 @@ describe("money edited in place in a detail", () => {
         act={act}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Edit Total" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit Total/ }));
     const box = screen.getByLabelText("Total") as HTMLInputElement;
     fireEvent.change(box, { target: { value: "1.234" } });
     fireEvent.keyDown(box, { key: "Enter" });

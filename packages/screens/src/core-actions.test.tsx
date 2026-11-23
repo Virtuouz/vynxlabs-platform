@@ -259,8 +259,31 @@ describe("record detail", () => {
       />,
     );
     await screen.findByText("+ Show another field (1 hidden)");
-    expect(screen.getByRole("button", { name: "Edit Total" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Edit Internal code" })).toBeNull();
+    expect(screen.getByRole("button", { name: /^Edit Total/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Edit Internal code/ })).toBeNull();
+  });
+
+  test("an editable field is a button inside its value, named by its label and value (WID-31)", async () => {
+    const act = vi.fn(async () => ({ ok: true as const }));
+    render(
+      <Page
+        client={clientOf({ record: recordInput })}
+        widgets={[
+          widgetOf({
+            type: "core/detail",
+            data: { record: { source: { visual: { table: "invoices" } } } },
+            config: { edit: true, fields: [{ column: "total" }] },
+          }),
+        ]}
+        registry={registryWith({ act, can: () => true })}
+      />,
+    );
+    const button = await screen.findByRole("button", { name: /^Edit Total/ });
+    // The term and the value stay a term and a definition, outside any role=button.
+    expect(button.closest("dd")).not.toBeNull();
+    expect(screen.getByText("Total").closest("[role=button]")).toBeNull();
+    expect(button.getAttribute("aria-label")).toBeNull();
+    expect(button.textContent).toMatch(/\d/);
   });
 
   test("a several-choice field is edited by ticking choices, and a file is not edited in place (WID-10)", async () => {
@@ -284,9 +307,9 @@ describe("record detail", () => {
         registry={registryWith({ act, can: () => true })}
       />,
     );
-    await screen.findByRole("button", { name: "Edit Tags" });
-    expect(screen.queryByRole("button", { name: "Edit Attachment" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Edit Tags" }));
+    await screen.findByRole("button", { name: /^Edit Tags/ });
+    expect(screen.queryByRole("button", { name: /^Edit Attachment/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Edit Tags/ }));
     const group = await screen.findByRole("group", { name: "Tags" });
     expect((within(group).getByLabelText("late") as HTMLInputElement).checked).toBe(true);
     fireEvent.click(within(group).getByLabelText("vip"));
@@ -318,11 +341,11 @@ describe("record detail", () => {
         />,
       );
     draw(["billing"]);
-    expect(await screen.findByRole("button", { name: "Edit Total" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /^Edit Total/ })).toBeTruthy();
     cleanup();
     draw(["sales"]);
     await screen.findByText("INV-1", { exact: false });
-    expect(screen.queryByRole("button", { name: "Edit Total" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Edit Total/ })).toBeNull();
     expect(screen.getByText("Only Billing can edit this.")).toBeTruthy();
   });
 

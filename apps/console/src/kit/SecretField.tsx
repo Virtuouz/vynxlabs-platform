@@ -43,6 +43,13 @@ export function SecretField({
   onRemove?: (removed: boolean) => void;
 }) {
   const [replacing, setReplacing] = useState(false);
+  // Saved: the stored value now is the one just given, so the stored line shows again and the
+  // form does not go on asking for another.
+  const [seen, setSeen] = useState(setAt);
+  if (seen !== setAt) {
+    setSeen(setAt);
+    setReplacing(false);
+  }
   if (stored && removed) {
     return (
       <div className="flex flex-col gap-1">

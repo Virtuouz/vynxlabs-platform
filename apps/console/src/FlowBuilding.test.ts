@@ -2,6 +2,7 @@ import type { Edge } from "@xyflow/react";
 import { expect, test } from "vitest";
 import { renameInExpression, renameInNode } from "./flowRename.ts";
 import { insertAfter, problemsAt } from "./screens/FlowEditor.tsx";
+import { switchStart } from "./screens/FlowStepFields.tsx";
 
 test("renaming a step rewrites what reads it, by parsing, and leaves text that only looks like it", () => {
   expect(
@@ -92,4 +93,14 @@ test("each problem names the step and the field it is in", () => {
     node: "run",
     field: "script",
   });
+});
+
+test("FLW-31: a start changed and changed back is as it was, and tags go with it between kinds that take them", () => {
+  const shelf = new Map();
+  const hook = { type: "webhook", tags: ["'a'"], input: "request" };
+  const event = switchStart(shelf, hook, "event", () => ({ type: "event", event: "" }));
+  expect(event).toEqual({ type: "event", event: "", tags: ["'a'"] });
+  expect(switchStart(shelf, event, "webhook", () => ({ type: "webhook" }))).toEqual(hook);
+  const manual = switchStart(shelf, hook, "manual", () => ({ type: "manual" }));
+  expect(manual).toEqual({ type: "manual" });
 });

@@ -179,6 +179,32 @@ describe("pausing one trigger", () => {
     expect((await alice.put(`${ws()}/trigger-pauses/nothing/here`, {})).status).toBe(404);
   });
 
+  test("a webhook paused on its own says it is the webhook, not the workspace (OPS-37)", async () => {
+    expect((await alice.put(`${ws()}/trigger-pauses/orders/hook`, { reason: "Hold" })).status).toBe(
+      204,
+    );
+    const refused = await send("orders/hook");
+    expect(refused.statusCode).toBe(503);
+    expect(refused.json().code).toBe("trigger_paused");
+    expect(refused.json().detail).toContain("This webhook is paused");
+    expect(refused.json().detail).not.toContain("workspace");
+    expect((await alice.delete(`${ws()}/trigger-pauses/orders/hook`)).status).toBe(204);
+  });
+
+  test("a trigger paused again by another person names that person, and the reason is theirs (OPS-36)", async () => {
+    expect((await alice.put(`${ws()}/trigger-pauses/orders/hook`, { reason: "A" })).status).toBe(
+      204,
+    );
+    expect((await carl.put(`${ws()}/trigger-pauses/orders/hook`, { reason: "B" })).status).toBe(
+      204,
+    );
+    const hook = (await alice.get(`${ws()}/triggers`)).body.items.find(
+      (one: { path: string }) => one.path === "orders/hook",
+    );
+    expect(hook.paused).toMatchObject({ reason: "B", byName: "carl@acme.example" });
+    expect((await alice.delete(`${ws()}/trigger-pauses/orders/hook`)).status).toBe(204);
+  });
+
   test("a request with a bad signature is refused and its reason kept, never its body", async () => {
     expect((await send("orders/signed", '{"card":"4111"}', { "x-sig": "nope" })).statusCode).toBe(
       401,

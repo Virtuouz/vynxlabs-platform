@@ -63,3 +63,9 @@ test("the groups list opens on focus, and Esc closes it and keeps the pick", () 
   expect(outer).toBe(0);
   expect(held).toEqual(["a"]);
 });
+
+test("the kit's locale is the reader's locale of the widgets, one rule", async () => {
+  const { readerLocale } = await import("@volvel/widgets");
+  const { localeOf } = await import("./dates.ts");
+  expect(localeOf).toBe(readerLocale);
+});

@@ -19,6 +19,7 @@ import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { REJECTING } from "../kit/approvals.ts";
+import { useMayOn } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -388,6 +389,14 @@ export function FlowView({
   editable?: boolean;
 }) {
   const flow = useLoad<FlowDetail>(`${root}/flows/${path}`);
+  // What this person may do here is asked before the controls are drawn (FLW-30).
+  const may = useMayOn(
+    root,
+    { kind: "flow", path },
+    "flow_run:write",
+    "resource:write",
+    "flow:write",
+  );
   const runs = useLoad<{ items: FlowRunRow[] }>(
     `${root}/flow-runs?flow=${encodeURIComponent(path)}&limit=20`,
   );
@@ -417,6 +426,20 @@ export function FlowView({
   const manualInput = (manualNode?.trigger as { input?: Record<string, unknown> } | undefined)
     ?.input;
 
+  const arrange = async (positions: Positions) => {
+    setSaved("saving");
+    try {
+      await api.put(`${root}/flow-layouts/${data.path}`, { positions });
+      setSaved("saved");
+    } catch (error) {
+      setSaved(
+        (error as ApiError).status === 403
+          ? "You can arrange the graph, but only someone who manages flows can save it."
+          : (error as Error).message,
+      );
+    }
+  };
+
   return (
     <Page
       title={data.path}
@@ -424,10 +447,10 @@ export function FlowView({
       description={data.description}
       action={
         <span className="flex flex-wrap gap-2">
-          {editable ? (
+          {editable && may("resource:write") ? (
             <Button onClick={() => navigate(`${link}/flows/edit/${data.path}`)}>Edit</Button>
           ) : null}
-          {manual ? (
+          {manual && may("flow_run:write") ? (
             <>
               <OfferButton root={root} kind="flow" path={data.path} />
               <Button variant="primary" onClick={() => setStarting(true)}>
@@ -443,7 +466,7 @@ export function FlowView({
         object={{
           heading: "This flow",
           commands: [
-            ...(manual
+            ...(manual && may("flow_run:write")
               ? [
                   {
                     key: "start",
@@ -453,7 +476,7 @@ export function FlowView({
                   },
                 ]
               : []),
-            ...(editable
+            ...(editable && may("resource:write")
               ? [
                   {
                     key: "edit",
@@ -494,30 +517,21 @@ export function FlowView({
         }}
       />
       <FlowGraph
+        key={may("flow:write") ? "arrange" : "fixed"}
         nodes={data.nodes}
         edges={data.edges}
         layout={data.layout}
-        onMove={async (positions) => {
-          setSaved("saving");
-          try {
-            await api.put(`${root}/flow-layouts/${data.path}`, { positions });
-            setSaved("saved");
-          } catch (error) {
-            setSaved(
-              (error as ApiError).status === 403
-                ? "You can arrange the graph, but only someone who manages flows can save it."
-                : (error as Error).message,
-            );
-          }
-        }}
+        {...(may("flow:write") ? { onMove: arrange } : {})}
       />
       <p className="m-0 text-body-sm text-ink-muted" aria-live="polite">
-        {saved === "saving"
-          ? "Saving the arrangement…"
-          : saved === "saved"
-            ? "Arrangement saved. The flow itself is unchanged."
-            : (saved ??
-              "Drag a step, or focus it and use the arrow keys, to arrange the graph. Arranging changes nothing about how the flow runs.")}
+        {!may("flow:write")
+          ? null
+          : saved === "saving"
+            ? "Saving the arrangement…"
+            : saved === "saved"
+              ? "Arrangement saved. The flow itself is unchanged."
+              : (saved ??
+                "Drag a step, or focus it and use the arrow keys, to arrange the graph. Arranging changes nothing about how the flow runs.")}
       </p>
       {data.triggers.length > 0 ? (
         <section>

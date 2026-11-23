@@ -32,7 +32,7 @@ import {
   TextField,
 } from "@volvel/ui";
 import { moneyFormatOf } from "@volvel/widgets";
-import { Code2, Database, Plus, Table2 } from "lucide-react";
+import { Code2, Database, Plus, Table2, X } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Loading } from "../LoadState.tsx";
 import { useColumnValues } from "./catalog.ts";
@@ -137,6 +137,9 @@ export function RowsItUses({
         />
       ) : null}
       {showSql ? <SqlBlock env={env} input={input} /> : null}
+      {data && ("query" in data.source || "sql" in data.source) ? (
+        <ConstantValues env={env} input={input} />
+      ) : null}
       {data && !visual && !showSql ? (
         <DrawerBlock>
           <p className="m-0 text-body-sm text-ink-muted">It gives its own columns.</p>
@@ -296,6 +299,125 @@ function SourceRow({
         />
       }
     />
+  );
+}
+
+/** What is typed as a value: a number when it reads as one exactly ("30", not "030"), else the words. */
+const valueOfText = (text: string): string | number =>
+  text.trim() !== "" && String(Number(text)) === text ? Number(text) : text;
+
+/**
+ * The values a saved query's parameters are given, and the numbered values of SQL written here
+ * ($1, $2). A filter can fill a parameter too (under "Where each one goes"); a value here is
+ * the same every time the widget reads.
+ */
+function ConstantValues({ env, input }: { env: Env; input: string }) {
+  const data = env.widget.data?.[input] as DataInput;
+  const key = `values:${env.widget.id}:${input}`;
+  const source = data.source as { query?: string; sql?: string; values?: unknown };
+  const write = (values: Record<string, unknown> | unknown[] | undefined, words: string) => {
+    const { values: _before, ...rest } = source;
+    const next = values === undefined ? rest : { ...rest, values };
+    env.write(
+      withInput(env.widget, input, { ...data, source: next as DataInput["source"] }),
+      words,
+      key,
+    );
+  };
+  if (source.sql !== undefined) {
+    const values = Array.isArray(source.values) ? source.values : [];
+    if (values.length === 0) return null;
+    return (
+      <DrawerBlock>
+        <p className="m-0 text-body-sm text-ink-muted">Values it passes to the query.</p>
+        {values.map((value, index) => (
+          <TextField
+            // biome-ignore lint/suspicious/noArrayIndexKey: a numbered value has no identity but its number
+            key={index}
+            name={`${env.widget.id}-${input}-value-${index + 1}`}
+            label={`Value of $${index + 1}`}
+            value={String(value ?? "")}
+            required={false}
+            onChange={(text) =>
+              write(
+                values.map((one, at) => (at === index ? valueOfText(text) : one)),
+                "changing a value of the query",
+              )
+            }
+          />
+        ))}
+      </DrawerBlock>
+    );
+  }
+  const given =
+    source.values && typeof source.values === "object" && !Array.isArray(source.values)
+      ? Object.entries(source.values as Record<string, unknown>)
+      : [];
+  const put = (entries: [string, unknown][], words: string) =>
+    write(entries.length === 0 ? undefined : Object.fromEntries(entries), words);
+  return (
+    <DrawerBlock>
+      <p className="m-0 text-body-sm text-ink-muted">
+        {given.length === 0
+          ? "A parameter of the query can be given a value that is the same every time."
+          : "Values given to the query's parameters. A page filter that fills one takes its place."}
+      </p>
+      {given.map(([name, value], index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a parameter is renamed in place, so its name cannot be its key
+        <div key={index} className="flex items-end gap-2">
+          <TextField
+            name={`${env.widget.id}-${input}-parameter-${index}`}
+            label={`Name of parameter ${index + 1}`}
+            value={name}
+            required={false}
+            onChange={(next) =>
+              put(
+                given.map((one, at) => (at === index ? [next.trim(), one[1]] : one)),
+                "renaming a parameter",
+              )
+            }
+          />
+          <TextField
+            name={`${env.widget.id}-${input}-value-${index}`}
+            label={`Value of ${name}`}
+            value={String(value ?? "")}
+            required={false}
+            onChange={(next) =>
+              put(
+                given.map((one, at) => (at === index ? [one[0], valueOfText(next)] : one)),
+                "changing a value of the query",
+              )
+            }
+          />
+          <Button
+            size="small"
+            variant="quiet"
+            aria-label={`Remove the value of ${name}`}
+            onClick={() =>
+              put(
+                given.filter((_, at) => at !== index),
+                "removing a value of the query",
+              )
+            }
+          >
+            <X aria-hidden="true" size={14} />
+          </Button>
+        </div>
+      ))}
+      <div>
+        <Button
+          size="small"
+          onClick={() =>
+            put(
+              [...given, [given.some(([name]) => name === "parameter") ? "" : "parameter", ""]],
+              "adding a value to the query",
+            )
+          }
+        >
+          <Plus aria-hidden="true" size={14} /> Add a value
+        </Button>
+      </div>
+    </DrawerBlock>
   );
 }
 

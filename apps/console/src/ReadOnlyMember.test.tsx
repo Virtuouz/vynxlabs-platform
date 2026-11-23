@@ -17,6 +17,7 @@ import { InstanceBranding } from "./screens/InstanceBranding.tsx";
 import { InstanceTriggers } from "./screens/InstanceTriggers.tsx";
 import { Interfaces } from "./screens/Interfaces.tsx";
 import { AccessList, MemberList } from "./screens/Members.tsx";
+import { EventPage, ScriptPage } from "./screens/ObjectPages.tsx";
 import { Roles } from "./screens/Roles.tsx";
 import { show } from "./testing.tsx";
 
@@ -45,7 +46,13 @@ beforeEach(() => {
     if (path.includes("/access/member/")) {
       return body({ principal: {}, sources: [], permissions: [{ permission: "tenant:read" }] });
     }
-    if (path.includes("/allowed?")) return body({ allowed: [] });
+    if (path.includes("/allowed?")) {
+      // A grant on one script alone: asked about that script, it is held.
+      const asked = decodeURIComponent(path);
+      const one =
+        asked.includes("permissions=run:write") && asked.includes("kind=script&path=jobs/nightly");
+      return body({ allowed: one ? ["run:write"] : [] });
+    }
     for (const [prefix, value] of Object.entries(answers)) {
       if (path.split("?")[0] === prefix) return body(value);
     }
@@ -170,4 +177,37 @@ test("alerts, repository, export and workspace settings cannot be changed withou
     />,
   );
   await said("workspace:write");
+});
+
+test("a script page offers Run to someone let run that script alone, and an event page offers no change (GOV-37)", async () => {
+  answers[`${root}/scripts`] = {
+    items: [
+      { path: "jobs/nightly", description: "", inputSchema: {}, deployed: true, lastRun: null },
+      { path: "jobs/other", description: "", inputSchema: {}, deployed: true, lastRun: null },
+    ],
+  };
+  show(<ScriptPage root={root} link={link} path="jobs/nightly" />);
+  const run = await screen.findByRole("button", { name: /^Run/ });
+  await waitFor(() =>
+    expect((run.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(false),
+  );
+  cleanup();
+  show(<ScriptPage root={root} link={link} path="jobs/other" />);
+  const other = await screen.findByRole("button", { name: /^Run/ });
+  await waitFor(() =>
+    expect((other.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true),
+  );
+  cleanup();
+  answers[`${root}/resources/orders/placed`] = {
+    id: "r1",
+    kind: "event",
+    path: "orders/placed",
+    body: {},
+    ownership: "ui",
+    version: 1,
+    updatedAt: "2026-11-01T00:00:00Z",
+  };
+  show(<EventPage root={root} link={link} path="orders/placed" />);
+  const change = await screen.findByRole("button", { name: "Change its declaration" });
+  await waitFor(() => expect((change as HTMLButtonElement).disabled).toBe(true));
 });

@@ -1663,6 +1663,24 @@ describe("tables made in the console, isolation and guards", () => {
     ).toBe("retired");
   });
 
+  test("a retired table keeps where it was managed, in the list and on its own page", async () => {
+    const mine = (path: string, ownership: string) =>
+      alice.put(`${ws()}/resources/${path}`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership,
+        body: { columns: { title: { type: "text", required: true } } },
+      });
+    expect((await mine("kept-in-console", "ui")).status).toBe(201);
+    expect((await alice.delete(`${ws()}/resources/kept-in-console`)).status).toBe(204);
+    const listed = (await alice.get(`${ws()}/tables`)).body.items.find(
+      (item: Any) => item.name === "kept-in-console",
+    );
+    expect(listed).toMatchObject({ status: "retired", managedIn: "ui" });
+    const described = await alice.get(`${ws()}/tables/kept-in-console?id=${listed.id}`);
+    expect(described.body).toMatchObject({ status: "retired", managedIn: "ui" });
+  });
+
   test("a required column that was removed comes back even when rows were written without it", async () => {
     const put = (columns: Record<string, object>) =>
       alice.put(`${ws()}/resources/gaps`, {

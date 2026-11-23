@@ -898,6 +898,7 @@ function WorkspaceDetail({
       ) : tab === "secrets" ? (
         <ListScreen<{ name: string; updatedAt: string; updatedBy?: string | null }>
           title="Secrets"
+          needs={{ base: root, permission: "secret:write", what: "this workspace's secrets" }}
           setupField="name"
           description="Values are encrypted with this tenant's own key. A value can be replaced but never read back here."
           path={`${root}/secrets`}

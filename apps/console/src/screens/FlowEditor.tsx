@@ -40,6 +40,7 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { ago } from "../kit/format.ts";
+import { useGroupKeys } from "../kit/inspector/groupChoices.tsx";
 import { glide } from "../kit/motion.ts";
 import { listenChoices } from "../kit/platformEvents.ts";
 import "@xyflow/react/dist/style.css";
@@ -81,6 +82,8 @@ import {
   GrantsFields,
   InputSchemaField,
   MAX_TAGS,
+  type StartSettings,
+  switchStart,
   TagsField,
 } from "./FlowStepFields.tsx";
 import {
@@ -234,6 +237,18 @@ const PALETTE: {
     make: () => ({ type: "fail", message: "'Stopped'" }),
   },
 ];
+
+/** The name a script's step starts with: its last word, in what a step's name may hold. */
+export function stepNameFor(path: string): string {
+  const name = (path.split("/").at(-1) ?? "").toLowerCase().replace(/[^a-z0-9_]/g, "_");
+  return /^[a-z]/.test(name) ? name.slice(0, 55) : `step_${name}`.slice(0, 55);
+}
+
+/** What the flow kind's schema allows in a step's text. */
+const MAX_EXPRESSION = 2000; // said as "2,000" in the problem below
+const MAX_APPROVAL_TITLE = 200;
+const MAX_CASES = 20;
+export const MAX_DESCRIPTION = 500;
 
 /** The most items a For each runs at once. */
 const MAX_AT_ONCE = 20;
@@ -512,6 +527,23 @@ export function manifestProblems(
   return out;
 }
 
+/** The expressions a step holds, to measure against the longest the kind takes. */
+function expressionsOf(node: FlowNode): string[] {
+  const out: string[] = [];
+  for (const key of ["items", "input", "flowFrom", "message", "detail", "with"]) {
+    const value = (node as Record<string, unknown>)[key];
+    if (typeof value === "string") out.push(value);
+  }
+  for (const key of ["values", "inputs", "headers"]) {
+    const map = (node as Record<string, unknown>)[key];
+    if (map && typeof map === "object")
+      for (const value of Object.values(map)) if (typeof value === "string") out.push(value);
+  }
+  for (const one of (node as { cases?: { when?: unknown }[] }).cases ?? [])
+    if (typeof one.when === "string") out.push(one.when);
+  return out;
+}
+
 /** What is wrong with a flow that can be seen without asking the server, as words. */
 export const problemsOf = (...args: Parameters<typeof problemsAt>): string[] =>
   problemsAt(...args).map((one) => one.message);
@@ -522,6 +554,8 @@ export function problemsAt(
   edges: GraphEdge[],
   /** The scripts that are nodes with a form of their own, by path. */
   specs: ReadonlyMap<string, PickableNode> = new Map(),
+  /** The keys of the tenant's groups of members, once read: an approval's group is checked against them. */
+  groups?: ReadonlySet<string>,
 ): Problem[] {
   const problems: Problem[] = [];
   const ids = Object.keys(nodes);
@@ -693,8 +727,41 @@ export function problemsAt(
     }
     // A field a step needs, left empty: the draft keeps it, and it is said here, and at deploy.
     const empty = (value: unknown) => typeof value !== "string" || value.trim() === "";
+    if (node.type === "approval" && groups) {
+      for (const group of (node.approvers as { groups?: string[] } | undefined)?.groups ?? []) {
+        if (!groups.has(group)) {
+          problems.push({
+            message: `${id} asks the group ${group}, which this tenant does not have. Choose another group, or ask a tenant admin to make it.`,
+            node: id,
+            field: "approvers",
+          });
+        }
+      }
+    }
     if (node.type === "approval" && empty(node.title))
       problems.push({ message: `${id} needs a title for the approval.`, node: id, field: "title" });
+    if (
+      node.type === "approval" &&
+      typeof node.title === "string" &&
+      node.title.length > MAX_APPROVAL_TITLE
+    )
+      problems.push({
+        message: `${id} has a title of more than ${MAX_APPROVAL_TITLE} letters. Make it shorter.`,
+        node: id,
+        field: "title",
+      });
+    if (node.type === "branch" && ((node.cases as unknown[] | undefined) ?? []).length > MAX_CASES)
+      problems.push({
+        message: `${id} has more than ${MAX_CASES} cases. Join some, or split it in two.`,
+        node: id,
+        field: "cases",
+      });
+    const tooLong = expressionsOf(node).some((text) => text.length > MAX_EXPRESSION);
+    if (tooLong)
+      problems.push({
+        message: `${id} has an expression longer than 2,000 letters. Move part of it to a Set step.`,
+        node: id,
+      });
     if (node.type === "fail" && empty(node.message))
       problems.push({ message: `${id} needs a message to fail with.`, node: id, field: "message" });
     if (
@@ -769,6 +836,7 @@ export function FlowEditor({
   const [testRunId, setTestRunId] = useState<string>();
   /** The steps added here from the palette: a schedule among them takes the workspace's zone. */
   const addedIds = useRef(new Set<string>());
+  const shelves = useRef(new Map<string, Map<string, StartSettings>>());
   const [testTrigger, setTestTrigger] = useState<string>();
   const [testAll, setTestAll] = useState(false);
   const [editedSinceTest, setEditedSinceTest] = useState(false);
@@ -1019,12 +1087,22 @@ export function FlowEditor({
     [nodes],
   );
   const flowEdges = useMemo(() => edges.map(toFlowEdge), [edges]);
+  // What was typed as a manual start's schema and is not JSON yet, by step: kept when another step is chosen.
+  const unsavedSchemas = useRef(new Map<string, string>());
+  const keyed = useGroupKeys(root);
+  const memberGroups = useMemo(
+    () =>
+      keyed.loaded
+        ? new Set(keyed.groups.filter((one) => one.kind === "member").map((one) => one.key))
+        : undefined,
+    [keyed.loaded, keyed.groups],
+  );
   const found = useMemo(() => {
-    const own = problemsAt(flowNodes, flowEdges, specs);
+    const own = problemsAt(flowNodes, flowEdges, specs, memberGroups);
     // What a deploy refuses is told here too, in the same words, so the two lists agree.
     const refused = manifestProblems(flowNodes, flowEdges, own);
     return [...own, ...refused];
-  }, [flowNodes, flowEdges, specs]);
+  }, [flowNodes, flowEdges, specs, memberGroups]);
   const chosen = nodes.find((node) => node.id === selected);
 
   const add = (entry: { base: string; make: () => FlowNode }) => {
@@ -1684,10 +1762,7 @@ export function FlowEditor({
                           className="flex flex-col rounded-control px-2 py-1.5 text-left hover:bg-selected"
                           onClick={() => {
                             add({
-                              base: (one.path.split("/").at(-1) ?? "step").replace(
-                                /[^a-z0-9_]/g,
-                                "_",
-                              ),
+                              base: stepNameFor(one.path),
                               make: () => ({ type: "script", script: one.path, inputs: {} }),
                             });
                             setAdding(false);
@@ -1832,22 +1907,33 @@ export function FlowEditor({
                           { value: "webhook", label: "When its address is called" },
                           { value: "form", label: "When someone fills in its form" },
                         ]}
-                        onChange={(type) =>
+                        onChange={(type) => {
+                          // What the start was set to returns if it is changed back.
+                          const shelf = shelves.current.get(chosen.id) ?? new Map();
+                          shelves.current.set(chosen.id, shelf);
                           update(chosen.id, {
-                            trigger:
+                            trigger: switchStart(shelf, node.trigger as StartSettings, type, () =>
                               type === "schedule"
                                 ? { type, cron: "0 8 * * *" }
                                 : type === "event"
                                   ? { type, event: "" }
                                   : type === "form"
-                                    ? newForm()
+                                    ? (newForm() as unknown as StartSettings)
                                     : { type },
-                          })
-                        }
+                            ) as FlowNode["trigger"],
+                          });
+                        }}
                       />
                       {(node.trigger as { type: string }).type === "manual" ? (
                         <InputSchemaField
                           value={(node.trigger as { input?: Record<string, unknown> }).input}
+                          kept={{
+                            get: () => unsavedSchemas.current.get(chosen.id),
+                            set: (text) =>
+                              text === undefined
+                                ? unsavedSchemas.current.delete(chosen.id)
+                                : unsavedSchemas.current.set(chosen.id, text),
+                          }}
                           onChange={(input) => {
                             const { input: _was, ...rest } = node.trigger as { input?: unknown };
                             update(chosen.id, {
@@ -2094,6 +2180,7 @@ export function FlowEditor({
                       <TextField
                         name="title"
                         label="What is being approved"
+                        maxLength={MAX_APPROVAL_TITLE}
                         value={(node.title as string) ?? ""}
                         onChange={(title) => update(chosen.id, { title })}
                       />
@@ -2195,6 +2282,8 @@ export function FlowEditor({
                   <TextField
                     name="description"
                     label="What it does"
+                    maxLength={MAX_DESCRIPTION}
+                    showCount
                     value={description}
                     required={false}
                     onChange={(value) => {

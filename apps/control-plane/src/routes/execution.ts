@@ -359,7 +359,7 @@ const toRun = (row: RunRow, bundleVersion: number) => ({
   id: row.id,
   script: row.script_path,
   status: row.status,
-  state: runState(row.status),
+  state: runState(row.status, row.scheduled_for),
   attempt: row.attempt,
   maxAttempts: row.max_attempts,
   trigger: { type: row.trigger_type, ...row.trigger_detail },
@@ -456,11 +456,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       for (const stored of uploaded) yield (await loadBundle(kernel, stored)).manifests;
     }
 
-    const configSchemaOf = async (
+    const declarationOf = async (
       workspaceId: string,
       kind: "connection" | "connection_group",
       path: string,
-    ): Promise<object> => {
+    ) => {
       const named = (body: unknown) => (body as { connector?: string } | undefined)?.connector;
       const [deployed, drafted] = await Promise.all([
         db
@@ -495,6 +495,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (found) break;
         }
       }
+      return found;
+    };
+    const configSchemaOf = async (
+      workspaceId: string,
+      kind: "connection" | "connection_group",
+      path: string,
+    ): Promise<object> => {
+      const found = await declarationOf(workspaceId, kind, path);
       if (!found) return BUILTIN_CONFIG_SCHEMAS.http as object;
       const schema = connectorSchema(found.name, found.connectors);
       if (!schema) {
@@ -1828,7 +1836,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   lastFiredAt: NullableTime,
                   url: NullableString,
                   paused: Type.Union([
-                    Type.Object({ at: Time, by: NullableId, reason: Type.String() }),
+                    Type.Object({
+                      at: Time,
+                      by: NullableId,
+                      byName: NullableString,
+                      reason: Type.String(),
+                    }),
                     Type.Null(),
                   ]),
                   pausedBy: Type.Union(
@@ -1917,6 +1930,18 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll()
           .where("workspace_id", "=", params.w)
           .execute();
+        const pausers = pauses.flatMap((one) => (one.paused_by ? [one.paused_by] : []));
+        const pauserNames = new Map(
+          pausers.length === 0
+            ? []
+            : (
+                await db
+                  .selectFrom("member")
+                  .select(["id", "name", "email"])
+                  .where("id", "in", pausers)
+                  .execute()
+              ).map((one) => [one.id, one.name || one.email] as const),
+        );
         const instancePaused = await instanceTriggersPaused(kernel);
         const workspacePaused =
           (
@@ -2005,7 +2030,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               event: row.event_name,
               enabled: row.enabled,
               paused: pause
-                ? { at: iso(pause.paused_at), by: pause.paused_by, reason: pause.reason }
+                ? {
+                    at: iso(pause.paused_at),
+                    by: pause.paused_by,
+                    byName: pause.paused_by ? (pauserNames.get(pause.paused_by) ?? null) : null,
+                    reason: pause.reason,
+                  }
                 : null,
               pausedBy: instancePaused
                 ? ("instance" as const)
@@ -2226,6 +2256,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               c.columns(["workspace_id", "path", "node_id"]).doUpdateSet({
                 reason: body.reason ?? "",
                 paused_at: new Date(),
+                paused_by: ctx.principal.type === "member" ? ctx.principal.id : null,
               }),
             )
             .execute();
@@ -2381,6 +2412,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           "config",
           "credential",
           "oauth",
+          "connector",
           "updated_at",
           "credential_set_at",
           "credential_set_by_type",
@@ -2458,6 +2490,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           // Nothing declares it: it is as HTTP only when its settings fit HTTP's, else unknown.
           const connector =
             definition?.connector ??
+            binding?.connector ??
             (binding &&
             validateJson(BUILTIN_CONFIG_SCHEMAS.http as object, binding.config ?? {}).length > 0
               ? "unknown"
@@ -2854,6 +2887,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         const path = wildPath(params);
+        const declared = await declarationOf(params.w, "connection", path);
         const issues = validateJson(
           await configSchemaOf(params.w, "connection", path),
           body.config,
@@ -2868,6 +2902,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             { tenantId: params.t, workspaceId: params.w, path },
             body.config,
             body.credential,
+            declared?.name,
           );
           // What a Test found says nothing about settings it did not try.
           if (changed) await forgetHealth(trx, params.w, path);
@@ -3682,11 +3717,20 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!outcome) throw notFound("The webhook");
           if ("refused" in outcome) {
             if (outcome.refused === "paused") {
-              // A sender that retries will get through once the workspace is resumed.
+              // A sender that retries will get through once what holds it is resumed.
+              if (outcome.heldBy === "workspace") {
+                throw new HttpError(
+                  503,
+                  "workspace_paused",
+                  "This workspace's triggers are paused, so the webhook started nothing. Try again later.",
+                );
+              }
               throw new HttpError(
                 503,
-                "workspace_paused",
-                "This workspace's triggers are paused, so the webhook started nothing. Try again later.",
+                "trigger_paused",
+                outcome.heldBy === "instance"
+                  ? "Every trigger in this instance is paused, so the webhook started nothing. Try again later."
+                  : "This webhook is paused, so it started nothing. Try again later.",
               );
             }
             if (outcome.refused === "signature") {

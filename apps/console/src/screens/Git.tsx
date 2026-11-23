@@ -8,6 +8,7 @@ import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Page } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
+import { ConsoleCodeButton } from "./Environments.tsx";
 
 interface Repository {
   url: string;
@@ -249,7 +250,47 @@ export function RepositorySettings({ base }: { base: string }) {
           </div>
         </form>
       </Can>
+      <ConsoleCodeSwitch base={base} />
     </Page>
+  );
+}
+
+/**
+ * Whether code may be written in the console for this tenant (EXT-10). Off, scripts, connectors
+ * and trigger sources come from the repository only. Whoever may change the tenant switches it.
+ */
+function ConsoleCodeSwitch({ base }: { base: string }) {
+  const tenant = useLoad<{ name?: string; consoleCode?: boolean; mayRename?: boolean }>(base);
+  if (tenant.data?.consoleCode === undefined) return null;
+  const on = tenant.data.consoleCode;
+  return (
+    // panel-allowed: a setting, drawn as a panel beside the form above.
+    <section
+      className="flex max-w-xl flex-col gap-3 rounded-panel border border-line bg-surface p-4"
+      aria-label="Code in the console"
+    >
+      <h2 className="m-0 text-body font-semibold">Code in the console</h2>
+      <p className="m-0">
+        Writing code in the console is {on ? "on" : "off"}.{" "}
+        <span className="text-ink-muted">
+          {on
+            ? "People with the code permission can write scripts, connectors and trigger sources in a dev workspace."
+            : "Code is deployed from the repository only. What is deployed keeps running."}
+        </span>
+      </p>
+      {tenant.data.mayRename ? (
+        <ConsoleCodeButton
+          tenant={{
+            id: base.split("/").at(-1) as string,
+            name: tenant.data.name ?? "",
+            ...tenant.data,
+          }}
+          onDone={tenant.reload}
+        />
+      ) : (
+        <p className="m-0 text-ink-muted">Changing it needs permission to change the tenant.</p>
+      )}
+    </section>
   );
 }
 

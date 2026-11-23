@@ -22,3 +22,16 @@ test("what a page's address says was opened, for the palette's Recent list", () 
   expect(openedAt(`${ws}/queries`, "late-orders")).toEqual({ kind: "query", ref: "late-orders" });
   expect(openedAt(`${ws}/queries`)).toBeUndefined();
 });
+
+test("a trigger, a schedule and an app are known by the address of their editor", () => {
+  const ws = "/t/t1/workspaces/w1";
+  expect(openedAt(`${ws}/resources/edit/schedule/nightly`)).toEqual({
+    kind: "schedule",
+    ref: "nightly",
+  });
+  expect(openedAt(`${ws}/resources/edit/trigger/orders/hook`)).toEqual({
+    kind: "trigger",
+    ref: "orders/hook",
+  });
+  expect(openedAt(`${ws}/resources/edit/script/x`)).toBeUndefined();
+});

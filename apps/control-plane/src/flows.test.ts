@@ -658,6 +658,24 @@ describe("a bundle with a broken flow is refused at upload, with the flow, node 
     ]);
   });
 
+  test("a tag that does not parse is refused, on a flow's start and on a trigger kind (FLW-27)", async () => {
+    const webhook = { type: "trigger", trigger: { type: "webhook", tags: ["trigger.((("] } };
+    expect(
+      await problems(flow("bad", { start: webhook, a: set({ x: "1" }) }, [["start", "a"]])),
+    ).toEqual([
+      expect.stringMatching(
+        /^bad \(flow\): \/body\/nodes\/start\/trigger\/tags\/0 is not a valid expression: /,
+      ),
+    ]);
+    expect(
+      await problems(
+        manifest("trigger", "bad-hook", { type: "webhook", script: "double", tags: ["a >"] }),
+      ),
+    ).toEqual([
+      expect.stringMatching(/^bad-hook \(trigger\): \/body\/tags\/0 is not a valid expression: /),
+    ]);
+  });
+
   test("expressions that do not parse, and references to things that are not there", async () => {
     expect(
       (
@@ -816,7 +834,8 @@ describe("running a flow", () => {
       input: { sku: "A", quantity: 0 },
     });
     expect(refused.status).toBe(400);
-    expect(refused.body.detail).toContain("/input/quantity");
+    // The words name the field; the path is in `errors`.
+    expect(refused.body.detail).toContain("quantity must be");
     expect(refused.body.errors).toEqual(
       expect.arrayContaining([expect.objectContaining({ path: "/input/quantity" })]),
     );
@@ -825,7 +844,7 @@ describe("running a flow", () => {
 
     const parent = await finished(await start("calls-typed"));
     expect(parent.status).toBe("failed");
-    expect(step(parent, "child").error.message).toContain("/input");
+    expect(step(parent, "child").error.message).toContain("It needs quantity");
   });
 
   test("a failed step takes its error path when it has one", async () => {
@@ -1061,6 +1080,35 @@ describe("a flow chosen when the step runs", () => {
 });
 
 describe("starting one flow and no other", () => {
+  test("a screen asks what is held on one flow, and a grant on it counts (GOV-37)", async () => {
+    // The member and the binding on `linear` are made by the next test; this one makes its own.
+    const role = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "flow_starter_asked",
+      description: "Starts flows it is bound to.",
+      permissions: ["flow_run:write"],
+    });
+    const member = await alice.post(`/tenants/${tenant}/members`, {
+      email: "quinn@acme.example",
+      name: "Quinn",
+      password: PASSWORD,
+    });
+    const linear = (await alice.get(`${ws()}/resources/linear`)).body;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: dev,
+      resourceId: linear.id,
+      principalType: "member",
+      principalId: member.body.id,
+      roleId: role.body.id,
+    });
+    const quinn = await t.signIn("quinn@acme.example", PASSWORD);
+    const asked = (query: string) =>
+      quinn.get(`${ws()}/allowed?permissions=flow_run:write${query}`);
+    expect((await asked("")).body.allowed).toEqual([]);
+    expect((await asked("&kind=flow&path=linear")).body.allowed).toEqual(["flow_run:write"]);
+    expect((await asked("&kind=flow&path=parent")).body.allowed).toEqual([]);
+    expect((await asked("&kind=flow&path=no-such-flow")).body.allowed).toEqual([]);
+  });
+
   test("someone allowed to start a single flow starts it, reads how it ended, and nothing else", async () => {
     const role = await alice.post(`/tenants/${tenant}/roles`, {
       name: "flow_starter",

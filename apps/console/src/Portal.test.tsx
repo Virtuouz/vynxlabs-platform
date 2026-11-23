@@ -149,7 +149,9 @@ test("APP-MP3: apps are searched, filtered by how they are built, sorted, and a 
   expect(screen.queryByText("Orders")).toBeNull();
   fireEvent.click(screen.getByRole("radio", { name: /^All/ }));
   // Sort by the title's header.
-  fireEvent.click(screen.getByRole("button", { name: /App/ }));
+  fireEvent.click(
+    screen.getByRole("columnheader", { name: /^App/ }).querySelector("button") as HTMLElement,
+  );
   const titles = () =>
     screen
       .getAllByRole("row")
@@ -782,4 +784,36 @@ test("a hostname is pointed at another app, or at the portal, without being remo
   fireEvent.click(within(dialog).getByRole("button", { name: "Change what it serves" }));
   await waitFor(() => expect(sent("PATCH")[1]?.body).toEqual({ app: "" }));
   await waitFor(() => expect(document.body.textContent).toContain("The portal and every app"));
+});
+
+test("an app that is opened is remembered for the palette's Recent list", async () => {
+  routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
+    200,
+    {
+      items: [
+        {
+          id: "a2",
+          path: "back-office",
+          title: "Back office",
+          description: null,
+          url: "https://apps.example.test/apps/acme/main/back-office/",
+          domains: [],
+          files: 1,
+          bytes: 900,
+          access: [],
+        },
+      ],
+    },
+  ];
+  routes["PUT /api/v1/me/recent-items"] = () => [204, null];
+  show(<Apps root={`${base}/workspaces/w1`} />);
+  fireEvent.click(await screen.findByText("Back office"));
+  await waitFor(() =>
+    expect(calls.find((one) => one.url === "/api/v1/me/recent-items")?.body).toEqual({
+      tenantId: "t1",
+      workspaceId: "w1",
+      kind: "app",
+      ref: "back-office",
+    }),
+  );
 });

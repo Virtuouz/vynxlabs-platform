@@ -274,6 +274,11 @@ export const ERROR_CODES = {
     "The workspace's triggers are paused",
     "The webhook started nothing. Try again once they are resumed.",
   ),
+  trigger_paused: code(
+    503,
+    "The webhook is paused",
+    "It started nothing. Try again once it is resumed. It is paused on its own, or with every trigger in the instance.",
+  ),
   signature_invalid: code(
     401,
     "The webhook's signature does not match",

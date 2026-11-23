@@ -41,27 +41,35 @@ export function RenameField({
     onDone(keep && next !== "" && next !== title ? next : undefined);
   };
   return (
-    <input
-      ref={field}
-      aria-label="Name of the app"
-      value={draft}
-      maxLength={NAME_MAX}
-      size={Math.max(12, Math.min(draft.length + 2, 40))}
-      onChange={(event) => setDraft(event.target.value)}
-      onBlur={() => finish(true)}
-      onKeyDown={(event) => {
-        // Enter and Escape are the name's own; every other key goes on to the page's shortcuts.
-        if (event.key === "Enter") {
-          event.stopPropagation();
-          finish(true);
-        }
-        if (event.key === "Escape") {
-          event.stopPropagation();
-          finish(false);
-        }
-      }}
-      className="h-9 min-w-0 max-w-full rounded-control border border-action bg-surface px-2 font-[inherit] text-[length:inherit]"
-    />
+    <span className="inline-flex min-w-0 max-w-full items-center gap-2">
+      <input
+        ref={field}
+        aria-label="Name of the app"
+        value={draft}
+        maxLength={NAME_MAX}
+        size={Math.max(12, Math.min(draft.length + 2, 40))}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => finish(true)}
+        onKeyDown={(event) => {
+          // Enter and Escape are the name's own; every other key goes on to the page's shortcuts.
+          if (event.key === "Enter") {
+            event.stopPropagation();
+            finish(true);
+          }
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            finish(false);
+          }
+        }}
+        className="h-9 min-w-0 max-w-full rounded-control border border-action bg-surface px-2 font-[inherit] text-[length:inherit]"
+      />
+      <span
+        data-field-count=""
+        className="shrink-0 text-meta font-normal text-ink-muted tabular-nums"
+      >
+        {draft.length} of {NAME_MAX}
+      </span>
+    </span>
   );
 }
 

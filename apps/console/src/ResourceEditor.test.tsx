@@ -324,3 +324,23 @@ test("a data source is declared with a path and a purpose, and saved as a draft 
   });
   await screen.findByText("Draft");
 });
+
+test("a draft someone else saved first offers to copy what was written before theirs is loaded", async () => {
+  const before = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+    if (init.method === "PUT") {
+      return new Response(
+        JSON.stringify({ status: 409, code: "draft_changed", detail: "Someone else saved this." }),
+        { status: 409 },
+      );
+    }
+    return before(address, init);
+  });
+  show(<ResourceEditor root={root} link={link} kind="variable" path={undefined} editable />);
+  fireEvent.change(await screen.findByLabelText("Path of the new variable"), {
+    target: { value: "orders/batch-size" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  expect(await screen.findByRole("button", { name: "Copy what I wrote" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Load their version" })).toBeTruthy();
+});

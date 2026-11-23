@@ -10,10 +10,11 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
-import { api, useCacheEdit, useLoad } from "../api.ts";
+import { api, askForAccess, useCacheEdit, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { REJECTING } from "../kit/approvals.ts";
 import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
+import { useMay } from "../kit/Can.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
@@ -26,6 +27,7 @@ import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { ViewsMenu } from "../kit/views.tsx";
 import { CopyButton } from "../ListScreen.tsx";
+import { useRecordRecent } from "../recent.ts";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { PublishEventButton } from "./PublishEvent.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
@@ -49,7 +51,7 @@ export interface Trigger {
   nextFireAt: string | null;
   lastFiredAt: string | null;
   url: string | null;
-  paused: { at: string; by: string | null; reason: string } | null;
+  paused: { at: string; by: string | null; byName?: string | null; reason: string } | null;
   /** What holds it, widest first: the instance, the workspace, or its own pause. */
   pausedBy?: "instance" | "workspace" | "trigger" | null;
   lastRun: {
@@ -245,6 +247,11 @@ export function TriggersWorkbench({
 }) {
   const list = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
   const { pause, resume } = useTriggerPause({ root, production, listPath: `${root}/triggers` });
+  // What this person may do is asked before the controls are drawn (OPS-35).
+  const may = useMay(root, "trigger:write", "resource:write");
+  const mayEdit = may("resource:write");
+  const noEdit = `It needs resource:write. ${askForAccess()}`;
+  const mayPause = may("trigger:write");
   // The kind shown is in the address, so a reload or a link keeps it.
   const [type, setType] = useUrlParam("kind", "all");
   // The chosen trigger lives in the address, so a run can link straight to the trigger
@@ -254,6 +261,14 @@ export function TriggersWorkbench({
   const types = [...new Set(items.map((one) => one.type))];
   const rows = items.filter((one) => type === "all" || one.type === type);
   const open = items.find((one) => triggerKey(one) === chosen);
+  // One a resource holds (not a flow's own trigger) is remembered for the palette's Recent.
+  const ids = /^\/tenants\/([^/]+)\/workspaces\/([^/]+)/.exec(root);
+  useRecordRecent(
+    ids?.[1],
+    ids?.[2],
+    open && !open.node ? (open.type === "schedule" ? "schedule" : "trigger") : undefined,
+    open?.path,
+  );
   const pausedCount = items.filter((one) => one.paused).length;
   const [creating, setCreating] = useState(false);
   // Triggers checked, to pause or resume together.
@@ -462,24 +477,25 @@ export function TriggersWorkbench({
         table={{
           checked,
           onCheck: setChecked,
-          batch: (keys) => (
-            <>
-              <Button
-                size="small"
-                disabled={batch.busy}
-                onClick={() => void pauseMany([...keys], true)}
-              >
-                <CirclePause aria-hidden="true" size={14} /> Pause
-              </Button>
-              <Button
-                size="small"
-                disabled={batch.busy}
-                onClick={() => void pauseMany([...keys], false)}
-              >
-                <CirclePlay aria-hidden="true" size={14} /> Resume
-              </Button>
-            </>
-          ),
+          batch: (keys) =>
+            !mayPause ? null : (
+              <>
+                <Button
+                  size="small"
+                  disabled={batch.busy}
+                  onClick={() => void pauseMany([...keys], true)}
+                >
+                  <CirclePause aria-hidden="true" size={14} /> Pause
+                </Button>
+                <Button
+                  size="small"
+                  disabled={batch.busy}
+                  onClick={() => void pauseMany([...keys], false)}
+                >
+                  <CirclePlay aria-hidden="true" size={14} /> Resume
+                </Button>
+              </>
+            ),
         }}
         error={list.error}
         onRetry={list.reload}
@@ -493,33 +509,35 @@ export function TriggersWorkbench({
               <Current
                 object={{
                   heading: "This trigger",
-                  commands: open.paused
-                    ? [
-                        {
-                          key: "resume",
-                          label: `Resume ${open.path}`,
-                          icon: CirclePlay,
-                          run: () => resume(open),
-                        },
-                      ]
-                    : [
-                        {
-                          key: "pause",
-                          label: `Pause ${open.path}…`,
-                          icon: CirclePause,
-                          run: () => pause(open),
-                        },
-                        ...(open.type === "schedule" && !workspacePaused && !open.pausedBy
-                          ? [
-                              {
-                                key: "fire",
-                                label: "Fire it now",
-                                icon: Zap,
-                                run: () => fireNow(open),
-                              },
-                            ]
-                          : []),
-                      ],
+                  commands: !mayPause
+                    ? []
+                    : open.paused
+                      ? [
+                          {
+                            key: "resume",
+                            label: `Resume ${open.path}`,
+                            icon: CirclePlay,
+                            run: () => resume(open),
+                          },
+                        ]
+                      : [
+                          {
+                            key: "pause",
+                            label: `Pause ${open.path}…`,
+                            icon: CirclePause,
+                            run: () => pause(open),
+                          },
+                          ...(open.type === "schedule" && !workspacePaused && !open.pausedBy
+                            ? [
+                                {
+                                  key: "fire",
+                                  label: "Fire it now",
+                                  icon: Zap,
+                                  run: () => fireNow(open),
+                                },
+                              ]
+                            : []),
+                        ],
                   pin: {
                     kind: open.type === "schedule" ? "schedule" : "trigger",
                     ref: open.path,
@@ -538,7 +556,12 @@ export function TriggersWorkbench({
                 footer={
                   open.draft === "new" ? (
                     <span className="flex flex-wrap gap-2">
-                      <Button variant="primary" href={editLink(link, open)}>
+                      <Button
+                        variant="primary"
+                        {...(mayEdit
+                          ? { href: editLink(link, open) }
+                          : { disabled: true, tooltip: noEdit })}
+                      >
                         <Pencil aria-hidden="true" size={16} /> Edit
                       </Button>
                       <DeployMenu
@@ -550,11 +573,17 @@ export function TriggersWorkbench({
                     </span>
                   ) : open.paused ? (
                     <span className="flex flex-wrap gap-2">
-                      <Button variant="primary" onClick={() => void resume(open)}>
-                        <CirclePlay aria-hidden="true" size={16} /> Resume
-                      </Button>
+                      {mayPause ? (
+                        <Button variant="primary" onClick={() => void resume(open)}>
+                          <CirclePlay aria-hidden="true" size={16} /> Resume
+                        </Button>
+                      ) : null}
                       {production ? null : (
-                        <Button href={editLink(link, open)}>
+                        <Button
+                          {...(mayEdit
+                            ? { href: editLink(link, open) }
+                            : { disabled: true, tooltip: noEdit })}
+                        >
                           <Pencil aria-hidden="true" size={16} /> Edit
                         </Button>
                       )}
@@ -562,18 +591,27 @@ export function TriggersWorkbench({
                   ) : (
                     <span className="flex flex-wrap gap-2">
                       {production ? null : (
-                        <Button href={editLink(link, open)}>
+                        <Button
+                          {...(mayEdit
+                            ? { href: editLink(link, open) }
+                            : { disabled: true, tooltip: noEdit })}
+                        >
                           <Pencil aria-hidden="true" size={16} /> Edit
                         </Button>
                       )}
-                      {open.type === "schedule" && !workspacePaused && !open.pausedBy ? (
+                      {mayPause &&
+                      open.type === "schedule" &&
+                      !workspacePaused &&
+                      !open.pausedBy ? (
                         <Button variant="primary" onClick={() => void fireNow(open)}>
                           <Zap aria-hidden="true" size={16} /> Fire now
                         </Button>
                       ) : null}
-                      <Button onClick={() => void pause(open)}>
-                        <CirclePause aria-hidden="true" size={16} /> Pause this trigger
-                      </Button>
+                      {mayPause ? (
+                        <Button onClick={() => void pause(open)}>
+                          <CirclePause aria-hidden="true" size={16} /> Pause this trigger
+                        </Button>
+                      ) : null}
                     </span>
                   )
                 }
@@ -601,6 +639,7 @@ export function TriggersWorkbench({
                   {open.paused ? (
                     <Notice tone="attention">
                       Paused {ago(open.paused.at)}
+                      {open.paused.byName ? ` by ${open.paused.byName}` : ""}
                       {open.paused.reason ? `: ${open.paused.reason}` : "."} Nothing it would start
                       is started until it is resumed.
                     </Notice>

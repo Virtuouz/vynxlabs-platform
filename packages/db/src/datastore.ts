@@ -77,6 +77,7 @@ create unique index if not exists data_column_name_idx on data_column (table_id,
 alter table data_column add column if not exists options jsonb;
 alter table data_column add column if not exists on_delete text;
 alter table data_table add column if not exists display_column text;
+alter table data_table add column if not exists managed_in text;
 `;
 
 /**

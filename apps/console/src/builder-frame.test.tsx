@@ -134,6 +134,10 @@ test("the app is named in the header and renamed in place, with no field for it"
   fireEvent.click(screen.getByRole("button", { name: "Rename the app" }));
   const field = screen.getByLabelText("Name of the app") as HTMLInputElement;
   expect(field.maxLength).toBe(100); // BLD-06: what the interface takes
+  // The count is said beside it, as in every other field of a name.
+  expect(field.parentElement?.textContent).toContain("5 of 100");
+  fireEvent.change(field, { target: { value: "Tak" } });
+  expect(field.parentElement?.textContent).toContain("3 of 100");
   fireEvent.change(field, { target: { value: "Takings" } });
   fireEvent.keyDown(field, { key: "Enter" });
   expect(await screen.findByRole("heading", { name: "Takings", level: 1 })).toBeTruthy();
@@ -420,6 +424,19 @@ test("tables and groups that could not be read are said, not taken for missing (
   expect(screen.getByText(/Could not check .*the groups/)).toBeTruthy();
   expect(screen.queryByText("1 data source not found")).toBeNull();
   expect(screen.queryByText(/no longer exists/)).toBeNull();
+});
+
+test("the page editor and the new page dialog say that the tables could not be read (BLD-03)", async () => {
+  const before = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) =>
+    address.includes("/queries/schema")
+      ? new Response(JSON.stringify({ detail: "The service is down.", status: 500 }), {
+          status: 500,
+        })
+      : before(address, init),
+  );
+  await open();
+  expect(await screen.findByText(/The tables and saved queries could not be read/)).toBeTruthy();
 });
 
 test("a table that is not there, or a group that is gone, is said before publishing", async () => {

@@ -242,13 +242,16 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["dashboards"],
           params: WorkspaceParams,
           response: {
-            200: Type.Object({
-              items: Type.Array(Summary),
-              mayCreate: Type.Boolean({
-                description:
-                  "Whether the caller may make a dashboard here: whether they hold `dashboard:write`.",
-              }),
-            }),
+            200: Type.Object(
+              {
+                items: Type.Array(Summary),
+                mayCreate: Type.Boolean({
+                  description:
+                    "Whether the caller may make a dashboard here: whether they hold `dashboard:write`.",
+                }),
+              },
+              { description: "Every one there is. The list has no cursor." },
+            ),
           },
         },
       },

@@ -660,9 +660,15 @@ export async function findRows(db: AnyDb, target: RowTarget, query: FindQuery = 
     for (const meta of target.columns) {
       if (named.has(meta.physicalName)) continue;
       const ref = sql.ref(meta.physicalName);
-      const orderable = ["text", "integer", "number", "boolean", "date", "timestamp", "enum"].includes(
-        meta.type,
-      );
+      const orderable = [
+        "text",
+        "integer",
+        "number",
+        "boolean",
+        "date",
+        "timestamp",
+        "enum",
+      ].includes(meta.type);
       order.push(orderable ? sql`${ref} asc nulls last` : sql`${ref}::text asc nulls last`);
     }
   }

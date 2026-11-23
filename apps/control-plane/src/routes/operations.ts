@@ -167,9 +167,11 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       if (may.scripts)
         parts.push(sql`
           select 'script' as kind, r.id, r.script_path as target, r.status::text as status,
-            ${runStateSql("r.status")} as state, r.trigger_type, (r.trigger_detail ? 'relay') as source, r.attempt, r.max_attempts, r.error->>'message' as error,
+            ${runStateSql("r.status", "r.scheduled_for")} as state, r.trigger_type, (r.trigger_detail ? 'relay') as source, r.attempt, r.max_attempts, r.error->>'message' as error,
             r.error_summary, r.output_summary, r.tags,
-            b.version, r.created_at, r.scheduled_for, null::timestamptz as wake_at, r.started_at,
+            b.version, r.created_at, r.scheduled_for,
+            case when r.status = 'queued' and r.scheduled_for > now() then r.scheduled_for end as wake_at,
+            r.started_at,
             r.finished_at
           from run r join bundle b on b.id = r.bundle_id
           where r.workspace_id = ${w} and r.flow_run_id is null and ${window("r.created_at")}
@@ -285,7 +287,8 @@ export function operationsRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           query.sort === "started"
             ? sql`extract(epoch from coalesce(started_at, scheduled_for, created_at))::float8`
             : query.sort === "duration"
-              ? sql`coalesce(extract(epoch from finished_at - started_at)::float8, -1)`
+              ? // A run that has not finished has no length: it goes last, whichever way the list runs.
+                sql`coalesce(extract(epoch from finished_at - started_at)::float8, ${descending ? -1 : 1e18}::float8)`
               : sql`null::float8`;
         let afterValue: number | undefined;
         let afterId = args.after;

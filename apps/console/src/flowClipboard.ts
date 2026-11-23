@@ -37,6 +37,23 @@ export function copySteps(steps: ClipStep[], edges: ClipEdge[], chosen: Set<stri
   };
 }
 
+/** A step's name, as the flow's schema takes it. */
+const STEP_NAME = /^[a-z][a-z0-9_]*$/;
+/** The kinds of step a flow has. */
+const STEP_TYPES = new Set([
+  "trigger",
+  "script",
+  "subflow",
+  "set",
+  "respond",
+  "branch",
+  "foreach",
+  "join",
+  "delay",
+  "approval",
+  "fail",
+]);
+
 /** Steps from the clipboard's text, or nothing when the text is something else. */
 export function readClip(text: string): Clip | undefined {
   try {
@@ -46,7 +63,10 @@ export function readClip(text: string): Clip | undefined {
     const steps = value.steps.filter(
       (step): step is ClipStep =>
         typeof step?.id === "string" &&
+        step.id.length <= 63 &&
+        STEP_NAME.test(step.id) &&
         typeof step.node?.type === "string" &&
+        STEP_TYPES.has(step.node.type) &&
         Number.isFinite(step.position?.x) &&
         Number.isFinite(step.position?.y),
     );

@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
-import { Can } from "../kit/Can.tsx";
+import { Can, useMay } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago, between, count, duration } from "../kit/format.ts";
@@ -718,7 +718,16 @@ export function TestConnection({
 }
 
 /** What the last Test found, or why the connection cannot be used. */
-export function ConnectionHealth({ root, row }: { root: string; row: ConnectionRow }) {
+export function ConnectionHealth({
+  root,
+  row,
+  mayConnect = true,
+}: {
+  root: string;
+  row: ConnectionRow;
+  /** Connecting is a change of the connection: someone who may only read sees the state, not the button. */
+  mayConnect?: boolean;
+}) {
   if (!row.bound) return null;
   // What a member must do is beside what is wrong, where a phone shows it.
   if (row.oauth && row.oauth.status !== "connected") {
@@ -728,13 +737,15 @@ export function ConnectionHealth({ root, row }: { root: string; row: ConnectionR
         <StatePill state={again ? "failed" : "waiting"}>
           {again ? "Needs reconnecting" : "Not connected"}
         </StatePill>
-        <Button
-          size="small"
-          variant="primary"
-          onClick={() => startConnect(root, row.path).catch((error) => notify.error(error))}
-        >
-          {again ? "Reconnect" : "Connect"}
-        </Button>
+        {mayConnect ? (
+          <Button
+            size="small"
+            variant="primary"
+            onClick={() => startConnect(root, row.path).catch((error) => notify.error(error))}
+          >
+            {again ? "Reconnect" : "Connect"}
+          </Button>
+        ) : null}
       </span>
     );
   }
@@ -743,6 +754,10 @@ export function ConnectionHealth({ root, row }: { root: string; row: ConnectionR
 
 export function Connections({ root, production = false }: { root: string; production?: boolean }) {
   const connectionUses = useReferences(root, "connection");
+  const may = useMay(root, "connection:write", "resource:write", "run:read");
+  const mayWrite = may("connection:write");
+  // A new connection is declared in a draft (resource:write); in production one only waits to be set up.
+  const mayNew = mayWrite && (production || may("resource:write"));
   const list = useLoad<{ items: ConnectionRow[] }>(`${root}/connection-bindings`);
   const [editing, setEditing] = useState<{ row?: ConnectionRow | undefined } | null>(null);
   // Back from an OAuth provider: the connection's sheet opens again with what it said.
@@ -799,7 +814,8 @@ export function Connections({ root, production = false }: { root: string; produc
         description="Where each connection points in this workspace. Addresses and credentials are set here, never in the repository, so dev and production can differ."
         path={`${root}/connection-bindings`}
         rowKey={(row) => row.path}
-        action={newButton}
+        action={mayNew ? newButton : null}
+        needs={{ base: root, permission: "connection:write", what: "this workspace's connections" }}
         columns={[
           {
             header: "Connection",
@@ -821,7 +837,10 @@ export function Connections({ root, production = false }: { root: string; produc
             ),
           },
           // Second, so a phone shows it without scrolling the table.
-          { header: "Health", cell: (row) => <ConnectionHealth root={root} row={row} /> },
+          {
+            header: "Health",
+            cell: (row) => <ConnectionHealth root={root} row={row} mayConnect={mayWrite} />,
+          },
           {
             header: "Used by",
             cell: (row) => (
@@ -865,7 +884,7 @@ export function Connections({ root, production = false }: { root: string; produc
           const done = () => reloadList();
           return (
             <span className="flex flex-wrap justify-end gap-2">
-              {row.bound && (!row.oauth || row.oauth.status === "connected") ? (
+              {row.bound && (!row.oauth || row.oauth.status === "connected") && may("run:read") ? (
                 <TestConnection root={root} path={row.path} onDone={done} />
               ) : null}
               <Button size="small" onClick={() => setEditing({ row })}>
@@ -909,6 +928,7 @@ export function Connections({ root, production = false }: { root: string; produc
 
 export function Variables({ root }: { root: string }) {
   const variableUses = useReferences(root, "variable");
+  const mayWrite = useMay(root, "variable:write")("variable:write");
   const [editing, setEditing] = useState<{ row: VariableValue; reload: () => void } | null>(null);
   return (
     <>
@@ -921,6 +941,7 @@ export function Variables({ root }: { root: string }) {
         draft?: "new" | "changed" | "removed" | null;
       }>
         title="Variables"
+        needs={{ base: root, permission: "variable:write", what: "this workspace's variables" }}
         setupField="path"
         description="Settings a script reads at run time. Each workspace can set its own value. Without one, the default from the repository applies."
         path={`${root}/variable-values`}
@@ -972,7 +993,9 @@ export function Variables({ root }: { root: string }) {
           {
             header: "Value here",
             cell: (row) =>
-              row.value !== null ? (
+              row.value === "" ? (
+                <span className="text-ink-muted">Empty</span>
+              ) : row.value !== null ? (
                 <Code>{row.value}</Code>
               ) : (
                 <span className="text-ink-muted">Default: {row.default ?? "none"}</span>
@@ -995,9 +1018,20 @@ export function Variables({ root }: { root: string }) {
                 }),
               },
             },
-            { name: "value", label: "Value" },
+            // An empty value is a value: a script that reads it gets "", not the default.
+            {
+              name: "value",
+              label: "Value",
+              required: false,
+              hint: "Leave it empty to give the variable an empty value.",
+            },
           ],
-          submit: ({ path = "", value }) => api.put(`${root}/variable-values/${path}`, { value }),
+          submit: ({ path = "", value = "" }) =>
+            api.put(`${root}/variable-values/${path}`, { value }),
+          done: (_, { path = "", value = "" }) =>
+            value === ""
+              ? `Set ${path} to an empty value in this workspace.`
+              : `Set ${path} in this workspace.`,
         }}
         rowActions={(row, reload) => (
           <span className="flex flex-wrap justify-end gap-2">

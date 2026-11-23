@@ -456,7 +456,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       ) : (
         <Loading />
       )}
-      {create ? (
+      {create && can ? (
         <CreateDialog
           // A name given by the address starts the form again, with the name in.
           key={filling ?? ""}

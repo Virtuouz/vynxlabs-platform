@@ -544,4 +544,27 @@ describe("the flow editor, as a person uses it", () => {
     expect(await iconOf("Call out")).toContain("lucide-globe");
     expect(await iconOf("Odd one")).toContain("lucide-puzzle");
   });
+  test("a schema typed for a manual start is still there after another step was chosen and this one again", async () => {
+    await openAt(
+      {
+        nodes: { start: manual, route: { type: "branch", cases: [{ name: "a", when: "true" }] } },
+        edges: [{ from: "start", to: "route" }],
+      },
+      "start",
+      /What it takes, as JSON Schema/,
+    );
+    const box = () => screen.getByLabelText(/What it takes, as JSON Schema/) as HTMLTextAreaElement;
+    fireEvent.change(box(), { target: { value: '{ "type": "obj' } });
+    await screen.findByText(/This is not JSON yet/);
+    const goTo = (step: string) =>
+      fireEvent.click(
+        document.querySelector(`.react-flow__node[data-id="${step}"]`) as HTMLElement,
+      );
+    goTo("route");
+    await screen.findByText("Cases, tried in order");
+    goTo("start");
+    await screen.findByLabelText(/What it takes, as JSON Schema/);
+    expect(box().value).toBe('{ "type": "obj');
+    await screen.findByText(/This is not JSON yet/);
+  });
 });

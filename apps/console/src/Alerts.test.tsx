@@ -125,3 +125,31 @@ test("the queue says where runs wait and for how long, and what each worker hold
   expect(await screen.findByText("Older version")).toBeTruthy();
   expect(screen.getByText("running orders/sync")).toBeTruthy();
 });
+
+test("a viewer reads the alert settings and is offered no Save or test (OPS-35)", async () => {
+  const served = globalThis.fetch;
+  let allowed: string[] = [];
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) =>
+    address.split("?")[0]?.endsWith("/allowed")
+      ? new Response(JSON.stringify({ allowed }), { status: 200 })
+      : served(address, init),
+  );
+  show(<Alerts root={root} link={link} workspaceRoot={root} editable />);
+  const post = (await screen.findByLabelText("Post to a connection")) as HTMLSelectElement;
+  await waitFor(() => expect(post.value).toBe("chat"));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  // Greyed under the line that says what it takes: inside a fieldset that is off.
+  expect((post.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
+  expect(document.body.textContent).toContain("It needs workspace:write");
+  const buttons = ["Save", "Send a test alert"].flatMap((name) =>
+    screen.queryAllByRole("button", { name }),
+  );
+  expect(buttons.every((one) => (one.closest("fieldset") as HTMLFieldSetElement).disabled)).toBe(
+    true,
+  );
+  cleanup();
+  allowed = ["workspace:write", "connection:write"];
+  show(<Alerts root={root} link={link} workspaceRoot={root} editable />);
+  expect(await screen.findByRole("button", { name: "Save" })).toBeTruthy();
+  expect(await screen.findByRole("button", { name: "Send a test alert" })).toBeTruthy();
+});

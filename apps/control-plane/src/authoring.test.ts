@@ -958,6 +958,41 @@ describe("testing a flow", () => {
     }
   });
 
+  test("an unrelated flow draft that does not build does not stop a test of another flow (FLW-36)", async () => {
+    await draft("solo2/ok", scriptBody("export default async () => ({ ok: true });\n"));
+    await draft(
+      "solo2/flow",
+      {
+        description: "",
+        nodes: {
+          start: { type: "trigger", trigger: { type: "manual" } },
+          a: { type: "script", script: "solo2/ok" },
+        },
+        edges: [{ from: "start", to: "a" }],
+      },
+      "flow",
+    );
+    // A join with one way in, which a deploy refuses, in a flow nothing here names.
+    await draft(
+      "elsewhere2/join",
+      {
+        description: "",
+        nodes: {
+          start: { type: "trigger", trigger: { type: "manual" } },
+          j: { type: "join" },
+        },
+        edges: [{ from: "start", to: "j" }],
+      },
+      "flow",
+    );
+    const started = await alice.post(`${ws()}/test-runs`, { flow: "solo2/flow" });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    expect((await flowRun(started.body.runId)).status).toBe("succeeded");
+    for (const path of ["solo2/flow", "solo2/ok", "elsewhere2/join"]) {
+      await alice.delete(`${ws()}/drafts/${path}`);
+    }
+  });
+
   test("every starter flow runs, on an input that fits it (FLW-11)", async () => {
     const { FLOW_STARTERS } = (await import(
       /* @vite-ignore */ new URL("../../console/src/screens/starters.ts", import.meta.url).href

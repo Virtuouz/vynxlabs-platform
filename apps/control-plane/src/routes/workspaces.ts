@@ -289,6 +289,57 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     );
 
     app.get(
+      "/tenants/:t/workspaces/:w/allowed",
+      {
+        config: { access: access.signedIn },
+        schema: {
+          summary: "Which of some permissions the caller holds in a workspace",
+          description:
+            "Asks about the caller only, and answers only the permissions they hold, so a screen can leave out what the server would refuse. A name that is not a permission is not held. At most 20 are asked at once.",
+          tags: ["tenancy"],
+          params: WorkspaceParams,
+          querystring: Type.Object({
+            permissions: Type.String({
+              maxLength: 600,
+              description:
+                "Permission names, separated by commas: `connection:write,secret:write`.",
+            }),
+            kind: Type.Optional(
+              Type.String({
+                maxLength: 60,
+                description:
+                  "With `path`: the resource asked about. A grant given on it alone counts, as it does where the server checks.",
+              }),
+            ),
+            path: Type.Optional(Type.String({ maxLength: 400 })),
+          }),
+          response: { 200: Type.Object({ allowed: Type.Array(Type.String()) }) },
+        },
+      },
+      async ({ ctx, params, query }) => {
+        const asked = [...new Set(query.permissions.split(",").filter(Boolean))].slice(0, 20);
+        const allowed: string[] = [];
+        // A resource that is not there is asked about as the workspace: a grant on nothing is none.
+        const target =
+          query.kind && query.path
+            ? (await resolveResource(db, params.w, query.path, { kind: query.kind }))?.resource
+            : undefined;
+        for (const permission of asked) {
+          if (
+            await ctx.allowed(permission, {
+              tenantId: params.t,
+              workspaceId: params.w,
+              ...(target ? { resourceId: target.id } : {}),
+            })
+          ) {
+            allowed.push(permission);
+          }
+        }
+        return { allowed };
+      },
+    );
+
+    app.get(
       "/tenants/:t/workspaces/:w",
       {
         config: { access: access.workspace("workspace:read") },

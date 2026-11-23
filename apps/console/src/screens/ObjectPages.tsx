@@ -5,6 +5,7 @@ import { api, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
+import { useMay, useNeeds } from "../kit/Can.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago } from "../kit/format.ts";
@@ -61,6 +62,8 @@ function Gate<T>({
 export function ConnectionPage({ root, link, path }: { root: string; link: string; path: string }) {
   const found = useLoad<ConnectionRow>(`${root}/connection-bindings/${path}`);
   const uses = useReferences(root, "connection");
+  const may = useMay(root, "connection:write", "run:read");
+  const mayWrite = may("connection:write");
   // The same sheet the list opens, here on the page itself.
   const [editing, setEditing] = useState<ConnectionRow | null>(null);
   return (
@@ -74,18 +77,23 @@ export function ConnectionPage({ root, link, path }: { root: string; link: strin
             state={
               <>
                 <StatePill state={one.bound ? "bound" : "unbound"} />
-                <ConnectionHealth root={root} row={one} />
+                <ConnectionHealth root={root} row={one} mayConnect={mayWrite} />
               </>
             }
             actions={
               <>
-                {one.bound && (!one.oauth || one.oauth.status === "connected") ? (
+                {one.bound &&
+                (!one.oauth || one.oauth.status === "connected") &&
+                may("run:read") &&
+                mayWrite ? (
                   <TestConnection root={root} path={one.path} onDone={() => found.reload?.()} />
                 ) : null}
-                <Button onClick={() => setEditing(one)}>
-                  {one.bound ? "Change where it points" : "Set up"}
-                </Button>
-                {one.bound ? (
+                {mayWrite ? (
+                  <Button onClick={() => setEditing(one)}>
+                    {one.bound ? "Change where it points" : "Set up"}
+                  </Button>
+                ) : null}
+                {one.bound && mayWrite ? (
                   <RemoveButton
                     label="Unbind"
                     confirm={`Unbind ${one.path}? Scripts that use it will fail until it is bound again.`}
@@ -175,6 +183,7 @@ interface Variable {
 export function VariablePage({ root, link, path }: { root: string; link: string; path: string }) {
   const found = useLoad<Variable>(`${root}/variable-values/${path}`);
   const [editing, setEditing] = useState<Variable | null>(null);
+  const mayWrite = useMay(root, "variable:write")("variable:write");
   return (
     <Gate found={found} list={`${link}/variables`} noun="variable">
       {(one) => (
@@ -184,9 +193,11 @@ export function VariablePage({ root, link, path }: { root: string; link: string;
             eyebrow="Variable"
             title={one.path}
             actions={
-              <Button onClick={() => setEditing(one)}>
-                {one.value !== null ? "Change value" : "Set value"}
-              </Button>
+              mayWrite ? (
+                <Button onClick={() => setEditing(one)}>
+                  {one.value !== null ? "Change value" : "Set value"}
+                </Button>
+              ) : null
             }
             meta={
               <KeyValues
@@ -195,9 +206,11 @@ export function VariablePage({ root, link, path }: { root: string; link: string;
                   {
                     label: "Value here",
                     value:
-                      one.value ??
-                      (one.default !== null ? `The default: ${one.default}` : "Not set"),
-                    mono: one.value !== null,
+                      one.value === ""
+                        ? "Empty"
+                        : (one.value ??
+                          (one.default !== null ? `The default: ${one.default}` : "Not set")),
+                    mono: one.value !== null && one.value !== "",
                   },
                   ...(one.default !== null
                     ? [{ label: "Default", value: one.default, mono: true }]
@@ -251,6 +264,15 @@ function ReplaceSecret({
 }) {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const mayReplace = useMay(root, "secret:write")("secret:write");
+  if (!mayReplace) {
+    return (
+      <p className="m-0 max-w-xl text-ink-muted">
+        Replacing the value needs the secret:write permission: ask an administrator of this
+        workspace.
+      </p>
+    );
+  }
   return (
     <form
       className="flex max-w-xl flex-col gap-3"
@@ -354,6 +376,13 @@ export function EventPage({
   production?: boolean;
 }) {
   const found = useLoad<Resource>(`${root}/resources/${path}`);
+  const may = useNeeds({ base: root, permission: "resource:write", what: "this event" });
+  const mayPublish = useNeeds({
+    base: root,
+    permission: "event:write",
+    what: "this event",
+    resource: { kind: "event", path },
+  });
   return (
     <Gate found={found} list={`${link}/events`} noun="event">
       {(one) => (
@@ -363,13 +392,19 @@ export function EventPage({
           title={one.path}
           actions={
             <>
-              <PublishEventButton
-                root={root}
-                production={production}
-                event={one.path}
-                label="Publish it"
-              />
-              <Button onClick={() => navigate(`${link}/resources/edit/event/${one.path}`)}>
+              <fieldset disabled={!mayPublish.can} className="contents">
+                <PublishEventButton
+                  root={root}
+                  production={production}
+                  event={one.path}
+                  label="Publish it"
+                />
+              </fieldset>
+              <Button
+                disabled={!may.can}
+                {...(may.reason ? { tooltip: may.reason } : {})}
+                onClick={() => navigate(`${link}/resources/edit/event/${one.path}`)}
+              >
                 Change its declaration
               </Button>
             </>
@@ -448,6 +483,7 @@ export function TriggersOf({
     (one) => one.script === path && (one.targetKind ?? "script") === kind,
   );
   const [adding, setAdding] = useState(false);
+  const may = useNeeds({ base: root, permission: "resource:write", what: "its triggers" });
   const listPath = `${root}/triggers?${new URLSearchParams({ target: path })}`;
   const { pause, resume } = useTriggerPause({ root, production, listPath });
   return (
@@ -458,7 +494,12 @@ export function TriggersOf({
         </p>
       ) : (
         <div>
-          <Button size="small" onClick={() => setAdding(true)}>
+          <Button
+            size="small"
+            disabled={!may.can}
+            {...(may.reason ? { tooltip: may.reason } : {})}
+            onClick={() => setAdding(true)}
+          >
             Add a schedule
           </Button>
         </div>
@@ -609,6 +650,12 @@ export function ScriptPage({
   production?: boolean;
 }) {
   const scripts = useLoad<{ items: ScriptSummary[] }>(`${root}/scripts`);
+  const mayRun = useNeeds({
+    base: root,
+    permission: "run:write",
+    what: "this script",
+    resource: { kind: "script", path },
+  });
   const one = scripts.data?.items.find((script) => script.path === path);
   const found: Loaded<ScriptSummary> = {
     data: one,
@@ -664,15 +711,17 @@ export function ScriptPage({
             }
             actions={
               <>
-                <RunButton
-                  root={root}
-                  script={script.path}
-                  schema={script.inputSchema ?? {}}
-                  runsLink={`${link}/runs`}
-                  deployed={script.deployed !== false}
-                  draft={script.draft === true}
-                  size="regular"
-                />
+                <fieldset disabled={!mayRun.can} className="contents" title={mayRun.reason}>
+                  <RunButton
+                    root={root}
+                    script={script.path}
+                    schema={script.inputSchema ?? {}}
+                    runsLink={`${link}/runs`}
+                    deployed={script.deployed !== false}
+                    draft={script.draft === true}
+                    size="regular"
+                  />
+                </fieldset>
                 <Button
                   variant="primary"
                   onClick={() => navigate(`${link}/scripts/edit/${script.path}`)}
@@ -714,6 +763,11 @@ export function ScriptPage({
                 content: <ReferenceList root={root} link={link} kind="script" name={script.path} />,
               },
               {
+                id: "settings",
+                label: "Settings",
+                content: <ScriptSettings root={root} link={link} path={script.path} />,
+              },
+              {
                 id: "source",
                 label: "Source",
                 content: <SourceAt root={root} link={link} path={script.path} />,
@@ -723,5 +777,79 @@ export function ScriptPage({
         </>
       )}
     </Gate>
+  );
+}
+
+interface ScriptSettingsBody {
+  timeoutSeconds?: number;
+  memoryMb?: number;
+  concurrency?: number | { key: string; limit: number };
+  worker?: string;
+  onFailure?: { script?: string; notify?: string };
+  retries?: { limit: number; delaySeconds: number; backoff: boolean };
+  uses?: Record<string, string[] | undefined>;
+}
+
+/** What a script runs with, as the editor's Settings set it: read here, changed in the editor. */
+function ScriptSettings({ root, link, path }: { root: string; link: string; path: string }) {
+  const found = useLoad<{ kind: string; body: ScriptSettingsBody }>(`${root}/resources/${path}`);
+  if (found.error) {
+    return (
+      <ErrorState what="the settings of this script" error={found.error} onRetry={found.reload} />
+    );
+  }
+  if (!found.data) return <Loading />;
+  const body = found.data.body;
+  const list = (names: string[] | undefined) =>
+    names && names.length > 0 ? names.join(", ") : undefined;
+  const concurrency =
+    typeof body.concurrency === "object"
+      ? `${body.concurrency.limit} for each value of ${body.concurrency.key}`
+      : body.concurrency !== undefined
+        ? String(body.concurrency)
+        : undefined;
+  const rows: { label: string; value: string | undefined; mono?: boolean }[] = [
+    {
+      label: "Stops after",
+      value: body.timeoutSeconds !== undefined ? `${body.timeoutSeconds} seconds` : undefined,
+    },
+    {
+      label: "Tries again",
+      value: body.retries
+        ? `${body.retries.limit} time${body.retries.limit === 1 ? "" : "s"}, ${body.retries.delaySeconds} seconds apart${body.retries.backoff ? ", waiting longer each time" : ""}`
+        : undefined,
+    },
+    { label: "Memory", value: body.memoryMb !== undefined ? `${body.memoryMb} MB` : undefined },
+    { label: "Runs at once", value: concurrency },
+    { label: "Worker pool", value: body.worker },
+    { label: "Connections", value: list(body.uses?.connections) },
+    { label: "Secrets", value: list(body.uses?.secrets) },
+    { label: "Variables", value: list(body.uses?.variables) },
+    { label: "Tables", value: list(body.uses?.tables) },
+    { label: "Data sources", value: list(body.uses?.sources) },
+    { label: "Events it may publish", value: list(body.uses?.events) },
+    { label: "Connection groups", value: list(body.uses?.connectionGroups) },
+    { label: "Starts, when it fails for the last time", value: body.onFailure?.script },
+    {
+      label: "Sends a summary through, when it fails for the last time",
+      value: body.onFailure?.notify,
+    },
+  ];
+  const set = rows.filter((row) => row.value !== undefined);
+  return (
+    <div className="flex max-w-2xl flex-col gap-3">
+      {set.length === 0 ? (
+        <p className="m-0 text-ink-muted">
+          Nothing is set: it runs with the workspace's defaults and uses nothing it has not been
+          given.
+        </p>
+      ) : (
+        <KeyValues rows={set.map((row) => ({ label: row.label, value: row.value }))} />
+      )}
+      <p className="m-0 text-meta text-ink-subtle">
+        These are changed in the editor's Settings.{" "}
+        <Link to={`${link}/scripts/edit/${path}`}>Open the code</Link>
+      </p>
+    </div>
   );
 }

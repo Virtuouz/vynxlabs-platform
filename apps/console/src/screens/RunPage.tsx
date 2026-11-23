@@ -14,6 +14,7 @@ import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { CopyIcon, Identifier } from "../kit/copy.tsx";
 import { Current } from "../kit/current.ts";
 import { Elapsed, WaitedAndRan } from "../kit/Elapsed.tsx";
@@ -222,6 +223,12 @@ function EditInDev({ root, path, runId }: { root: string; path: string; runId: s
 
 function ScriptRunPage({ root, link, id }: { root: string; link: string; id: string }) {
   const { run, lines, earlier, error, reconnecting } = useLiveRun(root, id);
+  const may = useNeeds({
+    base: root,
+    permission: "run:write",
+    what: "this run",
+    ...(run ? { resource: { kind: "script", path: run.script } } : {}),
+  });
   const ended = run !== undefined && !LIVE.includes(run.state);
   const insight = useLoad<Insight>(ended ? `${root}/runs/${id}/insight` : null);
   const [editing, setEditing] = useState(false);
@@ -365,32 +372,37 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         }
         actions={
           <>
+            {may.can ? null : <span className="text-meta text-ink-muted">{may.reason}</span>}
             {active ? (
-              <Button size="small" variant="danger" onClick={cancel}>
-                Cancel run
-              </Button>
+              <fieldset disabled={!may.can} className="contents">
+                <Button size="small" variant="danger" onClick={cancel}>
+                  Cancel run
+                </Button>
+              </fieldset>
             ) : null}
             {/* A step of a flow is run again by retrying its flow run. */}
             {run.trigger.type === "flow" || fromSource ? null : (
-              <Menu
-                label={
-                  <span className="flex items-center gap-1.5">
-                    <RotateCcw aria-hidden="true" size={14} /> Re-run
-                    <ChevronDown aria-hidden="true" size={14} />
-                  </span>
-                }
-                triggerClassName="flex h-8 items-center rounded-control border border-line px-3 text-meta hover:bg-surface"
-                align="end"
-                items={[
-                  { label: "With the same input", onSelect: () => void confirmed("original") },
-                  { label: "With other input…", onSelect: () => setEditing(true) },
-                  {
-                    label: "On the version deployed now",
-                    onSelect: () => void confirmed("active"),
-                    separated: true,
-                  },
-                ]}
-              />
+              <fieldset disabled={!may.can} className="contents">
+                <Menu
+                  label={
+                    <span className="flex items-center gap-1.5">
+                      <RotateCcw aria-hidden="true" size={14} /> Re-run
+                      <ChevronDown aria-hidden="true" size={14} />
+                    </span>
+                  }
+                  triggerClassName="flex h-8 items-center rounded-control border border-line px-3 text-meta hover:bg-surface"
+                  align="end"
+                  items={[
+                    { label: "With the same input", onSelect: () => void confirmed("original") },
+                    { label: "With other input…", onSelect: () => setEditing(true) },
+                    {
+                      label: "On the version deployed now",
+                      onSelect: () => void confirmed("active"),
+                      separated: true,
+                    },
+                  ]}
+                />
+              </fieldset>
             )}
             {fromSource ? null : <EditInDev root={root} path={run.script} runId={run.id} />}
             {fromSource ? null : (
@@ -641,6 +653,12 @@ function FlowRunHeader({
 }) {
   const [editing, setEditing] = useState(false);
   const [choosing, setChoosing] = useState(false);
+  const may = useNeeds({
+    base: root,
+    permission: "flow_run:write",
+    what: "this flow run",
+    resource: { kind: "flow", path: run.flow },
+  });
   const live = LIVE.includes(run.state);
   const finishedBadly = run.state === "failed" || run.state === "canceled";
   const trigger = flow?.nodes[run.triggerNode] as
@@ -791,10 +809,13 @@ function FlowRunHeader({
         }
         actions={
           <>
+            {may.can ? null : <span className="text-meta text-ink-muted">{may.reason}</span>}
             {live ? (
-              <Button size="small" variant="danger" onClick={cancel}>
-                Cancel flow run
-              </Button>
+              <fieldset disabled={!may.can} className="contents">
+                <Button size="small" variant="danger" onClick={cancel}>
+                  Cancel flow run
+                </Button>
+              </fieldset>
             ) : run.parentFlowRunId ? (
               // A step of another flow run is run again with that flow run: the server refuses it alone.
               <Link
@@ -804,37 +825,44 @@ function FlowRunHeader({
                 <RotateCcw aria-hidden="true" size={14} /> Retry the flow that started it
               </Link>
             ) : (
-              <Menu
-                label={
-                  <span className="flex items-center gap-1.5">
-                    <RotateCcw aria-hidden="true" size={14} /> Re-run
-                    <ChevronDown aria-hidden="true" size={14} />
-                  </span>
-                }
-                triggerClassName="flex h-8 items-center rounded-control border border-line px-3 text-meta hover:bg-surface"
-                align="end"
-                items={[
-                  ...(finishedBadly
-                    ? [{ label: "Retry from the failed step…", onSelect: () => void fromFailed() }]
-                    : []),
-                  ...(finishedBadly && fix !== undefined
-                    ? [
-                        {
-                          label: `Retry from the failed step on v${fix} (deployed now)…`,
-                          onSelect: () => void fromFailed("active"),
-                        },
-                      ]
-                    : []),
-                  { label: "Again from the start", onSelect: () => void fromStart("original") },
-                  { label: "Again, with other input…", onSelect: () => setEditing(true) },
-                  { label: "On another version…", onSelect: () => setChoosing(true) },
-                  {
-                    label: "On the version deployed now",
-                    onSelect: () => void fromStart("active"),
-                    separated: true,
-                  },
-                ]}
-              />
+              <fieldset disabled={!may.can} className="contents">
+                <Menu
+                  label={
+                    <span className="flex items-center gap-1.5">
+                      <RotateCcw aria-hidden="true" size={14} /> Re-run
+                      <ChevronDown aria-hidden="true" size={14} />
+                    </span>
+                  }
+                  triggerClassName="flex h-8 items-center rounded-control border border-line px-3 text-meta hover:bg-surface"
+                  align="end"
+                  items={[
+                    ...(finishedBadly
+                      ? [
+                          {
+                            label: "Retry from the failed step…",
+                            onSelect: () => void fromFailed(),
+                          },
+                        ]
+                      : []),
+                    ...(finishedBadly && fix !== undefined
+                      ? [
+                          {
+                            label: `Retry from the failed step on v${fix} (deployed now)…`,
+                            onSelect: () => void fromFailed("active"),
+                          },
+                        ]
+                      : []),
+                    { label: "Again from the start", onSelect: () => void fromStart("original") },
+                    { label: "Again, with other input…", onSelect: () => setEditing(true) },
+                    { label: "On another version…", onSelect: () => setChoosing(true) },
+                    {
+                      label: "On the version deployed now",
+                      onSelect: () => void fromStart("active"),
+                      separated: true,
+                    },
+                  ]}
+                />
+              </fieldset>
             )}
             {run.parentFlowRunId ? null : (
               // The retry route starts it again from its own stored input: it needs no manual

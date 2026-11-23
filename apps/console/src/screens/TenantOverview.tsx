@@ -64,6 +64,8 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
   const c = counts.data;
   const t = (slug: string) => `/t/${tenantId}/${slug}`;
 
+  // A count the viewer may not read is not zero.
+  const unseen = c !== undefined && (c.approvalsWaiting == null || c.domainsToFix == null);
   const attention: ReactNode[] = [];
   const waiting = c?.approvalsWaiting ?? 0;
   // An older server does not say which are the viewer's: then none is claimed.
@@ -172,13 +174,15 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
                   attention
                 ) : (
                   <NextStep
-                    tone="success"
+                    tone={unseen ? "action" : "success"}
                     icon={<CircleCheck aria-hidden="true" size={16} />}
-                    title="Nothing needs you"
+                    title={unseen ? "Nothing you can see needs you" : "Nothing needs you"}
                     detail={
-                      tenant.data?.managedWorkers
-                        ? "No approvals or promotions waiting, every hostname works, and the instance starts workers when there is work."
-                        : "No approvals or promotions waiting, every hostname works, and workers are online."
+                      unseen
+                        ? "Some counts here are not yours to read. Ask an administrator for read access if you need them."
+                        : tenant.data?.managedWorkers
+                          ? "No approvals or promotions waiting, every hostname works, and the instance starts workers when there is work."
+                          : "No approvals or promotions waiting, every hostname works, and workers are online."
                     }
                   />
                 )}

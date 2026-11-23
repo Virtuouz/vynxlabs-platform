@@ -291,3 +291,25 @@ test("pausing a trigger from a script's page asks why, and sends the reason", as
     }),
   );
 });
+
+test("a viewer who may not read the counts is not told nothing needs them, nor shown first steps (SHL-09)", async () => {
+  routes[`GET ${root}/summary`] = () => [
+    200,
+    {
+      drafts: null,
+      unboundConnections: null,
+      approvalsWaiting: null,
+      git: null,
+      version: 3,
+      linked: null,
+    },
+  ];
+  routes[`GET ${root}/triggers`] = () => [200, { items: [] }];
+  show(<Overview root={root} link={link} workspace={workspace} />);
+  expect(await screen.findByText("Nothing you can see needs you here")).toBeTruthy();
+  expect(
+    screen.getByText(/You cannot see failed runs, approvals, connections and drafts/),
+  ).toBeTruthy();
+  expect(screen.queryByText("Nothing needs you here")).toBeNull();
+  expect(screen.queryByText("A first run")).toBeNull();
+});

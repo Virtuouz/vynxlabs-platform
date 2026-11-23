@@ -27,7 +27,7 @@ import {
 } from "@volvel/ui";
 import { Download, Ellipsis, Keyboard } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { type ApiError, api, useLoad } from "../api.ts";
+import { ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { useAddressBox } from "../kit/addressBox.ts";
@@ -38,6 +38,7 @@ import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
+import { UsedBy, useReferences } from "../kit/references.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
@@ -1265,6 +1266,8 @@ function AddRow({
 // ----- Tables -----
 
 interface TableSummary {
+  /** Tells apart two retired tables that had one name. */
+  id?: string;
   name: string;
   description: string;
   status: "active" | "retired";
@@ -1280,16 +1283,24 @@ export function Tables({ root, link }: { root: string; link: string }) {
       title="Tables"
       description="The data this workspace keeps. A table defined in the repository changes when a bundle is deployed. Nothing is ever dropped by a deploy: what leaves a definition is retired and its data kept."
       path={`${root}/tables`}
-      rowKey={(row) => `${row.name}:${row.status}`}
+      rowKey={(row) => `${row.name}:${row.status}:${row.id ?? ""}`}
       columns={[
         {
           header: "Table",
           cell: (row) => (
             <span className="inline-flex items-center gap-2">
-              <Link to={`${link}/tables/${row.name}`} className="font-medium text-action">
+              <Link
+                to={`${link}/tables/${row.name}${row.status === "retired" && row.id ? `?id=${row.id}` : ""}`}
+                className="min-w-0 truncate font-medium text-action"
+              >
                 {row.name}
               </Link>
-              {row.status === "retired" ? <StatePill state="retired" /> : null}
+              {/* The pill keeps its word whole: it is the name that gives way. */}
+              {row.status === "retired" ? (
+                <span className="shrink-0">
+                  <StatePill state="retired" />
+                </span>
+              ) : null}
             </span>
           ),
         },
@@ -1301,7 +1312,9 @@ export function Tables({ root, link }: { root: string; link: string }) {
         {
           header: "Managed in",
           priority: 3,
-          cell: (row) => (row.managedIn === "code" ? "Repository" : "Console"),
+          // A retired table has left its definition, and what it was managed in is not kept.
+          cell: (row) =>
+            row.status === "retired" ? "" : row.managedIn === "code" ? "Repository" : "Console",
         },
         { header: "Who sees rows", priority: 3, cell: (row) => policyText(row.policy) },
         { header: "Columns", priority: 2, cell: (row) => row.columnCount, align: "end" },
@@ -1388,7 +1401,9 @@ const SYSTEM_COLUMNS: RowColumn[] = [
 ];
 
 export function TableView({ root, name, link }: { root: string; name: string; link: string }) {
-  const table = useLoad<TableDetail>(`${root}/tables/${name}`);
+  // Two retired tables can have had one name: the list opens the one it shows by its ID.
+  const [which] = useUrlParam("id");
+  const table = useLoad<TableDetail>(`${root}/tables/${name}${which ? `?id=${which}` : ""}`);
   const [view, setView] = useUrlParam<"rows" | "definition">("view", "rows", { push: true });
   // A workbench has no page padding of its own, so these two carry it.
   if (table.error) {
@@ -1424,7 +1439,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       fill
       helpKey="table"
       title={data.name}
-      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}. Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}
+      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}.${retired ? "" : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
     >
       <AttachedPages {...workspaceOf(root)} kind="table" path={data.name} />
       {retired ? (
@@ -1988,7 +2003,12 @@ function Definition({
     } catch (error) {
       // What is saved is not what the history thinks it is: it cannot be trusted any more.
       history.clear();
-      setFailure(`${failureText(error)} Undo and redo start again from what is saved now.`);
+      // Another window's change is on the page already (it is read again below): it is not to be reloaded.
+      setFailure(
+        error instanceof ApiError && error.code === "draft_changed"
+          ? `Someone else changed ${table.name} after you opened it. This page shows what is saved now, so undo and redo start again from there.`
+          : `${failureText(error)} Undo and redo start again from what is saved now.`,
+      );
     }
     reload();
   };
@@ -2693,7 +2713,20 @@ function ChangeSource({
         config={{
           action: `Change ${row.path}`,
           description: `How ${row.path} is reached. Leave the password empty to keep the stored one. It is dropped when the host, port or user changes or encryption is turned off: then type it again. Scripts that use it read the new details at once.`,
-          fields: SOURCE_FIELDS,
+          fields: [
+            ...SOURCE_FIELDS,
+            ...(row.hasPassword
+              ? [
+                  {
+                    name: "removePassword",
+                    label: "Remove the stored password",
+                    type: "checkbox" as const,
+                    required: false,
+                    hint: "For a database that lets this user in without one. Scripts that use it then connect with no password.",
+                  },
+                ]
+              : []),
+          ],
           done: () => `${row.path} was changed.`,
           submit: (values) => {
             // The stored password does not go to another address: it is asked for here, not lost in silence.
@@ -2701,7 +2734,13 @@ function ChangeSource({
               throw new Error(
                 "The host, port, user or encryption changed, so the stored password will not be sent there. Type the password again.",
               );
-            return api.put(`${root}/data-source-bindings/${row.path}`, sourceBody(values));
+            const body = sourceBody(values);
+            if (values.removePassword === "true" && values.password)
+              throw new Error("Either type a new password or remove the stored one, not both.");
+            return api.put(
+              `${root}/data-source-bindings/${row.path}`,
+              values.removePassword === "true" ? { ...body, password: null } : body,
+            );
           },
         }}
       />
@@ -2789,6 +2828,7 @@ function TestSource({
 }
 
 export function Sources({ root, link }: { root: string; link: string }) {
+  const sourceUses = useReferences(root, "data_source");
   return (
     <ListScreen<SourceBinding>
       title="Data sources"
@@ -2834,6 +2874,18 @@ export function Sources({ root, link }: { root: string; link: string }) {
             ),
         },
         {
+          header: "Used by",
+          priority: 2,
+          cell: (row) => (
+            <UsedBy
+              uses={sourceUses(row.path)}
+              failed={sourceUses.failed}
+              loaded={sourceUses.loaded}
+              link={link}
+            />
+          ),
+        },
+        {
           header: "Password",
           priority: 3,
           cell: (row) => (row.hasPassword ? "Set" : row.bound ? "None" : ""),
@@ -2855,16 +2907,13 @@ export function Sources({ root, link }: { root: string; link: string }) {
             </Link>
           ) : null}
           {row.bound ? (
-            <>
-              <TestSource root={root} row={row} onDone={reload} />
-              <ChangeSource root={root} row={row} onDone={reload} />
-              <RemoveButton
-                label="Unbind"
-                confirm={`Unbind "${row.path}"? Scripts that use it will fail until it is bound again. Nothing in that database changes.`}
-                run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
-                onDone={reload}
-              />
-            </>
+            // On a phone the buttons wrap under each other instead of widening the page.
+            <SourceActions
+              root={root}
+              row={row}
+              onDone={reload}
+              className="max-w-[9.5rem] justify-end sm:max-w-none"
+            />
           ) : (
             <ConnectSource root={root} row={row} onDone={reload} />
           )}
@@ -2901,6 +2950,35 @@ export function Sources({ root, link }: { root: string; link: string }) {
   );
 }
 
+/** Test, Change and Unbind of a bound data source: the list's row and the source's own page share them. */
+function SourceActions({
+  root,
+  row,
+  onDone,
+  onUnbound = onDone,
+  className = "",
+}: {
+  root: string;
+  row: SourceBinding;
+  onDone: () => void;
+  /** Told once the source is unbound, when that leaves nothing to show (its page). */
+  onUnbound?: () => void;
+  className?: string;
+}) {
+  return (
+    <span className={`inline-flex flex-wrap items-center gap-2 ${className}`}>
+      <TestSource root={root} row={row} onDone={onDone} />
+      <ChangeSource root={root} row={row} onDone={onDone} />
+      <RemoveButton
+        label="Unbind"
+        confirm={`Unbind "${row.path}"? Scripts that use it will fail until it is bound again. Nothing in that database changes.`}
+        run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
+        onDone={onUnbound}
+      />
+    </span>
+  );
+}
+
 interface SourceTable {
   name: string;
   key: string | null;
@@ -2912,6 +2990,9 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
   const [chosen, setChosen] = useUrlParam("item", undefined, { push: true });
   const items = tables.data?.items ?? [];
   const table = items.find((candidate) => candidate.name === chosen) ?? items[0];
+  // What is done to the source is done here as in the list: its binding is read for the buttons.
+  const bindings = useLoad<{ items: SourceBinding[] }>(`${root}/data-source-bindings`);
+  const binding = bindings.data?.items.find((one) => one.path === path);
 
   return (
     <Page
@@ -2920,9 +3001,22 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
       title={path}
       description="An external database. Rows are read and written there directly. The platform does not change its structure, and its own access rules apply."
       action={
-        <Link to={`${link}/sources`} className="text-action">
-          All data sources
-        </Link>
+        <span className="flex flex-wrap items-center gap-3">
+          {binding?.bound ? (
+            <SourceActions
+              root={root}
+              row={binding}
+              onDone={() => {
+                bindings.reload();
+                tables.reload();
+              }}
+              onUnbound={() => navigate(`${link}/sources`)}
+            />
+          ) : null}
+          <Link to={`${link}/sources`} className="text-action">
+            All data sources
+          </Link>
+        </span>
       }
     >
       {tables.error ? (

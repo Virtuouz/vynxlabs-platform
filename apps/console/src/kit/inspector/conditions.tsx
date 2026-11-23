@@ -6,7 +6,6 @@
  * hold (decision 0004, S9). Several values chosen are an array: "any of" for `is`, "none of" for
  * `is not`.
  */
-import { listWords } from "@volvel/manifest";
 import {
   AddChip,
   ChipSet,

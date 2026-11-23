@@ -77,7 +77,7 @@ export function PublishCheck({
     nothing ? null : `${root}/changes/preview?paths=${encodeURIComponent(paths)}`,
   );
   const workspace = useLoad<{ name: string }>(root);
-  const { catalog, loading } = useCatalog(root);
+  const { catalog, loading, error: catalogError } = useCatalog(root);
   const lists = useActionLists(root);
   const keyed = useGroupKeys(root);
   const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
@@ -86,12 +86,17 @@ export function PublishCheck({
 
   const known = useMemo(
     () => ({
-      tables: loading
-        ? undefined
-        : new Map(
-            catalog.tables.map((table) => [table.name, new Set(table.columns.map((c) => c.name))]),
-          ),
-      queries: loading ? undefined : new Set(catalog.queries.map((query) => query.path)),
+      tables:
+        loading || catalogError
+          ? undefined
+          : new Map(
+              catalog.tables.map((table) => [
+                table.name,
+                new Set(table.columns.map((c) => c.name)),
+              ]),
+            ),
+      queries:
+        loading || catalogError ? undefined : new Set(catalog.queries.map((query) => query.path)),
       flows: new Set(lists.flows.map((flow) => flow.path)),
       scripts: new Set(lists.scripts.map((script) => script.path)),
       inputsNeeded: inputsNeededOf(lists.flows, lists.scripts),
@@ -106,6 +111,7 @@ export function PublishCheck({
     }),
     [
       loading,
+      catalogError,
       catalog,
       lists.flows,
       lists.everyFlow,
@@ -119,29 +125,43 @@ export function PublishCheck({
   const asked: Preview | undefined = nothing
     ? { possible: true, refusal: null, summary: null }
     : preview.data;
-  const checks: CheckItem[] = useMemo(
-    () =>
-      checksFor({
-        body,
-        known,
-        definitionOf,
-        problems: problems.map((one) => ({
-          text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
-          at: problemAt(one, body),
-        })),
-        refusal: asked?.refusal
-          ? asked.refusal.errors.length > 0
-            ? asked.refusal.errors.map((one) => ({
-                // The same words as a saved problem's, so that one failure is one line.
-                text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
-                at: problemAt(one, body),
-              }))
-            : [{ text: asked.refusal.detail }]
-          : [],
-        warnings: (asked?.summary?.warnings ?? []).map((one) => one.message),
-      }),
-    [body, known, problems, asked],
-  );
+  const checks: CheckItem[] = useMemo(() => {
+    // What could not be read cannot be checked, and is said: neither passed nor failed.
+    const unread = [
+      ...(catalogError ? [`the tables and queries (${catalogError})`] : []),
+      ...(keyed.error ? [`the groups (${keyed.error})`] : []),
+    ];
+    const found = checksFor({
+      body,
+      known,
+      definitionOf,
+      problems: problems.map((one) => ({
+        text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
+        at: problemAt(one, body),
+      })),
+      refusal: asked?.refusal
+        ? asked.refusal.errors.length > 0
+          ? asked.refusal.errors.map((one) => ({
+              // The same words as a saved problem's, so that one failure is one line.
+              text: `${problemWords(one, body)}.`.replace(/\.\.$/, "."),
+              at: problemAt(one, body),
+            }))
+          : [{ text: asked.refusal.detail }]
+        : [],
+      warnings: (asked?.summary?.warnings ?? []).map((one) => one.message),
+    });
+    return unread.length === 0
+      ? found
+      : [
+          ...found,
+          {
+            id: "unread",
+            state: "warn" as const,
+            text: `Could not check ${unread.join(" or ")}`,
+            detail: "Reload to ask again. Publishing is not held for this.",
+          },
+        ];
+  }, [body, known, problems, asked, catalogError, keyed.error]);
   const lines = deployed === undefined ? undefined : draftChanges(deployed ?? undefined, body);
   const blockers = checks.filter((one) => one.state === "fail");
   const ready = asked !== undefined && lines !== undefined;
@@ -149,13 +169,17 @@ export function PublishCheck({
   const tryGroup = keyed.loaded ? mostAffectedGroup(body, known.groups ?? []) : undefined;
   const tryName = keyed.groups.find((group) => group.key === tryGroup)?.name;
 
-  const heading = !ready
-    ? "Checking before you publish"
-    : blocked
-      ? blockers.length > 0
-        ? `Not ready to publish: ${plural(blockers.length, "thing")} to fix`
-        : "Not ready to publish"
-      : "Ready to publish";
+  // The check itself was refused or failed: said, with a way to ask again, and not waited for.
+  const unasked = !nothing && preview.data === undefined ? preview.error : undefined;
+  const heading = unasked
+    ? "The check could not be made"
+    : !ready
+      ? "Checking before you publish"
+      : blocked
+        ? blockers.length > 0
+          ? `Not ready to publish: ${plural(blockers.length, "thing")} to fix`
+          : "Not ready to publish"
+        : "Ready to publish";
 
   return (
     <div data-publish-check="" className="flex flex-col gap-3 p-4 text-ink">
@@ -167,7 +191,14 @@ export function PublishCheck({
             : `Publishes to ${workspace.data?.name ?? "this workspace"}. The live app keeps working until then.`}
         </p>
       </header>
-      {!ready ? (
+      {unasked ? (
+        <div role="alert" className="flex flex-col items-start gap-2 text-body-sm">
+          <p className="m-0 text-danger">
+            {unasked.message} Publishing is off until the check can be made.
+          </p>
+          <Button onClick={() => void preview.reload()}>Check again</Button>
+        </div>
+      ) : !ready ? (
         <p role="status" className="m-0 text-body-sm text-ink-muted">
           Checking what publishing does…
         </p>
@@ -244,7 +275,7 @@ export function PublishCheck({
         <Button
           variant="primary"
           loading={publishing}
-          disabled={!ready || blocked || nothing}
+          disabled={!ready || blocked || nothing || unasked !== undefined}
           onClick={onPublish}
         >
           {lines && lines.length > 0

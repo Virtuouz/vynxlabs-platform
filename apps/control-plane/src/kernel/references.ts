@@ -5,6 +5,7 @@ import {
   flowReferences,
   type InterfaceBody,
   widgetFlows,
+  widgetQueries,
   widgetTables,
 } from "@volvel/manifest";
 import type { Db } from "./audit.js";
@@ -19,7 +20,9 @@ export type TargetKind =
   | "script"
   | "flow"
   | "event"
-  | "interface";
+  | "interface"
+  | "query"
+  | "data_source";
 
 export interface Reference {
   target: { kind: TargetKind; name: string };
@@ -38,6 +41,8 @@ interface ScriptLike {
     secrets?: string[];
     variables?: string[];
     tables?: string[];
+    sources?: string[];
+    events?: string[];
   };
   onFailure?: { notify?: string; script?: string };
 }
@@ -101,6 +106,8 @@ export async function workspaceReferences(
       for (const name of script.uses?.secrets ?? []) add("secret", name, by, "reads it");
       for (const name of script.uses?.variables ?? []) add("variable", name, by, "reads it");
       for (const name of script.uses?.tables ?? []) add("table", name, by, "reads and writes it");
+      for (const name of script.uses?.sources ?? []) add("data_source", name, by, "reads and writes it");
+      for (const name of script.uses?.events ?? []) add("event", name, by, "may publish it");
       add("connection", script.onFailure?.notify, by, "sends its failures through it");
       add("script", script.onFailure?.script, by, "starts it when it fails");
     }
@@ -155,6 +162,7 @@ export async function workspaceReferences(
           : ((body as unknown as DashboardBody).widgets ?? []);
       for (const table of widgetTables(widgets)) add("table", table, by, "shows it");
       for (const path of widgetFlows(widgets)) add("flow", path, by, "asks for its approvals");
+      for (const path of widgetQueries(widgets)) add("query", path, by, "shows its rows");
     }
     if (resource.kind === "app") {
       const app = body as { interface?: string; reads?: string[] };

@@ -764,6 +764,20 @@ describe("someone who maintains apps made in the console, and is not a developer
     ]);
   });
 
+  test("they read what publishing would do, for what is theirs, and the groups an action names (BLD-02)", async () => {
+    const check = await mona.get(`${devWs()}/changes/preview?paths=screens/stock,stock-app`);
+    expect(check.status, JSON.stringify(check.body)).toBe(200);
+    expect(check.body.possible).toBe(true);
+    // Not for everything, and not for what is not hers.
+    expect((await mona.get(`${devWs()}/changes/preview`)).status).toBe(403);
+    expect((await mona.get(`${devWs()}/changes/preview?paths=limits/batch`)).status).toBe(403);
+    expect((await mona.get(`${devWs()}/changes/preview?paths=screens/stock,stock`)).status).toBe(
+      403,
+    );
+    const keys = await mona.get(`${devWs()}/group-keys`);
+    expect(keys.status, JSON.stringify(keys.body)).toBe(200);
+  });
+
   test("they deploy what they made by name, and cannot deploy everything", async () => {
     const everything = await mona.post(`${devWs()}/changes/deploy`, {});
     expect(everything.status).toBe(403);

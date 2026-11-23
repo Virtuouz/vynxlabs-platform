@@ -203,3 +203,29 @@ describe("the list of saved queries (DAT-30)", () => {
     expect(screen.getByText(/Renamed from reports\/old/)).toBeDefined();
   });
 });
+
+describe("what uses a saved query (REL-MP7)", () => {
+  test("the open query says which dashboards show it, linked", async () => {
+    const before = globalThis.fetch;
+    vi.stubGlobal("fetch", async (address: string, init?: RequestInit) => {
+      if (address.startsWith(`${api}/references`)) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                target: { kind: "query", name: "reports/fees" },
+                by: { kind: "dashboard", path: "boards/fees" },
+                how: "shows its rows",
+              },
+            ],
+          }),
+        );
+      }
+      return before(address, init);
+    });
+    history.replaceState(null, "", "/?query=reports/fees");
+    show(<Queries root={root} link={link} />);
+    const list = await screen.findByRole("list", { name: "What uses reports/fees" });
+    expect(list.textContent).toContain("boards/fees");
+  });
+});

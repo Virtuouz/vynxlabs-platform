@@ -36,7 +36,9 @@ const title = {
   pattern: "^\\S(.*\\S)?$",
   description: "What people read. It can change: nothing refers to it.",
 };
-const description = { type: "string", maxLength: 300 };
+/** The most a description of a group, a role or a service account may say, whichever way it is made. */
+export const ACCESS_DESCRIPTION_MAX = 500;
+const description = { type: "string", maxLength: ACCESS_DESCRIPTION_MAX };
 
 /** How a group is filled by the identity provider people sign in through. */
 const membership = {

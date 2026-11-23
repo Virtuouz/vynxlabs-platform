@@ -19,7 +19,7 @@ import {
 } from "../ListScreen.tsx";
 import { Link, match, navigate } from "../router.tsx";
 import { EffectiveAccess, MemberPage } from "./Access.tsx";
-import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
+import { type KeyRow, keyColumns, keyExpiryField, newKeyBody, showNewKey } from "./Account.tsx";
 import { AgentAccess } from "./AgentAccess.tsx";
 import { Apps } from "./Apps.tsx";
 import { AuditTable } from "./Audit.tsx";
@@ -585,9 +585,18 @@ function WorkspaceDetail({
           editable={workspace.data.type === "dev"}
         />
       ) : tab === "events" && rest ? (
-        <EventPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
+        <EventPage
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          path={rest}
+          production={workspace.data.type === "production"}
+        />
       ) : tab === "events" ? (
-        <EventsWorkbench root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+        <EventsWorkbench
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          production={workspace.data.type === "production"}
+        />
       ) : tab === "tables" && rest ? (
         <TableView
           key={rest}
@@ -979,8 +988,11 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
                 empty={{ title: "No keys yet" }}
                 create={{
                   action: "Create API key",
-                  fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
-                  submit: (values) => api.post(keys, values),
+                  fields: [
+                    { name: "name", label: "Name", placeholder: "Deploy pipeline" },
+                    keyExpiryField,
+                  ],
+                  submit: (values) => api.post(keys, newKeyBody(values)),
                   afterCreate: showNewKey,
                 }}
                 rowActions={(row, reload) =>

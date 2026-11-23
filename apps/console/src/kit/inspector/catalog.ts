@@ -102,7 +102,12 @@ export function useCatalog(root: string): {
           maySql: schema.data?.maySql === true,
         }
       : EMPTY_CATALOG;
-  return { catalog, loading: !schema.data && !schema.error, error: schema.error?.message };
+  return {
+    catalog,
+    loading: !schema.data && !schema.error,
+    // Either read failing is said: a catalog that is empty because it could not be read is not one that has nothing.
+    error: (schema.error ?? saved.error)?.message,
+  };
 }
 
 /**

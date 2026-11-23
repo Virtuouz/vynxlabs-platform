@@ -1,4 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
+import { appPolicy } from "@volvel/manifest";
 import { loadVite, viteSettings } from "./apps.js";
 import { appSources } from "./build.js";
 import { BuildError } from "./errors.js";
@@ -6,9 +8,17 @@ import { BuildError } from "./errors.js";
 export interface DevOptions {
   /** The tenant repository. */
   directory: string;
+  /** Where the code is, when a flag says so; else `volvel.yaml`, else `src/index.ts`. */
+  entry?: string;
+  resources?: string;
   /** The app's path. May be left out when the repository has one app. */
   app: string | undefined;
   port: number;
+  /**
+   * Serve the page under the policy the platform serves an app with, so that what it would
+   * refuse once deployed is refused here. On unless said otherwise.
+   */
+  strict?: boolean;
   instance: { url: string; token: string };
   tenant: { id: string; slug: string; name: string };
   workspace: { id: string; slug: string };
@@ -29,7 +39,11 @@ const forHtml = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c
  */
 export async function startDevServer(options: DevOptions) {
   const directory = resolve(options.directory);
-  const apps = await appSources({ directory });
+  const apps = await appSources({
+    directory,
+    ...(options.entry ? { entry: options.entry } : {}),
+    ...(options.resources ? { resources: options.resources } : {}),
+  });
   if (apps.length === 0) throw new BuildError(["This repository defines no app."]);
   const app = options.app ? apps.find((candidate) => candidate.path === options.app) : apps[0];
   if (!app || (!options.app && apps.length > 1)) {
@@ -58,12 +72,20 @@ export async function startDevServer(options: DevOptions) {
     principal: { id: null, ...options.principal },
   };
   const theme = `/api/v1/tenants/${options.tenant.id}/workspaces/${options.workspace.id}/theme.css`;
+  // The development server's own inline scripts carry a nonce made for this run, and its
+  // reload socket is the one thing besides the page's own origin that may be connected to.
+  const nonce = randomBytes(16).toString("base64");
+  const policy =
+    options.strict === false
+      ? undefined
+      : appPolicy({ nonce, connect: ["ws://localhost:*", "ws://127.0.0.1:*", "ws://[::1]:*"] });
   const settings = viteSettings(resolve(directory, app.source), plugins);
   const server = await vite.createServer({
     ...settings,
     base: "/",
     logLevel: "warn",
     clearScreen: false,
+    ...(policy ? { html: { cspNonce: nonce } } : {}),
     plugins: [
       ...("plugins" in settings ? (settings.plugins as unknown[]) : []),
       {
@@ -82,6 +104,7 @@ export async function startDevServer(options: DevOptions) {
     server: {
       port: options.port,
       strictPort: false,
+      ...(policy ? { headers: { "content-security-policy": policy } } : {}),
       proxy: {
         "/portal": {
           target: instance,

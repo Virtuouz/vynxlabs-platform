@@ -6,6 +6,7 @@ import { hasOutsideCodeWriters, workerUserMode } from "../kernel/execution/isola
 import { WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import { Id, iso, NoContent, TenantParams, Time } from "./shared.js";
 
 const PoolName = Type.String({ pattern: "^[a-z0-9]+(-[a-z0-9]+)*$", maxLength: 40 });
@@ -58,6 +59,7 @@ export function poolRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("worker:read") },
         schema: {
           summary: "Whether the instance runs this tenant's code on workers it starts",
+          description: "Says whether the instance's own worker host serves the tenant.",
           tags: ["workers"],
           params: TenantParams,
           response: { 200: ManagedWorkers },
@@ -94,7 +96,7 @@ export function poolRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "named by a script and served by nobody shows with no worker online.",
           tags: ["workers"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Pool) }) },
+          response: { 200: listOf(Pool) },
         },
       },
       async ({ params }) => {

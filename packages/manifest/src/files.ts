@@ -681,6 +681,10 @@ export interface RepositoryConfig {
    * named, the one folder of pages is `docs` inside the folder the console writes to.
    */
   docs: string[];
+  /** The file that exports every resource defined in code. Left out: `src/index.ts`. A flag of the command wins. */
+  entry?: string;
+  /** The folder the console writes its resources to. Left out: `platform`. A flag of the command wins. */
+  resources?: string;
 }
 
 /** The name of the file at a repository's root that says where its resource files are. */
@@ -705,14 +709,16 @@ export function parseRepositoryConfig(text: string | undefined): {
     };
   }
   const problems: string[] = [];
-  const { roots, ignore, docs, ...unknown } = (document ?? {}) as {
+  const { roots, ignore, docs, entry, resources, ...unknown } = (document ?? {}) as {
     roots?: unknown;
     ignore?: unknown;
     docs?: unknown;
+    entry?: unknown;
+    resources?: unknown;
   };
   if (Object.keys(unknown).length > 0) {
     problems.push(
-      `${REPOSITORY_CONFIG}: has keys other than roots, ignore and docs: ${Object.keys(unknown).join(", ")}.`,
+      `${REPOSITORY_CONFIG}: has keys other than roots, ignore, docs, entry and resources: ${Object.keys(unknown).join(", ")}.`,
     );
   }
   for (const [name, value] of [
@@ -726,6 +732,20 @@ export function parseRepositoryConfig(text: string | undefined): {
       continue;
     }
     config[name] = (value as string[]).map((one) => one.replace(/^\.?\/+|\/+$/g, ""));
+  }
+  for (const [name, value] of [
+    ["entry", entry],
+    ["resources", resources],
+  ] as const) {
+    if (value === undefined) continue;
+    if (typeof value !== "string" || value.trim() === "") {
+      problems.push(`${REPOSITORY_CONFIG}: ${name} is one path, as text.`);
+      continue;
+    }
+    config[name] = value
+      .trim()
+      .replace(/^\.?\/+/, "")
+      .replace(/\/+$/, "");
   }
   return { config, problems };
 }

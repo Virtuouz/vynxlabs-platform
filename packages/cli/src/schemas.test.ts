@@ -74,3 +74,26 @@ test("the developer's own settings are kept, and ones it cannot read are left al
   expect(out.join("\n")).toContain("Add this to it:");
   expect(out.join("\n")).toContain('"./.platform/schemas/script.schema.json"');
 });
+
+test("a tenant's access is written in YAML only, and each of its kinds has a schema (D53)", async () => {
+  const directory = repository();
+  const written = await writeEditorSchemas(directory);
+  for (const kind of [
+    "group",
+    "end_user_group",
+    "service_account",
+    "tenant_role",
+    "tenant_binding",
+  ]) {
+    const schema = json(join(directory, `.platform/schemas/${kind}.schema.json`));
+    expect(schema.properties.body, kind).toBeDefined();
+    expect(written.mapping[`./.platform/schemas/${kind}.schema.json`], kind).toEqual([
+      `**/*.${kind}.yaml`,
+    ]);
+  }
+  // There is no SDK definition for it: access is not code a repository exports.
+  const sdk = readFileSync(new URL("../../sdk/src/index.ts", import.meta.url), "utf8");
+  expect(sdk).not.toMatch(
+    /export function define(Group|ServiceAccount|TenantRole|TenantBinding)\b/,
+  );
+});

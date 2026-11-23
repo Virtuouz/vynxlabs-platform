@@ -2,6 +2,7 @@ import type {
   FastifyPluginAsyncTypebox,
   TypeBoxTypeProvider,
 } from "@fastify/type-provider-typebox";
+import { sql } from "@volvel/db";
 import { validateJson } from "@volvel/manifest";
 import { Type } from "typebox";
 import { CredentialSet, credentialSetters } from "../kernel/credentials.js";
@@ -30,6 +31,8 @@ import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { arrivingManifests } from "../kernel/execution/arriving.js";
 import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { UUID } from "../kernel/pages/locate.js";
+import { likeTerm, listOf, pageOf, SearchPageQuery } from "../pagination.js";
 import { parseRowsQuery, RowsPage, RowsQuery, toRowsPage, WildParams, wildPath } from "./data.js";
 import {
   AnyObject,
@@ -37,7 +40,9 @@ import {
   isoOrNull,
   NoContent,
   NullableTime,
+  pageArgs,
   Time,
+  toPage,
   WorkspaceParams,
 } from "./shared.js";
 
@@ -301,6 +306,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Remove a data source's binding",
+          description: "The data source is no longer bound in this workspace. Audited.",
           tags: ["data sources"],
           params: WildParams,
           response: { 204: NoContent },
@@ -339,6 +345,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:read") },
         schema: {
           summary: "The tables of a bound data source",
+          description: "The tables the data source lists, read from the source itself.",
           tags: ["data sources"],
           params: WildParams,
           response: {
@@ -390,6 +397,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:read") },
         schema: {
           summary: "Rows of a table in a data source",
+          description: "Rows read from the source system, a page at a time.",
           tags: ["data sources"],
           params: SourceRowsParams,
           querystring: RowsQuery,
@@ -417,6 +425,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Insert rows into a table in a data source",
+          description: "Writes to the source system, if the binding lets it. Audited.",
           tags: ["data sources"],
           params: SourceRowsParams,
           body: AnyObject,
@@ -450,6 +459,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:read") },
         schema: {
           summary: "One row of a table in a data source",
+          description: "The row with the given key, read from the source system.",
           tags: ["data sources"],
           params: SourceRowParams,
           response: { 200: AnyObject },
@@ -473,6 +483,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Change a row in a data source",
+          description: "Writes to the source system, if the binding lets it. Audited.",
           tags: ["data sources"],
           params: SourceRowParams,
           body: AnyObject,
@@ -504,6 +515,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("data_source:write") },
         schema: {
           summary: "Delete a row in a data source",
+          description: "Deletes in the source system, if the binding lets it. Audited.",
           tags: ["data sources"],
           params: SourceRowParams,
           response: { 204: NoContent },
@@ -534,53 +546,38 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "Every file of the workspace, so it also needs `data_all:read`. A person who only has `file:read` gets a file by its ID, through a row they may read or because they uploaded it. " +
             "Each file says which tables name it (`namedBy`): a file that a row names cannot be deleted. " +
-            "`nextCursor` is given while there are more: send it back as `cursor`.",
+            "`nextCursor` is given while there are more: send it back as `cursor`. `search` matches anywhere in the name.",
           tags: ["files"],
           params: WorkspaceParams,
-          querystring: Type.Object({
-            limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, default: 200 })),
-            cursor: Type.Optional(Id),
-            search: Type.Optional(
-              Type.String({
-                maxLength: 255,
-                description: "Files whose name has this in it, whatever its case.",
-              }),
-            ),
-          }),
-          response: {
-            200: Type.Object({
-              items: Type.Array(ListedFile),
-              nextCursor: Type.Union([Type.String(), Type.Null()]),
-            }),
-          },
+          querystring: SearchPageQuery,
+          response: { 200: pageOf(ListedFile) },
         },
       },
       async ({ ctx, params, query }) => {
         await ctx.authorize("data_all:read", { tenantId: params.t, workspaceId: params.w });
-        const limit = query.limit ?? 200;
-        let found = db
-          .selectFrom("file")
-          .selectAll()
-          .where("workspace_id", "=", params.w)
-          .orderBy("id", "desc")
-          .limit(limit + 1);
-        if (query.cursor) found = found.where("id", "<", query.cursor);
-        if (query.search) {
-          const text = query.search.replace(/[\\%_]/g, "\\$&");
-          found = found.where("name", "ilike", `%${text}%`);
+        const args = pageArgs(query);
+        if (args.after !== undefined && !UUID.test(args.after)) {
+          throw badRequest("The cursor is not valid.");
         }
-        const rows = await found.execute();
-        const page = rows.slice(0, limit);
+        let found = db.selectFrom("file").selectAll().where("workspace_id", "=", params.w);
+        if (args.after) found = found.where("id", "<", args.after);
+        if (query.search) found = found.where(sql`lower(name)`, "like", likeTerm(query.search));
+        const rows = await found
+          .orderBy("id", "desc")
+          .limit(args.limit + 1)
+          .execute();
         const naming = await namingOf(
           kernel,
           params.t,
-          page.map((row) => row.id),
+          rows.slice(0, args.limit).map((row) => row.id),
           params.w,
         );
-        return {
-          items: page.map((row) => ({ ...toStoredFile(row), namedBy: naming.get(row.id) ?? [] })),
-          nextCursor: rows.length > limit ? (page.at(-1)?.id ?? null) : null,
-        };
+        return toPage(
+          rows,
+          args,
+          (row) => row.id,
+          (row) => ({ ...toStoredFile(row), namedBy: naming.get(row.id) ?? [] }),
+        );
       },
     );
 

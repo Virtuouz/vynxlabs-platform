@@ -237,6 +237,22 @@ test("a trigger is a webhook, an event or a form, each with its own settings", a
   expect(saved()).toBeUndefined();
 });
 
+test("an event trigger can listen for the platform's own events, each with its payload (OPS-MP2)", async () => {
+  show(<ResourceEditor root={root} link={link} kind="trigger" path={undefined} editable />);
+  fireEvent.change(await screen.findByLabelText("Path of the new trigger"), {
+    target: { value: "hooks/failures" },
+  });
+  fireEvent.change(screen.getByLabelText("It starts the script"), { target: { value: "event" } });
+  const box = await screen.findByRole("combobox", { name: "Event" });
+  fireEvent.mouseDown(box);
+  fireEvent.click(box);
+  expect(await screen.findByText("platform/run-failed")).toBeTruthy();
+  expect(screen.getByText("platform/row-changed")).toBeTruthy();
+  expect(screen.getByText(/Payload: runId, script, error/)).toBeTruthy();
+  // A repository's own event is still listed beside them.
+  expect(screen.getByText("orders/placed")).toBeTruthy();
+});
+
 test("a trigger says what it is for, and keeps saying it whatever else about it changes", async () => {
   show(<ResourceEditor root={root} link={link} kind="trigger" path={undefined} editable />);
   await screen.findByLabelText("Path of the new trigger");

@@ -17,6 +17,7 @@ import { failureText, notify, takenText } from "../ask.tsx";
 import { FieldAbout } from "../help/FieldAbout.tsx";
 import { inZone } from "../kit/format.ts";
 import { Link } from "../router.tsx";
+import { TagsField } from "./FlowStepFields.tsx";
 
 /** A schedule's body, as the manifest has it. */
 export interface ScheduleBody {
@@ -30,6 +31,7 @@ export interface ScheduleBody {
   overlap?: "allow" | "skip" | undefined;
   enabled?: boolean | undefined;
   source?: string | undefined;
+  tags?: string[] | undefined;
   [more: string]: unknown;
 }
 
@@ -222,11 +224,13 @@ export function WhenFields({
     cron?: string | undefined;
     timezone?: string | undefined;
     overlap?: "allow" | "skip" | undefined;
+    tags?: string[] | undefined;
   };
   change: (next: {
     cron?: string;
     timezone?: string;
     overlap?: "allow" | "skip" | undefined;
+    tags?: string[] | undefined;
   }) => void;
   readOnly: boolean;
   fresh?: boolean;
@@ -326,6 +330,12 @@ export function WhenFields({
           const next = on ? "skip" : "allow";
           change({ overlap: next === overlapDefault ? undefined : next });
         }}
+      />
+      <TagsField
+        value={value.tags}
+        readOnly={readOnly}
+        given="what the schedule gives it: its input"
+        onChange={(tags) => change({ tags })}
       />
     </>
   );

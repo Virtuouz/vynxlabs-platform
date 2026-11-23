@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { AuditTable, auditAreas, targetName, verbOf } from "./screens/Audit.tsx";
 import { show } from "./testing.tsx";
@@ -35,6 +35,9 @@ beforeEach(() => {
   }));
   vi.stubGlobal("fetch", async (address: string) => {
     asked.push(address);
+    if (address === "/api/v1/tenants/t1/workspaces") {
+      return new Response(JSON.stringify({ items: [{ id: "w1", name: "Main" }] }), { status: 200 });
+    }
     if (address.includes("/audit-facets")) {
       return new Response(
         JSON.stringify({
@@ -196,7 +199,12 @@ test("the time it covers is asked of the server", async () => {
 test("the instance's log offers the instance's areas, and every action's first word is in one list (INS-21)", async () => {
   show(<AuditTable title="Instance log" description="" path="/audit" />);
   await screen.findAllByText("secret.set");
-  const options = screen.getAllByRole("option").map((one) => one.getAttribute("value"));
+  // The areas, not what the log holds (which the facets give, and may be anything).
+  const areas = () =>
+    within(screen.getByLabelText("Area"))
+      .getAllByRole("option")
+      .map((one) => one.getAttribute("value"));
+  const options = areas();
   for (const own of ["instance", "identity_provider", "database_location", "tenant_import"]) {
     expect(options, own).toContain(own);
   }
@@ -206,7 +214,7 @@ test("the instance's log offers the instance's areas, and every action's first w
   cleanup();
   show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
   await screen.findAllByText("secret.set");
-  const tenant = screen.getAllByRole("option").map((one) => one.getAttribute("value"));
+  const tenant = areas();
   for (const own of ["promotion", "dashboard", "git_repository", "worker_pool", "trigger"]) {
     expect(tenant, own).toContain(own);
   }
@@ -247,3 +255,74 @@ function sourcesOf(dir: string): string[] {
         : [],
   );
 }
+
+const lastList = () => asked.filter((one) => /\/audit\?/.test(one)).at(-1) ?? "";
+
+test("a tenant's log is narrowed to dates and a workspace, and the CSV is the same list (GOV-P9)", async () => {
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  await screen.findAllByText("secret.set");
+  expect(screen.queryByLabelText("From date")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Since"), { target: { value: "custom" } });
+  fireEvent.change(screen.getByLabelText("From date"), { target: { value: "2026-10-01" } });
+  fireEvent.change(screen.getByLabelText("To date"), { target: { value: "2026-10-31" } });
+  await waitFor(() => expect(lastList()).toContain("to="));
+  const from = new URL(lastList(), "http://x").searchParams.get("from");
+  const to = new URL(lastList(), "http://x").searchParams.get("to");
+  // The reader's own days: the start of the first and the end of the last.
+  expect(from).toBe(new Date("2026-10-01T00:00:00").toISOString());
+  expect(to).toBe(new Date("2026-10-31T23:59:59.999").toISOString());
+  await screen.findByRole("option", { name: "Main" });
+  fireEvent.change(screen.getByLabelText("Workspace"), { target: { value: "w1" } });
+  await waitFor(() => expect(lastList()).toContain("workspaceId=w1"));
+  expect(asked.filter((one) => one.includes("/audit-facets")).at(-1)).toContain("workspaceId=w1");
+  const csv = screen.getByRole("link", { name: /CSV/ }).getAttribute("href") ?? "";
+  expect(csv).toContain("/api/v1/tenants/t1/audit-export?");
+  expect(csv).toContain("workspaceId=w1");
+  expect(csv).toContain(encodeURIComponent(to ?? ""));
+  // An end before the start is said.
+  fireEvent.change(screen.getByLabelText("To date"), { target: { value: "2026-09-01" } });
+  expect(screen.getByLabelText("To date")).toBeTruthy();
+});
+
+test("everything about one thing is asked of the log from an entry, and is left again (GOV-P9)", async () => {
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  const details = await screen.findByRole("complementary", { name: "Entry details" });
+  fireEvent.click(within(details).getByRole("button", { name: "Everything about this" }));
+  await waitFor(() => expect(lastList()).toContain("target=target-a"));
+  await screen.findByRole("button", { name: "Show everything" });
+  expect(screen.getByRole("link", { name: /CSV/ }).getAttribute("href")).toContain(
+    "target=target-a",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Show everything" }));
+  await waitFor(() => expect(lastList()).not.toContain("target="));
+});
+
+test("the instance's log is narrowed by who, what, to what and until when (GOV-P8)", async () => {
+  show(<AuditTable title="Instance log" description="" path="/audit" />);
+  await screen.findAllByText("secret.set");
+  await screen.findByRole("option", { name: "jane@acme.test (6)" });
+  expect(asked.some((one) => one === "/api/v1/audit-facets?")).toBe(true);
+  expect(screen.queryByLabelText("Workspace")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Who"), {
+    target: { value: "00000000-0000-7000-8000-00000000aaaa" },
+  });
+  await waitFor(() => expect(lastList()).toContain("actorId=00000000-0000-7000-8000-00000000aaaa"));
+  fireEvent.change(screen.getByLabelText("Action"), { target: { value: "secret.set" } });
+  await waitFor(() => expect(lastList()).toContain("action=secret.set"));
+  fireEvent.change(screen.getByLabelText("Done to"), { target: { value: "secret" } });
+  await waitFor(() => expect(lastList()).toContain("targetType=secret"));
+  fireEvent.change(screen.getByLabelText("Since"), { target: { value: "custom" } });
+  fireEvent.change(screen.getByLabelText("To date"), { target: { value: "2026-10-31" } });
+  await waitFor(() => expect(lastList()).toContain("to="));
+  fireEvent.click(
+    within(await screen.findByRole("complementary", { name: "Entry details" })).getByRole(
+      "button",
+      {
+        name: "Everything about this",
+      },
+    ),
+  );
+  await waitFor(() => expect(lastList()).toContain("target=target-"));
+  // Only a tenant's log is a file.
+  expect(screen.queryByRole("link", { name: /CSV/ })).toBeNull();
+});

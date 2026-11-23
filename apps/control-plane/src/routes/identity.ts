@@ -6,15 +6,16 @@ import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import { endOperatorGrantsIfNoLonger, keepingAnOperator } from "../kernel/administer.js";
 import type { Trx } from "../kernel/audit.js";
-import { badRequest, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { badRequest, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
 import { createMember, setMemberDisabled } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
 import { effectivePolicy } from "../kernel/retention.js";
+import { nameOwnedBy } from "../kernel/sso/people.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
-import { likeTerm, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
+import { likeTerm, listOf, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
 import {
   AnyObject,
   Id,
@@ -45,6 +46,18 @@ export const Member = Type.Object({
       description: "In the instance's list: whether the account can sign in nowhere.",
     }),
   ),
+  directRoles: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      description: "In a tenant's list: how many roles the member is given directly there.",
+    }),
+  ),
+  groups: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      description: "In a tenant's list: how many groups of the tenant the member is in.",
+    }),
+  ),
 });
 export const toMember = (row: {
   id: string;
@@ -53,11 +66,15 @@ export const toMember = (row: {
   created_at: Date;
   suspended_at?: Date | null;
   disabled_at?: Date | null;
+  direct_roles?: number | string;
+  group_count?: number | string;
 }) => ({
   id: row.id,
   name: row.name,
   email: row.email,
   createdAt: iso(row.created_at),
+  ...(row.direct_roles !== undefined ? { directRoles: Number(row.direct_roles) } : {}),
+  ...(row.group_count !== undefined ? { groups: Number(row.group_count) } : {}),
   ...(row.suspended_at !== undefined ? { suspended: row.suspended_at !== null } : {}),
   ...(row.disabled_at !== undefined ? { disabled: row.disabled_at !== null } : {}),
 });
@@ -204,6 +221,23 @@ export const AuditQuery = Type.Object({
     Type.String({ format: "date-time", description: "Nothing older than this." }),
   ),
   to: Type.Optional(Type.String({ format: "date-time", description: "Nothing newer than this." })),
+});
+
+const { limit: _limit, cursor: _cursor, ...filterProperties } = AuditQuery.properties;
+/** The filters of a log without paging: what facets and exports take. */
+export const AuditFilterQuery = Type.Object(filterProperties);
+const Count = Type.Integer({ minimum: 0 });
+export const AuditFacets = Type.Object({
+  actions: Type.Array(Type.Object({ value: Type.String(), count: Count })),
+  actors: Type.Array(
+    Type.Object({
+      type: Type.String(),
+      id: Type.Union([Type.String(), Type.Null()]),
+      label: Type.Union([Type.String(), Type.Null()]),
+      count: Count,
+    }),
+  ),
+  targetTypes: Type.Array(Type.Object({ value: Type.String(), count: Count })),
 });
 
 export interface AuditFilters {
@@ -378,7 +412,7 @@ export async function auditEntry(kernel: Kernel, tenantId: string, id: string) {
 }
 
 /** What a log holds in a range, to narrow it by: its actions, its actors and kinds of target. */
-export async function auditFacets(kernel: Kernel, tenantId: string, query: AuditFilters) {
+export async function auditFacets(kernel: Kernel, tenantId: string | null, query: AuditFilters) {
   const base = await auditSelect(kernel, tenantId, query);
   const [actions, actors, targets] = await Promise.all([
     base
@@ -467,6 +501,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "How many of the caller's recovery codes are left",
+          description: "A count only. The codes themselves are shown once, when they are made.",
           tags: ["identity"],
           response: {
             200: Type.Object({
@@ -640,6 +675,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedInOrKey },
         schema: {
           summary: "The calling principal",
+          description:
+            "Who the instance takes the caller to be: a member, a service account or an end user. The console draws its first screen from this answer.",
           tags: ["identity"],
           response: {
             200: Type.Object({
@@ -648,6 +685,12 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 id: Id,
                 name: NullableString,
                 email: NullableString,
+                nameFrom: Type.Optional(
+                  Type.Union([Type.String(), Type.Null()], {
+                    description:
+                      "The identity provider whose directory sets this member's name, when one does.",
+                  }),
+                ),
               }),
               instancePermissions: Type.Array(Type.String(), {
                 description: "Permissions held at instance scope.",
@@ -691,6 +734,9 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             id,
             name: principal.name ?? null,
             email: principal.email ?? null,
+            ...(principal.type === "member"
+              ? { nameFrom: (await nameOwnedBy(kernel.db, id)) ?? null }
+              : {}),
           },
           instancePermissions: [...new Set(roles.flatMap((role) => role.permissions))].sort(),
           tenants: await tenants.execute(),
@@ -704,6 +750,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "Registered resource kinds",
+          description:
+            "Every kind of resource this version of the platform knows, with the JSON Schema its body is checked against.",
           tags: ["resources"],
           response: {
             200: Type.Object({
@@ -826,8 +874,10 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "The calling member's API keys",
+          description:
+            "The keys the member made for themselves. A key's full value is shown once, when it is made, and is not in this list.",
           tags: ["identity"],
-          response: { 200: Type.Object({ items: Type.Array(ApiKey) }) },
+          response: { 200: listOf(ApiKey) },
         },
       },
       async ({ ctx }) => {
@@ -848,6 +898,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "Create an API key that acts as the calling member",
+          description:
+            "The key acts as the member. Its value is in the answer and is never shown again. Audited.",
           tags: ["identity"],
           body: NewApiKeyBody,
           response: { 201: NewApiKey },
@@ -875,6 +927,7 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.signedIn },
         schema: {
           summary: "Revoke one of the calling member's API keys",
+          description: "The key stops working. Audited.",
           tags: ["identity"],
           params: Type.Object({ id: Id }),
           response: { 204: NoContent },
@@ -1005,6 +1058,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("member:write") },
         schema: {
           summary: "Create a member identity",
+          description:
+            "Makes a person who can sign in to the instance. Giving them access to a tenant is a binding, made separately. Audited.",
           tags: ["identity"],
           body: NewMemberBody,
           response: { 201: Member },
@@ -1022,8 +1077,9 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("binding:read") },
         schema: {
           summary: "Instance-scope bindings",
+          description: "The roles given at the instance, and to whom.",
           tags: ["permissions"],
-          response: { 200: Type.Object({ items: Type.Array(InstanceBinding) }) },
+          response: { 200: listOf(InstanceBinding) },
         },
       },
       async () => {
@@ -1063,6 +1119,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("binding:write") },
         schema: {
           summary: "Bind a built-in role to a member at instance scope",
+          description:
+            "Only the built-in `operator_admin` role can be given at the instance. Audited.",
           tags: ["permissions"],
           body: Type.Object({ memberId: Id, roleId: Id }),
           response: { 201: Type.Object({ id: Id }) },
@@ -1119,6 +1177,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("binding:write") },
         schema: {
           summary: "Remove an instance-scope binding",
+          description:
+            "The member loses the role at the instance. Refused when it would leave the instance without an operator. Audited.",
           tags: ["permissions"],
           params: Type.Object({ id: Id }),
           response: { 204: NoContent },
@@ -1168,6 +1228,23 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ query }) => auditPage(kernel, null, query),
+    );
+
+    app.get(
+      "/audit-facets",
+      {
+        config: { access: access.instance("audit:read") },
+        schema: {
+          summary: "What the instance's log holds, to narrow it by",
+          description:
+            "The actions, actors and kinds of target among the instance-level entries the filters " +
+            "keep, each with how many entries it has, most first. At most 100 of each.",
+          tags: ["audit"],
+          querystring: AuditFilterQuery,
+          response: { 200: AuditFacets },
+        },
+      },
+      async ({ query }) => auditFacets(kernel, null, query),
     );
   };
 }

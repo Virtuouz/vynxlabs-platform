@@ -188,7 +188,8 @@ export async function buildBundle(options: BuildOptions): Promise<Bundle> {
 
 /** The apps a repository defines, with where each one's source is. */
 export async function appSources(options: BuildOptions): Promise<AppSource[]> {
-  const { definitions } = await loadDefinitions(options);
+  const { entry, resources } = await placesOf(options);
+  const { definitions } = await loadDefinitions({ ...options, entry, resources });
   return (
     definitions
       .map(([, definition]) => definition)
@@ -212,9 +213,23 @@ export async function readRepositoryConfig(directory: string) {
   return said.config;
 }
 
-export async function buildRepository(options: BuildOptions): Promise<Built> {
-  const directory = resolve(options.directory);
-  const entry = options.entry ?? "src/index.ts";
+/**
+ * The entry file and the console's folder of a repository: a flag of the command, else
+ * the `entry` and `resources` of `volvel.yaml`, else `src/index.ts` and `platform`.
+ */
+export async function placesOf(options: BuildOptions) {
+  const config = await readRepositoryConfig(options.directory);
+  return {
+    config,
+    entry: options.entry ?? config.entry ?? "src/index.ts",
+    resources: options.resources ?? config.resources ?? RESOURCE_FOLDER,
+  };
+}
+
+export async function buildRepository(given: BuildOptions): Promise<Built> {
+  const directory = resolve(given.directory);
+  const { config, entry, resources } = await placesOf(given);
+  const options = { ...given, entry, resources };
   const { code, sources, definitions, sdk, sdkEntry } = await loadDefinitions(options);
 
   const inOrder = (a: BundleManifest, b: BundleManifest) =>
@@ -222,8 +237,7 @@ export async function buildRepository(options: BuildOptions): Promise<Built> {
   const authored = definitions.map(([name, definition]) => definition.toManifest(name));
   // Resources written as files, by the console or by hand, wherever the repository keeps
   // them. `folder` is where the console writes, and is always read.
-  const folder = options.resources ?? RESOURCE_FOLDER;
-  const config = await readRepositoryConfig(directory);
+  const folder = resources;
   const docs = docsRoots(config, folder);
   const parsed = parseRepositoryFiles(await resourceFiles(directory, config, docs), {
     folder,

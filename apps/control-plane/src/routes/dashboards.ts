@@ -3,16 +3,10 @@ import { newId, sql } from "@volvel/db";
 import { checkDashboard, type DashboardBody, dashboardKind } from "@volvel/manifest";
 import { Type } from "typebox";
 import { checkQuery, QueryRefused } from "../kernel/data/query/parse.js";
-import {
-  badRequest,
-  conflict,
-  forbidden,
-  forbiddenBecause,
-  HttpError,
-  notFound,
-} from "../kernel/errors.js";
+import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../kernel/errors.js";
 import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { requireStanding } from "../kernel/pages/standing.js";
 import { workspaceTables } from "../kernel/pages.js";
 import { AnyObject, Id, iso, NoContent, NullableString, Time, WorkspaceParams } from "./shared.js";
 
@@ -202,13 +196,11 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           "sql" in input.source ? [{ sql: input.source.sql, at: `${index}/data/${name}` }] : [],
         ),
       );
-      // SQL typed into a widget is SQL typed: whoever saves it must be allowed to write it.
-      if (written.length > 0) {
-        await ctx.authorize("sql:read", {
-          tenantId: (ctx.workspace as WorkspaceRef).tenantId,
-          workspaceId: (ctx.workspace as WorkspaceRef).id,
-        });
-      }
+      // SQL typed into a widget is SQL typed, and a data source's table is read through it: whoever
+      // saves it must hold what each asks.
+      await requireStanding(kernel, ctx, ctx.workspace as WorkspaceRef, [
+        { kind: "dashboard", path: "dashboard", body: given },
+      ]);
       for (const one of written) {
         try {
           await checkQuery(one.sql, { schema: "q", tables: new Set(), anyTable: true });
@@ -381,7 +373,8 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const title = body.title?.trim() ?? current.title;
         const page = body.body === undefined ? undefined : await checked(ctx, title, body.body);
         await ctx.mutate(async (trx, audit) => {
-          await trx
+          // Only the save that read the revision now stored may write: a second one at once is refused.
+          const saved = await trx
             .updateTable("member_dashboard")
             .set({
               title,
@@ -391,7 +384,13 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               updated_at: new Date(),
             })
             .where("id", "=", current.id)
-            .execute();
+            .where("revision", "=", current.revision)
+            .executeTakeFirst();
+          if (Number(saved.numUpdatedRows) === 0) {
+            throw conflict(
+              "This dashboard was saved somewhere else since you opened it. Open it again.",
+            );
+          }
           if (body.sharedWith !== undefined) {
             const groups =
               body.sharedWith.length === 0

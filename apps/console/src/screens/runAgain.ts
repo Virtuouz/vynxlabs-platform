@@ -96,7 +96,14 @@ export async function flowFromStart(
 }
 
 /** A run of a trigger source: it has no script page, and it is not run again by hand. */
-export const isSourceRun = (trigger: { [detail: string]: unknown }) => trigger.relay != null;
+export const isSourceRun = (trigger: RunTrigger) => trigger.relay != null;
+
+/** What started a run, as the API's run schema says: a trigger source's run names its source. */
+export interface RunTrigger {
+  type?: string;
+  relay?: { resourceId: string; node: string; mode: "webhook" | "poll" } | null;
+  [detail: string]: unknown;
+}
 
 /** Where a trigger source is read and changed. */
 export const sourceLink = (link: string, path: string) =>

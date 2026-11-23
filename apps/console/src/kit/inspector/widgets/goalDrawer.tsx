@@ -7,6 +7,7 @@ import {
   DrawerBlock,
   DrawerGroup,
   DrawerRow,
+  MoneyField,
   NumberField,
   SegmentedControl,
   SelectField,
@@ -97,6 +98,8 @@ function GoalRow({ env }: SectionProps) {
   const fromColumn = typeof from === "string";
   const numeric = query?.columns.filter((column) => NUMERIC.has(column.type)) ?? [];
   const fixed = typeof env.config.target === "number" ? env.config.target : undefined;
+  const format = env.config.format as { style?: string; currency?: string; minorUnits?: boolean };
+  const money = format?.style === "currency" ? format : undefined;
   const takeColumn = (column: string) => {
     if (!query) return;
     const [first, ...rest] = query.visual.measures ?? [];
@@ -162,6 +165,19 @@ function GoalRow({ env }: SectionProps) {
                 label: heading(column.name),
               }))}
               onChange={takeColumn}
+            />
+          ) : money ? (
+            // Money is typed as money: a goal over a column kept in cents is typed in dollars.
+            <MoneyField
+              name={`${env.widget.id}-goal-amount`}
+              label="Amount"
+              required={false}
+              currency={money.currency ?? "USD"}
+              minorUnits={money.minorUnits === true}
+              value={fixed}
+              onChange={(next, problem) => {
+                if (problem === undefined) set("target", next, "changing the goal");
+              }}
             />
           ) : (
             <NumberField

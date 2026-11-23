@@ -416,7 +416,7 @@ test("goal data: a preview, then Value, Goal and Over", () => {
 test("the goal is a fixed amount, or a column of the table", async () => {
   show(<Harness start={thisMonth()} definition={goal} tab="data" />);
   fireEvent.click(screen.getByRole("button", { name: /^Goal/ }));
-  fireEvent.change(await screen.findByRole("spinbutton", { name: "Amount" }), {
+  fireEvent.change(await screen.findByRole("textbox", { name: /Amount/ }), {
     target: { value: "300000" },
   });
   expect(last().config?.target).toBe(300000);
@@ -435,6 +435,21 @@ test("the goal is a fixed amount, or a column of the table", async () => {
   expect(visualOf(last(), "value").measures).toEqual([
     { fn: "sum", column: "total", as: "sum_total" },
   ]);
+});
+
+test("a goal over a column kept in cents is typed in dollars (WID-26)", async () => {
+  show(
+    <Harness
+      start={thisMonth({ format: { style: "currency", currency: "USD", minorUnits: true } })}
+      definition={goal}
+      tab="data"
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /^Goal/ }));
+  fireEvent.change(await screen.findByRole("textbox", { name: /Amount/ }), {
+    target: { value: "60000" },
+  });
+  expect(last().config?.target).toBe(6000000);
 });
 
 test("Over follows one of the page's date filters", async () => {

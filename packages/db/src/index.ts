@@ -6,6 +6,7 @@ export {
   type DataStoreOptions,
   dataRoleName,
   openDataStore,
+  POLICY_NAMES,
 } from "./datastore.js";
 export {
   DatabaseNewerThanCodeError,

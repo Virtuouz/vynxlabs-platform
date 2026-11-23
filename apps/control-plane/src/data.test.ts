@@ -2,7 +2,7 @@ import { type Kysely, type PlatformSchema, sql } from "@volvel/db";
 import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { workspaceSchema } from "./kernel/data/apply.js";
+import { upgradePolicies, workspaceSchema } from "./kernel/data/apply.js";
 import { describeTable, findRows, withData } from "./kernel/data/rows.js";
 import { commitDataTransactions } from "./kernel/data/stores.js";
 import { deployBundle } from "./kernel/execution/deploy.js";
@@ -1694,5 +1694,50 @@ describe("tables made in the console, isolation and guards", () => {
       JSON.stringify(t.unaudited),
     ).toEqual([]);
     expect(t.unexercised((route) => /\/table-purges$/.test(route))).toEqual([]);
+  });
+});
+
+describe("tables restored without their policies (HOST-01)", () => {
+  test("opening a store makes the policy of every active table that has none for its role", async () => {
+    const workspace = (
+      await alice.post(`/tenants/${tenant}/workspaces`, {
+        slug: "restored",
+        name: "Restored",
+        type: "dev",
+      })
+    ).body.id as string;
+    const mine = table(
+      "mine",
+      { label: { type: "text" }, owner_id: { type: "uuid" } },
+      { policy: { type: "owner", column: "owner_id" } },
+    );
+    const shared = table(
+      "shared",
+      { label: { type: "text" }, team: { type: "text" } },
+      { policy: { type: "rules", rules: [{ allow: "write", when: { everyone: true } }] } },
+    );
+    const open = table("plain", { label: { type: "text" } });
+    const deployed = await deploy(bundle([mine, shared, open], "restored"), workspace);
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    for (const name of ["mine", "shared", "plain"]) {
+      expect((await alice.post(`${ws(workspace)}/rows/${name}`, { label: "kept" })).status).toBe(
+        201,
+      );
+    }
+    // What `pg_dump` restored onto a server without the role leaves: rows and security, no policy.
+    const schema = workspaceSchema(workspace);
+    for (const physical of ["t_mine", "t_shared", "t_plain"]) {
+      for (const name of ["rows", "rows_read", "rows_insert", "rows_update", "rows_delete"]) {
+        await sql.raw(`drop policy if exists ${name} on "${schema}"."${physical}"`).execute(data);
+      }
+    }
+    expect((await alice.get(`${ws(workspace)}/rows/plain`)).body.items).toHaveLength(0);
+
+    const store = await t.kernel.data.forTenant(tenant);
+    expect(await upgradePolicies(store.owner, store.role)).toBe(3);
+    expect((await alice.get(`${ws(workspace)}/rows/plain`)).body.items).toHaveLength(1);
+    expect((await alice.get(`${ws(workspace)}/rows/shared`)).body.items).toHaveLength(1);
+    expect((await alice.post(`${ws(workspace)}/rows/shared`, { label: "again" })).status).toBe(201);
+    expect(await upgradePolicies(store.owner, store.role)).toBe(0);
   });
 });

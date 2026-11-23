@@ -223,6 +223,12 @@ export async function openDataStore(options: DataStoreOptions): Promise<DataStor
   }
 }
 
+/**
+ * The names a table's row policies may have. A table with an owner or open policy has
+ * `rows`; one with rules has the four others. Every place that finds or drops them uses this list.
+ */
+export const POLICY_NAMES = ["rows", "rows_read", "rows_insert", "rows_update", "rows_delete"];
+
 /** Makes sure the catalog exists, the role signs in with its password, and it may use every workspace table. */
 async function setUp(
   owner: Kysely<PlatformSchema>,
@@ -260,12 +266,14 @@ async function setUp(
         trx,
       );
     }
-    const policies = await sql<{ schema: string; table: string }>`
-        select schemaname as schema, tablename as "table" from pg_policies
-        where schemaname ~ '^ws_[0-9a-f]{32}$' and policyname = 'rows' and not (${role} = any (roles))
+    // A restore under another database name leaves each policy handed to the old name's role.
+    const policies = await sql<{ schema: string; table: string; name: string }>`
+        select schemaname as schema, tablename as "table", policyname as name from pg_policies
+        where schemaname ~ '^ws_[0-9a-f]{32}$' and policyname = any (${sql.val(POLICY_NAMES)})
+          and not (${role} = any (roles))
       `.execute(trx);
     for (const policy of policies.rows) {
-      await sql`alter policy rows on ${sql.id(policy.schema, policy.table)} to ${sql.id(role)}`.execute(
+      await sql`alter policy ${sql.id(policy.name)} on ${sql.id(policy.schema, policy.table)} to ${sql.id(role)}`.execute(
         trx,
       );
     }

@@ -44,3 +44,8 @@ Items: INS-10, 15, 22, 25, 27, 28; HOST-16, 19, 28, 30.
 - Siblings: tenant-scoped `GET /tenants/:t/audit` stays 404 for a deleted tenant; the CSV export of the instance's log does not exist. `docs/self-hosting.md:122` already says entries stay and now is true to read them.
 - Left out: the Area filter of the instance log offers instance areas only; a deleted tenant's entries are reached by "Everything" or search.
 - Walk: Instance > Audit with a tenant deleted (Tenants > Delete; then the log): its entries with the tag, at 390 px the tag wraps in the "What was done" cell, light and dark, reload.
+
+## HOST-19
+- `packages/worker/src/host.ts`: a 404 from the worker host route (what the control plane answers when `MANAGED_WORKERS` is not `host`) is `HostRouteOff`; `run()` says once "The control plane's MANAGED_WORKERS is not set to host, ... Asking again every 30 seconds." and asks again after `routeOffPauseMs` (default 30 s; `stop()` cuts the pause short), no longer "could not be reached" every 2 s. `deploy/compose/.env.example` says the host still starts in those modes and how to stop it.
+- Test: `host.test.ts` "a control plane whose managed workers are not set to host is said once, and asked again only after a long pause (HOST-19)" (no such message before).
+- Siblings: the control plane's route answer is unchanged (`kernel/http.ts:349`); the standalone worker (`worker.ts`) is another route. Left out: the compose profile the row proposes: the default is `host`, so the service must start without one; the line in `.env.example` covers it.

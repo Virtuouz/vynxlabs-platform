@@ -1,6 +1,6 @@
 # Phase 30: Volvel's documentation is served, typed and generated like a tenant's docs site
 
-Status: in progress, on branch `phase-30-docs-system`, off `phase-29-correct-the-product`.
+Status: built through M11, at the owner's stop after M8 (look at /docs and a tenant docs site), on branch `phase-30-docs-system`, off `phase-29-correct-the-product`.
 Last updated: 2026-11-23
 
 The owner asked for documentation of every screen and feature, the console and local development, with self-hosting and administration (2026-11-22). Phase 29 corrected the product first. This phase builds the system the pages live in; phase 31 writes them. The plan is `~/.claude/plans/i-would-like-to-fuzzy-meteor-of-45518b7f-b8fc-41f4-9613-9ba4253edadd.md`; the design is [docs-platform-design](../documentation/inventory/docs-platform-design.md).
@@ -44,3 +44,17 @@ The owner asked for documentation of every screen and feature, the console and l
 
 - **D4 was decided but not built for members** (found by M0). Lane reset built it: a one-time link a tenant admin or operator makes. Its own rule, to confirm with the owner: from a tenant, a member who also belongs to another tenant or holds an instance role is refused (only an operator makes it).
 - **Five table findings were triaged real and never given to a lane** (TAB-30, 33, 34, 36, 37), found by M0's tables brief; with other untruths the briefs found, they go to lane truth.
+
+- **Built, M0 to M11, each in a lane with its write-up in `docs/documentation/fixed/p30-*.md`.** The 20 writers' briefs were refreshed against the code (M0). `@volvel/docs-site` draws tenant sites, `/docs`, the help panel's pages and the static export from one `SiteView` (M1); golden pages prove untyped tenant sites unchanged except the changes listed below. `volvel dev` draws interface and docs apps from local files, and the packed CLI carries the interface runtime (M1b, D64). Product profile, highlighting, a smaller search index (M2); Diátaxis types, subjects, eyebrows, type cards, related pages and the "instance may be older" hint (M3); redirects, `paths.lock`, `names.lock`, the `volvel-` reserve and the asked-topics check (M4); `/docs` on every instance (M5); the five collections with redirects from every old path (M6); the help panel's breadcrumbs, pager, related, "Open in documentation" and server search (M7); types and subjects in the docs editor, product terms and `::field` on tenant sites with a leak test (M8); the API reference without a database and every kind field described, coverage 1.0, typed registries of audit actions, platform events and metrics (M9); screenshots from a manifest in light and dark (M10); the static export with a crawl test (M11).
+- **Walks** (`docs/documentation/walks/p30-*.md`, on a throwaway Fernhill instance at :8091): five walks found 29 faults, a re-walk found 6 more, a third found one; all are fixed and confirmed in the browser (p30-r-last, p30-r-explain). Not walkable yet: diagrams, dark screenshots and related pages on /docs, since no page has a diagram or subjects and the local build takes no screenshots (CI does); the Repository page's "Set in volvel.yaml" state needs a remote repository.
+- **Two lanes drew the same thing two ways** (dark screenshots; previous/next): kept one each, by the page's own look and by the whole navigation.
+- **Visible on existing tenant sites** (not only typed ones): tab titles "page · folder · site", a breadcrumb on collection pages, previous/next within a collection. Asked of the owner.
+- **Not run yet:** the full `pnpm test` and `pnpm e2e`, once at the end of the phase.
+
+## Asked of the owner at the stop after M8
+
+1. Reset links: from a tenant, a member who also belongs to another tenant or holds an instance role is refused; only an operator makes theirs.
+2. Code highlighting: the small built-in highlighter (no new dependency, since none could be installed offline), or `lowlight` later.
+3. Tenant docs names starting `volvel-` are refused at deploy, so the product's help never takes a tenant's name.
+4. `@volvel/docs-site` is marked publishable (nothing publishes until releases are switched on).
+5. The visible changes on existing tenant sites above.

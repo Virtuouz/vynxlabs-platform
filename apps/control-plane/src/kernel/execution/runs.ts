@@ -597,13 +597,17 @@ interface EndedRun {
 async function afterRun(
   kernel: Kernel,
   run: EndedRun,
-  status: "succeeded" | "failed",
-  detail: unknown,
+  reportedStatus: "succeeded" | "failed",
+  reportedDetail: unknown,
 ) {
+  let status = reportedStatus;
+  let detail = reportedDetail;
   const { kickFlow } = await import("../flows/engine.js");
   const { publishPlatformEvent } = await import("../flows/events.js");
   if (run.flow_run_id) kickFlow(kernel, run.flow_run_id);
-  // What a trigger source gave back is what starts the trigger's script or flow.
+  // What a trigger source gave back is what starts the trigger's script or flow. It is passed on
+  // before the run is announced, because passing it on may fail the run, and the platform says
+  // what the run came to, not what it was a moment before.
   if (status === "succeeded" && run.trigger_detail?.relay) {
     const { relaySource } = await import("./triggers.js");
     await relaySource(kernel, run, detail).catch((error: Error) =>
@@ -612,6 +616,17 @@ async function afterRun(
         "a trigger source's answer could not be passed on",
       ),
     );
+    const now = await kernel.db
+      .selectFrom("run")
+      .select(["status", "error"])
+      .where("id", "=", run.id)
+      .executeTakeFirst();
+    if (now?.status === "failed") {
+      status = "failed";
+      detail = {
+        message: (now.error as { message?: string } | null)?.message ?? "The run failed.",
+      };
+    }
   }
   await publishPlatformEvent(kernel, {
     tenantId: run.tenant_id,

@@ -949,7 +949,7 @@ describe("triggers", () => {
     expect(await finished(runs[0].id)).toMatchObject({
       status: "succeeded",
       output: { greeting: "Hello schedule" },
-      trigger: { type: "schedule", schedule: "greet-hourly", scheduledFor: due.toISOString() },
+      trigger: { type: "schedule", trigger: "greet-hourly", scheduledFor: due.toISOString() },
       startedBy: { type: "trigger" },
     });
     const after = (await alice.get(`${ws()}/triggers`)).body.items.find(

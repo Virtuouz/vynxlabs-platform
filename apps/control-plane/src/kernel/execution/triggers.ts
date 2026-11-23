@@ -4,7 +4,7 @@ import type { FlowBody, FlowTrigger, FormTrigger, WebhookVerify } from "@volvel/
 import type { TriggerSource } from "@volvel/sdk";
 import { CronExpressionParser } from "cron-parser";
 import type { Trx } from "../audit.js";
-import { badRequest, HttpError, notFound } from "../errors.js";
+import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import type { AppliedResource, KindHook } from "../kinds.js";
 import { observe } from "../metrics.js";
@@ -418,10 +418,13 @@ async function register(
       target_kind: registration.target.kind,
       target_path: registration.target.path,
       enabled: registration.enabled,
+      // One that is turned off has no next time: it is worked out afresh when it is turned on.
       next_fire_at: registration.schedule
-        ? sameTime && current?.next_fire_at
-          ? current.next_fire_at
-          : firstFire(registration.schedule, field)
+        ? !registration.enabled
+          ? null
+          : sameTime && current?.next_fire_at
+            ? current.next_fire_at
+            : firstFire(registration.schedule, field)
         : null,
       event_name: registration.event?.name ?? null,
       filter: registration.event?.filter ?? null,
@@ -852,11 +855,12 @@ export async function relaySource(
   }
   const [first] = refused;
   if (first) {
+    const said = `${refused.length} of ${inputs.length} could not start a run. The ${ordinal(first.index + 1)}: ${first.reason}`;
     await recordRefusal(
       kernel,
       state,
       "input",
-      `${refused.length} of ${inputs.length} could not start a run. The ${ordinal(first.index + 1)}: ${first.reason}`,
+      `${said} Each is kept in the output of the source's run ${run.id}, under "refused", by its place in "items".`,
     );
     // The run's own output names each one, by its place in the list the source gave.
     await kernel.db
@@ -866,6 +870,23 @@ export async function relaySource(
       .where("output_ref", "is", null)
       .where(sql<boolean>`jsonb_typeof(output) = 'object'`)
       .execute();
+    // Told once for the whole pass, through the alert people have set for failed runs.
+    const row = await kernel.db
+      .selectFrom("run")
+      .selectAll()
+      .where("id", "=", run.id)
+      .executeTakeFirst();
+    if (row) {
+      const { sendAlerts } = await import("./alerts.js");
+      await sendAlerts(kernel, {
+        ...row,
+        error: {
+          message: `${said} They are kept in the output of this run, under "refused". The others were started.`,
+        },
+      }).catch((failure) =>
+        kernel.log.error({ err: failure, runId: run.id }, "failure alert could not be sent"),
+      );
+    }
   }
   await kickStarted(kernel, started);
 }
@@ -1014,41 +1035,8 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
       }
       try {
         if (config.source) {
-          // One at a time: a tick that comes while the last is still looking is passed over,
-          // so that two never start from the same place.
-          const busy = await sql<{ id: string }>`
-            select id from run
-            where workspace_id = ${due.workspace_id}
-              and status in ('queued', 'running')
-              and trigger_detail->'relay'->>'resourceId' = ${due.resource_id}
-              and trigger_detail->'relay'->>'node' = ${due.node_id}
-            limit 1
-          `.execute(trx);
-          if (busy.rows.length > 0) {
-            await recordRefusal(
-              kernel,
-              due,
-              "busy",
-              "The source was still looking from the last tick, so this time was passed over.",
-            );
-            return { kind: "none" as const, id: "" };
-          }
-          const made = await startRun(kernel, trx, {
-            tenantId: due.tenant_id,
-            workspaceId: due.workspace_id,
-            script: config.source,
-            input: { cursor: due.cursor ?? null, scheduledFor: fireTime.toISOString() },
-            trigger: {
-              type: "schedule",
-              detail: {
-                schedule: due.node_id ? `${due.path}#${due.node_id}` : due.path,
-                scheduledFor: fireTime.toISOString(),
-              },
-            },
-            startedBy: { type: "trigger", id: null },
-            idempotencyKey: `poll:${due.resource_id}:${due.node_id}:${fireTime.toISOString()}`,
-            relay: { resourceId: due.resource_id, node: due.node_id, mode: "poll" },
-          });
+          const made = await startSourceRun(kernel, trx, due, config, fireTime);
+          if (made === "busy") return { kind: "none" as const, id: "" };
           return { kind: "script" as const, id: made.run.id };
         }
         const label = due.node_id ? `${due.path}#${due.node_id}` : due.path;
@@ -1060,7 +1048,7 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
           trigger: {
             type: "schedule",
             detail: {
-              schedule: due.node_id ? `${due.path}#${due.node_id}` : due.path,
+              trigger: due.node_id ? `${due.path}#${due.node_id}` : due.path,
               scheduledFor: fireTime.toISOString(),
             },
           },
@@ -1085,6 +1073,63 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
       }
     });
   }
+}
+
+/**
+ * Starts the run of a schedule's source, which finds what is new and hands it on once it ends
+ * (`relaySource`). Shared by a time that is due and by Fire now, so that both start the same
+ * thing. One at a time: a tick that comes while the last is still looking is passed over, so
+ * that two never start from the same place, and says so where refusals are shown.
+ */
+async function startSourceRun(
+  kernel: Kernel,
+  trx: Trx,
+  state: TriggerRow & { path: string; cursor: unknown },
+  config: ScheduleConfig & { source?: string | undefined },
+  fireTime: Date,
+  manual = false,
+) {
+  const busy = await sql<{ id: string }>`
+    select id from run
+    where workspace_id = ${state.workspace_id}
+      and status in ('queued', 'running')
+      and trigger_detail->'relay'->>'resourceId' = ${state.resource_id}
+      and trigger_detail->'relay'->>'node' = ${state.node_id}
+    limit 1
+  `.execute(trx);
+  if (busy.rows.length > 0) {
+    // Someone who asked for it is told so, and needs no record of a time passed over.
+    if (!manual) {
+      await recordRefusal(
+        kernel,
+        state,
+        "busy",
+        "The source was still looking from the last tick, so this time was passed over.",
+      );
+    }
+    return "busy" as const;
+  }
+  return startRun(kernel, trx, {
+    tenantId: state.tenant_id,
+    workspaceId: state.workspace_id,
+    script: config.source as string,
+    input: { cursor: state.cursor ?? null, scheduledFor: fireTime.toISOString() },
+    trigger: {
+      type: "schedule",
+      detail: {
+        trigger: state.node_id ? `${state.path}#${state.node_id}` : state.path,
+        scheduledFor: fireTime.toISOString(),
+        ...(manual ? { manual: true } : {}),
+      },
+    },
+    startedBy: { type: "trigger", id: null },
+    ...(manual
+      ? {}
+      : {
+          idempotencyKey: `poll:${state.resource_id}:${state.node_id}:${fireTime.toISOString()}`,
+        }),
+    relay: { resourceId: state.resource_id, node: state.node_id, mode: "poll" },
+  });
 }
 
 /** The schedule a pass took up, for what is written once its start is done. */
@@ -1122,7 +1167,7 @@ async function stillGoing(trx: Trx, state: TriggerRow, label: string): Promise<b
   const found = await sql<{ id: string }>`
     select id from ${sql.table(table)}
     where workspace_id = ${state.workspace_id} and trigger_type = 'schedule'
-      and trigger_detail->>'schedule' = ${label} and ${going}
+      and coalesce(trigger_detail->>'trigger', trigger_detail->>'schedule') = ${label} and ${going}
     limit 1
   `.execute(trx);
   return found.rows.length > 0;
@@ -1151,12 +1196,21 @@ export async function fireScheduleNow(
     .executeTakeFirst();
   if (!state) throw notFound(node ? `The schedule ${node} of ${path}` : `The schedule ${path}`);
   const config = state.config as unknown as ScheduleConfig;
+  if (config.source) {
+    const made = await startSourceRun(kernel, trx, { ...state, path }, config, new Date(), true);
+    if (made === "busy") {
+      throw conflict(
+        "The source is still looking from the last time. Try again when it has finished.",
+      );
+    }
+    return { kind: "script" as const, id: made.run.id };
+  }
   return startTarget(kernel, trx, state, {
     input: config.input ?? {},
     trigger: {
       type: "schedule",
       detail: {
-        schedule: node ? `${path}#${node}` : path,
+        trigger: node ? `${path}#${node}` : path,
         scheduledFor: new Date().toISOString(),
         manual: true,
       },

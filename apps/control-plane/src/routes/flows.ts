@@ -634,7 +634,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               return {
                 node: state.node_id,
                 type: state.type,
-                nextFireAt: isoOrNull(state.next_fire_at),
+                nextFireAt: state.enabled ? isoOrNull(state.next_fire_at) : null,
                 url: token ? `${kernel.config.publicUrl}/api/v1/hooks/${token}` : null,
               };
             }),

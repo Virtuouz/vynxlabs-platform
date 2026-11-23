@@ -171,6 +171,28 @@ export class DataStores {
     }
   }
 
+  /**
+   * Which database a connection string reaches: the server's own identifier and the database's
+   * name. Two strings that give the same pair reach one database, however they are spelled.
+   * Nothing is written and nothing is remembered.
+   */
+  async identify(connectionString: string): Promise<string> {
+    const store = await openDataStore({
+      connectionString,
+      secret: await this.#secret(),
+      setUp: false,
+      maxConnections: 1,
+    });
+    try {
+      const { rows } = await sql<{ id: string }>`
+        select (select system_identifier::text from pg_control_system()) || '/' || current_database() as id
+      `.execute(store.owner);
+      return rows[0]?.id ?? "";
+    } finally {
+      await store.close();
+    }
+  }
+
   async #open(connectionString: string): Promise<DataStore> {
     return openDataStore({
       connectionString,

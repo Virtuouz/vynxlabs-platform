@@ -1034,6 +1034,48 @@ describe("database locations", () => {
     }
   });
 
+  test("the platform's own database is not a dedicated location, nor is one database under two names (INS-15)", async () => {
+    const own = (await sql<{ name: string }>`select current_database() as name`.execute(t.db))
+      .rows[0]?.name;
+    const extra = await createTestDatabase();
+    try {
+      const platformUrl = new URL(extra.connectionString);
+      platformUrl.pathname = `/${own}`;
+      const itself = await t.admin.put("/instance/database-locations/itself", {
+        connectionString: platformUrl.toString(),
+      });
+      expect(itself.status, JSON.stringify(itself.body)).toBe(400);
+      expect(itself.body.detail).toMatch(/platform's own database/i);
+      expect(
+        (await t.admin.get("/instance/database-locations/names")).body.items,
+      ).not.toContainEqual(expect.objectContaining({ name: "itself" }));
+
+      expect(
+        (
+          await t.admin.put("/instance/database-locations/first-name", {
+            connectionString: extra.connectionString,
+          })
+        ).status,
+      ).toBe(204);
+      // The same address again under its own name is a change of address, and is allowed.
+      expect(
+        (
+          await t.admin.put("/instance/database-locations/first-name", {
+            connectionString: extra.connectionString,
+          })
+        ).status,
+      ).toBe(204);
+      const twice = await t.admin.put("/instance/database-locations/second-name", {
+        connectionString: extra.connectionString,
+      });
+      expect(twice.status, JSON.stringify(twice.body)).toBe(400);
+      expect(twice.body.detail).toMatch(/first-name/);
+      await t.admin.delete("/instance/database-locations/first-name");
+    } finally {
+      await extra.drop();
+    }
+  });
+
   test("a location's description changes without its address, and tenants are listed by location (INS-MP9, INS-MP12)", async () => {
     const extra = await createTestDatabase();
     try {

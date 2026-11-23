@@ -5,6 +5,7 @@
  */
 import "./prism-manual.js";
 import Prism from "prismjs/components/prism-core.js";
+import "./prism-global.js";
 import "prismjs/components/prism-markup.js";
 import "prismjs/components/prism-css.js";
 import "prismjs/components/prism-clike.js";

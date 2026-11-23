@@ -826,3 +826,17 @@ describe("a screenshot in both looks", () => {
     expect(draw({ screenshotDark: () => null })).toBe(draw({}));
   });
 });
+
+test("Prism's core is put on the global before any language loads, as a bundle needs", () => {
+  // A bundler makes the core a lazy module while each language file runs at once and reads the global `Prism`
+  // (the app runtime failed to start, phase 30's e2e run). prism-global reads the core, so it must come first.
+  const order = readFileSync(new URL("./prism.ts", import.meta.url), "utf8")
+    .split("\n")
+    .filter((line) => line.startsWith("import "));
+  const core = order.findIndex((line) => line.includes("prism-core"));
+  const global = order.findIndex((line) => line.includes("./prism-global.js"));
+  const firstLanguage = order.findIndex((line) => line.includes("prismjs/components/prism-markup"));
+  expect(core).toBeGreaterThanOrEqual(0);
+  expect(global).toBeGreaterThan(core);
+  expect(global).toBeLessThan(firstLanguage);
+});

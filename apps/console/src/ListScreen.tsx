@@ -19,6 +19,7 @@ import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
 import { usePagedList } from "./kit/paged.tsx";
+import { READ_ONLY_WORDS, useReadOnly } from "./kit/ReadOnly.tsx";
 import { useQueryValue } from "./router.tsx";
 export interface FormField {
   name: string;
@@ -225,10 +226,19 @@ export function CreateDialog({
   // A form of more than three fields is configuration, not a quick question: it opens as a
   // sheet beside the page, with its buttons kept in view, rather than over it.
   const roomy = config.fields.length > 3;
+  const readOnly = useReadOnly();
   const buttons = (
     <>
       <Button onClick={close}>Cancel</Button>
-      <Button type="submit" form={formId} variant="primary" loading={busy}>
+      {readOnly ? <span className="text-meta text-ink-muted">{READ_ONLY_WORDS}</span> : null}
+      <Button
+        type="submit"
+        form={formId}
+        variant="primary"
+        loading={busy}
+        disabled={readOnly}
+        {...(readOnly ? { tooltip: READ_ONLY_WORDS } : {})}
+      >
         {config.action}
       </Button>
     </>

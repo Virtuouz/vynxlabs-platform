@@ -26,6 +26,7 @@ export const COMMAND_GROUPS = [
   "A tenant's access: its groups, service accounts, roles and what they are given",
   "Move a tenant",
   "See what ran",
+  "Run the instance",
 ] as const;
 
 const entry = <Name extends string>(
@@ -47,6 +48,13 @@ export const COMMANDS = [
   ),
   entry("whoami", "Sign in", "whoami", "Show who the saved key acts as."),
   entry("status", "Sign in", "status", "Show the instance's version and readiness."),
+
+  entry(
+    "instance",
+    "Run the instance",
+    "instance triggers [pause [--reason <text>]|resume]",
+    "Show whether every trigger in every tenant is paused, or pause or resume them all. Operators only.",
+  ),
 
   entry("init", REPOSITORY, "init [directory]", "Write a starter repository."),
   entry("build", REPOSITORY, "build", "Build the bundle and list what it contains."),

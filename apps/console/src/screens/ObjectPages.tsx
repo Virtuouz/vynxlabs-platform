@@ -1,13 +1,14 @@
-import { Button, Closing, JsonView } from "@volvel/ui";
+import { Button, Closing, JsonView, Notice } from "@volvel/ui";
 import { FileCode2, ListChecks } from "lucide-react";
-import { useState } from "react";
-import { api, useLoad } from "../api.ts";
-import { notify } from "../ask.tsx";
+import { useEffect, useState } from "react";
+import { type ApiError, api, useLoad } from "../api.ts";
+import { failureText, notify } from "../ask.tsx";
 import { CodeEditor } from "../editor/CodeEditor.tsx";
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { useMay, useNeeds } from "../kit/Can.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
+import { putDraft, readDraft } from "../kit/draftApi.ts";
 import { ago } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { KeyValues } from "../kit/layout.tsx";
@@ -20,6 +21,12 @@ import { Time } from "../kit/Time.tsx";
 import { RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate, TEXT_LINK, useUrlParam } from "../router.tsx";
 import { RecentRuns } from "./Authoring.tsx";
+import {
+  type CodeChoices,
+  type LimitsBody,
+  LimitsFields,
+  useCodeChoices,
+} from "./CodeSettings.tsx";
 import { CONNECTOR_NAMES, type ConnectionRow, ConnectionWizard } from "./ConnectionWizard.tsx";
 import { ConnectionHealth, RunButton, TestConnection } from "./Execution.tsx";
 import { NotFound } from "./NotFound.tsx";
@@ -785,7 +792,14 @@ export function ScriptPage({
               {
                 id: "settings",
                 label: "Settings",
-                content: <ScriptSettings root={root} link={link} path={script.path} />,
+                content: (
+                  <ScriptSettings
+                    root={root}
+                    link={link}
+                    path={script.path}
+                    production={production}
+                  />
+                ),
               },
               {
                 id: "source",
@@ -810,9 +824,32 @@ interface ScriptSettingsBody {
   uses?: Record<string, string[] | undefined>;
 }
 
-/** What a script runs with, as the editor's Settings set it: read here, changed in the editor. */
-function ScriptSettings({ root, link, path }: { root: string; link: string; path: string }) {
-  const found = useLoad<{ kind: string; body: ScriptSettingsBody }>(`${root}/resources/${path}`);
+/**
+ * What a script runs with, as the editor's Settings set it: read here, and changed here too, with
+ * the same fields. A change is saved as a draft, as in the editor: nothing that runs changes
+ * until it is deployed.
+ */
+function ScriptSettings({
+  root,
+  link,
+  path,
+  production = false,
+}: {
+  root: string;
+  link: string;
+  path: string;
+  production?: boolean;
+}) {
+  const found = useLoad<{ kind: string; ownership?: string; body: ScriptSettingsBody }>(
+    `${root}/resources/${path}`,
+  );
+  const may = useNeeds({
+    base: root,
+    permission: "resource:write",
+    what: "this script's settings",
+  });
+  const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState(false);
   if (found.error) {
     return (
       <ErrorState what="the settings of this script" error={found.error} onRetry={found.reload} />
@@ -858,8 +895,30 @@ function ScriptSettings({ root, link, path }: { root: string; link: string; path
     },
   ];
   const set = rows.filter((row) => row.value !== undefined);
+  // Code that a repository holds is changed there, and production is changed by promotion.
+  const mayChange = !production && found.data.ownership !== "repository";
+  if (editing) {
+    return (
+      <ScriptSettingsForm
+        root={root}
+        link={link}
+        path={path}
+        deployed={body}
+        onClose={(didSave) => {
+          setEditing(false);
+          setSaved(didSave);
+        }}
+      />
+    );
+  }
   return (
     <div className="flex max-w-2xl flex-col gap-3">
+      {saved ? (
+        <Notice tone="success">
+          Saved as a draft. It runs this way once it is deployed.{" "}
+          <Link to={`${link}/scripts/edit/${path}`}>Open the draft</Link>
+        </Notice>
+      ) : null}
       {set.length === 0 ? (
         <p className="m-0 text-ink-muted">
           Nothing is set: it runs with the workspace's defaults and uses nothing it has not been
@@ -868,10 +927,139 @@ function ScriptSettings({ root, link, path }: { root: string; link: string; path
       ) : (
         <KeyValues rows={set.map((row) => ({ label: row.label, value: row.value }))} />
       )}
-      <p className="m-0 text-meta text-ink-subtle">
-        These are changed in the editor's Settings.{" "}
-        <Link to={`${link}/scripts/edit/${path}`}>Open the code</Link>
-      </p>
+      {mayChange ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="secondary"
+            disabled={!may.can}
+            tooltip={may.reason}
+            onClick={() => {
+              setSaved(false);
+              setEditing(true);
+            }}
+          >
+            Change the settings
+          </Button>
+          <span className="text-meta text-ink-subtle">
+            A change is kept as a draft, as in the editor.{" "}
+            <Link to={`${link}/scripts/edit/${path}`}>Open the code</Link>
+          </span>
+        </div>
+      ) : (
+        <p className="m-0 text-meta text-ink-subtle">
+          {production
+            ? "Settings change in a dev workspace and reach production by promotion."
+            : "The repository holds this script: change its settings there."}{" "}
+          <Link to={`${link}/scripts/edit/${path}`}>Open the code</Link>
+        </p>
+      )}
     </div>
+  );
+}
+
+/** The same fields as the editor's Settings, over what the draft holds, or what is deployed. */
+function ScriptSettingsForm({
+  root,
+  link,
+  path,
+  deployed,
+  onClose,
+}: {
+  root: string;
+  link: string;
+  path: string;
+  deployed: ScriptSettingsBody;
+  onClose: (saved: boolean) => void;
+}) {
+  const choices: CodeChoices = useCodeChoices(root);
+  const [base, setBase] = useState<{ body: Record<string, unknown>; revision?: number }>();
+  const [problem, setProblem] = useState<string>();
+  const [fields, setFields] = useState<ApiError["fields"]>([]);
+  const [saving, setSaving] = useState(false);
+  // What the draft holds when there is one, so that its other changes are kept.
+  useEffect(() => {
+    let current = true;
+    readDraft(root, path)
+      .then((draft) => {
+        if (!current) return;
+        if (draft && !draft.deleted) setBase({ body: draft.body, revision: draft.revision });
+        else setBase({ body: deployed as Record<string, unknown> });
+      })
+      .catch((error) => current && setProblem(failureText(error)));
+    return () => {
+      current = false;
+    };
+  }, [root, path, deployed]);
+  const [body, setBody] = useState<LimitsBody>();
+  useEffect(() => {
+    if (base && !body) setBody(base.body as LimitsBody);
+  }, [base, body]);
+  if (!base || !body) {
+    return problem ? <Notice tone="danger">{problem}</Notice> : <Loading />;
+  }
+  const change = (next: Partial<LimitsBody>) => setBody((was) => ({ ...(was ?? {}), ...next }));
+  const changeFailure = (next: { script?: string | undefined; notify?: string | undefined }) =>
+    setBody((was) => {
+      const merged = { ...(was?.onFailure ?? {}), ...next };
+      const kept = Object.fromEntries(Object.entries(merged).filter(([, value]) => value));
+      return { ...(was ?? {}), onFailure: Object.keys(kept).length > 0 ? kept : undefined };
+    });
+  const save = async () => {
+    setSaving(true);
+    setProblem(undefined);
+    setFields([]);
+    try {
+      // Fields left empty are not sent: the manifest wants them absent, not undefined.
+      const sent = Object.fromEntries(
+        Object.entries(body).filter(([, value]) => value !== undefined),
+      );
+      await putDraft(
+        root,
+        path,
+        { kind: "script", schemaVersion: 1, body: sent },
+        base.revision !== undefined ? { revision: base.revision } : { first: true },
+      );
+      onClose(true);
+    } catch (error) {
+      setProblem(failureText(error));
+      setFields((error as ApiError).fields ?? []);
+    } finally {
+      setSaving(false);
+    }
+  };
+  return (
+    <form
+      className="flex max-w-2xl flex-col gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      {base.revision !== undefined ? (
+        <Notice tone="plain">
+          This script has a draft. Your changes are added to it.{" "}
+          <Link to={`${link}/scripts/edit/${path}`}>Open the draft</Link>
+        </Notice>
+      ) : null}
+      <LimitsFields
+        kind="script"
+        noun="script"
+        body={body}
+        change={change}
+        changeFailure={changeFailure}
+        readOnly={saving}
+        fieldError={(pointer) => fields?.find((field) => field.path.startsWith(pointer))?.message}
+        choices={choices}
+      />
+      {problem ? <Notice tone="danger">{problem}</Notice> : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" loading={saving}>
+          Save as a draft
+        </Button>
+        <Button variant="quiet" disabled={saving} onClick={() => onClose(false)}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }

@@ -119,6 +119,28 @@ test("a list's row actions stay inside the table at every width", async () => {
 });
 
 /**
+ * Phase 31 (cols): at 390 px a table's Definition tab shows each column's rules and default under
+ * its name, and its "Actions for <column>" menu is in the window at first view, no sideways scroll.
+ */
+test("a table's definition shows each column's rules and actions at first view at 390 px", async () => {
+  await ctx.page.setViewportSize({ width: 390, height: 900 });
+  await open(ctx.page, `${ctx.ws}/tables/patients?view=definition`);
+  const found = await ctx.page.evaluate(() => {
+    const menus = [...document.querySelectorAll<HTMLElement>('main [aria-label^="Actions for "]')];
+    return {
+      menus: menus.length,
+      outside: menus
+        .filter((one) => one.getBoundingClientRect().right > window.innerWidth + 1)
+        .map((one) => one.getAttribute("aria-label")),
+      stacks: document.querySelectorAll("main [data-column-stack]").length,
+    };
+  });
+  expect(found.stacks, "columns that stack their rules").toBeGreaterThan(0);
+  expect(found.menus, "a column's actions menu").toBeGreaterThan(0);
+  expect(found.outside, "menus past the window").toEqual([]);
+});
+
+/**
  * Phase 30 re-walk E: a documentation page whose title is one long unbroken name
  * (`@volvel/widgets/action`) breaks inside it at 390 px, and the page does not scroll sideways.
  */

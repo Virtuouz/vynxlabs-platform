@@ -1,6 +1,6 @@
-import { Button, Notice } from "@volvel/ui";
+import { Button, Notice, TextField } from "@volvel/ui";
 import { useState } from "react";
-import { api, useLoad } from "../api.ts";
+import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
@@ -148,6 +148,108 @@ export function RecoveryCodes() {
   );
 }
 
+const MIN_PASSWORD = 12;
+
+/**
+ * Changes the password of the person signed in. Their other sessions end with it: someone who
+ * had the old password should not stay in.
+ */
+export function ChangePassword() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string>();
+  const [done, setDone] = useState(false);
+  const mismatch = again !== "" && again !== next;
+  const short = next !== "" && next.length < MIN_PASSWORD;
+  const ready = current !== "" && next.length >= MIN_PASSWORD && next === again;
+
+  return (
+    <Panel role="region" aria-label="Password" className="flex max-w-xl flex-col gap-4 p-4 md:p-5">
+      <SectionLabel>Password</SectionLabel>
+      <p className="m-0 max-w-measure text-ink-muted">
+        Changing it signs you out everywhere else. If your organization's sign-in is the only way
+        you get in, you have no password here to change.
+      </p>
+      <form
+        className="flex flex-col gap-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!ready) return;
+          setBusy(true);
+          setProblem(undefined);
+          setDone(false);
+          try {
+            await api.post("/auth/change-password", {
+              currentPassword: current,
+              newPassword: next,
+              revokeOtherSessions: true,
+            });
+            setCurrent("");
+            setNext("");
+            setAgain("");
+            setDone(true);
+          } catch (error) {
+            const refused = error as ApiError;
+            setProblem(
+              refused instanceof ApiError &&
+                (refused.status === 400 || refused.status === 401) &&
+                /password/i.test(`${refused.code} ${refused.message}`)
+                ? "The current password is not right."
+                : refused.message,
+            );
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <TextField
+          label="Current password"
+          name="currentPassword"
+          type="password"
+          value={current}
+          required
+          autoComplete="current-password"
+          onChange={setCurrent}
+        />
+        <TextField
+          label="New password"
+          name="newPassword"
+          type="password"
+          value={next}
+          required
+          autoComplete="new-password"
+          hint={`At least ${MIN_PASSWORD} characters.`}
+          error={short ? `Use at least ${MIN_PASSWORD} characters.` : undefined}
+          onChange={setNext}
+        />
+        <TextField
+          label="New password again"
+          name="again"
+          type="password"
+          value={again}
+          required
+          autoComplete="new-password"
+          error={mismatch ? "The two do not match." : undefined}
+          onChange={setAgain}
+        />
+        {problem ? <Notice tone="danger">{problem}</Notice> : null}
+        {done ? (
+          <Notice tone="attention">
+            Your password is changed. Your other sessions were signed out.
+          </Notice>
+        ) : null}
+        <div>
+          <Button type="submit" variant="primary" loading={busy} disabled={!ready}>
+            Change password
+          </Button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
 export function Account() {
   return (
     <div className="flex flex-col gap-8">
@@ -182,6 +284,7 @@ export function Account() {
           )
         }
       />
+      <ChangePassword />
       <RecoveryCodes />
     </div>
   );

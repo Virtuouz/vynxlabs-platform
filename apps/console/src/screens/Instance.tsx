@@ -105,7 +105,7 @@ export function InstanceMembers() {
             name: "password",
             label: "Initial password",
             type: "password",
-            hint: "At least 12 characters. They can change it after signing in.",
+            hint: "At least 12 characters. They can change it on their Account screen after signing in.",
           },
         ],
         submit: (values) => api.post("/members", values),

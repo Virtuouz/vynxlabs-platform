@@ -105,7 +105,7 @@ function formTables(body) {
       const heading =
         index === 0
           ? ""
-          : `### ${table.root === "" ? "The body" : `\`${table.root}\``} when ${table.form}\n\n`;
+          : `### ${table.root === "" ? "The body" : `\`${table.root}\``} when ${table.form}\n\n${table.about ? `${table.about}\n\n` : ""}`;
       return `${heading}${fieldTable(table.fields)}`;
     });
 }

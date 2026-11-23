@@ -35,11 +35,13 @@
                 "group",
                 "service_account",
                 "end_user_group"
-              ]
+              ],
+              "description": "What kind of principal: a group of members, a service account or a group of end users."
             },
             "key": {
               "type": "string",
-              "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$",
+              "description": "Its key, which never changes. What it is called can change."
             }
           },
           "required": [

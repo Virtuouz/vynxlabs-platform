@@ -32,10 +32,12 @@
       "description": "IANA time zone. Default UTC."
     },
     "input": {
-      "type": "object"
+      "type": "object",
+      "description": "What the script or the flow is given each time."
     },
     "enabled": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "Whether it fires. Default true. Turn it off to pause it without deleting it."
     },
     "overlap": {
       "enum": [

@@ -6,10 +6,12 @@
   "properties": {
     "description": {
       "type": "string",
-      "maxLength": 500
+      "maxLength": 500,
+      "description": "What it is for, in plain text."
     },
     "columns": {
       "type": "object",
+      "description": "The table's columns, by name. Every table also has `id`, `created_at` and `updated_at`.",
       "propertyNames": {
         "pattern": "^[a-z][a-z0-9_]*$",
         "maxLength": 55
@@ -33,7 +35,8 @@
               "file",
               "enum",
               "enum_list"
-            ]
+            ],
+            "description": "What the column holds."
           },
           "description": {
             "type": "string",
@@ -41,10 +44,12 @@
             "description": "What the column holds, in plain text. Shown on the column's heading and wherever a page of documentation names the column."
           },
           "required": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether a row must have a value."
           },
           "unique": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether no two rows may hold the same value."
           },
           "default": {
             "description": "Used for a row that gives no value, and for existing rows when the column is added."
@@ -83,12 +88,14 @@
                       "type": "string",
                       "minLength": 1,
                       "maxLength": 100,
-                      "pattern": "^[^,\\n\\r]+$"
+                      "pattern": "^[^,\\n\\r]+$",
+                      "description": "What the row holds."
                     },
                     "label": {
                       "type": "string",
                       "minLength": 1,
-                      "maxLength": 100
+                      "maxLength": 100,
+                      "description": "What the value is called where people read it."
                     },
                     "color": {
                       "type": "string",
@@ -129,12 +136,15 @@
       "description": "The column that stands for a row where another table refers to it, in place of its ID."
     },
     "policy": {
+      "description": "Who may read and change the rows of the table, beyond what a role gives. Left out, the rows are open to whoever the roles allow.",
       "oneOf": [
         {
           "type": "object",
+          "description": "Every row is open to whoever the roles allow.",
           "properties": {
             "type": {
-              "const": "open"
+              "const": "open",
+              "description": "Always `open`."
             }
           },
           "required": [
@@ -144,9 +154,11 @@
         },
         {
           "type": "object",
+          "description": "A person sees and changes only the rows that name them in a column.",
           "properties": {
             "type": {
-              "const": "owner"
+              "const": "owner",
+              "description": "Always `owner`."
             },
             "column": {
               "type": "string",
@@ -165,10 +177,12 @@
           "description": "Rules that match a row's columns against the person asking. A person sees a row when any rule lets them, and changes it when a `write` or `all` rule does.",
           "properties": {
             "type": {
-              "const": "rules"
+              "const": "rules",
+              "description": "Always `rules`."
             },
             "rules": {
               "type": "array",
+              "description": "The rules, each saying who it lets in and what it lets them do.",
               "minItems": 1,
               "maxItems": 20,
               "items": {
@@ -179,15 +193,19 @@
                       "read",
                       "write",
                       "all"
-                    ]
+                    ],
+                    "description": "What the rule lets a person do with the rows it matches."
                   },
                   "when": {
+                    "description": "Which rows, and which people, the rule matches.",
                     "oneOf": [
                       {
                         "type": "object",
+                        "description": "Every person, for every row.",
                         "properties": {
                           "everyone": {
-                            "const": true
+                            "const": true,
+                            "description": "Always `true`."
                           }
                         },
                         "required": [
@@ -197,13 +215,16 @@
                       },
                       {
                         "type": "object",
+                        "description": "A row whose column holds the person asking.",
                         "properties": {
                           "column": {
                             "type": "string",
-                            "pattern": "^[a-z][a-z0-9_]*$"
+                            "pattern": "^[a-z][a-z0-9_]*$",
+                            "description": "The column the person is looked for in."
                           },
                           "is": {
-                            "const": "principal"
+                            "const": "principal",
+                            "description": "Always `principal`."
                           }
                         },
                         "required": [
@@ -214,13 +235,16 @@
                       },
                       {
                         "type": "object",
+                        "description": "A row whose column holds a group the person is in.",
                         "properties": {
                           "column": {
                             "type": "string",
-                            "pattern": "^[a-z][a-z0-9_]*$"
+                            "pattern": "^[a-z][a-z0-9_]*$",
+                            "description": "The column the person's groups are looked for in."
                           },
                           "in": {
-                            "const": "groups"
+                            "const": "groups",
+                            "description": "Always `groups`."
                           }
                         },
                         "required": [
@@ -231,17 +255,21 @@
                       },
                       {
                         "type": "object",
+                        "description": "A row whose column equals an attribute of the person.",
                         "properties": {
                           "column": {
                             "type": "string",
-                            "pattern": "^[a-z][a-z0-9_]*$"
+                            "pattern": "^[a-z][a-z0-9_]*$",
+                            "description": "The column that is compared."
                           },
                           "equals": {
                             "type": "object",
+                            "description": "What the column is compared with.",
                             "properties": {
                               "attribute": {
                                 "type": "string",
-                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                "description": "The name of the attribute of the person."
                               }
                             },
                             "required": [
@@ -278,6 +306,7 @@
     "indexes": {
       "type": "array",
       "maxItems": 20,
+      "description": "Indexes to keep, each a list of the columns it covers, to make a lookup by them fast.",
       "items": {
         "type": "array",
         "items": {

@@ -26,7 +26,7 @@ import { CORE_WIDGETS } from "../../widgets-core/dist/index.js";
 import { expected, GENERATED, stale, write } from "../generate.mjs";
 import { apiPages } from "../generators/api.mjs";
 import { listFiles, strayWords, wordlessSettings } from "../generators/lists.mjs";
-import { generate } from "../generators/reference.mjs";
+import { coverage, generate } from "../generators/reference.mjs";
 import { tablesOf } from "../generators/schema.mjs";
 
 const pages = generate();
@@ -275,4 +275,11 @@ test("the reference's first page leads to every page made from a list, and a cha
   } finally {
     writeFileSync(file, kept);
   }
+});
+
+test("every field of every kind says what it is, and the floor is all of them (M9)", () => {
+  const floor = JSON.parse(readFileSync(join(__dirname, "../coverage.json"), "utf8")).kinds;
+  expect(floor).toBe(1);
+  const covered = coverage();
+  expect(covered.described).toBe(covered.fields);
 });

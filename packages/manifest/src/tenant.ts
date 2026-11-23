@@ -38,7 +38,11 @@ const title = {
 };
 /** The most a description of a group, a role or a service account may say, whichever way it is made. */
 export const ACCESS_DESCRIPTION_MAX = 500;
-const description = { type: "string", maxLength: ACCESS_DESCRIPTION_MAX };
+const description = {
+  type: "string",
+  maxLength: ACCESS_DESCRIPTION_MAX,
+  description: "What it is for, in plain text.",
+};
 
 /** How a group is filled by the identity provider people sign in through. */
 const membership = {
@@ -53,6 +57,7 @@ const membership = {
       properties: {
         values: {
           type: "array",
+          description: "The values of the provider's groups claim.",
           items: { type: "string", minLength: 1, maxLength: 200 },
           minItems: 1,
           maxItems: 50,
@@ -86,6 +91,8 @@ export const TENANT_KINDS: { kind: string; schemaVersion: number; folder: string
           description,
           permissions: {
             type: "array",
+            description:
+              "What the role allows, each as `kind:verb` such as `table:read`, with `*` for either half.",
             items: { type: "string", pattern: PERMISSION_PATTERN },
             maxItems: 200,
             uniqueItems: true,
@@ -125,8 +132,16 @@ export const TENANT_KINDS: { kind: string; schemaVersion: number; folder: string
             description:
               "Who is given the role: a group or a service account, by key. A person is never named here.",
             properties: {
-              type: { enum: ["group", "service_account", "end_user_group"] },
-              key: { type: "string", pattern: TENANT_KEY_PATTERN },
+              type: {
+                enum: ["group", "service_account", "end_user_group"],
+                description:
+                  "What kind of principal: a group of members, a service account or a group of end users.",
+              },
+              key: {
+                type: "string",
+                pattern: TENANT_KEY_PATTERN,
+                description: "Its key, which never changes. What it is called can change.",
+              },
             },
             required: ["type", "key"],
             additionalProperties: false,

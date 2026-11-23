@@ -1,4 +1,5 @@
 import { Button } from "@volvel/ui";
+import { countText } from "@volvel/widgets";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NavigateTo } from "./actions.tsx";
 
@@ -358,7 +359,7 @@ export function Stepper({
         Previous
       </Button>
       <span className="text-body-sm text-ink-muted tabular-nums" aria-live="polite">
-        {stepping.at} of {stepping.total.toLocaleString("en-US")}
+        {stepping.at} of {countText(stepping.total)}
         {stepping.partial ? " or more" : ""}
       </span>
       <Button

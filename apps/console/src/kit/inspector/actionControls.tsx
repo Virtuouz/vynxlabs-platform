@@ -49,6 +49,7 @@ import {
   type ActionValue,
   type AskedField,
   grantWords,
+  inputType,
   inputWords,
   moved,
   newStep,
@@ -582,6 +583,7 @@ function InputMapper({
               id={`${id}-${name}`}
               label={`${heading(name)} gets`}
               value={input?.[name]}
+              type={inputType(schema?.properties?.[name])}
               ctx={ctx}
               asked={asked}
               optional

@@ -10,7 +10,7 @@ import {
 } from "@volvel/ui";
 import { Download, PanelRight } from "@volvel/ui/icons";
 import type { WidgetDefinition, WidgetState } from "@volvel/widgets";
-import { formatOfColumn } from "@volvel/widgets";
+import { countText, formatOfColumn } from "@volvel/widgets";
 import { type ColumnSpec, columnsToShow, headingOf } from "@volvel/widgets-core/views";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { download, type Result, toCsv, toXlsx } from "./export.ts";
@@ -223,8 +223,7 @@ export function Frame({
     (most, wire) => (wire.shape === "rows" && wire.total ? Math.max(most, wire.total) : most),
     0,
   );
-  const capped =
-    total > DOWNLOAD_ROWS ? ` (the first ${DOWNLOAD_ROWS.toLocaleString("en-US")} rows)` : "";
+  const capped = total > DOWNLOAD_ROWS ? ` (the first ${countText(DOWNLOAD_ROWS)} rows)` : "";
   const keep = async (save: (result: Result) => void) => {
     const whole = resultOf(await reading.all(), widget) ?? kept;
     if (whole) save(whole);

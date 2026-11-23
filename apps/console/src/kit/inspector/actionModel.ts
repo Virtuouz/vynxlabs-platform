@@ -186,6 +186,20 @@ export function typedConstant(text: string, type?: string): unknown {
   return text;
 }
 
+/**
+ * What a value typed for an input of a flow or script is stored as: by the type its schema gives
+ * the input, not by how the text looks. Text stays text ("007"), a list is a list, and an input
+ * that says nothing of its type is read as it looks.
+ */
+export function inputType(property: unknown): string | undefined {
+  const type = (property as { type?: unknown } | null | undefined)?.type;
+  const one = Array.isArray(type) ? type.find((name) => name !== "null") : type;
+  if (one === "string") return "text";
+  if (one === "array") return "enum_list";
+  if (one === "number" || one === "integer" || one === "boolean") return one;
+  return undefined;
+}
+
 const USER_WORDS = {
   id: "the current user",
   email: "the current user's email",

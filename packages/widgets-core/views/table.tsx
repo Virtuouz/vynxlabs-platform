@@ -1,6 +1,7 @@
 import { Button, OnHeading, Toggletip } from "@volvel/ui";
 import { ChevronDown, ChevronUp } from "@volvel/ui/icons";
 import type { ColumnInfo, RowsData, WidgetViewProps } from "@volvel/widgets";
+import { countText } from "@volvel/widgets";
 import { type ReactNode, useState } from "react";
 import {
   type ColumnSpec,
@@ -59,12 +60,12 @@ export function ShowMore({ data }: { data: RowsData }) {
     <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
       {data.total !== undefined ? (
         <span role="status" className="text-body-sm text-ink-muted tabular-nums">
-          Showing {data.rows.length.toLocaleString("en-US")} of {data.total.toLocaleString("en-US")}
+          Showing {countText(data.rows.length)} of {countText(data.total)}
         </span>
       ) : null}
       <Button size="small" onClick={() => data.more?.()}>
         {left !== undefined && left > 0
-          ? `Show ${Math.min(left, data.rows.length).toLocaleString("en-US")} more`
+          ? `Show ${countText(Math.min(left, data.rows.length))} more`
           : "Show more"}
       </Button>
     </div>
@@ -380,7 +381,7 @@ export function TableView(props: WithSelected<TableConfig>) {
         count={chosen.length}
         note={
           rows.more
-            ? `Only the ${rows.rows.length.toLocaleString("en-US")} rows shown can be chosen.`
+            ? `Only the ${countText(rows.rows.length)} rows shown can be chosen.`
             : undefined
         }
         rows={chosenRows}

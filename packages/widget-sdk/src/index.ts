@@ -666,7 +666,25 @@ export function numberOf(value: unknown): number | undefined {
   return undefined;
 }
 
-/** `12.5%`, `$1,234.56`, `1,204`, in US English. Undefined for a value that is not a number. */
+/**
+ * The reader's own locale, which every number a widget writes is written in (D38): the browser's
+ * first language, else US English where there is no browser (a test, a server).
+ */
+export function readerLocale(): string {
+  if (typeof navigator === "undefined") return "en-US";
+  return navigator.languages?.[0] || navigator.language || "en-US";
+}
+
+/** A count as the reader writes it: 1,204 in the US, 1.204 in Germany. */
+export function countText(count: number): string {
+  try {
+    return count.toLocaleString(readerLocale());
+  } catch {
+    return count.toLocaleString("en-US");
+  }
+}
+
+/** `12.5%`, `$1,234.56`, `1,204`, in the reader's locale. Undefined for a value that is not a number. */
 export function formatValue(value: unknown, format: ValueFormat | undefined): string | undefined {
   const found = numberOf(value);
   if (found === undefined) return undefined;
@@ -688,7 +706,7 @@ export function formatValue(value: unknown, format: ValueFormat | undefined): st
   }
   try {
     // The boards write a short number in lower case: $43.1k.
-    return new Intl.NumberFormat("en-US", options)
+    return new Intl.NumberFormat(readerLocale(), options)
       .format(scaled)
       .replace(/(\d)([KMBT])$/, (_, digit: string, unit: string) => digit + unit.toLowerCase());
   } catch {

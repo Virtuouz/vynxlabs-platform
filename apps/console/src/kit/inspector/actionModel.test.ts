@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { grantWords, stepKindsFor, typedConstant } from "./actionModel.ts";
+import { grantWords, inputType, stepKindsFor, typedConstant } from "./actionModel.ts";
 
 test("a value typed for a column is stored as that column's type, not as it looks", () => {
   expect(typedConstant("007", "text")).toBe("007");
@@ -46,7 +46,6 @@ test("who can do it is the groups the action names, not everyone who can open th
   expect(named).toContain("Only Practice billing can do this");
 });
 
-
 test("the rows behind a figure are offered for a table, and not for a saved query or SQL", async () => {
   const { actionContext } = await import("./actionControls.tsx");
   const env = (source: object) =>
@@ -59,4 +58,18 @@ test("the rows behind a figure are offered for a table, and not for a saved quer
   expect(stepKindsFor(actionContext(env({ visual: { table: "invoices" } })))).toContain("rows");
   expect(stepKindsFor(actionContext(env({ query: "reports/open" })))).not.toContain("rows");
   expect(stepKindsFor(actionContext(env({ sql: "select 1" })))).not.toContain("rows");
+});
+
+test("a flow's or script's input is typed by its schema, not by how the text looks", () => {
+  const stored = (property: unknown, text: string) => typedConstant(text, inputType(property));
+  // A code that is digits, in an input the schema says is text, stays text.
+  expect(stored({ type: "string" }, "007")).toBe("007");
+  expect(stored({ type: "string" }, "true")).toBe("true");
+  expect(stored({ type: "integer" }, "7")).toBe(7);
+  expect(stored({ type: ["number", "null"] }, "2.5")).toBe(2.5);
+  expect(stored({ type: "boolean" }, "false")).toBe(false);
+  expect(stored({ type: "array" }, "a, b")).toEqual(["a", "b"]);
+  // No type given: as it looks.
+  expect(stored({}, "007")).toBe(7);
+  expect(stored(undefined, "late")).toBe("late");
 });

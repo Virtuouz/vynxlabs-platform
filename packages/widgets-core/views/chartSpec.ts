@@ -1,5 +1,5 @@
 import { SURFACE } from "@volvel/ui";
-import { choiceWords, type SummaryData } from "@volvel/widgets";
+import { choiceWords, countText, type SummaryData } from "@volvel/widgets";
 import { axisFormat, labelOf, numberOf, type ValueFormat } from "./format.ts";
 
 export interface ChartConfig {
@@ -615,7 +615,7 @@ export function chartFor(
   // The figures on the bars are written only where they fit: a bar narrower than its figure has none.
   const seriesCount = grouped ? new Set(rows.map((row) => String(row[colour ?? ""]))).size : 1;
   const barPx = lying ? 99 : (band / Math.max(1, seriesCount)) * (1 - spacing);
-  const figure = wide(`${axis ? "$" : ""}${Math.round(biggest).toLocaleString("en-US")}`) + 4;
+  const figure = wide(`${axis ? "$" : ""}${countText(Math.round(biggest))}`) + 4;
   if (config.values && mark === "bar" && barPx >= figure) {
     // The value on each bar: above it, beside it when it lies down, inside its part of a stack.
     const { color: _color, ...place } = drawn.encoding as Record<string, unknown>;

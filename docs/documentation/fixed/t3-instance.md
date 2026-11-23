@@ -30,3 +30,9 @@ Items: INS-MP3, 4, 5, 7, 9, 10, 11, 12; HOST-MP2, 3/4, 5, 7. Each test was seen 
 - Siblings: other lists with an inspector (`InstanceMembers`, `Operators`) not changed. The Tenants "Tables kept in" column stays plain text so a click still opens the row.
 - Left out: pointing a tenant at another location (an export and an import, as the API says).
 - Walk: Instance > Database locations: Edit, inspector at 390 px (dialog), Remove still for an empty location; Tenants with the filter, reload keeps it, Back.
+
+## INS-MP11 (a staged import after a reload)
+- New route `GET /instance/tenant-imports/staged` (`routes/portability.ts`, `tenant:write`): every unexpired upload with the check it was given and `here` (false when another replica keeps the file). Console: `Environments.tsx` `WaitingUploads` on Import a tenant's first step: tenant or file name, size, kept until, Open (back to the check; type the passphrase again), Throw away (confirmed, audited `tenant_import.discarded`); an upload kept by another replica says so and offers only Throw away.
+- Tests: `portability.test.ts` "an upload still waiting is listed after a reload ... (INS-MP11)" (404 before), `Environments.test.tsx` "an upload that waits is listed after a reload ...". An existing test now picks the check's URL by `/staged/`.
+- Siblings: CLI `tenant import` does not stage. The check's passphrase is never stored, so Open shows "not checked yet" until typed.
+- Walk: Import a tenant: upload, reload, Open, Throw away from the list; at 390 px; keyboard (Tab to Open/Throw away, Enter); copy as written.

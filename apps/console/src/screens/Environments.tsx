@@ -982,6 +982,57 @@ function Check({ ok, children }: { ok: boolean | null; children: ReactNode }) {
   );
 }
 
+/** Uploads that were checked and not imported, still kept on the instance: they survive a reload. */
+function WaitingUploads({ onOpen }: { onOpen: (upload: Staged) => void }) {
+  const loaded = useLoad<{ items: (Staged & { here: boolean })[] }>(
+    "/instance/tenant-imports/staged",
+  );
+  if (loaded.error) {
+    return <ErrorState error={loaded.error} what="the uploads that wait" onRetry={loaded.reload} />;
+  }
+  if (!loaded.data) return <Loading what="the uploads that wait" />;
+  if (loaded.data.items.length === 0) return null;
+  return (
+    <section aria-label="Uploads that wait" className="flex max-w-[60rem] flex-col gap-2">
+      <SectionLabel>Uploads that wait</SectionLabel>
+      <p className="m-0 text-body-sm text-ink-muted">
+        Checked and not imported yet. Each is kept for an hour after it came, then removed.
+      </p>
+      <ul className="m-0 flex list-none flex-col gap-2 p-0">
+        {loaded.data.items.map((one) => (
+          <li
+            key={one.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-line p-3"
+          >
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="font-medium">
+                {one.inspection.tenant ? one.inspection.tenant.name : one.fileName}
+              </span>
+              <span className="text-meta text-ink-muted">
+                {one.fileName} · {bytes(one.sizeBytes)} · kept until {when(one.expiresAt)}
+                {one.here ? "" : ". Another replica keeps the file: upload it again"}
+              </span>
+            </span>
+            <span className="flex gap-2">
+              {one.here ? (
+                <Button size="small" onClick={() => onOpen(one)}>
+                  Open
+                </Button>
+              ) : null}
+              <RemoveButton
+                label="Throw away"
+                confirm={`Throw away ${one.fileName}? The file is removed from the instance. The export it came from is not touched.`}
+                run={() => api.delete(`/instance/tenant-imports/staged/${one.id}`)}
+                onDone={loaded.reload}
+              />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function TenantImport() {
   const locations = useLoad<{ items: { name: string }[] }>("/instance/database-locations/names");
   const [file, setFile] = useState<File>();
@@ -1280,54 +1331,63 @@ export function TenantImport() {
           </form>
         </div>
       ) : (
-        <form
-          className="flex max-w-md flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!file) return;
-            void run(async () => {
-              setStaged(
-                await sendTar<Staged>(
-                  `/instance/tenant-imports/staged${query({ name: file.name })}`,
-                  file,
-                  passphrase,
-                ),
-              );
-              setCheckedWith({ slug: "", passphrase });
-            });
-          }}
-        >
-          <label className="flex flex-col gap-1 text-body-sm font-medium">
-            Export file
-            <input
-              type="file"
-              accept=".tar,application/x-tar"
-              required
-              className="font-normal"
-              onChange={(event) => setFile(event.currentTarget.files?.[0])}
-            />
-          </label>
-          <TextField
-            label="Its passphrase"
-            name="passphrase"
-            type="password"
-            value={passphrase}
-            required={false}
-            autoComplete="off"
-            hint="With it, the check also says whether it opens the file."
-            onChange={setPassphrase}
+        <div className="flex flex-col gap-6">
+          <WaitingUploads
+            onOpen={(upload) => {
+              setProblem(undefined);
+              setStaged(upload);
+              setCheckedWith(undefined);
+            }}
           />
-          {problem ? <Notice tone="danger">{problem}</Notice> : null}
-          <div>
-            <Button type="submit" variant="primary" loading={working} disabled={!file}>
-              {working ? "Uploading…" : "Upload and check"}
-            </Button>
-          </div>
-          <p className="m-0 text-body-sm text-ink-muted">
-            The export must come from an instance at the same version as this one. For a large file,
-            use the command line: <Code>{"volvel tenant import <file>"}</Code>.
-          </p>
-        </form>
+          <form
+            className="flex max-w-md flex-col gap-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!file) return;
+              void run(async () => {
+                setStaged(
+                  await sendTar<Staged>(
+                    `/instance/tenant-imports/staged${query({ name: file.name })}`,
+                    file,
+                    passphrase,
+                  ),
+                );
+                setCheckedWith({ slug: "", passphrase });
+              });
+            }}
+          >
+            <label className="flex flex-col gap-1 text-body-sm font-medium">
+              Export file
+              <input
+                type="file"
+                accept=".tar,application/x-tar"
+                required
+                className="font-normal"
+                onChange={(event) => setFile(event.currentTarget.files?.[0])}
+              />
+            </label>
+            <TextField
+              label="Its passphrase"
+              name="passphrase"
+              type="password"
+              value={passphrase}
+              required={false}
+              autoComplete="off"
+              hint="With it, the check also says whether it opens the file."
+              onChange={setPassphrase}
+            />
+            {problem ? <Notice tone="danger">{problem}</Notice> : null}
+            <div>
+              <Button type="submit" variant="primary" loading={working} disabled={!file}>
+                {working ? "Uploading…" : "Upload and check"}
+              </Button>
+            </div>
+            <p className="m-0 text-body-sm text-ink-muted">
+              The export must come from an instance at the same version as this one. For a large
+              file, use the command line: <Code>{"volvel tenant import <file>"}</Code>.
+            </p>
+          </form>
+        </div>
       )}
     </Page>
   );

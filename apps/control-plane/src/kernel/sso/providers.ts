@@ -433,8 +433,8 @@ async function newSamlKey(): Promise<{ privateKey: string; certificate: string }
 export interface ProviderInput {
   name?: string;
   config?: Record<string, unknown>;
-  /** OIDC. Leave out to keep the one stored. */
-  clientSecret?: string;
+  /** OIDC. Leave out to keep the one stored; null removes it, for a public client. */
+  clientSecret?: string | null;
   enabled?: boolean;
   enforce?: boolean;
   provision?: boolean;
@@ -486,9 +486,6 @@ async function checkCanEnable(trx: Trx, provider: Provider) {
         "Prove at least one email domain before turning this provider on. Members are signed in only by an email in a domain the provider has proved.",
       );
     }
-  }
-  if (isOidc(provider) && !provider.hasSecret) {
-    throw new HttpError(409, "secret_needed", "Give the client secret before turning this on.");
   }
 }
 
@@ -570,9 +567,11 @@ export async function updateProvider(
     await checkRole(trx, current.tenantId, input.defaultRoleId);
   }
   let sealed: Buffer | undefined;
+  let cleared = false;
   if (input.clientSecret !== undefined) {
     if (current.protocol !== "oidc") throw badRequest("Only an OIDC provider has a client secret.");
-    sealed = await sealSecrets(kernel, trx, current, { clientSecret: input.clientSecret });
+    if (input.clientSecret === null) cleared = true;
+    else sealed = await sealSecrets(kernel, trx, current, { clientSecret: input.clientSecret });
   }
   // A stored client secret was given for the issuer it was given with. An issuer at another
   // address is not sent it: the secret is dropped unless given again.
@@ -598,7 +597,7 @@ export async function updateProvider(
     .set({
       ...(input.name !== undefined ? { name: input.name.trim() } : {}),
       config: JSON.stringify(config),
-      ...(sealed ? { secrets: sealed } : moved ? { secrets: null } : {}),
+      ...(sealed ? { secrets: sealed } : moved || cleared ? { secrets: null } : {}),
       enabled,
       enforce,
       ...(input.provision !== undefined ? { provision: input.provision } : {}),

@@ -17,10 +17,11 @@ async function configurationOf(
   const key = `${provider.updatedAt.getTime()}:${secrets.clientSecret ? "s" : "p"}`;
   const kept = discovered.get(provider.id);
   if (kept && kept.key === key && Date.now() - kept.at < HOUR) return kept.config;
-  const issuer = new URL(provider.config.issuer);
-  const config = await client
-    .discovery(
-      issuer,
+  const stored = provider.config.issuer;
+  const issuer = new URL(stored);
+  const discover = (at: URL) =>
+    client.discovery(
+      at,
       provider.config.clientId,
       secrets.clientSecret,
       // Without a secret the client is a public one, and PKCE is what protects the exchange.
@@ -30,14 +31,27 @@ async function configurationOf(
         // The issuer is an address a tenant gave: it, and everything it names, is reached
         // through the egress guard.
         [client.customFetch]: guardedFetch as unknown as client.CustomFetch,
-        ...(issuer.protocol === "http:" ? { execute: [client.allowInsecureRequests] } : {}),
+        ...(at.protocol === "http:" ? { execute: [client.allowInsecureRequests] } : {}),
       },
-    )
+    );
+  const config = await discover(issuer)
+    // A provider names itself with or without a closing slash, and the two are not the same
+    // name to the library. What was typed is tried first, then the other.
+    .catch((error: Error) => {
+      if (!/does not match the expected issuer/.test(error.message)) throw error;
+      const other = new URL(issuer.href);
+      other.pathname = other.pathname.endsWith("/")
+        ? other.pathname.replace(/\/+$/, "")
+        : `${other.pathname}/`;
+      return discover(other).catch(() => {
+        throw error;
+      });
+    })
     .catch((error: Error) => {
       throw new SsoRefusal(
         "provider_error",
         "The identity provider could not be reached. Try again in a moment.",
-        `Reading ${provider.config.issuer}/.well-known/openid-configuration failed: ${error.message}`,
+        `Reading ${stored}/.well-known/openid-configuration failed: ${error.message}`,
       );
     });
   // The library trusts an ID token that came straight from the token address over TLS, as

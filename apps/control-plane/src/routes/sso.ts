@@ -111,7 +111,12 @@ const _ProviderParams = Type.Object({ t: Type.Optional(Id), p: Id });
 const Settings = {
   name: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
   config: Type.Optional(AnyObject),
-  clientSecret: Type.Optional(Type.String({ minLength: 1, maxLength: 4000 })),
+  clientSecret: Type.Optional(
+    Type.Union([Type.String({ minLength: 1, maxLength: 4000 }), Type.Null()], {
+      description:
+        "OIDC. Leave out to keep the one stored. `null` removes it: the client is then a public one, and PKCE protects the exchange.",
+    }),
+  ),
   enabled: Type.Optional(Type.Boolean()),
   enforce: Type.Optional(Type.Boolean()),
   provision: Type.Optional(Type.Boolean()),
@@ -254,7 +259,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               { tenantId, audience: body.audience, protocol: body.protocol },
               body,
             );
-            if (isOidc(made)) await reachable(made, body.clientSecret);
+            if (isOidc(made)) await reachable(made, body.clientSecret ?? undefined);
             return made;
           });
           return reply.code(201).send(await view(created));
@@ -755,7 +760,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     }
 
     /** Reads an OIDC provider's own description, so a wrong issuer is said when it is saved. */
-    async function reachable(provider: Provider, clientSecret: string | undefined) {
+    async function reachable(provider: Provider, clientSecret: string | null | undefined) {
       if (!isOidc(provider)) return;
       await checkOidc(provider, clientSecret ? { clientSecret } : {}).catch(asProblem);
     }

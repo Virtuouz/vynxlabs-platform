@@ -66,3 +66,14 @@
 - Siblings: script test pane (same list, same filter); docs editor has its own "Problems" (DocEditor.tsx), untouched.
 - Left: nothing in the console raises a build error for a connector on save (only preview/deploy and a connection Test do), so the list shows editor diagnostics until a refused save names files; it is the same for scripts' saves.
 - Seen: "Problems" or "Problems (n)" under the code of an extension. Walk: connector editor at 390 px.
+
+## SCR-08 = SCR-MP1, EXT-MP3: script and extension Settings
+- Test: `Authoring.test.tsx` "SCR-08, EXT-MP3: a script's memory, concurrency, worker pool, ... are set in Settings". Failed before (no such fields).
+- Change: `apps/console/src/screens/Authoring.tsx`, the Settings shared by script, connector and trigger source: Worker pool (script and trigger source; from `/tenants/:t/worker-pools`, a pool named but not listed stays shown), and for scripts Memory (MB), Runs at once, "One lane for each value of", tables, data sources, events, connection groups, and `onFailure` (script and notify). Retry delay and backoff were already there. Body types `Uses` and `ScriptBody` extended. API and manifest unchanged.
+- Siblings: the list inspector for scripts (`ObjectPages.tsx` `ScriptPage`) shows none of these settings; the row said it "also reads" the shared set, and it does not read these yet (left: a read-only list of the same fields on the script's page). `ResourceEditor.tsx` has no pool field for a trigger source: a trigger source is made in this editor, so its pool is here. Flows pick pools nowhere.
+- Seen: Settings has new fields under the timeout and "uses"; saving writes `memoryMb`, `concurrency`, `worker`, `onFailure`, `uses.*`.
+- Polish: states: empty means default or no limit (each hint says so); refusal: server field errors show under memory and concurrency; keyboard: native fields. Walk: a script's Settings at 390 px (two-column rows hold two fields).
+
+## Found
+- `Interfaces.test.tsx` "widgets are added and removed, and what is wrong is said before anything can be published" times out on the phase branch already.
+- `Authoring.test.tsx` ends with unhandled Monaco worker errors ("Worker is not defined", "clearRect") and exit code 1 on the phase branch already (11 before this lane, more after, from tests that stay open longer).

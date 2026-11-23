@@ -131,6 +131,24 @@ describe("composing a bundle", () => {
     expect(module.__vx_describe("toString")).toEqual({});
   });
 
+  test("a console script's input and output are parsed, as defineScript does", async () => {
+    const typed = script(
+      "orders/parsed",
+      'import { z } from "@volvel/sdk";\n' +
+        "export const input = z.object({ name: z.string(), count: z.coerce.number().default(2) });\n" +
+        "export const output = z.object({ twice: z.number() });\n" +
+        "export default async (input: { count: number }) => ({ twice: input.count * 2 });\n",
+    );
+    const bundle = await composeBundle(base, [typed], options);
+    const module = await load(bundle.code);
+    const entry = typed.body.entry as string;
+    expect(await module[entry]?.execute({ name: "a" }, {})).toEqual({ twice: 4 });
+    expect(await module[entry]?.execute({ name: "a", count: "5" }, {})).toEqual({ twice: 10 });
+    await expect(module[entry]?.execute({ count: 1 }, {})).rejects.toThrow(
+      "The script's input does not match its schema",
+    );
+  });
+
   test("composing again replaces the console-managed part and leaves the repository's code alone", async () => {
     const once = await composeCode(baseCode, [hello], options);
     const twice = await composeCode(once, [hello], options);

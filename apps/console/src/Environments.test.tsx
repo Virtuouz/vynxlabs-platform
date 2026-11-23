@@ -60,70 +60,16 @@ afterEach(() => {
 });
 const sent = (method: string) => calls.filter((call) => call.method === method);
 
-test("promotion shows what would change before anything does, then promotes", async () => {
-  routes[`GET /api/v1${base}/workspaces/w-dev/promotion-preview`] = () => [
-    200,
-    {
-      target: { id: "w-main", slug: "main", name: "Main", type: "production" },
-      bundle: { digest: "abcdef0123456789", version: 4 },
-      possible: true,
-      refusal: null,
-      summary: {
-        created: 1,
-        updated: 1,
-        deleted: 0,
-        unchanged: 9,
-        changes: [
-          { change: "created", kind: "script", path: "orders/record" },
-          { change: "updated", kind: "table", path: "orders" },
-        ],
-        data: ["Table orders: column total renamed to amount. Its values are kept."],
-      },
-    },
-  ];
-  routes[`POST /api/v1${base}/workspaces/w-dev/promotions`] = () => [201, { bundleVersion: 7 }];
+test("Review and promote opens the Release screen's promote step, which is the one place that promotes (REL-11)", async () => {
+  history.replaceState(null, "", "/");
   show(<Promotion base={base} workspace={dev} reload={() => {}} />);
   fireEvent.click(await screen.findByRole("button", { name: "Review and promote" }));
-  const dialog = await screen.findByRole("dialog");
-  expect(dialog.textContent).toContain("Promote to Main");
-  expect(dialog.textContent).toContain("Version 4 here, bundle abcdef012345.");
-  expect(dialog.textContent).toContain("Nothing has been changed yet.");
-  expect(dialog.textContent).toContain("orders/record");
-  expect(dialog.textContent).toContain(
-    "Table orders: column total renamed to amount. Its values are kept.",
-  );
-  expect(sent("POST")).toHaveLength(0);
-  // The one action that changes production has the kit's promote look.
-  expect(screen.getByRole("button", { name: "Promote" }).className).toContain("bg-attention");
-  fireEvent.click(screen.getByRole("button", { name: "Promote" }));
-  expect((await screen.findByText("Promoted to Main as its version 7.")).textContent).toBeTruthy();
-});
-
-test("a promotion that would be refused says why, and offers nothing to press", async () => {
-  routes[`GET /api/v1${base}/workspaces/w-dev/promotion-preview`] = () => [
-    200,
-    {
-      target: { id: "w-main", slug: "main", name: "Main", type: "production" },
-      bundle: { digest: "abcdef0123456789", version: 4 },
-      possible: false,
-      refusal: {
-        detail: "The workspace is missing something this bundle needs.",
-        errors: [
-          {
-            path: "/connections/erp",
-            message: 'the connection "erp" is not bound in this workspace',
-          },
-        ],
-      },
-      summary: null,
-    },
-  ];
-  show(<Promotion base={base} workspace={dev} reload={() => {}} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Review and promote" }));
-  const dialog = await screen.findByRole("dialog");
-  expect(dialog.textContent).toContain("It cannot be promoted yet.");
-  expect(dialog.textContent).toContain('the connection "erp" is not bound in this workspace');
-  expect(screen.queryByRole("button", { name: "Promote" })).toBeNull();
+  expect(location.pathname).toBe("/t/t1/workspaces/w-dev/release");
+  expect(location.search).toBe("?step=promote");
+  // No second dialog, and nothing asked of the server.
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(calls.filter((call) => call.url.includes("promotion"))).toHaveLength(0);
+  history.replaceState(null, "", "/");
 });
 
 test("a workspace that is not linked offers no promotion, and a production workspace no panel at all", async () => {

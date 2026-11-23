@@ -290,9 +290,8 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
 
 function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
   const existing = useLoad<{ items: Workspace[] }>(`${base}/workspaces`);
-  const production = (existing.data?.items ?? []).filter(
-    (workspace) => workspace.type === "production",
-  );
+  // A dev workspace may promote to production or to another dev workspace, which is what a clone does.
+  const all = existing.data?.items ?? [];
   return (
     <ListScreen<Workspace>
       title="Workspaces"
@@ -316,7 +315,7 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
         {
           header: "Promotes to",
           cell: (row) =>
-            production.find((candidate) => candidate.id === row.linkedWorkspaceId)?.name ?? "",
+            all.find((candidate) => candidate.id === row.linkedWorkspaceId)?.name ?? "",
         },
       ]}
       empty={{
@@ -347,10 +346,10 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
           {
             name: "linkedWorkspaceId",
             label: "Promotes to",
-            hint: "For a dev workspace: the production workspace its changes go to.",
+            hint: "For a dev workspace: the workspace its changes go to, production or another dev workspace.",
             options: [
               { value: "", label: "Nothing" },
-              ...production.map((w) => ({ value: w.id, label: w.name })),
+              ...all.map((w) => ({ value: w.id, label: `${w.name} (${w.type})` })),
             ],
           },
         ],

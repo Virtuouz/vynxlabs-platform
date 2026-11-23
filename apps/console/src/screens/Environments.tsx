@@ -1,12 +1,4 @@
-import {
-  Button,
-  ComboboxField,
-  Dialog,
-  Notice,
-  SelectField,
-  SideSheet,
-  TextField,
-} from "@volvel/ui";
+import { Button, ComboboxField, Notice, SelectField, SideSheet, TextField } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -20,9 +12,8 @@ import {
   Stepper,
 } from "../kit/layout.tsx";
 import { consoleLink } from "../kit/objects.tsx";
-import { RefusalList } from "../kit/RefusalList.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
-import { Code, Mono, StatePill, Tag } from "../kit/status.tsx";
+import { Code, Mono, StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
@@ -522,30 +513,6 @@ function CloneDialog({
 
 // ----- Promotion: shown above a dev workspace's deployments -----
 
-interface Summary {
-  created: number;
-  updated: number;
-  deleted: number;
-  unchanged: number;
-  data?: string[];
-  changes?: { change: string; kind: string; path: string; from?: string }[];
-  breaking?: { path: string; message: string }[];
-}
-interface Preview {
-  target: { id: string; slug: string; name: string; type: string };
-  bundle: { digest: string; version: number };
-  possible: boolean;
-  refusal: { detail: string; errors: { path: string; message: string }[] } | null;
-  summary: Summary | null;
-}
-
-const CHANGE: Record<string, string> = {
-  created: "Add",
-  updated: "Change",
-  renamed: "Rename",
-  deleted: "Remove",
-};
-
 export function Promotion({
   base,
   workspace,
@@ -563,23 +530,9 @@ export function Promotion({
 }) {
   const root = `${base}/workspaces/${workspace.id}`;
   const others = useLoad<{ items: WorkspaceSummary[] }>(`${base}/workspaces`);
-  const [preview, setPreview] = useState<Preview>();
-  const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<string>();
-  const [done, setDone] = useState<string>();
   if (workspace.type !== "dev") return null;
   const target = others.data?.items.find((item) => item.id === workspace.linkedWorkspaceId);
-
-  const review = async () => {
-    setProblem(undefined);
-    setDone(undefined);
-    try {
-      setPreview(await api.get<Preview>(`${root}/promotion-preview`));
-      setOpen(true);
-    } catch (error) {
-      setProblem(failed(error));
-    }
-  };
 
   return (
     <Panel className="flex flex-col gap-2 p-4">
@@ -622,134 +575,19 @@ export function Promotion({
           />
         </div>
         {target ? (
-          <Button variant="primary" onClick={review}>
+          // The one place that reviews, asks for and makes a promotion is the Release screen's promote step.
+          <Button
+            variant="primary"
+            onClick={() =>
+              navigate(`${consoleLink(base)}/workspaces/${workspace.id}/release?step=promote`)
+            }
+          >
             Review and promote
           </Button>
         ) : null}
       </div>
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
-      {done ? <Notice tone="attention">{done}</Notice> : null}
-
-      <Dialog
-        open={open && preview !== undefined}
-        onClose={() => setOpen(false)}
-        title={`Promote to ${preview?.target.name ?? ""}`}
-        description={
-          preview
-            ? `Version ${preview.bundle.version} here, bundle ${preview.bundle.digest.slice(0, 12)}.`
-            : ""
-        }
-      >
-        {preview ? (
-          <div className="flex flex-col gap-3">
-            {preview.possible && preview.summary ? (
-              <>
-                <PreviewBody summary={preview.summary} target={preview.target.name} />
-                {preview.target.type === "production" && preview.summary.breaking?.length ? (
-                  <Notice tone="attention">
-                    <p className="m-0">
-                      Promoting changes a name that something outside calls. An agent told the old
-                      name will fail until it is told the new one.
-                    </p>
-                    <ul className="mt-1 mb-0 list-disc pl-5">
-                      {preview.summary.breaking.map((entry) => (
-                        <li key={`${entry.path} ${entry.message}`}>{entry.message}</li>
-                      ))}
-                    </ul>
-                  </Notice>
-                ) : null}
-              </>
-            ) : (
-              <Notice tone="danger">
-                <p className="m-0">It cannot be promoted yet. {preview.refusal?.detail}</p>
-                <RefusalList
-                  errors={preview.refusal?.errors ?? []}
-                  link={`${consoleLink(base)}/workspaces/${preview.target.id}`}
-                />
-              </Notice>
-            )}
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setOpen(false)}>Cancel</Button>
-              {preview.possible ? (
-                <Button
-                  variant="promote"
-                  onClick={async () => {
-                    try {
-                      const result = await api.post<{ bundleVersion: number }>(
-                        `${root}/promotions`,
-                        // What breaks is listed in this dialog, above the button that sends this.
-                        preview.summary?.breaking?.length ? { confirmBreaking: true } : {},
-                      );
-                      setOpen(false);
-                      setDone(
-                        `Promoted to ${preview.target.name} as its version ${result.bundleVersion}.`,
-                      );
-                    } catch (error) {
-                      setOpen(false);
-                      setProblem(failed(error));
-                    }
-                  }}
-                >
-                  Promote
-                </Button>
-              ) : null}
-            </div>
-          </div>
-        ) : null}
-      </Dialog>
     </Panel>
-  );
-}
-
-function PreviewBody({ summary, target }: { summary: Summary; target: string }) {
-  const changes = summary.changes ?? [];
-  const data = summary.data ?? [];
-  if (changes.length === 0 && data.length === 0) {
-    return <p className="m-0">{target} already runs this bundle. Promoting changes nothing.</p>;
-  }
-  return (
-    <div className="flex max-h-[50vh] flex-col gap-3 overflow-y-auto">
-      <p className="m-0">
-        This is what promoting will do in {target}. Nothing has been changed yet.
-      </p>
-      {changes.length > 0 ? (
-        <ul className="m-0 flex list-none flex-col gap-1 p-0">
-          {changes.map((entry) => (
-            <li key={`${entry.kind}:${entry.path}`} className="flex flex-wrap items-center gap-2">
-              <Tag
-                tone={
-                  entry.change === "deleted"
-                    ? "danger"
-                    : entry.change === "created"
-                      ? "live"
-                      : "neutral"
-                }
-              >
-                {CHANGE[entry.change] ?? entry.change}
-              </Tag>
-              <span className="text-ink-muted">{entry.kind}</span>
-              {entry.from ? (
-                <>
-                  <Code>{entry.from}</Code>
-                  <span className="text-ink-muted">to</span>
-                </>
-              ) : null}
-              <Code>{entry.path}</Code>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      {data.length > 0 ? (
-        <div>
-          <p className="m-0 font-medium">To the data</p>
-          <ul className="mt-1 mb-0 list-disc pl-5">
-            {data.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-    </div>
   );
 }
 

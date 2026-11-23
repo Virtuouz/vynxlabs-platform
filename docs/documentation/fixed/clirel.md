@@ -50,3 +50,15 @@
 - `Release.tsx` (~135 and the render): the step from the address is used only when this workspace has it; else the first. `?step=review` in production shows Versions, `?step=promote` with nothing to promote to shows Review.
 - Test: `Release.test.tsx` "an address that names a step this workspace does not have opens the first one (REL-14)". Failed before.
 - Siblings: the other `useUrlParam("step")` users (`Flows.tsx:749`, `FlowEditor.tsx:624`) choose a flow step in a list, not a stepper, so are not clamped.
+
+## REL-13
+- `Workspaces` in `apps/console/src/screens/Tenant.tsx` (~293): "Promotes to" looks the target up among all the tenant's workspaces, so a clone shows the dev workspace it promotes to; Create's "Promotes to" lists every workspace as `name (type)`, as Settings does (the API accepts any, `routes/workspaces.ts:242`).
+- Test: `TenantScreens.test.tsx` "the workspaces list names where a clone promotes to, and Create offers every workspace (REL-13)". Failed before.
+- Siblings: Settings' `Promotion` already listed all; the overview's per-workspace cards do not show the target.
+- Screens to walk: Tenant > Workspaces at 390/768/1440 with a clone; Create workspace dialog.
+
+## REL-11
+- `Promotion` (`screens/Environments.tsx`): "Review and promote" now opens the Release screen's promote step (`.../release?step=promote`). The second dialog, its preview, `PreviewBody`, `CHANGE` and the types behind them are deleted (about 170 lines). That step already holds the request path for those who may not promote, `allowDelete` ("Delete them and look again"), and breaking-change confirmation.
+- Test: `Environments.test.tsx` "Review and promote opens the Release screen's promote step ... (REL-11)"; the two tests of the old dialog are removed (the promote step's behavior is tested in `Release.test.tsx`). Failed before (it opened a dialog).
+- Left out: a link change not yet saved on the settings page is lost when the button is used; the button shows only when the saved link is set.
+- Screens to walk: Workspace settings > Promotion; Release > Promote step as a developer who may not promote.

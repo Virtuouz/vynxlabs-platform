@@ -339,3 +339,26 @@ test("Rename is offered on the overview only to someone who may rename the tenan
   show(<TenantOverview base={base} tenantId="t1" />);
   await screen.findByRole("button", { name: "Rename" });
 });
+
+test("the workspaces list names where a clone promotes to, and Create offers every workspace (REL-13)", async () => {
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme" });
+  routes[`GET ${base}/workspaces`] = () => ({
+    items: [
+      { id: "w1", slug: "main", name: "Main", type: "production", linkedWorkspaceId: null },
+      { id: "w2", slug: "dev", name: "Dev", type: "dev", linkedWorkspaceId: "w1" },
+      { id: "w3", slug: "copy", name: "Dev copy", type: "dev", linkedWorkspaceId: "w2" },
+    ],
+  });
+  show(<Tenant tenantId="t1" me={me} path="/t/t1/workspaces" />);
+  const row = (await screen.findByRole("link", { name: "Dev copy" })).closest("tr") as HTMLElement;
+  const cells = [...row.querySelectorAll("td")].map((cell) => cell.textContent);
+  expect(cells.at(-1)).toBe("Dev");
+  fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+  const promotes = (await screen.findByLabelText("Promotes to")) as HTMLSelectElement;
+  expect([...promotes.options].map((option) => option.textContent)).toEqual([
+    "Nothing",
+    "Main (production)",
+    "Dev (dev)",
+    "Dev copy (dev)",
+  ]);
+});

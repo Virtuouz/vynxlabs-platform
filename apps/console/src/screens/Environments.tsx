@@ -703,6 +703,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
   const [state, setState] = useState<"idle" | "working" | "done">("idle");
   const [problem, setProblem] = useState<string>();
   const mismatch = again !== "" && again !== passphrase;
+  const tooShort = passphrase !== "" && passphrase.length < 12;
 
   return (
     <Page
@@ -713,7 +714,7 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
         className="flex max-w-md flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
-          if (mismatch || passphrase !== again) return;
+          if (mismatch || tooShort || passphrase !== again) return;
           setProblem(undefined);
           setState("working");
           try {
@@ -742,10 +743,10 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           name="passphrase"
           type="password"
           value={passphrase}
-          minLength={12}
           required
           autoComplete="new-password"
           onChange={setPassphrase}
+          error={tooShort ? "Use at least 12 characters." : undefined}
           hint="At least 12 characters. It protects every secret in the file, and the password of each member who belongs to this tenant alone. It is not stored: without it they cannot be read. Pass it on separately from the file."
         />
         <TextField
@@ -777,7 +778,11 @@ export function TenantExport({ base, slug }: { base: string; slug: string }) {
           </Notice>
         ) : null}
         <div>
-          <Button type="submit" variant="primary" disabled={state === "working" || mismatch}>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={state === "working" || mismatch || tooShort}
+          >
             {state === "working" ? "Exporting…" : "Export tenant"}
           </Button>
         </div>

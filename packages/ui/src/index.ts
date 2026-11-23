@@ -55,6 +55,7 @@ export {
   type GridColumn,
   type GridSort,
   instantFromText,
+  keepsKey,
   localWall,
   parseValue,
   showValue,

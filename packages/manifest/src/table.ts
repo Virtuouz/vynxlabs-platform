@@ -30,6 +30,21 @@ export interface TableColumn {
   renamedFrom?: string;
 }
 
+/**
+ * Type changes that cannot lose anything, by what the column is now. A text column also becomes
+ * an enum, when every row already holds one of the values (the rows say, not this list).
+ */
+export const COLUMN_WIDENINGS: Record<string, ColumnType[]> = {
+  integer: ["number", "text"],
+  number: ["text"],
+  boolean: ["text"],
+  uuid: ["text"],
+  date: ["text"],
+  timestamp: ["text"],
+  // An enum is text that is held to a list, so letting go of the list loses nothing.
+  enum: ["text"],
+};
+
 export const isEnumType = (type: string): type is "enum" | "enum_list" =>
   type === "enum" || type === "enum_list";
 

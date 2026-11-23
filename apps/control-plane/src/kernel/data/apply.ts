@@ -483,14 +483,21 @@ async function applyStep(
       break;
     case "set_unique":
       if (step.unique) {
-        const repeated = await sql`
-          select 1 from ${target} where ${physical} is not null group by ${physical} having count(*) > 1 limit 1
+        const repeated = await sql<{ value: string; n: string }>`
+          select ${physical}::text as value, count(*) as n from ${target}
+          where ${physical} is not null group by ${physical} having count(*) > 1
+          order by count(*) desc, ${physical}::text limit 4
         `.execute(trx);
         if (repeated.rows.length > 0) {
+          // Name the values, so the person knows which rows to change.
+          const shown = repeated.rows.slice(0, 3).map((row) => {
+            const text = row.value.length > 40 ? `${row.value.slice(0, 40)}...` : row.value;
+            return `"${text}" is in ${row.n} rows`;
+          });
           throw refuse(
             step.table,
             step.name,
-            "is now unique, and some rows share a value. Make the values distinct first.",
+            `is now unique, and some rows share a value: ${shown.join(", ")}${repeated.rows.length > 3 ? " and more" : ""}. Make the values distinct first.`,
           );
         }
       }

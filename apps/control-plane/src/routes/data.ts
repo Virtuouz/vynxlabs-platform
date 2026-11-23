@@ -482,6 +482,11 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   description: "The column that stands for a row where another table refers to it.",
                 }),
               ),
+              indexes: Type.Optional(
+                Type.Array(Type.Array(Type.String()), {
+                  description: "The indexes its definition lists, each a list of column names.",
+                }),
+              ),
               rowCount: Type.Integer(),
               stored: Type.Object(
                 { schema: Type.String(), table: Type.String() },
@@ -513,6 +518,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const defined = (resource?.body ?? {}) as {
           description?: string;
           columns?: Record<string, { description?: string }>;
+          indexes?: string[][];
         };
         const schema = workspaceSchema(params.w);
         const count = await sql<{
@@ -535,6 +541,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           managedIn: resource?.ownership ?? "code",
           policy: table.policy as Record<string, unknown>,
           display: table.display ?? null,
+          ...(defined.indexes && defined.indexes.length > 0 ? { indexes: defined.indexes } : {}),
           rowCount: Number(count.rows[0]?.n ?? 0),
           stored: { schema, table: table.physicalName },
           columns: table.columns.map((column) => ({

@@ -51,6 +51,16 @@ export interface FormField {
   /** Shows the field only while this holds for what has been entered so far. */
   when?: (values: Record<string, string>) => boolean;
   placeholder?: string;
+  /**
+   * Draws the field's own control, for a value no plain box says well: a choice that depends on
+   * the type just chosen. It holds its value as text, like every other field.
+   */
+  render?: (control: {
+    value: string;
+    values: Record<string, string>;
+    error: string | undefined;
+    onChange: (value: string) => void;
+  }) => ReactNode;
 }
 
 function ChoiceField({
@@ -281,7 +291,16 @@ export function CreateDialog({
       }}
     >
       {config.fields.map((field) =>
-        field.when && !field.when(values) ? null : field.type === "checkbox" ? (
+        field.when && !field.when(values) ? null : field.render ? (
+          <div key={field.name}>
+            {field.render({
+              value: values[field.name] ?? field.initial ?? "",
+              values,
+              error: fieldError(field.name),
+              onChange: (value) => setValues((v) => ({ ...v, [field.name]: value })),
+            })}
+          </div>
+        ) : field.type === "checkbox" ? (
           <CheckboxField
             key={field.name}
             name={field.name}

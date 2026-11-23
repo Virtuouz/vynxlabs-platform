@@ -6,6 +6,7 @@ import { navigate } from "./router.tsx";
 import {
   bodyToRestore,
   moveColumn,
+  nextSort,
   pickerFilter,
   Sources,
   SourceView,
@@ -290,10 +291,16 @@ test("a table made in the console is changed by saving its definition", async ()
   const dialog = await screen.findByRole("dialog");
   fireEvent.input(screen.getByLabelText("Name"), { target: { value: "paid" } });
   fireEvent.change(screen.getByLabelText("It holds"), { target: { value: "boolean" } });
-  fireEvent.input(screen.getByLabelText("Value when none is given"), { target: { value: "no" } });
+  // A yes/no column is given its value by a choice, not by typing a word.
+  fireEvent.change(screen.getByLabelText("Value when none is given"), {
+    target: { value: "false" },
+  });
+  fireEvent.change(screen.getByLabelText("Must every row's value be different?"), {
+    target: { value: "yes" },
+  });
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   await waitFor(() =>
-    expect(saved().body.columns.paid).toEqual({ type: "boolean", default: false }),
+    expect(saved().body.columns.paid).toEqual({ type: "boolean", default: false, unique: true }),
   );
   // It says what was made, not only that something was.
   expect(await screen.findByText("The column paid was added.")).toBeTruthy();
@@ -1228,4 +1235,613 @@ test("WLK-09b: a retired table keeps its pill whole and does not claim to be man
   // Opened with its ID, the page asks for that table.
   expect(calls.some((call) => call.url.endsWith("/tables/orders?id=id-2"))).toBe(true);
   history.replaceState(null, "", "/");
+});
+
+/** A table made in the console, whose stored definition is read and saved as the screen changes it. */
+function editable(extra: Record<string, object> = {}, columns: object[] = []) {
+  const body = {
+    columns: {
+      number: { type: "text", required: true, unique: true },
+      total: { type: "number", default: 0 },
+      owner_id: { type: "uuid" },
+      ...extra,
+    },
+    policy: { type: "owner", column: "owner_id" },
+  };
+  const table = orders("ui");
+  (table.columns as object[]).push(...columns);
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [200, { body, version: 3 }];
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [200, { version: 4 }];
+  return () =>
+    calls.filter((call) => call.method === "PUT" && call.url.endsWith("/resources/orders")).at(-1)
+      ?.body as {
+      body: { columns: Record<string, Record<string, unknown>>; indexes?: string[][] };
+    };
+}
+const column = (name: string, type: string, more: object = {}) => ({
+  name,
+  type,
+  required: false,
+  unique: false,
+  default: null,
+  references: null,
+  status: "active",
+  held: null,
+  ...more,
+});
+
+test("TAB-P1 and TAB-P2: a column's required, no-two-alike and default are changed from its row, and a refusal names the values", async () => {
+  const saved = editable();
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  // The number column was required and unique: both are taken off, and a default is given.
+  fireEvent.click(screen.getAllByRole("button", { name: "Rules" })[0] as HTMLElement);
+  let dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Must every row have one?"), {
+    target: { value: "no" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Must every row's value be different?"), {
+    target: { value: "no" },
+  });
+  fireEvent.input(within(dialog).getByLabelText("Value when none is given"), {
+    target: { value: "none yet" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(saved().body.columns.number).toEqual({ type: "text", default: "none yet" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // Unique on a column whose rows share values is refused, and the refusal is read in the dialog.
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [
+    409,
+    {
+      status: 409,
+      code: "conflict",
+      detail:
+        'The table "orders" cannot be changed: column "total" is now unique, and some rows share a value: "0" is in 3 rows. Make the values distinct first.',
+    },
+  ];
+  fireEvent.click(screen.getAllByRole("button", { name: "Rules" })[1] as HTMLElement);
+  dialog = await screen.findByRole("dialog");
+  // The default is shown in the control that fits its type, with what it is now.
+  expect(
+    (within(dialog).getByLabelText("Value when none is given") as HTMLInputElement).value,
+  ).toBe("0");
+  fireEvent.change(within(dialog).getByLabelText("Must every row's value be different?"), {
+    target: { value: "yes" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(await within(dialog).findByText(/"0" is in 3 rows/)).toBeTruthy();
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  expect(
+    (within(dialog).getByLabelText("Must every row's value be different?") as HTMLSelectElement)
+      .value,
+  ).toBe("yes");
+});
+
+test("TAB-P2: a default is given in the column's own control, and one that does not read is said at the field", async () => {
+  const saved = editable(
+    {
+      state: { type: "enum", values: ["open", "closed"] },
+      paid: { type: "boolean" },
+    },
+    [
+      column("state", "enum", {
+        values: [{ value: "open" }, { value: "closed", label: "Closed" }],
+      }),
+      column("paid", "boolean"),
+    ],
+  );
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  const rulesOf = (name: string) => {
+    const at = ["number", "total", "owner_id", "state", "paid"].indexOf(name);
+    fireEvent.click(screen.getAllByRole("button", { name: "Rules" })[at] as HTMLElement);
+  };
+  rulesOf("state");
+  let dialog = await screen.findByRole("dialog");
+  const choice = within(dialog).getByLabelText("Value when none is given") as HTMLSelectElement;
+  expect(choice.tagName).toBe("SELECT");
+  expect([...choice.options].map((one) => one.textContent)).toEqual(["None", "open", "Closed"]);
+  fireEvent.change(choice, { target: { value: "closed" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(saved().body.columns.state?.default).toBe("closed"));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  rulesOf("paid");
+  dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Value when none is given"), {
+    target: { value: "true" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(saved().body.columns.paid?.default).toBe(true));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // A number that is not one is said under its field, and nothing is saved.
+  const puts = calls.filter((call) => call.method === "PUT").length;
+  rulesOf("total");
+  dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Value when none is given"), {
+    target: { value: "lots" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(await within(dialog).findByText("Enter a number.")).toBeTruthy();
+  expect(calls.filter((call) => call.method === "PUT").length).toBe(puts);
+});
+
+test("TAB-P3: a column's type is changed to what keeps its values, and a reference is pointed at another table", async () => {
+  const saved = editable({ customer: { type: "reference", references: "customers" } }, [
+    column("customer", "reference", { references: "customers", onDelete: "restrict" }),
+  ]);
+  routes[`GET /api/v1${root}/tables`] = () => [
+    200,
+    {
+      items: [
+        { name: "orders", status: "active" },
+        { name: "customers", status: "active" },
+        { name: "clients", status: "active" },
+        { name: "old", status: "retired" },
+      ],
+    },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  // Number can become text, and keeps its default as text. A text column can become a list only.
+  expect(screen.getAllByRole("button", { name: "Change type" }).length).toBe(3);
+  fireEvent.click(screen.getAllByRole("button", { name: "Change type" })[1] as HTMLElement);
+  let dialog = await screen.findByRole("dialog");
+  const kinds = within(dialog).getByLabelText("It holds") as HTMLSelectElement;
+  expect([...kinds.options].map((one) => one.value)).toEqual(["number", "text"]);
+  fireEvent.change(kinds, { target: { value: "text" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(saved().body.columns.total).toEqual({ type: "text", default: "0" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // A reference's table is changed, among the active tables.
+  fireEvent.click(await screen.findByRole("button", { name: "Change table" }));
+  dialog = await screen.findByRole("dialog");
+  const box = within(dialog).getByRole("combobox");
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  await screen.findByRole("option", { name: "customers" });
+  expect(screen.queryByRole("option", { name: "old" })).toBeNull();
+  fireEvent.click(await screen.findByRole("option", { name: "clients" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(saved().body.columns.customer?.references).toBe("clients"));
+});
+
+test("TAB-P4: a table's indexes are listed, added with the platform's own columns, and removed", async () => {
+  const saved = editable();
+  const table = orders("ui") as ReturnType<typeof orders> & { indexes?: string[][] };
+  table.indexes = [["total"]];
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [
+    200,
+    {
+      body: {
+        columns: {
+          number: { type: "text" },
+          total: { type: "number" },
+          owner_id: { type: "uuid" },
+        },
+        indexes: [["total"]],
+      },
+      version: 3,
+    },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  const list = await screen.findByRole("table", { name: "Indexes" });
+  expect(within(list).getByText("total")).toBeTruthy();
+
+  fireEvent.click(screen.getByRole("button", { name: "Add an index" }));
+  const dialog = await screen.findByRole("dialog");
+  const box = within(dialog).getByRole("combobox");
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: "owner_id" }));
+  fireEvent.click(await screen.findByRole("option", { name: "created_at" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add index" }));
+  await waitFor(() =>
+    expect(saved().body.indexes).toEqual([["total"], ["owner_id", "created_at"]]),
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "Remove the index on total" }));
+  await waitFor(() => expect(calls.filter((call) => call.method === "PUT").length).toBe(2));
+  await waitFor(() => expect(saved().body.indexes).toBeUndefined());
+});
+
+test("TAB-P4: a read stopped for taking too long links to the indexes of a table made in the console, and only there", async () => {
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("ui")];
+  routes[`GET /api/v1${root}/rows/orders`] = () => [
+    422,
+    {
+      status: 422,
+      code: "too_slow",
+      detail:
+        "This took longer than 8 seconds and was stopped. Narrow the filter, or add an index.",
+    },
+  ];
+  const view = show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  const link = await screen.findByRole("link", { name: "Add an index" });
+  expect(link.getAttribute("href")).toContain("/tables/orders?view=definition&at=indexes");
+  view.unmount();
+  // A table from the repository is changed there, not here.
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, orders("code")];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText(/took longer than 8 seconds/);
+  expect(screen.queryByRole("link", { name: "Add an index" })).toBeNull();
+});
+
+test("TAB-P6: a retired table of the console is brought back from its own screen, with the definition it had", async () => {
+  const retired = { ...orders("ui"), status: "retired", display: "number" };
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, retired];
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [200, { version: 1 }];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByText(/This table is retired/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Bring back" }));
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      body: {
+        columns: {
+          number: { type: "text", required: true, unique: true },
+          total: { type: "number", default: 0 },
+          owner_id: { type: "uuid" },
+        },
+        policy: { type: "owner", column: "owner_id" },
+        display: "number",
+      },
+    }),
+  );
+  expect(await screen.findByText("The table orders is back, with its rows.")).toBeTruthy();
+});
+
+test("TAB-P6: a retired table of the repository says a deploy brings it back, and has no button", async () => {
+  routes[`GET /api/v1${root}/tables/orders`] = () => [
+    200,
+    { ...orders("code"), status: "retired" },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  expect(
+    await screen.findByText(/Deploying a definition with this name brings it back/),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Bring back" })).toBeNull();
+});
+
+test("TAB-P7: a table's rules are seen as a group, of end users or of members, with the total that group would see", async () => {
+  editable();
+  routes["GET /api/v1/tenants/t1/end-users"] = () => [200, { items: [] }];
+  routes["GET /api/v1/tenants/t1/end-user-groups"] = () => [
+    200,
+    { items: [{ id: "g-end", name: "Customers" }] },
+  ];
+  routes["GET /api/v1/tenants/t1/groups"] = () => [
+    200,
+    { items: [{ id: "g-mem", name: "Billing" }] },
+  ];
+  routes[`GET /api/v1${root}/aggregate/orders`] = () => [
+    200,
+    { items: [{ values: { count: 7 } }] },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  const box = await screen.findByRole("combobox", { name: "See it as a group" });
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  expect(await screen.findByRole("option", { name: /Billing/ })).toBeTruthy();
+  fireEvent.click(await screen.findByRole("option", { name: /Customers/ }));
+  await waitFor(() =>
+    expect(
+      calls.some(
+        (call) =>
+          call.url.startsWith(`/api/v1${root}/rows/orders`) && call.url.includes("asGroup=g-end"),
+      ),
+    ).toBe(true),
+  );
+  expect(await screen.findByText("Someone in this group would see 7 rows in all.")).toBeTruthy();
+  expect(calls.some((call) => call.url === `/api/v1${root}/aggregate/orders?asGroup=g-end`)).toBe(
+    true,
+  );
+});
+
+test("TAB-P5: Create table takes a description, several columns, a reference, and who sees rows", async () => {
+  routes[`GET /api/v1${root}/tables`] = () => [
+    200,
+    {
+      items: [
+        {
+          name: "customers",
+          description: "",
+          status: "active",
+          managedIn: "ui",
+          columnCount: 1,
+          rowCount: 0,
+          policy: { type: "open" },
+        },
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${root}/resources/visits`] = () => [201, {}];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Create table" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "visits" } });
+  fireEvent.input(within(dialog).getByLabelText("What it holds"), {
+    target: { value: "  Who came in.  " },
+  });
+  // The first column points to another table, chosen from the tables there are.
+  fireEvent.input(within(dialog).getByLabelText("First column"), { target: { value: "customer" } });
+  fireEvent.change(within(dialog).getByLabelText("It holds"), { target: { value: "reference" } });
+  const box = await within(dialog).findByRole("combobox", { name: "Which table" });
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: "customers" }));
+  // More columns, each with its own kind.
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add another column" }));
+  fireEvent.input(within(dialog).getByLabelText("Column 2"), { target: { value: "state" } });
+  fireEvent.change(within(dialog).getByLabelText("Column 2 holds"), { target: { value: "enum" } });
+  fireEvent.input(within(dialog).getByLabelText("Column 2 values"), {
+    target: { value: "new, done" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add another column" }));
+  fireEvent.input(within(dialog).getByLabelText("Column 3"), { target: { value: "minutes" } });
+  fireEvent.change(within(dialog).getByLabelText("Column 3 holds"), {
+    target: { value: "integer" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Who sees rows"), { target: { value: "owner" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
+      kind: "table",
+      schemaVersion: 1,
+      ownership: "ui",
+      create: true,
+      body: {
+        description: "Who came in.",
+        columns: {
+          customer: { type: "reference", references: "customers" },
+          state: { type: "enum", values: ["new", "done"] },
+          minutes: { type: "integer" },
+          owner_id: { type: "uuid" },
+        },
+        policy: { type: "owner", column: "owner_id" },
+      },
+    }),
+  );
+});
+
+test("TAB-P5: Create table says which column is wrong, and sends nothing, when two have one name or a reference has no table", async () => {
+  routes[`GET /api/v1${root}/tables`] = () => [200, { items: [] }];
+  show(<Tables root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(
+    (await screen.findAllByRole("button", { name: "Create table" }))[0] as HTMLElement,
+  );
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "visits" } });
+  fireEvent.input(within(dialog).getByLabelText("First column"), { target: { value: "title" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Add another column" }));
+  fireEvent.input(within(dialog).getByLabelText("Column 2"), { target: { value: "title" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  expect(await within(dialog).findByText(/There is already a column called "title"/)).toBeTruthy();
+  fireEvent.input(within(dialog).getByLabelText("Column 2"), { target: { value: "other" } });
+  fireEvent.change(within(dialog).getByLabelText("Column 2 holds"), {
+    target: { value: "reference" },
+  });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  expect(await within(dialog).findByText(/Choose the table that "other" points to/)).toBeTruthy();
+  expect(calls.some((call) => call.method === "PUT")).toBe(false);
+});
+
+test("TAB-P8: a filter box says not, any of, not empty and a range, and the boxes may be any-of or all-of", async () => {
+  expect(toFilter("number", "!empty")).toEqual({ op: "is_null", value: false });
+  expect(toFilter("text", "!ada")).toEqual({ op: "ne", value: "ada" });
+  expect(toFilter("integer", "10..20")).toEqual({
+    and: [
+      { op: "gte", value: 10 },
+      { op: "lte", value: 20 },
+    ],
+  });
+  expect(toFilter("integer", "..20")).toEqual({ op: "lte", value: 20 });
+  expect(toFilter("date", "2026-01-01..")).toEqual({ op: "gte", value: "2026-01-01" });
+  expect(toFilter("enum", "new | paid")).toEqual({ op: "in", value: ["new", "paid"] });
+  expect(toFilter("text", "ada | bob")).toEqual({
+    or: [
+      { op: "contains", value: "ada" },
+      { op: "contains", value: "bob" },
+    ],
+  });
+  expect(() => toFilter("enum_list", "!a")).toThrow(/cannot be searched with not/);
+
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  fireEvent.change(screen.getByLabelText("Filter by total"), { target: { value: "5..300" } });
+  await waitFor(() =>
+    expect(JSON.parse(lastRows().get("filter") ?? "null")).toEqual({
+      and: [
+        {
+          and: [
+            { column: "total", op: "gte", value: 5 },
+            { column: "total", op: "lte", value: 300 },
+          ],
+        },
+      ],
+    }),
+  );
+  // Two boxes: rows may match either, when that is asked for, and it is in the address.
+  fireEvent.change(screen.getByLabelText("Filter by number"), { target: { value: "A-1 | A-2" } });
+  const match = await screen.findByLabelText("Rows must match");
+  fireEvent.change(match, { target: { value: "any" } });
+  await waitFor(() =>
+    expect(JSON.parse(lastRows().get("filter") ?? "null")).toEqual({
+      or: [
+        {
+          or: [
+            { column: "number", op: "contains", value: "A-1" },
+            { column: "number", op: "contains", value: "A-2" },
+          ],
+        },
+        {
+          and: [
+            { column: "total", op: "gte", value: 5 },
+            { column: "total", op: "lte", value: 300 },
+          ],
+        },
+      ],
+    }),
+  );
+  expect(new URLSearchParams(location.search).get("match")).toBe("any");
+  navigate("/t/t1/workspaces/w1/tables/orders");
+});
+
+test("TAB-P9: Shift on a heading sorts by several columns, in the address and in the request", async () => {
+  expect(nextSort([], "total", false)).toBe("total");
+  expect(nextSort([{ column: "total", descending: false }], "total", false)).toBe("-total");
+  expect(nextSort([{ column: "total", descending: true }], "total", false)).toBeUndefined();
+  expect(nextSort([{ column: "total", descending: false }], "number", true)).toBe("total,number");
+  expect(
+    nextSort(
+      [
+        { column: "total", descending: false },
+        { column: "number", descending: false },
+      ],
+      "number",
+      true,
+    ),
+  ).toBe("total,-number");
+  expect(
+    nextSort(
+      [
+        { column: "total", descending: false },
+        { column: "number", descending: true },
+      ],
+      "number",
+      true,
+    ),
+  ).toBe("total");
+  navigate("/t/t1/workspaces/w1/tables/orders");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  fireEvent.click(screen.getByRole("columnheader", { name: /^total/ }));
+  await waitFor(() => expect(lastRows().get("sort")).toBe("total"));
+  fireEvent.click(screen.getByRole("columnheader", { name: /^number/ }), { shiftKey: true });
+  await waitFor(() => expect(lastRows().get("sort")).toBe("total,number"));
+  expect(new URLSearchParams(location.search).get("sort")).toBe("total,number");
+  expect(screen.getByRole("columnheader", { name: /^number/ }).getAttribute("aria-sort")).toBe(
+    "ascending",
+  );
+  // CSV is asked for with the same order.
+  expect(screen.getByRole("link", { name: /CSV/ }).getAttribute("href")).toContain(
+    "sort=total%2Cnumber",
+  );
+});
+
+/** A table with a choice, a list, a reference, a day and a yes/no column, none of them filled in. */
+function openEmptyCells() {
+  const table = orders("ui");
+  const more = (name: string, type: string, extra: object = {}) => ({
+    name,
+    type,
+    required: false,
+    unique: false,
+    default: null,
+    references: null,
+    status: "active",
+    held: null,
+    ...extra,
+  });
+  (table.columns as unknown[]).push(
+    more("state", "enum", { values: [{ value: "open" }, { value: "closed", label: "Closed" }] }),
+    more("tags", "enum_list", { values: [{ value: "rush" }, { value: "gift" }] }),
+    more("customer", "reference", { references: "customers" }),
+    more("due", "date"),
+    more("paid", "boolean"),
+  );
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`GET /api/v1${root}/tables/customers`] = () => [200, { display: "name" }];
+  routes[`GET /api/v1${root}/rows/customers`] = () => [
+    200,
+    { items: [{ id: "c1", name: "Zelda Corp" }], nextCursor: null },
+  ];
+  const empty = { state: null, tags: null, customer: null, due: null, paid: null };
+  routes[`GET /api/v1${root}/rows/orders`] = () => [
+    200,
+    { items: [{ ...rows[0], ...empty }], nextCursor: null },
+  ];
+  routes[`PATCH /api/v1${root}/row/r1/orders`] = (body) => [
+    200,
+    { ...rows[0], ...empty, ...(body as object) },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+}
+/** The cell of a column in the first row. */
+async function firstRowCell(name: string) {
+  const grid = await screen.findByRole("grid");
+  await screen.findByText("A-1");
+  const heads = within(grid).getAllByRole("columnheader");
+  const at = heads.findIndex((head) => head.textContent?.startsWith(name));
+  return grid.querySelector(`[data-cell="1:${at}"]`) as HTMLElement;
+}
+const patched = () => calls.filter((call) => call.method === "PATCH").map((call) => call.body);
+
+test("TAB-P11 and TAB-31: an empty choice, list, reference or day opens its own control, and a yes/no goes round to empty", async () => {
+  openEmptyCells();
+  // A choice: a select of what it offers, and picking one saves it.
+  fireEvent.doubleClick(await firstRowCell("state"));
+  const choice = (await screen.findByLabelText("state")) as HTMLSelectElement;
+  expect(choice.tagName).toBe("SELECT");
+  expect([...choice.options].map((one) => one.textContent)).toEqual(["No value", "open", "Closed"]);
+  fireEvent.change(choice, { target: { value: "closed" } });
+  await waitFor(() => expect(patched()).toEqual([{ state: "closed" }]));
+  await waitFor(() => expect(screen.queryByLabelText("state")).toBeNull());
+
+  // A list, by Enter from the keyboard: the values to tick, in a dialog that Escape leaves.
+  const tags = await firstRowCell("tags");
+  fireEvent.focus(tags);
+  fireEvent.keyDown(tags, { key: "Enter" });
+  let dialog = await screen.findByRole("dialog", { name: "Change tags" });
+  const box = within(dialog).getByRole("combobox");
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: "gift" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(patched().at(-1)).toEqual({ tags: ["gift"] }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // A reference: the row is picked by its name, and the ID is never typed.
+  fireEvent.doubleClick(await firstRowCell("customer"));
+  dialog = await screen.findByRole("dialog", { name: "Change customer" });
+  const picker = within(dialog).getByRole("combobox");
+  fireEvent.click(picker);
+  fireEvent.keyDown(picker, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: "Zelda Corp" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(patched().at(-1)).toEqual({ customer: "c1" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // A day: a date field, and Cancel leaves the cell as it was.
+  fireEvent.doubleClick(await firstRowCell("due"));
+  dialog = await screen.findByRole("dialog", { name: "Change due" });
+  expect(within(dialog).getByLabelText("due")).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(patched().length).toBe(3);
+
+  // A yes/no that may be empty goes round: yes, no, empty again.
+  const paid = await firstRowCell("paid");
+  fireEvent.focus(paid);
+  fireEvent.keyDown(paid, { key: "Enter" });
+  await waitFor(() => expect(patched().at(-1)).toEqual({ paid: true }));
+  await screen.findByText("Yes");
+  fireEvent.keyDown(paid, { key: "Enter" });
+  await waitFor(() => expect(patched().at(-1)).toEqual({ paid: false }));
+  await screen.findByText("No");
+  fireEvent.keyDown(paid, { key: "Enter" });
+  await waitFor(() => expect(patched().at(-1)).toEqual({ paid: null }));
 });

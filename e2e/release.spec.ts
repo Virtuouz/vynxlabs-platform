@@ -181,9 +181,12 @@ test("a developer asks, a promoter decides from the overview, drift shows the ch
       }[]
     ).find((one) => one.active)?.id;
   const before = await bundlesOf();
-  const back = admin.getByRole("button", { name: "Activate this version" }).first();
+  const back = admin.getByRole("button", { name: /^(Deploy|Roll back to) this version$/ }).first();
   await back.click();
-  await admin.getByRole("dialog").getByRole("button", { name: "Activate in production" }).click();
+  await admin
+    .getByRole("dialog")
+    .getByRole("button", { name: /^(Deploy|Roll back) in production$/ })
+    .click();
   await expect(admin.getByText(/is what runs here now/)).toBeVisible();
   expect(await bundlesOf()).not.toBe(before);
   expect(errors).toEqual([]);

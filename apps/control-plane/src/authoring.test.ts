@@ -26,8 +26,16 @@ const scriptBody = (code: string, extra: Record<string, unknown> = {}) => ({
   source: { language: "typescript", code },
   ...extra,
 });
-const draft = (path: string, body: Record<string, unknown>, kind = "script", as = alice) =>
-  as.put(`${ws()}/drafts/${path}`, { kind, schemaVersion: 1, body });
+// A save says which draft it saw: the helper reads the revision there is, as a client does.
+const draft = async (path: string, body: Record<string, unknown>, kind = "script", as = alice) => {
+  const seen = await as.get(`${ws()}/drafts/${path}`);
+  return as.put(`${ws()}/drafts/${path}`, {
+    kind,
+    schemaVersion: 1,
+    body,
+    ...(seen.status === 200 ? { revision: seen.body.revision } : {}),
+  });
+};
 
 // A bundle as a CLI that predates console-managed resources would build it.
 function fromRepository(version: number): Bundle {
@@ -223,6 +231,52 @@ describe("drafts", () => {
     expect((await alice.delete(`${ws()}/drafts/orders/shared`)).status).toBe(404);
   });
 
+  test("a save without a revision never replaces a draft, of any kind (BLD-01, DAT-08)", async () => {
+    const put = (path: string, kind: string, body: Record<string, unknown>, more = {}) =>
+      alice.put(`${ws()}/drafts/${path}`, { kind, schemaVersion: 1, body, ...more });
+    const code = scriptBody("export default async () => 1;\n");
+    // A first draft over nothing needs no revision; a second save with none is refused, and the
+    // first person's text stays.
+    expect((await put("lock/script", "script", code)).status).toBe(200);
+    const bare = await put("lock/script", "script", scriptBody("export default async () => 2;\n"));
+    expect(bare.status).toBe(409);
+    expect(bare.body.code).toBe("draft_changed");
+    expect(bare.body.detail).toContain("Someone else saved this draft");
+    expect((await alice.get(`${ws()}/drafts/lock/script`)).body.revision).toBe(1);
+    // A create over a draft is still refused as taken.
+    expect((await put("lock/script", "script", code, { create: true })).body.code).toBe(
+      "path_taken",
+    );
+    // A revision for a draft that is gone (discarded) is refused, not made a draft again.
+    expect((await alice.delete(`${ws()}/drafts/lock/script`)).status).toBe(204);
+    const gone = await put("lock/script", "script", code, { revision: 1 });
+    expect(gone.status).toBe(409);
+    expect(gone.body.code).toBe("draft_changed");
+    expect((await alice.get(`${ws()}/drafts/lock/script`)).status).toBe(404);
+  });
+
+  test("a flow draft holds a step not yet finished, and a deploy refuses it (FLW-09)", async () => {
+    const flow = (script: string) => ({
+      nodes: {
+        start: { type: "trigger", trigger: { type: "manual" } },
+        run: { type: "script", script },
+      },
+      edges: [{ from: "start", to: "run" }],
+    });
+    const saved = await draft("flows/unfinished", flow(""), "flow");
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    // Not a flow at all: still refused.
+    expect((await draft("flows/notaflow", { nodes: [] }, "flow")).status).toBe(400);
+    const deploy = await alice.post(`${ws()}/changes/deploy`, { paths: ["flows/unfinished"] });
+    expect(deploy.status).toBe(400);
+    // It names the step and the field, and none of the shapes the step is not.
+    expect(deploy.body.errors).toEqual([
+      { path: "flows/unfinished (flow)", message: expect.stringContaining("/body/nodes/run/script ") },
+    ]);
+    expect((await alice.get(`${ws()}/drafts/flows/unfinished`)).status).toBe(200);
+    expect((await alice.delete(`${ws()}/drafts/flows/unfinished`)).status).toBe(204);
+  });
+
   test("a production workspace has no drafts", async () => {
     const refused = await alice.put(`${ws(prod)}/drafts/orders/hello`, {
       kind: "script",
@@ -322,16 +376,8 @@ describe("trying a draft out", () => {
     });
 
     // Two saves in a row: only the newer one's reading is written.
-    const first = await alice.put(`${ws()}/drafts/orders/typed`, {
-      kind: "script",
-      schemaVersion: 1,
-      body: scriptBody(typed.replace("min(1)", "min(2)")),
-    });
-    const second = await alice.put(`${ws()}/drafts/orders/typed`, {
-      kind: "script",
-      schemaVersion: 1,
-      body: scriptBody(typed.replace("min(1)", "min(3)")),
-    });
+    const first = await draft("orders/typed", scriptBody(typed.replace("min(1)", "min(2)")));
+    const second = await draft("orders/typed", scriptBody(typed.replace("min(1)", "min(3)")));
     await ended(first.body.schemaTaskId);
     await ended(second.body.schemaTaskId);
     expect(

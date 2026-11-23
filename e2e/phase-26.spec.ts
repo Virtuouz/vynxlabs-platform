@@ -36,6 +36,18 @@ type Answer = { status: number; body: any };
 const call = (page: Page, method: string, path: string, body?: unknown): Promise<Answer> =>
   page.evaluate(
     async ([method, path, body]) => {
+      // A draft save names the draft it saw: its revision now, or none when there is none.
+      if (
+        method === "PUT" &&
+        String(path).includes("/drafts/") &&
+        body &&
+        typeof body === "object" &&
+        !("revision" in body) &&
+        !("create" in body)
+      ) {
+        const seen = await fetch(`/api/v1${path}`);
+        if (seen.ok) body = { ...body, revision: (await seen.json()).revision };
+      }
       const response = await fetch(`/api/v1${path}`, {
         method: method as string,
         headers: body ? { "content-type": "application/json" } : {},

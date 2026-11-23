@@ -1,8 +1,10 @@
 import { Button, type GridColumn, Notice, TextField } from "@volvel/ui";
 import { Play, Save } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { type ApiError, api, useLoad } from "../api.ts";
+import { type ApiError, api, useLoad, useLoadOf } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
+import { DraftClash } from "../kit/DraftClash.tsx";
+import { type DraftRead, putDraft } from "../kit/draftApi.ts";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { count } from "../kit/format.ts";
 import { formatCombo } from "../kit/keys.ts";
@@ -108,7 +110,23 @@ export function Queries({ root, link }: { root: string; link: string }) {
   const [took, setTook] = useState<number>();
   const [reveal, setReveal] = useState<{ line: number; column?: number; at: number }>();
 
-  const current = saved.data?.items.find((one) => one.path === open);
+  const listed = saved.data?.items.find((one) => one.path === open);
+  // The list gives what is deployed. A query with a draft is opened as its draft: its text, its
+  // parameters, and the revision a save is based on.
+  const drafted = useLoadOf<DraftRead<Partial<SavedQuery>>>(
+    listed?.draft ? `${root}/drafts/${listed.path}` : null,
+  );
+  const ready = !listed?.draft || drafted.data?.path === listed.path || drafted.error !== undefined;
+  const removing = listed?.draft === "removed";
+  const current: SavedQuery | undefined =
+    listed && drafted.data?.body && !drafted.data.deleted && ready
+      ? {
+          ...listed,
+          description: drafted.data.body.description ?? "",
+          sql: drafted.data.body.sql ?? "",
+          parameters: drafted.data.body.parameters ?? [],
+        }
+      : listed;
   // What a save sends is the text as it is when it goes out. A query saved for the first time
   // keeps its text on screen when its address changes to its name: it is not read back.
   const target = useRef<string>(undefined);
@@ -117,7 +135,10 @@ export function Queries({ root, link }: { root: string; link: string }) {
   const createRefusal = useRef<unknown>(undefined);
   const keep = useDraftSave<string, { revision: number }>({
     send: (sql, at) =>
-      api.put<{ revision: number }>(`${root}/drafts/${target.current}`, {
+      putDraft<{ revision: number }>(
+        root,
+        target.current as string,
+        {
         kind: "query",
         schemaVersion: 1,
         body: {
@@ -125,18 +146,20 @@ export function Queries({ root, link }: { root: string; link: string }) {
           sql,
           ...(parametersIn(sql) > 0
             ? {
+                  // A parameter is sent as it is known, with all it has (such as `required`);
+                  // only a name that is still `$n` is given one.
                 parameters: parametersFor(sql, current).map((one, place) => ({
+                    ...one,
                   name: one.name.startsWith("$") ? `p${place + 1}` : one.name,
-                  type: one.type,
-                  ...(one.label ? { label: one.label } : {}),
-                  ...(one.default !== undefined ? { default: one.default } : {}),
                 })),
               }
             : {}),
         },
-        // A query not yet named is a create: it never replaces what is at the path.
-        ...(at ? { revision: at } : current ? {} : { create: true }),
-      }),
+        },
+        // A query not yet named is a create: it never replaces what is at the path. One with no
+        // draft yet makes its first.
+        at ? { revision: at } : current ? { first: true } : { create: true },
+      ),
     applied: (_answer, _sql, newest) => {
       const path = target.current as string;
       if (newest) {
@@ -188,21 +211,45 @@ export function Queries({ root, link }: { root: string; link: string }) {
     setRefusal(undefined);
     setTook(undefined);
   };
-  // Opening a saved query puts its text in the editor. What is typed after is the editor's.
+  // Opening a saved query puts its text in the editor, once its draft is read when it has one.
+  // What is typed after is the editor's: a save, or a reload of the list, does not replace it.
+  const shown = useRef<string>(undefined);
   // biome-ignore lint/correctness/useExhaustiveDependencies: only a change of query replaces the text
   useEffect(() => {
     if (!current) return;
+    const key = `${current.path}:${removing}`;
     // What was just saved from this screen is already here, with whatever was typed since.
     if (savedAs.current === current.path) {
       savedAs.current = undefined;
+      shown.current = key;
       return;
     }
+    if (shown.current === key || !ready) return;
+    shown.current = key;
     setText(current.sql);
-    keep.reset(current.sql);
+    keep.reset(current.sql, drafted.data?.revision);
     setTyped({});
     setResult(undefined);
     setRefusal(undefined);
-  }, [current?.path]);
+  }, [current?.path, ready, removing]);
+  /** What is saved at the open query now, put on the screen in place of what is there. */
+  const takeTheirs = async () => {
+    if (!listed) return;
+    const [list, theirs] = await Promise.all([
+      api.get<{ items: SavedQuery[] }>(`${root}/queries`),
+      api
+        .get<DraftRead<Partial<SavedQuery>>>(`${root}/drafts/${listed.path}`)
+        .catch(() => undefined),
+    ]);
+    const now = list.items.find((one) => one.path === listed.path);
+    const sql = theirs && !theirs.deleted ? (theirs.body?.sql ?? "") : (now?.sql ?? "");
+    shown.current = `${listed.path}:${now?.draft === "removed"}`;
+    setText(sql);
+    keep.reset(sql, theirs?.revision);
+    setTyped({});
+    await saved.reload();
+    await drafted.reload();
+  };
 
   // The editor completes from what the workspace has.
   useEffect(() => {
@@ -246,6 +293,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
   };
 
   const save = async () => {
+    if (removing || !ready) return;
     if (current) {
       target.current = current.path;
       await keep.save(true);
@@ -343,15 +391,23 @@ export function Queries({ root, link }: { root: string; link: string }) {
                         : "deployed"
                 }
                 onDone={(did) => {
-                  saved.reload();
                   if (did === "discarded" && current.draft === "new") {
+                    saved.reload();
                     clearEditor();
                     setOpen(undefined);
+                    return;
                   }
+                  // A discarded draft or a removal taken back: the query is as it is deployed, and
+                  // what was on screen is not the query's any more. A removal made opens as one.
+                  void takeTheirs();
                 }}
               />
             ) : null}
-            <Button size="small" onClick={() => void save()} disabled={text.trim() === ""}>
+            <Button
+              size="small"
+              onClick={() => void save()}
+              disabled={text.trim() === "" || removing || !ready}
+            >
               <Save aria-hidden="true" size={14} /> {current ? "Save" : "Save as…"}
             </Button>
             <Button
@@ -363,6 +419,13 @@ export function Queries({ root, link }: { root: string; link: string }) {
               <Play aria-hidden="true" size={16} /> Run
             </Button>
           </div>
+          {removing ? (
+            <Notice tone="attention">
+              This query is removed in your drafts. Nothing changes until that draft is deployed.
+              The text shown is what is deployed now. Keep this query to take the removal back.
+            </Notice>
+          ) : null}
+          {keep.clashed ? <DraftClash what="query" mine={() => text} onTake={takeTheirs} /> : null}
           {schema.data.maySql ? null : (
             <Notice tone="plain">
               You can read the queries kept here, but not run SQL: that takes the permission to read
@@ -378,6 +441,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
                 path={`queries/${open ?? "new"}.sql`}
                 value={text}
                 onChange={changeText}
+                readOnly={removing}
                 height="16rem"
                 onRun={() => void run()}
                 onSave={() => void save()}

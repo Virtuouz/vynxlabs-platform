@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
+import { ApiError } from "../api.ts";
 import { useDraftSave } from "./draftSave.ts";
 
 afterEach(cleanup);
@@ -103,4 +104,34 @@ test("the revision of a save is the one the next save sends, and a refused save 
   expect(failures).toHaveLength(1);
   expect(result.current.dirty).toBe(true);
   expect(result.current.revision).toBe(1);
+});
+
+test("a save refused because someone else saved first is a clash: not retried, not reported as a failure, cleared by their version (BLD-01)", async () => {
+  const failures: unknown[] = [];
+  let sends = 0;
+  const { result } = renderHook(() =>
+    useDraftSave<string, { revision: number }>({
+      send: async () => {
+        sends += 1;
+        throw new ApiError(409, {
+          code: "draft_changed",
+          detail: "Someone else saved this draft.",
+        });
+      },
+      failed: (error) => failures.push(error),
+    }),
+  );
+  act(() => result.current.reset("mine", 1));
+  act(() => result.current.edit("mine, changed"));
+  await act(async () => {
+    expect(await result.current.save()).toBe(false);
+  });
+  expect(result.current.clashed).toBe(true);
+  expect(failures).toEqual([]);
+  await act(async () => {
+    expect(await result.current.save()).toBe(false);
+  });
+  expect(sends).toBe(1);
+  act(() => result.current.reset("theirs", 2));
+  expect(result.current.clashed).toBe(false);
 });

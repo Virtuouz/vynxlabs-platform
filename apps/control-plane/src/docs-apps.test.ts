@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { FEEDBACK_COLUMNS, FEEDBACK_TABLE } from "@volvel/docs-engine";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: test responses are inspected freely
 type Any = any;
@@ -1102,7 +1102,7 @@ describe("someone who writes documentation in the console, and is not a develope
 
   test("they draft and deploy the workspace's table of answers, and no other table, nor that table with other columns", async () => {
     const table = (client: Client, path: string, columns: object, description = "Answers.") =>
-      client.put(`${devWs()}/drafts/${path}`, {
+      putSeen(client, `${devWs()}/drafts/${path}`, {
         kind: "table",
         schemaVersion: 1,
         body: { description, columns },

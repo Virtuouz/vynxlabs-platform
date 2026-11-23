@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { brotliDecompressSync, gunzipSync } from "node:zlib";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: test responses are inspected freely
 type Any = any;
@@ -642,7 +642,7 @@ describe("someone who maintains apps made in the console, and is not a developer
     pages: [{ id: "main", title: "Stock", widgets }],
   });
   const draft = (who: Client, path: string, kind: string, body: object, more: object = {}) =>
-    who.put(`${devWs()}/drafts/${path}`, {
+    putSeen(who, `${devWs()}/drafts/${path}`, {
       kind,
       schemaVersion: kind === "interface" ? 2 : kind === "dashboard" ? 3 : 1,
       body,

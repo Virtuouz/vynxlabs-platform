@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { isDraftClash } from "./draftApi.ts";
 
 /**
  * One way for an editor to save a draft. The editor keeps its own state for what is on the
@@ -11,6 +12,9 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
  * - What the server answers is given to `applied` with whether it is still the newest. An
  *   answer that is not must not replace what the person has typed since.
  * - The newest revision it has been given is the one it sends.
+ * - A save the server refuses because someone else saved the draft first is not tried again and
+ *   not reported to `failed`: `clashed` is true, for the editor to show `DraftClash`, until the
+ *   editor loads their version (`reset`).
  */
 export function useDraftSave<T, A extends { revision: number }>(options: {
   /** Sends one snapshot. A refusal is thrown. */
@@ -25,9 +29,11 @@ export function useDraftSave<T, A extends { revision: number }>(options: {
   const saved = useRef(0);
   const revision = useRef<number>(undefined);
   const flight = useRef<Promise<boolean>>(undefined);
+  const clash = useRef(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [shown, setShown] = useState<number>();
+  const [clashed, setClashed] = useState(false);
   const hooks = useRef(options);
   useLayoutEffect(() => {
     hooks.current = options;
@@ -48,6 +54,8 @@ export function useDraftSave<T, A extends { revision: number }>(options: {
     revision.current = at;
     setShown(revision.current);
     setDirty(false);
+    clash.current = false;
+    setClashed(false);
   }, []);
 
   /** What the server made of the value just saved, taken as the value without making it unsaved. */
@@ -68,6 +76,8 @@ export function useDraftSave<T, A extends { revision: number }>(options: {
    */
   const save = useCallback((force = false): Promise<boolean> => {
     if (flight.current) return flight.current;
+    // Someone else's draft stands in the way: nothing is sent until their version is loaded.
+    if (clash.current) return Promise.resolve(false);
     if (!force && version.current === saved.current) return Promise.resolve(true);
     const run = async () => {
       setSaving(true);
@@ -81,7 +91,10 @@ export function useDraftSave<T, A extends { revision: number }>(options: {
           try {
             answer = await hooks.current.send(sent, revision.current);
           } catch (error) {
-            hooks.current.failed?.(error);
+            if (isDraftClash(error)) {
+              clash.current = true;
+              setClashed(true);
+            } else hooks.current.failed?.(error);
             return false;
           }
           if (revision.current === undefined || answer.revision >= revision.current) {
@@ -113,6 +126,8 @@ export function useDraftSave<T, A extends { revision: number }>(options: {
     save,
     dirty,
     saving,
+    /** Someone else saved the draft first: show `DraftClash`, and `reset` with their version. */
+    clashed,
     /** The revision to show or to send with something else. */
     revision: shown,
     /** Read at the moment of a key press: the render may not have happened yet. */

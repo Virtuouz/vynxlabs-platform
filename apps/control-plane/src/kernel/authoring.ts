@@ -64,6 +64,12 @@ export interface DraftInput {
   renameDashboards?: boolean | undefined;
   /** A create: refused, as `path_taken`, when the path holds a draft or a deployed resource. */
   create?: boolean | undefined;
+  /**
+   * For the platform's own writes that replace a draft on purpose, and keep what it held in the
+   * history: restoring an earlier version, and the dashboards a query rename drafts. Never given
+   * by a route's caller.
+   */
+  replace?: boolean | undefined;
 }
 
 const PRODUCTION_REFUSAL =
@@ -255,11 +261,17 @@ export async function saveDraft(
     // other unfinished things. The checks of the page say it, and publishing refuses it.
     const unfinished = (issue: { path: string; message: string }) =>
       /\/steps$/.test(issue.path) && issue.message === "must NOT have fewer than 1 items";
+    // A flow is built a step at a time as well: one step with a field not yet chosen (the script
+    // it runs, the event it waits for) is held in the draft, and a deploy refuses it. What is
+    // refused here is a body that is not a flow at all, or a fault outside its steps.
+    const unfinishedFlow = (issue: { path: string }) =>
+      /^\/(body\/)?nodes\/[^/]+(\/|$)/.test(issue.path);
     if (
       !validation.ok &&
       !(
-        (input.kind === "interface" || input.kind === "dashboard") &&
-        validation.issues.every(unfinished)
+        ((input.kind === "interface" || input.kind === "dashboard") &&
+          validation.issues.every(unfinished)) ||
+        (input.kind === "flow" && isFlowShaped(body) && validation.issues.every(unfinishedFlow))
       )
     ) {
       throw badRequest("The manifest is not valid.", validation.issues);
@@ -276,14 +288,17 @@ export async function saveDraft(
     );
   }
 
-  // A page of documentation is written by people who do not share a repository to settle
-  // their differences in. Whoever saves one says which draft they were looking at, and a
-  // save that says nothing, over a draft someone else has made since, is that same conflict.
-  if (existing && input.kind === "doc" && input.revision === undefined) {
+  // A draft is shared by everyone who may write the workspace. Whoever saves says which draft
+  // they were looking at (its revision), or that they make a new one (`create`, or a first draft
+  // over a deployed resource, which has none yet). A save that says nothing over a draft someone
+  // has made since, or one that names a draft that is gone, is a conflict, never an overwrite.
+  if (existing && input.revision === undefined && !input.replace) {
     throw new HttpError(
       409,
       "draft_changed",
-      "Someone else saved this page after you opened it. Reload it, then make your change again.",
+      input.kind === "doc"
+        ? "Someone else saved this page after you opened it. Reload it, then make your change again."
+        : "Someone else saved this draft after you opened it. Reload it, then make your change again.",
     );
   }
   if (existing && input.revision !== undefined && input.revision !== existing.revision) {
@@ -291,6 +306,13 @@ export async function saveDraft(
       409,
       "draft_changed",
       "Someone else saved this draft after you opened it. Reload it, then make your change again.",
+    );
+  }
+  if (!existing && input.revision !== undefined) {
+    throw new HttpError(
+      409,
+      "draft_changed",
+      "This draft was discarded or deployed after you opened it. Reload it, then make your change again.",
     );
   }
   const values = {
@@ -345,6 +367,7 @@ export async function saveDraft(
     for (const dashboard of await dashboardsNaming(trx, workspace.id, input.path)) {
       if (dashboard.ownership === "code") continue;
       await saveDraft(kernel, trx, audit, workspace, principal, {
+        replace: true,
         path: dashboard.path,
         kind: dashboard.kind,
         schemaVersion: dashboard.schemaVersion,
@@ -356,6 +379,17 @@ export async function saveDraft(
     }
   }
   return { draft: row, takesOver: resource?.ownership === "code" };
+}
+
+/** A body that is a flow's graph: steps by name, and the edges between them. */
+function isFlowShaped(body: Record<string, unknown>) {
+  const nodes = body.nodes;
+  return (
+    typeof nodes === "object" &&
+    nodes !== null &&
+    !Array.isArray(nodes) &&
+    Array.isArray(body.edges)
+  );
 }
 
 /** How many earlier versions are kept of one draft. */

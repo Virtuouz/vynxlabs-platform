@@ -362,4 +362,54 @@ describe("where it is used", () => {
       body: { kind: "flow", deleted: true },
     });
   });
+
+  test("a step added with nothing chosen is saved with the rest, and the editor says what it needs (FLW-09)", async () => {
+    routes[`GET ${api}/drafts/orders/sync`] = () => [404, { code: "not_found", detail: "none" }];
+    routes[`GET ${api}/resources/orders/sync`] = () => [
+      200,
+      {
+        ownership: "ui",
+        body: { nodes: { start: { type: "trigger", trigger: { type: "manual" } } }, edges: [] },
+      },
+    ];
+    routes[`PUT ${api}/drafts/orders/sync`] = () => [200, { revision: 1 }];
+    show(<FlowEditor root={root} link={link} path="orders/sync" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Add step" }));
+    fireEvent.click(await screen.findByText("Run a script"));
+    const list = await screen.findByRole("list", { name: "To fix" });
+    expect(list.textContent).toContain("has no script chosen");
+    fireEvent.click(screen.getByRole("button", { name: "Add step" }));
+    fireEvent.click(await screen.findByText("For each"));
+    await waitFor(() =>
+      expect(screen.getByRole("list", { name: "To fix" }).textContent).toContain(
+        "needs a script or a flow to run for each item",
+      ),
+    );
+    // The draft is saved with the unfinished step in it: nothing is held back.
+    await waitFor(() => expect(sent("PUT")).toHaveLength(1), { timeout: 8000 });
+    const saved = (sent("PUT")[0]?.body as { body: { nodes: Record<string, { type: string }> } })
+      .body.nodes;
+    expect(Object.values(saved).map((node) => node.type)).toContain("script");
+  });
+
+  test("a flow drafted for removal is shown as deployed and cannot be changed", async () => {
+    routes[`GET ${api}/drafts/orders/sync`] = () => [
+      200,
+      { path: "orders/sync", kind: "flow", revision: 2, deleted: true, body: {} },
+    ];
+    routes[`GET ${api}/resources/orders/sync`] = () => [
+      200,
+      {
+        ownership: "ui",
+        body: { nodes: { start: { type: "trigger", trigger: { type: "manual" } } }, edges: [] },
+      },
+    ];
+    show(<FlowEditor root={root} link={link} path="orders/sync" />);
+    expect(await screen.findByText(/This flow is removed in your drafts/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Add step" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByRole("button", { name: "Keep this flow" })).toBeTruthy();
+    expect(screen.getByLabelText("The chosen step").querySelector("fieldset")?.disabled).toBe(true);
+  });
 });

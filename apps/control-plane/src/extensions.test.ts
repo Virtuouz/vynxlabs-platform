@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: test responses are inspected freely
 type Any = any;
@@ -351,7 +351,7 @@ describe("a connector of the tenant's own", () => {
 
   test("a connector written in the console is compiled, deployed and used like one from the repository", async () => {
     const draft = (path: string, kind: string, body: object) =>
-      alice.put(`${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
+      putSeen(alice, `${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
     const connector = await draft("connectors/shout", "connector", {
       description: "Says things loudly.",
       configSchema: {
@@ -731,7 +731,7 @@ export const onLetter = { execute: async (input) => ({ read: input.letter }) };
 
 describe("the core nodes, and nodes of a tenant's own", () => {
   const draft = (path: string, kind: string, body: object) =>
-    alice.put(`${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
+    putSeen(alice, `${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
   const manual = { type: "trigger", trigger: { type: "manual" } };
   const core = (name: string, inputs: Record<string, string>, grants?: object) => ({
     type: "script",
@@ -989,7 +989,7 @@ describe("the core nodes, and nodes of a tenant's own", () => {
 
 describe("a flow that answers the request that started it", () => {
   const draft = (path: string, body: object) =>
-    alice.put(`${ws(dev)}/drafts/${path}`, { kind: "flow", schemaVersion: 1, body });
+    putSeen(alice, `${ws(dev)}/drafts/${path}`, { kind: "flow", schemaVersion: 1, body });
   const hooked = { type: "trigger", trigger: { type: "webhook", respond: "flow" } };
   const address = async (flow: string) => {
     const listed = (await alice.get(`${ws(dev)}/triggers`)).body.items.find(
@@ -1347,7 +1347,11 @@ describe("a trigger that is a form", () => {
         },
       ],
     ] as const) {
-      const saved = await alice.put(`${ws(dev)}/drafts/${path}`, { kind, schemaVersion: 1, body });
+      const saved = await putSeen(alice, `${ws(dev)}/drafts/${path}`, {
+        kind,
+        schemaVersion: 1,
+        body,
+      });
       expect(saved.status, JSON.stringify(saved.body)).toBe(200);
     }
     const deployed = await alice.post(`${ws(dev)}/changes/deploy`, {
@@ -1416,7 +1420,7 @@ describe("a trigger that is a form", () => {
 
   test("a form's fields are checked when it is built", async () => {
     const tried = async (extra: object[]) => {
-      await alice.put(`${ws(dev)}/drafts/badly`, {
+      await putSeen(alice, `${ws(dev)}/drafts/badly`, {
         kind: "flow",
         schemaVersion: 1,
         body: feedback({ title: "x", fields: [...fields.slice(0, 3), ...extra] }),

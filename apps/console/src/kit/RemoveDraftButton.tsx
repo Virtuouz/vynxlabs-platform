@@ -2,6 +2,7 @@ import { Button } from "@volvel/ui";
 import { useState } from "react";
 import { ApiError, api } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { putOnDraftNow } from "./draftApi.ts";
 
 /** What was done: a draft thrown away, or a draft that removes the resource saved. */
 export type RemoveResult = "discarded" | "removed" | "kept";
@@ -99,14 +100,12 @@ export function RemoveDraftButton({
             };
             if (draft) await api.delete(`${root}/drafts/${one.path}`).catch(apart);
             else
-              await api
-                .put(`${root}/drafts/${one.path}`, {
-                  kind: one.kind,
-                  schemaVersion: 1,
-                  body: {},
-                  deleted: true,
-                })
-                .catch(apart);
+              await putOnDraftNow(root, one.path, {
+                kind: one.kind,
+                schemaVersion: 1,
+                body: {},
+                deleted: true,
+              }).catch(apart);
           }
           onDone(state === "removed" ? "kept" : draft ? "discarded" : "removed");
         } catch (error) {

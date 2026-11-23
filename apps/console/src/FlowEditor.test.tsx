@@ -190,3 +190,24 @@ test("a webhook or form start with no key keeps its address by taking its old na
   );
   expect(keepsAddress({ type: "trigger", trigger: { type: "manual" } } as never)).toBe(false);
 });
+
+test("a field a step needs, left empty, is said with its step (FLW-09)", () => {
+  const said = problemsOf(
+    {
+      start: { type: "trigger", trigger: { type: "manual" } },
+      ask: { type: "approval", title: "" },
+      stop: { type: "fail", message: "" },
+      pick: { type: "branch", cases: [{ name: "big", when: "" }] },
+      put: { type: "set", values: { total: "" } },
+      each: { type: "foreach", items: "", script: "a/b" },
+    },
+    ["ask", "stop", "pick", "put", "each"].map((to) => ({ from: "start", to })),
+  );
+  expect(said).toEqual([
+    "ask needs a title for the approval.",
+    "stop needs a message to fail with.",
+    "pick has a case with no condition.",
+    "put has a value with no expression.",
+    "each needs an expression that gives the items to go through.",
+  ]);
+});

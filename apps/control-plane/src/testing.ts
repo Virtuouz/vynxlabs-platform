@@ -74,6 +74,20 @@ export interface ApiResponse {
   bytes: Buffer;
 }
 
+/**
+ * Saves a draft as a console editor does: it says which draft it saw, the revision there is now,
+ * or none when there is no draft. A save that says nothing over a draft is refused.
+ */
+export async function putSeen(as: Client, url: string, body: Record<string, unknown>) {
+  const seen = await as.get(url);
+  return as.put(url, {
+    ...body,
+    ...(seen.status === 200 && body.revision === undefined && !body.create
+      ? { revision: (seen.body as { revision: number }).revision }
+      : {}),
+  });
+}
+
 export interface Client {
   get(url: string): Promise<ApiResponse>;
   post(url: string, body?: unknown): Promise<ApiResponse>;

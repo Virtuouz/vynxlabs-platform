@@ -18,6 +18,8 @@ import { CodeEditor, type Marker } from "../editor/CodeEditor.tsx";
 import { InputForm, withoutMasked } from "../InputDialog.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { DraftClash } from "../kit/DraftClash.tsx";
+import { putDraft } from "../kit/draftApi.ts";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { Elapsed } from "../kit/Elapsed.tsx";
 import { ago } from "../kit/format.ts";
@@ -262,11 +264,15 @@ export function ScriptEditor({
   const uses = (of: ScriptBody) => of.uses ?? NO_USES;
   const [path, setPath] = useState(opened ?? "");
   const [body, setBody] = useState<ScriptBody>();
-  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
+  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository" | "removed">(
+    "new",
+  );
   const [problem, setProblem] = useState<string>();
   const [pathTaken, setPathTaken] = useState<string>();
   const [fields, setFields] = useState<ApiError["fields"]>([]);
   const [busy, setBusy] = useState(false);
+  // Bumped to read the resource again, as when a removal is taken back.
+  const [again, setAgain] = useState(0);
   const [schemaText, setSchemaText] = useState("");
   // What is saved and what is on screen go through one hook: a save sends the newest text, and
   // what is typed while one is in flight is saved after it.
@@ -283,7 +289,10 @@ export function ScriptEditor({
       } catch {
         throw new Error("The schema is not valid JSON.");
       }
-      return api.put<DraftDetail>(`${root}/drafts/${snap.path}`, {
+      return putDraft<DraftDetail>(
+        root,
+        snap.path,
+        {
         kind,
         schemaVersion: 1,
         // A schema read from the code is the code's: what was read is sent back as it is.
@@ -291,9 +300,10 @@ export function ScriptEditor({
           about.schema && snap.body.schemaSource !== "code"
             ? { ...snap.body, [about.schema.field]: schema }
             : snap.body,
+        },
         // A new one is a create: a path that is taken is refused, never overwritten.
-        ...(at ? { revision: at } : opened ? {} : { create: true }),
-      });
+        at ? { revision: at } : opened ? { first: true } : { create: true },
+      );
     },
     applied: (saved, sent, current) => {
       // What the server sends back replaces the screen only if nothing was typed since.
@@ -371,11 +381,16 @@ export function ScriptEditor({
       open(about.fresh(), "new");
       return;
     }
-    if (opened === savedAs.current) return;
+    if (opened === savedAs.current && again === 0) return;
     (async () => {
       try {
         const found = await api.get<DraftDetail>(`${root}/drafts/${opened}`);
-        open(found.body, "draft", found.revision);
+        if (found.deleted) {
+          // A draft that removes it holds no code: what is shown is what is deployed. Nothing is
+          // saved from here, so a removal decided earlier is never undone by an autosave.
+          const resource = await api.get<{ body: ScriptBody }>(`${root}/resources/${opened}`);
+          open(resource.body, "removed", found.revision);
+        } else open(found.body, "draft", found.revision);
       } catch (error) {
         if ((error as ApiError).status !== 404) throw error;
         const resource = await api.get<{ ownership: string; body: ScriptBody }>(
@@ -387,7 +402,7 @@ export function ScriptEditor({
     return () => {
       current = false;
     };
-  }, [root, opened, about, draft.reset]);
+  }, [root, opened, about, draft.reset, again]);
 
   // ⌘S or Ctrl+S saves the draft, from anywhere on the page. It saves what was typed a moment
   // ago too: the text is read from the hook, not from the last render.
@@ -470,7 +485,8 @@ export function ScriptEditor({
   const fromRepository = state === "repository" && !body.source;
   /** A step that comes with the platform. It is the platform's to change. */
   const core = (opened ?? "").startsWith("core/");
-  const readOnly = !editable || fromRepository || core;
+  const removed = state === "removed";
+  const readOnly = !editable || fromRepository || core || removed;
   const change = (next: Partial<ScriptBody>) => {
     // On top of the newest, not of this render's: two changes before a render both stay.
     const now = draft.value();
@@ -764,7 +780,7 @@ export function ScriptEditor({
         title={opened ? path : `New ${about.noun}`}
         state={
           <>
-            <StatePill state={state} />
+            {removed ? <StatePill state="draft">Removing</StatePill> : <StatePill state={state} />}
             {dirty ? <StatePill state="unsaved" /> : null}
           </>
         }
@@ -773,6 +789,17 @@ export function ScriptEditor({
             {/* Something deployed can be given to an agent; a draft cannot, until it is. */}
             {kind === "script" && opened && (state === "deployed" || state === "repository") ? (
               <OfferButton root={root} kind="script" path={opened} />
+            ) : null}
+            {removed && editable && opened ? (
+              <RemoveDraftButton
+                root={root}
+                kind={kind}
+                path={opened}
+                noun={about.noun}
+                state="removed"
+                disabled={working}
+                onDone={() => setAgain((n) => n + 1)}
+              />
             ) : null}
             {readOnly ? null : (
               <div className="flex items-center gap-2">
@@ -882,7 +909,12 @@ export function ScriptEditor({
           )
         }
       />
-      {core ? (
+      {removed ? (
+        <Notice tone="attention">
+          This {about.noun} is removed in your drafts. Nothing changes until that draft is deployed.
+          The code shown is what is deployed now. Keep this {about.noun} to take the removal back.
+        </Notice>
+      ) : core ? (
         <Notice tone="plain">
           This step comes with the platform, and is added to the workspace because a flow uses it.
           It can be read here and not changed. To do something else, write a script of your own and
@@ -906,6 +938,13 @@ export function ScriptEditor({
         <Notice tone="attention">
           Saving a draft of this {about.noun} takes it over from the repository.
         </Notice>
+      ) : null}
+      {draft.clashed ? (
+        <DraftClash
+          what={about.noun}
+          mine={() => draft.value()?.body.source?.code}
+          onTake={() => setAgain((n) => n + 1)}
+        />
       ) : null}
       {kept && state === "new" && !dirty ? (
         <Notice

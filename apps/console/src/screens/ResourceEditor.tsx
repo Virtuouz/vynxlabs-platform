@@ -14,6 +14,8 @@ import { type ApiError, api, useLoad } from "../api.ts";
 import { failureText, takenText } from "../ask.tsx";
 import { FieldAbout } from "../help/FieldAbout.tsx";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
+import { DraftClash } from "../kit/DraftClash.tsx";
+import { putDraft } from "../kit/draftApi.ts";
 import { useDraftSave } from "../kit/draftSave.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
@@ -164,7 +166,11 @@ export function ResourceEditor({
     typeAsked === "webhook" || typeAsked === "event" || typeAsked === "form"
       ? typeAsked
       : undefined;
-  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository">("new");
+  const [state, setState] = useState<"new" | "draft" | "deployed" | "repository" | "removed">(
+    "new",
+  );
+  // Counted up to read the resource again, as when someone else's version is loaded.
+  const [again, setAgain] = useState(0);
   const [problem, setProblem] = useState<string>();
   const [pathTaken, setPathTaken] = useState<string>();
   const [tried, setTried] = useState(false);
@@ -177,13 +183,13 @@ export function ResourceEditor({
         if (value.trim() === "") delete written[name];
         else written[name] = JSON.parse(value);
       }
-      return api.put<{ body: Body; revision: number }>(`${root}/drafts/${snap.path}`, {
-        kind,
-        schemaVersion: 1,
-        body: written,
+      return putDraft<{ body: Body; revision: number }>(
+        root,
+        snap.path,
+        { kind, schemaVersion: 1, body: written as Record<string, unknown> },
         // A new one is a create: a path that is taken is refused, never overwritten.
-        ...(at ? { revision: at } : opened ? {} : { create: true }),
-      });
+        at ? { revision: at } : opened ? { first: true } : { create: true },
+      );
     },
     applied: (saved, sent, current) => {
       // What the server sends back replaces the screen only if nothing was typed since.
@@ -216,6 +222,7 @@ export function ResourceEditor({
   );
   const secrets = useLoad<{ items: { name: string }[] }>(`${root}/secrets`);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `again` reads the resource again
   useEffect(() => {
     let current = true;
     const jsonOf = (next: Body): Record<string, string> => ({
@@ -242,8 +249,15 @@ export function ResourceEditor({
     }
     (async () => {
       try {
-        const draft = await api.get<{ body: Body; revision: number }>(`${root}/drafts/${opened}`);
-        open(draft.body, "draft", draft.revision);
+        const draft = await api.get<{ body: Body; revision: number; deleted?: boolean }>(
+          `${root}/drafts/${opened}`,
+        );
+        if (draft.deleted) {
+          // A draft that removes it holds no settings: what is shown is what is deployed, and
+          // nothing is saved from here.
+          const resource = await api.get<{ body: Body }>(`${root}/resources/${opened}`);
+          open(resource.body, "removed", draft.revision);
+        } else open(draft.body, "draft", draft.revision);
       } catch (error) {
         if ((error as ApiError).status !== 404) throw error;
         const resource = await api.get<{ ownership: string; body: Body }>(
@@ -255,7 +269,7 @@ export function ResourceEditor({
     return () => {
       current = false;
     };
-  }, [root, opened, about, askedType, draft.reset]);
+  }, [root, opened, about, askedType, draft.reset, again]);
 
   // Changes not saved are not lost by a click elsewhere, Back, or closing the tab. A draft
   // saves itself a few seconds after the last change; something new waits for its first Save,
@@ -286,7 +300,8 @@ export function ResourceEditor({
   if (problem && !body) return <Notice tone="danger">{problem}</Notice>;
   if (!body) return <Loading />;
 
-  const readOnly = !editable;
+  const removed = state === "removed";
+  const readOnly = !editable || removed;
   /** Something changed: on top of the newest, not of this render's, so two changes both stay. */
   const edit = (part: Partial<Unsaved>) => {
     const next = { path, body, json, ...draft.value(), ...part };
@@ -386,12 +401,21 @@ export function ResourceEditor({
         state={
           <>
             <Tag>{about.noun}</Tag>
-            <StatePill state={state} />
+            {removed ? <StatePill state="draft">Removing</StatePill> : <StatePill state={state} />}
             {dirty ? <StatePill state="unsaved" /> : null}
           </>
         }
         actions={
-          readOnly ? null : (
+          removed && editable && opened ? (
+            <RemoveDraftButton
+              root={root}
+              kind={kind}
+              path={opened}
+              noun={about.noun}
+              state="removed"
+              onDone={() => setAgain((n) => n + 1)}
+            />
+          ) : readOnly ? null : (
             <div className="flex items-center gap-2">
               {opened && state !== "new" ? (
                 <ResourceIdentity
@@ -465,6 +489,12 @@ export function ResourceEditor({
           noun="Resources"
           edit={path ? `resources/edit/${kind}/${path}` : undefined}
         />
+      ) : removed ? (
+        <Notice tone="attention">
+          This {about.noun} is removed in your drafts. Nothing changes until that draft is deployed.
+          The settings shown are what is deployed now. Keep this {about.noun} to take the removal
+          back.
+        </Notice>
       ) : state === "repository" ? (
         <Notice
           tone="attention"
@@ -504,6 +534,9 @@ export function ResourceEditor({
           A new {about.noun}
           {kept.path ? ` (${kept.path})` : ""} that was not saved is kept in this browser.
         </Notice>
+      ) : null}
+      {draft.clashed ? (
+        <DraftClash what={about.noun} onTake={() => setAgain((n) => n + 1)} />
       ) : null}
       {problem ? <Notice tone="danger">{problem}</Notice> : null}
 

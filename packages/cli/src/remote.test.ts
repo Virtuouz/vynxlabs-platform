@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Client, startTestApp, type TestApp } from "@volvel/control-plane/testing";
+import { type Client, putSeen, startTestApp, type TestApp } from "@volvel/control-plane/testing";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { run } from "./cli.js";
@@ -271,7 +271,7 @@ describe("pulling the console's resources", () => {
   const read = (path: string) => readFile(join(folder(), path), "utf8");
 
   test("writes them, and a second pull changes nothing", async () => {
-    await alice.put(`${base}/drafts/notes/hello`, {
+    await putSeen(alice, `${base}/drafts/notes/hello`, {
       kind: "flow",
       schemaVersion: 1,
       body: {
@@ -299,7 +299,7 @@ describe("pulling the console's resources", () => {
       },
       edges: [{ from: "start", to: "note" }],
     });
-    await alice.put(`${base}/drafts/notes/hello`, {
+    await putSeen(alice, `${base}/drafts/notes/hello`, {
       kind: "flow",
       schemaVersion: 1,
       body: body("'changed in the console'"),
@@ -309,7 +309,7 @@ describe("pulling the console's resources", () => {
 
     const mine = (await read("notes/hello.flow.yaml")).replace("in the console", "here");
     await writeFile(join(folder(), "notes/hello.flow.yaml"), mine);
-    await alice.put(`${base}/drafts/notes/hello`, {
+    await putSeen(alice, `${base}/drafts/notes/hello`, {
       kind: "flow",
       schemaVersion: 1,
       body: body("'and again in the console'"),
@@ -340,7 +340,7 @@ describe("pulling the console's resources", () => {
     expect(again.out).toMatch(/0 new, 0 updated, 0 removed, 1 unchanged/);
 
     // Removed in the console: removed here, as it was not changed since.
-    await alice.put(`${base}/drafts/notes/hello`, {
+    await putSeen(alice, `${base}/drafts/notes/hello`, {
       kind: "flow",
       schemaVersion: 1,
       body: {},

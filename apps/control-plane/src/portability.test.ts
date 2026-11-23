@@ -862,6 +862,28 @@ describe("an export that someone changed, who knows its passphrase", () => {
     expect(changed.problem).toMatch(/not signed with this export's key/);
   });
 
+  test("an upload still waiting is listed after a reload, and can be thrown away (INS-MP11)", async () => {
+    const staged = await operatorB.upload(
+      "/instance/tenant-imports/staged",
+      archive,
+      "application/x-tar",
+      { "x-export-passphrase": PASSPHRASE },
+    );
+    expect(staged.status, JSON.stringify(staged.body)).toBe(201);
+    const listed = await operatorB.get("/instance/tenant-imports/staged");
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect(listed.body.items).toHaveLength(1);
+    expect(listed.body.items[0]).toMatchObject({
+      id: staged.body.id,
+      here: true,
+      inspection: staged.body.inspection,
+    });
+    expect(
+      (await operatorB.delete(`/instance/tenant-imports/staged/${staged.body.id}`)).status,
+    ).toBe(204);
+    expect((await operatorB.get("/instance/tenant-imports/staged")).body.items).toEqual([]);
+  });
+
   test("an upload waits in a folder and a file only this user can open", async () => {
     const staged = await operatorB.upload(
       "/instance/tenant-imports/staged",

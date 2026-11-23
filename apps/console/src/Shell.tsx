@@ -36,6 +36,7 @@ import { LiveIndicator } from "./kit/LiveIndicator.tsx";
 import { useWide, WIDE } from "./kit/layout.tsx";
 import { Junction, Wire } from "./kit/motifs.tsx";
 import { OperatorMark, OperatorStrip } from "./kit/OperatorStrip.tsx";
+import { ReadOnlyStrip } from "./kit/ReadOnly.tsx";
 import { EnvTag, StatePill, Tag } from "./kit/status.tsx";
 import { pageTitle, useNamedObject } from "./kit/title.ts";
 import { useBleeding } from "./kit/workbench.ts";
@@ -1272,6 +1273,7 @@ export function Shell({
           <div data-production-rule="" aria-hidden="true" className="h-0.5 shrink-0 bg-attention" />
         ) : null}
         {tenantId ? <OperatorStrip /> : null}
+        <ReadOnlyStrip />
 
         <main
           id="main"

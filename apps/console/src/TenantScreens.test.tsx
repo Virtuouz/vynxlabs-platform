@@ -441,3 +441,40 @@ test("Workers does not offer a tenant admin the switch an operator turned off (D
   await screen.findByText("An operator turned this off. Only an operator can turn it on again.");
   expect(screen.queryByRole("button", { name: "Let the instance run workers" })).toBeNull();
 });
+
+test("an operator turns workers off for a tenant and reads its retention from the list, with no grant (INS-MP7)", async () => {
+  const row = {
+    id: "t1",
+    slug: "acme",
+    name: "Acme",
+    dataLocation: null,
+    workspaceCount: 2,
+    createdAt: "2026-11-01T00:00:00.000Z",
+  };
+  let on = true;
+  routes["GET /tenants"] = () => ({ items: [row], nextCursor: null });
+  routes[`GET ${base}`] = () => ({ ...row, managedWorkers: on, managedWorkersLocked: !on });
+  routes[`PATCH ${base}`] = (body) => {
+    on = (body as { managedWorkers: boolean }).managedWorkers;
+    return {};
+  };
+  routes[`GET ${base}/retention`] = () => ({
+    effective: { runsDays: 30, eventsDays: 14, refusalsDays: 7, auditDays: 400 },
+  });
+  const { Tenants } = await import("./screens/Tenants.tsx");
+  show(<Tenants me={operatorMe} />);
+  const inspector = async () =>
+    screen.findByRole("region", { name: "Workers the instance starts" });
+  fireEvent.click((await screen.findAllByText("acme")).at(-1) as HTMLElement);
+  const workers = await inspector();
+  await within(workers).findByText(/starts workers for this tenant when it has work/);
+  fireEvent.click(within(workers).getByRole("button", { name: "Start no workers for it" }));
+  await waitFor(() =>
+    expect(calls.some((c) => c.method === "PATCH" && c.url.endsWith(base))).toBe(true),
+  );
+  expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ managedWorkers: false });
+  await within(await inspector()).findByText(/An operator turned this off/);
+  const history = screen.getByRole("region", { name: "History kept" });
+  await within(history).findByText(/Runs 30 days, events 14, refused requests 7, audit log 400/);
+  expect(await within(history).findByRole("button", { name: "Change how long" })).toBeTruthy();
+});

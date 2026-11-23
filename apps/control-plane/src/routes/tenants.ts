@@ -125,7 +125,14 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Tenants the caller can see",
           description: "Every tenant for an operator. Otherwise the tenants the caller belongs to.",
           tags: ["tenancy"],
-          querystring: SearchPageQuery,
+          querystring: Type.Object({
+            ...SearchPageQuery.properties,
+            dataLocation: Type.Optional(
+              Type.String({
+                description: "Only the tenants that keep their tables in this database location.",
+              }),
+            ),
+          }),
           response: {
             200: pageOf(
               Type.Object({
@@ -171,6 +178,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           select = select.where((eb) =>
             eb.or([eb(eb.fn("lower", ["name"]), "like", term), eb("slug", "like", term)]),
           );
+        }
+        if (query.dataLocation !== undefined) {
+          select = select.where(sql<boolean>`data_location ->> 'ref' = ${query.dataLocation}`);
         }
         if (args.after) select = select.where("id", ">", args.after);
         const rows = await select

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ApiError, api } from "./api.ts";
 import { AccessReleases } from "./screens/AccessReleases.tsx";
@@ -298,4 +298,19 @@ test("a refusal names its cause, not only that the access is not valid (ACC-21)"
   fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
   await answer("Approve");
   expect(await screen.findByText(/must NOT have more than 500 characters/)).toBeTruthy();
+});
+
+test("ACC-MP14: one release is opened from its address, with its changes and warnings, and closing leaves the address", async () => {
+  history.replaceState(null, "", "/t/t1/releases?release=r2");
+  show(<AccessReleases base={base} />);
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("Release 2");
+  expect(dialog.textContent).toContain("Makes the group Night shift");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Back" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(location.search).not.toContain("release=");
+  // A number in the list opens the same.
+  fireEvent.click(await screen.findByRole("button", { name: "Open release 1" }));
+  expect((await screen.findByRole("dialog")).textContent).toContain("Release 1");
+  expect(location.search).toContain("release=r1");
 });

@@ -31,7 +31,8 @@ export type RefusalReason =
   | "email_not_trusted"
   | "no_account"
   | "not_in_tenant"
-  | "disabled";
+  | "disabled"
+  | "runs_instance";
 
 /** A sign-in that was refused, with a reason for the record and words for the person. */
 export class SsoRefusal extends Error {
@@ -173,6 +174,7 @@ export async function resolvePerson(
       }
     }
 
+    if (principalType === "member") await refuseInstanceMember(trx, provider, principalId, email);
     // One person has one subject at a provider. A second is someone else using their email.
     const other = await trx
       .selectFrom("identity_link")
@@ -225,6 +227,7 @@ export async function resolvePerson(
     if (member.disabled_at) {
       throw new SsoRefusal("disabled", "This account has been turned off.");
     }
+    await refuseInstanceMember(trx, provider, principalId, email ?? asserted.subject);
     if (tenantId !== null) await ensureTenantMember(trx, audit, provider, tenantId, principalId);
   } else {
     const user = await trx
@@ -270,6 +273,31 @@ export async function resolvePerson(
     groupsAdded: groups.added,
     groupsRemoved: groups.removed,
   };
+}
+
+/**
+ * Whether a person holds access at the instance. A tenant's provider does not sign them in:
+ * whoever runs a tenant's directory could otherwise sign in as an operator by an email in a
+ * domain they prove. An operator uses a password, or the instance's own provider.
+ */
+export async function holdsInstanceAccess(trx: Trx | Db, memberId: string): Promise<boolean> {
+  const held = await trx
+    .selectFrom("binding")
+    .select("id")
+    .where("scope_type", "=", "instance")
+    .where("principal_type", "=", "member")
+    .where("principal_id", "=", memberId)
+    .executeTakeFirst();
+  return held !== undefined;
+}
+
+async function refuseInstanceMember(trx: Trx, provider: Provider, memberId: string, who: string) {
+  if (provider.tenantId === null || !(await holdsInstanceAccess(trx, memberId))) return;
+  throw new SsoRefusal(
+    "runs_instance",
+    "This account runs the instance, and a tenant's sign-in does not open it. Sign in with your password or the instance's provider.",
+    `${who} holds access at the instance, and the provider belongs to a tenant.`,
+  );
 }
 
 /** The names of the pushed groups a person is in. */

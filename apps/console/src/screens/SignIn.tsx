@@ -31,6 +31,8 @@ const SSO_ERRORS: Record<string, string> = {
   no_account: "There is no account here for you yet. Ask your administrator for one.",
   not_in_tenant: "Your account has not been added here yet. Ask your administrator to add you.",
   disabled: "Your account has been turned off.",
+  runs_instance:
+    "Your account runs this instance, and this sign-in does not open it. Use your password, or the instance sign-in.",
 };
 
 /** Takes the reason single sign-on failed out of the address, so a reload does not show it again. */

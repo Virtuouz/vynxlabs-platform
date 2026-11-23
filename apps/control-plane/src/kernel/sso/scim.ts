@@ -6,7 +6,7 @@ import { cleanEmail, createEndUser } from "../endusers.js";
 import { HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { hashApiKey } from "../principal.js";
-import { giveRole, syncGroups } from "./people.js";
+import { giveRole, holdsInstanceAccess, syncGroups } from "./people.js";
 import { domainOfEmail, findProvider, type Provider, provedDomains } from "./providers.js";
 
 /**
@@ -707,6 +707,12 @@ export async function createScimUser(
       .where("email", "=", email)
       .executeTakeFirst();
     let created = false;
+    if (existing && provider.tenantId !== null && (await holdsInstanceAccess(trx, existing.id))) {
+      throw new ScimError(
+        403,
+        `${email} runs the instance, and a tenant's directory cannot push them. They sign in with a password or the instance's provider.`,
+      );
+    }
     if (existing) principalId = existing.id;
     else {
       principalId = newId();

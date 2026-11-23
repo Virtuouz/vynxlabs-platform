@@ -636,3 +636,46 @@ describe("a changed issuer (GOV-06, GOV-07)", () => {
     expect((await alice.get(`${providers()}/${id}/links`)).body.items).toEqual([]);
   });
 });
+
+describe("a tenant's provider and the people who run the instance (GOV-08)", () => {
+  test("it neither signs them in nor pushes them", async () => {
+    const op = await t.admin.post("/members", {
+      email: "ops@acme.example",
+      name: "Ops",
+      password: PASSWORD,
+    });
+    expect(op.status).toBe(201);
+    expect(
+      (await t.admin.post("/bindings", { memberId: op.body.id, roleId: roles.operator_admin }))
+        .status,
+    ).toBe(201);
+    await t.db
+      .insertInto("tenant_member")
+      .values({ tenant_id: tenant, member_id: op.body.id })
+      .execute();
+    await expect(signInAs(staff, "ops-subject", "ops@acme.example")).rejects.toMatchObject({
+      reason: "runs_instance",
+    });
+    expect(
+      await t.db
+        .selectFrom("identity_link")
+        .select("id")
+        .where("principal_id", "=", op.body.id)
+        .execute(),
+    ).toEqual([]);
+
+    const root = await t.admin.post("/members", {
+      email: "root@acme.example",
+      name: "Root",
+      password: PASSWORD,
+    });
+    expect(
+      (await t.admin.post("/bindings", { memberId: root.body.id, roleId: roles.operator_admin }))
+        .status,
+    ).toBe(201);
+    const pushed = await push(staff, "POST", "/Users", pushedUser("root@acme.example"));
+    expect(pushed.status, JSON.stringify(pushed.body)).toBe(403);
+    // Their password still works.
+    expect((await t.signIn("ops@acme.example", PASSWORD)).get).toBeDefined();
+  });
+});

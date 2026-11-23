@@ -152,3 +152,47 @@ test("a made-up pack's widget with an action setting gets the step editor too", 
   fireEvent.click(screen.getByRole("button", { name: "Add a step" }));
   expect(screen.queryByRole("menuitem", { name: "Update the record" })).toBeNull();
 });
+
+test("WLK-11: a message added after the sheet closes is said before it closes", () => {
+  const dial = defineWidget({
+    type: "labs/dial",
+    version: "0.1.0",
+    title: "Dial",
+    description: "A dial",
+    category: "action",
+    icon: "gauge",
+    surfaces: ["app"],
+    data: {},
+    config: {
+      type: "object",
+      properties: {
+        onSet: {
+          type: "object",
+          "x-volvel": { tab: "actions", control: "action", label: "When it is set", order: 1 },
+        },
+      },
+    },
+    events: {},
+    layout: { min: { w: 2, h: 2 }, default: { w: 3, h: 3 } },
+  });
+  show(
+    <Harness
+      start={{
+        id: "d",
+        type: "labs/dial",
+        at: place,
+        config: {
+          onSet: { steps: [{ do: "create", table: "invoices", set: {} }, { do: "close" }] },
+        },
+      }}
+      definition={dial}
+    />,
+  );
+  tab("Actions");
+  add("Show a message");
+  expect((last().config?.onSet as { steps: { do: string }[] }).steps.map((one) => one.do)).toEqual([
+    "create",
+    "message",
+    "close",
+  ]);
+});

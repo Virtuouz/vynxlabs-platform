@@ -48,6 +48,7 @@ import {
   type ActionContext,
   type ActionValue,
   type AskedField,
+  addedAt,
   grantWords,
   inputWords,
   moved,
@@ -1070,8 +1071,13 @@ export function ActionEditor({
   const kinds = stepKindsFor(ctx);
   const firstPage = env.pages[0]?.id;
   const addStep = (step: Step) => {
-    stepKeys.keys.current = [...stepKeys.keys.current, stepKeys.fresh()];
-    put(withSteps(current, [...current.steps, step]));
+    const at = addedAt(current.steps, step);
+    stepKeys.keys.current = [
+      ...stepKeys.keys.current.slice(0, at),
+      stepKeys.fresh(),
+      ...stepKeys.keys.current.slice(at),
+    ];
+    put(withSteps(current, [...current.steps.slice(0, at), step, ...current.steps.slice(at)]));
   };
   const items = [
     ...(!current.confirm && ctx.surface !== "dashboard"

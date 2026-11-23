@@ -210,6 +210,8 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("git:read") },
         schema: {
           summary: "How a workspace stands against its branch",
+          description:
+            "What the workspace is connected to, and how it differs from the repository.",
           tags: ["git"],
           params: WorkspaceParams,
           response: { 200: Status },
@@ -583,6 +585,7 @@ export function gitRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("git:read") },
         schema: {
           summary: "The workspace's recent pushes and pulls",
+          description: "Each push and pull, newest first, with how it ended.",
           tags: ["git"],
           params: WorkspaceParams,
           response: {

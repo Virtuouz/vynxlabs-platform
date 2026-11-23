@@ -409,8 +409,9 @@ export function RunButton({
         title={draft ? `Run ${script}, as deployed` : `Run ${script}`}
         action="Run"
         schema={schema}
-        onSubmit={async (input) => {
-          const run = await api.post<Run>(`${root}/runs`, { script, input });
+        timing
+        onSubmit={async (input, timing) => {
+          const run = await api.post<Run>(`${root}/runs`, { script, input, ...timing });
           navigate(`${runsLink}/${run.id}`);
         }}
       />

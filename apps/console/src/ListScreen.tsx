@@ -457,8 +457,11 @@ export function RemoveButton({
   affected,
   usesUnread = false,
   typeToConfirm,
+  disabled,
 }: {
   label?: string;
+  /** Why it cannot be done now, shown as the button's title; the button is then off. */
+  disabled?: string | undefined;
   confirm: string;
   run: () => Promise<unknown>;
   onDone: () => void;
@@ -473,6 +476,8 @@ export function RemoveButton({
     <Button
       variant="danger"
       size="small"
+      disabled={disabled !== undefined}
+      {...(disabled !== undefined ? { title: disabled } : {})}
       onClick={async () => {
         const text = usesUnread
           ? `${question} What uses it could not be read, so what it affects is not listed here.`

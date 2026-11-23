@@ -175,7 +175,7 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
     <>
       <CollectionView<MemberGroup>
         title={framed?.title ?? "Groups"}
-        description="A group is a set of members that can be given access together. Give a group a role under Access grants."
+        description="A group is a set of members that can be given access together. Give a group a role under Access."
         actions={
           <Button variant="primary" onClick={() => setCreating(true)}>
             Create group
@@ -246,6 +246,11 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
                 </Button>
                 <RemoveButton
                   label="Delete"
+                  disabled={
+                    row.managedBy === "provider"
+                      ? "An identity provider made this group. Remove it there."
+                      : undefined
+                  }
                   confirm={`The group ${row.name} is deleted, and access given to it is removed.`}
                   run={() => api.delete(`${base}/groups/${row.id}`)}
                   onDone={groups.reload}
@@ -294,6 +299,7 @@ interface EndUserGroup {
   name: string;
   description: string;
   memberCount: number;
+  managedBy?: string;
 }
 
 /** Groups of end users: the people of the tenant's apps, sorted by what they may see and do. */
@@ -308,7 +314,7 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
         title={framed?.title ?? "End-user groups"}
         helpKey="end-user-groups"
         toolbar={toolbarOf(framed)}
-        description="Sort the people who use your apps into groups, such as one per customer or per job. Give a group a role under Access grants, and rule a table's rows by it under Tables."
+        description="Sort the people who use your apps into groups, such as one per customer or per job. Give a group a role under Access, and rule a table's rows by it under Tables."
         actions={
           <Button variant="primary" onClick={() => setCreating(true)}>
             Create group
@@ -357,6 +363,7 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
                       notify.error(error);
                     }
                   }}
+                  disabled={row.managedBy === "provider"}
                 >
                   Rename
                 </Button>
@@ -387,6 +394,11 @@ export function EndUserGroups({ base, framed }: { base: string; framed?: Framed 
                 </Button>
                 <RemoveButton
                   label="Delete"
+                  disabled={
+                    row.managedBy === "provider"
+                      ? "An identity provider made this group. Remove it there."
+                      : undefined
+                  }
                   confirm={`The group ${row.name} is deleted. Its people lose what it was given, and rows ruled by it are shown to nobody in it.`}
                   run={() => api.delete(`${base}/end-user-groups/${row.id}`)}
                   onDone={groups.reload}

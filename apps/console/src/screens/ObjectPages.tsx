@@ -23,6 +23,7 @@ import { CONNECTOR_NAMES, type ConnectionRow, ConnectionWizard } from "./Connect
 import { ConnectionHealth, RunButton, TestConnection } from "./Execution.tsx";
 import { NotFound } from "./NotFound.tsx";
 import { type Trigger, TriggerState, useTriggerPause } from "./Operate.tsx";
+import { PublishEventButton } from "./PublishEvent.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
 
 /**
@@ -322,7 +323,17 @@ interface Resource {
   body: { description?: string; schema?: unknown; payload?: unknown };
 }
 
-export function EventPage({ root, link, path }: { root: string; link: string; path: string }) {
+export function EventPage({
+  root,
+  link,
+  path,
+  production = false,
+}: {
+  root: string;
+  link: string;
+  path: string;
+  production?: boolean;
+}) {
   const found = useLoad<Resource>(`${root}/resources/${path}`);
   return (
     <Gate found={found} list={`${link}/events`} noun="event">
@@ -332,9 +343,17 @@ export function EventPage({ root, link, path }: { root: string; link: string; pa
           eyebrow="Event"
           title={one.path}
           actions={
-            <Button onClick={() => navigate(`${link}/resources/edit/event/${one.path}`)}>
-              Change its declaration
-            </Button>
+            <>
+              <PublishEventButton
+                root={root}
+                production={production}
+                event={one.path}
+                label="Publish it"
+              />
+              <Button onClick={() => navigate(`${link}/resources/edit/event/${one.path}`)}>
+                Change its declaration
+              </Button>
+            </>
           }
           meta={
             <KeyValues

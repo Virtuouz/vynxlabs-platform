@@ -240,7 +240,7 @@ export function ToastProvider({
         // A panel docked at the right edge says how much room it takes (`--vx-toast-inset`): a
         // message never covers the buttons of what it is about.
         style={{ right: "calc(1rem + var(--vx-toast-inset, 0px))" }}
-        className="pointer-events-none fixed bottom-4 left-4 layer-toast flex flex-col items-end gap-2"
+        className="pointer-events-none fixed bottom-4 left-4 layer-toast flex flex-col items-end gap-2 md:items-center"
         onMouseEnter={hold}
         onMouseLeave={release}
         onFocus={hold}
@@ -252,10 +252,10 @@ export function ToastProvider({
          * Both lists are always on the page, so what is added to them is read out once, as it
          * appears: the others politely, a failure as an alert. The text is never in the page twice.
          */}
-        <div aria-live="polite" className="flex flex-col items-end gap-2">
+        <div aria-live="polite" className="flex flex-col items-end gap-2 md:items-center">
           {visible.filter((toast) => toast.tone !== "danger").map(card)}
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-2 md:items-center">
           {visible.filter((toast) => toast.tone === "danger").map(card)}
         </div>
       </div>

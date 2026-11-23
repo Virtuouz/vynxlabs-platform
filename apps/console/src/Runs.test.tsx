@@ -356,3 +356,42 @@ test("a run of a schedule from before the change, and an event's run, link to wh
     "/t/t1/workspaces/w1/events?item=e9",
   );
 });
+
+test("runs between two times: chosen under When, kept in the address, asked for and canceled by (OPS-MP7)", async () => {
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("reminders/send");
+  fireEvent.change(screen.getByLabelText("When"), { target: { value: "between" } });
+  const start = await screen.findByLabelText("From");
+  const end = screen.getByLabelText("To");
+  fireEvent.change(start, { target: { value: "2026-11-10T08:00" } });
+  fireEvent.change(end, { target: { value: "2026-11-11T09:30" } });
+  const from = new Date("2026-11-10T08:00").toISOString();
+  const to = new Date("2026-11-11T09:30").toISOString();
+  await waitFor(() => {
+    const params = new URLSearchParams(location.search);
+    expect(params.get("when")).toBe("between");
+    expect(params.get("from")).toBe(from);
+    expect(params.get("to")).toBe(to);
+  });
+  await waitFor(() => {
+    const last = new URLSearchParams(lists().at(-1)?.split("?")[1]);
+    expect(last.get("from")).toBe(from);
+    expect(last.get("to")).toBe(to);
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel 2 queued" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel queued runs" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]?.body).toMatchObject({ filters: { from, to } });
+});
+
+test("a window that ends before it starts says so and asks for nothing (OPS-MP7)", async () => {
+  history.replaceState(
+    null,
+    "",
+    "/t/t1/workspaces/w1/runs?when=between&from=2026-11-11T08:00:00.000Z&to=2026-11-10T08:00:00.000Z",
+  );
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByText("The end is before the start.")).toBeTruthy();
+  expect(lists()).toHaveLength(0);
+});

@@ -243,6 +243,40 @@ test("a page's kind is listed beside it, set in its settings, and a page is reor
   await saved((body) => body.pages.length === 1);
 });
 
+test("removing a page that actions open names them in the question, and keeps the page when it is cancelled (BLD-07)", async () => {
+  stored.pages.push({
+    id: "invoice-detail",
+    title: "Invoice detail",
+    kind: "sheet",
+    record: { table: "invoices" },
+    widgets: [],
+  });
+  const table = stored.pages[0]?.widgets[0] as { on?: unknown };
+  table.on = { rowClick: { steps: [{ do: "open", page: "invoice-detail", record: "event" }] } };
+  await open();
+  const list = within(
+    screen.getByRole("heading", { name: "Pages" }).closest("section") as HTMLElement,
+  );
+  fireEvent.click(list.getByRole("button", { name: /Invoice detail\s*Side sheet/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^More about / }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "Remove page" }));
+  const dialog = within(await screen.findByRole("dialog"));
+  expect(dialog.getByText(/All invoices, on Money/)).toBeTruthy();
+  expect(dialog.getByText(/stops working|will open nothing/)).toBeTruthy();
+  // Each can be gone to first: the question closes, and nothing is removed.
+  fireEvent.click(dialog.getByRole("button", { name: "Show All invoices, on Money" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(stored.pages).toHaveLength(2);
+  // It went to the page the action is on.
+  await waitFor(() =>
+    expect(
+      within(screen.getByRole("heading", { name: "Pages" }).closest("section") as HTMLElement)
+        .getByRole("button", { name: /Money\s*Page/ })
+        .closest("li")?.className,
+    ).toContain("bg-selected"),
+  );
+});
+
 test("a side sheet is previewed with a sample record, and another can be chosen", async () => {
   stored.pages.push({
     id: "invoice-detail",

@@ -278,17 +278,18 @@ test("POLISH-011: a Text widget is added from Add to page and written in Markdow
   await expect(text).not.toContainText(":::");
 });
 
-test("POLISH-002: the labs Goal is added from Add to page, marked with its pack, and set in the same inspector", async () => {
+test("POLISH-002: the Goal is added from Add to page and set in the same inspector", async () => {
   await openBuilder();
   await owner
     .getByRole("button", { name: /Add to page/ })
     .first()
     .click();
   const goal = owner.getByRole("dialog").getByRole("button", { name: /^Goal/ });
-  await expect(goal).toContainText("Labs");
+  // Goal is a core widget (decision D37): it carries no pack mark.
+  await expect(goal).not.toContainText("Labs");
   await goal.click();
   await expect(owner.locator("section[data-selected]")).toHaveAttribute("aria-label", "Goal");
-  await expect(settings()).toContainText("Labs");
+  await expect(settings()).not.toContainText("Labs");
   // The target is the Goal row of the Data tab: a fixed amount, or a column.
   const target = await openSetting(owner, settings(), "Goal");
   await target.getByRole("spinbutton", { name: "Amount" }).fill("20000000");
@@ -296,7 +297,7 @@ test("POLISH-002: the labs Goal is added from Add to page, marked with its pack,
   await expect
     .poll(
       async () =>
-        (await money()).widgets.filter((one: { type: string }) => one.type === "labs/goal").at(-1)
+        (await money()).widgets.filter((one: { type: string }) => one.type === "core/goal").at(-1)
           ?.config?.target,
     )
     .toBe(20000000);

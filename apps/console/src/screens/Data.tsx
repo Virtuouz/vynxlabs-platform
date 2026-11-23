@@ -2428,7 +2428,12 @@ function Definition({
           </div>
         )}
         {table.policy.type !== "open" && tenantBase ? (
-          <SeeItAs root={root} table={table.name} usersPath={`${tenantBase}/end-users?limit=200`} />
+          <SeeItAs
+            root={root}
+            table={table.name}
+            usersPath={`${tenantBase}/end-users`}
+            columns={table.columns}
+          />
         ) : null}
       </section>
 

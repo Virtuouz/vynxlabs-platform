@@ -3,6 +3,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/re
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { EffectiveAccess } from "./screens/Access.tsx";
 import { EndUsers } from "./screens/EndUsers.tsx";
+import { GiveAccess } from "./screens/GiveAccess.tsx";
 import { AttributesDialog, EndUserGroups, Groups } from "./screens/Groups.tsx";
 import { MemberList } from "./screens/Members.tsx";
 import { OfferToAgent } from "./screens/OfferToAgent.tsx";
@@ -413,4 +414,67 @@ test("ACC-27: someone who holds everything is told a permission given by name is
   });
   const checked = screen.getAllByRole("status").find((one) => /Denied/.test(one.textContent ?? ""));
   expect(checked?.textContent).toContain("is one of those. A role that lists it");
+});
+
+const giveRoutes = () =>
+  routes.push((method, url) => {
+    if (method !== "GET") return method === "POST" ? [201, { id: "b1" }] : undefined;
+    if (url.includes("/principals"))
+      return [200, { items: [{ type: "member", id: "m7", label: "bob@acme.test", detail: null }] }];
+    if (url.endsWith("/workspaces")) return [200, { items: [{ id: "w1", name: "Main" }] }];
+    if (url.endsWith("/workspaces/w1/resources"))
+      return [200, { items: [{ id: "res1", kind: "interface", path: "orders-app" }] }];
+    if (url.includes("/roles"))
+      return [
+        200,
+        {
+          items: [
+            { id: "r-admin", name: "workspace_admin", permissions: ["role:read"] },
+            { id: "r-portal", name: "portal_reader", permissions: ["table:read"] },
+          ],
+        },
+      ];
+    return undefined;
+  });
+
+test("ACC-MP5, APP-MP2: access is given on one thing in a workspace", async () => {
+  giveRoutes();
+  show(<GiveAccess base={base} open onClose={() => {}} onGiven={() => {}} />);
+  const who = await screen.findByLabelText("Who");
+  fireEvent.click(who);
+  fireEvent.keyDown(who, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: /bob@acme\.test/ }));
+  // No workspace, nothing to choose one thing from.
+  expect(screen.queryByLabelText("What")).toBeNull();
+  fireEvent.change(screen.getByLabelText("Where"), { target: { value: "w1" } });
+  await screen.findByRole("option", { name: "interface orders-app" });
+  fireEvent.change(screen.getByLabelText("What"), { target: { value: "res1" } });
+  fireEvent.change(screen.getByLabelText("Role"), { target: { value: "r-portal" } });
+  fireEvent.click(screen.getByRole("button", { name: "Give access" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+  expect(calls.find((c) => c.method === "POST")?.body).toEqual({
+    principalType: "member",
+    principalId: "m7",
+    roleId: "r-portal",
+    workspaceId: "w1",
+    resourceId: "res1",
+  });
+});
+
+test("ACC-MP5: anyone without signing in is offered only roles that give what an app uses", async () => {
+  giveRoutes();
+  show(<GiveAccess base={base} open onClose={() => {}} onGiven={() => {}} />);
+  const who = await screen.findByLabelText("Who");
+  fireEvent.click(who);
+  fireEvent.keyDown(who, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: /Anyone, without signing in/ }));
+  const role = (await screen.findByLabelText("Role")) as HTMLSelectElement;
+  expect([...role.options].map((o) => o.text)).toEqual(["Choose…", "portal_reader"]);
+  fireEvent.change(role, { target: { value: "r-portal" } });
+  fireEvent.click(screen.getByRole("button", { name: "Give access" }));
+  await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+  expect(calls.find((c) => c.method === "POST")?.body).toEqual({
+    principalType: "anonymous",
+    roleId: "r-portal",
+  });
 });

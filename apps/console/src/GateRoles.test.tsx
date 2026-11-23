@@ -198,6 +198,42 @@ const FAMILIES: Family[] = [
     draw: () => <AccessList base={base} />,
   },
   {
+    family: "Triggers list: Fire now",
+    control: /Fire now/,
+    leftOut: true,
+    route: "POST /schedule-firings (run:write)",
+    scopes: WORKSPACE,
+    serves: (has) => has("run:write"),
+    draw: () => {
+      history.replaceState(null, "", `${link}/triggers?trigger=reminders%2Fnightly`);
+      return (
+        <TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />
+      );
+    },
+  },
+  {
+    family: "Retired table: Delete for good",
+    control: "Delete for good",
+    route: "POST /table-purges (table:write)",
+    scopes: WORKSPACE,
+    serves: (has) => has("table:write"),
+    draw: () => {
+      history.replaceState(null, "", `${link}/tables/gone`);
+      return <TableView root={root} name="gone" link={link} />;
+    },
+  },
+  {
+    family: "Retired table: Bring back",
+    control: "Bring back",
+    route: "PUT /resources/* (resource:write)",
+    scopes: WORKSPACE,
+    serves: (has) => has("resource:write"),
+    draw: () => {
+      history.replaceState(null, "", `${link}/tables/gone`);
+      return <TableView root={root} name="gone" link={link} />;
+    },
+  },
+  {
     family: "Event page: Publish",
     control: /^Publish/,
     route: "POST /events (event:write at the workspace, not at one event)",
@@ -294,6 +330,41 @@ function serve(role: string, scope: Scope) {
         ],
         counts: { failed: 1 },
         stateCounts: { failed: 1 },
+      });
+    }
+    if (path === `${root}/tables/gone`) {
+      return body({
+        id: "tb2",
+        name: "gone",
+        status: "retired",
+        managedIn: "ui",
+        policy: { type: "open" },
+        rowCount: 3,
+        stored: { schema: "s", table: "t" },
+        columns: [{ name: "name", type: "text", required: true, status: "active" }],
+      });
+    }
+    if (path.startsWith(`${root}/triggers`)) {
+      return body({
+        items: [
+          {
+            path: "reminders/nightly",
+            node: "",
+            type: "schedule",
+            script: "reminders/send",
+            targetKind: "script",
+            event: null,
+            enabled: true,
+            cron: "0 2 * * *",
+            timezone: "UTC",
+            nextFireAt: "2026-11-24T02:00:00Z",
+            lastFiredAt: null,
+            url: null,
+            paused: null,
+            lastRun: null,
+            lastRefusal: null,
+          },
+        ],
       });
     }
     if (path === `${root}/alert-settings`) {

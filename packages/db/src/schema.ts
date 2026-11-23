@@ -845,6 +845,8 @@ export interface DataColumnTable {
   status: CatalogStatus;
   retired_at: Date | null;
   created_at: Generated<Date>;
+  /** Its place among the table's columns, as its definition gave it. Null: made before places were kept. */
+  position: ColumnType<number | null, number | null | undefined, number | null>;
 }
 
 export interface DataSourceBindingTable {

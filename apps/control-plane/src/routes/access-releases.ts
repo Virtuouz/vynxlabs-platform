@@ -229,7 +229,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenant("access:read") },
         schema: {
-          summary: "What releasing a set would change",
+          summary: "What an access change from a set would do",
           description:
             "Found by carrying the access change out and taking it all back, so it is exactly what the " +
             "access change would then do, including why it would be refused.",

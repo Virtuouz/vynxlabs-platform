@@ -14,9 +14,7 @@ test("every event the platform publishes is in the list the editors offer (OPS-M
   const published = new Set<string>();
   for (const file of walk(join(import.meta.dirname))) {
     const text = readFileSync(file, "utf8");
-    for (const found of text.matchAll(/name:\s*"(platform\/[a-z-]+)"/g))
-      published.add(found[1] as string);
-    for (const found of text.matchAll(/"(platform\/(?:run-succeeded|run-failed))"/g))
+    for (const found of text.matchAll(/"(platform\/[a-z]+(?:-[a-z]+)+)"/g))
       published.add(found[1] as string);
   }
   expect([...published].sort()).toEqual(PLATFORM_EVENTS.map((one) => one.name).sort());

@@ -62,6 +62,16 @@ export const PLATFORM_EVENTS: readonly {
     ],
   },
   {
+    name: "platform/run-finished",
+    description: "A script run ended, however it ended, including a run that was canceled.",
+    payload: [
+      { name: "runId", type: "string", description: "The run." },
+      { name: "script", type: "string", description: "The script's path." },
+      { name: "status", type: "string", description: "succeeded, failed or `cancelled`." },
+      { name: "error", type: "string", optional: true, description: "Why it failed." },
+    ],
+  },
+  {
     name: "platform/flow-run-finished",
     description: "A flow run ended, however it ended.",
     payload: [

@@ -163,7 +163,64 @@ export function RepositorySettings({ base }: { base: string }) {
           ) : null}
         </div>
       </form>
+      <ConsoleCodeSwitch base={base} />
     </Page>
+  );
+}
+
+/**
+ * Whether code may be written in the console for this tenant (EXT-10). Off, scripts, connectors
+ * and trigger sources come from the repository only. Whoever may change the tenant switches it.
+ */
+function ConsoleCodeSwitch({ base }: { base: string }) {
+  const tenant = useLoad<{ consoleCode?: boolean; mayRename?: boolean }>(base);
+  if (tenant.data?.consoleCode === undefined) return null;
+  const on = tenant.data.consoleCode;
+  return (
+    // panel-allowed: a setting, drawn as a panel beside the form above.
+    <section
+      aria-label="Code in the console"
+      className="flex max-w-xl flex-col gap-3 rounded-panel border border-line bg-surface p-4"
+    >
+      <h2 className="m-0 text-body font-semibold">Code in the console</h2>
+      <p className="m-0">
+        Writing code in the console is {on ? "on" : "off"}.{" "}
+        <span className="text-ink-muted">
+          {on
+            ? "People with the code permission can write scripts, connectors and trigger sources in a dev workspace."
+            : "Code is deployed from the repository only. What is deployed keeps running."}
+        </span>
+      </p>
+      {tenant.data.mayRename ? (
+        <Button
+          className="w-fit"
+          variant={on ? "danger" : "secondary"}
+          onClick={async () => {
+            if (on) {
+              const sure = await ask.confirm({
+                title: "Turn off code in the console?",
+                text: "People can no longer save code here, in any workspace of this tenant. Drafts are kept, and what is deployed keeps running. It can be turned on again here.",
+                action: "Turn off",
+                danger: true,
+              });
+              if (!sure) return;
+            }
+            await api.patch(base, { consoleCode: !on }).then(() => {
+              notify.success(
+                on
+                  ? "Code can no longer be written in the console."
+                  : "Code can be written in the console again.",
+              );
+              tenant.reload();
+            }, notify.error);
+          }}
+        >
+          {on ? "Turn off code in the console" : "Turn on code in the console"}
+        </Button>
+      ) : (
+        <p className="m-0 text-ink-muted">Changing it needs permission to change the tenant.</p>
+      )}
+    </section>
   );
 }
 

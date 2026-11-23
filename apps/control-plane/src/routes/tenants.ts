@@ -51,6 +51,10 @@ const Tenant = Type.Object({
     description:
       "True when an operator turned managed workers off. Then only an operator can turn them on again.",
   }),
+  consoleCode: Type.Boolean({
+    description:
+      "Whether code may be written in the console (scripts, connectors, trigger sources). Off, code is deployed from the repository only.",
+  }),
   createdAt: Time,
 });
 const toTenant = (row: {
@@ -60,6 +64,7 @@ const toTenant = (row: {
   data_location: DataLocation;
   managed_workers: boolean;
   managed_workers_locked?: boolean;
+  console_code?: boolean;
   created_at: Date;
 }) => ({
   id: row.id,
@@ -68,6 +73,7 @@ const toTenant = (row: {
   dataLocation: row.data_location.kind === "dedicated" ? row.data_location.ref : null,
   managedWorkers: row.managed_workers,
   managedWorkersLocked: row.managed_workers_locked ?? false,
+  consoleCode: row.console_code ?? true,
   createdAt: iso(row.created_at),
 });
 
@@ -132,7 +138,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ...Tenant.properties,
                 workspaceCount: Type.Integer({ minimum: 0 }),
                 mayRename: Type.Boolean({
-                  description: "Whether the caller may change this tenant's name.",
+                  description: "Whether the caller may change this tenant (its name and settings).",
                 }),
               }),
             ),
@@ -151,6 +157,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "data_location",
             "managed_workers",
             "managed_workers_locked",
+            "console_code",
             "created_at",
           ]);
         if (!(await ctx.allowed("tenant:read", {}))) {
@@ -272,6 +279,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "data_location",
               "managed_workers",
               "managed_workers_locked",
+              "console_code",
               "created_at",
             ])
             .executeTakeFirstOrThrow();
@@ -328,7 +336,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             200: Type.Object({
               ...Tenant.properties,
               mayRename: Type.Boolean({
-                description: "Whether the caller may change this tenant's name.",
+                description: "Whether the caller may change this tenant (its name and settings).",
               }),
             }),
           },
@@ -344,6 +352,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "data_location",
             "managed_workers",
             "managed_workers_locked",
+            "console_code",
             "created_at",
           ])
           .where("id", "=", params.t)
@@ -360,20 +369,31 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenantOrInstance("tenant:write") },
         schema: {
-          summary: "Rename a tenant, or say whether the instance runs workers for it",
-          description: "Either field may be sent alone. Audited.",
+          summary:
+            "Rename a tenant, say whether the instance runs workers for it, or whether code may be written in the console",
+          description: "Any field may be sent alone. Audited.",
           tags: ["tenancy"],
           params: TenantParams,
           body: Type.Object({
             name: Type.Optional(Name),
             managedWorkers: Type.Optional(Type.Boolean()),
+            consoleCode: Type.Optional(
+              Type.Boolean({
+                description:
+                  "False turns writing code in the console off for the tenant, true turns it on.",
+              }),
+            ),
           }),
           response: { 200: Tenant },
         },
       },
       async ({ ctx, params, body }) => {
-        if (body.name === undefined && body.managedWorkers === undefined) {
-          throw badRequest("Send a name, or managedWorkers.");
+        if (
+          body.name === undefined &&
+          body.managedWorkers === undefined &&
+          body.consoleCode === undefined
+        ) {
+          throw badRequest("Send a name, managedWorkers, or consoleCode.");
         }
         const operator =
           ctx.principal.type === "member" &&
@@ -396,6 +416,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .updateTable("tenant")
             .set({
               ...(body.name !== undefined ? { name: body.name } : {}),
+              ...(body.consoleCode !== undefined ? { console_code: body.consoleCode } : {}),
               ...(body.managedWorkers !== undefined
                 ? {
                     managed_workers: body.managedWorkers,
@@ -413,6 +434,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "data_location",
               "managed_workers",
               "managed_workers_locked",
+              "console_code",
               "created_at",
             ])
             .executeTakeFirstOrThrow();
@@ -421,7 +443,11 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             targetType: "tenant",
             targetId: params.t,
             tenantId: params.t,
-            details: { name: updated.name, managedWorkers: updated.managed_workers },
+            details: {
+              name: updated.name,
+              managedWorkers: updated.managed_workers,
+              consoleCode: updated.console_code,
+            },
           });
           return updated;
         });

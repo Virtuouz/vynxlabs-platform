@@ -216,7 +216,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         throw new HttpError(
           403,
           "console_code_off",
-          "Writing code in the console is turned off for this tenant. Code is deployed from its repository.",
+          "Writing code in the console is turned off for this tenant. Code is deployed from its repository. Someone who may change the tenant can turn it on under Repository.",
         );
       }
     };

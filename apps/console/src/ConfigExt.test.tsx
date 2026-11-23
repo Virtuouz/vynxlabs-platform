@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Connections, Variables } from "./screens/Execution.tsx";
+import { RepositorySettings } from "./screens/Git.tsx";
 import { SecretPage } from "./screens/ObjectPages.tsx";
 import { show } from "./testing.tsx";
 
@@ -123,4 +124,39 @@ test("CFG-24: a replaced secret shows the stored line again, not a form for anot
   await waitFor(() => expect(calls.some((c) => c.method === "PUT")).toBe(true));
   expect(await screen.findByRole("button", { name: "Replace the value" })).toBeTruthy();
   expect(screen.queryByLabelText("New value")).toBeNull();
+});
+
+const tenantBase = "/tenants/t1";
+function repositoryAnd(tenant: Record<string, unknown>) {
+  routes[`GET ${tenantBase}/git-repository`] = () => [200, { repository: null }];
+  routes[`GET ${tenantBase}`] = () => [200, { id: "t1", name: "Acme", slug: "acme", ...tenant }];
+}
+
+test("EXT-10: a tenant administrator turns writing code in the console off, after being told what that does", async () => {
+  repositoryAnd({ consoleCode: true, mayRename: true });
+  routes[`PATCH ${tenantBase}`] = (body) => [
+    200,
+    { consoleCode: (body as { consoleCode: boolean }).consoleCode },
+  ];
+  show(<RepositorySettings base={tenantBase} />);
+  expect(await screen.findByText(/Writing code in the console is on/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Turn off code in the console" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toMatch(/can no longer save code here/);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Turn off" }));
+  await waitFor(() =>
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ consoleCode: false }),
+  );
+});
+
+test("EXT-10: when it is off the page says so and offers to turn it on; a reader sees the state and no button", async () => {
+  repositoryAnd({ consoleCode: false, mayRename: true });
+  show(<RepositorySettings base={tenantBase} />);
+  expect(await screen.findByText(/Writing code in the console is off/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Turn on code in the console" })).toBeTruthy();
+  cleanup();
+  repositoryAnd({ consoleCode: false, mayRename: false });
+  show(<RepositorySettings base={tenantBase} />);
+  expect(await screen.findByText(/Writing code in the console is off/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /code in the console/ })).toBeNull();
 });

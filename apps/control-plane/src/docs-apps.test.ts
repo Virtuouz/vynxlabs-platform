@@ -83,7 +83,7 @@ const handbook = (): BundleManifest[] => [
   ),
   page(
     "handbook/support/returns",
-    "title: Returns",
+    'title: Returns\nsince: "0.4"',
     "## By post\n\nParcels come back on Tuesdays. An :term[RMA]{id=rma} is needed.\n",
   ),
   page("handbook/ops/closing/checklist", "title: Closing checklist"),
@@ -280,6 +280,9 @@ describe("a folder of pages served as a docs app", () => {
     );
     const returns = (await browser().get(`${HELP}support/returns`)).body;
     expect(returns).toContain(`<a href="${HELP}support/refunds">More about RMA</a>`);
+    // The version that brought what a page describes is said, by the pages that say it (DOC-MP2).
+    expect(returns).toContain('<p class="since">New in version 0.4</p>');
+    expect(refunds).not.toContain("New in version");
     // A term that names a column is the word alone here: what it means is told to those who
     // may read the table, by the console and by the table's own apps.
     expect(refunds).toContain("<p>The status column says where it is.</p>");

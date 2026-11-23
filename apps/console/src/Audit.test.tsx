@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { AuditTable, targetName, verbOf } from "./screens/Audit.tsx";
+import { AuditTable, auditAreas, targetName, verbOf } from "./screens/Audit.tsx";
 import { show } from "./testing.tsx";
 
 const entry = (id: string, action: string, over: object = {}) => ({
@@ -190,3 +192,59 @@ test("the time it covers is asked of the server", async () => {
   fireEvent.change(screen.getByLabelText("Since"), { target: { value: "24h" } });
   await waitFor(() => expect(asked.at(-1)).toMatch(/[?&]from=\d{4}-/));
 });
+
+test("the instance's log offers the instance's areas, and every action's first word is in one list (INS-21)", async () => {
+  show(<AuditTable title="Instance log" description="" path="/audit" />);
+  await screen.findAllByText("secret.set");
+  const options = screen.getAllByRole("option").map((one) => one.getAttribute("value"));
+  for (const own of ["instance", "identity_provider", "database_location", "tenant_import"]) {
+    expect(options, own).toContain(own);
+  }
+  // A tenant's secrets and runs are never in the instance's log.
+  expect(options).not.toContain("secret");
+  expect(options).not.toContain("run");
+  cleanup();
+  show(<AuditTable title="Audit log" description="" path="/tenants/t1/audit" />);
+  await screen.findAllByText("secret.set");
+  const tenant = screen.getAllByRole("option").map((one) => one.getAttribute("value"));
+  for (const own of ["promotion", "dashboard", "git_repository", "worker_pool", "trigger"]) {
+    expect(tenant, own).toContain(own);
+  }
+  expect(tenant).not.toContain("database_location");
+
+  // Every action the control plane writes starts with a word one of the lists has.
+  const known = new Set([...auditAreas(false), ...auditAreas(true)]);
+  const missing = new Set<string>();
+  for (const file of sourcesOf(join(__dirname, "../../control-plane/src"))) {
+    for (const found of readFileSync(file, "utf8").matchAll(
+      /\baction: ["`]([a-z_]+)\.[a-z_.${}]+["`]/g,
+    )) {
+      const first = found[1] as string;
+      if (!known.has(first) && !NOT_AUDIT.has(first)) missing.add(first);
+    }
+  }
+  expect([...missing]).toEqual([]);
+});
+
+/** Words `action:` is followed by in the control plane's code that are not entries of the log. */
+const NOT_AUDIT = new Set([
+  "body",
+  "request",
+  "older",
+  "updated",
+  "taken",
+  "old",
+  "input",
+  "operation",
+  "sql",
+]);
+
+function sourcesOf(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((one) =>
+    one.isDirectory()
+      ? sourcesOf(join(dir, one.name))
+      : one.name.endsWith(".ts") && !one.name.endsWith(".test.ts") && !one.name.endsWith(".d.ts")
+        ? [join(dir, one.name)]
+        : [],
+  );
+}

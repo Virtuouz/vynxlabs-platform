@@ -2,6 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId, sql } from "@volvel/db";
 import { PATH_PATTERN } from "@volvel/manifest";
 import { Type } from "typebox";
+import { refuseDirectProductionWrite } from "../kernel/authoring.js";
 import { check } from "../kernel/authorize.js";
 import { badRequest, conflict, notFound } from "../kernel/errors.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
@@ -614,6 +615,12 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
+        await refuseDirectProductionWrite(db, workspace, () =>
+          ctx.allowed("promotion:write", {
+            tenantId: workspace.tenantId,
+            workspaceId: workspace.id,
+          }),
+        );
         const result = await ctx.mutate((trx, audit) =>
           putResource(kernel, trx, audit, workspace, { ...body, path }),
         );
@@ -736,6 +743,12 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }, reply) => {
         const workspace = ctx.workspace as WorkspaceRef;
         const path = resourcePath(params);
+        await refuseDirectProductionWrite(db, workspace, () =>
+          ctx.allowed("promotion:write", {
+            tenantId: workspace.tenantId,
+            workspaceId: workspace.id,
+          }),
+        );
         await ctx.mutate((trx, audit) => deleteResource(trx, audit, workspace, path, kernel.hooks));
         return reply.code(204).send(null);
       },

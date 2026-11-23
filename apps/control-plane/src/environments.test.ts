@@ -1073,3 +1073,45 @@ describe("deleting a production workspace", () => {
     expect(entry.details).toMatchObject({ slug: "retired-prod", type: "production" });
   });
 });
+
+describe("a direct write to a production workspace's resources", () => {
+  const resourceBody = {
+    kind: "variable",
+    schemaVersion: 1,
+    ownership: "ui",
+    body: { default: "1" },
+  };
+
+  test("is refused for a member who may not promote, and allowed for one who may (REL-01)", async () => {
+    const roles = Object.fromEntries(
+      (
+        await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
+      ).map((role) => [role.name, role.id]),
+    );
+    const dev1 = await alice.post(`/tenants/${tenant}/members`, {
+      email: "rel01@acme.example",
+      name: "Rel",
+      password: PASSWORD,
+    });
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: prod,
+      principalType: "member",
+      principalId: dev1.body.id,
+      roleId: roles.developer,
+    });
+    const developer = await t.signIn("rel01@acme.example", PASSWORD);
+    const url = `${ws(prod)}/resources/direct-write`;
+
+    // The developer may write resources in production by role, yet production is not theirs.
+    const refused = await developer.put(url, resourceBody);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("production_workspace");
+    expect((await alice.get(url)).status).toBe(404);
+
+    // Someone who may promote there may still write, and delete, directly.
+    expect((await alice.put(url, resourceBody)).status).toBe(201);
+    expect((await developer.delete(url)).status).toBe(409);
+    expect((await alice.get(url)).status).toBe(200);
+    expect((await alice.delete(url)).status).toBe(204);
+  });
+});

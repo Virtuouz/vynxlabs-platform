@@ -242,6 +242,41 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "The connection string must look like postgres://user:password@host/database.",
           );
         }
+        // The platform's own database is not a place for tables of their own, and one database
+        // under two names would give its tenants two shares of one set of connections.
+        const identity = await kernel.data.identify(connectionString).catch(() => null);
+        if (identity !== null) {
+          const own = await sql<{ id: string }>`
+            select (select system_identifier::text from pg_control_system()) || '/' || current_database() as id
+          `.execute(kernel.db);
+          if (own.rows[0]?.id === identity) {
+            throw badRequest(
+              "That is this instance's own database, the platform's own database. Register a different database for tenants' tables.",
+            );
+          }
+          const others = await db
+            .selectFrom("database_location")
+            .select(["name", "connection_encrypted"])
+            .where("name", "!=", params.name)
+            .execute();
+          for (const other of others) {
+            const reached = await Promise.resolve()
+              .then(() =>
+                kernel.data.identify(
+                  kernel.vault.openForInstance(
+                    `database-location:${other.name}`,
+                    other.connection_encrypted,
+                  ),
+                ),
+              )
+              .catch(() => null);
+            if (reached === identity) {
+              throw badRequest(
+                `That is the database "${other.name}" already reaches. Change "${other.name}" instead, or use another database.`,
+              );
+            }
+          }
+        }
         // Prove it works, and prepare it, before any tenant is pointed at it.
         const store = await kernel.data.connect(connectionString).catch((error: Error) => {
           throw badRequest(`That database could not be prepared. ${error.message}`);

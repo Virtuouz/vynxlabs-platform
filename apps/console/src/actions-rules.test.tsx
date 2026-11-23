@@ -153,10 +153,10 @@ test("the trigger line, then steps on a rail, built as board 4 draws them", asyn
   fireEvent.click(screen.getByRole("button", { name: "Set another field" }));
   fireEvent.click(await screen.findByRole("menuitem", { name: "Paid on" }));
 
-  add("Run a workflow");
-  // A workflow is one chip in the card; it opens its small editor.
+  add("Run a flow");
+  // A flow is one chip in the card; it opens its small editor.
   fireEvent.click(screen.getByRole("button", { name: /^Change step 3/ }));
-  fireEvent.change(await screen.findByLabelText("Workflow"), { target: { value: "send-receipt" } });
+  fireEvent.change(await screen.findByLabelText("Flow"), { target: { value: "send-receipt" } });
   fireEvent.change(screen.getByLabelText("What it is given"), { target: { value: "this" } });
   expect(screen.getByText("Gets this invoice as its input")).toBeTruthy();
   fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });

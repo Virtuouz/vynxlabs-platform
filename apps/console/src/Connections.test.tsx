@@ -140,7 +140,7 @@ test("the list says what each connection's last Test found, and what needs a mem
   expect(screen.getByText("Reached")).toBeTruthy();
   expect(screen.getByText(/^87 ms · tested/)).toBeTruthy();
   expect(screen.getByText("Needs reconnecting")).toBeTruthy();
-  expect(screen.getByText("Not bound")).toBeTruthy();
+  expect(screen.getByText("Not set up here")).toBeTruthy();
   // Reconnect is the OAuth connection's first action, and goes to its provider.
   fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
   await waitFor(() =>
@@ -186,7 +186,7 @@ test("a new connection is declared in a draft, bound, and tested; a refusal says
     credential: "wrong",
   });
   expect(
-    await within(sheet).findByText("HTTP 401: https://crm.example answered 401."),
+    await within(sheet).findByText("Failed (HTTP 401): https://crm.example answered 401."),
   ).toBeTruthy();
   expect(calls.find((call) => call.url.endsWith("/connection-tests"))?.body).toEqual({
     path: "crm",

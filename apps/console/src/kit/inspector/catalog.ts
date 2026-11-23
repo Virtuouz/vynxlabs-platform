@@ -117,7 +117,7 @@ export function useCatalog(root: string): {
  */
 export function useActionLists(root: string): {
   flows: FlowChoice[];
-  /** The workflows with an approval step, which an Approvals widget may ask of. */
+  /** The flows with an approval step, which an Approvals widget may ask of. */
   approvals: { path: string; title: string | null }[];
   /** Every flow, with whether it has an approval step: for checking what an Approvals widget names. */
   everyFlow: { path: string; title: string | null; asks: boolean }[];

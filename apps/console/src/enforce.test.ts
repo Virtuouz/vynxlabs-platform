@@ -133,7 +133,7 @@ test("no type size, corner, shadow, layer or spacing step is written by hand", (
  */
 test("no Badge says a state", () => {
   const states =
-    /<Badge\b[^>]*>\s*(Active|Running|Failed|Succeeded|Paused|Revoked|Expired|Enabled|Disabled|Verified|Not verified|Draft|Deployed|On|Off|Ended|Waiting|Queued|Canceled|Reachable|Not reachable)\s*</;
+    /<Badge\b[^>]*>\s*(Active|Running|Failed|Succeeded|Paused|Revoked|Expired|Enabled|Disabled|Verified|Not verified|Draft|Deployed|On|Off|Ended|Waiting|Queued|Canceled|Reached|Not tested)\s*</;
   const found: string[] = [];
   for (const path of [
     ...files(join(here, "screens")),
@@ -696,6 +696,40 @@ test("no string a person reads is in British spelling", () => {
           }
         }
       });
+
+ * The word is "flow", never "workflow", in anything a person sees (vocabulary, VOC-01..16).
+ * Code names and stored values stay: the lucide `Workflow` icon is not text, and a search
+ * alias that lets an old habit find a card says so with `search-alias:` on its line.
+ */
+test("no string of the console, screens, widgets or ui says workflow", () => {
+  const root = join(here, "..", "..", "..");
+  const all = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory())
+        return entry.name === "node_modules" || entry.name === "dist" ? [] : all(path);
+      return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
+    });
+  const found: string[] = [];
+  for (const dir of [
+    join(here),
+    join(root, "packages", "screens", "src"),
+    join(root, "packages", "widgets-core", "src"),
+    join(root, "packages", "ui", "src"),
+  ]) {
+    for (const path of all(dir)) {
+      if (path.endsWith("enforce.test.ts")) continue;
+      readFileSync(path, "utf8")
+        .split("\n")
+        .forEach((line, index) => {
+          if (line.includes("search-alias:")) return;
+          const text = line.replace(
+            /<Workflow\b|\bicon: Workflow\b|\bWorkflow(?=[,}\s]*(,|\}|$|\s+from))|\bflow: Workflow\b|\? Workflow\b/g,
+            "",
+          );
+          if (/workflow/i.test(text))
+            found.push(`${path.slice(root.length + 1)}:${index + 1} says workflow`);
+        });
     }
   }
   expect(found).toEqual([]);

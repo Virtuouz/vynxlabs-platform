@@ -243,9 +243,9 @@ export async function withData<T>(
         throw translate(error, timeoutMs);
       }
     });
-  // On the shared database each tenant has a share of the connections, so one tenant's
-  // slow requests leave the others room.
-  return store.shared ? kernel.data.gate.run(tenantId, work) : work();
+  // Each tenant has a share of the connections, on the platform database and on a dedicated one
+  // (several tenants may name one location), so one tenant's slow requests leave the others room.
+  return kernel.data.gate.run(tenantId, work);
 }
 
 /** Database refusals that are the caller's doing, in words they can act on. */

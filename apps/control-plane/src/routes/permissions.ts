@@ -766,14 +766,17 @@ export function permissionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           grant && ctx.principal.type === "member" && grant.member_id === ctx.principal.id;
         if (!own) await ctx.authorize("access_grant:write", { tenantId: params.t });
         if (!grant) throw notFound("The access grant");
+        // Ended already: nothing changes, so nothing is written and nothing is audited.
+        if (grant.revoked_at) {
+          ctx.mutated = true;
+          return reply.code(204).send(null);
+        }
         await ctx.mutate(async (trx, audit) => {
-          if (!grant.revoked_at) {
-            await trx
-              .updateTable("access_grant")
-              .set({ revoked_at: new Date(), revoked_by: ctx.principal.id })
-              .where("id", "=", grant.id)
-              .execute();
-          }
+          await trx
+            .updateTable("access_grant")
+            .set({ revoked_at: new Date(), revoked_by: ctx.principal.id })
+            .where("id", "=", grant.id)
+            .execute();
           await audit({
             action: "access_grant.revoked",
             targetType: "access_grant",

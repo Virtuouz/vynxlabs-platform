@@ -322,14 +322,33 @@ test("Versions is the one list: a repeated version rolls back from its row, and 
     />,
   );
   await screen.findByText("Versions of Clinics");
-  // Two history rows for version 1 and one bundle never run: three Activates, none on the running one.
-  const buttons = await screen.findAllByRole("button", { name: "Activate this version" });
-  expect(buttons).toHaveLength(3);
+  // Two history rows for version 1 and one bundle never run: three buttons, none on the running one:
+  // version 1 (earlier than the running 2) rolls back, version 3 (never run) deploys.
+  const buttons = await screen.findAllByRole("button", {
+    name: /^(Roll back to|Deploy) this version$/,
+  });
+  expect(buttons.map((one) => one.textContent)).toEqual([
+    "Roll back to this version",
+    "Roll back to this version",
+    "Deploy this version",
+  ]);
   expect(screen.getByText("Not yet run here")).toBeTruthy();
   expect(screen.queryByText("Bundles and rollback")).toBeNull();
   fireEvent.click(buttons[0] as HTMLElement);
-  expect(await answer("Activate in production")).toContain("Clinics stops running");
+  expect(await answer("Roll back in production")).toContain("Clinics stops running");
   await waitFor(() =>
     expect(calls.find((call) => call.method === "POST")?.body).toEqual({ bundleId: "b1" }),
   );
+});
+
+test("VOC-41: the release screen is Deploy in a dev workspace and Versions in production", async () => {
+  const { sectionLabel, WORKSPACE_SECTIONS } = await import("./nav.ts");
+  const section = WORKSPACE_SECTIONS.operate.find((one) => one.slug === "release");
+  if (!section) throw new Error("the release section is gone");
+  expect(sectionLabel(section, "dev")).toBe("Deploy");
+  expect(sectionLabel(section, undefined)).toBe("Deploy");
+  expect(sectionLabel(section, "production")).toBe("Versions");
+  const runs = WORKSPACE_SECTIONS.operate.find((one) => one.slug === "runs");
+  if (!runs) throw new Error("the runs section is gone");
+  expect(sectionLabel(runs, "production")).toBe("Runs");
 });

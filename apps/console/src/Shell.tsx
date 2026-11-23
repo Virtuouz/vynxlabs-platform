@@ -50,6 +50,7 @@ import {
   INSTANCE_SECTIONS,
   lastWorkspace,
   rememberWorkspace,
+  sectionLabel,
   TENANT_GROUPS,
   TENANT_SECTIONS,
   type Where,
@@ -152,6 +153,7 @@ function panelFor(
   counts: { workspace?: WorkspaceCounts | undefined; tenant?: TenantCounts | undefined },
   /** An area of the rail that was pressed: its sections are shown, wherever the person is. */
   reveal?: { area: Area; workspaceId: string },
+  workspaceType?: string,
 ): { title: string; groups: { label?: string; entries: Entry[] }[] } {
   const { tenantId } = where;
   const workspaceId = reveal?.workspaceId ?? where.workspaceId;
@@ -176,7 +178,7 @@ function panelFor(
         {
           entries: WORKSPACE_SECTIONS[area].map((section) => ({
             key: section.slug,
-            label: section.label,
+            label: sectionLabel(section, workspaceType),
             icon: section.icon,
             to: `/t/${tenantId}/workspaces/${workspaceId}/${section.slug}`,
             current: where.workspaceId === workspaceId && where.section === section.slug,
@@ -427,7 +429,7 @@ function ReleasePath({ counts }: { counts: WorkspaceCounts }) {
     });
   return (
     <div className="flex flex-col gap-2 border-line border-t px-3 pt-3 pb-4">
-      <p className="m-0 text-label text-ink-subtle uppercase">Release path</p>
+      <p className="m-0 text-label text-ink-subtle uppercase">Deploy path</p>
       <ol className="relative m-0 flex list-none flex-col gap-2 p-0 pl-4">
         <span
           aria-hidden="true"
@@ -780,6 +782,7 @@ export function Shell({
     me,
     { workspace: wsCounts.data, tenant: tenantCounts.data },
     reveal,
+    workspaces.data?.items.find((one) => one.id === (reveal?.workspaceId ?? workspaceId))?.type,
   );
   // The overview is one screen, and an editor wants the width: neither has a panel.
   const hasPanel = where.area !== "overview" && !where.editor;
@@ -814,10 +817,12 @@ export function Shell({
   });
 
   const here = (() => {
-    if (workspaceId)
-      return Object.values(WORKSPACE_SECTIONS)
+    if (workspaceId) {
+      const section = Object.values(WORKSPACE_SECTIONS)
         .flat()
-        .find((section) => section.slug === where.section)?.label;
+        .find((one) => one.slug === where.section);
+      return section ? sectionLabel(section, workspace?.type) : undefined;
+    }
     if (tenantId) return TENANT_SECTIONS.find((section) => section.slug === where.section)?.label;
     if (where.area === "instance")
       return INSTANCE_SECTIONS.find((section) => section.to === where.section)?.label;
@@ -881,7 +886,7 @@ export function Shell({
       for (const section of Object.values(WORKSPACE_SECTIONS).flat())
         list.push({
           key: `ws-${section.slug}`,
-          label: section.label,
+          label: sectionLabel(section, workspace?.type),
           where: workspace?.name ?? "This workspace",
           to: `/t/${tenantId}/workspaces/${workspaceId}/${section.slug}`,
           icon: section.icon,
@@ -938,7 +943,16 @@ export function Shell({
       icon: KeyRound,
     });
     return list;
-  }, [tenantId, workspaceId, workspace?.name, workspaces.data, tenant?.name, me.tenants, operator]);
+  }, [
+    tenantId,
+    workspaceId,
+    workspace?.name,
+    workspace?.type,
+    workspaces.data,
+    tenant?.name,
+    me.tenants,
+    operator,
+  ]);
 
   const rail = (onGo?: () => void, inDrawer = false) => (
     <>

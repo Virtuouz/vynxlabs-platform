@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { InterfaceBuilder } from "./screens/builder/AppBuilder.tsx";
 import { draftChangeCount } from "./screens/builder/changes.ts";
 import { reordered, stepped } from "./screens/builder/outline.ts";
+import { layoutByHandText } from "./screens/builder/PhoneFrame.tsx";
 import { show } from "./testing.tsx";
 
 // Phase 28, A3: the builder's frame (board 1): one header row, the pane's rows, the canvas frame.
@@ -361,6 +362,10 @@ test("the phone preview is drawn in a device, says what was changed by hand, and
   // The one placed by hand, and the one told to hide on narrow screens.
   expect(banner.textContent).toContain("2 widgets changed by hand");
   expect(await screen.findByText("By clinic is hidden on phones")).toBeTruthy();
+  // The question asked before a hand-made place names controls that are on the screen (P31).
+  const button = within(banner).getByRole("button").textContent ?? "";
+  expect(layoutByHandText("phone")).toContain(button);
+  expect(layoutByHandText("phone")).not.toContain("Go back to automatic");
 });
 
 test("Ready to publish: checks, what changes, Try as, and a blocking problem", async () => {

@@ -28,6 +28,7 @@ import { NewPageDialog } from "./NewPageDialog.tsx";
 import { runsActions } from "./outline.ts";
 import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
+import { layoutByHandText } from "./PhoneFrame.tsx";
 import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, inMenu, movedPage } from "./pageKinds.ts";
 import { openerPlaces, problemWords } from "./publishCheck.ts";
@@ -290,7 +291,7 @@ export function AppBuilder({
     if (agreed.current.has(device)) return true;
     const sure = await ask.confirm({
       title: `Change the ${device} layout by hand?`,
-      text: `The ${device} layout is made from the desktop one. Moving a widget here gives it a place of its own on the ${device}, and it stops following the desktop. "Go back to automatic" in its Layout undoes that.`,
+      text: layoutByHandText(device),
       action: `Change the ${device} layout`,
     });
     if (sure) agreed.current.add(device);

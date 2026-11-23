@@ -30,6 +30,7 @@ import { downstreamOf, keptNodes, kickFlow, startFlowRun } from "../kernel/flows
 import { draftManifests, markAhead } from "../kernel/git.js";
 import { access, findWorkspace, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { requireStanding } from "../kernel/pages/standing.js";
 import { dashboardProblems, interfaceProblems } from "../kernel/pages.js";
 import { AnyObject, Id, iso, NullableId, Time, WorkspaceParams } from "./shared.js";
 
@@ -596,6 +597,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (!theirs || there === false) throw forbidden("resource:write");
         }
         if (isCodeKind(body.kind)) await mayWriteCode(ctx, workspace);
+        await requireStanding(kernel, ctx, workspace, [
+          { kind: body.kind, path, body: body.body, deleted: body.deleted },
+        ]);
         const saved = await ctx.mutate((trx, audit) =>
           saveDraft(kernel, trx, audit, workspace, ctx.principal, {
             kind: body.kind,
@@ -714,6 +718,17 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
           if (isCodeKind(kind)) await mayWriteCode(ctx, workspace);
         }
+        await requireStanding(
+          kernel,
+          ctx,
+          workspace,
+          body.changes.map((change) => ({
+            kind: change.kind ?? "doc",
+            path: change.path,
+            body: change.body,
+            deleted: change.deleted,
+          })),
+        );
         const paths = await ctx.mutate(async (trx, audit) => {
           const out: string[] = [];
           for (const change of body.changes) {
@@ -899,6 +914,9 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (!full && !(await screenAt(workspace, kept.path, held)))
           throw forbidden("resource:write");
         if (isCodeKind(kept.kind)) await mayWriteCode(ctx, workspace);
+        await requireStanding(kernel, ctx, workspace, [
+          { kind: kept.kind, path: kept.path, body: kept.body, deleted: kept.deleted },
+        ]);
         const saved = await ctx.mutate((trx, audit) =>
           saveDraft(kernel, trx, audit, workspace, ctx.principal, {
             path: kept.path,
@@ -1046,12 +1064,14 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         let pending = db
           .selectFrom("resource_draft")
-          .select("kind")
+          .select(["kind", "path", "body", "deleted"])
           .where("workspace_id", "=", workspace.id);
         if (body.paths) pending = pending.where("path", "in", body.paths);
-        if ((await pending.execute()).some((draft) => isCodeKind(draft.kind))) {
+        const drafts = await pending.execute();
+        if (drafts.some((draft) => isCodeKind(draft.kind))) {
           await mayWriteCode(ctx, workspace);
         }
+        await requireStanding(kernel, ctx, workspace, drafts, { deploying: true });
         const result = await ctx.mutate((trx, audit) =>
           deployDrafts(kernel, trx, audit, workspace, ctx.principal, {
             paths: body.paths,

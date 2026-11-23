@@ -2535,7 +2535,7 @@ function ChangeSource({
         }}
         config={{
           action: `Change ${row.path}`,
-          description: `How ${row.path} is reached. Leave the password empty to keep the stored one. Scripts that use it read the new details at once.`,
+          description: `How ${row.path} is reached. Leave the password empty to keep the stored one, unless the host, port or user changes or encryption is turned off: then type it again. Scripts that use it read the new details at once.`,
           fields: SOURCE_FIELDS,
           done: () => `${row.path} was changed.`,
           submit: (values) =>
@@ -2649,7 +2649,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
       create={{
         action: "Connect database",
         description:
-          "Connecting a source that is already connected replaces its details. Leave the password empty to keep the stored one. The platform never changes the database's structure.",
+          "Connecting a source that is already connected replaces its details. Leave the password empty to keep the stored one, unless the host, port or user changes or encryption is turned off: then type it again. The platform never changes the database's structure.",
         fields: [
           {
             name: "path",

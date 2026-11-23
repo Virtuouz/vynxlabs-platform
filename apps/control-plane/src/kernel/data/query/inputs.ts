@@ -7,6 +7,7 @@ import {
   type LastValue,
   type PageFilter,
   type PageWidget,
+  type VisualBucket,
   type VisualCondition,
   type VisualQuery,
   widgetRegistry,
@@ -171,12 +172,28 @@ export function groupRowsOf(
 const NOTHING: VisualCondition = { column: "id", op: "is_null" };
 
 /** The first day after the period that begins on `day`. */
-function periodEnd(day: string, bucket: string): string {
-  if (bucket === "day") return dayAfter(day);
+export function periodEnd(day: string, bucket: VisualBucket): string {
   const next = new Date(`${day}T00:00:00Z`);
-  if (bucket === "week") next.setUTCDate(next.getUTCDate() + 7);
-  else if (bucket === "month") next.setUTCMonth(next.getUTCMonth() + 1);
-  else next.setUTCFullYear(next.getUTCFullYear() + 1);
+  switch (bucket) {
+    case "day":
+      return dayAfter(day);
+    case "week":
+      next.setUTCDate(next.getUTCDate() + 7);
+      break;
+    case "month":
+      next.setUTCMonth(next.getUTCMonth() + 1);
+      break;
+    case "quarter":
+      next.setUTCMonth(next.getUTCMonth() + 3);
+      break;
+    case "year":
+      next.setUTCFullYear(next.getUTCFullYear() + 1);
+      break;
+    default: {
+      const unreachable: never = bucket;
+      throw new Error(`Unknown bucket ${String(unreachable)}`);
+    }
+  }
   return next.toISOString().slice(0, 10);
 }
 

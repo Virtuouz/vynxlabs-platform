@@ -790,6 +790,7 @@ function WorkspaceDetail({
       ) : tab === "secrets" ? (
         <ListScreen<{ name: string; updatedAt: string; updatedBy?: string | null }>
           title="Secrets"
+          setupField="name"
           description="Values are encrypted with this tenant's own key. A value can be replaced but never read back here."
           path={`${root}/secrets`}
           rowKey={(row) => row.name}
@@ -810,6 +811,7 @@ function WorkspaceDetail({
                 <UsedBy
                   uses={secretUses(row.name)}
                   failed={secretUses.failed}
+                  loaded={secretUses.loaded}
                   link={`/t/${tenantId}/workspaces/${workspaceId}`}
                   all={`/t/${tenantId}/workspaces/${workspaceId}/secrets/${row.name}?tab=used-by`}
                 />
@@ -859,6 +861,7 @@ function WorkspaceDetail({
               label="Delete"
               confirm={`Delete the secret ${row.name}? Anything that uses it will fail.`}
               affected={usersOf(secretUses(row.name))}
+              usesUnread={secretUses.failed || !secretUses.loaded}
               run={() => api.delete(`${root}/secrets/${row.name}`)}
               onDone={reload}
             />

@@ -109,7 +109,7 @@ export const ERROR_CODES = {
   egress_refused: code(
     400,
     "That address may not be reached",
-    "Scripts and connections may not reach private networks unless the operator allows them in `EGRESS_ALLOW`.",
+    "The control plane does not reach private networks for a tenant (an OAuth token address, an identity provider, a Git remote, a data source) unless the operator allows them in `EGRESS_ALLOW`.",
   ),
 
   // Deploying, promoting and drafts.
@@ -152,7 +152,7 @@ export const ERROR_CODES = {
   bindings_missing: code(
     409,
     "The workspace is missing something the bundle needs",
-    "The response lists each connection, secret or variable. Set each one in the workspace, then deploy again.",
+    "The response lists each connection, secret or variable. Set each one in the workspace, then deploy or promote again. A deploy to a dev workspace goes ahead with a warning instead.",
   ),
   bindings_invalid: code(
     409,

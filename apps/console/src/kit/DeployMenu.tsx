@@ -2,8 +2,9 @@ import { Menu } from "@volvel/ui";
 import { ChevronDown, Rocket } from "lucide-react";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { notify } from "../ask.tsx";
+import { ask, notify } from "../ask.tsx";
 import { navigate, useUrlParam } from "../router.tsx";
+import { RefusalList } from "./RefusalList.tsx";
 
 interface WorkspaceRef {
   id: string;
@@ -59,12 +60,20 @@ export function DeployMenu({
         refusal: { detail: string; errors: { path: string; message: string }[] } | null;
       }>(`${root}/changes/preview?paths=${encodeURIComponent(path)}`);
       if (!preview.possible) {
-        const why = preview.refusal?.errors.map((one) => `${one.path}: ${one.message}`).join("; ");
-        notify.error(
-          new Error(
-            `${preview.refusal?.detail ?? "It cannot be deployed."}${why ? ` ${why}` : ""}`,
+        // What it names is a list, each with where to set it up: one line of toast cannot hold it.
+        const review = await ask.confirm({
+          title: `${path} cannot be deployed alone`,
+          text: (
+            <>
+              <p className="m-0">{preview.refusal?.detail ?? "It cannot be deployed."}</p>
+              <RefusalList errors={preview.refusal?.errors ?? []} />
+            </>
           ),
-        );
+          action: "Review all drafts",
+          cancel: "Close",
+        });
+        if (review)
+          navigate(`${link}/release${fromRun ? `?fromRun=${encodeURIComponent(fromRun)}` : ""}`);
         return;
       }
       const done = await api.post<{ bundleVersion: number }>(`${root}/changes/deploy`, {

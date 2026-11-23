@@ -205,7 +205,7 @@ export const scriptKind: KindDefinition = {
       uses: {
         type: "object",
         description:
-          "Everything the script may read at run time. Each must be bound before a deploy.",
+          "Everything the script may read at run time. Each must be bound before a deploy to production or a promotion. A deploy to a dev workspace goes ahead with a warning.",
         properties: {
           connections: { type: "array", items: path, uniqueItems: true },
           connectionGroups: {

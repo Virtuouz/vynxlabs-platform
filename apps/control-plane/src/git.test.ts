@@ -251,6 +251,20 @@ describe("connecting a repository", () => {
     expect(again.status).toBe(200);
   });
 
+  test("a stored token does not follow a changed address to another host (D10)", async () => {
+    const elsewhere = repoUrl.replace("127.0.0.1", "localhost");
+    expect(elsewhere).not.toBe(repoUrl);
+    const refused = await alice.put(`/tenants/${tenant}/git-repository`, { url: elsewhere });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(400);
+    expect(refused.body.detail).toMatch(/Enter the access token again/);
+    expect((await alice.get(`/tenants/${tenant}/git-repository`)).body.repository.url).toBe(
+      repoUrl,
+    );
+    // The same host, another path: the token is still for it.
+    const samePlace = await alice.put(`/tenants/${tenant}/git-repository`, { url: repoUrl });
+    expect(samePlace.status).toBe(200);
+  });
+
   test("a dev workspace follows a branch of its own, never the default one", async () => {
     expect((await alice.put(`${ws()}/git`, { branch: "main" })).status).toBe(409);
     expect((await alice.put(`${ws()}/git`, { branch: "bad..name" })).status).toBe(400);

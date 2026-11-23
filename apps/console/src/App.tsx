@@ -64,6 +64,26 @@ export function useRememberPlace(signedIn: boolean, path: string) {
 }
 
 /**
+ * What an OAuth provider's answer says, when the browser comes back to a page that is not the
+ * Connections list (which reads it itself): a connection that was removed on the way, a member
+ * who was signed out, a provider's refusal. Said once, then taken out of the address.
+ */
+export function useOAuthReturn(signedIn: boolean, path: string) {
+  useEffect(() => {
+    if (!signedIn || path.endsWith("/connections")) return;
+    const query = new URLSearchParams(location.search);
+    const error = query.get("oauth_error");
+    const connected = query.get("oauth") === "connected" ? query.get("connection") : null;
+    if (error === null && connected === null) return;
+    if (error !== null) notify.error(new Error(error));
+    else notify.success(`${connected} is connected.`);
+    for (const name of ["oauth", "oauth_error", "connection"]) query.delete(name);
+    const rest = query.toString();
+    navigate(`${location.pathname}${rest ? `?${rest}` : ""}`, { replace: true });
+  }, [signedIn, path]);
+}
+
+/**
  * Opening the console at its root goes back to where the member was last: the
  * workspace, or the tenant, kept by `useRememberPlace`. Only on opening, so the
  * tenant list stays one click away afterward.
@@ -99,6 +119,7 @@ export function App() {
   const path = usePath();
   const signedIn = me.data !== undefined && !me.error;
   useRememberPlace(signedIn, path);
+  useOAuthReturn(signedIn, path);
   useReopenLastPlace(signedIn);
   // A member's settings follow them from browser to browser.
   useEffect(() => {

@@ -12,6 +12,7 @@ import type { Db } from "./audit.js";
 /** Something a resource can depend on, by kind and name. */
 export type TargetKind =
   | "connection"
+  | "connection_group"
   | "secret"
   | "variable"
   | "table"
@@ -31,7 +32,13 @@ export interface Reference {
 }
 
 interface ScriptLike {
-  uses?: { connections?: string[]; secrets?: string[]; variables?: string[]; tables?: string[] };
+  uses?: {
+    connections?: string[];
+    connectionGroups?: string[];
+    secrets?: string[];
+    variables?: string[];
+    tables?: string[];
+  };
   onFailure?: { notify?: string; script?: string };
 }
 
@@ -89,6 +96,8 @@ export async function workspaceReferences(
     ) {
       const script = body as ScriptLike;
       for (const name of script.uses?.connections ?? []) add("connection", name, by, "calls it");
+      for (const name of script.uses?.connectionGroups ?? [])
+        add("connection_group", name, by, "picks a member of it");
       for (const name of script.uses?.secrets ?? []) add("secret", name, by, "reads it");
       for (const name of script.uses?.variables ?? []) add("variable", name, by, "reads it");
       for (const name of script.uses?.tables ?? []) add("table", name, by, "reads and writes it");
@@ -153,5 +162,25 @@ export async function workspaceReferences(
       for (const table of app.reads ?? []) add("table", table, by, "reads it");
     }
   }
+  // The workspace's own default alert uses what it names, and is no resource.
+  const workspace = await db
+    .selectFrom("workspace")
+    .select("failure_alert")
+    .where("id", "=", workspaceId)
+    .executeTakeFirst();
+  const settings = { kind: "workspace", path: "settings" };
+  const alert = workspace?.failure_alert;
+  if (alert?.notify)
+    found.push({
+      target: { kind: "connection", name: alert.notify },
+      by: settings,
+      how: "sends its failures through it",
+    });
+  if (alert?.script)
+    found.push({
+      target: { kind: "script", name: alert.script },
+      by: settings,
+      how: "starts it when a run fails",
+    });
   return found;
 }

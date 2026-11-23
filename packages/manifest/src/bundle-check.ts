@@ -209,6 +209,14 @@ export function checkBundleManifests(manifests: BundleManifest[]): string[] {
       for (const path of body.uses?.sources ?? []) expect(manifest, "sources", path, "data_source");
       expect(manifest, "onFailure.script", body.onFailure?.script, "script");
       expect(manifest, "onFailure.notify", body.onFailure?.notify, "connection");
+      // A failure is posted over HTTP: another kind of connection would fail only when a run does.
+      const notified = byPath.get(body.onFailure?.notify ?? "");
+      const connector = (notified?.body as { connector?: string } | undefined)?.connector;
+      if (notified?.kind === "connection" && connector !== undefined && connector !== "http") {
+        problems.push(
+          `${manifest.path} (script): onFailure.notify names "${notified.path}", which is a ${connector} connection. A failure is posted to an HTTP connection.`,
+        );
+      }
       const keyed = (body as { concurrency?: unknown }).concurrency;
       if (typeof keyed === "object" && keyed !== null && "key" in keyed) {
         const missing = keyMissing(

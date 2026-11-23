@@ -3,7 +3,12 @@ import { newId, sql } from "@volvel/db";
 import { type Actor, type Audit, mutate, type Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
 import { bindSource, readSourcePassword } from "../data/sources.js";
-import { bindConnection, readConnection } from "../execution/bindings.js";
+import {
+  bindConnection,
+  bindGroupMember,
+  readConnection,
+  readGroupMember,
+} from "../execution/bindings.js";
 import { deployBundle, order } from "../execution/deploy.js";
 import { adoptBundle } from "../execution/promote.js";
 import type { WorkspaceRef } from "../http.js";
@@ -23,6 +28,8 @@ export interface CloneReport {
   /** Zero when safety is on. */
   connections: number;
   dataSources: number;
+  /** Members of connection groups. Zero when safety is on. */
+  connectionGroupMembers: number;
   secrets: number;
   tables: number;
   rows: number;
@@ -94,6 +101,26 @@ async function copyBindings(
     );
   }
   report.connections = connections.length;
+
+  // The members of connection groups: added per workspace, so a clone has none unless they are copied.
+  const members = await trx
+    .selectFrom("connection_group_member")
+    .select(["group_path", "key"])
+    .where("workspace_id", "=", source.id)
+    .execute();
+  for (const { group_path, key } of members) {
+    const at = { tenantId: source.tenantId, workspaceId: source.id, group: group_path, key };
+    const bound = await readGroupMember(kernel, trx, at);
+    if (!bound) continue;
+    await bindGroupMember(
+      kernel,
+      trx,
+      { ...at, workspaceId: target.id },
+      { label: bound.label, config: bound.config as Record<string, unknown> },
+      bound.credential ?? null,
+    );
+  }
+  report.connectionGroupMembers = members.length;
 
   const sources = await trx
     .selectFrom("data_source_binding")
@@ -291,6 +318,7 @@ async function copyWorkspace(
     variables: 0,
     connections: 0,
     dataSources: 0,
+    connectionGroupMembers: 0,
     secrets: 0,
     tables: 0,
     rows: 0,

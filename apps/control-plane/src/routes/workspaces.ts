@@ -346,6 +346,36 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           );
         }
         await checkLink(params.t, current.type, linked, params.w);
+        const notify = body.failureAlert?.notify;
+        if (notify) {
+          // A run's failure is posted over HTTP: say now what would only fail when a run does.
+          const declared = await db
+            .selectFrom("resource")
+            .select("body")
+            .where("workspace_id", "=", params.w)
+            .where("kind", "=", "connection")
+            .where("path", "=", notify)
+            .executeTakeFirst();
+          const bound = await db
+            .selectFrom("connection_binding")
+            .select("id")
+            .where("workspace_id", "=", params.w)
+            .where("path", "=", notify)
+            .executeTakeFirst();
+          const connector = (declared?.body as { connector?: string } | undefined)?.connector;
+          if (!declared && !bound) {
+            throw badRequest(
+              `${notify} is not a connection of this workspace. Set it up under Connections first.`,
+              [{ path: "/failureAlert/notify", message: "Not a connection." }],
+            );
+          }
+          if (connector !== undefined && connector !== "http") {
+            throw badRequest(
+              `${notify} is a ${connector} connection. A failure is posted to an HTTP connection.`,
+              [{ path: "/failureAlert/notify", message: "Not an HTTP connection." }],
+            );
+          }
+        }
         const row = await ctx.mutate(async (trx, audit) => {
           const updated = await trx
             .updateTable("workspace")

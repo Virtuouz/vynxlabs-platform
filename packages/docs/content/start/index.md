@@ -4,6 +4,7 @@ icon: compass
 description: The ideas the rest of the help uses.
 pages:
   - explanation
+  - tutorials
 ---
 
 Read [the concepts](explanation/concepts) first. They are few, and every screen is made of them.

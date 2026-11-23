@@ -38,7 +38,6 @@
     "console/reference/screens/data/dashboards",
     "console/reference/screens/data/data-sources",
     "console/reference/screens/data/queries",
-    "console/reference/screens/data/tables",
     "console/reference/screens/home/tenants",
     "console/reference/screens/home/workspace-overview",
     "console/reference/screens/operate/approvals",

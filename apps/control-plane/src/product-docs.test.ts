@@ -246,19 +246,18 @@ describe("the product's documentation at /docs", () => {
   });
 
   test("a reader's own choice of look decides which shot a page shows, over the system's", async () => {
+    // The console's choice is put on the page; the stylesheet shows the shot of that look.
     const script = (await get(t, "/docs/_theme.js")).body;
-    expect(script).toContain("picture source");
-    expect(script).toContain("not all");
+    expect(script).toContain("vx-pref:theme");
+    expect(script).toContain("dataset.theme");
   });
 
   test("the pictures and the screenshots are served from the build, and a screenshot never changes", async () => {
     const page = await get(t, "/docs/start/first");
     expect(page.body).toContain('src="/docs/assets/start/pic.png"');
     expect(page.body).toContain(`src="/docs/assets/screenshots/${SHOT}"`);
-    // In dark a reader is given the dark shot: the light one is the picture's own source.
-    expect(page.body).toContain(
-      `<picture><source media="(prefers-color-scheme: dark)" srcset="/docs/assets/screenshots/${SHOT_DARK}"/>`,
-    );
+    // Both shots are drawn; the page's look shows one (light, unless the reader's is dark).
+    expect(page.body).toContain(`class="vd-shot-dark" src="/docs/assets/screenshots/${SHOT_DARK}"`);
     expect((await get(t, `/docs/assets/screenshots/${SHOT_DARK}`)).statusCode).toBe(200);
     // A screenshot that was not taken is said in words.
     expect(page.body).toContain("A table that was not photographed");

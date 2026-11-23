@@ -106,7 +106,7 @@ export interface SiteView {
     asset?: (path: string) => string | undefined;
     /** Where a screenshot is served from, by its name. */
     screenshot?: (name: string) => string | null | undefined;
-    /** Where the dark look's picture of a screenshot is served from. Left out, a screenshot is one picture. */
+    /** Where a screenshot is served from for a dark page. With it, both pictures are drawn. */
     screenshotDark?: (name: string) => string | null | undefined;
     /** What a field of a resource means. */
     field?: (path: string) => FieldInfo | null | undefined;
@@ -114,7 +114,7 @@ export interface SiteView {
     term?: (props: Record<string, string>, page: string) => TermInfo | null | undefined;
   };
   /** Where search is answered: by the server, as a form, or from an index served as a file. Server when left out. */
-  search?: { kind: "server" } | { kind: "static"; index: string };
+  search?: { kind: "server" } | { kind: "static"; index: string; module?: string };
   /** Whether a page's address ends in a slash, as a static site's does. */
   trailingSlash?: boolean;
   /** The version of what the pages describe, shown at the foot of the navigation. Left out, none is. */
@@ -130,6 +130,12 @@ export interface SiteView {
 
 const attr = escapeHtml;
 const href = (at: SiteView, url: string) => attr(`${at.base}${url}`);
+/**
+ * Where search is asked. A static site has no server to answer `_search`: its page is a file, so its
+ * address ends in a slash, and the script reads the question from the address.
+ */
+const searchHref = (at: SiteView) =>
+  attr(`${at.base}${at.search?.kind === "static" ? "_search/" : "_search"}`);
 /** A page's address under the site, with the slash a static site ends it with. */
 const slashed = (at: SiteView, url: string) =>
   at.trailingSlash && url !== "" && !url.endsWith("/") ? `${url}/` : url;
@@ -238,7 +244,7 @@ function side(
   return `<aside class="side" id="nav" aria-label="Navigation">
 <a class="iconbutton close" href="#" data-nav-close aria-label="Close the navigation">${icon("x", 20)}</a>
 ${brand(at)}
-<a class="find" href="${href(at, "_search")}" data-search>${icon("search", 16)}<span class="grow">Search</span><kbd class="key">⌘</kbd><kbd class="key">K</kbd></a>
+<a class="find" href="${searchHref(at)}" data-search>${icon("search", 16)}<span class="grow">Search</span><kbd class="key">⌘</kbd><kbd class="key">K</kbd></a>
 ${switcher}
 <nav aria-label="${attr(collection?.title ?? at.title)}">${tree}</nav>${
     at.version ? `\n<p class="version">Version ${escapeHtml(at.version)}</p>` : ""
@@ -304,7 +310,7 @@ function shell(
 <div class="layout">
 <header class="topbar">
 ${brand(at)}
-<a class="iconbutton" href="${href(at, "_search")}" data-search aria-label="Search">${icon("search", 20)}</a>
+<a class="iconbutton" href="${searchHref(at)}" data-search aria-label="Search">${icon("search", 20)}</a>
 <a class="iconbutton" href="#nav" data-nav-open aria-label="Open the navigation">${icon("menu", 20)}</a>
 </header>
 ${side(at, options.collection, options.current)}
@@ -391,7 +397,7 @@ function draw(at: SiteView, path: string, tree: Root): string {
   });
 }
 
-function crumbOf(set: DocSet, path: string): string {
+export function crumbOf(set: DocSet, path: string): string {
   return trailOf(set.nav, path)
     .filter((folder) => folder.id !== "")
     .map((folder) => folder.title)
@@ -592,13 +598,13 @@ export function homePage(at: SiteView): string {
 <header class="homebar"><div class="inner">
 ${brand(at)}
 <nav aria-label="Collections">${nav}</nav>
-<a class="find" href="${href(at, "_search")}" data-search aria-label="Search">${icon("search", 16)}<span class="grow">Search</span><kbd class="key">⌘K</kbd></a>
+<a class="find" href="${searchHref(at)}" data-search aria-label="Search">${icon("search", 16)}<span class="grow">Search</span><kbd class="key">⌘K</kbd></a>
 </div></header>
 <main id="content" class="home">
 ${latest ? `<p class="pill">Updated ${DATE.format(new Date(latest))}</p>` : ""}
 <h1>${escapeHtml(title)}</h1>
 ${description ? `<p class="intro">${escapeHtml(description)}</p>` : ""}
-<form class="search-form" action="${href(at, "_search")}" method="get" role="search">
+<form class="search-form" action="${searchHref(at)}" method="get" role="search">
 <label class="find big" data-search>${icon("search", 18)}<input class="grow" type="search" name="q" placeholder="Search ${attr(title)}" aria-label="Search ${attr(title)}"><kbd class="key">⌘K</kbd></label>
 </form>
 ${own}
@@ -630,9 +636,31 @@ export function searchPage(at: SiteView, query: string, hits: readonly SearchHit
     title: asked === "" ? "Search" : `Search: ${asked}`,
     noindex: true,
     main: `<header class="lead"><h1>Search</h1>${asked === "" ? "" : `<p>${hits.length} ${hits.length === 1 ? "page" : "pages"} for “${escapeHtml(asked)}”</p>`}</header>
-<form class="search-form" action="${href(at, "_search")}" method="get" role="search"><input type="search" name="q" aria-label="Search ${attr(at.title)}" placeholder="Search" value="${attr(asked)}"><button type="submit">Search</button></form>
-${found}`,
+<form class="search-form" action="${searchHref(at)}" method="get" role="search"><input type="search" name="q" aria-label="Search ${attr(at.title)}" placeholder="Search" value="${attr(asked)}"><button type="submit">Search</button></form>
+${at.search?.kind === "static" ? staticResults(at, found) : found}`,
   });
+}
+
+/**
+ * The results of a static site: a place the script fills, and, for a reader without the script, every
+ * page of the site, by collection, to look through.
+ */
+function staticResults(at: SiteView, found: string): string {
+  const all = collectionsOf(at.set)
+    .map((one) => {
+      const pages = pagesInOrder({ collections: [one] }).filter((page) =>
+        at.set.pages.has(page.path),
+      );
+      return `<section><h2>${escapeHtml(one.title)}</h2><ul>${pages
+        .map(
+          (page) =>
+            `<li><a href="${pageHref(at, urlOf(page.path))}">${escapeHtml(at.set.pages.get(page.path)?.frontmatter.title ?? page.path)}</a></li>`,
+        )
+        .join("")}</ul></section>`;
+    })
+    .join("");
+  return `<div id="vd-static-results" data-static-results>${found}</div>
+<div id="vd-all-pages" class="all-pages"><h2>All pages</h2>${all}</div>`;
 }
 
 /** What the search dialog is answered with: pages, the places on each, and where each page is. */
@@ -658,6 +686,6 @@ export function notFoundPage(at: SiteView): string {
     title: "Not found",
     noindex: true,
     main: `<header class="lead"><h1>There is no page here</h1><p>It may have been moved or removed.</p></header>
-<p><a href="${attr(at.base)}">Go to the first page</a>, or <a href="${href(at, "_search")}" data-search>search</a>.</p>`,
+<p><a href="${attr(at.base)}">Go to the first page</a>, or <a href="${searchHref(at)}" data-search>search</a>.</p>`,
   });
 }

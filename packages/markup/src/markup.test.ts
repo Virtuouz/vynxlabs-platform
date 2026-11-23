@@ -747,31 +747,26 @@ describe("highlighted code", () => {
 });
 
 describe("a screenshot in both looks", () => {
-  const tree = parse('::screenshot{name=console/deploy alt="The deploy"}\n');
-  const light = (name: string) => (name === "console/deploy" ? "/a/deploy.light.png" : null);
-  const dark = (name: string) => (name === "console/deploy" ? "/a/deploy.dark.png" : null);
+  const source = "::screenshot{name=console/deploy alt=Deploy}\n";
+  const draw = (more: Partial<RenderOptions>) => renderHtml(parse(source), { ...OPTIONS, ...more });
 
-  test("with a dark picture it is a picture whose dark source a reader in dark is given", () => {
-    const html = renderHtml(tree, { profile: "product", screenshot: light, screenshotDark: dark });
-    expect(html).toContain(
-      '<picture><source media="(prefers-color-scheme: dark)" srcset="/a/deploy.dark.png"/>',
+  test("is one picture unless a dark one is given", () => {
+    expect(draw({})).toBe(
+      '<figure class="vd-screenshot"><img src="/assets/console/deploy.png" alt="Deploy" loading="lazy"/></figure>',
     );
-    expect(html).toContain('<img src="/a/deploy.light.png" alt="The deploy" loading="lazy"/>');
   });
 
-  test("without one it is drawn as it was", () => {
-    const html = renderHtml(tree, { profile: "product", screenshot: light });
-    expect(html).not.toContain("<picture");
-    expect(html).toContain('<figure class="vd-screenshot"><img src="/a/deploy.light.png"');
+  test("is two, and the page's look shows one", () => {
+    const html = draw({ screenshotDark: () => "/assets/console/deploy-dark.png" });
+    expect(html).toContain('class="vd-shot-light" src="/assets/console/deploy.png" alt="Deploy"');
+    expect(html).toContain('class="vd-shot-dark" src="/assets/console/deploy-dark.png" alt=""');
+    expect(html).toContain('aria-hidden="true"');
+    expect(DOC_CSS).toContain(".vd-shot-dark { display: none; }");
+    expect(DOC_DARK_CSS).toContain(".vd-shot-dark { display: block; }");
+    expect(DOC_DARK_CSS).toContain(".vd-shot-light:has(+ .vd-shot-dark) { display: none; }");
   });
 
-  test("a dark picture whose address is refused is left out, and the light one stands", () => {
-    const html = renderHtml(tree, {
-      profile: "product",
-      screenshot: light,
-      screenshotDark: () => "javascript:alert(1)",
-    });
-    expect(html).not.toContain("javascript:");
-    expect(html).not.toContain("<picture");
+  test("is one when there is no dark picture for it", () => {
+    expect(draw({ screenshotDark: () => null })).toBe(draw({}));
   });
 });

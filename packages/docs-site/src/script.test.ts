@@ -185,3 +185,95 @@ describe("the search dialog", () => {
     expect(group.querySelectorAll('[role="option"]')).toHaveLength(1);
   });
 });
+
+describe("a site served as files", () => {
+  // The search script of an export is a module the page imports. A script run by `new Function` cannot
+  // import, so the one `import()` of the search module is handed to a stand-in with the module's shape.
+  const MODULE = "/docs/_platform/search.0123456789.js";
+  const runStatic = () => {
+    const source = DOCS_SCRIPT.replace(
+      "await import(fixed.module)",
+      "await globalThis.__import(fixed.module)",
+    );
+    expect(source).not.toBe(DOCS_SCRIPT);
+    (globalThis as Record<string, unknown>).__import = async (url: string) => {
+      expect(url).toBe(MODULE);
+      return {
+        search: async (prefix: string, query: string, options: unknown) => {
+          (globalThis as Record<string, unknown>).__asked = [prefix, query, options];
+          return {
+            pages:
+              query === "none"
+                ? []
+                : [
+                    {
+                      url: "start/intro",
+                      title: [{ text: "Intro", hit: true }],
+                      crumb: "Start",
+                      places: [
+                        { type: "heading", url: "start/intro#setup", words: [{ text: "Setup" }] },
+                      ],
+                    },
+                  ],
+          };
+        },
+      };
+    };
+    new Function(source)();
+  };
+  const data = (extra = "") =>
+    `<script type="application/json" id="docs-data">${JSON.stringify({
+      base: "/docs/",
+      collections: [],
+      search: { kind: "static", index: "/docs/search/", module: MODULE },
+    })}</script>${extra}`;
+
+  test("the dialog asks the module, not a server, and opens pages by their address with its slash", async () => {
+    const fetched = vi.fn();
+    vi.stubGlobal("fetch", fetched);
+    document.body.innerHTML = `<a data-search href="/docs/_search/">Search</a>${data()}`;
+    runStatic();
+    (document.querySelector("[data-search]") as HTMLElement).click();
+    const input = document.querySelector(".finder input") as HTMLInputElement;
+    input.value = "intro";
+    input.dispatchEvent(new Event("input"));
+    await new Promise((done) => setTimeout(done, 300));
+    expect(fetched).not.toHaveBeenCalled();
+    expect((globalThis as { __asked?: unknown }).__asked).toEqual([
+      "/docs/search/",
+      "intro",
+      { collection: "", type: "" },
+    ]);
+    const hrefs = [...document.querySelectorAll(".finder a.hit, .finder a.place")].map((one) =>
+      one.getAttribute("href"),
+    );
+    expect(hrefs).toEqual(["/docs/start/intro/", "/docs/start/intro/#setup"]);
+  });
+
+  test("the search page answers the question in its address, and hides the list of every page", async () => {
+    window.history.replaceState(null, "", "/docs/_search/?q=intro");
+    document.body.innerHTML = `<form class="search-form"><input type="search" name="q"></form>
+<div id="vd-static-results" data-static-results><p>Type</p></div><div id="vd-all-pages">All</div>${data()}`;
+    runStatic();
+    await new Promise((done) => setTimeout(done, 100));
+    expect((document.querySelector("input[name=q]") as HTMLInputElement).value).toBe("intro");
+    expect(document.getElementById("vd-all-pages")?.hidden).toBe(true);
+    const link = document.querySelector("[data-static-results] a") as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/docs/start/intro/");
+    expect(document.querySelector("[data-static-results] small")?.textContent).toBe("Start");
+    window.history.replaceState(null, "", "/?q=none");
+    document.body.innerHTML = `<div id="vd-static-results" data-static-results></div>${data()}`;
+    runStatic();
+    await new Promise((done) => setTimeout(done, 100));
+    expect(document.querySelector("[data-static-results]")?.textContent).toContain(
+      "Nothing here matches",
+    );
+    window.history.replaceState(null, "", "/");
+  });
+
+  test("a diagram is drawn by the script beside the pages, not one at the host's root", () => {
+    expect(DOCS_SCRIPT).toContain('import(data.platform + "diagrams.js")');
+    // And a site with a server keeps asking for it where it always did.
+    expect(DOCS_SCRIPT).toContain('import("/_platform/diagrams.js")');
+  });
+});

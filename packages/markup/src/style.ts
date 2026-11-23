@@ -209,6 +209,7 @@ export const DOC_CSS = `
 
 .vd-doc .vd-field code { font-weight: 600; }
 .vd-doc .vd-screenshot img { border: 1px solid var(--vd-line, #dcdcdc); }
+.vd-doc .vd-screenshot .vd-shot-dark { display: none; }
 .vd-doc .vd-screenshot-missing { color: var(--vd-muted, #5c5c5c); font-style: italic; }
 .vd-doc .vd-unavailable { color: var(--vd-muted, #5c5c5c); font-style: italic; }
 
@@ -397,11 +398,15 @@ export const DOC_CSS = `
  */
 export const DOC_DARK_CSS = `
 @media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .vd-doc .vd-screenshot .vd-shot-dark { display: block; }
+  :root:not([data-theme="light"]) .vd-doc .vd-screenshot .vd-shot-light:has(+ .vd-shot-dark) { display: none; }
   :root:not([data-theme="light"]) .vd-doc {
     --vd-tok-keyword: #e879f9; --vd-tok-literal: #67e8f9; --vd-tok-string: #86efac;
     --vd-tok-number: #fdba74; --vd-tok-comment: #a3a3a3; --vd-tok-attr: #93c5fd; --vd-tok-name: #67e8f9;
   }
 }
+:root[data-theme="dark"] .vd-doc .vd-screenshot .vd-shot-dark { display: block; }
+:root[data-theme="dark"] .vd-doc .vd-screenshot .vd-shot-light:has(+ .vd-shot-dark) { display: none; }
 :root[data-theme="dark"] .vd-doc {
   --vd-tok-keyword: #e879f9; --vd-tok-literal: #67e8f9; --vd-tok-string: #86efac;
   --vd-tok-number: #fdba74; --vd-tok-comment: #a3a3a3; --vd-tok-attr: #93c5fd; --vd-tok-name: #67e8f9;

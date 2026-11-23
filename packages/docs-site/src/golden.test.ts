@@ -151,6 +151,16 @@ const site = (more: Partial<SiteView> = {}): SiteView => ({
   ...more,
 });
 
+/** A site served as files: search is asked of indexes, in the reader's browser. */
+const staticSearch: Partial<SiteView> = {
+  trailingSlash: true,
+  search: {
+    kind: "static",
+    index: "/apps/handbook/search/",
+    module: "/apps/handbook/_platform/search.js",
+  },
+};
+
 /** Hashed names of the platform's stylesheet and script are the one thing allowed to change. */
 const normal = (html: string) =>
   html.replace(/\/_platform\/docs(\.[0-9a-f]{8,})?\.(css|js)/g, "/_platform/docs.$2");
@@ -186,6 +196,8 @@ const cases: Record<string, () => string> = {
   "search-hits": () => searchPage(site(), "refund", search.search("refund", 30)),
   "search-none": () => searchPage(site(), "zzzzqq", []),
   "search-escaped": () => searchPage(site(), '<b>"x"', []),
+  "search-static": () => searchPage(site(staticSearch), "", []),
+  "page-static-search": () => docPage(site(staticSearch), "support/refunds"),
   "not-found": () => notFoundPage(site()),
   "not-found-preview": () => notFoundPage(site({ notice: "A preview." })),
 };
@@ -229,6 +241,23 @@ describe("what a site's view changes", () => {
     expect(html).toContain('href="/apps/handbook/guide/fresh/"');
     expect(html).toContain('href="/apps/handbook/_search"');
     expect(html).toContain('data-copy="/apps/handbook/guide/components.md"');
+  });
+
+  test("a static site asks for search at a page of its own, and carries where its indexes are", () => {
+    const html = docPage(site(staticSearch), "support/refunds");
+    expect(html).toContain('href="/apps/handbook/_search/"');
+    expect(html).not.toContain('href="/apps/handbook/_search"');
+    expect(html).toContain('"search":{"kind":"static","index":"/apps/handbook/search/"');
+    const page = searchPage(site(staticSearch), "", []);
+    expect(page).toContain('action="/apps/handbook/_search/"');
+    expect(page).toContain("data-static-results");
+    // Without the script, every page of the site is there to look through.
+    expect(page).toContain('href="/apps/handbook/support/refunds/"');
+    expect(page).toContain('href="/apps/handbook/guide/components/"');
+  });
+
+  test("a server site's search page has no list of all pages", () => {
+    expect(searchPage(site(), "", [])).not.toContain("data-static-results");
   });
 
   test("the profile and the platform's address are the view's", () => {

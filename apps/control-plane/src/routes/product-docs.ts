@@ -24,9 +24,6 @@ import { DEFAULT_PRODUCT_NAME } from "./branding.js";
 
 /** The reader's own choice of light or dark, as the console kept it, put on the page before it is drawn. */
 const THEME_SCRIPT = `try{var v=JSON.parse(localStorage.getItem("vx-pref:theme"));if(v==="light"||v==="dark")document.documentElement.dataset.theme=v}catch(e){}
-/* A screenshot has a dark source for a reader whose system is dark. A look chosen in the console wins over the system's. */
-(function(){function f(){var t=document.documentElement.dataset.theme;if(t!=="light"&&t!=="dark")return;var s=document.querySelectorAll("picture source");for(var i=0;i<s.length;i++)s[i].media=t==="dark"?"all":"not all"}
-if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",f);else f()})();
 `;
 const RENDERED_KEPT = 300;
 const BASE = "/docs/";

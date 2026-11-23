@@ -41,7 +41,7 @@ export const loadFields = () => load<Record<string, string>>("fields.json");
 
 /** What `/docs/_search.json` answers: pages by their address, with the places on each. */
 interface ServerAnswer {
-  pages: { url: string; title: PageHit["title"]; places: PageHit["places"] }[];
+  pages: { url: string; title: PageHit["title"]; places: PageHit["places"]; score?: number }[];
 }
 
 /**
@@ -57,7 +57,7 @@ async function searchOnInstance(query: string): Promise<PageHit[] | undefined> {
     if (!Array.isArray(answer?.pages)) return undefined;
     const manifest = await loadManifest();
     const byUrl = new Map(manifest.pages.map((page) => [page.url, page] as const));
-    return answer.pages.flatMap((hit) => {
+    return answer.pages.flatMap((hit, at) => {
       const page = byUrl.get(hit.url);
       // A page this build of the help does not have cannot be opened here.
       if (!page) return [];
@@ -70,6 +70,8 @@ async function searchOnInstance(query: string): Promise<PageHit[] | undefined> {
           collection: page.path.split("/")[0] ?? "",
           ...(page.docType ? { docType: page.docType } : {}),
           places: hit.places ?? [],
+          // The instance has ranked them already: kept in its order.
+          score: hit.score ?? answer.pages.length - at,
         },
       ];
     });

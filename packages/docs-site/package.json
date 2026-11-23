@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./export": {
+      "types": "./dist/export.d.ts",
+      "default": "./dist/export.js"
     }
   },
   "files": [
@@ -21,6 +25,7 @@
   },
   "dependencies": {
     "@volvel/docs-engine": "workspace:*",
-    "@volvel/markup": "workspace:*"
+    "@volvel/markup": "workspace:*",
+    "esbuild": "^0.28.2"
   }
 }

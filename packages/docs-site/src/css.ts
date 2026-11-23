@@ -201,6 +201,11 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .results li { margin: 0 0 22px; }
 .results a { font-weight: 600; font-size: 17px; text-decoration: none; }
 .results p { margin: 2px 0 0; color: var(--vx-ink-muted); }
+.results small { display: block; color: var(--vx-ink-muted); font-size: 13px; }
+.all-pages { margin-top: 32px; }
+.all-pages h2 { font-size: 15px; margin: 22px 0 6px; }
+.all-pages ul { margin: 0; padding: 0; list-style: none; columns: 2 280px; }
+.all-pages li { margin: 0 0 4px; break-inside: avoid; }
 .search-form { display: flex; gap: 8px; margin-bottom: 28px; }
 .search-form input {
   flex: 1; height: 42px; padding: 0 12px; border: 1px solid var(--vx-line); border-radius: 10px;

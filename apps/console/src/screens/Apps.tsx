@@ -21,6 +21,10 @@ export interface AppSummary {
   bytes: number;
   /** Who is bound at the app itself: "anyone", "every end user", an email or a group's name. */
   access: string[];
+  /** Who a binding at the workspace or at the tenant lets open it, and every other app. */
+  broaderAccess?: { scope: "workspace" | "tenant"; label: string }[];
+  /** False for a documentation app that is switched off: kept, and not served. */
+  published?: boolean;
   builtWith?: "code" | "builder" | "docs";
   /** For a docs app: the folder of pages it serves. */
   docs?: string | null;
@@ -49,6 +53,16 @@ function RowsFor({ root, table, group }: { root: string; table: string; group: s
   if (!counted.data) return <span className="text-ink-subtle">…</span>;
   return <span className="font-mono text-code">{counted.data.items[0]?.values.count ?? 0}</span>;
 }
+
+const SCOPE = { workspace: "whole workspace", tenant: "whole tenant" } as const;
+
+/** Everyone an app is open to, at the app and by a binding that reaches all apps. */
+const openTo = (app: AppSummary) => [
+  ...app.access,
+  ...(app.broaderAccess ?? []).map((one) => `${one.label} (${SCOPE[one.scope]})`),
+];
+const isPublic = (app: AppSummary) =>
+  app.access.includes("anyone") || (app.broaderAccess ?? []).some((one) => one.label === "anyone");
 
 const external = (url: string, text: string) => (
   <a href={url} target="_blank" rel="noreferrer" className="break-all text-action">
@@ -106,6 +120,7 @@ function ShareDialog({
     open ? `${base}/end-user-groups?limit=200` : null,
   );
   const roles = useLoad<{ items: Named[] }>(open ? `${base}/roles?limit=200` : null);
+  const apps = useLoad<{ items: AppSummary[] }>(open ? `${root}/apps` : null);
   const [who, setWho] = useState("end_users");
   const [may, setMay] = useState("portal_reader");
   const [busy, setBusy] = useState(false);
@@ -162,6 +177,18 @@ function ShareDialog({
         <span>Staff whose role lets them read this workspace</span>
         <span className="text-meta text-ink-subtle">always</span>
       </div>
+      {(app?.broaderAccess ?? []).map((one) => (
+        <div
+          key={`${one.scope}:${one.label}`}
+          className="flex items-center justify-between gap-2 rounded-control border border-line px-3 py-2"
+        >
+          <span>
+            {one.label}{" "}
+            <span className="text-ink-muted">may open every app of the {SCOPE[one.scope]}</span>
+          </span>
+          <span className="text-meta text-ink-subtle">under Access</span>
+        </div>
+      ))}
       {atApp.length === 0 ? (
         <p className="m-0 text-ink-muted">Nobody else yet.</p>
       ) : (
@@ -199,19 +226,55 @@ function ShareDialog({
                         other.principalId === binding.principalId &&
                         other.roleName === binding.roleName,
                     );
-                    const tablesToo = theirs.filter((one) => one.resourceId !== app?.id).length;
+                    // A table another app of the workspace reads, which is shared the same way,
+                    // stays: that app would stop working for them.
+                    const usedElsewhere = (one: Binding) => {
+                      const path = tables.find((table) => table.id === one.resourceId)?.path;
+                      if (!path) return [];
+                      return (apps.data?.items ?? []).filter(
+                        (other) =>
+                          other.id !== app?.id &&
+                          other.reads?.includes(path) &&
+                          (bindings.data?.items ?? []).some(
+                            (held) =>
+                              held.resourceId === other.id &&
+                              held.principalType === binding.principalType &&
+                              held.principalId === binding.principalId &&
+                              held.roleName === binding.roleName,
+                          ),
+                      );
+                    };
+                    const kept = new Set<string>();
+                    const keptFor = new Set<string>();
+                    for (const one of theirs) {
+                      if (one.resourceId === app?.id) continue;
+                      const others = usedElsewhere(one);
+                      if (others.length === 0) continue;
+                      kept.add(one.id);
+                      for (const other of others) keptFor.add(other.title);
+                    }
+                    const tablesToo = theirs.filter(
+                      (one) => one.resourceId !== app?.id && !kept.has(one.id),
+                    ).length;
                     const sure = await ask.confirm({
                       title: `Stop sharing ${app?.title ?? "the app"} with ${binding.principalLabel}?`,
-                      text:
+                      text: `${
                         tablesToo > 0
                           ? `They lose the app, and their access to its ${tablesToo} table${tablesToo === 1 ? "" : "s"} goes with it.`
-                          : "They lose the app.",
+                          : "They lose the app."
+                      }${
+                        kept.size > 0
+                          ? ` ${kept.size} table${kept.size === 1 ? " stays" : "s stay"}, for ${keptFor.size} other app${keptFor.size === 1 ? "" : "s"} that use${keptFor.size === 1 ? "s" : ""} ${kept.size === 1 ? "it" : "them"}: ${[...keptFor].join(", ")}.`
+                          : ""
+                      }`,
                       action: "Stop sharing",
                       danger: true,
                     });
                     if (!sure) return;
                     await run(async () => {
-                      for (const one of theirs) await api.delete(`${base}/bindings/${one.id}`);
+                      for (const one of theirs) {
+                        if (!kept.has(one.id)) await api.delete(`${base}/bindings/${one.id}`);
+                      }
                     });
                   }}
                 >
@@ -434,24 +497,27 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
           {
             header: "Address",
             priority: 2,
-            cell: (row) => (
-              <span className="flex min-w-0 flex-col">
-                {external(row.url, row.url.replace(/^https?:\/\//, ""))}
-                {row.domains
-                  .filter((domain) => domain.enabled)
-                  .map((domain) => (
-                    <span key={domain.hostname}>{external(domain.url, domain.hostname)}</span>
-                  ))}
-              </span>
-            ),
+            cell: (row) =>
+              row.published === false ? (
+                <Tag tone="draft">Not published</Tag>
+              ) : (
+                <span className="flex min-w-0 flex-col">
+                  {external(row.url, row.url.replace(/^https?:\/\//, ""))}
+                  {row.domains
+                    .filter((domain) => domain.enabled)
+                    .map((domain) => (
+                      <span key={domain.hostname}>{external(domain.url, domain.hostname)}</span>
+                    ))}
+                </span>
+              ),
           },
           {
             header: "Open to",
             priority: 3,
             cell: (row) =>
-              row.access.length > 0 ? (
-                <span className={row.access.includes("anyone") ? "text-attention" : ""}>
-                  {row.access.join(", ")}
+              openTo(row).length > 0 ? (
+                <span className={isPublic(row) ? "text-attention" : ""}>
+                  {openTo(row).join(", ")}
                 </span>
               ) : (
                 <span className="text-ink-subtle">Staff only</span>
@@ -492,27 +558,35 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
                   <Button variant="primary" onClick={() => onShare(open)}>
                     Share
                   </Button>
-                  <a
-                    href={open.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 text-meta"
-                  >
-                    Open the live app <ArrowUpRight aria-hidden="true" size={14} />
-                  </a>
+                  {open.published === false ? null : (
+                    <a
+                      href={open.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1.5 text-meta"
+                    >
+                      Open the live app <ArrowUpRight aria-hidden="true" size={14} />
+                    </a>
+                  )}
                 </>
               }
             >
               <div className="flex flex-col gap-4">
                 {open.description ? <p className="m-0 text-ink-muted">{open.description}</p> : null}
-                {open.access.includes("anyone") ? (
+                {isPublic(open) ? (
                   <Notice tone="attention">
                     Anyone with the address can open it, without signing in.
                   </Notice>
                 ) : null}
                 <KeyValues
                   rows={[
-                    { label: "Address", value: external(open.url, open.url) },
+                    {
+                      label: "Address",
+                      value:
+                        open.published === false
+                          ? "Not published: switched off in the repository, so nothing is served"
+                          : external(open.url, open.url),
+                    },
                     ...open.domains.map((domain) => ({
                       label: domain.enabled ? "Hostname" : "Hostname (off)",
                       value: external(domain.url, domain.hostname),
@@ -543,8 +617,8 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
                     {
                       label: "Open to",
                       value:
-                        open.access.length > 0
-                          ? open.access.join(", ")
+                        openTo(open).length > 0
+                          ? openTo(open).join(", ")
                           : "Staff whose role lets them read this workspace",
                     },
                   ]}

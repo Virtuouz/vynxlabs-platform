@@ -322,6 +322,78 @@ describe("an app in a bundle", () => {
   });
 });
 
+describe("who an app is open to (APP-03, APP-14)", () => {
+  test("names groups of end users and service accounts, and the broader bindings that reach the app", async () => {
+    const group = await alice.post(`/tenants/${tenant}/end-user-groups`, { name: "customers" });
+    expect(group.status, JSON.stringify(group.body)).toBe(201);
+    const account = await alice.post(`/tenants/${tenant}/service-accounts`, { name: "robot" });
+    expect(account.status, JSON.stringify(account.body)).toBe(201);
+    const reader = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "app_looker",
+      permissions: ["app:read"],
+    });
+    const nothing = await alice.post(`/tenants/${tenant}/roles`, {
+      name: "table_looker",
+      permissions: ["table:read"],
+    });
+    const gave = async (body: Record<string, unknown>) => {
+      const made = await alice.post(`/tenants/${tenant}/bindings`, body);
+      expect(made.status, JSON.stringify(made.body)).toBe(201);
+      return made.body.id as string;
+    };
+    const portal = (await alice.get(`${ws()}/apps`)).body.items.find(
+      (one: Any) => one.path === "portal",
+    );
+    const made = [
+      await gave({
+        workspaceId: prod,
+        resourceId: portal.id,
+        principalType: "end_user_group",
+        principalId: group.body.id,
+        roleId: reader.body.id,
+      }),
+      await gave({
+        workspaceId: prod,
+        resourceId: portal.id,
+        principalType: "service_account",
+        principalId: account.body.id,
+        roleId: reader.body.id,
+      }),
+      // At the workspace and at the tenant: they reach every app, and the screen said nothing.
+      await gave({ workspaceId: prod, principalType: "anonymous", roleId: reader.body.id }),
+      await gave({ principalType: "end_users", roleId: reader.body.id }),
+      // A role that does not open apps changes nothing.
+      await gave({
+        workspaceId: prod,
+        principalType: "end_user_group",
+        principalId: group.body.id,
+        roleId: nothing.body.id,
+      }),
+    ];
+    try {
+      const shown = (await alice.get(`${ws()}/apps`)).body.items.find(
+        (one: Any) => one.path === "portal",
+      );
+      expect(shown.access).toEqual(
+        expect.arrayContaining(["every end user", "customers", "robot"]),
+      );
+      expect(shown.access).not.toContain("end_user_group");
+      expect(shown.access).not.toContain("service_account");
+      expect(shown.broaderAccess).toEqual(
+        expect.arrayContaining([
+          { scope: "workspace", label: "anyone" },
+          { scope: "tenant", label: "every end user" },
+        ]),
+      );
+      expect(shown.broaderAccess).toHaveLength(2);
+    } finally {
+      for (const id of made) await alice.delete(`/tenants/${tenant}/bindings/${id}`);
+      await alice.delete(`/tenants/${tenant}/end-user-groups/${group.body.id}`);
+      await alice.delete(`/tenants/${tenant}/service-accounts/${account.body.id}`);
+    }
+  });
+});
+
 describe("serving by path, on the instance's own address", () => {
   test("someone who is not signed in is sent to the sign-in page, and a member sees the app", async () => {
     const visitor = browser(t, MAIN);

@@ -15,6 +15,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Search,
+  ShieldCheck,
   Sun,
   UsersRound,
 } from "lucide-react";
@@ -642,7 +643,16 @@ function useGoTo(
   });
 }
 
-function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
+function AccountMenu({
+  me,
+  tenantId,
+  onSignOut,
+}: {
+  me: Me;
+  /** The tenant the person is in, when they are in one. */
+  tenantId?: string | undefined;
+  onSignOut: () => void;
+}) {
   const name = me.principal.email ?? me.principal.name ?? "?";
   return (
     <Menu
@@ -660,6 +670,16 @@ function AccountMenu({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
           icon: <KeyRound aria-hidden="true" size={16} />,
           onSelect: () => navigate("/account/api-keys"),
         },
+        // Read by the person about themselves, so it needs no permission to read access.
+        ...(tenantId
+          ? [
+              {
+                label: "What I may do here",
+                icon: <ShieldCheck aria-hidden="true" size={16} />,
+                onSelect: () => navigate(`/t/${tenantId}/members/${me.principal.id}`),
+              },
+            ]
+          : []),
         {
           label: "Help for this page",
           icon: <CircleHelp aria-hidden="true" size={16} />,
@@ -1000,7 +1020,7 @@ export function Shell({
         <div className="flex-1" />
         <ThemeMenu compact />
         <div className="mt-2">
-          <AccountMenu me={me} onSignOut={onSignOut} />
+          <AccountMenu me={me} tenantId={tenantId} onSignOut={onSignOut} />
         </div>
       </nav>
 
@@ -1334,7 +1354,7 @@ export function Shell({
           ) : null}
           {workspaceId && ws ? <ReleasePath counts={ws} /> : null}
           <div className="flex items-center gap-3 border-line border-t pt-3 md:hidden">
-            <AccountMenu me={me} onSignOut={onSignOut} />
+            <AccountMenu me={me} tenantId={tenantId} onSignOut={onSignOut} />
             <span className="min-w-0 flex-1 truncate text-meta text-ink-muted">
               {me.principal.email ?? me.principal.name}
             </span>

@@ -469,6 +469,48 @@ describe("a tenant's members, pushed as Entra pushes them", () => {
     expect(signedIn).toMatchObject({ principalId: bob, created: false, linked: false });
   });
 
+  test("a name a directory pushes is changed there; a person's own is changed by them, and their sessions are listed at any age (ACC-MP2, ACC-MP3)", async () => {
+    // Bob is pushed, so his name is the directory's. He is given a password to sign in with.
+    await sql`
+      insert into member_account (id, member_id, account_id, provider_id, password, created_at, updated_at)
+      select ${newId()}, ${bob}, ${bob}, 'credential', password, now(), now()
+      from member_account
+      where provider_id = 'credential'
+        and member_id = (select id from member where email = 'alice@acme.example')
+    `.execute(t.db);
+    const asBob = await t.signIn("bob@acme.example", PASSWORD);
+    expect((await asBob.get("/me")).body.principal.nameFrom).toBe("Acme Staff");
+    const refused = await asBob.post("/auth/update-user", { name: "Robert" });
+    expect(refused.status).toBe(403);
+    expect(refused.body.detail).toBe("Your name comes from Acme Staff. Change it there.");
+    expect((await asBob.get("/me")).body.principal.name).toBe("Bob Stone");
+    // Alice is nobody's push: her name is hers, and /me says so.
+    expect((await alice.get("/me")).body.principal.nameFrom).toBeNull();
+    expect((await alice.post("/auth/update-user", { name: "Alice A" })).status).toBe(200);
+    expect((await alice.get("/me")).body.principal.name).toBe("Alice A");
+    // A session made two days ago is still listed and still ended by its owner.
+    await sql`
+      update member_session set created_at = now() - interval '2 days'
+      where member_id = (select id from member where email = 'alice@acme.example')
+    `.execute(t.db);
+    const listed = await alice.get("/auth/list-sessions");
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect((listed.body as Any[]).length).toBeGreaterThan(0);
+    expect((await lastAudit("member.renamed")).details).toEqual({ name: "Alice A" });
+    const second = await t.signIn("alice@acme.example", PASSWORD);
+    expect(((await alice.get("/auth/list-sessions")).body as Any[]).length).toBe(2);
+    const secondToken = ((await second.get("/auth/get-session")).body as Any).session.token;
+    const ended = await alice.post("/auth/revoke-session", { token: secondToken });
+    expect(ended.status).toBe(200);
+    expect((await second.get("/me")).status).toBe(401);
+    const third = await t.signIn("alice@acme.example", PASSWORD);
+    const others = await alice.post("/auth/revoke-other-sessions", {});
+    expect(others.status).toBe(200);
+    expect((await third.get("/me")).status).toBe(401);
+    expect((await alice.get("/me")).status).toBe(200);
+    expect(await lastAudit("member.other_sessions_ended")).toBeTruthy();
+  });
+
   test("what cannot be taken in is refused, in words a directory's log can show", async () => {
     const again = await push(staff, "POST", "/Users", entraUser("bob@acme.example", "another-id"));
     expect(again.status).toBe(409);

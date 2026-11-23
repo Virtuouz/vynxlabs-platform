@@ -13,6 +13,7 @@ import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";
 import { createMember, setMemberDisabled } from "../kernel/members.js";
 import { generateApiKey } from "../kernel/principal.js";
 import { effectivePolicy } from "../kernel/retention.js";
+import { nameOwnedBy } from "../kernel/sso/people.js";
 import { makeRecoveryCodes, ownsATenant } from "../kernel/sso/recovery.js";
 import { likeTerm, PageQuery, pageOf, SearchPageQuery } from "../pagination.js";
 import {
@@ -648,6 +649,12 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 id: Id,
                 name: NullableString,
                 email: NullableString,
+                nameFrom: Type.Optional(
+                  Type.Union([Type.String(), Type.Null()], {
+                    description:
+                      "The identity provider whose directory sets this member's name, when one does.",
+                  }),
+                ),
               }),
               instancePermissions: Type.Array(Type.String(), {
                 description: "Permissions held at instance scope.",
@@ -691,6 +698,9 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             id,
             name: principal.name ?? null,
             email: principal.email ?? null,
+            ...(principal.type === "member"
+              ? { nameFrom: (await nameOwnedBy(kernel.db, id)) ?? null }
+              : {}),
           },
           instancePermissions: [...new Set(roles.flatMap((role) => role.permissions))].sort(),
           tenants: await tenants.execute(),

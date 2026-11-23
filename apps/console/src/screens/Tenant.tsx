@@ -19,7 +19,7 @@ import {
 } from "../ListScreen.tsx";
 import { Link, match, navigate } from "../router.tsx";
 import { EffectiveAccess, MemberPage } from "./Access.tsx";
-import { type KeyRow, keyColumns, showNewKey } from "./Account.tsx";
+import { type KeyRow, keyColumns, keyExpiryField, newKeyBody, showNewKey } from "./Account.tsx";
 import { AgentAccess } from "./AgentAccess.tsx";
 import { Apps } from "./Apps.tsx";
 import { AuditTable } from "./Audit.tsx";
@@ -974,8 +974,11 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
                 empty={{ title: "No keys yet" }}
                 create={{
                   action: "Create API key",
-                  fields: [{ name: "name", label: "Name", placeholder: "Deploy pipeline" }],
-                  submit: (values) => api.post(keys, values),
+                  fields: [
+                    { name: "name", label: "Name", placeholder: "Deploy pipeline" },
+                    keyExpiryField,
+                  ],
+                  submit: (values) => api.post(keys, newKeyBody(values)),
                   afterCreate: showNewKey,
                 }}
                 rowActions={(row, reload) =>

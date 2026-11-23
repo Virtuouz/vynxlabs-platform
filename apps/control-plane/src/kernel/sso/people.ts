@@ -301,6 +301,21 @@ async function refuseInstanceMember(trx: Trx, provider: Provider, memberId: stri
   );
 }
 
+/**
+ * The name of the identity provider whose directory pushes this member's name, when one does.
+ * A name a directory owns is changed there: a change made here would be undone by its next push.
+ */
+export async function nameOwnedBy(db: Db | Trx, memberId: string): Promise<string | undefined> {
+  const row = await db
+    .selectFrom("scim_user")
+    .innerJoin("identity_provider", "identity_provider.id", "scim_user.provider_id")
+    .select("identity_provider.name")
+    .where("scim_user.principal_id", "=", memberId)
+    .where("scim_user.principal_type", "=", "member")
+    .executeTakeFirst();
+  return row?.name;
+}
+
 /** The names of the pushed groups a person is in. */
 async function pushedGroups(trx: Trx, providerId: string, principalId: string) {
   const rows = await trx

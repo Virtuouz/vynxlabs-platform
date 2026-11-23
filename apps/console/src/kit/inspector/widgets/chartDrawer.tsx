@@ -105,9 +105,22 @@ const MARK_WORDS: Record<string, string> = {
 
 const plural = (word: string) => (/s$/.test(word) ? word : `${word}s`);
 
+/** The value drawn up the side: the one chosen as "Up the side", else the first. */
+export function drawnMeasure(query: Query, config: Record<string, unknown>) {
+  const all = query.visual.measures ?? [];
+  return all.find((one) => one.as === config.y) ?? all[0];
+}
+
+/** The breakdowns, the one chosen as "Along the bottom" (else the first) leading. */
+export function drawnGroups(query: Query, config: Record<string, unknown>) {
+  const all = groupsOf(query);
+  const along = all.find((one) => groupName(one) === config.x) ?? all[0];
+  return along ? [along, ...all.filter((one) => one !== along)] : all;
+}
+
 /** "the sum of total": what a measure reads as in a sentence. */
-function measureSentence(query: Query): string {
-  const measure = query.visual.measures?.[0];
+function measureSentence(query: Query, config: Record<string, unknown> = {}): string {
+  const measure = drawnMeasure(query, config);
   if (!measure) return "the figures";
   const column = measure.column ? lower(measure.column) : "rows";
   switch (measure.fn) {
@@ -128,7 +141,7 @@ function measureSentence(query: Query): string {
 
 /** "Reads as the sum of total for each clinic. Drawn as bars; 3 clinics." */
 export function readsAs(query: Query, config: Record<string, unknown>, count: number | undefined) {
-  const groups = groupsOf(query);
+  const groups = drawnGroups(query, config);
   const first = groups[0];
   const second = groups[1];
   const when = first?.type !== undefined && TEMPORAL.has(first.type);
@@ -142,7 +155,7 @@ export function readsAs(query: Query, config: Record<string, unknown>, count: nu
   const how = MARK_WORDS[kindOf(config)] ?? "bars";
   const tail = count === undefined ? "" : `; ${count} ${count === 1 ? noun : plural(noun)}`;
   return {
-    reads: `Reads as ${measureSentence(query)} ${along}${split}.`.replace(" .", "."),
+    reads: `Reads as ${measureSentence(query, config)} ${along}${split}.`.replace(" .", "."),
     drawn: `Drawn as ${how}${tail}.`,
   };
 }
@@ -415,7 +428,8 @@ export function ChartDisplay({ env, data }: SectionProps) {
   const kind = kindOf(config);
   const mark = (config.mark as string | undefined) ?? "bar";
   const filters = dateFilters(env);
-  const measure = query?.visual.measures?.[0];
+  const measure = query ? drawnMeasure(query, config) : undefined;
+  const along = query ? drawnGroups(query, config)[0] : undefined;
 
   const tiles: TileOption<ChartKind>[] = KINDS.map((one) => {
     const fit = chartFits(one.value, shape);
@@ -498,8 +512,8 @@ export function ChartDisplay({ env, data }: SectionProps) {
             label="Show axis titles"
             on={config.axisTitles !== false}
             help={
-              groups[0] && measure
-                ? `${heading(groups[0].column)} along the bottom, ${heading(measure.column ?? measure.as)} up the side`
+              along && measure
+                ? `${heading(along.column)} along the bottom, ${heading(measure.column ?? measure.as)} up the side`
                 : undefined
             }
           />

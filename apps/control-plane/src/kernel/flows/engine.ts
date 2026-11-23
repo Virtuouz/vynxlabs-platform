@@ -1128,14 +1128,15 @@ class Advance {
     error?: { message: string },
   ): Promise<Finished> {
     for (const step of [...this.#steps.values()].filter(isActive)) await this.#cancelStep(step);
-    // A flow's output is what its last steps produced: the nodes nothing leads on from.
+    // A flow's output is what its last steps produced: the nodes nothing leads on from. A step
+    // that went well has no use for an error path, so one with only that after it is last too.
     const output: Record<string, unknown> = {};
     if (status === "succeeded") {
       for (const step of this.#steps.values()) {
         if (
           step.item_key === "" &&
           step.status === "succeeded" &&
-          this.#outgoing(step.node_id).length === 0
+          this.#outgoing(step.node_id).every((edge) => edge.error)
         ) {
           output[step.node_id] = await this.#outputOf(step);
         }

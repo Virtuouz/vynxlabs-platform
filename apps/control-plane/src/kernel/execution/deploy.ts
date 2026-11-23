@@ -472,6 +472,19 @@ export async function deployBundle(
       // A resource taken over in the console, or handed back to the repository.
       switchOwnership: true,
     });
+    // Positions saved from the flow page are older than a layout this deploy brings: the
+    // newer one is read, by the flow page, the run's page and the editor alike.
+    if (
+      stored &&
+      manifest.kind === "flow" &&
+      stored.kind === "flow" &&
+      !same(
+        (stored.body as { layout?: unknown }).layout ?? {},
+        (manifest.body as { layout?: unknown }).layout ?? {},
+      )
+    ) {
+      await trx.deleteFrom("flow_layout").where("resource_id", "=", stored.id).execute();
+    }
     for (const message of result.warnings) {
       summary.warnings.push({ path: manifest.path, message });
     }

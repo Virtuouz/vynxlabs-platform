@@ -15,6 +15,7 @@ import {
   checkBundleAssets,
   checkBundleManifests,
   docsRoots,
+  EXPRESSION_ROOTS,
   formatFor,
   ignoredFolder,
   isResourceFile,
@@ -479,6 +480,9 @@ export function check(manifests: BundleManifest[]): string[] {
   ];
   for (const { where, expression } of bundleExpressions(manifests)) {
     try {
+      // The names an expression reads are checked too: `input` is never one.
+      const checked = strict.check(expression);
+      if (!checked.valid) throw checked.error;
       cel.parse(expression);
     } catch (error) {
       const reason = ((error as Error).message.split("\n")[0] ?? "").trim();
@@ -504,6 +508,14 @@ export function describeBundle(bundle: Bundle): string[] {
     }),
   ];
 }
+
+const strict = new Environment({
+  unlistedVariablesAreDyn: false,
+  homogeneousAggregateLiterals: false,
+}).registerFunction("string(google.protobuf.Timestamp): string", (time: Date) =>
+  time.toISOString(),
+);
+for (const name of EXPRESSION_ROOTS) strict.registerVariable(name, "dyn");
 
 const cel = new Environment({
   unlistedVariablesAreDyn: true,

@@ -29,6 +29,7 @@ import { Reconnecting } from "../kit/Reconnecting.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { ReferenceList } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
+import { STARTED_BY, STARTED_ON } from "../kit/starts.ts";
 import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
@@ -41,23 +42,6 @@ import { OfferButton } from "./OfferToAgent.tsx";
 import { detailSummary } from "./Operate.tsx";
 
 type FlowStatus = "running" | "succeeded" | "failed" | "cancelled";
-/** How a run began, as the end of a sentence. */
-const STARTED: Record<string, string> = {
-  manual: "by hand",
-  schedule: "by its schedule",
-  webhook: "by a webhook",
-  event: "by an event",
-  flow: "by another flow",
-};
-
-const TRIGGER: Record<string, string> = {
-  manual: "By hand",
-  schedule: "Schedule",
-  webhook: "Webhook",
-  event: "Event",
-  flow: "Another flow",
-};
-
 interface FlowRow {
   path: string;
   description: string;
@@ -143,7 +127,7 @@ export function Flows({
                 { value: "all", label: "All", count: items.length },
                 {
                   value: "failing",
-                  label: "Failed today",
+                  label: "Failed in 24 hours",
                   count: items.filter((row) => row.runs.failedLastDay > 0).length,
                 },
                 {
@@ -167,7 +151,7 @@ export function Flows({
           cell: (row) => (
             <span className="flex min-w-0 flex-col">
               <Link
-                to={`${link}/flows/${row.path}`}
+                to={flowPage(link, row, editable)}
                 className="min-w-0 font-mono text-code text-ink no-underline"
               >
                 <Truncate mode="middle">{row.path}</Truncate>
@@ -187,7 +171,7 @@ export function Flows({
                 ? "Nothing yet"
                 : row.starts.map((one) => (
                     <span key={`${one.type}-${one.detail}`} className="truncate">
-                      {TRIGGER[one.type] ?? one.type}
+                      {STARTED_BY[one.type] ?? one.type}
                       {one.detail ? (
                         <span className="font-mono text-code text-ink-subtle"> · {one.detail}</span>
                       ) : null}
@@ -209,7 +193,7 @@ export function Flows({
               <span className="flex flex-col">
                 <StatePill state={row.lastRun.state} detail={ago(row.lastRun.createdAt)} />
                 <span className="text-meta text-ink-subtle">
-                  {row.runs.lastDay} today
+                  {row.runs.lastDay} in 24 hours
                   {row.runs.failedLastDay ? ` · ${row.runs.failedLastDay} failed` : ""}
                   {row.runs.waiting ? ` · ${row.runs.waiting} waiting` : ""}
                 </span>
@@ -263,7 +247,7 @@ export function Flows({
             onClose={() => setChosen(undefined)}
             footer={
               <>
-                <Button variant="primary" onClick={() => navigate(`${link}/flows/${open.path}`)}>
+                <Button variant="primary" onClick={() => navigate(flowPage(link, open, editable))}>
                   Open
                 </Button>
                 {editable && open.draft !== "removed" ? (
@@ -310,7 +294,7 @@ export function Flows({
                   },
                   { label: "Steps", value: String(open.nodeCount), mono: true },
                   {
-                    label: "Runs today",
+                    label: "Runs in 24 hours",
                     value: `${open.runs.lastDay}, ${open.runs.failedLastDay} failed`,
                     mono: true,
                   },
@@ -324,7 +308,7 @@ export function Flows({
                   open.starts.map((one) => (
                     <span key={`${one.type}-${one.detail}`} className="flex items-center gap-2">
                       <Junction kind="here" size={5} />
-                      {TRIGGER[one.type] ?? one.type}
+                      {STARTED_BY[one.type] ?? one.type}
                       {one.detail ? <Mono className="text-ink-subtle">{one.detail}</Mono> : null}
                     </span>
                   ))
@@ -342,6 +326,17 @@ export function Flows({
     />
   );
 }
+
+/**
+ * Where a flow opens. One that is only a draft has no page of its own to read: it opens in
+ * the editor, which is where it can be seen.
+ */
+export const flowPage = (
+  link: string,
+  row: { path: string; version: number | null },
+  editable: boolean,
+) =>
+  row.version === null && editable ? `${link}/flows/edit/${row.path}` : `${link}/flows/${row.path}`;
 
 /** A flow's size as a short chain of junctions. */
 function StepChain({ count }: { count: number }) {
@@ -565,7 +560,10 @@ export function FlowView({
               ),
             },
             { header: "Status", cell: (row) => <StatePill state={row.state} /> },
-            { header: "Started by", cell: (row) => TRIGGER[row.trigger.type] ?? row.trigger.type },
+            {
+              header: "Started by",
+              cell: (row) => STARTED_BY[row.trigger.type] ?? row.trigger.type,
+            },
           ]}
         />
       </section>
@@ -614,6 +612,8 @@ export interface FlowRunDetail extends FlowRunRow {
   errorSummary: string | null;
   tags: string[];
   retryOf: string | null;
+  /** The flow run whose step started this one: such a run is retried through that one. */
+  parentFlowRunId?: string | null;
   /** The trace the flow run and its runs are part of. */
   traceId?: string | null;
   retries: { id: string; state: RunState; createdAt: string }[];
@@ -817,8 +817,8 @@ export function FlowRunView({
           <StateAnnouncer state={run.state} label={`Run of ${run.flow}`} />
           <Reconnecting show={reconnecting} />
           <span className="text-ink-muted">
-            Started {when(run.createdAt)} {STARTED[run.trigger.type] ?? `by ${run.trigger.type}`},
-            on bundle version {run.bundleVersion}
+            Started {when(run.createdAt)} {STARTED_ON[run.trigger.type] ?? `by ${run.trigger.type}`}
+            , on bundle version {run.bundleVersion}
           </span>
         </div>
       )}

@@ -1,3 +1,4 @@
+import { FORM_RESERVED_NAMES } from "@volvel/manifest";
 import {
   Button,
   CheckboxField,
@@ -11,6 +12,7 @@ import {
   useFlip,
   useKeys,
 } from "@volvel/ui";
+import { useEffect, useState } from "react";
 import type { GraphNode } from "../FlowGraph.tsx";
 import { ExpressionField } from "./ExpressionField.tsx";
 
@@ -58,6 +60,17 @@ export const quoted = (text: string) => `'${text.replace(/\\/g, "\\\\").replace(
 export function unquoted(expression: string | undefined): string | undefined {
   const match = /^'((?:[^'\\]|\\.)*)'$/.exec((expression ?? "").trim());
   return match ? (match[1] as string).replace(/\\(.)/g, "$1") : undefined;
+}
+
+/** A listed value written as the expression that gives it: text in quotes, a number or yes/no as itself. */
+export const literalOf = (value: unknown): string =>
+  typeof value === "string" ? quoted(value) : String(value);
+
+/** Which of the listed values an expression is exactly, if it is one of them. */
+export function listedBy(expression: string | undefined, listed: unknown[]): string | undefined {
+  const text = (expression ?? "").trim();
+  const found = listed.find((one) => literalOf(one) === text);
+  return found === undefined ? undefined : String(found);
 }
 
 /** What the step must hand its script, given what was chosen in its fields. */
@@ -188,40 +201,34 @@ export function NodeInputs({
               />
             );
           }
-          if (property.enum) {
+          const listed = property.enum ?? (property.type === "boolean" ? [true, false] : undefined);
+          // An expression that is not one of the listed values is shown as the expression it is.
+          if (listed && (!inputs[name] || listedBy(inputs[name], listed) !== undefined)) {
+            const yesNo = property.enum === undefined;
             return (
               <SelectField
                 key={name}
                 name={`input-${name}`}
                 label={label}
-                value={unquoted(inputs[name]) ?? ""}
+                value={listedBy(inputs[name], listed) ?? ""}
                 options={[
                   {
                     value: "",
                     label:
-                      property.default === undefined ? "Not set" : `Default: ${property.default}`,
+                      property.default === undefined
+                        ? "Not set"
+                        : `Default: ${yesNo ? (property.default ? "Yes" : "No") : property.default}`,
                   },
-                  ...property.enum.map((one) => ({ value: String(one), label: String(one) })),
+                  ...listed.map((one) => ({
+                    value: String(one),
+                    label: yesNo ? (one ? "Yes" : "No") : String(one),
+                  })),
                 ]}
                 {...(property.description ? { hint: property.description } : {})}
-                onChange={(value) => set(name, value === "" ? undefined : quoted(value))}
-              />
-            );
-          }
-          if (property.type === "boolean") {
-            return (
-              <SelectField
-                key={name}
-                name={`input-${name}`}
-                label={label}
-                value={inputs[name] ?? ""}
-                options={[
-                  { value: "", label: "Not set" },
-                  { value: "true", label: "Yes" },
-                  { value: "false", label: "No" },
-                ]}
-                {...(property.description ? { hint: property.description } : {})}
-                onChange={(value) => set(name, value === "" ? undefined : value)}
+                onChange={(value) => {
+                  const one = listed.find((each) => String(each) === value);
+                  set(name, one === undefined ? undefined : literalOf(one));
+                }}
               />
             );
           }
@@ -445,6 +452,44 @@ export function fieldName(label: string, taken: readonly string[]): string {
   return name;
 }
 
+const optionLines = (text: string) =>
+  [...new Set(text.split("\n").map((line) => line.trim()))].filter(Boolean);
+
+/**
+ * A choice list, one to a line. What is typed stays as typed, so Enter and a space are
+ * kept; the list the form takes is read from it on each key, and the text is tidied
+ * when the field is left or when the list is changed from elsewhere (undo).
+ */
+function OptionsField({
+  name,
+  options,
+  onChange,
+}: {
+  name: string;
+  options: string[];
+  onChange: (options: string[]) => void;
+}) {
+  const [text, setText] = useState(options.join("\n"));
+  useEffect(() => {
+    setText((now) =>
+      JSON.stringify(optionLines(now)) === JSON.stringify(options) ? now : options.join("\n"),
+    );
+  }, [options]);
+  return (
+    <TextAreaField
+      name={name}
+      label="The list, one to a line"
+      rows={3}
+      value={text}
+      onChange={(next) => {
+        setText(next);
+        onChange(optionLines(next));
+      }}
+      onBlur={() => setText(optionLines(text).join("\n"))}
+    />
+  );
+}
+
 /** A new form trigger, with one field to begin from. */
 export const newForm = (): FormTrigger => ({
   type: "form",
@@ -531,24 +576,21 @@ export function FormDesigner({
                 label="Called, in the flow"
                 value={one.name}
                 hint={`trigger.${one.name}`}
+                error={
+                  FORM_RESERVED_NAMES.includes(one.name)
+                    ? `"${one.name}" is kept for the form itself. Choose another name.`
+                    : undefined
+                }
                 onChange={(name) =>
                   field(index, { name: name.toLowerCase().replace(/[^a-z0-9_]/g, "_") })
                 }
               />
             </div>
             {one.type === "select" ? (
-              <TextAreaField
+              <OptionsField
                 name={`field-options-${index}`}
-                label="The list, one to a line"
-                rows={3}
-                value={(one.options ?? []).join("\n")}
-                onChange={(text) =>
-                  field(index, {
-                    options: [...new Set(text.split("\n").map((line) => line.trim()))].filter(
-                      Boolean,
-                    ),
-                  })
-                }
+                options={one.options ?? []}
+                onChange={(options) => field(index, { options })}
               />
             ) : null}
             <TextField

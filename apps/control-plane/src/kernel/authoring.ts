@@ -501,6 +501,59 @@ async function setAside(trx: Trx, audit: Audit, workspace: WorkspaceRef, path: s
   return removed;
 }
 
+/** Every string in a value, however deep. */
+function stringsOf(value: unknown, into: string[] = []): string[] {
+  if (typeof value === "string") into.push(value);
+  else if (Array.isArray(value)) for (const one of value) stringsOf(one, into);
+  else if (value && typeof value === "object") {
+    for (const one of Object.values(value)) stringsOf(one, into);
+  }
+  return into;
+}
+
+/**
+ * The drafts a test of one draft needs: itself, and every draft it names, however far
+ * (a flow's scripts and flows, the connectors and variables a script says it uses, a
+ * name written in a script's code). Another person's draft that nothing here names is
+ * not among them, so its fault does not stop this test. [] when the test is of
+ * something that has no draft, which then runs as it is deployed.
+ */
+export async function draftsUsedBy(
+  db: Db | Trx,
+  workspace: WorkspaceRef,
+  path: string,
+): Promise<string[]> {
+  const drafts = await db
+    .selectFrom("resource_draft")
+    .select(["path", "key", "body"])
+    .where("workspace_id", "=", workspace.id)
+    .execute();
+  const start = drafts.find((draft) => draft.path === path);
+  if (!start) return [];
+  const used = new Set<string>([start.path]);
+  const queue = [start];
+  while (queue.length > 0) {
+    const strings = stringsOf(queue.pop()?.body);
+    for (const other of drafts) {
+      if (used.has(other.path)) continue;
+      const named = strings.some(
+        (text) =>
+          text === other.path ||
+          text === other.key ||
+          (text.length > other.path.length &&
+            (text.includes(`"${other.path}"`) ||
+              text.includes(`'${other.path}'`) ||
+              text.includes(`\`${other.path}\``))),
+      );
+      if (named) {
+        used.add(other.path);
+        queue.push(other);
+      }
+    }
+  }
+  return [...used];
+}
+
 /**
  * The bundle the workspace would run if the drafts were deployed: its active
  * bundle's repository-managed part, and its console-managed resources with

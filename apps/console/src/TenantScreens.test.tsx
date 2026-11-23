@@ -89,7 +89,7 @@ test("the tenant's overview says what needs attention, and how each workspace st
   expect(await screen.findByText("1 approval waiting for you")).toBeTruthy();
   expect(screen.getByText(/1 more waits for someone else/)).toBeTruthy();
   expect(screen.getByRole("link", { name: "Decide" }).getAttribute("href")).toBe("/t/t1/approvals");
-  expect(await screen.findByText("3 failed runs today")).toBeTruthy();
+  expect(await screen.findByText("3 failed runs in 24 hours")).toBeTruthy();
   expect(await screen.findByText("2 drafts")).toBeTruthy();
   expect(screen.getByText(/Running v7/)).toBeTruthy();
   expect(screen.getByText(/Nothing deployed · promotes to Main/)).toBeTruthy();

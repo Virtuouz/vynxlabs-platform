@@ -43,7 +43,7 @@ So flows use CEL, through `@marcbachmann/cel-js` (MIT, no dependencies), always 
 - **Outputs too large for the run row are not visible to expressions.** They are kept in file storage under the existing 256 KB rule, and an expression sees a reference in their place. This is the spec's rule that large datasets never travel through flow state.
 - **The engine keeps no queue of its own.** The plan had advancing requested through queue jobs. Building it showed that the tables already say everything: a flow run with something to do can be found by a query. So advancing is asked for directly where that is quick, and a sweep finds anything that was missed. Code steps are still ordinary jobs on the queue.
 - **A node that two paths lead into, and is not a join, runs once**, when the first path arrives. To wait for several paths, use a join.
-- **The graph in a flow run's view is the flow as it is deployed now.** A run that started on an older bundle is drawn on the current graph. Its steps and statuses are its own.
+- **The graph in a flow run's view is the flow as it is deployed now.** A run that started on an older bundle is drawn on the current graph. Its steps and statuses are its own. (Later, `GET /flow-runs/:id/definition` draws the graph of the version the run used; this note is the history of phase 3.)
 - **A code step that fails inside a flow does not alert by itself.** The flow decides: an error path handles it, or the flow fails and the workspace's failure alert fires once.
 
 ## Events

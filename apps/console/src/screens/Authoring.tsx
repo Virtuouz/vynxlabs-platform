@@ -1,5 +1,6 @@
 import {
   Button,
+  CheckboxField,
   EmptyState,
   MultiSelectField,
   Notice,
@@ -331,6 +332,7 @@ export function ScriptEditor({
   const { dirty } = draft;
   // The last input it was tried with, kept while the editor is open.
   const [testInput, setTestInput] = useState<unknown>({});
+  const [testAll, setTestAll] = useState(false);
   const [testRun, setTestRun] = useState<string>();
   // The test pane's tab, and the run's own tab, stay as chosen from one run to the next.
   const [paneTab, setPaneTab] = useKeptChoice("editor.pane", "result");
@@ -531,6 +533,7 @@ export function ScriptEditor({
       const started = await api.post<{ runId: string }>(`${root}/test-runs`, {
         script: path,
         input,
+        ...(testAll ? { withAllDrafts: true } : {}),
       });
       setBuildIssues([]);
       setTestRun(started.runId);
@@ -735,6 +738,13 @@ export function ScriptEditor({
             initial={testInput}
             action={dirty || state === "new" ? "Save and run" : "Run the draft"}
             onSubmit={test}
+          />
+          <CheckboxField
+            name="with-all-drafts"
+            label="Build with all drafts"
+            checked={testAll}
+            onChange={setTestAll}
+            hint="Off: this script's draft and the drafts it names. On: every draft of the workspace, so another draft that does not build stops the test."
           />
           <p className="m-0 text-body-sm text-ink-muted">
             Runs the script as its draft has it, on a worker, without deploying anything.{" "}

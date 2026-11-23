@@ -12,7 +12,7 @@ import {
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
-import { InputDialog, isStoredInput } from "../InputDialog.tsx";
+import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { CopyIcon, curlFor, Identifier } from "../kit/copy.tsx";
 import { Current } from "../kit/current.ts";
@@ -715,32 +715,43 @@ function FlowRunHeader({
                 },
               ]
             : [
-                ...(finishedBadly
+                ...(run.parentFlowRunId
                   ? [
                       {
-                        key: "retry",
-                        label: "Retry from the failed step",
+                        key: "parent",
+                        label: "Retry the flow run that started this one",
                         icon: RotateCcw,
-                        run: () => fromFailed(),
+                        run: () => navigate(`${link}/runs/${run.parentFlowRunId}`),
                       },
                     ]
-                  : []),
-                ...(finishedBadly && fix !== undefined
-                  ? [
+                  : [
+                      ...(finishedBadly
+                        ? [
+                            {
+                              key: "retry",
+                              label: "Retry from the failed step",
+                              icon: RotateCcw,
+                              run: () => fromFailed(),
+                            },
+                          ]
+                        : []),
+                      ...(finishedBadly && fix !== undefined
+                        ? [
+                            {
+                              key: "retry-fix",
+                              label: `Retry from the failed step on v${fix}`,
+                              icon: RotateCcw,
+                              run: () => fromFailed("active"),
+                            },
+                          ]
+                        : []),
                       {
-                        key: "retry-fix",
-                        label: `Retry from the failed step on v${fix}`,
+                        key: "rerun",
+                        label: "Run again from the start",
                         icon: RotateCcw,
-                        run: () => fromFailed("active"),
+                        run: () => fromStart("original"),
                       },
-                    ]
-                  : []),
-                {
-                  key: "rerun",
-                  label: "Run again from the start",
-                  icon: RotateCcw,
-                  run: () => fromStart("original"),
-                },
+                    ]),
                 {
                   key: "edit",
                   label: `Open ${run.flow} in the editor`,
@@ -799,6 +810,14 @@ function FlowRunHeader({
               <Button size="small" variant="danger" onClick={cancel}>
                 Cancel flow run
               </Button>
+            ) : run.parentFlowRunId ? (
+              // A step of another flow run is run again with that flow run: the server refuses it alone.
+              <Link
+                to={`${link}/runs/${run.parentFlowRunId}`}
+                className="flex h-8 items-center gap-1.5 rounded-control border border-line px-3 text-meta hover:bg-surface"
+              >
+                <RotateCcw aria-hidden="true" size={14} /> Retry the flow that started it
+              </Link>
             ) : (
               <Menu
                 label={
@@ -831,9 +850,11 @@ function FlowRunHeader({
                 ]}
               />
             )}
-            {isStoredInput(run.input) ? null : (
+            {run.parentFlowRunId ? null : (
+              // The retry route starts it again from its own stored input: it needs no manual
+              // start, and sends nothing that is masked or too large to be shown.
               <CopyIcon
-                value={curlFor("POST", `${root}/flow-runs`, { flow: run.flow, input: run.input })}
+                value={curlFor("POST", `${root}/flow-runs/${run.id}/retry`, { from: "start" })}
                 label="Copy as curl: start this flow again with the same input"
               />
             )}

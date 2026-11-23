@@ -141,3 +141,27 @@ test("a chosen step's last test shows its output by its shape, its error, or tha
   show(<LastTest run={run} node="never" />);
   expect(screen.getByText("The last test did not reach this step.")).toBeTruthy();
 });
+
+test("a test builds with the flow's own drafts, and with all drafts only when chosen (D32)", () => {
+  const chosen: boolean[] = [];
+  show(
+    <FlowTestPanel
+      link="/t/t1/workspaces/w1"
+      path="orders/intake"
+      schema={undefined}
+      blocked={undefined}
+      run={undefined}
+      error={undefined}
+      changed={false}
+      onRun={async () => {}}
+      withAll={false}
+      onWithAll={(all) => chosen.push(all)}
+      onChoose={() => {}}
+      onClose={() => {}}
+    />,
+  );
+  const box = screen.getByLabelText("Build with all drafts") as HTMLInputElement;
+  expect(box.checked).toBe(false);
+  fireEvent.click(box);
+  expect(chosen).toEqual([true]);
+});

@@ -64,6 +64,7 @@ export {
 export {
   addressedStarts,
   checkFlow,
+  EXPRESSION_ROOTS,
   type FlowBody,
   type FlowEdge,
   type FlowGrants,

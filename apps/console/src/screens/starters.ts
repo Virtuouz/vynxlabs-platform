@@ -118,10 +118,10 @@ export const FLOW_STARTERS: FlowStarter[] = [
         },
         size: {
           type: "branch",
-          cases: [{ name: "large", when: "input.amount > 100" }],
+          cases: [{ name: "large", when: "trigger.amount > 100" }],
         },
-        large: { type: "set", values: { size: "'large'", amount: "input.amount" } },
-        small: { type: "set", values: { size: "'small'", amount: "input.amount" } },
+        large: { type: "set", values: { size: "'large'", amount: "trigger.amount" } },
+        small: { type: "set", values: { size: "'small'", amount: "trigger.amount" } },
       },
       edges: [
         { from: "start", to: "size" },

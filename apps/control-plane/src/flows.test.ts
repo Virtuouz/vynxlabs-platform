@@ -631,6 +631,16 @@ describe("a bundle with a broken flow is refused at upload, with the flow, node 
         )
       )[0],
     ).toMatch(/^bad \(flow\): \/body\/nodes\/a\/values\/x is not a valid expression: /);
+    // A name no expression of a flow has, such as `input` for what started it (FLW-11).
+    expect(
+      await problems(
+        flow("bad", { start: manual, a: set({ x: "input.amount" }) }, [["start", "a"]]),
+      ),
+    ).toEqual([
+      expect.stringMatching(
+        /^bad \(flow\): \/body\/nodes\/a\/values\/x is not a valid expression: .*input/,
+      ),
+    ]);
     expect(
       await problems(
         flow(
@@ -1050,6 +1060,11 @@ describe("waiting", () => {
     // It is not "running" to a person: it waits for its time.
     expect(paused.state).toBe("waiting_time");
     expect(step(paused, "pause").state).toBe("waiting_time");
+    // The list counts the runs that wait for a person: a delay waits for its time (FLW-13).
+    const listed = (await alice.get(`${ws()}/flows`)).body.items.find(
+      (one: { path: string }) => one.path === "waiting",
+    );
+    expect(listed.runs.waiting).toBe(0);
     expect(Date.parse(step(paused, "pause").wakeAt)).toBeGreaterThan(Date.now() + 3000_000);
     // Whatever else is due on the instance, this flow is not: it stays where it is.
     await advanceDueFlows(t.kernel);
@@ -1073,6 +1088,10 @@ describe("waiting", () => {
     );
     // Every list says the same: it waits for a person.
     expect(waiting).toMatchObject({ status: "running", state: "waiting_approval" });
+    const counted = (await alice.get(`${ws()}/flows`)).body.items.find(
+      (one: { path: string }) => one.path === "approving",
+    );
+    expect(counted.runs.waiting).toBeGreaterThanOrEqual(1);
     expect(step(waiting, "gate").state).toBe("waiting_approval");
     const listed = (await alice.get(`${ws()}/activity?state=waiting_approval`)).body;
     expect(listed.items.map((one: { id: string; state: string }) => [one.id, one.state])).toEqual([

@@ -334,7 +334,10 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
     group: "Flows",
     scope: "workspace",
     appFacing: true,
-    verbs: { read: "See flow runs and their steps.", write: "Start and cancel a flow." },
+    verbs: {
+      read: "See flow runs and their steps.",
+      write: "Start, retry and test a flow, and cancel its runs.",
+    },
   },
   {
     kind: "approval",

@@ -18,6 +18,7 @@ import { startTestApp, type TestApp } from "./testing.js";
 
 const MAIN = "localhost:8080";
 const SHOT = "table-help.light.0123456789ab.png";
+const SHOT_DARK = "table-help.dark.0123456789ab.png";
 const PNG = Buffer.from(
   "89504e470d0a1a0a0000000d4948445200000001000000010806000000" +
     "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082",
@@ -45,7 +46,7 @@ function writeHelp(consoleDir: string, version: string, extra: Record<string, st
   const files = packageOutput(set, { version, productName: "Volvel" });
   const manifest = JSON.parse(files.get("manifest.json") as string);
   manifest.screenshots = ["table-help"];
-  manifest.screenshotFiles = { "table-help": { light: SHOT } };
+  manifest.screenshotFiles = { "table-help": { light: SHOT, dark: SHOT_DARK } };
   files.set("manifest.json", `${JSON.stringify(manifest)}\n`);
   files.set("redirects.json", `${JSON.stringify({ "old/first": "start/first" })}\n`);
   for (const [path, text] of Object.entries(PAGES)) files.set(`md/${path}.md`, text);
@@ -55,7 +56,7 @@ function writeHelp(consoleDir: string, version: string, extra: Record<string, st
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, text);
   }
-  for (const name of ["assets/start/pic.png", `assets/screenshots/${SHOT}`]) {
+  for (const name of ["assets/start/pic.png", `assets/screenshots/${SHOT}`, `assets/screenshots/${SHOT_DARK}`]) {
     const file = join(consoleDir, "help", name);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, PNG);
@@ -240,10 +241,21 @@ describe("the product's documentation at /docs", () => {
     expect(missing.headers["content-security-policy"]).toBeTruthy();
   });
 
+  test("a reader's own choice of look decides which shot a page shows, over the system's", async () => {
+    const script = (await get(t, "/docs/_theme.js")).body;
+    expect(script).toContain("picture source");
+    expect(script).toContain("not all");
+  });
+
   test("the pictures and the screenshots are served from the build, and a screenshot never changes", async () => {
     const page = await get(t, "/docs/start/first");
     expect(page.body).toContain('src="/docs/assets/start/pic.png"');
     expect(page.body).toContain(`src="/docs/assets/screenshots/${SHOT}"`);
+    // In dark a reader is given the dark shot: the light one is the picture's own source.
+    expect(page.body).toContain(
+      `<picture><source media="(prefers-color-scheme: dark)" srcset="/docs/assets/screenshots/${SHOT_DARK}"/>`,
+    );
+    expect((await get(t, `/docs/assets/screenshots/${SHOT_DARK}`)).statusCode).toBe(200);
     // A screenshot that was not taken is said in words.
     expect(page.body).toContain("A table that was not photographed");
     const shot = await get(t, `/docs/assets/screenshots/${SHOT}`);

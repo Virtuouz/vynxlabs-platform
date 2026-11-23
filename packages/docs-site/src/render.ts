@@ -104,6 +104,8 @@ export interface SiteView {
     asset?: (path: string) => string | undefined;
     /** Where a screenshot is served from, by its name. */
     screenshot?: (name: string) => string | null | undefined;
+    /** Where the dark look's picture of a screenshot is served from. Left out, a screenshot is one picture. */
+    screenshotDark?: (name: string) => string | null | undefined;
     /** What a field of a resource means. */
     field?: (path: string) => FieldInfo | null | undefined;
     /** What a term means, when the site's own glossary does not say. */
@@ -363,6 +365,7 @@ function draw(at: SiteView, path: string, tree: Root): string {
     ...(at.productName ? { productName: at.productName } : {}),
     ...(at.resolve?.field ? { field: at.resolve.field } : {}),
     ...(at.resolve?.screenshot ? { screenshot: at.resolve.screenshot } : {}),
+    ...(at.resolve?.screenshotDark ? { screenshotDark: at.resolve.screenshotDark } : {}),
     // Classes only, drawn here: no script and no policy to change.
     highlight: highlightCode,
     // The page's title is its first heading. What the author wrote as `#` comes under it.

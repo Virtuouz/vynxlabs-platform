@@ -49,6 +49,12 @@ export interface RenderOptions {
   /** Where a screenshot is served from, by its name. */
   screenshot?: (name: string) => string | null | undefined;
   /**
+   * Where the dark look's picture of a screenshot is, by its name. With it, a screenshot is drawn as
+   * a `<picture>` whose dark source is chosen by the reader's `prefers-color-scheme`. Without it, or
+   * where it has none for a name, the screenshot is the one picture.
+   */
+  screenshotDark?: (name: string) => string | null | undefined;
+  /**
    * Marks each block drawn with the lines of the source it came from, as
    * `data-line` and, for a container, `data-end-line`: for an editor whose
    * preview follows its cursor. A served page leaves it out.
@@ -451,7 +457,16 @@ function component(node: Component, ctx: Context): Drawn[] {
       if (!src || imageKind(src) === "refused") {
         return [el("p", { class: "vd-screenshot-missing" }, [alt])];
       }
-      return [el("figure", { class: "vd-screenshot" }, [el("img", { src, alt, loading: "lazy" })])];
+      const img = el("img", { src, alt, loading: "lazy" });
+      const dark = ctx.options.screenshotDark?.(node.props.name ?? "");
+      const picture =
+        dark && imageKind(dark) !== "refused"
+          ? el("picture", {}, [
+              el("source", { media: "(prefers-color-scheme: dark)", srcset: dark }),
+              img,
+            ])
+          : img;
+      return [el("figure", { class: "vd-screenshot" }, [picture])];
     }
     case "file-tree":
       return [el("div", { class: "vd-file-tree" }, inside())];

@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { FEEDBACK_COLUMNS, FEEDBACK_TABLE } from "@volvel/docs-engine";
 import { type Bundle, type BundleManifest, bundleDigest, fileSchemas } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -154,8 +157,18 @@ function browser() {
   return { get, form };
 }
 
+// The names the product's own help holds, as the console's build leaves them, so that no test
+// depends on a console having been built.
+let consoleDir: string;
+
 beforeAll(async () => {
-  t = await startTestApp();
+  consoleDir = mkdtempSync(join(tmpdir(), "vx-help-"));
+  mkdirSync(join(consoleDir, "help"));
+  writeFileSync(
+    join(consoleDir, "help", "manifest.json"),
+    JSON.stringify({ terms: { workspace: {} }, topics: { "data-tables": {} } }),
+  );
+  t = await startTestApp({ config: { consoleDir } });
   const roles = Object.fromEntries(
     (
       await t.db.selectFrom("role").select(["id", "name"]).where("builtin", "=", true).execute()
@@ -189,6 +202,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await t?.stop();
+  if (consoleDir) rmSync(consoleDir, { recursive: true, force: true });
 });
 
 const HELP = "/apps/acme/main/help/";
@@ -1010,6 +1024,28 @@ describe("someone who writes documentation in the console, and is not a develope
       preview: `http://${MAIN}/apps/acme/dev/guide-site/_draft/`,
     });
     expect((await wren.delete(`${devWs()}/drafts/guide/support/exchanges`)).status).toBe(204);
+  });
+
+  test("DOC-08 a draft preview, the terms and the search leave out what a deploy would refuse: a term the product owns", async () => {
+    const at = (url: string) => t.app.inject({ url, headers: { host: MAIN, ...wren.headers } });
+    expect(
+      (
+        await save(
+          wren,
+          "guide/clash",
+          text(
+            "title: Clash\nterms:\n  - id: workspace\n    term: workspace\n    short: Ours alone.",
+            "::glossary\n",
+          ),
+        )
+      ).status,
+    ).toBe(200);
+    const preview = await at("/apps/acme/dev/guide-site/_draft/clash");
+    expect(preview.statusCode).toBe(200);
+    expect(preview.body).not.toContain("Ours alone.");
+    const known = (await wren.get(`${devWs()}/terms`)).body.terms as Any[];
+    expect(known.map((one) => one.id)).not.toContain("workspace");
+    expect((await wren.delete(`${devWs()}/drafts/guide/clash`)).status).toBe(204);
   });
 
   test("a change to the tree of pages is saved whole, or not at all", async () => {

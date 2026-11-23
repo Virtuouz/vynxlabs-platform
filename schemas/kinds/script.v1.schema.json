@@ -10,7 +10,8 @@
     },
     "description": {
       "type": "string",
-      "maxLength": 500
+      "maxLength": 500,
+      "description": "What it is for, in plain text."
     },
     "input": {
       "type": "object",
@@ -29,7 +30,8 @@
     "timeoutSeconds": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 3600
+      "maximum": 3600,
+      "description": "How long a run may take, in seconds, before it is stopped and fails."
     },
     "memoryMb": {
       "type": "integer",
@@ -39,19 +41,23 @@
     },
     "retries": {
       "type": "object",
+      "description": "What happens when a run fails: how many more tries it gets, and how long between.",
       "properties": {
         "limit": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 10
+          "maximum": 10,
+          "description": "How many more times a failed run is tried. 0 tries it once."
         },
         "delaySeconds": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 3600
+          "maximum": 3600,
+          "description": "How long to wait before a try, in seconds."
         },
         "backoff": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Whether the wait doubles with each try."
         }
       },
       "required": [
@@ -62,6 +68,7 @@
       "additionalProperties": false
     },
     "concurrency": {
+      "description": "How many runs of this script may be in progress at once.",
       "oneOf": [
         {
           "type": "integer",
@@ -82,7 +89,8 @@
             "limit": {
               "type": "integer",
               "minimum": 1,
-              "maximum": 64
+              "maximum": 64,
+              "description": "How many runs for each value of `key` may be in progress at once."
             }
           },
           "required": [
@@ -110,7 +118,8 @@
             "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
             "maxLength": 255
           },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "description": "Connections the script may use, by path."
         },
         "connectionGroups": {
           "type": "array",
@@ -128,7 +137,8 @@
             "type": "string",
             "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
           },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "description": "Secrets of the workspace the script may read, by name."
         },
         "variables": {
           "type": "array",
@@ -137,7 +147,8 @@
             "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
             "maxLength": 255
           },
-          "uniqueItems": true
+          "uniqueItems": true,
+          "description": "Variables the script may read, by path."
         },
         "events": {
           "type": "array",
@@ -203,7 +214,8 @@
         "label": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 60
+          "maxLength": 60,
+          "description": "What the step is called in the flow editor."
         },
         "icon": {
           "type": "string",
@@ -214,7 +226,8 @@
         "category": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 40
+          "maxLength": 40,
+          "description": "The group the step is listed under in the flow editor."
         },
         "takes": {
           "type": "array",
@@ -239,11 +252,13 @@
       "description": "The TypeScript the resource was written as, for a resource managed in the console. Its default export is what runs.",
       "properties": {
         "language": {
-          "const": "typescript"
+          "const": "typescript",
+          "description": "The language it is written in. Only `typescript`."
         },
         "code": {
           "type": "string",
-          "maxLength": 262144
+          "maxLength": 262144,
+          "description": "The code itself. It may import the SDK and `node:` modules only."
         }
       },
       "required": [

@@ -357,7 +357,10 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             body.purpose,
           );
           await audit({
-            action: `end_user.${body.purpose}_link_created`,
+            action:
+              body.purpose === "invite"
+                ? "end_user.invite_link_created"
+                : "end_user.reset_link_created",
             targetType: "end_user",
             targetId: user.id,
             tenantId: params.t,

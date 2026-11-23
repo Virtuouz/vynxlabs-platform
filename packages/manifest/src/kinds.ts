@@ -1,4 +1,5 @@
 import { PATH_PATTERN } from "./envelope.js";
+import { FLOW_STARTS, FLOW_STEPS } from "./flow-words.js";
 import { dashboardKind, interfaceKind } from "./page.js";
 import type { KindDefinition, KindRegistry } from "./registry.js";
 
@@ -6,6 +7,8 @@ export const PERMISSION_PATTERN = "^(\\*|[a-z][a-z0-9_]*):(\\*|read|write)$";
 export const SECRET_NAME_PATTERN = "^[A-Za-z_][A-Za-z0-9_]*$";
 
 const path = { type: "string", pattern: PATH_PATTERN, maxLength: 255 };
+/** What every kind may say of itself: what it is for, for people reading the repository. */
+const aboutIt = { type: "string", maxLength: 500, description: "What it is for, in plain text." };
 const jsonSchema = { type: "object", description: "A JSON Schema (draft 2020-12)." };
 
 export const roleKind: KindDefinition = {
@@ -14,10 +17,17 @@ export const roleKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      name: { type: "string", pattern: "^[a-z][a-z0-9_]*$", maxLength: 63 },
-      description: { type: "string", maxLength: 500 },
+      name: {
+        type: "string",
+        pattern: "^[a-z][a-z0-9_]*$",
+        maxLength: 63,
+        description: "The name bindings refer to the role by. Small letters, digits and `_`.",
+      },
+      description: aboutIt,
       permissions: {
         type: "array",
+        description:
+          "What the role allows, each as `kind:verb` such as `table:read`, with `*` for either half. The permissions page lists them all.",
         items: { type: "string", pattern: PERMISSION_PATTERN },
         minItems: 1,
         uniqueItems: true,
@@ -36,10 +46,14 @@ export const bindingKind: KindDefinition = {
     properties: {
       role: { type: "string", description: "The name of a role visible in this workspace." },
       principal: {
+        description: "Who the role is given to.",
         oneOf: [
           {
             type: "object",
-            properties: { type: { const: "member" }, email: { type: "string" } },
+            properties: {
+              type: { const: "member", description: "A person who is a member of the tenant." },
+              email: { type: "string", description: "The member's email address." },
+            },
             required: ["type", "email"],
             additionalProperties: false,
           },
@@ -75,7 +89,13 @@ export const bindingKind: KindDefinition = {
           },
           {
             type: "object",
-            properties: { type: { const: "end_user" }, email: { type: "string" } },
+            properties: {
+              type: {
+                const: "end_user",
+                description: "A person who signs in to the tenant's apps.",
+              },
+              email: { type: "string", description: "The end user's email address." },
+            },
             required: ["type", "email"],
             additionalProperties: false,
           },
@@ -121,8 +141,15 @@ const sourceCode = {
   description:
     "The TypeScript the resource was written as, for a resource managed in the console. Its default export is what runs.",
   properties: {
-    language: { const: "typescript" },
-    code: { type: "string", maxLength: MAX_SOURCE_LENGTH },
+    language: {
+      const: "typescript",
+      description: "The language it is written in. Only `typescript`.",
+    },
+    code: {
+      type: "string",
+      maxLength: MAX_SOURCE_LENGTH,
+      description: "The code itself. It may import the SDK and `node:` modules only.",
+    },
   },
   required: ["language", "code"],
   additionalProperties: false,
@@ -141,7 +168,7 @@ export const scriptKind: KindDefinition = {
         type: "string",
         description: "The name the script is exported under in the bundle.",
       },
-      description: { type: "string", maxLength: 500 },
+      description: aboutIt,
       input: jsonSchema,
       output: jsonSchema,
       schemaSource: {
@@ -150,7 +177,12 @@ export const scriptKind: KindDefinition = {
           "Set when `input` and `output` were read from the script's own `input` and `output` " +
           "exports, which the console then shows and does not let be edited by hand.",
       },
-      timeoutSeconds: { type: "integer", minimum: 1, maximum: 3600 },
+      timeoutSeconds: {
+        type: "integer",
+        minimum: 1,
+        maximum: 3600,
+        description: "How long a run may take, in seconds, before it is stopped and fails.",
+      },
       memoryMb: {
         type: "integer",
         minimum: 64,
@@ -160,15 +192,31 @@ export const scriptKind: KindDefinition = {
       },
       retries: {
         type: "object",
+        description:
+          "What happens when a run fails: how many more tries it gets, and how long between.",
         properties: {
-          limit: { type: "integer", minimum: 0, maximum: 10 },
-          delaySeconds: { type: "integer", minimum: 0, maximum: 3600 },
-          backoff: { type: "boolean" },
+          limit: {
+            type: "integer",
+            minimum: 0,
+            maximum: 10,
+            description: "How many more times a failed run is tried. 0 tries it once.",
+          },
+          delaySeconds: {
+            type: "integer",
+            minimum: 0,
+            maximum: 3600,
+            description: "How long to wait before a try, in seconds.",
+          },
+          backoff: {
+            type: "boolean",
+            description: "Whether the wait doubles with each try.",
+          },
         },
         required: ["limit", "delaySeconds", "backoff"],
         additionalProperties: false,
       },
       concurrency: {
+        description: "How many runs of this script may be in progress at once.",
         oneOf: [
           {
             type: "integer",
@@ -188,7 +236,12 @@ export const scriptKind: KindDefinition = {
                 description:
                   "Where the value is in the input, as `input.<field>` or `input.<field>.<field>`. A run whose input has no value there shares one lane with the others that have none.",
               },
-              limit: { type: "integer", minimum: 1, maximum: 64 },
+              limit: {
+                type: "integer",
+                minimum: 1,
+                maximum: 64,
+                description: "How many runs for each value of `key` may be in progress at once.",
+              },
             },
             required: ["key", "limit"],
             additionalProperties: false,
@@ -207,7 +260,12 @@ export const scriptKind: KindDefinition = {
         description:
           "Everything the script may read at run time. Each must be bound before a deploy to production or a promotion. A deploy to a dev workspace goes ahead with a warning.",
         properties: {
-          connections: { type: "array", items: path, uniqueItems: true },
+          connections: {
+            type: "array",
+            items: path,
+            uniqueItems: true,
+            description: "Connections the script may use, by path.",
+          },
           connectionGroups: {
             type: "array",
             items: path,
@@ -219,8 +277,14 @@ export const scriptKind: KindDefinition = {
             type: "array",
             items: { type: "string", pattern: SECRET_NAME_PATTERN },
             uniqueItems: true,
+            description: "Secrets of the workspace the script may read, by name.",
           },
-          variables: { type: "array", items: path, uniqueItems: true },
+          variables: {
+            type: "array",
+            items: path,
+            uniqueItems: true,
+            description: "Variables the script may read, by path.",
+          },
           events: {
             type: "array",
             items: path,
@@ -257,14 +321,24 @@ export const scriptKind: KindDefinition = {
         description:
           "Makes the script a step that can be picked in the flow editor, under this label.",
         properties: {
-          label: { type: "string", minLength: 1, maxLength: 60 },
+          label: {
+            type: "string",
+            minLength: 1,
+            maxLength: 60,
+            description: "What the step is called in the flow editor.",
+          },
           icon: {
             type: "string",
             pattern: "^[a-z][a-z0-9-]*$",
             maxLength: 40,
             description: "The name of an icon from the interface's set.",
           },
-          category: { type: "string", minLength: 1, maxLength: 40 },
+          category: {
+            type: "string",
+            minLength: 1,
+            maxLength: 40,
+            description: "The group the step is listed under in the flow editor.",
+          },
           takes: {
             type: "array",
             items: { enum: ["connection", "table", "event"] },
@@ -318,8 +392,11 @@ export const scheduleKind: KindDefinition = {
       },
       cron: { type: "string", maxLength: 120, description: "Five-field cron expression." },
       timezone: { type: "string", maxLength: 64, description: "IANA time zone. Default UTC." },
-      input: { type: "object" },
-      enabled: { type: "boolean" },
+      input: { type: "object", description: "What the script or the flow is given each time." },
+      enabled: {
+        type: "boolean",
+        description: "Whether it fires. Default true. Turn it off to pause it without deleting it.",
+      },
       overlap: {
         enum: ["allow", "skip"],
         description:
@@ -333,6 +410,10 @@ export const scheduleKind: KindDefinition = {
     additionalProperties: false,
   },
 };
+
+/** Whether a trigger starts anything. */
+const TRIGGER_ENABLED =
+  "Whether it starts anything. Default true. Turn it off to pause it without deleting it.";
 
 const expression = {
   type: "string",
@@ -361,7 +442,10 @@ const webhookOptions = {
       "that fails is answered 401. Covers senders that put an HMAC of the body in a header, " +
       "such as GitHub, Shopify and Slack.",
     properties: {
-      scheme: { enum: ["hmac-sha256", "hmac-sha1"] },
+      scheme: {
+        enum: ["hmac-sha256", "hmac-sha1"],
+        description: "The way the signature is made: HMAC with SHA-256, or with SHA-1.",
+      },
       header: {
         type: "string",
         pattern: "^[A-Za-z0-9-]+$",
@@ -409,10 +493,20 @@ const webhookOptions = {
 
 /** A form that starts something: a page the platform serves, with these fields. */
 const formOptions = {
-  title: { type: "string", minLength: 1, maxLength: 120 },
-  description: { type: "string", maxLength: 1000 },
+  title: {
+    type: "string",
+    minLength: 1,
+    maxLength: 120,
+    description: "The heading of the form's page.",
+  },
+  description: {
+    type: "string",
+    maxLength: 1000,
+    description: "What is said under the heading, to whoever fills the form in.",
+  },
   fields: {
     type: "array",
+    description: "What the form asks, in order. Each answer is a field of the input.",
     minItems: 1,
     maxItems: 30,
     items: {
@@ -424,10 +518,23 @@ const formOptions = {
           maxLength: 63,
           description: "The key the value has in the input.",
         },
-        label: { type: "string", minLength: 1, maxLength: 120 },
-        type: { enum: ["text", "textarea", "email", "number", "date", "select", "checkbox"] },
-        required: { type: "boolean" },
-        help: { type: "string", maxLength: 300 },
+        label: {
+          type: "string",
+          minLength: 1,
+          maxLength: 120,
+          description: "What the field is called on the page.",
+        },
+        type: {
+          enum: ["text", "textarea", "email", "number", "date", "select", "checkbox"],
+          description:
+            "What kind of answer it takes: a line of text, several lines, an email address, a number, a date, one of a list or a checkbox.",
+        },
+        required: { type: "boolean", description: "Whether the form can be sent with it empty." },
+        help: {
+          type: "string",
+          maxLength: 300,
+          description: "A line under the field that says what to put in it.",
+        },
         options: {
           type: "array",
           items: { type: "string", minLength: 1, maxLength: 120 },
@@ -441,7 +548,12 @@ const formOptions = {
       additionalProperties: false,
     },
   },
-  submitLabel: { type: "string", minLength: 1, maxLength: 40 },
+  submitLabel: {
+    type: "string",
+    minLength: 1,
+    maxLength: 40,
+    description: "What the button that sends the form says.",
+  },
   success: {
     type: "string",
     maxLength: 500,
@@ -462,10 +574,10 @@ export const triggerKind: KindDefinition = {
       {
         type: "object",
         properties: {
-          type: { const: "webhook" },
+          type: { const: "webhook", description: "Starts when its address is called." },
           description: { type: "string", maxLength: 500, description: "What the trigger is for." },
-          script: path,
-          enabled: { type: "boolean" },
+          script: { ...path, description: "The script it starts." },
+          enabled: { type: "boolean", description: TRIGGER_ENABLED },
           tags: tagExpressions,
           ...webhookOptions,
         },
@@ -475,15 +587,15 @@ export const triggerKind: KindDefinition = {
       {
         type: "object",
         properties: {
-          type: { const: "event" },
+          type: { const: "event", description: "Starts when an event is published." },
           description: { type: "string", maxLength: 500, description: "What the trigger is for." },
-          script: path,
+          script: { ...path, description: "The script it starts." },
           event: { ...path, description: "The event to listen for." },
           filter: {
             ...expression,
             description: "CEL over `event`. The script runs only when it is true.",
           },
-          enabled: { type: "boolean" },
+          enabled: { type: "boolean", description: TRIGGER_ENABLED },
           tags: tagExpressions,
         },
         required: ["type", "script", "event"],
@@ -492,9 +604,12 @@ export const triggerKind: KindDefinition = {
       {
         type: "object",
         properties: {
-          type: { const: "form" },
-          script: path,
-          enabled: { type: "boolean" },
+          type: {
+            const: "form",
+            description: "Starts when someone sends a form the platform serves.",
+          },
+          script: { ...path, description: "The script it starts." },
+          enabled: { type: "boolean", description: TRIGGER_ENABLED },
           ...formOptions,
         },
         required: ["type", "script", "title", "fields"],
@@ -510,7 +625,7 @@ export const eventKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      description: { type: "string", maxLength: 500 },
+      description: aboutIt,
       payload: { ...jsonSchema, description: "A JSON Schema every published payload must match." },
     },
     required: ["payload"],
@@ -519,9 +634,15 @@ export const eventKind: KindDefinition = {
 };
 
 const nodeId = "^[a-z][a-z0-9_]*$";
+/** What a step or a start is and does, from the flow's words. */
+const wordsOfNode = (type: string): string => {
+  const known: Record<string, { description: string }> = { ...FLOW_STEPS, ...FLOW_STARTS };
+  return known[type]?.description ?? "";
+};
 const node = (type: string, properties: Record<string, object>, required: string[] = []) => ({
   type: "object",
-  properties: { type: { const: type }, ...properties },
+  description: wordsOfNode(type),
+  properties: { type: { const: type, description: `Always \`${type}\`.` }, ...properties },
   required: ["type", ...required],
   additionalProperties: false,
 });
@@ -566,9 +687,11 @@ export const flowKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      description: { type: "string", maxLength: 500 },
+      description: aboutIt,
       nodes: {
         type: "object",
+        description:
+          "The steps of the flow, by name. Each is of one type, and what it may say depends on it.",
         propertyNames: { pattern: nodeId, maxLength: 63 },
         minProperties: 1,
         maxProperties: 200,
@@ -585,6 +708,7 @@ export const flowKind: KindDefinition = {
                     "What names this start for as long as the flow lives. A webhook's address, a form's address, a pause and the time it last fired follow the key when the step is renamed. Left out, the step's own name is the key.",
                 },
                 trigger: {
+                  description: "How the flow starts, and what it is given.",
                   oneOf: [
                     node("manual", {
                       input: {
@@ -606,8 +730,16 @@ export const flowKind: KindDefinition = {
                     node(
                       "schedule",
                       {
-                        cron: { type: "string", maxLength: 120 },
-                        timezone: { type: "string", maxLength: 64 },
+                        cron: {
+                          type: "string",
+                          maxLength: 120,
+                          description: "Five-field cron expression.",
+                        },
+                        timezone: {
+                          type: "string",
+                          maxLength: 64,
+                          description: "IANA time zone. Default UTC.",
+                        },
                         source: triggerSourceRef,
                         tags: tagExpressions,
                         overlap: {
@@ -618,9 +750,18 @@ export const flowKind: KindDefinition = {
                       },
                       ["cron"],
                     ),
-                    node("event", { event: path, filter: expression, tags: tagExpressions }, [
+                    node(
                       "event",
-                    ]),
+                      {
+                        event: { ...path, description: "The event to listen for." },
+                        filter: {
+                          ...expression,
+                          description: "CEL over `event`. The flow starts only when it is true.",
+                        },
+                        tags: tagExpressions,
+                      },
+                      ["event"],
+                    ),
                     node("form", formOptions, ["title", "fields"]),
                   ],
                 },
@@ -630,8 +771,11 @@ export const flowKind: KindDefinition = {
             node(
               "script",
               {
-                script: path,
-                input: expression,
+                script: { ...path, description: "The script to run." },
+                input: {
+                  ...expression,
+                  description: "One expression for the whole input of the script.",
+                },
                 inputs: {
                   type: "object",
                   propertyNames: { pattern: "^[A-Za-z_][A-Za-z0-9_]*$", maxLength: 63 },
@@ -639,7 +783,11 @@ export const flowKind: KindDefinition = {
                   maxProperties: 50,
                   description: "An expression for each field of the script's input.",
                 },
-                with: grants,
+                with: {
+                  ...grants,
+                  description:
+                    "What the script may reach in this step, beyond what it declares itself: a connection, a table or an event, as the script says it takes.",
+                },
               },
               ["script"],
             ),
@@ -651,6 +799,7 @@ export const flowKind: KindDefinition = {
                   additionalProperties: expression,
                   minProperties: 1,
                   maxProperties: 50,
+                  description: "An expression for each value, by the name it is given.",
                 },
               },
               ["values"],
@@ -660,13 +809,23 @@ export const flowKind: KindDefinition = {
               {
                 cases: {
                   type: "array",
+                  description:
+                    "The ways the flow may go, tried in order. The flow leaves by the first whose `when` is true, or by `otherwise` when none is.",
                   minItems: 1,
                   maxItems: 20,
                   items: {
                     type: "object",
                     properties: {
-                      name: { type: "string", pattern: nodeId, maxLength: 63 },
-                      when: expression,
+                      name: {
+                        type: "string",
+                        pattern: nodeId,
+                        maxLength: 63,
+                        description: "What an edge names to leave by this case.",
+                      },
+                      when: {
+                        ...expression,
+                        description: "An expression that gives true when the flow goes this way.",
+                      },
                     },
                     required: ["name", "when"],
                     additionalProperties: false,
@@ -676,7 +835,12 @@ export const flowKind: KindDefinition = {
               ["cases"],
             ),
             node("respond", {
-              status: { type: "integer", minimum: 200, maximum: 599 },
+              status: {
+                type: "integer",
+                minimum: 200,
+                maximum: 599,
+                description: "The status the request is answered with. Default 200.",
+              },
               headers: {
                 type: "object",
                 propertyNames: { pattern: "^[A-Za-z0-9-]+$", maxLength: 100 },
@@ -693,13 +857,25 @@ export const flowKind: KindDefinition = {
             node(
               "foreach",
               {
-                items: expression,
-                script: path,
-                flow: path,
+                items: {
+                  ...expression,
+                  description: "An expression that gives the list to go through.",
+                },
+                script: { ...path, description: "The script to run for each item." },
+                flow: { ...path, description: "The flow to run for each item." },
                 flowFrom,
                 allow: allowedFlows,
-                input: expression,
-                concurrency: { type: "integer", minimum: 1, maximum: 20 },
+                input: {
+                  ...expression,
+                  description:
+                    "An expression for what each run is given, worked out with `item` and `index`.",
+                },
+                concurrency: {
+                  type: "integer",
+                  minimum: 1,
+                  maximum: 20,
+                  description: "How many items run at once.",
+                },
                 continueOnError: {
                   type: "boolean",
                   description:
@@ -710,15 +886,37 @@ export const flowKind: KindDefinition = {
               ["items"],
             ),
             node("join", {}),
-            node("delay", { seconds: { type: "integer", minimum: 1, maximum: 2592000 } }, [
-              "seconds",
-            ]),
+            node(
+              "delay",
+              {
+                seconds: {
+                  type: "integer",
+                  minimum: 1,
+                  maximum: 2592000,
+                  description: "How long to wait, in seconds.",
+                },
+              },
+              ["seconds"],
+            ),
             node(
               "approval",
               {
-                title: { type: "string", minLength: 1, maxLength: 200 },
-                detail: expression,
-                timeoutSeconds: { type: "integer", minimum: 1, maximum: 2592000 },
+                title: {
+                  type: "string",
+                  minLength: 1,
+                  maxLength: 200,
+                  description: "What is asked of the person who decides.",
+                },
+                detail: {
+                  ...expression,
+                  description: "An expression for the details shown beside the question.",
+                },
+                timeoutSeconds: {
+                  type: "integer",
+                  minimum: 1,
+                  maximum: 2592000,
+                  description: "How long the approval waits, in seconds, before it fails.",
+                },
                 approvers: {
                   type: "object",
                   description:
@@ -727,11 +925,13 @@ export const flowKind: KindDefinition = {
                     groups: {
                       type: "array",
                       maxItems: 20,
+                      description: "Groups whose members may decide.",
                       items: { type: "string", minLength: 1, maxLength: 100 },
                     },
                     roles: {
                       type: "array",
                       maxItems: 20,
+                      description: "Roles whose holders may decide.",
                       items: { type: "string", minLength: 1, maxLength: 100 },
                     },
                   },
@@ -745,21 +945,47 @@ export const flowKind: KindDefinition = {
               },
               ["title"],
             ),
-            node("subflow", { flow: path, flowFrom, allow: allowedFlows, input: expression }),
-            node("fail", { message: expression }, ["message"]),
+            node("subflow", {
+              flow: { ...path, description: "The flow to run." },
+              flowFrom,
+              allow: allowedFlows,
+              input: {
+                ...expression,
+                description: "An expression for the input the other flow is started with.",
+              },
+            }),
+            node(
+              "fail",
+              {
+                message: {
+                  ...expression,
+                  description: "An expression that gives the message the flow fails with.",
+                },
+              },
+              ["message"],
+            ),
           ],
         },
       },
       edges: {
         type: "array",
         maxItems: 1000,
+        description:
+          "Which step goes on to which. A step with no edge out is the end of that path.",
         items: {
           type: "object",
           properties: {
-            from: { type: "string", pattern: nodeId },
-            to: { type: "string", pattern: nodeId },
-            output: { type: "string", pattern: nodeId },
-            error: { type: "boolean" },
+            from: { type: "string", pattern: nodeId, description: "The step it leaves." },
+            to: { type: "string", pattern: nodeId, description: "The step it goes to." },
+            output: {
+              type: "string",
+              pattern: nodeId,
+              description: "For a branch: the case it leaves by, or `otherwise`.",
+            },
+            error: {
+              type: "boolean",
+              description: "Taken when the step it leaves fails, and only then.",
+            },
           },
           required: ["from", "to"],
           additionalProperties: false,
@@ -774,7 +1000,10 @@ export const flowKind: KindDefinition = {
         maxProperties: 200,
         additionalProperties: {
           type: "object",
-          properties: { x: { type: "integer" }, y: { type: "integer" } },
+          properties: {
+            x: { type: "integer", description: "Across, in pixels." },
+            y: { type: "integer", description: "Down, in pixels." },
+          },
           required: ["x", "y"],
           additionalProperties: false,
         },
@@ -785,8 +1014,42 @@ export const flowKind: KindDefinition = {
   },
 };
 
-/** The connectors every worker has. A connection names one of these, or a connector resource. */
-export const BUILTIN_CONNECTORS: readonly string[] = ["http", "smtp", "oauth2"];
+/** A connector every worker has, with what a connection to it is for. */
+export interface BuiltinConnector {
+  name: string;
+  label: string;
+  description: string;
+  /** What a script is given when it asks for a connection of this connector (`ctx.connection`). */
+  client: string;
+}
+
+/** The connectors every worker has, with their words. A connection names one of these, or a connector resource. */
+export const BUILTIN_CONNECTOR_LIST: readonly BuiltinConnector[] = [
+  {
+    name: "http",
+    label: "HTTP API",
+    description:
+      "Any API reached over HTTP. The connection holds the address and, as its secret, a credential that is sent as a bearer token, in a header or as HTTP Basic. A script can call only the connection's own address.",
+    client: "`HttpClient`: `request(path, options)`, with the status, the headers and the body.",
+  },
+  {
+    name: "smtp",
+    label: "Mail server",
+    description:
+      "A mail server, to send messages through. The connection holds the server and the address mail is sent from, and its secret is the password.",
+    client: "`SmtpClient`: `send(message)`, which gives the ID the server gave the message.",
+  },
+  {
+    name: "oauth2",
+    label: "API with OAuth 2.0",
+    description:
+      "An API a member authorizes once in the console. The platform keeps the tokens and refreshes them, and a script is given the access token alone, never the refresh token or the client's secret.",
+    client: "`HttpClient`, which sends the access token as a bearer token.",
+  },
+];
+
+/** The names of the connectors every worker has. */
+export const BUILTIN_CONNECTORS: readonly string[] = BUILTIN_CONNECTOR_LIST.map((one) => one.name);
 
 const connectorName = {
   type: "string",
@@ -806,7 +1069,7 @@ export const connectorKind: KindDefinition = {
         type: "string",
         description: "The name the connector is exported under in the bundle.",
       },
-      description: { type: "string", maxLength: 500 },
+      description: aboutIt,
       configSchema: {
         ...jsonSchema,
         description:
@@ -831,14 +1094,19 @@ export const triggerSourceKind: KindDefinition = {
         type: "string",
         description: "The name the source is exported under in the bundle.",
       },
-      description: { type: "string", maxLength: 500 },
+      description: aboutIt,
       mode: {
         enum: [...TRIGGER_SOURCE_MODES],
         description:
           "`webhook`: it is handed each request to a webhook's address, and says whether to start anything and with what. " +
           "`poll`: it is run on a schedule with where it had got to, and gives back what is new.",
       },
-      timeoutSeconds: { type: "integer", minimum: 1, maximum: 300 },
+      timeoutSeconds: {
+        type: "integer",
+        minimum: 1,
+        maximum: 300,
+        description: "How long a run of it may take, in seconds, before it is stopped.",
+      },
       worker: {
         type: "string",
         pattern: "^[a-z0-9]+(-[a-z0-9]+)*$",
@@ -849,13 +1117,24 @@ export const triggerSourceKind: KindDefinition = {
         type: "object",
         description: "What the source may read when it runs, as for a script.",
         properties: {
-          connections: { type: "array", items: path, uniqueItems: true },
+          connections: {
+            type: "array",
+            items: path,
+            uniqueItems: true,
+            description: "Connections it may use, by path.",
+          },
           secrets: {
             type: "array",
             items: { type: "string", pattern: SECRET_NAME_PATTERN },
             uniqueItems: true,
+            description: "Secrets of the workspace it may read, by name.",
           },
-          variables: { type: "array", items: path, uniqueItems: true },
+          variables: {
+            type: "array",
+            items: path,
+            uniqueItems: true,
+            description: "Variables it may read, by path.",
+          },
         },
         additionalProperties: false,
       },
@@ -873,7 +1152,7 @@ export const connectionKind: KindDefinition = {
     type: "object",
     properties: {
       connector: connectorName,
-      description: { type: "string", maxLength: 500 },
+      description: aboutIt,
     },
     required: ["connector"],
     additionalProperties: false,
@@ -889,7 +1168,7 @@ export const connectionGroupKind: KindDefinition = {
       "A set of connections of one kind, whose members are added per workspace in the console with no deploy. A script picks a member by key when it runs.",
     properties: {
       connector: connectorName,
-      description: { type: "string", maxLength: 500 },
+      description: aboutIt,
     },
     required: ["connector"],
     additionalProperties: false,
@@ -902,8 +1181,12 @@ export const variableKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      description: { type: "string", maxLength: 500 },
-      default: { type: "string", maxLength: 65536 },
+      description: aboutIt,
+      default: {
+        type: "string",
+        maxLength: 65536,
+        description: "Used in a workspace that has not set its own value.",
+      },
     },
     additionalProperties: false,
   },
@@ -958,7 +1241,7 @@ export const queryKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      description: { type: "string", maxLength: 500 },
+      description: aboutIt,
       sql: {
         type: "string",
         minLength: 1,
@@ -979,12 +1262,23 @@ export const queryKind: KindDefinition = {
               maxLength: 55,
               description: "What the parameter is called by whoever runs the query.",
             },
-            type: { enum: [...QUERY_PARAMETER_TYPES] },
-            label: { type: "string", minLength: 1, maxLength: 100 },
+            type: {
+              enum: [...QUERY_PARAMETER_TYPES],
+              description: "What the parameter holds. A value that does not fit is refused.",
+            },
+            label: {
+              type: "string",
+              minLength: 1,
+              maxLength: 100,
+              description: "What the parameter is called where a person is asked for it.",
+            },
             default: {
               description: "Used when the query is run without this parameter.",
             },
-            required: { type: "boolean" },
+            required: {
+              type: "boolean",
+              description: "Whether the query cannot be run without it.",
+            },
           },
           required: ["name", "type"],
           additionalProperties: false,
@@ -1064,24 +1358,29 @@ export const tableKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      description: { type: "string", maxLength: 500 },
+      description: aboutIt,
       columns: {
         type: "object",
+        description:
+          "The table's columns, by name. Every table also has `id`, `created_at` and `updated_at`.",
         propertyNames: { pattern: columnName, maxLength: 55 },
         minProperties: 1,
         maxProperties: 200,
         additionalProperties: {
           type: "object",
           properties: {
-            type: { enum: [...COLUMN_TYPES] },
+            type: { enum: [...COLUMN_TYPES], description: "What the column holds." },
             description: {
               type: "string",
               maxLength: 500,
               description:
                 "What the column holds, in plain text. Shown on the column's heading and wherever a page of documentation names the column.",
             },
-            required: { type: "boolean" },
-            unique: { type: "boolean" },
+            required: { type: "boolean", description: "Whether a row must have a value." },
+            unique: {
+              type: "boolean",
+              description: "Whether no two rows may hold the same value.",
+            },
             default: {
               description:
                 "Used for a row that gives no value, and for existing rows when the column is added.",
@@ -1104,8 +1403,13 @@ export const tableKind: KindDefinition = {
                   {
                     type: "object",
                     properties: {
-                      value: enumValue,
-                      label: { type: "string", minLength: 1, maxLength: 100 },
+                      value: { ...enumValue, description: "What the row holds." },
+                      label: {
+                        type: "string",
+                        minLength: 1,
+                        maxLength: 100,
+                        description: "What the value is called where people read it.",
+                      },
                       color: {
                         type: "string",
                         pattern: `^(${Object.keys(ENUM_COLORS).join("|")}|#[0-9a-fA-F]{6})$`,
@@ -1140,17 +1444,21 @@ export const tableKind: KindDefinition = {
           "The column that stands for a row where another table refers to it, in place of its ID.",
       },
       policy: {
+        description:
+          "Who may read and change the rows of the table, beyond what a role gives. Left out, the rows are open to whoever the roles allow.",
         oneOf: [
           {
             type: "object",
-            properties: { type: { const: "open" } },
+            description: "Every row is open to whoever the roles allow.",
+            properties: { type: { const: "open", description: "Always `open`." } },
             required: ["type"],
             additionalProperties: false,
           },
           {
             type: "object",
+            description: "A person sees and changes only the rows that name them in a column.",
             properties: {
-              type: { const: "owner" },
+              type: { const: "owner", description: "Always `owner`." },
               column: {
                 type: "string",
                 pattern: columnName,
@@ -1165,49 +1473,77 @@ export const tableKind: KindDefinition = {
             description:
               "Rules that match a row's columns against the person asking. A person sees a row when any rule lets them, and changes it when a `write` or `all` rule does.",
             properties: {
-              type: { const: "rules" },
+              type: { const: "rules", description: "Always `rules`." },
               rules: {
                 type: "array",
+                description: "The rules, each saying who it lets in and what it lets them do.",
                 minItems: 1,
                 maxItems: 20,
                 items: {
                   type: "object",
                   properties: {
-                    allow: { enum: ["read", "write", "all"] },
+                    allow: {
+                      enum: ["read", "write", "all"],
+                      description: "What the rule lets a person do with the rows it matches.",
+                    },
                     when: {
+                      description: "Which rows, and which people, the rule matches.",
                       oneOf: [
                         {
                           type: "object",
-                          properties: { everyone: { const: true } },
+                          description: "Every person, for every row.",
+                          properties: {
+                            everyone: { const: true, description: "Always `true`." },
+                          },
                           required: ["everyone"],
                           additionalProperties: false,
                         },
                         {
                           type: "object",
+                          description: "A row whose column holds the person asking.",
                           properties: {
-                            column: { type: "string", pattern: columnName },
-                            is: { const: "principal" },
+                            column: {
+                              type: "string",
+                              pattern: columnName,
+                              description: "The column the person is looked for in.",
+                            },
+                            is: { const: "principal", description: "Always `principal`." },
                           },
                           required: ["column", "is"],
                           additionalProperties: false,
                         },
                         {
                           type: "object",
+                          description: "A row whose column holds a group the person is in.",
                           properties: {
-                            column: { type: "string", pattern: columnName },
-                            in: { const: "groups" },
+                            column: {
+                              type: "string",
+                              pattern: columnName,
+                              description: "The column the person's groups are looked for in.",
+                            },
+                            in: { const: "groups", description: "Always `groups`." },
                           },
                           required: ["column", "in"],
                           additionalProperties: false,
                         },
                         {
                           type: "object",
+                          description: "A row whose column equals an attribute of the person.",
                           properties: {
-                            column: { type: "string", pattern: columnName },
+                            column: {
+                              type: "string",
+                              pattern: columnName,
+                              description: "The column that is compared.",
+                            },
                             equals: {
                               type: "object",
+                              description: "What the column is compared with.",
                               properties: {
-                                attribute: { type: "string", pattern: "^[a-z][a-z0-9_]{0,62}$" },
+                                attribute: {
+                                  type: "string",
+                                  pattern: "^[a-z][a-z0-9_]{0,62}$",
+                                  description: "The name of the attribute of the person.",
+                                },
                               },
                               required: ["attribute"],
                               additionalProperties: false,
@@ -1232,6 +1568,8 @@ export const tableKind: KindDefinition = {
       indexes: {
         type: "array",
         maxItems: 20,
+        description:
+          "Indexes to keep, each a list of the columns it covers, to make a lookup by them fast.",
         items: {
           type: "array",
           items: { type: "string", pattern: columnName },
@@ -1252,8 +1590,11 @@ export const dataSourceKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      connector: { const: "postgres" },
-      description: { type: "string", maxLength: 500 },
+      connector: {
+        const: "postgres",
+        description: "What kind of database it is. Only `postgres` is read.",
+      },
+      description: aboutIt,
     },
     required: ["connector"],
     additionalProperties: false,
@@ -1294,6 +1635,38 @@ export const THEME_TOKENS = [
   "font-code",
 ] as const;
 
+/** What each theme token colors, sizes or sets. */
+export const THEME_TOKEN_WORDS: Record<(typeof THEME_TOKENS)[number], string> = {
+  canvas: "The color behind everything: the page's background.",
+  surface: "The color of cards, panels and the body of a page.",
+  sunken: "The color of what is set into a surface, such as a well or a field's background.",
+  line: "The hairlines between things: dividers and the edges of a card.",
+  ink: "The color of text.",
+  "ink-muted": "The color of secondary text, such as a description under a heading.",
+  action: "The color of the main button, of links and of what is chosen.",
+  "action-ink": "The color of text on the `action` color.",
+  "action-soft": "A pale tint of `action`, for a background that points at something chosen.",
+  attention: "The color that asks to be noticed without being an error, such as a warning.",
+  "attention-soft": "A pale tint of `attention`, for the background of a warning.",
+  danger: "The color of an error and of what cannot be undone.",
+  "danger-soft": "A pale tint of `danger`, for the background of an error.",
+  success: "The color of what went well.",
+  "success-soft": "A pale tint of `success`, for the background of a good result.",
+  structure: "The color that gives a page its frame, such as the track behind a progress bar.",
+  raised: "The color of what lies above the page, such as a menu or a dialog.",
+  selected: "The background of a row or an item that is chosen.",
+  "line-strong": "A stronger line, where an edge must be seen, such as under a heading.",
+  "line-control":
+    "The edge of a control such as an input, which must be seen against what is around it.",
+  "ink-subtle": "The color of the faintest text that is still read, such as a hint.",
+  "code-bg": "The background of code.",
+  focus: "The ring drawn around what the keyboard is on.",
+  "radius-control": "How round the corners of a button or a field are, as a length.",
+  "radius-panel": "How round the corners of a card or a panel are, as a length.",
+  font: "The typeface of text, as a list of fonts to try in order.",
+  "font-code": "The typeface of code, as a list of fonts to try in order.",
+};
+
 /**
  * What a token's value may be made of: enough for a color, a length or a list
  * of fonts, and nothing that could end the declaration it is written into or
@@ -1314,7 +1687,10 @@ export function isThemeValue(value: unknown): value is string {
 const themeValues = {
   type: "object",
   properties: Object.fromEntries(
-    THEME_TOKENS.map((token) => [token, { type: "string", pattern: THEME_VALUE_PATTERN }]),
+    THEME_TOKENS.map((token) => [
+      token,
+      { type: "string", pattern: THEME_VALUE_PATTERN, description: THEME_TOKEN_WORDS[token] },
+    ]),
   ),
   additionalProperties: false,
 };
@@ -1325,7 +1701,11 @@ export const themeKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      description: { type: "string", maxLength: 500 },
+      description: {
+        type: "string",
+        maxLength: 500,
+        description: "What the theme is for, in plain text.",
+      },
       tokens: { ...themeValues, description: "Values that replace the tenant's, by token name." },
       dark: { ...themeValues, description: "The same, for when the viewer prefers a dark scheme." },
     },
@@ -1339,8 +1719,13 @@ export const appKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      title: { type: "string", minLength: 1, maxLength: 100 },
-      description: { type: "string", maxLength: 500 },
+      title: {
+        type: "string",
+        minLength: 1,
+        maxLength: 100,
+        description: "What the app is called where people choose it.",
+      },
+      description: aboutIt,
       entry: {
         type: "string",
         maxLength: 500,

@@ -12,7 +12,9 @@ import {
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { apiFiles } from "./generators/api.mjs";
+import { LIST_LINKS, LIST_PAGES, listFiles } from "./generators/lists.mjs";
 import { generate, referenceIndex } from "./generators/reference.mjs";
+import { sdkFiles } from "./generators/sdk.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const GENERATED = join(HERE, "generated");
@@ -38,6 +40,8 @@ export function placeOf(name) {
   if (!name.endsWith(".md")) return name;
   if (name === "permissions.md") return "administer/reference/permissions.md";
   if (name === "settings.md") return "self-host/reference/settings.md";
+  if (name === "metrics.md") return "self-host/reference/metrics.md";
+  if (name === "audit-actions.md") return "administer/reference/audit-actions.md";
   return `develop/reference/${name}`;
 }
 
@@ -76,7 +80,15 @@ function withMoved(name, text) {
 export async function expected() {
   const made = generate();
   for (const [name, text] of await apiFiles()) made.set(name, text);
-  made.set("index.md", referenceIndex(["- [The API](api/index): every route, and what it needs"]));
+  for (const [name, text] of listFiles()) made.set(name, text);
+  for (const [name, text] of sdkFiles()) made.set(name, text);
+  made.set(
+    "index.md",
+    referenceIndex(
+      ["- [The API](api/index): every route, and what it needs", ...LIST_LINKS],
+      LIST_PAGES,
+    ),
+  );
   const files = new Map();
   for (const [name, text] of made) {
     files.set(placeOf(name), name.endsWith(".md") ? withMoved(name, text) : text);

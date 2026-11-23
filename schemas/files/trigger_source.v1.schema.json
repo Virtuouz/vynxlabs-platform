@@ -29,7 +29,8 @@
       "properties": {
         "description": {
           "type": "string",
-          "maxLength": 500
+          "maxLength": 500,
+          "description": "What it is for, in plain text."
         },
         "mode": {
           "enum": [
@@ -41,7 +42,8 @@
         "timeoutSeconds": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 300
+          "maximum": 300,
+          "description": "How long a run of it may take, in seconds, before it is stopped."
         },
         "worker": {
           "type": "string",
@@ -60,7 +62,8 @@
                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
                 "maxLength": 255
               },
-              "uniqueItems": true
+              "uniqueItems": true,
+              "description": "Connections it may use, by path."
             },
             "secrets": {
               "type": "array",
@@ -68,7 +71,8 @@
                 "type": "string",
                 "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
               },
-              "uniqueItems": true
+              "uniqueItems": true,
+              "description": "Secrets of the workspace it may read, by name."
             },
             "variables": {
               "type": "array",
@@ -77,7 +81,8 @@
                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
                 "maxLength": 255
               },
-              "uniqueItems": true
+              "uniqueItems": true,
+              "description": "Variables it may read, by path."
             }
           },
           "additionalProperties": false

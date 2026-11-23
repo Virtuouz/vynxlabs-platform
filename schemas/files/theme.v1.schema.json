@@ -28,118 +28,146 @@
       "properties": {
         "description": {
           "type": "string",
-          "maxLength": 500
+          "maxLength": 500,
+          "description": "What the theme is for, in plain text."
         },
         "tokens": {
           "type": "object",
           "properties": {
             "canvas": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color behind everything: the page's background."
             },
             "surface": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of cards, panels and the body of a page."
             },
             "sunken": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of what is set into a surface, such as a well or a field's background."
             },
             "line": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The hairlines between things: dividers and the edges of a card."
             },
             "ink": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of text."
             },
             "ink-muted": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of secondary text, such as a description under a heading."
             },
             "action": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of the main button, of links and of what is chosen."
             },
             "action-ink": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of text on the `action` color."
             },
             "action-soft": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "A pale tint of `action`, for a background that points at something chosen."
             },
             "attention": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color that asks to be noticed without being an error, such as a warning."
             },
             "attention-soft": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "A pale tint of `attention`, for the background of a warning."
             },
             "danger": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of an error and of what cannot be undone."
             },
             "danger-soft": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "A pale tint of `danger`, for the background of an error."
             },
             "success": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of what went well."
             },
             "success-soft": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "A pale tint of `success`, for the background of a good result."
             },
             "structure": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color that gives a page its frame, such as the track behind a progress bar."
             },
             "raised": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of what lies above the page, such as a menu or a dialog."
             },
             "selected": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The background of a row or an item that is chosen."
             },
             "line-strong": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "A stronger line, where an edge must be seen, such as under a heading."
             },
             "line-control": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The edge of a control such as an input, which must be seen against what is around it."
             },
             "ink-subtle": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of the faintest text that is still read, such as a hint."
             },
             "code-bg": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The background of code."
             },
             "focus": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The ring drawn around what the keyboard is on."
             },
             "radius-control": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "How round the corners of a button or a field are, as a length."
             },
             "radius-panel": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "How round the corners of a card or a panel are, as a length."
             },
             "font": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The typeface of text, as a list of fonts to try in order."
             },
             "font-code": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The typeface of code, as a list of fonts to try in order."
             }
           },
           "additionalProperties": false,
@@ -150,111 +178,138 @@
           "properties": {
             "canvas": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color behind everything: the page's background."
             },
             "surface": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of cards, panels and the body of a page."
             },
             "sunken": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of what is set into a surface, such as a well or a field's background."
             },
             "line": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The hairlines between things: dividers and the edges of a card."
             },
             "ink": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of text."
             },
             "ink-muted": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of secondary text, such as a description under a heading."
             },
             "action": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of the main button, of links and of what is chosen."
             },
             "action-ink": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of text on the `action` color."
             },
             "action-soft": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "A pale tint of `action`, for a background that points at something chosen."
             },
             "attention": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color that asks to be noticed without being an error, such as a warning."
             },
             "attention-soft": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "A pale tint of `attention`, for the background of a warning."
             },
             "danger": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of an error and of what cannot be undone."
             },
             "danger-soft": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "A pale tint of `danger`, for the background of an error."
             },
             "success": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of what went well."
             },
             "success-soft": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "A pale tint of `success`, for the background of a good result."
             },
             "structure": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color that gives a page its frame, such as the track behind a progress bar."
             },
             "raised": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of what lies above the page, such as a menu or a dialog."
             },
             "selected": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The background of a row or an item that is chosen."
             },
             "line-strong": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "A stronger line, where an edge must be seen, such as under a heading."
             },
             "line-control": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The edge of a control such as an input, which must be seen against what is around it."
             },
             "ink-subtle": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The color of the faintest text that is still read, such as a hint."
             },
             "code-bg": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The background of code."
             },
             "focus": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The ring drawn around what the keyboard is on."
             },
             "radius-control": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "How round the corners of a button or a field are, as a length."
             },
             "radius-panel": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "How round the corners of a card or a panel are, as a length."
             },
             "font": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The typeface of text, as a list of fonts to try in order."
             },
             "font-code": {
               "type": "string",
-              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$"
+              "pattern": "^[A-Za-z0-9#(),.%\"' -]{1,200}$",
+              "description": "The typeface of code, as a list of fonts to try in order."
             }
           },
           "additionalProperties": false,

@@ -7,14 +7,17 @@
     "name": {
       "type": "string",
       "pattern": "^[a-z][a-z0-9_]*$",
-      "maxLength": 63
+      "maxLength": 63,
+      "description": "The name bindings refer to the role by. Small letters, digits and `_`."
     },
     "description": {
       "type": "string",
-      "maxLength": 500
+      "maxLength": 500,
+      "description": "What it is for, in plain text."
     },
     "permissions": {
       "type": "array",
+      "description": "What the role allows, each as `kind:verb` such as `table:read`, with `*` for either half. The permissions page lists them all.",
       "items": {
         "type": "string",
         "pattern": "^(\\*|[a-z][a-z0-9_]*):(\\*|read|write)$"

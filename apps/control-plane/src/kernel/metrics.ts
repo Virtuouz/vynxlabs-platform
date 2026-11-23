@@ -8,6 +8,8 @@
  * their slugs when written, so that a renamed workspace keeps one series.
  */
 
+import { METRICS } from "./metric-list.js";
+
 type Labels = Record<string, string>;
 
 /** Seconds, from a fast script to one that runs for an hour. */
@@ -164,10 +166,10 @@ export const observe = {
     labels: { method: string; route: string; status: string },
     seconds: number,
   ) {
-    metrics.inc("volvel_http_requests_total", "Requests answered, by route and status.", labels);
+    metrics.inc(METRICS.httpRequests.name, METRICS.httpRequests.help, labels);
     metrics.observe(
-      "volvel_http_request_duration_seconds",
-      "How long a request took to answer, by route.",
+      METRICS.httpDuration.name,
+      METRICS.httpDuration.help,
       { method: labels.method, route: labels.route },
       seconds,
       HTTP_BUCKETS,
@@ -179,15 +181,15 @@ export const observe = {
     state: "succeeded" | "failed" | "cancelled",
   ) {
     const labels = { workspace: run.workspace_id };
-    metrics.inc("volvel_runs_finished_total", "Script runs that ended, by how.", {
+    metrics.inc(METRICS.runsFinished.name, METRICS.runsFinished.help, {
       ...labels,
       state,
     });
     if (run.started_at) {
       const end = run.finished_at ?? new Date();
       metrics.observe(
-        "volvel_run_duration_seconds",
-        "How long a script run took, from its first start to its end.",
+        METRICS.runDuration.name,
+        METRICS.runDuration.help,
         labels,
         (end.getTime() - run.started_at.getTime()) / 1000,
       );
@@ -195,23 +197,19 @@ export const observe = {
   },
   runClaimed(metrics: Metrics, run: { workspace_id: string; due: Date }) {
     metrics.observe(
-      "volvel_run_queue_wait_seconds",
-      "How long a script run waited, from when it was due to when a worker took it.",
+      METRICS.runQueueWait.name,
+      METRICS.runQueueWait.help,
       { workspace: run.workspace_id },
       (Date.now() - run.due.getTime()) / 1000,
     );
   },
   flowRunEnded(metrics: Metrics, state: "succeeded" | "failed" | "cancelled") {
-    metrics.inc("volvel_flow_runs_finished_total", "Flow runs that ended, by how.", { state });
+    metrics.inc(METRICS.flowRunsFinished.name, METRICS.flowRunsFinished.help, { state });
   },
   webhookRefused(metrics: Metrics, reason: string) {
-    metrics.inc(
-      "volvel_webhook_refusals_total",
-      "Requests to webhooks that were refused, by why.",
-      { reason },
-    );
+    metrics.inc(METRICS.webhookRefusals.name, METRICS.webhookRefusals.help, { reason });
   },
   alert(metrics: Metrics, outcome: "delivered" | "failed" | "suppressed") {
-    metrics.inc("volvel_alerts_total", "Failure alerts, by what came of them.", { outcome });
+    metrics.inc(METRICS.alerts.name, METRICS.alerts.help, { outcome });
   },
 };

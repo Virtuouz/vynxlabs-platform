@@ -1,6 +1,15 @@
 export * from "./action.js";
 export { APP_POLICY, appPolicy } from "./app-policy.js";
 export {
+  AUDIT_ACTIONS,
+  AUDIT_AREAS,
+  type AuditAction,
+  type AuditArea,
+  actionWords,
+  auditAreaOf,
+  targetTypeWords,
+} from "./audit.js";
+export {
   ASSET_PATH_PATTERN,
   assetPathProblem,
   Bundle,
@@ -29,7 +38,9 @@ export {
   keyMissing,
   PLATFORM_EVENT_PREFIX,
   PLATFORM_EVENTS,
+  type PlatformEventDefinition,
   type PlatformEventField,
+  type PlatformEventName,
 } from "./bundle-check.js";
 export {
   envelopeSchemas,
@@ -84,6 +95,19 @@ export {
   type WebhookVerify,
 } from "./flow.js";
 export {
+  EXPRESSION_EXAMPLE_DATA,
+  EXPRESSION_FUNCTIONS,
+  EXPRESSION_LIMITS,
+  EXPRESSION_NAMES,
+  EXPRESSION_OPERATORS,
+  type ExpressionFunction,
+  type ExpressionName,
+  FLOW_STARTS,
+  FLOW_STEPS,
+  type FlowStartWords,
+  type FlowStepWords,
+} from "./flow-words.js";
+export {
   checkForm,
   FORM_FIELD_TYPES,
   FORM_RESERVED_NAMES,
@@ -95,7 +119,9 @@ export {
 export * from "./groups.js";
 export {
   appKind,
+  BUILTIN_CONNECTOR_LIST,
   BUILTIN_CONNECTORS,
+  type BuiltinConnector,
   bindingKind,
   COLUMN_TYPES,
   CONCURRENCY_KEY,

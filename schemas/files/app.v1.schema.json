@@ -29,11 +29,13 @@
         "title": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 100
+          "maxLength": 100,
+          "description": "What the app is called where people choose it."
         },
         "description": {
           "type": "string",
-          "maxLength": 500
+          "maxLength": 500,
+          "description": "What it is for, in plain text."
         },
         "entry": {
           "type": "string",

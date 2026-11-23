@@ -20,6 +20,7 @@ export type Filter =
       value?: unknown;
     };
 
+/** What `find` takes: a filter, the order, how many rows and where to start. */
 export interface FindOptions {
   filter?: Filter;
   /** Column names. A leading minus sorts that column downwards. */
@@ -29,6 +30,7 @@ export interface FindOptions {
   offset?: number;
 }
 
+/** What `aggregate` takes: the columns to group by, the values to work out and the filter to count rows by. */
 export interface AggregateOptions {
   /**
    * Columns to group by, up to three. A date or a time can be gathered into
@@ -85,6 +87,7 @@ export interface TableClient<Row, Insert = Partial<Row>> {
   as(principalId: string): TableClient<Row, Insert>;
 }
 
+/** What a column may say beside its type: what it holds, whether it is required or unique, and its default. */
 export interface ColumnOptions<Required extends boolean = boolean> {
   /** What the column holds, in plain text. Shown on its heading and where documentation names it. */
   description?: string;

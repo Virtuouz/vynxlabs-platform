@@ -1,3 +1,4 @@
+import { AUDIT_AREAS } from "@volvel/manifest";
 import { Button, JsonView, Notice } from "@volvel/ui";
 import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -34,78 +35,23 @@ interface Entry {
   requestId: string | null;
 }
 
-/** The areas of a tenant's log a person can narrow to. Each is the word an action starts with. */
-const TENANT_AREAS: [string, string][] = [
+/**
+ * The areas of a log a person can narrow to, first "Everything". Each is the word an action
+ * starts with. They are the manifest package's list, which the reference is drawn from.
+ */
+const areasOf = (tenantLog: boolean): [string, string][] => [
   ["", "Everything"],
-  ["member", "Members and sign-ins"],
-  ["tenant_member", "Tenant membership"],
-  ["group", "Groups"],
-  ["service_account", "Service accounts"],
-  ["api_key", "API keys"],
-  ["role", "Roles"],
-  ["binding", "Access"],
-  ["access_grant", "Operator access"],
-  ["end_user", "End users"],
-  ["app_session", "Sign-ins to apps"],
-  ["workspace", "Workspaces"],
-  ["resource", "Resources"],
-  ["secret", "Secrets"],
-  ["connection", "Connections"],
-  ["variable", "Variables"],
-  ["data_source", "Data sources"],
-  ["bundle", "Bundles"],
-  ["deployment", "Deployments"],
-  ["run", "Runs"],
-  ["flow", "Flows"],
-  ["flow_run", "Flow runs"],
-  ["event", "Events"],
-  ["table", "Tables"],
-  ["file", "Files"],
-  ["portal", "Branding and portal"],
-  ["app_domain", "Hostnames"],
-  ["worker_credential", "Worker credentials"],
-  ["worker_pool", "Worker pools"],
-  ["promotion", "Promotions"],
-  ["dashboard", "Dashboards"],
-  ["git_repository", "Git repositories"],
-  ["access", "Access checks"],
-  ["trigger", "Triggers"],
-  ["schedule", "Schedules"],
-  ["approval", "Approvals"],
-  ["workspace_git", "Workspace repositories"],
-  ["page_action", "Page actions"],
-  ["alert", "Alerts"],
-  ["bundle_asset", "Bundle assets"],
-  ["end_user_group", "End user groups"],
-  ["connection_group", "Connection groups"],
-  ["group_member", "Group members"],
-  ["sql", "SQL"],
-  ["tenant", "Tenant"],
-];
-
-/** The areas of the instance's own log: what operators do, not what happens inside a tenant. */
-const INSTANCE_AREAS: [string, string][] = [
-  ["", "Everything"],
-  ["member", "Members and sign-ins"],
-  ["binding", "Instance access"],
-  ["api_key", "API keys"],
-  ["operator", "Operator access"],
-  ["access_grant", "Operator access grants"],
-  ["tenant", "Tenants"],
-  ["tenant_import", "Tenant imports"],
-  ["instance", "Instance settings"],
-  ["identity_provider", "Identity providers"],
-  ["identity_domain", "Identity domains"],
-  ["identity_link", "Identity links"],
-  ["sso", "Single sign-on"],
-  ["scim", "Directory sync"],
-  ["scim_token", "Directory sync tokens"],
-  ["database_location", "Database locations"],
+  ...AUDIT_AREAS.flatMap((one): [string, string][] => {
+    const words = tenantLog ? one.tenant : one.instance;
+    return words === undefined ? [] : [[one.area, words]];
+  }),
 ];
 
 /** The words an area can be, for the log of a tenant or of the instance. */
 export const auditAreas = (tenantLog: boolean) =>
-  (tenantLog ? TENANT_AREAS : INSTANCE_AREAS).map(([value]) => value).filter(Boolean);
+  areasOf(tenantLog)
+    .map(([value]) => value)
+    .filter(Boolean);
 
 type Verb = "Create" | "Update" | "Delete" | "Execute" | "Read" | "Other";
 const VERB_TONE: Record<Verb, TagTone> = {
@@ -456,7 +402,7 @@ export function AuditTable({
                 onChange={(event) => setUrl({ area: event.currentTarget.value || undefined })}
                 className={select}
               >
-                {(tenantLog ? TENANT_AREAS : INSTANCE_AREAS).map(([value, label]) => (
+                {areasOf(tenantLog).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>

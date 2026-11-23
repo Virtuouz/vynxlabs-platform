@@ -9,15 +9,18 @@
       "description": "The name of a role visible in this workspace."
     },
     "principal": {
+      "description": "Who the role is given to.",
       "oneOf": [
         {
           "type": "object",
           "properties": {
             "type": {
-              "const": "member"
+              "const": "member",
+              "description": "A person who is a member of the tenant."
             },
             "email": {
-              "type": "string"
+              "type": "string",
+              "description": "The member's email address."
             }
           },
           "required": [
@@ -74,10 +77,12 @@
           "type": "object",
           "properties": {
             "type": {
-              "const": "end_user"
+              "const": "end_user",
+              "description": "A person who signs in to the tenant's apps."
             },
             "email": {
-              "type": "string"
+              "type": "string",
+              "description": "The end user's email address."
             }
           },
           "required": [

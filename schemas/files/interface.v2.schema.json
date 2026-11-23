@@ -178,18 +178,22 @@
                             "oneOf": [
                               {
                                 "type": "object",
+                                "description": "A visual query.",
                                 "properties": {
                                   "visual": {
                                     "type": "object",
+                                    "description": "A query made by choosing a table, what to keep, how to group and what to work out.",
                                     "properties": {
                                       "table": {
                                         "type": "string",
                                         "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                                        "maxLength": 255
+                                        "maxLength": 255,
+                                        "description": "The table it reads."
                                       },
                                       "joins": {
                                         "type": "array",
                                         "maxItems": 6,
+                                        "description": "Reference columns of the table to follow, to read the columns of what they point to.",
                                         "items": {
                                           "type": "string",
                                           "pattern": "^[a-z][a-z0-9_]{0,62}$"
@@ -198,12 +202,14 @@
                                       "filters": {
                                         "type": "array",
                                         "maxItems": 20,
+                                        "description": "What to keep: a row stays when all of them hold.",
                                         "items": {
                                           "type": "object",
                                           "properties": {
                                             "column": {
                                               "type": "string",
-                                              "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                                              "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$",
+                                              "description": "The column compared."
                                             },
                                             "op": {
                                               "enum": [
@@ -219,9 +225,12 @@
                                                 "not_null",
                                                 "last",
                                                 "between"
-                                              ]
+                                              ],
+                                              "description": "How it is compared."
                                             },
-                                            "value": {}
+                                            "value": {
+                                              "description": "What it is compared with. Left out for `is_null` and `not_null`. For `last`, a count and a unit; for `between`, two dates."
+                                            }
                                           },
                                           "required": [
                                             "column",
@@ -233,12 +242,14 @@
                                       "groupBy": {
                                         "type": "array",
                                         "maxItems": 4,
+                                        "description": "What to break the values down by.",
                                         "items": {
                                           "type": "object",
                                           "properties": {
                                             "column": {
                                               "type": "string",
-                                              "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                                              "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$",
+                                              "description": "The column grouped by."
                                             },
                                             "bucket": {
                                               "enum": [
@@ -247,7 +258,8 @@
                                                 "month",
                                                 "quarter",
                                                 "year"
-                                              ]
+                                              ],
+                                              "description": "For a date or a time: how long each group is."
                                             }
                                           },
                                           "required": [
@@ -259,6 +271,7 @@
                                       "measures": {
                                         "type": "array",
                                         "maxItems": 8,
+                                        "description": "The values to work out for each group.",
                                         "items": {
                                           "type": "object",
                                           "properties": {
@@ -270,15 +283,18 @@
                                                 "avg",
                                                 "min",
                                                 "max"
-                                              ]
+                                              ],
+                                              "description": "How the value is worked out."
                                             },
                                             "column": {
                                               "type": "string",
-                                              "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
+                                              "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$",
+                                              "description": "The column it is worked out of. A count of rows has none."
                                             },
                                             "as": {
                                               "type": "string",
-                                              "pattern": "^[a-z][a-z0-9_]{0,54}$"
+                                              "pattern": "^[a-z][a-z0-9_]{0,54}$",
+                                              "description": "What the value is called in the result."
                                             }
                                           },
                                           "required": [
@@ -291,6 +307,7 @@
                                       "columns": {
                                         "type": "array",
                                         "maxItems": 50,
+                                        "description": "For rows with nothing worked out: the columns to read. Left out, all of them.",
                                         "items": {
                                           "type": "string",
                                           "pattern": "^[a-z][a-z0-9_]{0,62}(\\.[a-z][a-z0-9_]{0,62})?$"
@@ -299,15 +316,18 @@
                                       "sort": {
                                         "type": "array",
                                         "maxItems": 4,
+                                        "description": "The order of the result, the first sort being the main one.",
                                         "items": {
                                           "type": "object",
                                           "properties": {
                                             "by": {
                                               "type": "string",
-                                              "pattern": "^[a-z][a-z0-9_.]{0,130}$"
+                                              "pattern": "^[a-z][a-z0-9_.]{0,130}$",
+                                              "description": "A column, or the name of a value worked out."
                                             },
                                             "descending": {
-                                              "type": "boolean"
+                                              "type": "boolean",
+                                              "description": "Biggest or newest first."
                                             }
                                           },
                                           "required": [
@@ -319,7 +339,8 @@
                                       "limit": {
                                         "type": "integer",
                                         "minimum": 1,
-                                        "maximum": 10000
+                                        "maximum": 10000,
+                                        "description": "At most this many rows of the result."
                                       }
                                     },
                                     "required": [
@@ -532,38 +553,46 @@
                       },
                       "additionalProperties": {
                         "type": "object",
+                        "description": "What happens when someone acts on a widget.",
                         "properties": {
                           "confirm": {
                             "type": "object",
+                            "description": "Asked before anything runs.",
                             "properties": {
                               "title": {
                                 "type": "string",
                                 "minLength": 1,
-                                "maxLength": 120
+                                "maxLength": 120,
+                                "description": "The question the confirmation asks."
                               },
                               "text": {
                                 "type": "string",
-                                "maxLength": 500
+                                "maxLength": 500,
+                                "description": "More under the question. It may name a column of the record as `{column}`."
                               },
                               "button": {
                                 "type": "string",
                                 "minLength": 1,
-                                "maxLength": 40
+                                "maxLength": 40,
+                                "description": "What the button that goes on says."
                               },
                               "ask": {
                                 "type": "array",
                                 "maxItems": 6,
+                                "description": "Fields the confirmation asks for before the steps run, such as a reason.",
                                 "items": {
                                   "type": "object",
                                   "properties": {
                                     "name": {
                                       "type": "string",
-                                      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                      "description": "What the answer is called, for a step to use as `{ asked: name }`."
                                     },
                                     "label": {
                                       "type": "string",
                                       "minLength": 1,
-                                      "maxLength": 80
+                                      "maxLength": 80,
+                                      "description": "What the field says."
                                     },
                                     "type": {
                                       "enum": [
@@ -572,14 +601,17 @@
                                         "number",
                                         "date",
                                         "choice"
-                                      ]
+                                      ],
+                                      "description": "What kind of answer it takes."
                                     },
                                     "required": {
-                                      "type": "boolean"
+                                      "type": "boolean",
+                                      "description": "Whether the action waits for an answer."
                                     },
                                     "choices": {
                                       "type": "array",
                                       "maxItems": 50,
+                                      "description": "For `choice`: what may be chosen.",
                                       "items": {
                                         "type": "string",
                                         "maxLength": 100
@@ -602,34 +634,44 @@
                           },
                           "steps": {
                             "type": "array",
+                            "description": "What it does, in order. Steps that change data or start work run on the server first, and the ones that move the reader run in the browser after.",
                             "minItems": 1,
                             "maxItems": 8,
                             "items": {
+                              "description": "One thing an action does.",
                               "oneOf": [
                                 {
                                   "type": "object",
+                                  "description": "Sets fields of a record to named values. The fields named are all it may change.",
                                   "properties": {
                                     "do": {
-                                      "const": "update"
+                                      "const": "update",
+                                      "description": "Always `update`."
                                     },
                                     "record": {
                                       "enum": [
                                         "this",
                                         "event"
-                                      ]
+                                      ],
+                                      "description": "The record to change. `this` is the record the page was opened on, and `event` is the one the event gave: the row clicked, or the row whose action was pressed."
                                     },
                                     "set": {
                                       "type": "object",
+                                      "description": "What to set, by column name.",
                                       "maxProperties": 30,
                                       "propertyNames": {
                                         "pattern": "^[a-z][a-z0-9_]{0,62}$"
                                       },
                                       "additionalProperties": {
+                                        "description": "A value a step sets or passes. It is never an expression: it is one of these kinds.",
                                         "oneOf": [
                                           {
                                             "type": "object",
+                                            "description": "A constant.",
                                             "properties": {
-                                              "value": {}
+                                              "value": {
+                                                "description": "The value itself: text, a number, true or false."
+                                              }
                                             },
                                             "required": [
                                               "value"
@@ -638,9 +680,11 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "The date the step runs, in UTC.",
                                             "properties": {
                                               "today": {
-                                                "const": true
+                                                "const": true,
+                                                "description": "Always `true`."
                                               }
                                             },
                                             "required": [
@@ -650,9 +694,11 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "The moment the step runs, in UTC.",
                                             "properties": {
                                               "now": {
-                                                "const": true
+                                                "const": true,
+                                                "description": "Always `true`."
                                               }
                                             },
                                             "required": [
@@ -662,13 +708,15 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "Who is acting.",
                                             "properties": {
                                               "user": {
                                                 "enum": [
                                                   "id",
                                                   "email",
                                                   "name"
-                                                ]
+                                                ],
+                                                "description": "Which of the person's details."
                                               }
                                             },
                                             "required": [
@@ -678,16 +726,19 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "A column of a record.",
                                             "properties": {
                                               "record": {
                                                 "type": "string",
-                                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                                "description": "The column's name."
                                               },
                                               "of": {
                                                 "enum": [
                                                   "this",
                                                   "event"
-                                                ]
+                                                ],
+                                                "description": "Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`."
                                               }
                                             },
                                             "required": [
@@ -697,10 +748,12 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "What the person typed in the confirmation.",
                                             "properties": {
                                               "asked": {
                                                 "type": "string",
-                                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                                "description": "The `name` of the field the confirmation asked for."
                                               }
                                             },
                                             "required": [
@@ -721,27 +774,35 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Adds a row to a table, with the fields named.",
                                   "properties": {
                                     "do": {
-                                      "const": "create"
+                                      "const": "create",
+                                      "description": "Always `create`."
                                     },
                                     "table": {
                                       "type": "string",
                                       "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                                      "maxLength": 255
+                                      "maxLength": 255,
+                                      "description": "The table's path."
                                     },
                                     "set": {
                                       "type": "object",
+                                      "description": "The row's fields, by column name.",
                                       "maxProperties": 30,
                                       "propertyNames": {
                                         "pattern": "^[a-z][a-z0-9_]{0,62}$"
                                       },
                                       "additionalProperties": {
+                                        "description": "A value a step sets or passes. It is never an expression: it is one of these kinds.",
                                         "oneOf": [
                                           {
                                             "type": "object",
+                                            "description": "A constant.",
                                             "properties": {
-                                              "value": {}
+                                              "value": {
+                                                "description": "The value itself: text, a number, true or false."
+                                              }
                                             },
                                             "required": [
                                               "value"
@@ -750,9 +811,11 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "The date the step runs, in UTC.",
                                             "properties": {
                                               "today": {
-                                                "const": true
+                                                "const": true,
+                                                "description": "Always `true`."
                                               }
                                             },
                                             "required": [
@@ -762,9 +825,11 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "The moment the step runs, in UTC.",
                                             "properties": {
                                               "now": {
-                                                "const": true
+                                                "const": true,
+                                                "description": "Always `true`."
                                               }
                                             },
                                             "required": [
@@ -774,13 +839,15 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "Who is acting.",
                                             "properties": {
                                               "user": {
                                                 "enum": [
                                                   "id",
                                                   "email",
                                                   "name"
-                                                ]
+                                                ],
+                                                "description": "Which of the person's details."
                                               }
                                             },
                                             "required": [
@@ -790,16 +857,19 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "A column of a record.",
                                             "properties": {
                                               "record": {
                                                 "type": "string",
-                                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                                "description": "The column's name."
                                               },
                                               "of": {
                                                 "enum": [
                                                   "this",
                                                   "event"
-                                                ]
+                                                ],
+                                                "description": "Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`."
                                               }
                                             },
                                             "required": [
@@ -809,10 +879,12 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "What the person typed in the confirmation.",
                                             "properties": {
                                               "asked": {
                                                 "type": "string",
-                                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                                "description": "The `name` of the field the confirmation asked for."
                                               }
                                             },
                                             "required": [
@@ -833,15 +905,18 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Removes a record.",
                                   "properties": {
                                     "do": {
-                                      "const": "delete"
+                                      "const": "delete",
+                                      "description": "Always `delete`."
                                     },
                                     "record": {
                                       "enum": [
                                         "this",
                                         "event"
-                                      ]
+                                      ],
+                                      "description": "The record to remove. `this` is the record the page was opened on, and `event` is the one the event gave: the row clicked, or the row whose action was pressed."
                                     }
                                   },
                                   "required": [
@@ -852,27 +927,35 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Starts a flow that has a manual start.",
                                   "properties": {
                                     "do": {
-                                      "const": "flow"
+                                      "const": "flow",
+                                      "description": "Always `flow`."
                                     },
                                     "path": {
                                       "type": "string",
                                       "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                                      "maxLength": 255
+                                      "maxLength": 255,
+                                      "description": "The path of the flow."
                                     },
                                     "input": {
                                       "type": "object",
+                                      "description": "What the flow is given, by the name of each input.",
                                       "maxProperties": 30,
                                       "propertyNames": {
                                         "pattern": "^[a-z][a-z0-9_]{0,62}$"
                                       },
                                       "additionalProperties": {
+                                        "description": "A value a step sets or passes. It is never an expression: it is one of these kinds.",
                                         "oneOf": [
                                           {
                                             "type": "object",
+                                            "description": "A constant.",
                                             "properties": {
-                                              "value": {}
+                                              "value": {
+                                                "description": "The value itself: text, a number, true or false."
+                                              }
                                             },
                                             "required": [
                                               "value"
@@ -881,9 +964,11 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "The date the step runs, in UTC.",
                                             "properties": {
                                               "today": {
-                                                "const": true
+                                                "const": true,
+                                                "description": "Always `true`."
                                               }
                                             },
                                             "required": [
@@ -893,9 +978,11 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "The moment the step runs, in UTC.",
                                             "properties": {
                                               "now": {
-                                                "const": true
+                                                "const": true,
+                                                "description": "Always `true`."
                                               }
                                             },
                                             "required": [
@@ -905,13 +992,15 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "Who is acting.",
                                             "properties": {
                                               "user": {
                                                 "enum": [
                                                   "id",
                                                   "email",
                                                   "name"
-                                                ]
+                                                ],
+                                                "description": "Which of the person's details."
                                               }
                                             },
                                             "required": [
@@ -921,16 +1010,19 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "A column of a record.",
                                             "properties": {
                                               "record": {
                                                 "type": "string",
-                                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                                "description": "The column's name."
                                               },
                                               "of": {
                                                 "enum": [
                                                   "this",
                                                   "event"
-                                                ]
+                                                ],
+                                                "description": "Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`."
                                               }
                                             },
                                             "required": [
@@ -940,10 +1032,12 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "What the person typed in the confirmation.",
                                             "properties": {
                                               "asked": {
                                                 "type": "string",
-                                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                                "description": "The `name` of the field the confirmation asked for."
                                               }
                                             },
                                             "required": [
@@ -963,27 +1057,35 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Starts a script.",
                                   "properties": {
                                     "do": {
-                                      "const": "script"
+                                      "const": "script",
+                                      "description": "Always `script`."
                                     },
                                     "path": {
                                       "type": "string",
                                       "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
-                                      "maxLength": 255
+                                      "maxLength": 255,
+                                      "description": "The path of the script."
                                     },
                                     "input": {
                                       "type": "object",
+                                      "description": "What the script is given, by the name of each input.",
                                       "maxProperties": 30,
                                       "propertyNames": {
                                         "pattern": "^[a-z][a-z0-9_]{0,62}$"
                                       },
                                       "additionalProperties": {
+                                        "description": "A value a step sets or passes. It is never an expression: it is one of these kinds.",
                                         "oneOf": [
                                           {
                                             "type": "object",
+                                            "description": "A constant.",
                                             "properties": {
-                                              "value": {}
+                                              "value": {
+                                                "description": "The value itself: text, a number, true or false."
+                                              }
                                             },
                                             "required": [
                                               "value"
@@ -992,9 +1094,11 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "The date the step runs, in UTC.",
                                             "properties": {
                                               "today": {
-                                                "const": true
+                                                "const": true,
+                                                "description": "Always `true`."
                                               }
                                             },
                                             "required": [
@@ -1004,9 +1108,11 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "The moment the step runs, in UTC.",
                                             "properties": {
                                               "now": {
-                                                "const": true
+                                                "const": true,
+                                                "description": "Always `true`."
                                               }
                                             },
                                             "required": [
@@ -1016,13 +1122,15 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "Who is acting.",
                                             "properties": {
                                               "user": {
                                                 "enum": [
                                                   "id",
                                                   "email",
                                                   "name"
-                                                ]
+                                                ],
+                                                "description": "Which of the person's details."
                                               }
                                             },
                                             "required": [
@@ -1032,16 +1140,19 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "A column of a record.",
                                             "properties": {
                                               "record": {
                                                 "type": "string",
-                                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                                "description": "The column's name."
                                               },
                                               "of": {
                                                 "enum": [
                                                   "this",
                                                   "event"
-                                                ]
+                                                ],
+                                                "description": "Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`."
                                               }
                                             },
                                             "required": [
@@ -1051,10 +1162,12 @@
                                           },
                                           {
                                             "type": "object",
+                                            "description": "What the person typed in the confirmation.",
                                             "properties": {
                                               "asked": {
                                                 "type": "string",
-                                                "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                                "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                                "description": "The `name` of the field the confirmation asked for."
                                               }
                                             },
                                             "required": [
@@ -1074,19 +1187,23 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Opens a page of this interface. A record page, a side sheet or a modal is opened on a record.",
                                   "properties": {
                                     "do": {
-                                      "const": "open"
+                                      "const": "open",
+                                      "description": "Always `open`."
                                     },
                                     "page": {
                                       "type": "string",
-                                      "pattern": "^[a-z][a-z0-9_-]{0,39}$"
+                                      "pattern": "^[a-z][a-z0-9_-]{0,39}$",
+                                      "description": "The page's name."
                                     },
                                     "record": {
                                       "enum": [
                                         "this",
                                         "event"
-                                      ]
+                                      ],
+                                      "description": "The record the page is opened on. `this` is the record the page was opened on, and `event` is the one the event gave: the row clicked, or the row whose action was pressed."
                                     }
                                   },
                                   "required": [
@@ -1097,9 +1214,11 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Closes the side sheet or modal this page is open in.",
                                   "properties": {
                                     "do": {
-                                      "const": "close"
+                                      "const": "close",
+                                      "description": "Always `close`."
                                     }
                                   },
                                   "required": [
@@ -1109,20 +1228,24 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Says something in a notice.",
                                   "properties": {
                                     "do": {
-                                      "const": "message"
+                                      "const": "message",
+                                      "description": "Always `message`."
                                     },
                                     "text": {
                                       "type": "string",
                                       "minLength": 1,
-                                      "maxLength": 300
+                                      "maxLength": 300,
+                                      "description": "What is said."
                                     },
                                     "tone": {
                                       "enum": [
                                         "success",
                                         "info"
-                                      ]
+                                      ],
+                                      "description": "How the notice looks."
                                     }
                                   },
                                   "required": [
@@ -1133,17 +1256,21 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Sets a page filter to what the event gave: the group of a point clicked narrows the page to it.",
                                   "properties": {
                                     "do": {
-                                      "const": "narrow"
+                                      "const": "narrow",
+                                      "description": "Always `narrow`."
                                     },
                                     "filter": {
                                       "type": "string",
-                                      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                      "description": "The name of the page filter."
                                     },
                                     "from": {
                                       "type": "string",
-                                      "maxLength": 130
+                                      "maxLength": 130,
+                                      "description": "The part of what the event gave that the filter is set to."
                                     }
                                   },
                                   "required": [
@@ -1155,9 +1282,11 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Shows the rows behind what was clicked, in a side sheet. It only reads.",
                                   "properties": {
                                     "do": {
-                                      "const": "rows"
+                                      "const": "rows",
+                                      "description": "Always `rows`."
                                     }
                                   },
                                   "required": [
@@ -1170,21 +1299,26 @@
                           },
                           "when": {
                             "type": "array",
+                            "description": "When it may be pressed: all must hold, for the record it acts on. They are checked again on the server.",
                             "maxItems": 10,
                             "items": {
+                              "description": "A sentence that is true or not, about a record or about who is looking.",
                               "oneOf": [
                                 {
                                   "type": "object",
+                                  "description": "A column of a record, tested.",
                                   "properties": {
                                     "field": {
                                       "type": "string",
-                                      "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                      "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                      "description": "The column's name."
                                     },
                                     "of": {
                                       "enum": [
                                         "this",
                                         "event"
-                                      ]
+                                      ],
+                                      "description": "Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`."
                                     },
                                     "test": {
                                       "enum": [
@@ -1197,9 +1331,12 @@
                                         "contains",
                                         "is_empty",
                                         "is_not_empty"
-                                      ]
+                                      ],
+                                      "description": "What is tested."
                                     },
-                                    "value": {}
+                                    "value": {
+                                      "description": "What the column is tested against. Not given for `is_empty` or `is_not_empty`."
+                                    }
                                   },
                                   "required": [
                                     "field",
@@ -1209,14 +1346,17 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Who is acting.",
                                   "properties": {
                                     "user": {
-                                      "const": "in"
+                                      "const": "in",
+                                      "description": "Always `in`."
                                     },
                                     "group": {
                                       "type": "string",
                                       "minLength": 1,
-                                      "maxLength": 100
+                                      "maxLength": 100,
+                                      "description": "The group the current user must be in, by its path."
                                     }
                                   },
                                   "required": [
@@ -1227,18 +1367,21 @@
                                 },
                                 {
                                   "type": "object",
+                                  "description": "Whether a record is there.",
                                   "properties": {
                                     "record": {
                                       "enum": [
                                         "exists",
                                         "missing"
-                                      ]
+                                      ],
+                                      "description": "Whether a record must be chosen."
                                     },
                                     "of": {
                                       "enum": [
                                         "this",
                                         "event"
-                                      ]
+                                      ],
+                                      "description": "Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`."
                                     }
                                   },
                                   "required": [
@@ -1251,15 +1394,18 @@
                           },
                           "done": {
                             "type": "string",
-                            "maxLength": 300
+                            "maxLength": 300,
+                            "description": "What is said when it worked, if the steps say nothing themselves."
                           },
                           "runBy": {
                             "type": "object",
+                            "description": "Who may run it. Left out, whoever may open the app may. With groups named, only their members may, which the server checks, and a call to the API too.",
                             "properties": {
                               "groups": {
                                 "type": "array",
                                 "minItems": 1,
                                 "maxItems": 10,
+                                "description": "The groups, each by its path: an end-user group or a member group.",
                                 "items": {
                                   "type": "string",
                                   "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
@@ -1281,24 +1427,30 @@
                     },
                     "rules": {
                       "type": "object",
+                      "description": "When the widget is shown. Hiding a widget isn't security: the rows a person gets are decided by the tables' row rules.",
                       "properties": {
                         "showWhen": {
                           "type": "array",
+                          "description": "The widget is shown only while all of these hold.",
                           "maxItems": 10,
                           "items": {
+                            "description": "A sentence that is true or not, about a record or about who is looking.",
                             "oneOf": [
                               {
                                 "type": "object",
+                                "description": "A column of a record, tested.",
                                 "properties": {
                                   "field": {
                                     "type": "string",
-                                    "pattern": "^[a-z][a-z0-9_]{0,62}$"
+                                    "pattern": "^[a-z][a-z0-9_]{0,62}$",
+                                    "description": "The column's name."
                                   },
                                   "of": {
                                     "enum": [
                                       "this",
                                       "event"
-                                    ]
+                                    ],
+                                    "description": "Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`."
                                   },
                                   "test": {
                                     "enum": [
@@ -1311,9 +1463,12 @@
                                       "contains",
                                       "is_empty",
                                       "is_not_empty"
-                                    ]
+                                    ],
+                                    "description": "What is tested."
                                   },
-                                  "value": {}
+                                  "value": {
+                                    "description": "What the column is tested against. Not given for `is_empty` or `is_not_empty`."
+                                  }
                                 },
                                 "required": [
                                   "field",
@@ -1323,14 +1478,17 @@
                               },
                               {
                                 "type": "object",
+                                "description": "Who is acting.",
                                 "properties": {
                                   "user": {
-                                    "const": "in"
+                                    "const": "in",
+                                    "description": "Always `in`."
                                   },
                                   "group": {
                                     "type": "string",
                                     "minLength": 1,
-                                    "maxLength": 100
+                                    "maxLength": 100,
+                                    "description": "The group the current user must be in, by its path."
                                   }
                                 },
                                 "required": [
@@ -1341,18 +1499,21 @@
                               },
                               {
                                 "type": "object",
+                                "description": "Whether a record is there.",
                                 "properties": {
                                   "record": {
                                     "enum": [
                                       "exists",
                                       "missing"
-                                    ]
+                                    ],
+                                    "description": "Whether a record must be chosen."
                                   },
                                   "of": {
                                     "enum": [
                                       "this",
                                       "event"
-                                    ]
+                                    ],
+                                    "description": "Which record: `this`, the one the page was opened on, or `event`, the one the event gave. Left out, `this`."
                                   }
                                 },
                                 "required": [
@@ -1365,11 +1526,13 @@
                         },
                         "seenBy": {
                           "type": "object",
+                          "description": "Shown only to members of these groups. Drawing only: hiding a widget is not security.",
                           "properties": {
                             "groups": {
                               "type": "array",
                               "minItems": 1,
                               "maxItems": 10,
+                              "description": "The groups, each by its path.",
                               "items": {
                                 "type": "string",
                                 "pattern": "^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$",
@@ -1383,8 +1546,7 @@
                           "additionalProperties": false
                         }
                       },
-                      "additionalProperties": false,
-                      "description": "When the widget is shown. Hiding a widget isn't security: the rows a person gets are decided by the tables' row rules."
+                      "additionalProperties": false
                     },
                     "layout": {
                       "type": "object",

@@ -105,7 +105,7 @@ function formTables(body) {
       const heading =
         index === 0
           ? ""
-          : `### ${table.root === "" ? "The body" : `\`${table.root}\``} when ${table.form}\n\n`;
+          : `### ${table.root === "" ? "The body" : `\`${table.root}\``} when ${table.form}\n\n${table.about ? `${table.about}\n\n` : ""}`;
       return `${heading}${fieldTable(table.fields)}`;
     });
 }
@@ -397,13 +397,13 @@ export function generate() {
 }
 
 /** The reference's own first page. `more` are pages made by something else, such as the API's. */
-export function referenceIndex(more = []) {
+export function referenceIndex(more = [], morePages = []) {
   return page(
     {
       title: "Reference",
       icon: "book-open",
       type: "reference",
-      pages: ["kinds", "cli", "errors", "docs", "api"],
+      pages: ["kinds", "cli", "errors", "docs", "api", ...morePages],
       description: "Lists drawn from the code itself: what it checks, reads and answers with.",
     },
     [

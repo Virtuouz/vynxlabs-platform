@@ -11,6 +11,17 @@ import { sameOrigin } from "../origin.js";
 import { membershipForProvider } from "../tenant/releases.js";
 import { readIdpMetadata } from "./metadata.js";
 
+/** What an identity provider's update may say it changed, beside the update itself. */
+type ProviderChange =
+  | "enabled"
+  | "disabled"
+  | "enforced"
+  | "enforcement_lifted"
+  | "sha1_allowed"
+  | "sha1_refused"
+  | "idp_initiated_allowed"
+  | "idp_initiated_refused";
+
 export type Audience = "members" | "end_users";
 export type Protocol = "oidc" | "saml";
 
@@ -658,7 +669,7 @@ export async function updateProvider(
     },
   });
   // Each of these lowers the bar or changes who may sign in how, so each is its own entry.
-  const notable: [boolean, string, Record<string, unknown>][] = [
+  const notable: [boolean, ProviderChange, Record<string, unknown>][] = [
     [current.enabled !== provider.enabled, provider.enabled ? "enabled" : "disabled", {}],
     [
       current.enforce !== provider.enforce,

@@ -28,11 +28,13 @@
       "properties": {
         "description": {
           "type": "string",
-          "maxLength": 500
+          "maxLength": 500,
+          "description": "What it is for, in plain text."
         },
         "default": {
           "type": "string",
-          "maxLength": 65536
+          "maxLength": 65536,
+          "description": "Used in a workspace that has not set its own value."
         }
       },
       "additionalProperties": false

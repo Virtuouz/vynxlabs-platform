@@ -48,6 +48,7 @@ export { z };
 
 /** The version of the SDK, and the core versions a bundle built with it works on. */
 export const SDK_VERSION = "0.5.0";
+/** The core versions a bundle built with this SDK works on: from `min` up to, not including, `below`. */
 export const CORE_RANGE = { min: "0.5.0", below: "0.6.0" };
 
 /**
@@ -98,6 +99,7 @@ export interface ResourceDefinition {
   toManifest(entry: string): AuthoredManifest;
 }
 
+/** Whether a value is a resource made with one of the `define` functions, as the build finds them in a repository's exports. */
 export function isResourceDefinition(value: unknown): value is ResourceDefinition {
   return (
     typeof value === "object" &&
@@ -165,6 +167,7 @@ export type InputKey<I> =
     ? `input.${Extract<keyof I, string>}` | `input.${Extract<keyof I, string>}.${string}`
     : `input.${string}`;
 
+/** What `defineScript` takes: the script's path, the schemas of its input and its output, what it uses and the function that runs. */
 export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType>
   extends ResourceNames {
   /** The name of the tool an agent sees for it, if it should not follow the path. */
@@ -230,6 +233,7 @@ export interface ScriptOptions<Input extends z.ZodType, Output extends z.ZodType
   run(input: z.output<Input>, ctx: ScriptContext): Promise<z.input<Output>> | z.input<Output>;
 }
 
+/** A script made with `defineScript`. The build finds it among a repository's exports. */
 export interface ScriptDefinition extends ResourceDefinition {
   readonly kind: "script";
   /** Validates the input, runs the script and validates what it returns. */
@@ -244,6 +248,7 @@ export class SchemaError extends Error {
   }
 }
 
+/** Defines a script: a function with a checked input and a checked output, that runs on a worker. */
 export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
   options: ScriptOptions<Input, Output>,
 ): ScriptDefinition {
@@ -296,6 +301,7 @@ export function defineScript<Input extends z.ZodType, Output extends z.ZodType>(
   };
 }
 
+/** What `defineSchedule` takes: when it fires and what it starts. */
 export interface ScheduleOptions extends ResourceNames {
   path: string;
   /** What it is for, in plain text. */
@@ -322,6 +328,7 @@ export interface ScheduleOptions extends ResourceNames {
   tags?: string[];
 }
 
+/** Defines a schedule: a script or a flow started at times given as a cron line. */
 export function defineSchedule(options: ScheduleOptions): ResourceDefinition {
   return resource("schedule", options, () =>
     compact({
@@ -369,6 +376,7 @@ export interface WebhookRequest<Body = unknown> {
   rawBody: string;
 }
 
+/** What `defineWebhook` takes: the script that receives a request, and how the request is checked. */
 export interface WebhookOptions extends ResourceNames {
   path: string;
   /** What it is for, in plain text. */
@@ -430,6 +438,7 @@ interface TriggerSourceCommon {
   worker?: string;
 }
 
+/** What `defineTriggerSource` takes: code of your own that turns requests, or a poll, into starts of a script or a flow. */
 export type TriggerSourceOptions =
   | (TriggerSourceCommon & {
       mode: "webhook";
@@ -443,6 +452,7 @@ export type TriggerSourceOptions =
       run(tick: PollTick, ctx: ScriptContext): Promise<PollResult> | PollResult;
     });
 
+/** A trigger source made with `defineTriggerSource`. */
 export interface TriggerSourceDefinition extends ResourceDefinition {
   readonly kind: "trigger_source";
   execute(input: unknown, ctx: ScriptContext): Promise<unknown>;
@@ -482,6 +492,7 @@ export function defineTriggerSource(options: TriggerSourceOptions): TriggerSourc
   };
 }
 
+/** Defines a webhook: an address that starts a script when a request is made to it. */
 export function defineWebhook(options: WebhookOptions): ResourceDefinition {
   return resource("trigger", options, () =>
     compact({
@@ -539,6 +550,7 @@ export function defineForm(
   );
 }
 
+/** What `defineConnector` takes: the connector's name, the schema of a connection's configuration and how its client is made. */
 export interface ConnectorOptions<Config, Client> extends ResourceNames {
   /** Unique within the workspace, for example `connectors/shop`. Connections name it by this. */
   path: string;
@@ -562,6 +574,7 @@ export interface ConnectorOptions<Config, Client> extends ResourceNames {
   ): Promise<ConnectionTest>;
 }
 
+/** A connector made with `defineConnector`, which connections of your own name. */
 export interface ConnectorDefinition<Config, Client> extends ResourceDefinition {
   readonly kind: "connector";
   create(config: Config, credential: string | undefined, signal: AbortSignal): Client;
@@ -591,6 +604,7 @@ export function defineConnector<Config, Client>(
   };
 }
 
+/** What `defineConnection` takes: the connector it uses, its configuration and the name of the secret that holds the credential. */
 export interface ConnectionOptions extends ResourceNames {
   path: string;
   /** The connector to use: `http`, `smtp` or `oauth2`, which are built in, or one of your own. */
@@ -598,6 +612,7 @@ export interface ConnectionOptions extends ResourceNames {
   description?: string;
 }
 
+/** What `defineConnectionGroup` takes: the connector every member uses, and the connections that are members. */
 export interface ConnectionGroupOptions extends ResourceNames {
   path: string;
   /** The connector every member uses: `http` or `smtp`, which are built in, or one of your own. */
@@ -630,6 +645,7 @@ export function defineConnection(options: ConnectionOptions): ResourceDefinition
   );
 }
 
+/** What `defineVariable` takes: its path, what it is for and the value used in a workspace that has not set its own. */
 export interface VariableOptions extends ResourceNames {
   path: string;
   description?: string;
@@ -644,6 +660,7 @@ export function defineVariable(options: VariableOptions): ResourceDefinition {
   );
 }
 
+/** What `defineQuery` takes: its path, one SELECT over the workspace's tables and the parameters it is given. */
 export interface QueryOptions extends ResourceNames {
   /** The query's name, for example `reports/fees`. */
   path: string;
@@ -679,6 +696,7 @@ export function defineQuery(options: QueryOptions): ResourceDefinition {
   );
 }
 
+/** What `defineEvent` takes: the event's name and the schema of its payload. */
 export interface EventOptions<Payload extends z.ZodType> extends ResourceNames {
   /** The event's name, for example `orders/placed`. */
   path: string;
@@ -699,6 +717,7 @@ export function defineEvent<Payload extends z.ZodType>(
   );
 }
 
+/** What `defineEventTrigger` takes: the event to listen for, what it starts and an optional filter. */
 export interface EventTriggerOptions extends ResourceNames {
   path: string;
   /** What it is for, in plain text. */
@@ -976,6 +995,7 @@ export type FlowEdge<Node extends string> =
   | [from: Node, to: Node]
   | [from: Node, to: Node, options: { when?: string; error?: boolean }];
 
+/** What `defineFlow` takes: its steps and the edges between them. */
 export interface FlowOptions<Nodes extends Record<string, FlowNode>> extends ResourceNames {
   /** The name of the tool an agent sees for it, if it should not follow the path. */
   mcp?: ToolName;
@@ -1007,6 +1027,7 @@ export function defineFlow<Nodes extends Record<string, FlowNode>>(
   );
 }
 
+/** What `defineTable` takes: the table's path, its columns and who may read and change its rows. */
 export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boolean, boolean>>>
   extends ResourceNames {
   /** The table's name, for example `crm/orders`. */
@@ -1048,6 +1069,7 @@ export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boole
   renamedFrom?: string;
 }
 
+/** A table made with `defineTable`, which carries the type of its rows. */
 export interface TableDefinition<Row, Insert> extends ResourceDefinition {
   readonly kind: "table";
   /** Only for type inference. Never set. */
@@ -1082,6 +1104,7 @@ export function defineTable<C extends Record<string, ColumnSpec<unknown, boolean
   return { ...definition, kind: "table" };
 }
 
+/** What `defineDataSource` takes: its path and what it is for. */
 export interface DataSourceOptions extends ResourceNames {
   path: string;
   description?: string;
@@ -1131,6 +1154,7 @@ export const THEME_TOKENS = [
 /** One of the theme tokens a workspace may set. */
 export type ThemeToken = (typeof THEME_TOKENS)[number];
 
+/** What `defineTheme` takes: the values that replace the tenant's theme for this workspace. */
 export interface ThemeOptions extends ResourceNames {
   /** Default `theme`. A workspace has one theme. */
   path?: string;
@@ -1151,6 +1175,7 @@ export function defineTheme(options: ThemeOptions): ResourceDefinition {
   );
 }
 
+/** What `defineApp` takes: the app's path and title, and the interface or the code it serves. */
 export interface AppOptions extends ResourceNames {
   /** Unique within the workspace. It is part of the app's address, for example `orders`. */
   path: string;
@@ -1202,6 +1227,7 @@ export interface AppOptions extends ResourceNames {
   reads?: string[];
 }
 
+/** An app made with `defineApp`. */
 export interface AppDefinition extends ResourceDefinition {
   readonly kind: "app";
   /** Read by the build. Not part of the manifest. Absent for an app that serves an interface. */
@@ -1257,6 +1283,7 @@ export function defineApp(options: AppOptions): AppDefinition {
   };
 }
 
+/** What `defineInterface` takes: its path and the pages it is made of. */
 export interface InterfaceOptions extends Omit<ResourceNames, "title">, InterfaceBody {
   /** Unique within the workspace, for example `screens/invoices`. */
   path: string;
@@ -1277,6 +1304,7 @@ export function defineInterface(options: InterfaceOptions): ResourceDefinition {
   );
 }
 
+/** What `defineDashboard` takes: its path and the widgets it is made of. */
 export interface DashboardOptions extends Omit<ResourceNames, "title">, DashboardBody {
   /** Unique within the workspace, for example `boards/clinic-visits`. */
   path: string;
@@ -1301,6 +1329,7 @@ export function defineDashboard(options: DashboardOptions): ResourceDefinition {
   );
 }
 
+/** What `defineRole` takes: the role's path, the name bindings refer to and the permissions it holds. */
 export interface RoleOptions extends ResourceNames {
   /** Unique within the workspace, for example `roles/order-reader`. */
   path: string;
@@ -1323,6 +1352,7 @@ export function defineRole(options: RoleOptions): ResourceDefinition & { readonl
   return { ...definition, name: options.name };
 }
 
+/** Who a binding gives a role to: a member, a group of members, an end-user group or a service account. */
 export type BindingPrincipal =
   | { type: "member"; email: string }
   /** A group of members, by its key: `tech-desk`. What it is called can change freely. */
@@ -1341,6 +1371,7 @@ export type BindingPrincipal =
   /** Anyone, signed in or not. This is what makes something public. */
   | { type: "anonymous" };
 
+/** What `defineBinding` takes: the role, who holds it and where. */
 export interface BindingOptions extends ResourceNames {
   /** Unique within the workspace, for example `bindings/portal-orders`. */
   path: string;

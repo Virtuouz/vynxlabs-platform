@@ -42,6 +42,7 @@ function marks(locale: string | undefined): { decimal: string; group: string } {
   };
 }
 
+/** How an amount is read: whether it is kept in cents, the currency its problems are worded in, and the reader's locale. */
 export interface MoneyOptions {
   /** The column keeps cents (the default for money): 12345 is 123.45. `false`: whole units. */
   minorUnits?: boolean | undefined;

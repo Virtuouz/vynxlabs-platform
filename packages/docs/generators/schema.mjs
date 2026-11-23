@@ -123,8 +123,8 @@ function discriminatorOf(forms) {
  */
 export function tablesOf(schema) {
   const tables = [];
-  const start = (root, form) => {
-    const table = { root, form, fields: new Map() };
+  const start = (root, form, about = "") => {
+    const table = { root, form, about, fields: new Map() };
     tables.push(table);
     return table;
   };
@@ -156,8 +156,11 @@ export function tablesOf(schema) {
         forms.forEach((form, index) => {
           const name = tell
             ? `\`${tell.name}\` is \`${JSON.stringify(tell.fixed(form))}\``
-            : (form.title ?? `form ${index + 1}`);
-          walk(form, prefix, start(prefix, name));
+            : (form.title ??
+              (form.required?.length
+                ? `with ${form.required.map((one) => `\`${one}\``).join(" and ")}`
+                : `form ${index + 1}`));
+          walk(form, prefix, start(prefix, name, form.description ?? ""));
         });
       }
     }

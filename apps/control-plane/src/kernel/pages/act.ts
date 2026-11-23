@@ -417,7 +417,12 @@ export async function runAction(
     action: request.at,
   };
 
-  const changes: { action: string; table: string; id: string; fields: string[] }[] = [];
+  const changes: {
+    action: "create" | "update" | "delete";
+    table: string;
+    id: string;
+    fields: string[];
+  }[] = [];
   const starts: { do: "flow" | "script"; path: string; input: Record<string, unknown> }[] = [];
   let made: { table: string; id: string } | undefined;
   let ids: Partial<Record<RecordRef, string>> = {};

@@ -34,16 +34,19 @@ export interface PlatformEventField {
   description: string;
 }
 
+/** One event the platform publishes: its name, what it says and what its payload holds. */
+export interface PlatformEventDefinition {
+  name: string;
+  description: string;
+  payload: readonly PlatformEventField[];
+}
+
 /**
  * The events the platform publishes, with what each says and what its payload holds: the one
  * list the editors offer a trigger and a flow to listen for. Nobody declares these in a
  * repository, so nothing else lists them.
  */
-export const PLATFORM_EVENTS: readonly {
-  name: string;
-  description: string;
-  payload: readonly PlatformEventField[];
-}[] = [
+const EVENT_LIST = [
   {
     name: "platform/run-succeeded",
     description: "A script run ended well.",
@@ -97,7 +100,12 @@ export const PLATFORM_EVENTS: readonly {
       { name: "id", type: "string", description: "The row's ID." },
     ],
   },
-];
+] as const satisfies readonly PlatformEventDefinition[];
+
+export const PLATFORM_EVENTS: readonly PlatformEventDefinition[] = EVENT_LIST;
+
+/** What a platform event is called. A publisher names one of these and nothing else. */
+export type PlatformEventName = (typeof EVENT_LIST)[number]["name"];
 
 /**
  * Paths under this are the platform's own: the core nodes it adds to a bundle

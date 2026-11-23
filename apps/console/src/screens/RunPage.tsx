@@ -39,6 +39,7 @@ import {
 } from "./Execution.tsx";
 import { type FlowDetail, type FlowRunDetail, FlowRunView } from "./Flows.tsx";
 import { NotFound } from "./NotFound.tsx";
+import { RetryOnVersion } from "./RetryOnVersion.tsx";
 import { RunAlert, RunEvents } from "./RunAlert.tsx";
 import { type PreviousSuccess, RunCompare } from "./RunCompare.tsx";
 import type { Insight } from "./Runs.tsx";
@@ -639,6 +640,7 @@ function FlowRunHeader({
   reconnecting: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const [choosing, setChoosing] = useState(false);
   const live = LIVE.includes(run.state);
   const finishedBadly = run.state === "failed" || run.state === "canceled";
   const trigger = flow?.nodes[run.triggerNode] as
@@ -825,6 +827,7 @@ function FlowRunHeader({
                     : []),
                   { label: "Again from the start", onSelect: () => void fromStart("original") },
                   { label: "Again, with other input…", onSelect: () => setEditing(true) },
+                  { label: "On another version…", onSelect: () => setChoosing(true) },
                   {
                     label: "On the version deployed now",
                     onSelect: () => void fromStart("active"),
@@ -863,6 +866,15 @@ function FlowRunHeader({
           />
         </div>
       ) : null}
+      <RetryOnVersion
+        open={choosing}
+        onClose={() => setChoosing(false)}
+        root={root}
+        id={run.id}
+        flow={run.flow}
+        failed={finishedBadly}
+        started={again.started}
+      />
       <Closing subject={editing}>
         {(_editing, shown) => (
           <InputDialog

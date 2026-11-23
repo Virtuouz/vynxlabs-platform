@@ -745,6 +745,33 @@ test("WLK-16: a flow run the list does not hold (a child's, or an older one) ope
   expect(screen.queryByText(/No run has this ID/)).toBeNull();
 });
 
+test("a flow run is retried on a version chosen from the list, not only its own or the newest (FLW-MP13)", async () => {
+  routes[`GET ${root}/bundles`] = () => [
+    200,
+    {
+      items: [
+        { id: "b5", version: 5, active: true, createdAt: "2026-11-15T10:00:00.000Z" },
+        { id: "b4", version: 4, active: false, createdAt: "2026-11-14T09:00:00.000Z" },
+        { id: "b3", version: 3, active: false, createdAt: "2026-11-13T09:00:00.000Z" },
+      ],
+    },
+  ];
+  show(<RunPage root={root} link={link} id="f2" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Re-run/ }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "On another version…" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.change(await within(dialog).findByLabelText("Version"), { target: { value: "b3" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+  // The version dialog steps aside, and the usual question is asked.
+  await waitFor(() => expect(screen.queryByLabelText("Version")).toBeNull());
+  expect(await answer("Retry")).toContain("On version 4");
+  await waitFor(() => expect(location.pathname).toBe(`${link}/runs/f3`));
+  expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+    from: "failed",
+    bundleId: "b3",
+  });
+});
+
 test("a script run says what its failure alert did, and what it published (OPS-MP9, OPS-MP10)", async () => {
   routes[`GET ${root}/runs/r1`] = () => [
     200,

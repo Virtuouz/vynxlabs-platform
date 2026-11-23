@@ -19,6 +19,14 @@ export const DOC_TYPE_LABELS: Record<DocType, string> = {
   explanation: "Explanation",
 };
 
+/** The types as a group of pages is headed: on a collection's cards and in the Related block. */
+export const DOC_TYPE_PLURALS: Record<DocType, string> = {
+  tutorial: "Tutorials",
+  "how-to": "How-to guides",
+  reference: "Reference",
+  explanation: "Explanations",
+};
+
 /** What each type is for, in a line: shown on a collection's landing page. */
 export const DOC_TYPE_SUMMARIES: Record<DocType, string> = {
   tutorial: "Learn by building something, one step at a time.",

@@ -14,7 +14,7 @@ import {
   asDirectory,
   type Collection,
   DOC_TYPE_LABELS,
-  DOC_TYPE_SUMMARIES,
+  DOC_TYPE_PLURALS,
   DOC_TYPES,
   type DocSet,
   type DocType,
@@ -31,6 +31,7 @@ import {
   type SearchHit,
   splitFrontmatter,
   trailOf,
+  typeCardsOf,
   urlOf,
 } from "@volvel/docs-engine";
 import {
@@ -242,13 +243,6 @@ ${switcher}
 </aside>`;
 }
 
-const PLURALS: Record<DocType, string> = {
-  tutorial: "Tutorials",
-  "how-to": "How-to guides",
-  reference: "Reference",
-  explanation: "Explanations",
-};
-
 /** The types a site's pages have, in the order a reader thinks of them. Empty for a site with none. */
 function typesOf(set: DocSet): DocType[] {
   const present = new Set(Object.values(set.types));
@@ -260,7 +254,9 @@ function data(at: SiteView, extra: Record<string, unknown>): string {
   const types = typesOf(at.set);
   const json = JSON.stringify({
     base: at.base,
-    ...(types.length > 0 ? { types: types.map((id) => ({ id, title: PLURALS[id] })) } : {}),
+    ...(types.length > 0
+      ? { types: types.map((id) => ({ id, title: DOC_TYPE_PLURALS[id] })) }
+      : {}),
     ...(at.platform ? { platform: at.platform } : {}),
     ...(at.search?.kind === "static" ? { search: at.search } : {}),
     collections: collectionsOf(at.set).map((one) => ({ id: one.id, title: one.title })),
@@ -420,19 +416,13 @@ function feedbackOf(at: SiteView, path: string): string {
  * reader says what they are doing and is taken to the first page that does it.
  */
 function typeCards(at: SiteView, path: string): string {
-  const { set } = at;
-  const trail = trailOf(set.nav, path);
-  const folder = trail.at(-1);
-  if (!folder || folder.index?.path !== path || trail.length !== 1 || folder.id === "") return "";
-  const inside = pagesInOrder({ collections: [folder] }).filter((page) => set.types[page.path]);
-  const present = DOC_TYPES.filter((one) => inside.some((page) => set.types[page.path] === one));
-  if (present.length < 2) return "";
-  return `<section class="types" aria-labelledby="types"><h2 id="types">What do you want to do?</h2><ul class="cards">${present
-    .map((one) => {
-      const pages = inside.filter((page) => set.types[page.path] === one);
-      const first = pages[0] as PageRef;
-      return `<li><section class="card" data-type="${one}"><h3><a href="${pageHref(at, first.url)}">${escapeHtml(PLURALS[one])}</a></h3><p>${escapeHtml(DOC_TYPE_SUMMARIES[one])}</p><a class="more" href="${pageHref(at, first.url)}">${pages.length} ${pages.length === 1 ? "page" : "pages"} →</a></section></li>`;
-    })
+  const cards = typeCardsOf(at.set, path);
+  if (cards.length === 0) return "";
+  return `<section class="types" aria-labelledby="types"><h2 id="types">What do you want to do?</h2><ul class="cards">${cards
+    .map(
+      (card) =>
+        `<li><section class="card" data-type="${card.type}"><h3><a href="${pageHref(at, card.first.url)}">${escapeHtml(card.title)}</a></h3><p>${escapeHtml(card.summary)}</p><a class="more" href="${pageHref(at, card.first.url)}">${card.count} ${card.count === 1 ? "page" : "pages"} →</a></section></li>`,
+    )
     .join("")}</ul></section>`;
 }
 
@@ -444,7 +434,9 @@ function relatedBlock(at: SiteView, path: string): string {
   return `<aside class="related" aria-labelledby="related"><h2 id="related">Related</h2>${kinds
     .map(
       (one) =>
-        `<section data-type="${one}"><h3>${escapeHtml(PLURALS[one])}</h3><ul>${(related[one] ?? [])
+        `<section data-type="${one}"><h3>${escapeHtml(DOC_TYPE_PLURALS[one])}</h3><ul>${(
+          related[one] ?? []
+        )
           .map(
             (page) => `<li><a href="${pageHref(at, page.url)}">${escapeHtml(page.title)}</a></li>`,
           )

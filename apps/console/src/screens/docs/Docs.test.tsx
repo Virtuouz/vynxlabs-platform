@@ -1146,3 +1146,207 @@ describe("what is taken out can be brought back", () => {
     expect(sent("PUT")[0]?.body).toMatchObject({ kind: "app", deleted: true });
   });
 });
+
+describe("DOC-03 types and subjects in the docs editor", () => {
+  /** The handbook with its support folder a how-to folder, and a reference page about refunds. */
+  const typed = () => {
+    const base = list();
+    const set = (path: string, source: string) => {
+      const found = base.pages.find((one) => one.path === path);
+      if (found) found.source = source;
+    };
+    set(
+      "handbook/support/index",
+      text("title: Customer support\ntype: how-to\npages: [returns, refunds]"),
+    );
+    set(
+      "handbook/support/refunds",
+      text(
+        "title: Refund an order\ntopic: support-refunds\nsubjects: [refunds]",
+        "## Goal\n\nGive the money back.\n\n:::steps\n1. Open the order.\n:::\n",
+      ),
+    );
+    set(
+      "handbook/support/returns",
+      text(
+        "title: Receive a return\nsubjects: [refunds, parcels]",
+        "## Goal\n\n:::steps\n1. Scan.\n:::\n",
+      ),
+    );
+    base.pages.push(
+      page("handbook/limits/index", "Limits", {
+        source: text("title: Limits\ntype: reference"),
+      }),
+      page("handbook/limits/refund-limits", "Refund limits", {
+        source: text("title: Refund limits\nsubjects: [refunds]", "Up to 500 a day.\n"),
+      }),
+    );
+    routes[`GET /api/v1${root}/docs`] = () => [200, base];
+    for (const one of base.pages) {
+      routes[`GET /api/v1${root}/docs/page/${one.path}`] = () => [
+        200,
+        { page: one, source: one.source, revision: null, deployedSource: null },
+      ];
+    }
+    return base;
+  };
+  const editor = (path: string) =>
+    show(<DocEditor root={root} link={link} tenantId="acme" workspaceId="dev" path={path} />);
+  const source = async (path = "handbook/support/refunds") =>
+    (await screen.findByLabelText(`Source of ${path}`)) as HTMLTextAreaElement;
+  const details = () => {
+    fireEvent.click(screen.getByRole("tab", { name: "Page details" }));
+    return within(screen.getByRole("region", { name: "Page details" }));
+  };
+
+  test("the index of the pages carries each page's type, subjects and moved_from, as written", () => {
+    const base = typed();
+    base.pages[3] = {
+      ...(base.pages[3] as (typeof base.pages)[number]),
+      source: text("title: Refund an order\ntype: reference\nsubjects: [a, b]\nmoved_from: [old]"),
+    };
+    const app = base.apps[0] as DocsApp;
+    expect(indexOf(base, app).find((one) => one.path === "support/refunds")).toMatchObject({
+      type: "reference",
+      subjects: ["a", "b"],
+      moved_from: ["old"],
+    });
+    expect(indexOf(base, app).find((one) => one.path === "support/index")?.type).toBe("how-to");
+  });
+
+  test("a page's type is shown as the folder's when it says none, and is changed or given back", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    const box = await source();
+    const form = details();
+    const type = form.getByLabelText(/^Type/) as HTMLSelectElement;
+    expect(type.value).toBe("");
+    expect(
+      within(type).getByRole("option", { name: "Use the folder's (How-to guide)" }),
+    ).toBeTruthy();
+    fireEvent.change(type, { target: { value: "reference" } });
+    await waitFor(() => expect(box.value).toContain("type: reference\n"));
+    fireEvent.change(form.getByLabelText(/^Type/), { target: { value: "" } });
+    await waitFor(() => expect(box.value).not.toContain("type:"));
+    // What it did not touch is as it was.
+    expect(box.value).toContain("subjects:");
+  });
+
+  test("subjects are added, offered from the site's own, and stop at five", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    const box = await source();
+    const form = details();
+    // Another page's subject is offered; this page's own is not offered again.
+    fireEvent.click(form.getByRole("button", { name: "Add parcels" }));
+    await waitFor(() => expect(box.value).toContain("subjects:\n  - refunds\n  - parcels\n"));
+    expect(form.queryByRole("button", { name: "Add refunds" })).toBeNull();
+    const add = form.getByLabelText("Add a subject");
+    fireEvent.change(add, { target: { value: "Gift cards" } });
+    fireEvent.keyDown(add, { key: "Enter" });
+    await waitFor(() => expect(box.value).toContain("  - gift-cards\n"));
+    for (const one of ["a", "b"]) {
+      fireEvent.change(form.getByLabelText("Add a subject"), { target: { value: one } });
+      fireEvent.keyDown(form.getByLabelText("Add a subject"), { key: "Enter" });
+    }
+    await waitFor(() => expect(box.value).toContain("  - b\n"));
+    expect(form.getByText(/Five is the most a page uses/)).toBeTruthy();
+    expect((form.getByLabelText("Add a subject") as HTMLInputElement).disabled).toBe(true);
+    fireEvent.click(form.getByRole("button", { name: "Remove gift-cards" }));
+    await waitFor(() => expect(box.value).not.toContain("gift-cards"));
+    expect((form.getByLabelText("Add a subject") as HTMLInputElement).disabled).toBe(false);
+  });
+
+  test("the lints of a page of a typed folder are among the problems, as warnings", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    const box = await source();
+    fireEvent.change(box, {
+      target: { value: text("title: About refunds", "No steps and no heading.\n") },
+    });
+    const problems = within(await screen.findByRole("region", { name: "Problems" }));
+    expect(await problems.findByText(/has no numbered steps/)).toBeTruthy();
+    expect(problems.getByText(/title says what the reader will do/)).toBeTruthy();
+    // A warning does not stop it being saved or deployed.
+    expect(screen.queryByText("This page would deploy as it is.")).not.toBeNull();
+  });
+
+  test("the preview shows the page's type, and the pages of other types about the same things", async () => {
+    typed();
+    editor("handbook/support/refunds");
+    await source();
+    const shown = await screen.findByRole("region", { name: "The page as it will be served" });
+    await waitFor(() => expect(within(shown).getByText("How-to guide")).toBeTruthy());
+    expect(shown.querySelector(".eyebrow")?.textContent).toBe("How-to guide");
+    const related = within(shown).getByRole("complementary", { name: "Related" });
+    expect(within(related).getByRole("link", { name: "Refund limits" }).getAttribute("href")).toBe(
+      `${link}/docs/handbook/limits/refund-limits`,
+    );
+    // The same type is not related to itself: the other how-to page shares a subject and is left out.
+    expect(within(related).queryByRole("link", { name: "Receive a return" })).toBeNull();
+  });
+
+  test("a collection's own page shows a card for each type its pages have", async () => {
+    const base = typed();
+    base.pages.push(
+      page("handbook/support/faq-reference", "Support limits", {
+        source: text("title: Support limits\ntype: reference", "Facts.\n"),
+      }),
+    );
+    editor("handbook/support/index");
+    const shown = await screen.findByRole("region", { name: "The page as it will be served" });
+    await waitFor(() => expect(within(shown).getByText("What do you want to do?")).toBeTruthy());
+    expect(within(shown).getByRole("link", { name: "How-to guides" })).toBeTruthy();
+    expect(within(shown).getByRole("link", { name: "Reference" })).toBeTruthy();
+  });
+
+  test("a new page offers a type, and starts from that type's template", async () => {
+    typed();
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Limits" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New page here/ }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Check a limit" } });
+    const type = screen.getByLabelText("Type") as HTMLSelectElement;
+    // The folder says reference: leaving it be writes no type on the page.
+    expect(within(type).getByRole("option", { name: "Use the folder's (Reference)" })).toBeTruthy();
+    fireEvent.change(type, { target: { value: "how-to" } });
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const made = (
+      batches()[0]?.body?.changes as { path: string; source: string }[] | undefined
+    )?.[0];
+    expect(made?.path).toBe("handbook/limits/check-a-limit");
+    expect(made?.source).toContain("type: how-to\n");
+    expect(made?.source).toContain(":::steps");
+  });
+
+  test("a new page that takes the folder's type writes none, and one without a choice is as it was", async () => {
+    typed();
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Limits" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New page here/ }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Raise a limit" } });
+    fireEvent.change(screen.getByLabelText("Type"), { target: { value: "reference" } });
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const made = (batches()[0]?.body?.changes as { source: string }[] | undefined)?.[0];
+    expect(made?.source).not.toContain("type:");
+    expect(made?.source).toContain("## Fields");
+  });
+
+  test("a new page with no type chosen is only its title", async () => {
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Customer support" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New page here/ }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Gift cards" } });
+    expect((screen.getByLabelText("Type") as HTMLSelectElement).value).toBe("");
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    expect(batches()[0]?.body).toEqual({
+      changes: [{ path: "handbook/support/gift-cards", source: "---\ntitle: Gift cards\n---\n" }],
+    });
+  });
+});

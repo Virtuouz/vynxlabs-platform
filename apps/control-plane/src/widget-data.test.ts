@@ -365,8 +365,14 @@ function bundle(): Bundle {
         sql: "select title from notes where $1::text is null or title ilike '%' || $1 || '%' order by title",
         parameters: [{ name: "words", type: "text" }],
       }),
+      // A table whose rows are named by a number.
+      manifest("table", "gadgets", {
+        display: "serial",
+        columns: { serial: { type: "number", required: true } },
+      }),
       manifest("table", "payments", {
         columns: {
+          gadget: { type: "reference", references: "gadgets" },
           invoice: { type: "reference", references: "invoices", required: true },
           amount: { type: "number" },
           owner: { type: "text" },
@@ -1420,6 +1426,15 @@ describe("what a field may be set to", () => {
     // The paging test made 120 more.
     expect((await choices(alice, "invoice")).body.choices).toHaveLength(50);
     expect(labels(await choices(alice, "invoice", "&search=B-05"))).toHaveLength(10);
+  });
+
+  test("TAB2: a reference to rows named by a number is searched by that number, not refused", async () => {
+    await alice.post(`${ws()}/rows/gadgets`, { rows: [{ serial: 1017 }, { serial: 2044 }] });
+    const found = await choices(alice, "gadget", "&search=10");
+    expect(found.status, JSON.stringify(found.body)).toBe(200);
+    expect(labels(found)).toEqual(["1017"]);
+    expect(labels(await choices(alice, "gadget", "&search=zzz"))).toEqual([]);
+    expect(labels(await choices(alice, "gadget"))).toEqual(["1017", "2044"]);
   });
 
   test("for an enum are its values, searched", async () => {

@@ -462,6 +462,11 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "The table, with its columns, the ones retired included, and where its rows are kept.",
           tags: ["data"],
           params: WildParams,
+          querystring: Type.Object({
+            id: Type.Optional(
+              Type.String({ description: "Which table, when two retired ones had the name." }),
+            ),
+          }),
           response: {
             200: Type.Object({
               id: Type.Optional(Type.String()),
@@ -487,13 +492,15 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx, params }) => {
+      async ({ ctx, params, query }) => {
         const name = await currentName(ctx, params, wildPath(params));
         const data = (await kernel.data.forTenant(params.t)).owner;
         const catalog = await loadCatalog(data, params.w);
-        const table =
-          catalog.find((candidate) => candidate.name === name && candidate.status === "active") ??
-          catalog.find((candidate) => candidate.name === name);
+        const table = query.id
+          ? catalog.find((candidate) => candidate.name === name && candidate.id === query.id)
+          : (catalog.find(
+              (candidate) => candidate.name === name && candidate.status === "active",
+            ) ?? catalog.find((candidate) => candidate.name === name));
         if (!table) return describeTable(data, params.w, name) as never;
         const resource = await db
           .selectFrom("resource")

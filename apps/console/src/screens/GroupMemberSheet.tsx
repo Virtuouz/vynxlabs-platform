@@ -3,6 +3,7 @@ import { useState } from "react";
 import { api } from "../api.ts";
 import { failureText } from "../ask.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
+import { addressChanged } from "./ConnectionWizard.tsx";
 
 /** A member of a connection group, as the list has it. */
 export interface GroupMemberRow {
@@ -44,6 +45,13 @@ export function GroupMemberSheet({
   const [credential, setCredential] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
+
+  // Another address keeps no credential that was given for the old one (D10), as in the wizard.
+  const addressMoved =
+    member !== undefined &&
+    member.hasCredential &&
+    credential === "" &&
+    addressChanged(member.config, config);
 
   const save = async () => {
     setProblem(undefined);
@@ -111,6 +119,12 @@ export function GroupMemberSheet({
           value={config}
           onChange={(value) => setConfig((value ?? {}) as Record<string, unknown>)}
         />
+        {addressMoved ? (
+          <Notice tone="attention">
+            The address changed. Save removes the stored credential, which was given for the old
+            one: enter it again to keep using this member.
+          </Notice>
+        ) : null}
         <SecretField
           label="Credential"
           name="credential"

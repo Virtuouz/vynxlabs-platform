@@ -1,4 +1,5 @@
 export * from "./action.js";
+export { APP_POLICY, appPolicy } from "./app-policy.js";
 export {
   ASSET_PATH_PATTERN,
   assetPathProblem,
@@ -27,6 +28,8 @@ export {
   checkBundleManifests,
   keyMissing,
   PLATFORM_EVENT_PREFIX,
+  PLATFORM_EVENTS,
+  type PlatformEventField,
 } from "./bundle-check.js";
 export {
   envelopeSchemas,

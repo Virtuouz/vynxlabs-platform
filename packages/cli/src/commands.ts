@@ -26,6 +26,7 @@ export const COMMAND_GROUPS = [
   "A tenant's access: its groups, service accounts, roles and what they are given",
   "Move a tenant",
   "See what ran",
+  "Run the instance",
 ] as const;
 
 const entry = <Name extends string>(
@@ -45,11 +46,35 @@ export const COMMANDS = [
     "login --url <url> --token <api key>",
     "Save the instance and key to use.",
   ),
-  entry("whoami", "Sign in", "whoami", "Show who the saved key acts as."),
-  entry("status", "Sign in", "status", "Show the instance's version and readiness."),
+  entry("logout", "Sign in", "logout", "Remove the saved instance and key."),
+  entry(
+    "profiles",
+    "Sign in",
+    "profiles",
+    "List the saved sign-ins. Give --profile <name> to login, or to any command, to use one besides the default; VOLVEL_PROFILE does the same.",
+  ),
+  entry("whoami", "Sign in", "whoami [--json]", "Show who the saved key acts as."),
+  entry(
+    "status",
+    "Sign in",
+    "status [--json]",
+    "Show the instance's version and readiness. Exits 1 when it is not ready.",
+  ),
+
+  entry(
+    "instance",
+    "Run the instance",
+    "instance triggers [pause [--reason <text>]|resume]",
+    "Show whether every trigger in every tenant is paused, or pause or resume them all. Operators only.",
+  ),
 
   entry("init", REPOSITORY, "init [directory]", "Write a starter repository."),
-  entry("build", REPOSITORY, "build", "Build the bundle and list what it contains."),
+  entry(
+    "build",
+    REPOSITORY,
+    "build [--entry <file>] [--resources <folder>]",
+    "Build the bundle and list what it contains. The file that exports the code (src/index.ts) and the folder of console resources (platform) can be changed here, or by `entry` and `resources` in volvel.yaml.",
+  ),
   entry(
     "schemas",
     REPOSITORY,
@@ -72,20 +97,26 @@ export const COMMANDS = [
   entry(
     "dev",
     REPOSITORY,
-    "dev [app] --tenant <slug> --workspace <slug> [--port <n>]",
-    "Serve an app from its source, with reload, against that workspace's data, as yourself.",
+    "dev [app] --tenant <slug> --workspace <slug> [--port <n>] [--no-strict]",
+    "Serve an app from its source, with reload, against that workspace's data, as yourself. The page is served under the content policy the platform gives a deployed app, so what it would refuse fails here too; --no-strict leaves the policy off.",
   ),
   entry(
     "deploy",
     REPOSITORY,
-    "deploy --tenant <slug> --workspace <slug> [--allow-delete <path>]",
-    "Build, upload and activate the bundle. Stops before uploading when it would delete console resources the repository has no file for, unless --allow-delete names each.",
+    "deploy --tenant <slug> --workspace <slug> [--preview] [--message <text>] [--json] [--allow-delete <path>]",
+    "Build, upload and activate the bundle. Stops before uploading when it would delete console resources the repository has no file for, unless --allow-delete names each. With --preview, says what it would do and changes nothing. --message is kept with the version; in CI (CI is set) the subject of the last git commit is used when there is none. With --json, the one answer is a JSON document.",
+  ),
+  entry(
+    "rollback",
+    REPOSITORY,
+    "rollback <version> --tenant <slug> --workspace <slug> [--message <text>] [--json]",
+    "Activate an earlier version of the workspace's code again, as a deploy of that version. Console resources stay as they are.",
   ),
   entry(
     "promote",
     REPOSITORY,
-    "promote --tenant <slug> --workspace <slug> [--preview] [--allow-delete <path>] [--confirm-breaking]",
-    "Activate this workspace's bundle in the workspace it is linked to. Nothing is rebuilt. With --preview, exits 4 when a production promotion would be refused for breaking changes without --confirm-breaking. A failed push to the release branch is a warning: the promotion stands and the exit is 0.",
+    "promote --tenant <slug> --workspace <slug> [--preview] [--message <text>] [--json] [--allow-delete <path>] [--confirm-breaking]",
+    "Activate this workspace's bundle in the workspace it is linked to. Nothing is rebuilt. With --preview, exits 4 when a production promotion would be refused for breaking changes without --confirm-breaking. A failed push to the release branch is a warning: the promotion stands and the exit is 0. --message is kept with the version, as deploy's is.",
   ),
 
   entry(
@@ -147,7 +178,7 @@ export const COMMANDS = [
   entry(
     "runs",
     "See what ran",
-    "runs --tenant <slug> --workspace <slug> [run id]",
+    "runs --tenant <slug> --workspace <slug> [run id] [--json]",
     "List recent runs, or show one with its logs.",
   ),
   entry(
@@ -169,7 +200,8 @@ export type CommandName = (typeof COMMANDS)[number]["command"];
 
 /** What is true of several commands, said once under the list. */
 export const COMMAND_NOTES = [
-  "build, run, dev, deploy and pull read the repository in the current directory, or --dir <path>.",
+  "build, schemas, run, dev, deploy, pull, tenant plan and tenant release read the repository in the current directory, or --dir <path>.",
+  "build, run, dev and deploy take --entry <file>, where the code is exported from (src/index.ts); these and pull take --resources <folder>, where the console's resources are (platform). `entry` and `resources` in volvel.yaml say the same.",
   "Create an API key in the console under your account menu.",
   "VOLVEL_URL and VOLVEL_TOKEN override the saved settings.",
   "volvel --version prints the version. volvel <command> --help shows that command's lines.",

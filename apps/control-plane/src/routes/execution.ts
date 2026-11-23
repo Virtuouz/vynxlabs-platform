@@ -35,7 +35,12 @@ import {
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
 import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
-import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
+import {
+  previewDeployment,
+  previewPromotion,
+  promote,
+  promotionOf,
+} from "../kernel/execution/promote.js";
 import { redact, redactError, redactText } from "../kernel/execution/redact.js";
 import {
   announceCanceled,
@@ -407,19 +412,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("kind", "=", "connector")
         .execute();
 
-    /** The manifests of the workspace's latest uploaded bundles, newest first, deployed or not. */
-    const uploadedManifests = async (workspaceId: string) => {
+    /**
+     * The manifests of the workspace's uploaded bundles, newest first, deployed or not, read one
+     * at a time: a caller stops reading when it has what it wanted. A connection bound long ago
+     * still finds its declaration, though many bundles were uploaded since.
+     */
+    async function* uploadedManifests(workspaceId: string) {
       const uploaded = await db
         .selectFrom("bundle")
         .select(["id", "storage_key"])
         .where("workspace_id", "=", workspaceId)
         .orderBy("id", "desc")
-        .limit(5)
+        .limit(200)
         .execute();
-      const loaded: { kind: string; path: string; body: unknown }[][] = [];
-      for (const stored of uploaded) loaded.push((await loadBundle(kernel, stored)).manifests);
-      return loaded;
-    };
+      for (const stored of uploaded) yield (await loadBundle(kernel, stored)).manifests;
+    }
 
     const configSchemaOf = async (
       workspaceId: string,
@@ -455,7 +462,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         found = from([...arriving, ...deployed]);
       }
       if (!found) {
-        for (const manifests of await uploadedManifests(workspaceId)) {
+        for await (const manifests of uploadedManifests(workspaceId)) {
           found = from(manifests);
           if (found) break;
         }
@@ -658,6 +665,54 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           })),
         };
       },
+    );
+
+    app.get(
+      `${base}/deployment-preview`,
+      {
+        config: { access: access.workspace("deployment:write") },
+        schema: {
+          summary: "What deploying a bundle here would do",
+          description:
+            "Found by carrying the deploy out and taking it all back, so it is exactly what " +
+            "the deploy would do: the resources and tables it would change, or why it would be refused. " +
+            "Nothing is changed.",
+          tags: ["deploys"],
+          params: WorkspaceParams,
+          querystring: Type.Object({
+            bundleId: Id,
+            allowDelete: Type.Optional(
+              Type.String({
+                maxLength: 4000,
+                description:
+                  "Paths the deploy may delete although it looks like a rename, separated by commas.",
+              }),
+            ),
+          }),
+          response: {
+            200: Type.Object({
+              possible: Type.Boolean(),
+              refusal: Type.Union([
+                Type.Object({
+                  code: Type.String(),
+                  detail: Type.String(),
+                  errors: Type.Array(Type.Object({ path: Type.String(), message: Type.String() })),
+                }),
+                Type.Null(),
+              ]),
+              summary: Type.Union([Summary, Type.Null()]),
+            }),
+          },
+        },
+      },
+      async ({ ctx, query }) =>
+        previewDeployment(
+          kernel,
+          ctx.actor,
+          ctx.workspace as WorkspaceRef,
+          query.bundleId,
+          query.allowDelete?.split(",").filter(Boolean),
+        ),
     );
 
     app.post(
@@ -907,6 +962,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   "it, when there is one, is refused with `breaking_changes`.",
               }),
             ),
+            message: Type.Optional(
+              Type.String({ maxLength: 500, description: "What changed, in a few words." }),
+            ),
             allowDelete: Type.Optional(
               Type.Array(Type.String({ maxLength: 255 }), {
                 maxItems: 200,
@@ -950,6 +1008,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           promote(kernel, trx, audit, workspace, ctx.principal, {
             ...(body?.allowDelete ? { allowDelete: body.allowDelete } : {}),
             ...(body?.confirmBreaking ? { confirmBreaking: true } : {}),
+            ...(body?.message ? { message: body.message } : {}),
           }),
         );
         await publishPlatformEvent(kernel, {
@@ -2339,7 +2398,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       );
       const uploaded = new Map<string, Declared>();
       if (orphans.length > 0) {
-        for (const manifests of await uploadedManifests(params.w)) {
+        for await (const manifests of uploadedManifests(params.w)) {
           for (const manifest of manifests) {
             if (
               manifest.kind === "connector" &&
@@ -2356,6 +2415,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             )
               uploaded.set(manifest.path, manifest.body as Declared);
           }
+          // Every one that nothing else declares is found: older bundles need not be read.
+          if (orphans.every((one) => uploaded.has(one.path))) break;
         }
       }
       return {
@@ -2604,11 +2665,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const left: { path: string; body: unknown }[] = [];
         if (leftover.length > 0) {
           const named = new Map<string, unknown>();
-          for (const manifests of await uploadedManifests(params.w)) {
+          for await (const manifests of uploadedManifests(params.w)) {
             for (const manifest of manifests) {
               if (manifest.kind === "connection_group" && !named.has(manifest.path))
                 named.set(manifest.path, manifest.body);
             }
+            if (leftover.every((path) => named.has(path))) break;
           }
           for (const path of leftover) left.push({ path, body: named.get(path) ?? {} });
         }

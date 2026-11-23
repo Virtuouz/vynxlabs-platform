@@ -1,5 +1,6 @@
 import { newId } from "@volvel/db";
 import { type Actor, type Audit, type Db, mutate, type Principal, type Trx } from "../audit.js";
+import { keepConsoleManaged } from "../authoring.js";
 import { conflict, HttpError } from "../errors.js";
 import type { WorkspaceRef } from "../http.js";
 import type { Kernel } from "../kernel.js";
@@ -147,6 +148,8 @@ export async function promote(
     bundleId?: string;
     allowDelete?: readonly string[];
     confirmBreaking?: boolean;
+    /** What whoever promotes said about it; kept with the deployment. */
+    message?: string;
   } = {},
 ) {
   const promotion = await promotionOf(trx, source, options.bundleId);
@@ -161,6 +164,7 @@ export async function promote(
   );
   const result = await deployBundle(kernel, trx, audit, promotion.target, principal, bundle.id, {
     promotedFrom: source.id,
+    ...(options.message ? { message: options.message } : {}),
     ...(options.allowDelete ? { allowDelete: options.allowDelete } : {}),
     // A preview shows what would break. Only the promotion itself has to be told it may.
     confirmBreaking: options.dryRun === true || options.confirmBreaking === true,
@@ -216,4 +220,50 @@ export async function previewPromotion(
     if (!(error instanceof DryRun)) throw error;
   }
   return { ...about, possible: true, refusal: null, summary: summary ?? null };
+}
+
+/**
+ * What deploying a bundle here would do, found as a promotion's preview is: by deploying it
+ * and taking it all back. The answer is what the deploy would then do, refusals included.
+ * Nothing stays, and nothing is audited.
+ */
+export async function previewDeployment(
+  kernel: Kernel,
+  actor: Actor,
+  workspace: WorkspaceRef,
+  bundleId: string,
+  allowDelete?: readonly string[],
+) {
+  let summary: Awaited<ReturnType<typeof deployBundle>>["summary"] | undefined;
+  try {
+    await mutate(kernel.db, actor, async (trx, audit) => {
+      // As a deploy does: a bundle that says nothing about console resources keeps the workspace's.
+      const kept = await keepConsoleManaged(
+        kernel,
+        trx,
+        audit,
+        workspace,
+        actor.principal,
+        bundleId,
+      );
+      summary = (
+        await deployBundle(kernel, trx, audit, workspace, actor.principal, kept, {
+          // What would break is in the summary; only the deploy itself has to be told it may.
+          confirmBreaking: true,
+          ...(allowDelete ? { allowDelete } : {}),
+        })
+      ).summary;
+      throw new DryRun();
+    });
+  } catch (error) {
+    if (error instanceof HttpError && error.statusCode < 500) {
+      return {
+        possible: false as const,
+        refusal: { code: error.problemCode, detail: error.message, errors: error.issues ?? [] },
+        summary: null,
+      };
+    }
+    if (!(error instanceof DryRun)) throw error;
+  }
+  return { possible: true as const, refusal: null, summary: summary ?? null };
 }

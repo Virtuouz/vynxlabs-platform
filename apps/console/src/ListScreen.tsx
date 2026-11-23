@@ -15,10 +15,12 @@ import { Fragment, useEffect, useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, noteWaiting, notify } from "./ask.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
+import { keepPlace } from "./kit/focus.ts";
 import { clock } from "./kit/format.ts";
 import { Loading } from "./kit/LoadState.tsx";
 import { PageHeader } from "./kit/layout.tsx";
 import { usePagedList } from "./kit/paged.tsx";
+import { READ_ONLY_WORDS, useReadOnly } from "./kit/ReadOnly.tsx";
 import { useQueryValue } from "./router.tsx";
 export interface FormField {
   name: string;
@@ -234,10 +236,19 @@ export function CreateDialog({
   // A form of more than three fields is configuration, not a quick question: it opens as a
   // sheet beside the page, with its buttons kept in view, rather than over it.
   const roomy = config.fields.length > 3;
+  const readOnly = useReadOnly();
   const buttons = (
     <>
       <Button onClick={close}>Cancel</Button>
-      <Button type="submit" form={formId} variant="primary" loading={busy}>
+      {readOnly ? <span className="text-meta text-ink-muted">{READ_ONLY_WORDS}</span> : null}
+      <Button
+        type="submit"
+        form={formId}
+        variant="primary"
+        loading={busy}
+        disabled={readOnly}
+        {...(readOnly ? { tooltip: READ_ONLY_WORDS } : {})}
+      >
         {config.action}
       </Button>
     </>
@@ -499,7 +510,8 @@ export function RemoveButton({
       size="small"
       disabled={disabled !== undefined}
       {...(disabled !== undefined ? { title: disabled } : {})}
-      onClick={async () => {
+      onClick={async (event) => {
+        const settle = keepPlace(event.currentTarget);
         const text = usesUnread
           ? `${question} What uses it could not be read, so what it affects is not listed here.`
           : affected?.length
@@ -513,6 +525,7 @@ export function RemoveButton({
         try {
           await run();
           onDone();
+          settle();
         } catch (error) {
           notify.error(error);
         }

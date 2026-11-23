@@ -120,3 +120,42 @@ test("an input too large to be shown can only be run again as it was (FLW-24)", 
   await waitFor(() => expect(same).toHaveBeenCalled());
   expect(sent).not.toHaveBeenCalled();
 });
+
+test("a run can start later and with a priority, and says what is wrong with them (OPS-MP8)", async () => {
+  const sent = vi.fn(async (_input: unknown, _timing?: unknown) => {});
+  show(
+    <InputDialog
+      open
+      onClose={() => {}}
+      title="Run reminders/send"
+      action="Run"
+      timing
+      onSubmit={sent}
+    />,
+  );
+  // Nothing chosen: it starts now, at the usual priority.
+  fireEvent.click(await screen.findByRole("button", { name: "Run" }));
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
+  expect(sent.mock.calls[0]?.[1]).toEqual({});
+
+  fireEvent.change(screen.getByLabelText("Start"), { target: { value: "later" } });
+  fireEvent.change(screen.getByLabelText("Starts at"), { target: { value: "2020-01-01T08:00" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
+  expect(await screen.findByText("Choose a time that has not passed.")).toBeTruthy();
+  expect(sent).toHaveBeenCalledTimes(1);
+
+  const at = new Date(Date.now() + 3_600_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const field = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  fireEvent.change(screen.getByLabelText("Starts at"), { target: { value: field } });
+  fireEvent.change(screen.getByLabelText("Priority"), { target: { value: "500" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
+  expect(await screen.findByText("Priority is a whole number from -100 to 100.")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Priority"), { target: { value: "10" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(2));
+  expect(sent.mock.calls[1]?.[1]).toEqual({
+    startAfter: new Date(field).toISOString(),
+    priority: 10,
+  });
+});

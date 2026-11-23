@@ -270,6 +270,45 @@ test("a service account says what it is for, and it is changed in place", async 
   );
 });
 
+test("a service account's key is made with an expiry too (SHL-MP4)", async () => {
+  routes[`GET ${base}/service-accounts`] = () => ({
+    items: [{ id: "s1", name: "ci", description: "", createdAt: "2026-11-01T00:00:00Z" }],
+  });
+  routes[`GET ${base}/service-accounts/s1/api-keys`] = () => ({
+    items: [
+      {
+        id: "k0",
+        name: "Old",
+        prefix: "vx_old",
+        suffix: "0000",
+        expiresAt: null,
+        lastUsedAt: null,
+        revokedAt: null,
+        createdAt: "2026-11-01T00:00:00Z",
+      },
+    ],
+  });
+  routes[`POST ${base}/service-accounts/s1/api-keys`] = () => ({ token: "vx_new", id: "k1" });
+  const me = {
+    principal: { id: "m1", type: "member" },
+    tenants: [{ id: "t1", name: "Acme", slug: "acme" }],
+    instancePermissions: [],
+  } as never;
+  show(<Tenant tenantId="t1" me={me} path="/t/t1/service-accounts/s1" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Keys" }));
+  expect(await screen.findByRole("columnheader", { name: "Expires" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Create API key" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Name"), { target: { value: "Deploy" } });
+  fireEvent.change(within(dialog).getByLabelText("Expires"), { target: { value: "90" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Create API key" }));
+  await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+  const sent = calls.find((call) => call.method === "POST")?.body as { expiresAt: string };
+  const days = (new Date(sent.expiresAt).getTime() - Date.now()) / 86_400_000;
+  expect(days).toBeGreaterThan(89.9);
+  expect(days).toBeLessThan(90.1);
+});
+
 test("access is given starting from the person, found by name on the server, with a role of where", async () => {
   routes[`GET ${base}/principals`] = () => ({
     items: [{ type: "member", id: "m7", label: "bob@acme.test", detail: "Bob Ray" }],
@@ -440,4 +479,41 @@ test("Workers does not offer a tenant admin the switch an operator turned off (D
   show(<Workers base={base} />);
   await screen.findByText("An operator turned this off. Only an operator can turn it on again.");
   expect(screen.queryByRole("button", { name: "Let the instance run workers" })).toBeNull();
+});
+
+test("an operator turns workers off for a tenant and reads its retention from the list, with no grant (INS-MP7)", async () => {
+  const row = {
+    id: "t1",
+    slug: "acme",
+    name: "Acme",
+    dataLocation: null,
+    workspaceCount: 2,
+    createdAt: "2026-11-01T00:00:00.000Z",
+  };
+  let on = true;
+  routes["GET /tenants"] = () => ({ items: [row], nextCursor: null });
+  routes[`GET ${base}`] = () => ({ ...row, managedWorkers: on, managedWorkersLocked: !on });
+  routes[`PATCH ${base}`] = (body) => {
+    on = (body as { managedWorkers: boolean }).managedWorkers;
+    return {};
+  };
+  routes[`GET ${base}/retention`] = () => ({
+    effective: { runsDays: 30, eventsDays: 14, refusalsDays: 7, auditDays: 400 },
+  });
+  const { Tenants } = await import("./screens/Tenants.tsx");
+  show(<Tenants me={operatorMe} />);
+  const inspector = async () =>
+    screen.findByRole("region", { name: "Workers the instance starts" });
+  fireEvent.click((await screen.findAllByText("acme")).at(-1) as HTMLElement);
+  const workers = await inspector();
+  await within(workers).findByText(/starts workers for this tenant when it has work/);
+  fireEvent.click(within(workers).getByRole("button", { name: "Start no workers for it" }));
+  await waitFor(() =>
+    expect(calls.some((c) => c.method === "PATCH" && c.url.endsWith(base))).toBe(true),
+  );
+  expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ managedWorkers: false });
+  await within(await inspector()).findByText(/An operator turned this off/);
+  const history = screen.getByRole("region", { name: "History kept" });
+  await within(history).findByText(/Runs 30 days, events 14, refused requests 7, audit log 400/);
+  expect(await within(history).findByRole("button", { name: "Change how long" })).toBeTruthy();
 });

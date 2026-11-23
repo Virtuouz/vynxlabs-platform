@@ -5,8 +5,10 @@ import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, noteWaiting } from "../ask.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
+import type { SortState } from "../kit/DataTable.tsx";
 import { bytes, count } from "../kit/format.ts";
-import { Inspector, KeyValues } from "../kit/layout.tsx";
+import { FilterChips, Inspector, KeyValues } from "../kit/layout.tsx";
+import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { Mono, Tag } from "../kit/status.tsx";
 import { useUrlParam } from "../router.tsx";
 
@@ -26,6 +28,8 @@ export interface AppSummary {
   /** False for a documentation app that is switched off: kept, and not served. */
   published?: boolean;
   builtWith?: "code" | "builder" | "docs";
+  /** `code`: defined in the repository and removed there. */
+  ownership?: string;
   /** For a docs app: the folder of pages it serves. */
   docs?: string | null;
   interface?: string | null;
@@ -472,6 +476,25 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
   const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
   const [chosen, setChosen] = useUrlParam("app", undefined, { push: true });
   const open = list.data?.items.find((row) => row.id === chosen);
+  const [search, setSearch] = useState("");
+  const [built, setBuilt] = useState<"all" | "builder" | "code" | "docs">("all");
+  const [sort, setSort] = useState<SortState>();
+  const items = list.data?.items ?? [];
+  const needle = search.trim().toLowerCase();
+  const shown = items
+    .filter(
+      (row) =>
+        (built === "all" || (row.builtWith ?? "code") === built) &&
+        (needle === "" ||
+          row.title.toLowerCase().includes(needle) ||
+          row.path.toLowerCase().includes(needle)),
+    )
+    .sort((a, b) => {
+      if (!sort) return 0;
+      const pick = (row: AppSummary) =>
+        sort.key === "built" ? (row.builtWith ?? "code") : row.title.toLowerCase();
+      return (pick(a) < pick(b) ? -1 : pick(a) > pick(b) ? 1 : 0) * (sort.dir === "asc" ? 1 : -1);
+    });
   const unserved =
     instance.data?.appsAddress === "none" &&
     (list.data?.items ?? []).some(
@@ -492,9 +515,47 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
       <CollectionView<AppSummary>
         title="Published apps"
         description="What end users and staff can open: apps built in the repository, and apps made in the App Builder. Each has an address here, and can have hostnames of the tenant's own under Domains."
+        toolbar={
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex h-8 w-64 max-w-full items-center gap-2 rounded-control border border-line bg-structure px-3 text-ink-subtle">
+              <span className="sr-only">Find an app</span>
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Find by name or path"
+                className="min-w-0 flex-1 border-0 bg-transparent text-ink outline-none placeholder:text-ink-subtle"
+              />
+            </label>
+            <FilterChips
+              label="Built"
+              value={built}
+              onChange={setBuilt}
+              options={[
+                { value: "all", label: "All", count: items.length },
+                {
+                  value: "builder",
+                  label: "App Builder",
+                  count: items.filter((row) => row.builtWith === "builder").length,
+                },
+                {
+                  value: "code",
+                  label: "Repository",
+                  count: items.filter((row) => (row.builtWith ?? "code") === "code").length,
+                },
+                {
+                  value: "docs",
+                  label: "Documentation",
+                  count: items.filter((row) => row.builtWith === "docs").length,
+                },
+              ]}
+            />
+          </div>
+        }
+        table={{ sort, onSort: setSort }}
         columns={[
           {
             header: "App",
+            sort: "title",
             cell: (row) => (
               <span className="flex min-w-0 flex-col">
                 <span className="truncate font-medium">{row.title}</span>
@@ -533,6 +594,7 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
           },
           {
             header: "Built",
+            sort: "built",
             cell: (row) =>
               row.builtWith === "builder" ? (
                 <Tag tone="draft">App Builder</Tag>
@@ -543,15 +605,18 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
               ),
           },
         ]}
-        rows={list.data?.items}
+        rows={list.data ? shown : undefined}
         rowKey={(row) => row.id}
         selected={chosen}
         onSelect={(row) => setChosen(row.id)}
         error={list.error}
         onRetry={list.reload}
         empty={{
-          title: "No apps yet",
-          text: "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here.",
+          title: items.length > 0 ? "No app matches" : "No apps yet",
+          text:
+            items.length > 0
+              ? "Clear the search or choose All."
+              : "An app is defined in the tenant's repository with defineApp, or made in the App Builder. It is served once it is deployed here.",
         }}
         inspector={
           open ? (
@@ -566,6 +631,21 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
                   <Button variant="primary" onClick={() => onShare(open)}>
                     Share
                   </Button>
+                  {open.ownership === "code" ? (
+                    <span className="text-meta text-ink-muted">
+                      Managed in the repository: the app is removed there.
+                    </span>
+                  ) : (
+                    <RemoveDraftButton
+                      root={root}
+                      kind="app"
+                      path={open.path}
+                      noun="app"
+                      state="deployed"
+                      then="Its address stops serving once that draft is deployed."
+                      onDone={() => list.reload()}
+                    />
+                  )}
                   {open.published === false ? null : (
                     <a
                       href={open.url}

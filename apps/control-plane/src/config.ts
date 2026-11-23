@@ -121,6 +121,9 @@ export interface Limits {
 
 export const MIN_PASSWORD_LENGTH = 12;
 
+/** How long a member's console session lasts from sign-in. SECURITY.md says so (D51). */
+export const CONSOLE_SESSION_DAYS = 7;
+
 export interface RetentionDays {
   /** Script runs and flow runs, with their logs, steps and stored payloads, after they end. */
   runsDays: number;

@@ -9,6 +9,10 @@ export type RecentKind =
   | "interface"
   | "connection"
   | "event"
+  | "doc"
+  | "variable"
+  | "query"
+  | "data_source"
   | "run"
   | "flow_run";
 
@@ -28,10 +32,18 @@ export function useRecordRecent(
   }, [tenantId, workspaceId, kind, ref]);
 }
 
-/** What a page's address says was opened, for the kinds known by address alone. */
-export function openedAt(path: string): { kind: RecentKind; ref: string } | undefined {
+/**
+ * What a page's address says was opened, for the kinds known by address alone. `query` is the
+ * address's `?query=`, which is where a saved query opens.
+ */
+export function openedAt(
+  path: string,
+  query?: string | null,
+): { kind: RecentKind; ref: string } | undefined {
+  const queries = /^\/t\/[^/]+\/workspaces\/[^/]+\/queries\/?$/.exec(path);
+  if (queries) return query ? { kind: "query", ref: query } : undefined;
   const match =
-    /^\/t\/[^/]+\/workspaces\/[^/]+\/(scripts\/edit|scripts|flows(?:\/edit)?|tables|screens|connections|events)\/(.+)$/.exec(
+    /^\/t\/[^/]+\/workspaces\/[^/]+\/(scripts\/edit|scripts|flows(?:\/edit)?|tables|screens|connections|events|docs|variables|sources)\/(.+)$/.exec(
       path,
     );
   if (!match) return undefined;
@@ -39,6 +51,9 @@ export function openedAt(path: string): { kind: RecentKind; ref: string } | unde
   if (rest === "new") return undefined;
   if (area === "connections") return { kind: "connection", ref: decodeURIComponent(rest) };
   if (area === "events") return { kind: "event", ref: decodeURIComponent(rest) };
+  if (area === "docs") return { kind: "doc", ref: decodeURIComponent(rest) };
+  if (area === "variables") return { kind: "variable", ref: decodeURIComponent(rest) };
+  if (area === "sources") return { kind: "data_source", ref: decodeURIComponent(rest) };
   if (area.startsWith("flows")) {
     if (rest === "new") return undefined;
     return { kind: "flow", ref: decodeURIComponent(rest) };

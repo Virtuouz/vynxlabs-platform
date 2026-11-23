@@ -451,8 +451,11 @@ function ReviewStep({
             {preview.error ? <ErrorState error={preview.error} onRetry={preview.reload} /> : null}
             {preview.data?.refusal ? (
               <Notice tone="danger">
-                <strong>These changes cannot be deployed yet.</strong> {preview.data.refusal.detail}
-                <RefusalList errors={preview.data.refusal.errors} />
+                <p className="m-0">
+                  <strong>These changes cannot be deployed yet.</strong>
+                </p>
+                <p className="m-0 mt-1">{preview.data.refusal.detail}</p>
+                <RefusalList errors={preview.data.refusal.errors} link={link} />
               </Notice>
             ) : preview.data?.summary ? (
               <>
@@ -910,7 +913,10 @@ export function PreviewPanels({
         <Panel className="flex flex-col gap-2 p-4">
           {data.refusal ? (
             <Notice tone="danger">
-              <strong>It cannot be promoted yet.</strong> {data.refusal.detail}
+              <p className="m-0">
+                <strong>It cannot be promoted yet.</strong>
+              </p>
+              <p className="m-0 mt-1">{data.refusal.detail}</p>
               <RefusalList
                 errors={data.refusal.errors}
                 link={link.replace(/\/workspaces\/[^/]+$/, `/workspaces/${data.target.id}`)}

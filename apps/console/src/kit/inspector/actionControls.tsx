@@ -48,6 +48,7 @@ import {
   type ActionContext,
   type ActionValue,
   type AskedField,
+  addedAt,
   grantWords,
   inputType,
   inputWords,
@@ -1067,15 +1068,22 @@ export function ActionEditor({
   const asked = current.confirm?.ask ?? [];
   const put = (next: Action, key?: string) =>
     onChange(
-      !next.confirm && next.steps.length === 0 && !next.when && !next.runBy ? undefined : next,
+      !next.confirm && next.steps.length === 0 && !next.when && !next.runBy && !next.done
+        ? undefined
+        : next,
       key,
     );
   const stepKeys = useStepKeys(current.steps.length);
   const kinds = stepKindsFor(ctx);
   const firstPage = env.pages[0]?.id;
   const addStep = (step: Step) => {
-    stepKeys.keys.current = [...stepKeys.keys.current, stepKeys.fresh()];
-    put(withSteps(current, [...current.steps, step]));
+    const at = addedAt(current.steps, step);
+    stepKeys.keys.current = [
+      ...stepKeys.keys.current.slice(0, at),
+      stepKeys.fresh(),
+      ...stepKeys.keys.current.slice(at),
+    ];
+    put(withSteps(current, [...current.steps.slice(0, at), step, ...current.steps.slice(at)]));
   };
   const items = [
     ...(!current.confirm && ctx.surface !== "dashboard"
@@ -1229,6 +1237,20 @@ export function ActionEditor({
             {failure}
           </span>
         </p>
+      ) : null}
+      {count > 0 ? (
+        <TextField
+          name={`${id}-done`}
+          label="When it is done, say"
+          hint="A notice after every step has worked. Leave it empty to say nothing."
+          required={false}
+          value={current.done ?? ""}
+          maxLength={300}
+          onChange={(text) => {
+            const { done: _before, ...rest } = current;
+            put(text.trim() === "" ? rest : { ...rest, done: text }, `${id}-done`);
+          }}
+        />
       ) : null}
       {current.steps.length > 0 ? (
         <p className="m-0 text-body-sm text-ink-muted">

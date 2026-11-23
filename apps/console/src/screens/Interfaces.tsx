@@ -253,6 +253,7 @@ export function Interfaces({
             value={title}
             required
             maxLength={NAME_MAX}
+            showCount
             onChange={(value) => {
               setTaken(undefined);
               setTitle(value);
@@ -389,6 +390,7 @@ function RenameApp({
           value={title}
           required
           maxLength={NAME_MAX}
+          showCount
           onChange={setTitle}
         />
         {row ? (

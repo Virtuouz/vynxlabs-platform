@@ -12,13 +12,15 @@ import {
 } from "@volvel/manifest";
 import { announceRows } from "../../routes/data.js";
 import { writeAudit } from "../audit.js";
-import { updateRowKeepingFiles } from "../data/files.js";
+import {
+  deleteRowKeepingFiles,
+  insertRowsKeepingFiles,
+  updateRowKeepingFiles,
+} from "../data/files.js";
 import {
   type DataScope,
-  deleteRow,
   describeTable,
   getRow,
-  insertRows,
   type Row,
   type RowTarget,
   scopeFor,
@@ -522,7 +524,15 @@ export async function runAction(
           if (step.do === "create") {
             const set = resolveAll(step.set);
             try {
-              const [row] = await insertRows(trx, table, [set], grant);
+              const [row] = await insertRowsKeepingFiles(
+                kernel,
+                trx,
+                { tenantId, id: workspaceId },
+                table,
+                [set],
+                grant,
+                ctx,
+              );
               if (row) {
                 made = { table: table.name, id: String(row.id) };
                 changes.push({
@@ -547,6 +557,7 @@ export async function runAction(
                 table,
                 id,
                 set,
+                ctx,
               );
             } catch (error) {
               remap(step.set, error);
@@ -554,7 +565,14 @@ export async function runAction(
             changes.push({ action: "update", table: table.name, id, fields: Object.keys(set) });
           } else {
             const id = roundIds[step.record] as string;
-            await deleteRow(trx, table, id);
+            await deleteRowKeepingFiles(
+              kernel,
+              trx,
+              { tenantId, id: workspaceId },
+              ctx.principal,
+              table,
+              id,
+            );
             delete records[step.record];
             changes.push({ action: "delete", table: table.name, id, fields: [] });
           }

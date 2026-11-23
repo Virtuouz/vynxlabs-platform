@@ -95,3 +95,19 @@ test("a period outside the bounds is refused before anything is sent", async () 
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(sent).toEqual([]);
 });
+
+test("GOV-11: shortening the audit log says it also deletes the files that rows replaced or were deleted with", async () => {
+  show(<RetentionSettings base={base} />);
+  expect(await screen.findByText(/Files that rows replaced or were deleted with/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText(/Audit log \(days\)/), { target: { value: "120" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const said = await answer("Cancel");
+  expect(said).toContain("Audit log: from 400 days to 120.");
+  expect(said).toContain("files that rows replaced, or were deleted with");
+  // Another kind shortened does not say it.
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.change(screen.getByLabelText(/Audit log \(days\)/), { target: { value: "" } });
+  fireEvent.change(screen.getByLabelText(/Runs \(days\)/), { target: { value: "7" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(await answer("Cancel")).not.toContain("files that rows replaced");
+});

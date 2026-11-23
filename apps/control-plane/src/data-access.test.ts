@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
-import { Database, sql } from "@volvel/db";
+import { Database, newId, sql } from "@volvel/db";
 import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { Worker } from "@volvel/worker";
@@ -71,6 +71,15 @@ export const asGroup = { execute: async (input, ctx) => {
   try { await notes.as(input.person).insert({ title: "by them", team: "ops" }); } catch (error) { wrote = error.message; }
   return { theirs, wrote, all: (await notes.find()).length };
 } };
+export const attacher = { execute: async (input, ctx) => {
+  const said = async (work) => { try { await work(); return "allowed"; } catch (error) { return error.message; } };
+  const mine = ctx.table("tasks").as(input.person);
+  return {
+    insert: await said(() => mine.insert({ title: "with a file", attachment: input.file })),
+    update: await said(() => mine.update(input.row, { attachment: input.file })),
+    workspace: await said(() => ctx.table("tasks").insert({ title: "as the workspace", attachment: input.file })),
+  };
+} };
 export const undeclared = { execute: async (input, ctx) => ({ rows: await ctx.table("tasks").find() }) };
 export const erpSync = { execute: async (input, ctx) => {
   const customers = ctx.source("erp").table("customers");
@@ -119,6 +128,7 @@ function bundle(extra: BundleManifest[] = []): Bundle {
       manifest("data_source", "erp", { connector: "postgres" }),
       script("writer", "writer", { tables: ["tasks"] }),
       script("as-person", "asPerson", { tables: ["tasks"] }),
+      script("attacher", "attacher", { tables: ["tasks"] }),
       script("as-group", "asGroup", { tables: ["notes"] }),
       script("undeclared", "undeclared"),
       script("erp-sync", "erpSync", { sources: ["erp"] }),
@@ -625,11 +635,13 @@ describe("files", () => {
     ).toBe(413);
     expect((await alice.upload(`${ws()}/files`, "x", "text/plain")).status).toBe(400);
     expect((await alice.upload(`${ws()}/files?name=empty.txt`, "", "text/plain")).status).toBe(400);
-    // Bob may read files, not add or remove them.
+    // Bob may read files, not add or remove them. A file is read through a row he may read: the
+    // row that names it is Alice's, so it is none of his, and is said not to exist.
     expect((await bob.client.upload(`${ws()}/files?name=x.txt`, "x", "text/plain")).status).toBe(
       403,
     );
-    expect((await bob.client.get(`${ws()}/files/${fileId}`)).status).toBe(200);
+    expect((await bob.client.get(`${ws()}/files/${fileId}`)).status).toBe(404);
+    expect((await bob.client.get(`${ws()}/files`)).status).toBe(403);
     expect((await bob.client.delete(`${ws()}/files/${fileId}`)).status).toBe(403);
     expect((await other.get(`${ws()}/files/${fileId}`)).status).toBe(404);
   });
@@ -750,17 +762,244 @@ describe("files", () => {
         .where("id", "=", fileId)
         .executeTakeFirstOrThrow()
     ).storage_key;
-    // The row that points at it does not hold it in place: a file column is a note of an ID.
+    // A row that names it holds it in place: it goes once no row does.
+    expect((await alice.delete(`${ws()}/files/${fileId}`)).status).toBe(409);
+    const naming = (
+      await alice.post(`${ws()}/row-deletions/tasks`, {
+        ids: (
+          await alice.get(
+            `${ws()}/rows/tasks?filter=${encodeURIComponent(JSON.stringify({ column: "attachment", op: "eq", value: fileId }))}`,
+          )
+        ).body.items.map((row: Any) => row.id),
+      })
+    ).body.deleted;
+    expect(naming.length).toBeGreaterThan(0);
     expect((await alice.delete(`${ws()}/files/${fileId}`)).status).toBe(204);
     expect((await alice.get(`${ws()}/files/${fileId}`)).status).toBe(404);
     await expect(t.kernel.storage.get(key)).rejects.toThrow();
   });
 });
 
+describe("files follow the rows that name them (D22)", () => {
+  let carol: Client;
+  let carolId: string;
+  const upload = async (who: Client, name: string) => {
+    const made = await who.upload(`${ws()}/files?name=${name}`, name, "text/plain");
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    return made.body.id as string;
+  };
+  const exists = async (id: string) =>
+    (await t.db.selectFrom("file").select("id").where("id", "=", id).executeTakeFirst()) !==
+    undefined;
+  const notesOf = (id: string) =>
+    t.db.selectFrom("row_file_history").select("id").where("file_id", "=", id).execute();
+  const age = (id: string) =>
+    t.db
+      .updateTable("row_file_history")
+      .set({ replaced_at: new Date(Date.now() - 500 * 86_400_000) })
+      .where("file_id", "=", id)
+      .execute();
+
+  beforeAll(async () => {
+    const role = (
+      await alice.post(`/tenants/${tenant}/roles`, {
+        name: "rows_and_files",
+        permissions: ["data:read", "data:write", "file:read", "file:write"],
+      })
+    ).body.id;
+    const made = await alice.post(`/tenants/${tenant}/members`, {
+      email: "carol@acme.example",
+      name: "Carol",
+      password: PASSWORD,
+    });
+    carolId = made.body.id;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      principalType: "member",
+      principalId: carolId,
+      roleId: role,
+    });
+    carol = await t.signIn("carol@acme.example", PASSWORD);
+  });
+
+  test("DAT-05: listing and deleting every file need the permission past the row policy", async () => {
+    const mine = await upload(carol, "mine.txt");
+    const hers = await upload(alice, "alices.txt");
+    expect((await carol.get(`${ws()}/files`)).status).toBe(403);
+    expect((await carol.delete(`${ws()}/files/${mine}`)).status).toBe(403);
+    expect((await alice.get(`${ws()}/files`)).status).toBe(200);
+    // One she uploaded she reads; one only another person's row names, she does not.
+    expect((await carol.get(`${ws()}/files/${mine}`)).status).toBe(200);
+    expect((await carol.get(`${ws()}/files/${hers}/content`)).status).toBe(404);
+    await alice.post(`${ws()}/rows/tasks`, { title: "Hers", attachment: hers });
+    expect((await carol.get(`${ws()}/files/${hers}`)).status).toBe(404);
+    expect((await carol.delete(`${ws()}/files/${hers}`)).status).toBe(403);
+    // A row she may read names a file she did not upload: she reads it.
+    const given = await upload(alice, "given.txt");
+    await alice.post(`${ws()}/rows/tasks`, {
+      title: "Given",
+      attachment: given,
+      owner_id: carolId,
+    });
+    expect((await carol.get(`${ws()}/files/${given}`)).status).toBe(200);
+    expect((await carol.get(`${ws()}/files/${given}/content`)).status).toBe(200);
+  });
+
+  test("a row is given only a file the caller could already read, as an unknown file is refused", async () => {
+    const hers = await upload(alice, "kept-from-carol.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "Alice's", attachment: hers });
+    const mine = await upload(carol, "carols.txt");
+    const row = (await carol.post(`${ws()}/rows/tasks`, { title: "Carol's" })).body.items[0];
+    const at = `${ws()}/row/${row.id}/tasks`;
+
+    const refused = await carol.patch(at, { attachment: hers });
+    const unknown = await carol.patch(at, { attachment: newId() });
+    expect(refused.status).toBe(400);
+    expect(refused.body.detail).toBe(unknown.body.detail);
+    expect((await carol.post(`${ws()}/rows/tasks`, { title: "X", attachment: hers })).status).toBe(
+      400,
+    );
+    expect(
+      (await carol.post(`${ws()}/rows/tasks`, { rows: [{ title: "Y", attachment: hers }] })).status,
+    ).toBe(400);
+    // Her own upload is hers to name, and naming it again changes nothing, so is not asked again.
+    expect((await carol.patch(at, { attachment: mine })).status).toBe(200);
+    expect((await carol.patch(at, { attachment: mine, title: "Again" })).status).toBe(200);
+    // Whoever may read every row may name any file.
+    expect((await alice.post(`${ws()}/rows/tasks`, { title: "Z", attachment: mine })).status).toBe(
+      201,
+    );
+  });
+
+  test("a script acting for a person names only a file that person may read; as the workspace it names any", async () => {
+    const hidden = await upload(alice, "script-hidden.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "Alice's", attachment: hidden });
+    const shown = await upload(alice, "script-shown.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "Bob's", attachment: shown, owner_id: bob.id });
+    const row = (await alice.post(`${ws()}/rows/tasks`, { title: "Bob's blank", owner_id: bob.id }))
+      .body.items[0];
+
+    const refused = await ran("attacher", { person: bob.id, file: hidden, row: row.id });
+    expect(refused.status, JSON.stringify(refused.error)).toBe("succeeded");
+    expect(refused.output.insert).toContain("not a file of this workspace");
+    expect(refused.output.update).toContain("not a file of this workspace");
+    expect(refused.output.workspace).toBe("allowed");
+
+    const accepted = await ran("attacher", { person: bob.id, file: shown, row: row.id });
+    expect(accepted.output).toEqual({
+      insert: "allowed",
+      update: "allowed",
+      workspace: "allowed",
+    });
+  });
+
+  test("DAT-10: a file a row names is not deleted, and the answer says so", async () => {
+    const id = await upload(alice, "named.txt");
+    const row = (await alice.post(`${ws()}/rows/tasks`, { title: "Names", attachment: id })).body
+      .items[0];
+    const refused = await alice.delete(`${ws()}/files/${id}`);
+    expect(refused.status).toBe(409);
+    expect(refused.body.detail).toContain("A row still names this file");
+    expect(await exists(id)).toBe(true);
+    // The row lets go of it: it is noted, and can be deleted.
+    await alice.patch(`${ws()}/row/${row.id}/tasks`, { attachment: null });
+    expect((await alice.delete(`${ws()}/files/${id}`)).status).toBe(204);
+    expect(await exists(id)).toBe(false);
+  });
+
+  test("a deleted row's files are kept for the audit period, as a replaced one is", async () => {
+    const one = await upload(alice, "gone-one.txt");
+    const two = await upload(alice, "gone-two.txt");
+    const a = (await alice.post(`${ws()}/rows/tasks`, { title: "A", attachment: one })).body
+      .items[0];
+    const b = (await alice.post(`${ws()}/rows/tasks`, { title: "B", attachment: two })).body
+      .items[0];
+    expect((await alice.delete(`${ws()}/row/${a.id}/tasks`)).status).toBe(204);
+    expect((await alice.post(`${ws()}/row-deletions/tasks`, { ids: [b.id] })).body.deleted).toEqual(
+      [b.id],
+    );
+    for (const id of [one, two]) expect(await notesOf(id)).toHaveLength(1);
+    await pruneOnce(t.kernel);
+    expect(await exists(one)).toBe(true);
+    expect(await exists(two)).toBe(true);
+    await age(one);
+    await pruneOnce(t.kernel);
+    expect(await exists(one)).toBe(false);
+    expect(await exists(two)).toBe(true);
+  });
+
+  test("TAB-09: a file a row still names is not removed by the retention pass", async () => {
+    // (a) replaced in row A, then row B is inserted naming it.
+    const first = await upload(alice, "again.txt");
+    const second = await upload(alice, "again-2.txt");
+    const a = (await alice.post(`${ws()}/rows/tasks`, { title: "A", attachment: first })).body
+      .items[0];
+    await alice.patch(`${ws()}/row/${a.id}/tasks`, { attachment: second });
+    expect(await notesOf(first)).toHaveLength(1);
+    await alice.post(`${ws()}/rows/tasks`, { title: "B", attachment: first });
+    expect(await notesOf(first)).toHaveLength(0);
+
+    // (b) two rows name one file, and one lets go: the note ages while the other names it.
+    const shared = await upload(alice, "shared.txt");
+    const c = (await alice.post(`${ws()}/rows/tasks`, { title: "C", attachment: shared })).body
+      .items[0];
+    await alice.post(`${ws()}/rows/tasks`, { title: "D", attachment: shared });
+    await alice.patch(`${ws()}/row/${c.id}/tasks`, { attachment: null });
+    await age(shared);
+    await pruneOnce(t.kernel);
+    expect(await exists(shared)).toBe(true);
+    expect(await exists(first)).toBe(true);
+  });
+
+  test("TAB-02: a row names only a file of its workspace, and another tenant's note is left alone", async () => {
+    const globex = await t.db
+      .selectFrom("tenant")
+      .select("id")
+      .where("slug", "=", "globex")
+      .executeTakeFirstOrThrow();
+    const foreignWorkspace = (
+      await other.post(`/tenants/${globex.id}/workspaces`, {
+        slug: "main-dev",
+        name: "Dev",
+        type: "dev",
+      })
+    ).body.id;
+    const foreign = (
+      await other.upload(
+        `/tenants/${globex.id}/workspaces/${foreignWorkspace}/files?name=f.txt`,
+        "f",
+        "text/plain",
+      )
+    ).body.id as string;
+    await t.db
+      .insertInto("row_file_history")
+      .values({
+        id: newId(),
+        tenant_id: globex.id,
+        workspace_id: foreignWorkspace,
+        file_id: foreign,
+        table_name: "orders",
+        row_id: "1",
+        column_name: "doc",
+        replaced_by_type: "member",
+      })
+      .execute();
+    const refused = await alice.post(`${ws()}/rows/tasks`, { title: "X", attachment: foreign });
+    expect(refused.status).toBe(400);
+    const made = (await alice.post(`${ws()}/rows/tasks`, { title: "Y" })).body.items[0];
+    expect(
+      (await alice.patch(`${ws()}/row/${made.id}/tasks`, { attachment: foreign })).status,
+    ).toBe(400);
+    expect(
+      (await alice.patch(`${ws()}/row/${made.id}/tasks`, { attachment: newId() })).status,
+    ).toBe(400);
+    expect(await notesOf(foreign)).toHaveLength(1);
+  });
+});
+
 describe("guards", () => {
   test("every change by a principal went through the write path, and every such route was exercised", () => {
     expect(
-      t.unaudited.filter((route) => !/\/(rows?|source-rows?)\//.test(route)),
+      t.unaudited.filter((route) => !/\/(rows?|source-rows?|row-deletions)\//.test(route)),
       JSON.stringify(t.unaudited),
     ).toEqual([]);
     expect(

@@ -1,7 +1,12 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { HEARTBEAT_SECONDS } from "@volvel/db";
 import { Type } from "typebox";
+import type { Principal } from "../kernel/audit.js";
 import {
+  callerOf,
+  deleteRowKeepingFiles,
+  type FileCaller,
+  insertRowsKeepingFiles,
   MAX_FILE_BYTES,
   readFile,
   storeFile,
@@ -879,6 +884,8 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           group?: string[];
           measure?: string[];
         };
+        // Acting for a person, a file a row is given must be one that person may have.
+        let actingFor: FileCaller | undefined;
         const perform = async (
           data: Parameters<typeof findRows>[0],
           target: RowTarget,
@@ -897,7 +904,17 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               const rows = args.rows ?? [];
               if (rows.length === 0 || rows.length > 1000)
                 throw badRequest("Insert between 1 and 1,000 rows at a time.");
-              return insertRows(data, target, rows, scope);
+              return own
+                ? insertRowsKeepingFiles(
+                    kernel,
+                    data,
+                    { tenantId: run.tenant_id, id: run.workspace_id },
+                    target,
+                    rows,
+                    scope,
+                    actingFor,
+                  )
+                : insertRows(data, target, rows, scope);
             }
             case "update":
               // A workspace table's file column names files Volvel stores: a replaced one is
@@ -911,10 +928,22 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     target,
                     String(args.id),
                     args.patch,
+                    actingFor,
                   )
                 : updateRow(data, target, String(args.id), args.patch);
             case "delete":
-              await deleteRow(data, target, String(args.id));
+              if (own) {
+                await deleteRowKeepingFiles(
+                  kernel,
+                  data,
+                  { tenantId: run.tenant_id, id: run.workspace_id },
+                  { type: "script", id: null },
+                  target,
+                  String(args.id),
+                );
+              } else {
+                await deleteRow(data, target, String(args.id));
+              }
               return null;
             case "aggregate":
               return aggregateRows(data, target, aggregateQueryFrom(args));
@@ -958,6 +987,13 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body.as && person
             ? await scopeFor(kernel, run.tenant_id, { type: person, id: body.as }, false)
             : { principalId: null, all: true };
+        if (body.as && person) {
+          actingFor = callerOf(kernel, {
+            type: person,
+            id: body.as,
+            tenantId: run.tenant_id,
+          } as Principal);
+        }
         const result = await withData(kernel, run.tenant_id, scope, (data) =>
           perform(data, target, scope, true),
         );

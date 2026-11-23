@@ -381,7 +381,10 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         RETENTION_BOUNDS.refusalsDays,
         "Refused webhook requests and SCIM pushes.",
       ),
-      auditDays: Days(RETENTION_BOUNDS.auditDays, "The audit log."),
+      auditDays: Days(
+        RETENTION_BOUNDS.auditDays,
+        "The audit log, and the files that rows replaced or were deleted with. Both go when older.",
+      ),
     };
     const PolicyDays = Type.Object({
       runsDays: Type.Integer(),
@@ -444,7 +447,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Say how long the tenant's history is kept",
           description:
             "Only the kinds sent change. Null goes back to the instance's default. What is " +
-            "older than the new period is removed by the next retention pass, within minutes.",
+            "older than the new period is removed by the next retention pass, within minutes. " +
+            "A shorter `auditDays` also deletes the files that rows replaced or were deleted with " +
+            "longer ago than the new period.",
           tags: ["tenancy"],
           params: TenantParams,
           body: Type.Partial(Type.Object(RetentionFields)),

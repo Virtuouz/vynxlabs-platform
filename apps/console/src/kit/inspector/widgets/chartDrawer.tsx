@@ -103,7 +103,9 @@ const MARK_WORDS: Record<string, string> = {
   scatter: "points",
 };
 
-const plural = (word: string) => (/s$/.test(word) ? word : `${word}s`);
+/** "status" is "statuses", "clinic" is "clinics", and a word that is already plural, as "species", stays. */
+export const plural = (word: string) =>
+  /(us|ss|x|ch|sh)$/.test(word) ? `${word}es` : /s$/.test(word) ? word : `${word}s`;
 
 /** The value drawn up the side: the one chosen as "Up the side", else the first. */
 export function drawnMeasure(query: Query, config: Record<string, unknown>) {

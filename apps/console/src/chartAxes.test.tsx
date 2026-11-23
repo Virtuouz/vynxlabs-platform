@@ -1,5 +1,10 @@
 import { expect, test } from "vitest";
-import { drawnGroups, drawnMeasure, readsAs } from "./kit/inspector/widgets/chartDrawer.tsx";
+import {
+  drawnGroups,
+  drawnMeasure,
+  plural,
+  readsAs,
+} from "./kit/inspector/widgets/chartDrawer.tsx";
 import type { Query } from "./kit/inspector/widgets/chartShared.tsx";
 
 const query = {
@@ -27,4 +32,11 @@ test("w-builder 2: what is said along the bottom and up the side is what the axe
   expect(readsAs(query, {}, undefined).reads).toBe(
     "Reads as the number of appointments for each pet species, split by clinic.",
   );
+});
+
+test("R-last: a word ending in s is made plural when it is a singular", () => {
+  expect(plural("status")).toBe("statuses");
+  expect(plural("address")).toBe("addresses");
+  expect(plural("clinic")).toBe("clinics");
+  expect(plural("species")).toBe("species");
 });

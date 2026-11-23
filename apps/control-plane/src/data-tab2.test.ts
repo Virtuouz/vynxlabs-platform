@@ -258,6 +258,22 @@ describe("what a table refuses, and how it says so", () => {
     expect((await alice.delete(`${ws(own)}/resources/owners`)).status).toBe(204);
   });
 
+  test("TAB2: a deploy that drops a table a console table refers to names both", async () => {
+    const own = await fresh();
+    const owners = table("owners", { name: { type: "text" } });
+    const first = await deploy(bundle([owners]), own);
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    expect(
+      (await put(own, "pets", { columns: { owner: { type: "reference", references: "owners" } } }))
+        .status,
+    ).toBe(201);
+    const second = await deploy(bundle([], "again"), own);
+    expect(second.status, JSON.stringify(second.body)).toBeGreaterThanOrEqual(400);
+    expect(second.body.detail).toBe(
+      'The table "pets" (column "owner") refers to "owners", which this deploy does not hold. Keep "owners", or change "pets" in the same deploy.',
+    );
+  });
+
   test("TAB-15: a definition Postgres would refuse is refused in words, at the column", async () => {
     const own = await fresh();
     const bad = async (columns: Record<string, object>, field: string) => {

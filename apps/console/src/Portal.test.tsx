@@ -502,6 +502,29 @@ test("adding a hostname shows its TXT record, a check shows what is missing, and
   expect(sent("DELETE")[0]?.url).toBe(`/api/v1${base}/domains/d1`);
 });
 
+test("turning a served hostname off says what stops, and asks first (GOV-35)", async () => {
+  const serving = {
+    ...domain,
+    enabled: true,
+    verifiedAt: "2026-11-01T10:00:00.000Z",
+    checkedAt: "2026-11-12T10:00:00.000Z",
+  };
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: [serving] }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [] }];
+  routes[`PATCH /api/v1${base}/domains/d1`] = () => [200, { ...serving, enabled: false }];
+  show(<Domains base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Details/, hidden: true }));
+  fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
+  const said = await answer("Cancel");
+  expect(said).toContain("Turn off orders.acme.example?");
+  expect(said).toContain("stops answering");
+  await waitFor(() => expect(screen.queryByText(/Turn off orders/)).toBeNull());
+  expect(sent("PATCH")).toHaveLength(0);
+  fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
+  await answer("Turn off");
+  await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ enabled: false }));
+});
+
 test("a hostname can serve the portal and every app, even from a workspace with no app chosen", async () => {
   let domains: (typeof domain)[] = [];
   routes[`GET /api/v1${base}/domains`] = () => [200, { items: domains }];

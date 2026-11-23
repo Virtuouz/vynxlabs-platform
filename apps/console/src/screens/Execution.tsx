@@ -1251,6 +1251,25 @@ export function Workers({ base }: { base: string }) {
                 size="small"
                 onClick={async () => {
                   const on = !tenant.data?.managedWorkers;
+                  if (!on) {
+                    // Every run of the default pool waits for a worker that is not the instance's.
+                    const served = pools.data?.items.find(
+                      (pool) => pool.name === null,
+                    )?.credentials;
+                    const sure = await ask.confirm({
+                      title: "Stop the instance starting workers?",
+                      text: `Runs of the default pool wait for a worker you start yourself. ${
+                        served === undefined
+                          ? "Check the credentials below first."
+                          : served > 0
+                            ? `${served === 1 ? "One credential serves" : `${served} credentials serve`} the default pool, so a worker started with it takes them.`
+                            : "No credential serves the default pool, so every run of it waits until one does."
+                      }`,
+                      action: "Stop",
+                      danger: true,
+                    });
+                    if (!sure) return;
+                  }
                   await api
                     .patch(base, { managedWorkers: on })
                     .then(
@@ -1312,7 +1331,7 @@ export function Workers({ base }: { base: string }) {
       }>
         as="section"
         title="Credentials for standalone workers"
-        description={`A worker outside the platform signs in with one of these: volvel-worker --url ${instanceUrl} --token followed by the credential. The full command is shown when a credential is made.`}
+        description={`A worker outside the platform signs in with one of these: volvel-worker --url ${instanceUrl} --token-stdin, with the credential on its standard input. The full command is shown when a credential is made.`}
         path={`${base}/worker-credentials`}
         rowKey={(row) => row.id}
         columns={[
@@ -1354,7 +1373,8 @@ export function Workers({ base }: { base: string }) {
           },
           afterCreate: (result, dismiss) => {
             const token = (result as { token: string }).token;
-            const command = `volvel-worker --url ${instanceUrl} --token ${token}`;
+            // The credential goes in on standard input: a command line is readable by every process on the host.
+            const command = `printf '%s\\n' '${token}' | volvel-worker --url ${instanceUrl} --token-stdin`;
             return (
               <OneTimeSecret value={token} noun="credential" onDone={dismiss}>
                 <p className="m-0">Start a worker with it:</p>

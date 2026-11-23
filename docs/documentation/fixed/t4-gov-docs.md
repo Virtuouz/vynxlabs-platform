@@ -27,3 +27,14 @@ Migration: none.
 - `help/HelpPanel.tsx` `term` resolver gives no `href` for a term whose page is the one shown, so no "More about" is drawn (the served site already did this, `docs.ts`).
 - Siblings: `help/glossary.tsx` (a workspace's own terms lead to handbook pages, never the shown help page); `DocServed` has its own exception.
 - Screens: open Help on Start > Concepts, press a term; 390 px, light and dark; Escape closes the popover.
+
+## GOV-35
+- Tests failed before: `Portal.test.tsx` "turning a served hostname off says what stops, and asks first (GOV-35)"; `Workers.test.tsx` "turning the instance's workers off says what waits, and asks first (GOV-35)".
+- `screens/Domains.tsx` Disable on an enabled hostname asks (names the hostname, says it stops answering and sign-ins end); `screens/Execution.tsx` "Run only on our own workers" asks, and says whether a credential serves the default pool (read from the default pool row) or that none does. Turning on asks nothing.
+- Siblings: SSO provider off already asks; trigger pause and end-user disable ask; `Environments`/`Git` switches not touched.
+- Screens: Domains detail > Disable; Workers > the switch; Escape and Cancel change nothing; 390 px; light and dark.
+
+## GOV-36
+- Test failed before: `Workers.test.tsx` "the worker command hands the credential on standard input, never on the command line (GOV-36)".
+- `screens/Execution.tsx` credential sheet: `printf '%s\n' '<token>' | volvel-worker --url <url> --token-stdin` (printf is a shell builtin, so the credential is not in the process list); the table description says `--token-stdin`.
+- Siblings: Hosts/compose file already done (HOST-27); `docs/self-hosting.md:184` already recommends it.

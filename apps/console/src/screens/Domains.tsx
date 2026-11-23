@@ -293,15 +293,25 @@ function DetailsDialog({
             <span className="flex flex-wrap gap-2">
               <Button
                 disabled={busy}
-                onClick={() =>
-                  run(async () =>
+                onClick={async () => {
+                  // Turning a hostname off stops it answering on one press: said first.
+                  if (domain.enabled) {
+                    const sure = await ask.confirm({
+                      title: `Turn off ${domain.hostname}?`,
+                      text: "The hostname stops answering, so the app is no longer served there and sign-ins made at that hostname end. The record stays; turn it on again to serve it.",
+                      action: "Turn off",
+                      danger: true,
+                    });
+                    if (!sure) return;
+                  }
+                  return run(async () =>
                     onChanged(
                       await api.patch<Domain>(`${base}/domains/${domain.id}`, {
                         enabled: !domain.enabled,
                       }),
                     ),
-                  )
-                }
+                  );
+                }}
               >
                 {domain.enabled ? "Disable" : "Enable"}
               </Button>

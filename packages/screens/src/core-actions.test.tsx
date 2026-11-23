@@ -236,6 +236,30 @@ describe("record detail", () => {
     expect(screen.getByText("Internal code")).toBeTruthy();
   });
 
+  test("a hidden field is shown to read and is not edited in place: the server refuses it", async () => {
+    const act = vi.fn(async () => ({ ok: true as const }));
+    const config = {
+      edit: true,
+      fields: [{ column: "total" }, { column: "secret", hidden: true }],
+    };
+    render(
+      <Page
+        client={clientOf({ record: recordInput })}
+        widgets={[
+          widgetOf({
+            type: "core/detail",
+            data: { record: { source: { visual: { table: "invoices" } } } },
+            config,
+          }),
+        ]}
+        registry={registryWith({ act, can: () => true })}
+      />,
+    );
+    await screen.findByText("+ Show another field (1 hidden)");
+    expect(screen.getByRole("button", { name: "Edit Total" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit Internal code" })).toBeNull();
+  });
+
   test("actions are buttons: disabled by can, run with the record, in their tone", async () => {
     const act = vi.fn(async () => ({ ok: true as const }));
     const can = vi.fn((at: string) => at !== "config/actions/1/action");

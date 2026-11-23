@@ -540,18 +540,19 @@ export function Queries({
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="min-w-0 flex-1 font-mono text-code">
+            {/* The state is a flex item of its own: beside a long path it wraps, and never runs under the buttons. */}
+            <span className="min-w-0 flex-[1_1_12rem] break-all font-mono text-code">
               {current ? current.path : gone ? `There is no query at ${open}.` : "A new query"}
-              {current?.draft === "new" ? (
-                <span className="ml-2">
-                  <StatePill state="draft">Draft, never deployed</StatePill>
-                </span>
-              ) : current?.draft ? (
-                <span className="ml-2">
-                  <Tag tone="draft">{current.draft === "removed" ? "Removing" : "Draft"}</Tag>
-                </span>
-              ) : null}
             </span>
+            {current?.draft === "new" ? (
+              <span className="shrink-0">
+                <StatePill state="draft">Draft, never deployed</StatePill>
+              </span>
+            ) : current?.draft ? (
+              <span className="shrink-0">
+                <Tag tone="draft">{current.draft === "removed" ? "Removing" : "Draft"}</Tag>
+              </span>
+            ) : null}
             {current || gone ? (
               <Button size="small" variant="quiet" onClick={() => void go(undefined)}>
                 New query

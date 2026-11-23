@@ -13,11 +13,21 @@ services:
     image: ${VOLVEL_IMAGE:?set VOLVEL_IMAGE in .env}
     restart: unless-stopped
     # The worker ships inside the platform image.
-    command: ["node", "node_modules/@volvel/worker/dist/bin.js"]
+    # The credential is read from a secret file, not the environment: an environment is
+    # shown by `docker inspect` and read by other processes of the same user.
+    command:
+      - node
+      - node_modules/@volvel/worker/dist/bin.js
+      - --token-file
+      - /run/secrets/worker_token
     environment:
       VOLVEL_URL: ${VOLVEL_URL:?set VOLVEL_URL in .env}
-      VOLVEL_WORKER_TOKEN: ${VOLVEL_WORKER_TOKEN:?set VOLVEL_WORKER_TOKEN in .env}
+    secrets: [worker_token]
     # The worker keeps nothing: bundles are fetched again after a restart.
     read_only: true
     tmpfs:
       - /tmp
+
+secrets:
+  worker_token:
+    file: ./worker-token

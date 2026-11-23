@@ -244,6 +244,30 @@ test("the run's tab stays as chosen from one run to the next", async () => {
   );
 });
 
+test("Ctrl+Enter runs with what the test pane holds now, as its Run button does (P31)", async () => {
+  const sent: unknown[] = [];
+  routes[`POST ${base}/test-runs`] = (body) => {
+    sent.push(body);
+    return { runId: "r1" };
+  };
+  openSaved();
+  routes[`GET ${base}/drafts/hello/greet`] = () => {
+    const draft = draftOf("export default async () => ({});\n");
+    return {
+      ...draft,
+      body: {
+        ...draft.body,
+        input: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+      },
+    };
+  };
+  const pane = await screen.findByRole("region", { name: "Test pane" });
+  fireEvent.change(await within(pane).findByLabelText(/^name/i), { target: { value: "Ada" } });
+  fireEvent.keyDown(document.body, { key: "Enter", ctrlKey: true });
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]).toMatchObject({ script: "hello/greet", input: { name: "Ada" } });
+});
+
 test("⌘S saves the draft, and code that does not build lists where, each line a way to it", async () => {
   routes[`PUT ${base}/drafts/hello/greet`] = () => {
     throw new Error("unused");

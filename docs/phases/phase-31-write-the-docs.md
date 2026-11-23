@@ -1,6 +1,6 @@
 # Phase 31: every screen and feature of Volvel is documented
 
-Status: in progress, on branch `phase-31-write-the-docs`, off `phase-30-docs-system`.
+Status: at the owner's stop after M1 (the Tables sample), on branch `phase-31-write-the-docs`, off `phase-30-docs-system`.
 Last updated: 2026-11-24
 
 The owner asked for documentation of every screen and feature, the console and local development, with self-hosting and administration (2026-11-22). Phase 29 corrected the product, phase 30 built the system the pages live in (`/docs` on every instance, the help panel, the static export, Diátaxis types, generated reference). This phase writes the pages. The plan is `~/.claude/plans/i-would-like-to-fuzzy-meteor-of-45518b7f-b8fc-41f4-9613-9ba4253edadd.md`; the writers' briefs are `docs/documentation/inventory/*.md` (refreshed in phase 30 M0).
@@ -37,3 +37,8 @@ The owner asked for documentation of every screen and feature, the console and l
 | M7 | Retire the old guides; README, SECURITY.md, CHANGELOG |
 
 ## Findings
+
+- **M0, the style guide** (`docs/documentation/style-guide.md`): voice, terminology, the four templates, components, fact-check records and run logs. Its gaps closed: the editor's how-to and tutorial templates follow it; the product's pages are checked for avoided words and British spelling; every new page needs a fact-check record and every tutorial and how-to a run log (`packages/docs/unchecked.json` lists the old pages that do not, and only shrinks).
+- **M1, the Tables sample**, deployed to the review instance (https://volvel-test.fly.dev/docs/): reference (the Tables screen, column types, filter syntax), five how-tos (rows, definition, who sees rows, retired data, files), a Get started tutorial ("Your first table"), an explanation ("How tables work"), with 18 screenshots in light and dark. Three writers, then two checkers who did not write them: the checks corrected 16 claims (among them: renaming a table is a draft until deployed, Undo covers saved row rules, `a | b` reads "any of these" on text), and the tutorial was done again end to end at 1440 and 390.
+- **Product faults the writing found, fixed:** a row's file field offered Replace when there was no file; the "Saved" line vanished in the row rules' "Rules decide" mode; descriptions were cut at 500 characters at submit; at 390 a table's columns hid their rules and their actions off-screen.
+- **Asked of the owner:** the Tables screen's reference is about 4,300 words — every control, state and permission. Is that the depth wanted for screen pages?

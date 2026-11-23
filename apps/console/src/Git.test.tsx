@@ -301,3 +301,14 @@ test("a pull that stopped at what looks like a rename offers to delete those pat
   await screen.findByText("Deployed what changed on the branch.");
   expect(sent("POST").map((call) => call.body)).toEqual([{}, { allowDelete: ["orders/old"] }]);
 });
+
+test("WLK-17h: the branch is shown as it is written, not in capitals", async () => {
+  routes[`GET /api/v1${root}/git`] = () => [
+    200,
+    { repository, branch: "console/dev", state: "synced", syncedCommit: "abc1234def" },
+  ];
+  routes[`GET /api/v1${root}/git/compare`] = () => [200, compare(false)];
+  show(<GitSync root={root} link="/t/t1/workspaces/w1" />);
+  const branch = await screen.findByText("console/dev", { selector: "span" });
+  expect(branch.className).not.toContain("uppercase");
+});

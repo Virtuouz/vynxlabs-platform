@@ -52,7 +52,7 @@ export function endUsersFramed(tenantId: string, current: EndUserTab): Framed {
 }
 
 /** A screen's tabs, each a link to its own address under the tenant. */
-function SectionTabs({
+export function SectionTabs({
   label,
   tenantId,
   tabs,
@@ -64,7 +64,7 @@ function SectionTabs({
   current: string;
 }) {
   return (
-    <nav aria-label={label} className="-mb-4 flex gap-1 overflow-x-auto">
+    <nav aria-label={label} className="-mb-4 flex flex-wrap gap-x-1">
       {tabs.map((tab) => {
         const on = tab.slug === current;
         return (

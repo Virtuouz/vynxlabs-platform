@@ -407,19 +407,21 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("kind", "=", "connector")
         .execute();
 
-    /** The manifests of the workspace's latest uploaded bundles, newest first, deployed or not. */
-    const uploadedManifests = async (workspaceId: string) => {
+    /**
+     * The manifests of the workspace's uploaded bundles, newest first, deployed or not, read one
+     * at a time: a caller stops reading when it has what it wanted. A connection bound long ago
+     * still finds its declaration, though many bundles were uploaded since.
+     */
+    async function* uploadedManifests(workspaceId: string) {
       const uploaded = await db
         .selectFrom("bundle")
         .select(["id", "storage_key"])
         .where("workspace_id", "=", workspaceId)
         .orderBy("id", "desc")
-        .limit(5)
+        .limit(200)
         .execute();
-      const loaded: { kind: string; path: string; body: unknown }[][] = [];
-      for (const stored of uploaded) loaded.push((await loadBundle(kernel, stored)).manifests);
-      return loaded;
-    };
+      for (const stored of uploaded) yield (await loadBundle(kernel, stored)).manifests;
+    }
 
     const configSchemaOf = async (
       workspaceId: string,
@@ -455,7 +457,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         found = from([...arriving, ...deployed]);
       }
       if (!found) {
-        for (const manifests of await uploadedManifests(workspaceId)) {
+        for await (const manifests of uploadedManifests(workspaceId)) {
           found = from(manifests);
           if (found) break;
         }
@@ -2339,7 +2341,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       );
       const uploaded = new Map<string, Declared>();
       if (orphans.length > 0) {
-        for (const manifests of await uploadedManifests(params.w)) {
+        for await (const manifests of uploadedManifests(params.w)) {
           for (const manifest of manifests) {
             if (
               manifest.kind === "connector" &&
@@ -2356,6 +2358,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             )
               uploaded.set(manifest.path, manifest.body as Declared);
           }
+          // Every one that nothing else declares is found: older bundles need not be read.
+          if (orphans.every((one) => uploaded.has(one.path))) break;
         }
       }
       return {
@@ -2604,11 +2608,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const left: { path: string; body: unknown }[] = [];
         if (leftover.length > 0) {
           const named = new Map<string, unknown>();
-          for (const manifests of await uploadedManifests(params.w)) {
+          for await (const manifests of uploadedManifests(params.w)) {
             for (const manifest of manifests) {
               if (manifest.kind === "connection_group" && !named.has(manifest.path))
                 named.set(manifest.path, manifest.body);
             }
+            if (leftover.every((path) => named.has(path))) break;
           }
           for (const path of leftover) left.push({ path, body: named.get(path) ?? {} });
         }

@@ -13,7 +13,7 @@ import {
 } from "../kit/layout.tsx";
 import { consoleLink } from "../kit/objects.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
-import { Code, Mono, StatePill, Tag } from "../kit/status.tsx";
+import { Code, lookUp, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { ListScreen, Page, RemoveButton, when } from "../ListScreen.tsx";
 import { Link, navigate } from "../router.tsx";
@@ -675,7 +675,9 @@ export function Promotion({
         </div>
         {unsaved ? (
           <p className="m-0 max-w-measure text-ink-muted">
-            Save the new target to review a promotion to it.
+            {linked === null
+              ? "Saved, this workspace promotes nowhere. Save to stop, or choose a target again."
+              : "Save the new target to review a promotion to it."}
           </p>
         ) : target ? (
           // The one place that reviews, asks for and makes a promotion is the Release screen's promote step.
@@ -950,11 +952,22 @@ async function withPassphrase<T>(
   return body as T;
 }
 
-/** One line of what an inspection found, as a state and what it means. */
-function Check({ ok, children }: { ok: boolean | null; children: ReactNode }) {
+/**
+ * One line of what an inspection found, as a state and what it means. A long sentence wraps
+ * under its icon, as it must in a card at a phone's width. `ok` is "note" for what allows the
+ * import and still deserves a look: a warning, not a failure.
+ */
+function Check({ ok, children }: { ok: boolean | null | "note"; children: ReactNode }) {
+  const [, Icon, tone] = lookUp(
+    ok === null ? "unchecked" : ok === "note" ? "warning" : ok ? "ok" : "failed",
+  );
   return (
-    <li>
-      <StatePill state={ok === null ? "unchecked" : ok ? "ok" : "failed"}>{children}</StatePill>
+    <li
+      data-check={ok === "note" ? "note" : ok === null ? "unchecked" : ok ? "ok" : "failed"}
+      className="flex items-start gap-1.5"
+    >
+      <Icon aria-hidden="true" size={14} className={`mt-1 shrink-0 ${tone}`} />
+      <span className={`min-w-0 break-words ${tone}`}>{children}</span>
     </li>
   );
 }
@@ -1065,13 +1078,16 @@ export function TenantImport() {
                 : "the instance's own database."}
             </li>
             <li>
-              All {report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume
-              each one when the instance it came from has stopped.
+              {report.pausedWorkspaces === 1
+                ? "The workspace arrived with its triggers paused. Resume it"
+                : `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one`}{" "}
+              when the instance it came from has stopped.
             </li>
             {report.cancelled.runs + report.cancelled.flowRuns > 0 ? (
               <li>
-                {report.cancelled.runs} runs and {report.cancelled.flowRuns} flow runs were
-                unfinished in the export, and are recorded as cancelled.
+                {report.cancelled.runs} {report.cancelled.runs === 1 ? "run" : "runs"} and{" "}
+                {report.cancelled.flowRuns} flow {report.cancelled.flowRuns === 1 ? "run" : "runs"}{" "}
+                were unfinished in the export, and are recorded as canceled.
               </li>
             ) : null}
             {report.notCarried.map((line) => (
@@ -1155,7 +1171,11 @@ export function TenantImport() {
                       ? "The passphrase opens it"
                       : "The passphrase does not open it"}
                 </Check>
-                <Check ok={inspection.authenticated ?? null}>
+                <Check
+                  ok={
+                    inspection.authenticated === false ? "note" : (inspection.authenticated ?? null)
+                  }
+                >
                   {inspection.authenticated === true
                     ? "Its list of contents is signed with its key, and the signature is right"
                     : inspection.authenticated === false

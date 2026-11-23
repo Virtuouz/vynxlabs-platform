@@ -1,5 +1,6 @@
 import { newId } from "@volvel/db";
 import { betterAuth } from "better-auth";
+import { memoryAdapter } from "better-auth/adapters/memory";
 import {
   APIError,
   createAuthEndpoint,
@@ -186,7 +187,13 @@ function singleSignOn(db: Db, config: Pick<Config, "publicUrl">) {
 const recent: string[] = [];
 export const recentAuthLog = (): readonly string[] => recent;
 
-export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
+export function createAuth(
+  db: Db,
+  config: Config,
+  log: FastifyBaseLogger,
+  /** Only to describe the sign-in routes: the library is given a store in memory and no database. */
+  describing = false,
+) {
   const actorFor = (
     memberId: string,
     session?: { ipAddress?: string | null | undefined; userAgent?: string | null | undefined },
@@ -198,6 +205,7 @@ export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
 
   return betterAuth({
     ...authOptions(db, config),
+    ...(describing ? { database: memoryAdapter({}) } : {}),
     plugins: [openAPI({ disableDefaultReference: true }), singleSignOn(db, config)],
     hooks: {
       // A person ending their other sessions is on the record, as ending one is.

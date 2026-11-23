@@ -161,6 +161,9 @@ importers:
       '@volvel/docs-engine':
         specifier: workspace:*
         version: link:../../packages/docs-engine
+      '@volvel/docs-site':
+        specifier: workspace:*
+        version: link:../../packages/docs-site
       '@volvel/manifest':
         specifier: workspace:*
         version: link:../../packages/manifest
@@ -423,6 +426,15 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
+
+  packages/docs-site:
+    dependencies:
+      '@volvel/docs-engine':
+        specifier: workspace:*
+        version: link:../docs-engine
+      '@volvel/markup':
+        specifier: workspace:*
+        version: link:../markup
 
   packages/manifest:
     dependencies:

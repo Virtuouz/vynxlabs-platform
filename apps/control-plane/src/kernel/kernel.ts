@@ -61,6 +61,8 @@ export function createKernel(
   version: string,
   config: Config,
   log: FastifyBaseLogger,
+  /** Only to describe the API: nothing it makes reaches a database. */
+  describing = false,
 ): Kernel {
   const db = database.router.platform();
   const kinds = new KindRegistry();
@@ -80,7 +82,7 @@ export function createKernel(
   const kernel: Kernel = {
     db,
     router: database.router,
-    auth: createAuth(db, config, log),
+    auth: createAuth(db, config, log, describing),
     vault,
     data: new DataStores(
       database,

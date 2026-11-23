@@ -23,6 +23,9 @@
       "path": "packages/docs-engine"
     },
     {
+      "path": "packages/docs-site"
+    },
+    {
       "path": "packages/sdk"
     },
     {

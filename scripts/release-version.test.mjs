@@ -13,9 +13,18 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 function copy() {
   const root = mkdtempSync(join(scratch, "root-"));
   const files = [
-    ...["widget-sdk", "markup", "docs-engine", "docs", "ui", "app", "sdk", "cli", "worker"].map(
-      (name) => `packages/${name}/package.json`,
-    ),
+    ...[
+      "widget-sdk",
+      "markup",
+      "docs-engine",
+      "docs-site",
+      "docs",
+      "ui",
+      "app",
+      "sdk",
+      "cli",
+      "worker",
+    ].map((name) => `packages/${name}/package.json`),
     "apps/control-plane/package.json",
     "apps/console/package.json",
     "packages/sdk/src/index.ts",

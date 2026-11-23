@@ -77,7 +77,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          for package in widgets markup docs-engine docs ui app sdk cli; do
+          for package in widgets markup docs-engine docs-site docs ui app sdk cli; do
             pnpm --filter "@volvel/${package}" publish --no-git-checks --access public --tag "${{ steps.version.outputs.tag }}"
           done
 

@@ -11,9 +11,17 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PUBLISHED = ["widget-sdk", "markup", "docs-engine", "docs", "ui", "app", "sdk", "cli"].map(
-  (name) => `packages/${name}`,
-);
+const PUBLISHED = [
+  "widget-sdk",
+  "markup",
+  "docs-engine",
+  "docs-site",
+  "docs",
+  "ui",
+  "app",
+  "sdk",
+  "cli",
+].map((name) => `packages/${name}`);
 /** Not published to npm, but what runs and reports its version: the image's own parts. */
 const RUNS = ["apps/control-plane", "apps/console", "packages/worker"];
 const VERSION = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;

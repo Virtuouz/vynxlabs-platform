@@ -11,6 +11,7 @@ COPY packages/compose/package.json packages/compose/
 COPY packages/db/package.json packages/db/
 COPY packages/docs/package.json packages/docs/
 COPY packages/docs-engine/package.json packages/docs-engine/
+COPY packages/docs-site/package.json packages/docs-site/
 COPY packages/manifest/package.json packages/manifest/
 COPY packages/markup/package.json packages/markup/
 COPY packages/nodes/package.json packages/nodes/

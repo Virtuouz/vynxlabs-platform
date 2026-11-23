@@ -19,6 +19,7 @@ export const PUBLISHED = [
   },
   { folder: "packages/markup", name: "@volvel/markup", holds: ["dist/index.js", "dist/react.js"] },
   { folder: "packages/docs-engine", name: "@volvel/docs-engine", holds: ["dist/index.js"] },
+  { folder: "packages/docs-site", name: "@volvel/docs-site", holds: ["dist/index.js"] },
   {
     folder: "packages/docs",
     name: "@volvel/docs",

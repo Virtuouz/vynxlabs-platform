@@ -2,7 +2,7 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
 import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
-import { type Database, newId } from "@volvel/db";
+import { Database, newId } from "@volvel/db";
 import Fastify, { type RouteOptions } from "fastify";
 import { Type } from "typebox";
 import {
@@ -84,6 +84,7 @@ import { workerRoutes } from "./routes/worker.js";
 import { workerHostRoutes } from "./routes/worker-host.js";
 import { workspaceRoutes } from "./routes/workspaces.js";
 import type { ObjectStore } from "./storage.js";
+import { MemoryObjectStore } from "./storage.js";
 
 export const API_PREFIX = "/api/v1";
 
@@ -98,6 +99,8 @@ export interface AppOptions {
   logLevel?: LogLevel;
   /** Receives every registered route. For tests. */
   onRoute?: (route: RouteOptions) => void;
+  /** Builds the app only to describe it: see `describeApi`. */
+  describing?: boolean;
 }
 
 /** What Fastify is given for `TRUSTED_PROXIES`: a count of hops from this server, or networks. */
@@ -127,6 +130,7 @@ export async function buildApp(options: AppOptions) {
     options.version,
     options.config,
     app.log,
+    options.describing,
   );
   app.decorate("kernel", kernel);
   // An access change is committed to the tenant's branch once it is in the
@@ -407,6 +411,7 @@ export async function buildApp(options: AppOptions) {
     return notFoundHandler(request, reply);
   });
 
+  app.decorate("describeApi", describe);
   return app;
 }
 
@@ -422,5 +427,34 @@ declare module "fastify" {
 declare module "fastify" {
   interface FastifyInstance {
     kernel: Kernel;
+    /** The API's OpenAPI description, with the sign-in library's routes. Nothing in it needs a database. */
+    describeApi: () => Promise<Record<string, unknown>>;
+  }
+}
+
+/**
+ * The API's description, made without a database: the app is built over a connection that is never
+ * opened, the sign-in library is given a store in memory, and nothing is asked of either. For the
+ * documentation's generators, which run where no Postgres is.
+ */
+export async function describeApi(options: {
+  version: string;
+  config: Config;
+}): Promise<Record<string, unknown>> {
+  const app = await buildApp({
+    database: new Database({
+      connectionString: "postgres://describing@127.0.0.1:1/none",
+      maxConnections: 1,
+    }),
+    storage: new MemoryObjectStore(),
+    version: options.version,
+    config: options.config,
+    describing: true,
+  });
+  try {
+    await app.ready();
+    return await app.describeApi();
+  } finally {
+    await app.close();
   }
 }

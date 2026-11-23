@@ -2585,9 +2585,7 @@ function Definition({
       if (report) {
         const caught = error as ApiError;
         const first = caught.fields?.[0];
-        setFailure(
-          withCode(first ? `${caught.message} ${first.message}` : caught.message, caught),
-        );
+        setFailure(withCode(first ? `${caught.message} ${first.message}` : caught.message, caught));
       }
       throw error;
     }

@@ -1080,6 +1080,27 @@ describe("audit", () => {
       expect.arrayContaining(["member.created", "member.signed_in", "binding.created"]),
     );
     expect((await alice.client.get("/audit")).status).toBe(403);
+    // The instance's log is narrowed as a tenant's is, by what it holds (GOV-P8).
+    expect((await alice.client.get("/audit-facets")).status).toBe(403);
+    const facets = (await t.admin.get("/audit-facets")).body;
+    expect(facets.actions.some((one: { value: string }) => one.value === "member.signed_in")).toBe(
+      true,
+    );
+    expect(facets.actors.some((one: { id: string | null }) => one.id !== null)).toBe(true);
+    expect(facets.targetTypes.some((one: { value: string }) => one.value === "member")).toBe(true);
+    // A facet follows the filters: nothing is after the far future.
+    const later = (await t.admin.get("/audit-facets?from=2999-01-01T00:00:00Z")).body;
+    expect(later.actions).toEqual([]);
+    const members = (await t.admin.get("/audit?targetType=member&limit=200")).body.items;
+    expect(members.length).toBeGreaterThan(0);
+    expect(members.every((entry: { targetType: string }) => entry.targetType === "member")).toBe(
+      true,
+    );
+    const one = members[0] as { targetId: string };
+    const about = (await t.admin.get(`/audit?target=${one.targetId}&limit=200`)).body.items;
+    expect(about.every((entry: { targetId: string }) => entry.targetId === one.targetId)).toBe(
+      true,
+    );
   });
 
   test("sign-out and password changes are recorded", async () => {

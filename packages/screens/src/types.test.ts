@@ -18,6 +18,7 @@ test("the registry holds each type with its definition and its view", () => {
     "core/stat",
     "core/chart",
     "core/pivot",
+    "core/goal",
     "core/section",
     "core/tabs",
     "core/filter",

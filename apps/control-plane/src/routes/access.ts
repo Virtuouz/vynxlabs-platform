@@ -32,7 +32,11 @@ export function accessRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/access/:principalType/:id",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `binding:read` in the tenant, or the caller asking about themselves.",
+          ),
+        },
         schema: {
           summary: "Every permission a member or service account holds, and what gives it",
           description:

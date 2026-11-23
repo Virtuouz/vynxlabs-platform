@@ -197,6 +197,8 @@ function describeGeneric(before: Body, after: Body): string[] {
  * resource; `after` is the draft, or nothing for a removal.
  */
 export function describeChange(kind: string, before: Body, after: Body): string[] {
+  // A kind is said as people say it: "trigger source", not "trigger_source".
+  const noun = kind.replaceAll("_", " ");
   if (!before && after) {
     if (kind === "flow") {
       const steps = Object.keys((after.nodes ?? {}) as object).length;
@@ -206,12 +208,12 @@ export function describeChange(kind: string, before: Body, after: Body): string[
       const columns = Object.keys((after.columns ?? {}) as object);
       return [`A new table with the columns ${list(columns)}.`];
     }
-    return [`A new ${kind}.`];
+    return [`A new ${noun}.`];
   }
   if (before && !after) {
     return kind === "table"
       ? ["Retires the table. Its rows are kept until someone deletes them for good."]
-      : [`Removes the ${kind}.`];
+      : [`Removes the ${noun}.`];
   }
   const said =
     kind === "flow"

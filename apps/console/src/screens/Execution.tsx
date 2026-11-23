@@ -410,8 +410,9 @@ export function RunButton({
         title={draft ? `Run ${script}, as deployed` : `Run ${script}`}
         action="Run"
         schema={schema}
-        onSubmit={async (input) => {
-          const run = await api.post<Run>(`${root}/runs`, { script, input });
+        timing
+        onSubmit={async (input, timing) => {
+          const run = await api.post<Run>(`${root}/runs`, { script, input, ...timing });
           navigate(`${runsLink}/${run.id}`);
         }}
       />
@@ -757,7 +758,19 @@ export function Connections({ root, production = false }: { root: string; produc
     setItem(null);
   }, [setup, list.data, setSetup, setItem]);
   const newButton = (
-    <Button variant="primary" onClick={() => setEditing({})}>
+    <Button
+      variant="primary"
+      onClick={() => {
+        // In production a connection is set up only if one waits: otherwise the form would be empty.
+        if (production && list.data?.items.every((item) => item.bound)) {
+          notify.info(
+            "Nothing waits to be set up here. A connection is declared in a dev workspace and arrives here with a promotion.",
+          );
+          return;
+        }
+        setEditing({});
+      }}
+    >
       {production ? "Set up a connection" : "New connection"}
     </Button>
   );
@@ -805,7 +818,11 @@ export function Connections({ root, production = false }: { root: string; produc
           },
           {
             header: "Kind",
-            cell: (row) => CONNECTOR_NAMES[row.connector] ?? <Code>{row.connector}</Code>,
+            cell: (row) => (
+              <span className="whitespace-nowrap">
+                {CONNECTOR_NAMES[row.connector] ?? <Code>{row.connector}</Code>}
+              </span>
+            ),
           },
           {
             header: "Points to",
@@ -1147,6 +1164,9 @@ export function Workers({ base }: { base: string }) {
     state: "off" | "unavailable" | "host" | "isolated" | "shared" | "refused";
   }>(`${base}/managed-workers`);
   const [adding, setAdding] = useState(false);
+  const workspaces = useLoad<{ items: { id: string; name: string }[] }>(`${base}/workspaces`);
+  const workspaceName = (id: string) =>
+    workspaces.data?.items.find((workspace) => workspace.id === id)?.name ?? "A workspace";
   const made = (pools.data?.items ?? []).filter((pool) => pool.name !== null);
   const poolOptions = [
     { value: "", label: "Default pool: scripts that name no pool" },
@@ -1347,6 +1367,11 @@ export function Workers({ base }: { base: string }) {
             header: "Pool",
             cell: (row) => (row.pool ? <Mono>{row.pool}</Mono> : "Default pool"),
           },
+          {
+            header: "Runs code of",
+            cell: (row) =>
+              row.workspaceId ? workspaceName(row.workspaceId) : "Every workspace of the tenant",
+          },
           { header: "Created", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
           {
             header: "Status",
@@ -1368,11 +1393,24 @@ export function Workers({ base }: { base: string }) {
               options: poolOptions,
               hint: "The worker runs only the scripts of this pool.",
             },
+            {
+              name: "workspaceId",
+              label: "Runs code of",
+              options: [
+                { value: "", label: "Every workspace of the tenant" },
+                ...(workspaces.data?.items ?? []).map((workspace) => ({
+                  value: workspace.id,
+                  label: workspace.name,
+                })),
+              ],
+              hint: "A worker for one workspace never runs another's scripts, so a client's network holds only that client's code.",
+            },
           ],
-          submit: async ({ name, pool }) => {
+          submit: async ({ name, pool, workspaceId }) => {
             const result = await api.post(`${base}/worker-credentials`, {
               name,
               ...(pool ? { pool } : {}),
+              ...(workspaceId ? { workspaceId } : {}),
             });
             pools.reload();
             return result;

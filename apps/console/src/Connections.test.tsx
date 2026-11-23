@@ -325,3 +325,24 @@ test("a stored credential is removed from the connection's sheet: Save sends cre
     credential: null,
   });
 });
+
+test("WLK-17a: at a phone's width the health, used-by and kind cells keep room, and a header never wraps into the next", async () => {
+  show(<Connections root={root} />);
+  await screen.findByText("HTTP 401: answered 401.");
+  for (const header of screen.getAllByRole("columnheader")) {
+    expect(header.className).toContain("whitespace-nowrap");
+  }
+  const health = document.querySelector("[data-health]");
+  expect(health?.className).toContain("min-w-[9rem]");
+  const kind = screen.getAllByText("HTTP")[0]?.closest("td")?.firstElementChild;
+  expect(kind?.className).toContain("whitespace-nowrap");
+});
+
+test("WLK-17g: in production with nothing arriving, Set up a connection says so and opens no empty form", async () => {
+  rows = [row({ path: "shop", connector: "http" })];
+  show(<Connections root={root} production />);
+  await screen.findByText("shop");
+  fireEvent.click(await screen.findByRole("button", { name: "Set up a connection" }));
+  expect(await screen.findByText(/Nothing waits to be set up here/)).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: /New connection/ })).toBeNull();
+});

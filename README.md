@@ -49,7 +49,7 @@ The example also defines a table, `orders`, and the flow writes each order it se
 
 An existing Postgres database can be connected under the workspace's Data sources tab, then browsed there and used by scripts through `ctx.source(...)`.
 
-The example has two apps. After a deploy, the workspace's Apps tab lists them with their addresses: a portal at `/apps/<tenant>/<workspace>/portal/`, where staff see every order and a customer sees their own, and a public page of notices. Invite a customer under the tenant's End users page and open the link it gives you. To work on an app with reload, against a workspace's real data:
+The example has two apps. After a deploy, the workspace's Apps page lists them with their addresses: a portal at `/apps/<tenant>/<workspace>/portal/`, where staff see every order and a customer sees their own, and a public page of notices. Invite a customer under the tenant's End users page and open the link it gives you. To work on an app with reload, against a workspace's real data:
 
 ```sh
 volvel dev portal --tenant <slug> --workspace <slug>

@@ -130,6 +130,17 @@ export function newStep(kind: StepKind, ctx: ActionContext, firstPage?: string):
   }
 }
 
+/**
+ * Where a step added by hand goes. Last, except that a message goes before a closing step: said
+ * after the sheet has closed it would be said to nobody.
+ */
+export function addedAt(steps: readonly Step[], step: Step): number {
+  if (step.do !== "message") return steps.length;
+  let at = steps.length;
+  while (at > 0 && steps[at - 1]?.do === "close") at -= 1;
+  return at;
+}
+
 /** An action with a step set, added or removed; the confirmation and conditions are kept. */
 export function withSteps(action: Action, steps: Step[]): Action {
   return { ...action, steps };
@@ -186,6 +197,20 @@ export function typedConstant(text: string, type?: string): unknown {
   return text;
 }
 
+/**
+ * What a value typed for an input of a flow or script is stored as: by the type its schema gives
+ * the input, not by how the text looks. Text stays text ("007"), a list is a list, and an input
+ * that says nothing of its type is read as it looks.
+ */
+export function inputType(property: unknown): string | undefined {
+  const type = (property as { type?: unknown } | null | undefined)?.type;
+  const one = Array.isArray(type) ? type.find((name) => name !== "null") : type;
+  if (one === "string") return "text";
+  if (one === "array") return "enum_list";
+  if (one === "number" || one === "integer" || one === "boolean") return one;
+  return undefined;
+}
+
 const USER_WORDS = {
   id: "the current user",
   email: "the current user's email",
@@ -240,7 +265,12 @@ export function settableColumns(columns: readonly CatalogColumn[]): CatalogColum
 // What an action grants
 
 /** "Changes Status and Paid on of an invoice." and the sentence that says who may do it, where it acts. */
-export function grantWords(action: Action, ctx: ActionContext): string {
+export function grantWords(
+  action: Action,
+  ctx: ActionContext,
+  /** What each group the action names is called now, by its path. */
+  groupNames: Readonly<Record<string, string>> = {},
+): string {
   const parts: string[] = [];
   const list = (names: string[]) => {
     const words = names.map(heading);
@@ -282,7 +312,12 @@ export function grantWords(action: Action, ctx: ActionContext): string {
   const seen = tables.length
     ? `, on ${tables.map((table) => (table.split("/").pop() ?? table).replace(/_/g, " ")).join(" and ")} they can see`
     : "";
-  return `${parts.join(". ")}. People who can open the ${noun} can do this${seen}.`;
+  const groups = action.runBy?.groups ?? [];
+  const who =
+    groups.length > 0
+      ? `Only ${list(groups.map((path) => groupNames[path] ?? path.split("/").pop() ?? path))} can do this`
+      : `People who can open the ${noun} can do this`;
+  return `${parts.join(". ")}. ${who}${seen}.`;
 }
 
 /** What an input of a flow or script is given, in a line: "Gets this invoice as its input". */

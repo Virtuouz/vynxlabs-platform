@@ -323,7 +323,7 @@ describe("DAT-16: days are UTC", () => {
       password: sourcePassword,
     });
     const filter = encodeURIComponent(
-      JSON.stringify({ column: "at", op: "gte", value: "2026-03-01" }),
+      JSON.stringify({ column: "at", op: "gte", value: "2026-03-01T00:00:00Z" }),
     );
     const rows = await alice.get(`${ws()}/source-rows/events/east?filter=${filter}`);
     expect(rows.status, JSON.stringify(rows.body)).toBe(200);

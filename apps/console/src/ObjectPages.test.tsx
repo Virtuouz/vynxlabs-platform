@@ -100,9 +100,8 @@ test("no kind is sent to an editor that does not exist for it (REL-07)", () => {
   expect(objectHref(link, "doc", "guide/intro")).toBe(`${link}/docs/guide/intro`);
   expect(objectHref(link, "theme", "theme")).toBe(`${link}/resources`);
   expect(objectHref(link, "variable", "a/b")).toBe(`${link}/variables/a/b`);
-  expect(objectHref(link, "connection_group", "a/b")).toBe(
-    `${link}/resources/edit/connection_group/a/b`,
-  );
+  // A group's members are set on the Connections screen, where its groups are (CFG-10).
+  expect(objectHref(link, "connection_group", "a/b")).toBe(`${link}/connections`);
 });
 
 test("what uses a thing is a list of links, drafts marked, and a failed read says so", async () => {

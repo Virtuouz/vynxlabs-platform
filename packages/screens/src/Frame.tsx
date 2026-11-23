@@ -10,17 +10,47 @@ import {
 } from "@volvel/ui";
 import { Download, PanelRight } from "@volvel/ui/icons";
 import type { WidgetDefinition, WidgetState } from "@volvel/widgets";
+import { countText, formatOfColumn } from "@volvel/widgets";
+import { type ColumnSpec, columnsToShow, headingOf } from "@volvel/widgets-core/views";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { download, type Result, toCsv, toXlsx } from "./export.ts";
 import type { WireData } from "./types.ts";
 import { DOWNLOAD_ROWS, type Reading } from "./useWidgetData.ts";
 
-/** What a widget read as a table to keep: the first input that has rows, as its view was given them. */
-function resultOf(read: Readonly<Record<string, WireData>> | undefined): Result | undefined {
+/**
+ * What a widget read as a table to keep: the first input that has rows, as its view was given them.
+ * A table keeps what it shows: its columns in its order, under the headings set, with money in
+ * units and numbers as numbers (a hidden column is left out, though rows are sent whole).
+ */
+export function resultOf(
+  read: Readonly<Record<string, WireData>> | undefined,
+  widget?: PageWidget,
+): Result | undefined {
   for (const wire of Object.values(read ?? {})) {
     // Rows are worth keeping; one number, or one record, is read off the page.
     if (wire.shape === "record" || wire.shape === "approvals" || wire.rows.length === 0) continue;
     if (wire.shape === "summary" && wire.breakdowns.length === 0) continue;
+    if (wire.shape === "rows" && widget?.type === "core/table") {
+      const specs = columnsToShow(widget.config?.columns as ColumnSpec[] | undefined, wire);
+      const names = wire.names ?? {};
+      return {
+        columns: specs.map(({ spec }) => ({ name: headingOf(spec, wire) })),
+        rows: wire.rows.map((row) =>
+          specs.map(({ spec, info }) => {
+            const value = row[spec.column];
+            if (typeof value === "string" && names[spec.column]?.[value] !== undefined) {
+              return names[spec.column]?.[value];
+            }
+            const format = formatOfColumn(spec.format, info);
+            return format?.style === "currency" &&
+              format.minorUnits === true &&
+              typeof value === "number"
+              ? Math.round(value) / 100
+              : value;
+          }),
+        ),
+      };
+    }
     const columns = wire.columns.map((column) => ({ name: column.label || column.name }));
     const names = wire.shape === "rows" ? (wire.names ?? {}) : {};
     const rows = wire.rows.map((row) =>
@@ -187,16 +217,15 @@ export function Frame({
     told.current?.(isEmpty);
     return () => told.current?.(false);
   }, [isEmpty]);
-  const kept = !building && state.status === "ready" ? resultOf(reading.read) : undefined;
+  const kept = !building && state.status === "ready" ? resultOf(reading.read, widget) : undefined;
   // A table read a page at a time is downloaded whole, as far as a download reads.
   const total = Object.values(reading.read ?? {}).reduce(
     (most, wire) => (wire.shape === "rows" && wire.total ? Math.max(most, wire.total) : most),
     0,
   );
-  const capped =
-    total > DOWNLOAD_ROWS ? ` (the first ${DOWNLOAD_ROWS.toLocaleString("en-US")} rows)` : "";
+  const capped = total > DOWNLOAD_ROWS ? ` (the first ${countText(DOWNLOAD_ROWS)} rows)` : "";
   const keep = async (save: (result: Result) => void) => {
-    const whole = resultOf(await reading.all()) ?? kept;
+    const whole = resultOf(await reading.all(), widget) ?? kept;
     if (whole) save(whole);
   };
   const followed = Object.values(reading.read ?? {}).find((wire) => wire.followed)?.followed;

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Provisioning } from "./screens/Provisioning.tsx";
 import { answer, show } from "./testing.tsx";
@@ -185,4 +185,18 @@ test("a token says when it expires, and an expired one does not look live (GOV-2
   expect(rowOf("Old").textContent).toContain("Expired");
   expect(rowOf("Fresh").textContent).toContain("Active");
   expect(rowOf("Forever").textContent).toContain("Never");
+});
+
+test("a token is made with a length of life, and the list says when it ends (GOV-P1)", async () => {
+  show(<Provisioning root={root} instance={false} audience="members" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Make a token" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByRole("textbox"), { target: { value: "Okta" } });
+  fireEvent.change(within(dialog).getByLabelText("Expires"), { target: { value: "90" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Make the token" }));
+  expect(await screen.findByText("vxp_the-whole-token")).toBeTruthy();
+  expect(calls.find((call) => call.method === "POST")?.body).toEqual({
+    name: "Okta",
+    expiresInDays: 90,
+  });
 });

@@ -270,7 +270,7 @@ test("a link that was emailed says so, and the search is sent to the server", as
   );
 });
 
-test("an end user is disabled and deleted through their own routes, and deleting asks first", async () => {
+test("an end user is disabled and deleted through their own routes, and both ask first", async () => {
   let users = [ada];
   routes[`GET /api/v1${base}/end-users`] = () => [200, { items: users, nextCursor: null }];
   routes[`PATCH /api/v1${base}/end-users/u1`] = (body) => {
@@ -285,6 +285,8 @@ test("an end user is disabled and deleted through their own routes, and deleting
   show(<EndUsers base={base} />);
   fireEvent.click(await screen.findByText(ada.email));
   fireEvent.click(await screen.findByRole("button", { name: "Disable" }));
+  // Disabling signs them out of every app, so it is asked first.
+  expect(await answer("Disable")).toContain(`Disable ${ada.email}?`);
   await screen.findAllByText("Disabled");
   expect(sent("PATCH")[0]?.url).toBe(`/api/v1${base}/end-users/u1`);
   expect(sent("PATCH")[0]?.body).toEqual({ disabled: true });
@@ -696,4 +698,44 @@ test("the end users screen keeps its search and the person open in the address, 
   expect(location.pathname).toBe("/t/t1/end-users");
   expect(new URLSearchParams(location.search).get("q")).toBe("ada");
   history.replaceState(null, "", "/");
+});
+
+test("a hostname is pointed at another app, or at the portal, without being removed (GOV-P6)", async () => {
+  let domains: (typeof domain)[] = [domain];
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: domains }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [{ id: "w1", name: "Main" }] }];
+  routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
+    200,
+    {
+      items: [
+        { id: "a1", path: "portal/orders", title: "Orders" },
+        { id: "a2", path: "portal/billing", title: "Billing" },
+      ],
+    },
+  ];
+  routes[`PATCH /api/v1${base}/domains/d1`] = (body) => {
+    domains = [{ ...domain, app: (body as { app: string }).app }];
+    return [200, domains[0]];
+  };
+  show(<Domains base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Details/, hidden: true }));
+  const dialog = await screen.findByRole("dialog");
+  const change = (await within(dialog).findByRole("button", {
+    name: "Change what it serves",
+  })) as HTMLButtonElement;
+  // Nothing is different yet, so nothing can be sent.
+  expect(change.disabled).toBe(true);
+  const app = (await within(dialog).findByLabelText("App")) as HTMLSelectElement;
+  await within(dialog).findByRole("option", { name: "Billing (portal/billing)" });
+  expect(app.value).toBe("portal/orders");
+  fireEvent.change(app, { target: { value: "portal/billing" } });
+  expect(change.disabled).toBe(false);
+  fireEvent.click(change);
+  await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ app: "portal/billing" }));
+  await waitFor(() => expect(document.body.textContent).toContain("Serves portal/billing"));
+
+  fireEvent.change(await within(dialog).findByLabelText("Serves"), { target: { value: "portal" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Change what it serves" }));
+  await waitFor(() => expect(sent("PATCH")[1]?.body).toEqual({ app: "" }));
+  await waitFor(() => expect(document.body.textContent).toContain("The portal and every app"));
 });

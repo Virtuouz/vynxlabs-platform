@@ -19,6 +19,7 @@ import { badRequest, conflict, forbidden, HttpError, notFound } from "../kernel/
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import {
   Id,
   iso,
@@ -311,9 +312,10 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("app:read") },
         schema: {
           summary: "The apps deployed to a workspace, with where each is served",
+          description: "Each app of the workspace's active bundle, with its address.",
           tags: ["apps"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(AppItem) }) },
+          response: { 200: listOf(AppItem) },
         },
       },
       async ({ ctx, params }) => {
@@ -490,6 +492,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("portal:read") },
         schema: {
           summary: "A tenant's branding and end-user settings",
+          description: "How the tenant's apps look, and how end users may sign up and in.",
           tags: ["branding"],
           params: TenantParams,
           response: { 200: Portal },
@@ -559,6 +562,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("portal:write") },
         schema: {
           summary: "Remove the tenant's logo",
+          description: "The tenant's apps stop showing the uploaded logo. Audited.",
           tags: ["branding"],
           params: TenantParams,
           response: { 204: NoContent },
@@ -637,6 +641,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.public },
         schema: {
           summary: "The tenant's logo",
+          description: "The image uploaded for the tenant's apps.",
           tags: ["branding"],
           params: TenantParams,
           produces: ["image/png", "image/jpeg", "image/webp"],
@@ -716,9 +721,10 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("domain:read") },
         schema: {
           summary: "The hostnames a tenant has registered for its apps",
+          description: "Each hostname the tenant registered, with whether it was checked.",
           tags: ["domains"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Domain) }) },
+          response: { 200: listOf(Domain) },
         },
       },
       async ({ params }) => {
@@ -1074,7 +1080,12 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/app-handoffs/start",
       {
-        config: { access: access.custom, rateLimit: HANDOFF_LIMIT },
+        config: {
+          access: access.custom(
+            "Needs a member's own sign-in at the instance's address. An API key is refused.",
+          ),
+          rateLimit: HANDOFF_LIMIT,
+        },
         schema: {
           summary: "Carry a signed-in member to an app's address",
           description:
@@ -1142,7 +1153,12 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/app-sessions/start",
       {
-        config: { access: access.public, rateLimit: HANDOFF_LIMIT },
+        config: {
+          access: access.publicWith(
+            "Needs the one-time hand-off code in the query, which `/app-handoffs/start` gave.",
+          ),
+          rateLimit: HANDOFF_LIMIT,
+        },
         schema: {
           summary: "Exchange a hand-off code for a sign-in at this address",
           description: "For browsers, at an app's address. See `/app-handoffs/start`.",

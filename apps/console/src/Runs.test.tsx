@@ -356,3 +356,75 @@ test("a run of a schedule from before the change, and an event's run, link to wh
     "/t/t1/workspaces/w1/events?item=e9",
   );
 });
+
+test("flow runs and script runs that have been going too long are canceled by age (FLW-MP14)", async () => {
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel by age…" }));
+  const dialog = await screen.findByRole("dialog");
+  // Nothing can be canceled until a length is given.
+  expect(
+    (within(dialog).getByRole("button", { name: "Continue" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.change(within(dialog).getByLabelText("Amount"), { target: { value: "2" } });
+  fireEvent.change(within(dialog).getByLabelText("Unit"), { target: { value: "86400" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+  expect(dialog.textContent).toContain("It cannot be undone");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel runs older than 2 days" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]).toEqual({
+    address: `/api/v1${root}/flow-runs/cancel`,
+    body: { olderThanSeconds: 172800 },
+  });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel by age…" }));
+  const again = await screen.findByRole("dialog");
+  fireEvent.change(within(again).getByLabelText("Which runs"), { target: { value: "script" } });
+  fireEvent.change(within(again).getByLabelText("Amount"), { target: { value: "3" } });
+  fireEvent.click(within(again).getByRole("button", { name: "Continue" }));
+  fireEvent.click(within(again).getByRole("button", { name: "Cancel runs older than 3 seconds" }));
+  await waitFor(() => expect(sent).toHaveLength(2));
+  expect(sent[1]).toEqual({
+    address: `/api/v1${root}/runs/cancel`,
+    body: { include: "all", olderThanSeconds: 3 },
+  });
+});
+
+test("runs between two times: chosen under When, kept in the address, asked for and canceled by (OPS-MP7)", async () => {
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("reminders/send");
+  fireEvent.change(screen.getByLabelText("When"), { target: { value: "between" } });
+  const start = await screen.findByLabelText("From");
+  const end = screen.getByLabelText("To");
+  fireEvent.change(start, { target: { value: "2026-11-10T08:00" } });
+  fireEvent.change(end, { target: { value: "2026-11-11T09:30" } });
+  const from = new Date("2026-11-10T08:00").toISOString();
+  const to = new Date("2026-11-11T09:30").toISOString();
+  await waitFor(() => {
+    const params = new URLSearchParams(location.search);
+    expect(params.get("when")).toBe("between");
+    expect(params.get("from")).toBe(from);
+    expect(params.get("to")).toBe(to);
+  });
+  await waitFor(() => {
+    const last = new URLSearchParams(lists().at(-1)?.split("?")[1]);
+    expect(last.get("from")).toBe(from);
+    expect(last.get("to")).toBe(to);
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel 2 queued" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel queued runs" }));
+  await waitFor(() => expect(sent).toHaveLength(1));
+  expect(sent[0]?.body).toMatchObject({ filters: { from, to } });
+});
+
+test("a window that ends before it starts says so and asks for nothing (OPS-MP7)", async () => {
+  history.replaceState(
+    null,
+    "",
+    "/t/t1/workspaces/w1/runs?when=between&from=2026-11-11T08:00:00.000Z&to=2026-11-10T08:00:00.000Z",
+  );
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByText("The end is before the start.")).toBeTruthy();
+  expect(lists()).toHaveLength(0);
+});

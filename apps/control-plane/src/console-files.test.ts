@@ -18,6 +18,8 @@ beforeAll(async () => {
   writeFileSync(asset, script);
   writeFileSync(`${asset}.br`, brotliCompressSync(Buffer.from(script)));
   writeFileSync(`${asset}.gz`, gzipSync(Buffer.from(script)));
+  mkdirSync(join(directory, "help", "assets", "screenshots"), { recursive: true });
+  writeFileSync(join(directory, "help", "assets", "screenshots", "a.png"), "png");
   t = await startTestApp({ config: { consoleDir: directory } });
 });
 
@@ -63,4 +65,15 @@ test("the page itself is asked for afresh, at any address that is one of its scr
   expect((await get("/api/v1/nothing-here")).statusCode).toBe(404);
   // A file that is not there is a screen's address like any other: the page answers, and says so itself.
   expect((await get("/assets/missing-00000000.js")).body).toContain("<title>Console</title>");
+});
+
+test("DOC-10 a help picture named by its path is asked for afresh; DOC-11 a help file that is not there is missing", async () => {
+  const picture = await get("/help/assets/screenshots/a.png");
+  expect(picture.statusCode).toBe(200);
+  expect(picture.headers["cache-control"]).toBe("no-cache");
+  const missing = await get("/help/pages/nope.json");
+  expect(missing.statusCode).toBe(404);
+  expect(missing.body).not.toContain("<title>Console</title>");
+  // A help screen's own address is still the console's.
+  expect((await get("/help/some-topic")).body).toContain("<title>Console</title>");
 });

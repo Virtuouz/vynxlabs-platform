@@ -70,12 +70,13 @@ afterEach(() => {
 const sent = (method: string) => calls.filter((call) => call.method === method);
 
 test("a provider is connected, tried out, given a domain, turned on and required", async () => {
-  let stored: IdentityProvider[] = [];
+  let made = false;
   let current = oidc;
   let domains: object[] = [];
-  routes[`GET ${base}`] = () => [200, { items: stored }];
+  // The list says what the provider is now, as the server does.
+  routes[`GET ${base}`] = () => [200, { items: made ? [current] : [] }];
   routes[`POST ${base}`] = () => {
-    stored = [current];
+    made = true;
     return [201, current];
   };
   routes[`GET ${base}/p1`] = () => [200, current];
@@ -396,4 +397,43 @@ test("a stored client secret can be removed, for a public client (GOV-13)", asyn
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await waitFor(() => expect(sent("PATCH")).toHaveLength(1));
   expect(sent("PATCH")[0]?.body).toMatchObject({ clientSecret: null });
+});
+
+test("after an edit, removing the last domain turns the header off with the provider (GOV-16)", async () => {
+  let current: IdentityProvider = { ...oidc, enabled: true, enforce: true };
+  let domains: object[] = [
+    {
+      id: "d1",
+      domain: "acme.example",
+      verified: true,
+      verifiedAt: "2026-11-01T10:00:00Z",
+      checkedAt: null,
+      problem: null,
+      record: { name: "_vx.acme.example", value: "vx" },
+    },
+  ];
+  routes[`GET ${base}`] = () => [200, { items: [current] }];
+  routes[`GET ${base}/p1/group-maps`] = () => [200, { items: [] }];
+  routes[`GET ${base}/p1/domains`] = () => [200, { items: domains }];
+  routes[`PATCH ${base}/p1`] = (body) => [200, { ...current, ...(body as object) }];
+  routes[`DELETE ${base}/p1/domains/d1`] = () => {
+    domains = [];
+    // The server turns a provider of members with no proved domain left off.
+    current = { ...current, enabled: false, enforce: false };
+    return [204, null];
+  };
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PATCH")).toHaveLength(1));
+  await screen.findByRole("button", { name: "Stop requiring it" });
+
+  fireEvent.click(screen.getByRole("tab", { name: "Domains" }));
+  await screen.findByText("acme.example");
+  // The provider's own Remove is in the header; the domain's is the last.
+  fireEvent.click(screen.getAllByRole("button", { name: "Remove" }).at(-1) as HTMLElement);
+  await answer("Remove");
+  await screen.findByRole("button", { name: "Turn on" });
+  expect(screen.queryByRole("button", { name: "Stop requiring it" })).toBeNull();
 });

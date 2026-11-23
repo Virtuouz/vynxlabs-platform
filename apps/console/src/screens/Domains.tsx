@@ -6,6 +6,7 @@ import { DataTable } from "../kit/DataTable.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { SectionLabel } from "../kit/layout.tsx";
 import { Code, StatePill } from "../kit/status.tsx";
+import { useOpenRow } from "../kit/useOpenRow.ts";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { useUrlParam } from "../router.tsx";
 import type { AppSummary } from "./Apps.tsx";
@@ -350,9 +351,7 @@ export function Domains({ base }: { base: string }) {
   const [adding, setAdding] = useState(false);
   // The hostname open is in the address, so a link opens it and Back closes it.
   const [open, setOpen] = useUrlParam("hostname", undefined, { push: true });
-  const [fresh, setFresh] = useState<Domain>();
-  const shown =
-    (fresh?.id === open ? fresh : undefined) ?? list.data?.items.find((one) => one.id === open);
+  const [shown, setFresh] = useOpenRow(list, open);
   const setShown = (domain: Domain | undefined) => {
     setFresh(domain);
     setOpen(domain?.id);

@@ -24,6 +24,7 @@ import { Stepper } from "../kit/layout.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
+import { useOpenRow } from "../kit/useOpenRow.ts";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
 import { Link as RouteLink, useUrlParam } from "../router.tsx";
 import { Provisioning } from "./Provisioning.tsx";
@@ -103,6 +104,7 @@ interface Domain {
 interface GroupMap {
   value: string;
   groupId: string;
+  groupName?: string;
   /** `release` for one an access release made: it is changed by a release, not here. */
   managedBy?: "hand" | "release";
 }
@@ -1277,9 +1279,7 @@ export function SingleSignOn({ base }: { base: string }) {
   const [connecting, setConnecting] = useState(false);
   // The provider open is in the address: a link opens it, and the breadcrumb leads back.
   const [open, setOpen] = useUrlParam("provider", undefined, { push: true });
-  const [fresh, setFresh] = useState<IdentityProvider>();
-  const shown =
-    (fresh?.id === open ? fresh : undefined) ?? list.data?.items.find((one) => one.id === open);
+  const [shown, setFresh] = useOpenRow(list, open);
   const setShown = (provider: IdentityProvider | undefined) => {
     setFresh(provider);
     setOpen(provider?.id);

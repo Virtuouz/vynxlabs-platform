@@ -38,6 +38,7 @@ import { BreakdownRow, MeasureRow } from "../measureControls.tsx";
 import { heading } from "../model.ts";
 import {
   ChoiceRow,
+  CompareAcross,
   ConfigToggle,
   type DrawerData,
   dateFilters,
@@ -520,6 +521,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
               )
             }
           />
+          {comparing ? <CompareAcross env={env} /> : null}
           {mark === "line" || mark === "area" ? (
             <>
               <ConfigToggle env={env} name="smooth" label="Smooth the line" />

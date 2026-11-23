@@ -8,7 +8,9 @@ import { columnCounts, columnValues, refuseColumn } from "../kernel/data/column-
 import {
   deleteRowKeepingFiles,
   deleteRowsKeepingFiles,
+  filesOfPurge,
   insertRowsKeepingFiles,
+  noteDroppedFiles,
   updateRowKeepingFiles,
 } from "../kernel/data/files.js";
 import {
@@ -573,7 +575,15 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params, body }) =>
         ctx.mutate(async (trx, audit) => {
           const data = (await kernel.data.within(trx, params.t)).db;
+          // The files its rows name are read first, and kept for the audit period once it is gone.
+          const files = await filesOfPurge(kernel, { tenantId: params.t, id: params.w }, body);
           const result = await purgeRetired(data, params.w, body);
+          await noteDroppedFiles(
+            kernel,
+            { tenantId: params.t, id: params.w },
+            ctx.principal,
+            files,
+          );
           await audit({
             action: "table.purged",
             targetType: "table",

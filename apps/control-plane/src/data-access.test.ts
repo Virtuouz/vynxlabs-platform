@@ -968,6 +968,64 @@ describe("files follow the rows that name them (D22)", () => {
     expect(await exists(two)).toBe(true);
   });
 
+  test("a file of a row that a reference's rule deletes, or of a dropped table, is kept for the audit period", async () => {
+    const table = (columns: Record<string, unknown>, path: string) =>
+      alice.put(`${ws()}/resources/${path}`, {
+        kind: "table",
+        schemaVersion: 1,
+        ownership: "ui",
+        body: { columns },
+      });
+    expect((await table({ name: { type: "text" } }, "kb_boards")).status).toBe(201);
+    expect(
+      (
+        await table(
+          {
+            board: { type: "reference", references: "kb_boards", onDelete: "cascade" },
+            file: { type: "file" },
+          },
+          "kb_cards",
+        )
+      ).status,
+    ).toBe(201);
+    expect(
+      (
+        await table(
+          {
+            card: { type: "reference", references: "kb_cards", onDelete: "cascade" },
+            file: { type: "file" },
+          },
+          "kb_notes",
+        )
+      ).status,
+    ).toBe(201);
+    const board = (await alice.post(`${ws()}/rows/kb_boards`, { name: "b" })).body.items[0].id;
+    const cardFile = await upload(alice, "card.txt");
+    const noteFile = await upload(alice, "note.txt");
+    const card = (await alice.post(`${ws()}/rows/kb_cards`, { board, file: cardFile })).body
+      .items[0].id;
+    await alice.post(`${ws()}/rows/kb_notes`, { card, file: noteFile });
+    expect((await alice.delete(`${ws()}/row/${board}/kb_boards`)).status).toBe(204);
+    // Both rows went with the board, and neither file is lost the moment they did.
+    expect(await notesOf(cardFile)).toHaveLength(1);
+    expect(await notesOf(noteFile)).toHaveLength(1);
+    await age(cardFile);
+    await pruneOnce(t.kernel);
+    expect(await exists(cardFile)).toBe(false);
+    expect(await exists(noteFile)).toBe(true);
+
+    // A table that is dropped for good: its files are noted, and kept as any other.
+    const dropFile = await upload(alice, "dropped.txt");
+    await alice.post(`${ws()}/rows/kb_cards`, { file: dropFile });
+    expect((await alice.delete(`${ws()}/resources/kb_notes`)).status).toBe(204);
+    expect((await alice.delete(`${ws()}/resources/kb_cards`)).status).toBe(204);
+    const purged = await alice.post(`${ws()}/table-purges`, { table: "kb_cards" });
+    expect(purged.status, JSON.stringify(purged.body)).toBe(200);
+    expect(await notesOf(dropFile)).toHaveLength(1);
+    await pruneOnce(t.kernel);
+    expect(await exists(dropFile)).toBe(true);
+  });
+
   test("TAB-09: a file a row still names is not removed by the retention pass", async () => {
     // (a) replaced in row A, then row B is inserted naming it.
     const first = await upload(alice, "again.txt");

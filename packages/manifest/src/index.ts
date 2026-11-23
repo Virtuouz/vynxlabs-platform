@@ -1,6 +1,15 @@
 export * from "./action.js";
 export { APP_POLICY, appPolicy } from "./app-policy.js";
 export {
+  AUDIT_ACTIONS,
+  AUDIT_AREAS,
+  type AuditAction,
+  type AuditArea,
+  actionWords,
+  auditAreaOf,
+  targetTypeWords,
+} from "./audit.js";
+export {
   ASSET_PATH_PATTERN,
   assetPathProblem,
   Bundle,

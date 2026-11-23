@@ -2,6 +2,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { AUDIT_ACTIONS, auditAreaOf } from "@volvel/manifest";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { AuditTable, auditAreas, targetName, verbOf } from "./screens/Audit.tsx";
 import { show } from "./testing.tsx";
@@ -246,45 +247,27 @@ test("the instance's log offers the instance's areas, and every action's first w
   }
   expect(tenant).not.toContain("database_location");
 
-  // Every action the control plane writes starts with a word one of the lists has.
+  // Every action the control plane can write (the one typed list, which `audit()` is bound to)
+  // starts with a word one of the two logs has an area for.
   const known = new Set([...auditAreas(false), ...auditAreas(true)]);
   const missing = new Set<string>();
-  // An action that begins with a template has no first word to read. Each is listed, with the
-  // words it can start with, so that a new one is a decision and not a hole (until the actions
-  // are one typed list, which is phase 30's reference work).
-  const templated: string[] = [];
-  for (const file of sourcesOf(join(__dirname, "../../control-plane/src"))) {
-    for (const found of readFileSync(file, "utf8").matchAll(
-      /\baction: `(\$\{[^}]+\}\.[a-z_.]+)`/g,
-    )) {
-      templated.push(`${file.split("control-plane/src/")[1]}: ${found[1]}`);
-    }
-    for (const found of readFileSync(file, "utf8").matchAll(
-      /\baction: ["`]([a-z_]+)\.[a-z_.${}]+["`]/g,
-    )) {
-      const first = found[1] as string;
-      if (!known.has(first) && !NOT_AUDIT.has(first)) missing.add(first);
-    }
+  for (const action of AUDIT_ACTIONS) {
+    if (!known.has(auditAreaOf(action))) missing.add(auditAreaOf(action));
   }
   expect([...missing]).toEqual([]);
-  expect(templated).toEqual(["kernel/tenant/releases.ts: $" + "{kind}.deleted"]);
-  // `kind` there is a group, an end-user group or a service account.
-  for (const first of ["group", "end_user_group", "service_account"]) {
-    expect(known.has(first), first).toBe(true);
-  }
+  // Every area a log offers is the start of some action, so that none narrows to nothing.
+  const started = new Set(AUDIT_ACTIONS.map(auditAreaOf));
+  expect([...known].filter((area) => !started.has(area))).toEqual([]);
+  // What is listed is written by something: its whole name, or the word that ends it, is in the
+  // control plane's code (a few are built from a word and a template).
+  const code = sourcesOf(join(__dirname, "../../control-plane/src"))
+    .map((file) => readFileSync(file, "utf8"))
+    .join("\n");
+  const unwritten = AUDIT_ACTIONS.filter(
+    (action) => !code.includes(`"${action}"`) && !code.includes(`"${action.split(".")[1]}"`),
+  );
+  expect(unwritten).toEqual([]);
 });
-
-/** Words `action:` is followed by in the control plane's code that are not entries of the log. */
-const NOT_AUDIT = new Set([
-  "body",
-  "request",
-  "older",
-  "updated",
-  "taken",
-  "old",
-  "input",
-  "operation",
-]);
 
 function sourcesOf(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((one) =>

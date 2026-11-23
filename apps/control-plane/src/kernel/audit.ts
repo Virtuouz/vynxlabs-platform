@@ -1,5 +1,6 @@
 import { type Kysely, newId, type PlatformSchema, sql, type Transaction } from "@volvel/db";
 
+import type { AuditAction } from "@volvel/manifest";
 import { commitDataTransactions, rollbackDataTransactions } from "./data/stores.js";
 
 export type Db = Kysely<PlatformSchema>;
@@ -37,7 +38,8 @@ export interface Actor {
 }
 
 export interface AuditInput {
-  action: string;
+  /** One of `AUDIT_ACTIONS` (@volvel/manifest): what is not listed cannot be written. */
+  action: AuditAction;
   targetType: string;
   targetId?: string | null;
   tenantId?: string | null;

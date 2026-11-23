@@ -81,7 +81,16 @@ beforeEach(() => {
           { key: "ops", name: "Operations" },
         ],
       });
-    if (path === "/api/v1/tenants/t1/roles") return send(200, { items: [{ name: "Approver" }] });
+    if (path === "/api/v1/tenants/t1/roles")
+      return send(200, {
+        // A role the repository defines is a row for each workspace it is deployed to.
+        items: [
+          { name: "Approver", workspaceId: "w1" },
+          { name: "Approver", workspaceId: "w2" },
+          { name: "Reviewer", workspaceId: "w2" },
+          { name: "Auditor", workspaceId: null },
+        ],
+      });
     return send(200, { items: [] });
   });
 });
@@ -195,6 +204,22 @@ describe("the inspector of a flow's steps", () => {
     expect(screen.getByText(/Only a member of one of these groups/)).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Remove finance" }));
     expect((await lastSaved()).nodes.gate?.approvers).toEqual({ roles: ["Approver"] });
+  });
+
+  test("the role picker lists each role once, and only those this workspace has (FLW-roles)", async () => {
+    await openAt(
+      {
+        nodes: { start: manual, gate: { type: "approval", title: "Approve" } },
+        edges: [{ from: "start", to: "gate" }],
+      },
+      "gate",
+      "Where it waits",
+    );
+    fireEvent.focus(await screen.findByLabelText("Roles"));
+    const names = (await screen.findAllByRole("option")).map((one) => one.textContent);
+    expect(names.filter((name) => name === "Approver")).toHaveLength(1);
+    expect(names).toContain("Auditor");
+    expect(names).not.toContain("Reviewer");
   });
 
   test("with nobody named, an approval says anyone with the permission may decide (FLW-MP5)", async () => {

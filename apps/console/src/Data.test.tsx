@@ -1178,15 +1178,15 @@ test("cfg2: the page of a data source has Test, Change and Unbind, as its list r
   const dialog = await screen.findByRole("dialog");
   expect((within(dialog).getByLabelText("Host") as HTMLInputElement).value).toBe("erp.internal");
   fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-  fireEvent.click(screen.getByRole("button", { name: "Unbind" }));
-  await answer("Unbind");
+  fireEvent.click(screen.getByRole("button", { name: "Remove from here" }));
+  await answer("Remove from here");
   await waitFor(() => expect(calls.some((call) => call.method === "DELETE")).toBe(true));
 });
 
 test("WLK-09d: the buttons of a source's row wrap on a phone instead of widening the page", async () => {
   routes[`GET /api/v1${root}/data-source-bindings`] = () => [200, { items: [bound] }];
   show(<Sources root={root} link="/t/t1/workspaces/w1" />);
-  const unbind = await screen.findByRole("button", { name: "Unbind" });
+  const unbind = await screen.findByRole("button", { name: "Remove from here" });
   expect(unbind.parentElement?.className).toMatch(/flex-wrap/);
   expect(unbind.parentElement?.className).toMatch(/max-w-/);
 });

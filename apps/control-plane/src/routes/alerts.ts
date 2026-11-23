@@ -176,7 +176,7 @@ export function alertRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           workspaceId: params.w,
           path: body.connection,
         });
-        if (!bound) throw badRequest(`The connection "${body.connection}" is not bound.`);
+        if (!bound) throw badRequest(`The connection "${body.connection}" is not set up in this workspace.`);
         const workspace = await db
           .selectFrom("workspace")
           .select("slug")

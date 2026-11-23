@@ -609,6 +609,56 @@ describe("the flow editor, as a person uses it", () => {
       expect(document.activeElement).toBe(screen.getByRole("button", { name: "Add a field" })),
     );
   });
+  test("two fields with one name say so, and say the JSON is not changed until they differ (FLW-dup)", async () => {
+    await openAt({ nodes: { start: manual }, edges: [] }, "start", /What it takes, as JSON Schema/);
+    const box = () => screen.getByLabelText(/What it takes, as JSON Schema/) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole("button", { name: "Add a field" }));
+    fireEvent.change(screen.getByLabelText("Name of field 1"), { target: { value: "client" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add a field" }));
+    fireEvent.change(screen.getByLabelText("Name of field 2"), { target: { value: "client" } });
+    expect((await screen.findAllByText("Another field has this name.")).length).toBeGreaterThan(0);
+    expect(screen.getByText(/The JSON below keeps the last schema/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Name of field 2"), { target: { value: "note" } });
+    await waitFor(() =>
+      expect(Object.keys(JSON.parse(box().value).properties)).toEqual(["client", "note"]),
+    );
+    expect(screen.queryByText(/The JSON below keeps the last schema/)).toBeNull();
+  });
+  test("a schema with a title, and fields with titles, is shown by the form and written back with them (FLW-title)", async () => {
+    await openAt(
+      {
+        nodes: {
+          start: {
+            type: "trigger",
+            trigger: {
+              type: "manual",
+              input: {
+                type: "object",
+                title: "Refund",
+                properties: { amount: { type: "number", title: "Amount in euros" } },
+              },
+            },
+          },
+        },
+        edges: [],
+      },
+      "start",
+      /What it takes, as JSON Schema/,
+    );
+    expect(screen.queryByText(/The form cannot show this schema/)).toBeNull();
+    expect((screen.getByLabelText("Label of field 1") as HTMLInputElement).value).toBe(
+      "Amount in euros",
+    );
+    fireEvent.change(screen.getByLabelText("Name of field 1"), { target: { value: "total" } });
+    const box = screen.getByLabelText(/What it takes, as JSON Schema/) as HTMLTextAreaElement;
+    await waitFor(() =>
+      expect(JSON.parse(box.value)).toEqual({
+        type: "object",
+        title: "Refund",
+        properties: { total: { type: "number", title: "Amount in euros" } },
+      }),
+    );
+  });
   test("a schema the form cannot show keeps the JSON box and says why", async () => {
     await openAt(
       {

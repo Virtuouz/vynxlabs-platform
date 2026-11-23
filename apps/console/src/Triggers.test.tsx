@@ -156,6 +156,30 @@ test("a paused trigger says who paused it (OPS-36)", async () => {
   expect(await screen.findByText(/by Carl Jones: Holding for the audit/)).toBeTruthy();
 });
 
+test("a pause reason ends its sentence before the next one starts (OPS-36)", async () => {
+  vi.stubGlobal("fetch", async () =>
+    Response.json({
+      items: [
+        {
+          ...trigger("reminders/hourly", "", "reminders/send", "script"),
+          paused: {
+            at: new Date().toISOString(),
+            by: "m2",
+            byName: "Carl Jones",
+            reason: "Checking the weekly run first",
+          },
+          pausedBy: "trigger",
+        },
+      ],
+    }),
+  );
+  history.replaceState(null, "", `${link}/triggers?trigger=reminders%2Fhourly`);
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  expect(
+    await screen.findByText(/Checking the weekly run first\. Nothing it would start/),
+  ).toBeTruthy();
+});
+
 test("a schedule that is opened is remembered for the palette's Recent list", async () => {
   const put: unknown[] = [];
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {

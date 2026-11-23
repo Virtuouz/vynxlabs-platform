@@ -133,6 +133,7 @@ function RunHeader({
   pathLink,
   state,
   detail,
+  until,
   started,
   version,
   tags,
@@ -148,6 +149,8 @@ function RunHeader({
   pathLink: string;
   state: RunState;
   detail?: string | undefined;
+  /** When a run set for later starts: a run waiting for its time says when. */
+  until?: string | null | undefined;
   started: ReactNode;
   version: number;
   tags: string[];
@@ -173,7 +176,7 @@ function RunHeader({
         }
         meta={
           <>
-            <StatePill state={state} detail={detail} />
+            <StatePill state={state} detail={detail} until={until} />
             {timing}
             <StateAnnouncer state={state} label={`Run of ${path}`} />
             <Reconnecting show={reconnecting} />
@@ -362,6 +365,7 @@ function ScriptRunPage({ root, link, id }: { root: string; link: string; id: str
         path={run.script}
         pathLink={scriptPage}
         state={run.state}
+        until={run.scheduledFor}
         detail={
           run.maxAttempts > 1
             ? `attempt ${Math.max(run.attempt, 1)} of ${run.maxAttempts}`

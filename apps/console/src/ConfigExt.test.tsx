@@ -206,7 +206,7 @@ test("CFG-26: someone who may only read connections is offered no change, and to
   show(<Connections root={root} />);
   expect(await screen.findByText("shop")).toBeTruthy();
   await needsSaid("connection:write");
-  for (const name of ["New connection", "Change", "Unbind", "Test"]) {
+  for (const name of ["New connection", "Change", "Remove from here", "Test"]) {
     expect(unavailable(name)).toBe(true);
   }
 });
@@ -216,7 +216,7 @@ test("CFG-26: with connection:write and resource:write a connection is offered e
   routes[`GET ${root}/connection-bindings`] = () => [200, { items: [connection] }];
   routes[`GET ${root}/references`] = () => [200, { items: [] }];
   show(<Connections root={root} />);
-  for (const name of ["New connection", "Change", "Unbind", "Test"]) {
+  for (const name of ["New connection", "Change", "Remove from here", "Test"]) {
     expect(await screen.findByRole("button", { name })).toBeTruthy();
   }
   cleanup();

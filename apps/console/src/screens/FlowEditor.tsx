@@ -57,7 +57,13 @@ import {
 import { type ApiError, api, useLoad } from "../api.ts";
 import { ask, failureText, notify, takenText } from "../ask.tsx";
 import { autoLayout, describe, type GraphEdge, type GraphNode } from "../FlowGraph.tsx";
-import { type Clip, type ClipStep, copySteps, pasteSteps, readClip } from "../flowClipboard.ts";
+import {
+  type Clip,
+  type ClipStep,
+  copySteps,
+  pasteSteps,
+  readClipReport,
+} from "../flowClipboard.ts";
 import { renameInNode } from "../flowRename.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
 import { DraftClash } from "../kit/DraftClash.tsx";
@@ -802,8 +808,36 @@ export function problemsAt(
     ) {
       problems.push({ message: `${id} has no event chosen.`, node: id, field: "event" });
     }
+    const eventFilter =
+      node.type === "trigger" && (node.trigger as { type: string }).type === "event"
+        ? (node.trigger as { filter?: string }).filter
+        : undefined;
+    // An event start has no `trigger` to read: its filter is over `event`.
+    if (eventFilter && /(^|[^\w.])trigger\s*[.[]/.test(eventFilter)) {
+      problems.push({
+        message: `${id}'s filter reads trigger, which an event start does not have. Read the event instead: event.payload or event.name.`,
+        node: id,
+        field: "filter",
+      });
+    }
   }
   return problems;
+}
+
+/** Pastes the steps in the clipboard's text, and says what could not be pasted and why. */
+function pasteText(text: string, paste: (clip: Clip) => void) {
+  const { clip, skipped, nothing } = readClipReport(text);
+  const said = skipped.map((one) => `${one.id}: ${one.why}.`).join(" ");
+  if (!clip) {
+    notify.error(said ? `${nothing} ${said}` : (nothing ?? "Nothing was pasted."));
+    return;
+  }
+  paste(clip);
+  if (skipped.length > 0) {
+    notify.error(
+      `${skipped.length === 1 ? "1 step was" : `${skipped.length} steps were`} not pasted. ${said}`,
+    );
+  }
 }
 
 /** A flow drawn on a canvas. Saving makes a draft, deployed from the Releases screen. */
@@ -1297,10 +1331,10 @@ export function FlowEditor({
     const onCut = (event: ClipboardEvent) => copy(event, true);
     const onPaste = (event: ClipboardEvent) => {
       if (isTyping(document.activeElement) || document.querySelector('[role="dialog"]')) return;
-      const clip = readClip(event.clipboardData?.getData("text/plain") ?? "");
-      if (!clip) return;
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      if (!text.trim()) return;
       event.preventDefault();
-      clipboard.current.pasteClip(clip);
+      pasteText(text, clipboard.current.pasteClip);
     };
     document.addEventListener("copy", onCopy);
     document.addEventListener("cut", onCut);
@@ -1370,9 +1404,8 @@ export function FlowEditor({
         keys: formatCombo("Mod+V"),
         onSelect: () => {
           void navigator.clipboard?.readText().then((text) => {
-            const clip = readClip(text);
-            if (clip) pasteClip(clip);
-            else notify.info("The clipboard holds no steps. Copy steps from a flow first.");
+            if (!text.trim()) notify.info("The clipboard is empty. Copy steps from a flow first.");
+            else pasteText(text, pasteClip);
           }, notify.error);
         },
       },

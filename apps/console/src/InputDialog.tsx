@@ -132,8 +132,8 @@ function useRunTiming(enabled: boolean) {
         />
       </label>
       <p className="m-0 basis-full text-meta text-ink-subtle">
-        A later run waits as queued until its time. A higher priority goes first when runs wait for
-        a worker.
+        A later run is listed as waiting until its time, and starts then. A higher priority goes
+        first when runs wait for a worker.
       </p>
     </div>
   ) : null;

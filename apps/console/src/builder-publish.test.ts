@@ -225,3 +225,21 @@ test("a page whose Help topic no document has is a warning; a known topic, or do
   expect(check(new Set(["billing-help"]))).toBeUndefined();
   expect(check(undefined)).toBeUndefined();
 });
+
+test("a Run a flow step with no flow chosen says so, not an empty path (FLW-publish)", async () => {
+  const { actionProblem } = await import("./screens/builder/publishCheck.ts");
+  const known = {
+    tables: undefined,
+    queries: undefined,
+    flows: new Set(["orders/refund"]),
+    scripts: new Set(["orders/size"]),
+    groups: undefined,
+  } as never;
+  const body = { pages: [] } as never;
+  const problem = (step: object) => actionProblem({ steps: [step] } as never, body, known, false);
+  expect(problem({ do: "flow", path: "" })).toBe("it has no flow chosen");
+  expect(problem({ do: "script", path: "" })).toBe("it has no script chosen");
+  expect(problem({ do: "flow", path: "orders/other" })).toBe(
+    "it starts orders/other, which can't be started by hand",
+  );
+});

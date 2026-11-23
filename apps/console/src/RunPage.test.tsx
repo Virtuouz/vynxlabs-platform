@@ -194,6 +194,25 @@ test("a run held back by its concurrency key says by what, and shows the key", a
   expect(screen.getByText("c-17 · one at a time")).toBeTruthy();
 });
 
+test("a run set for later says when it starts, as the list does (OPS-25)", async () => {
+  const at = new Date(Date.now() + 3_600_000).toISOString();
+  routes[`GET ${root}/runs/r1`] = () => [
+    200,
+    {
+      ...scriptRun,
+      status: "queued",
+      state: "waiting_time",
+      error: null,
+      errorSummary: null,
+      finishedAt: null,
+      startedAt: null,
+      scheduledFor: at,
+    },
+  ];
+  show(<RunPage root={root} link={link} id="r1" />);
+  expect(await screen.findByText(/^Waiting until /)).toBeTruthy();
+});
+
 test("a script run is run again with the same input, and the page moves to the new run", async () => {
   show(<RunPage root={root} link={link} id="r1" />);
   fireEvent.click(await screen.findByRole("button", { name: /Re-run/ }));
@@ -781,7 +800,7 @@ test("a script run says what its failure alert did, and what it published (OPS-M
         handlerRunId: "h1",
         handlerError: null,
         notified: false,
-        notifyError: 'The connection "ops-chat" is not bound.',
+        notifyError: 'The connection "ops-chat" is not set up in this workspace.',
         repeats: 2,
       },
     },

@@ -1154,6 +1154,32 @@ describe("what is drafted is listed where it will be", () => {
     ]);
   });
 
+  test("drafts deployed together apply what a resource depends on first, whatever the paths (WOP-order)", async () => {
+    const target = await draft("wop/ok", scriptBody("export default async () => ({});\n"));
+    expect(target.status, JSON.stringify(target.body)).toBe(200);
+    // Each of these sorts before what it depends on.
+    await draft("wop/hook", { type: "webhook", script: "wop/ok" }, "trigger");
+    await draft("wop/clock", { script: "wop/ok", cron: "0 3 * * *", timezone: "UTC" }, "schedule");
+    const flowBody = {
+      description: "",
+      nodes: {
+        start: { type: "trigger", trigger: { type: "manual" } },
+        run: { type: "script", script: "wop/ok", input: "{}" },
+      },
+      edges: [{ from: "start", to: "run" }],
+    };
+    expect((await draft("wop/a-flow", flowBody, "flow")).status).toBe(200);
+    await draft(
+      "wop/a-clock",
+      { flow: "wop/a-flow", cron: "0 4 * * *", timezone: "UTC" },
+      "schedule",
+    );
+    const paths = ["wop/hook", "wop/ok", "wop/clock", "wop/a-flow", "wop/a-clock"];
+    const deployed = await alice.post(`${ws()}/changes/deploy`, { paths });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+    expect(deployed.body.applied).toHaveLength(paths.length);
+  });
+
   test("deployed, it is a trigger like any other; changed or removed by a draft, it says so", async () => {
     await alice.post(`${ws()}/changes/deploy`, {});
     let listed = await triggers();

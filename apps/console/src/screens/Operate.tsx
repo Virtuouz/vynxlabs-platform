@@ -641,8 +641,10 @@ export function TriggersWorkbench({
                     <Notice tone="attention">
                       Paused {ago(open.paused.at)}
                       {open.paused.byName ? ` by ${open.paused.byName}` : ""}
-                      {open.paused.reason ? `: ${open.paused.reason}` : "."} Nothing it would start
-                      is started until it is resumed.
+                      {open.paused.reason
+                        ? `: ${open.paused.reason.trim().replace(/[.!?]*$/, ".")}`
+                        : "."}{" "}
+                      Nothing it would start is started until it is resumed.
                     </Notice>
                   ) : null}
                   {open.lastRefusal ? (

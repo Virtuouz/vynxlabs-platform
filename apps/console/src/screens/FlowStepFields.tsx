@@ -309,7 +309,19 @@ export function ApproversFields({
   const groups = useLoad<{ items: { key: string; name: string }[] }>(
     `${tenantOf(root)}/groups?limit=200`,
   );
-  const roles = useLoad<{ items: { name: string }[] }>(`${tenantOf(root)}/roles?limit=200`);
+  const roles = useLoad<{ items: { name: string; workspaceId?: string | null }[] }>(
+    `${tenantOf(root)}/roles?limit=200`,
+  );
+  // A role the repository defines is a row for each workspace it is deployed to: this
+  // workspace's are listed, once each, with the tenant's own.
+  const here = root.split("/workspaces/")[1];
+  const roleNames = [
+    ...new Set(
+      (roles.data?.items ?? [])
+        .filter((one) => !one.workspaceId || one.workspaceId === here)
+        .map((one) => one.name),
+    ),
+  ];
   const chosen = { groups: value?.groups ?? [], roles: value?.roles ?? [] };
   const put = (next: { groups: string[]; roles: string[] }) =>
     onChange(
@@ -355,7 +367,7 @@ export function ApproversFields({
       <MultiSelectField
         label="Roles"
         options={withCurrent(
-          (roles.data?.items ?? []).map((one) => ({ value: one.name, label: one.name })),
+          roleNames.map((name) => ({ value: name, label: name })),
           chosen.roles,
         )}
         value={chosen.roles}
@@ -462,6 +474,8 @@ export function InputSchemaField({
   });
   const shown = fieldsOf(value);
   const [rows, setRows] = useState<SchemaRow[]>(() => ("rows" in shown ? shown.rows : []));
+  // The schema's own title is kept as it is: the form does not edit it.
+  const title = "rows" in shown ? shown.title : undefined;
   // A schema changed from elsewhere (undo) is the one shown. Not when drawn: then what was kept is.
   const drawn = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `kept` is the host's, and changes each draw
@@ -474,7 +488,8 @@ export function InputSchemaField({
     const next = fieldsOf(value);
     if ("rows" in next) {
       setRows((now) =>
-        problemsOf(now).size > 0 || JSON.stringify(schemaOf(now)) === JSON.stringify(value)
+        problemsOf(now).size > 0 ||
+        JSON.stringify(schemaOf(now, next.title)) === JSON.stringify(value)
           ? now
           : next.rows,
       );
@@ -506,7 +521,7 @@ export function InputSchemaField({
   const write = (next: SchemaRow[]) => {
     setRows(next);
     if (problemsOf(next).size > 0) return;
-    const schema = schemaOf(next);
+    const schema = schemaOf(next, title);
     setText(textOf(schema));
     setProblem(undefined);
     kept?.set(undefined);
@@ -537,6 +552,7 @@ const NEW_ROW: SchemaRow = {
   type: "string",
   required: false,
   description: "",
+  title: "",
   min: undefined,
   max: undefined,
 };
@@ -596,6 +612,12 @@ function SchemaFields({
           No fields: any object is accepted. Add a field to say what it must hold.
         </p>
       ) : null}
+      {problems.size > 0 ? (
+        <p className="m-0 text-meta text-ink-muted" role="note">
+          The JSON below keeps the last schema that was saved until each field has a name of its own
+          and limits that fit.
+        </p>
+      ) : null}
       {rows.map((row, at) => {
         const n = at + 1;
         const text = row.type === "string";
@@ -633,6 +655,14 @@ function SchemaFields({
               label={`Field ${n} is required`}
               checked={row.required}
               onChange={(required) => change(at, { required })}
+            />
+            <TextField
+              name={`input-field-${n}-title`}
+              label={`Label of field ${n}`}
+              value={row.title}
+              required={false}
+              hint="What the Start form calls it. Left empty, it shows the name."
+              onChange={(title) => change(at, { title })}
             />
             <TextField
               name={`input-field-${n}-description`}

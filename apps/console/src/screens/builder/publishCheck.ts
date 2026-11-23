@@ -105,6 +105,8 @@ export function actionProblem(
       return "it opens a page that is gone";
     if (step.do === "create" && known.tables && !known.tables.has(step.table))
       return `it adds to ${step.table}, which does not exist`;
+    if (step.do === "flow" && !step.path) return "it has no flow chosen";
+    if (step.do === "script" && !step.path) return "it has no script chosen";
     if (step.do === "flow" && known.flows.size > 0 && !known.flows.has(step.path))
       return `it starts ${step.path}, which can't be started by hand`;
     if (step.do === "script" && known.scripts.size > 0 && !known.scripts.has(step.path))

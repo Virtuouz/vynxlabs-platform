@@ -264,11 +264,12 @@ export function RunsWorkbench({
     setMoreError(undefined);
   }, [base]);
   const items = useMemo(() => {
+    if (backwards) return [];
     const head = list.data?.items ?? [];
     // While the later pages are read again behind a first page that moved, a row may be in both.
     const have = new Set(head.map((one) => one.id));
     return [...head, ...(later?.items ?? []).filter((one) => !have.has(one.id))];
-  }, [list.data, later]);
+  }, [list.data, later, backwards]);
   const next = later ? later.next : (list.data?.nextCursor ?? null);
   const loadMore = async () => {
     if (!next) return;

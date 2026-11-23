@@ -80,3 +80,6 @@ Already decided, and not asked: every collection is on every instance; `/docs` s
 | D60 | The widget contract's page | Published, marked for contributors to the platform | as recommended |
 | D61 | Vulnerability contact and response time | GitHub private vulnerability reports, answered within 3 working days. No email address | decided |
 | D62 | Supported versions and the first publish date | The newest minor and the one before. The first publish date is not set | decided |
+| D63 | With two-person approval on, does a role given straight to a member or to every end user wait? | No: it applies at once, and the screen says so. Access changes keep covering groups, service accounts and end-user groups | decided 2026-11-22 |
+| D64 | `volvel dev` for interface and docs apps (CLI-MP7) | Drawn locally by the same packages the instance uses (`@volvel/screens`, `@volvel/docs-site`), API calls passed to the instance. Built in phase 30, after M1 | decided 2026-11-22 |
+| D65 | Git sync and `volvel.yaml`'s `resources` and `entry` | The file wins for `resources`: git sync writes there, and the Repository page shows it read-only. `entry` stays for the CLI and CI; the instance never builds code | decided 2026-11-22 |

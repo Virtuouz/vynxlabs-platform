@@ -51,8 +51,10 @@ Answered once for the phase: every lane's entry in `docs/documentation/fixed/` a
 
 ## Asked of the owner at the end of the phase
 
-1. With two-person approval on, a role given straight to a member, or to every end user, applies at once: access changes cover groups, service accounts and end-user groups only. The screen now says so. Should these wait for approval too?
-2. `volvel dev` for interface and docs apps (CLI-MP7): they have no source, the platform draws them. Serving them locally means pushing drafts on save, or moving the renderer into a shared package. Both are large.
-3. Git sync reading `entry` and `resources` from `volvel.yaml`: the repository settings have their own folder, so the file would be a second answer to one question.
+Answered 2026-11-22 ([decisions.md](../documentation/decisions.md) D63 to D65):
+
+1. A role given straight to a member or to every end user does not wait for a second person (D63). The screen says it applies at once.
+2. `volvel dev` for interface and docs apps is built in phase 30, after M1, drawing them locally with the instance's own packages (D64).
+3. `volvel.yaml`'s `resources` wins over the Repository page's folder; `entry` stays for the CLI (D65). Built in this phase.
 
 ## After the owner's first look

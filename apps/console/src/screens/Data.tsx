@@ -204,6 +204,18 @@ const ROWS_URL = {
 
 const NONE_CHECKED: Set<string> = new Set();
 
+const ROW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** Whether text in a reference's filter box is what the server takes: IDs, `empty`, or `!` of them. */
+function referenceFilterOk(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed === "" || /^(!\s*empty|!\s*null|not\s+empty|not\s+null|empty|null)$/i.test(trimmed))
+    return true;
+  return trimmed
+    .split("|")
+    .map((one) => one.trim().replace(/^(?:!=|!|not\s+)\s*/i, ""))
+    .every((one) => ROW_ID.test(one));
+}
+
 function RowsBrowser(
   props: RowsBrowserProps & {
     fill?: boolean;
@@ -272,7 +284,13 @@ function RowsBrowser(
   const filterErrors: Record<string, string> = {};
   for (const column of columns) {
     try {
-      const built = toFilter(column.type, applied[column.name] ?? "");
+      const text = applied[column.name] ?? "";
+      // The server finds a reference by its row's ID alone; a name would be refused there.
+      if (column.references && !referenceFilterOk(text))
+        throw new Error(
+          "A reference is found by its row's ID, or by empty. Open the row to copy its ID.",
+        );
+      const built = toFilter(column.type, text);
       if (built) parts.push(filterNode(column.name, built));
     } catch (error) {
       filterErrors[column.name] = (error as Error).message;
@@ -288,8 +306,12 @@ function RowsBrowser(
   if (filter) query.set("filter", JSON.stringify(filter));
   if (url.sort) query.set("sort", url.sort);
   if (url.page) query.set("cursor", url.page);
-  // What stands for the rows a reference points to comes with the page, for up to five of them.
-  const pointing = columns.filter((column) => column.references).slice(0, 5);
+  // What stands for the rows a reference points to comes with the page, for up to five of the
+  // columns shown, in the order shown.
+  const pointing = order
+    .flatMap((name) => columns.find((column) => column.name === name) ?? [])
+    .filter((column) => column.references)
+    .slice(0, 5);
   if (pointing.length > 0) query.set("expand", pointing.map((column) => column.name).join(","));
   const page = useLoad<{
     items: DataRow[];

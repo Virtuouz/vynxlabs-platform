@@ -1989,3 +1989,35 @@ test("w-limits 2: a required yes/no column and a required reference are marked a
   expect(await within(dialog).findByText("paid needs a value.")).toBeTruthy();
   expect(await within(dialog).findByText("shop needs a value.")).toBeTruthy();
 });
+
+test("TAB-36: the names of referenced rows are asked for the columns shown, and a reference box says it takes an ID", async () => {
+  const reference = (name: string) => ({
+    name,
+    type: "reference",
+    required: false,
+    unique: false,
+    default: null,
+    references: "customers",
+    status: "active",
+    held: null,
+    writable: true,
+  });
+  const names = ["a1", "a2", "a3", "a4", "a5", "a6", "a7"];
+  routes[`GET /api/v1${root}/tables/orders`] = () => [
+    200,
+    {
+      ...orders("ui"),
+      columns: [{ ...orders("ui").columns[0] }, ...names.map(reference)],
+    },
+  ];
+  navigate("/t/t1/workspaces/w1/tables/orders?cols=number&cols=a7&cols=a6");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("A-1");
+  await waitFor(() => expect(lastRows().get("expand")).toBe("a7,a6"));
+  // A name typed in a reference's box is not an ID: it is said so, and nothing is asked for.
+  const before = calls.length;
+  fireEvent.change(screen.getByLabelText("Filter by a7"), { target: { value: "Acme" } });
+  expect((await screen.findByRole("alert")).textContent).toMatch(/^a7: .*ID/);
+  expect(calls.slice(before).some((call) => call.url.includes("filter="))).toBe(false);
+  navigate("/t/t1/workspaces/w1/tables/orders");
+});

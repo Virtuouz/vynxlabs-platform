@@ -160,7 +160,10 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
         actions={
           tenant.data ? (
             <>
-              <RenameTenantButton tenant={{ id: tenantId, ...tenant.data }} onDone={tenant.reload} />
+              <RenameTenantButton
+                tenant={{ id: tenantId, ...tenant.data }}
+                onDone={tenant.reload}
+              />
               <ConsoleCodeButton tenant={{ id: tenantId, ...tenant.data }} onDone={tenant.reload} />
             </>
           ) : null

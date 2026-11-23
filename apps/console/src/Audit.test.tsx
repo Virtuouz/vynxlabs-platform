@@ -328,6 +328,10 @@ test("the instance's log is narrowed by who, what, to what and until when (GOV-P
   await screen.findByRole("option", { name: "jane@acme.test (6)" });
   expect(asked.some((one) => one === "/api/v1/audit-facets?")).toBe(true);
   expect(screen.queryByLabelText("Workspace")).toBeNull();
+  // The instance's log is a file too, from the server's own route.
+  expect(screen.getByRole("link", { name: /CSV/ }).getAttribute("href")).toContain(
+    "/api/v1/audit-export?",
+  );
   fireEvent.change(screen.getByLabelText("Who"), {
     target: { value: "00000000-0000-7000-8000-00000000aaaa" },
   });
@@ -348,6 +352,4 @@ test("the instance's log is narrowed by who, what, to what and until when (GOV-P
     ),
   );
   await waitFor(() => expect(lastList()).toContain("target=target-"));
-  // Only a tenant's log is a file.
-  expect(screen.queryByRole("link", { name: /CSV/ })).toBeNull();
 });

@@ -537,7 +537,12 @@ test("a tenant admin turns writing code in the console off and on, after being a
 });
 
 test("someone who may not change the tenant is not offered the switch", async () => {
-  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", mayRename: false, consoleCode: true });
+  routes[`GET ${base}`] = () => ({
+    name: "Acme",
+    slug: "acme",
+    mayRename: false,
+    consoleCode: true,
+  });
   show(<TenantOverview base={base} tenantId="t1" />);
   await screen.findByRole("heading", { name: "Acme" });
   expect(screen.queryByRole("button", { name: /code in console/ })).toBeNull();

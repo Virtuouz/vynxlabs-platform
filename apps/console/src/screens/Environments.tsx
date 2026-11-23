@@ -1603,7 +1603,9 @@ export function ConsoleCodeButton({
       loading={busy}
       onClick={async () => {
         const sure = await ask.confirm({
-          title: on ? `Turn off code in the console for ${tenant.name}?` : `Turn on code in the console for ${tenant.name}?`,
+          title: on
+            ? `Turn off code in the console for ${tenant.name}?`
+            : `Turn on code in the console for ${tenant.name}?`,
           text: on
             ? "People can no longer save or test scripts and flows' code in the console. Code deployed from the repository keeps running. A tenant admin or an operator can turn it on again."
             : "People with the code permission can write and test code in the console again.",

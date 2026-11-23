@@ -809,6 +809,14 @@ describe("the log of a tenant that was deleted", () => {
     expect(kept.every((entry) => entry.tenantId === id)).toBe(true);
     // A tenant that is still here keeps its entries in its own log only.
     expect(atInstance.some((entry) => entry.tenantId === tenant)).toBe(false);
+    // The instance's log opens one entry by its id, and is a file too.
+    expect((await t.admin.get(`/audit/${kept[0].id}`)).body.id).toBe(kept[0].id);
+    expect((await t.admin.get(`/audit/${kept[0].id}`)).body.tenantId).toBe(id);
+    const file = await t.admin.get("/audit-export");
+    expect(file.headers["content-type"]).toContain("text/csv");
+    expect(String(file.body).split("\r\n")[0]).toMatch(/^occurredAt,action,/);
+    expect(String(file.body)).toContain("tenant.deleted");
+    expect((await alice.get("/audit-export")).status).toBe(403);
   });
 });
 

@@ -348,6 +348,7 @@ describe("drafts", () => {
     const on = await t.admin.patch(`/tenants/${tenant}`, { consoleCode: true });
     expect(on.body.consoleCode).toBe(true);
     expect((await draft("orders/switched", body)).status).toBe(200);
+    await alice.delete(`${ws()}/drafts/orders/switched`);
     const entries = (await alice.get(`/tenants/${tenant}/audit?limit=50`)).body.items;
     expect(
       entries.filter(

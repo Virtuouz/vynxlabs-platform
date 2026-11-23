@@ -285,6 +285,8 @@ export const open = defineBinding({
 
 Every page whose path is under `handbook` is a page of the site, and `handbook` is a top-level folder: a site never serves a folder inside another. `index` is its home page, each folder directly under it is a collection, and folders inside them go as deep as they are written. A folder's own page with nothing written in it lists what is in the folder. Who may open the site is decided by bindings, as for any app: nobody outside without one.
 
+To see the site while you write it, run `volvel dev handbook --tenant <slug> --workspace <slug>`. It draws the pages from your files with the renderer the instance uses, with search, and reloads when a file changes. Its calls to the platform go to that workspace as you. What only the instance knows is said on the page and not drawn: the product's own terms, readers' answers, and diagrams. `volvel dev` serves an interface app the same way, from its file, with the platform's own screens: set `SCREENS_DIR` to the platform's built `packages/screens/runtime/dist`, as an instance is told. With one app in the repository it needs no name; with several, give the app's path.
+
 A site can ask its readers whether a page helped, and keep each answer as a row of a table of yours. A workspace keeps the answers of all its sites in one table, `docs-feedback`, where each row says which site it is from by `site_key`, the key of the site's app, which a rename keeps:
 
 ```ts

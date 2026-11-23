@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { appPolicy } from "@volvel/manifest";
 import { loadVite, viteSettings } from "./apps.js";
 import { appSources } from "./build.js";
+import { siteApps, startSiteServer } from "./dev-site.js";
 import { BuildError } from "./errors.js";
 
 export interface DevOptions {
@@ -11,7 +12,7 @@ export interface DevOptions {
   /** Where the code is, when a flag says so; else `volvel.yaml`, else `src/index.ts`. */
   entry?: string;
   resources?: string;
-  /** The app's path. May be left out when the repository has one app. */
+  /** The app's path, whatever its kind. May be left out when the repository has one app. */
   app: string | undefined;
   port: number;
   /**
@@ -23,10 +24,24 @@ export interface DevOptions {
   tenant: { id: string; slug: string; name: string };
   workspace: { id: string; slug: string };
   principal: { type: string; id?: string | null; name: string | null; email: string | null };
+  /** Where the files that draw an interface are; `SCREENS_DIR`, else beside this build. For tests. */
+  screens?: string;
 }
 
 interface ProxyRequest {
   setHeader(name: string, value: string): void;
+}
+
+/**
+ * The instance knows whether the tenant has a logo; an app asks so as to show none that is
+ * not there. Left unsaid when the instance cannot be reached, as an older platform leaves it.
+ */
+async function tenantHasLogo(instance: string, tenantId: string): Promise<boolean | undefined> {
+  return fetch(`${instance}/api/v1/tenants/${tenantId}/portal/logo`, { method: "HEAD" })
+    .then((response) =>
+      response.status === 200 ? true : response.status === 404 ? false : undefined,
+    )
+    .catch(() => undefined);
 }
 
 const forHtml = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
@@ -44,22 +59,48 @@ export async function startDevServer(options: DevOptions) {
     ...(options.entry ? { entry: options.entry } : {}),
     ...(options.resources ? { resources: options.resources } : {}),
   });
-  if (apps.length === 0) throw new BuildError(["This repository defines no app."]);
-  const app = options.app ? apps.find((candidate) => candidate.path === options.app) : apps[0];
-  if (!app || (!options.app && apps.length > 1)) {
-    throw new BuildError([`Say which app: ${apps.map((candidate) => candidate.path).join(", ")}.`]);
+  const sites = await siteApps({
+    directory,
+    ...(options.entry ? { entry: options.entry } : {}),
+    ...(options.resources ? { resources: options.resources } : {}),
+  });
+  const all = [
+    ...apps.map((candidate) => ({ path: candidate.path, kind: "files" as const })),
+    ...sites.map((candidate) => ({ path: candidate.path, kind: candidate.kind })),
+  ].sort((one, other) => (one.path < other.path ? -1 : 1));
+  if (all.length === 0) throw new BuildError(["This repository defines no app."]);
+  const names = all.map((candidate) => `${candidate.path} (${candidate.kind})`).join(", ");
+  const chosen = options.app ? all.find((candidate) => candidate.path === options.app) : all[0];
+  if (options.app && !chosen) {
+    throw new BuildError([
+      `This repository has no app at "${options.app}". Its apps: ${names}.`,
+      "volvel dev draws an app made of files, an interface and a docs site.",
+    ]);
   }
-  const { vite, plugins } = await loadVite(directory);
+  if (!chosen || (!options.app && all.length > 1)) {
+    throw new BuildError([`Say which app: ${names}.`]);
+  }
   const instance = options.instance.url.replace(/\/+$/, "");
-  // The instance knows whether the tenant has a logo; an app asks so as to show none that is
-  // not there. Left unsaid when the instance cannot be reached, as an older platform leaves it.
-  const logo = await fetch(`${instance}/api/v1/tenants/${options.tenant.id}/portal/logo`, {
-    method: "HEAD",
-  })
-    .then((response) =>
-      response.status === 200 ? true : response.status === 404 ? false : undefined,
-    )
-    .catch(() => undefined);
+  const logo = await tenantHasLogo(instance, options.tenant.id);
+  const site = sites.find((candidate) => candidate.path === chosen.path);
+  if (site) {
+    return startSiteServer({
+      directory,
+      ...(options.entry ? { entry: options.entry } : {}),
+      ...(options.resources ? { resources: options.resources } : {}),
+      app: site,
+      port: options.port,
+      ...(options.strict === undefined ? {} : { strict: options.strict }),
+      ...(options.screens ? { screens: options.screens } : {}),
+      instance: options.instance,
+      tenant: options.tenant,
+      workspace: options.workspace,
+      principal: options.principal,
+      logo,
+    });
+  }
+  const app = apps.find((candidate) => candidate.path === chosen.path) as (typeof apps)[number];
+  const { vite, plugins } = await loadVite(directory);
   const context = {
     api: "/api/v1",
     tenant: { ...options.tenant, ...(logo === undefined ? {} : { logo }) },

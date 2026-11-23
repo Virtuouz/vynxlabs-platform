@@ -28,7 +28,7 @@ import {
   withData,
 } from "../kernel/data/rows.js";
 import { openSource, sourceFailure, sourceTable } from "../kernel/data/sources.js";
-import { badRequest, forbidden, forbiddenBecause, HttpError, notFound } from "../kernel/errors.js";
+import { badRequest, forbiddenBecause, HttpError, notFound } from "../kernel/errors.js";
 import { readConnection, readGroupMember } from "../kernel/execution/bindings.js";
 import { loadBundle } from "../kernel/execution/bundles.js";
 import { accessToken, isOAuthSettings } from "../kernel/execution/oauth.js";

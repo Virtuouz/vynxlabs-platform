@@ -7,7 +7,6 @@ import { DraftClash } from "../../kit/DraftClash.tsx";
 import { isDraftClash, putDraft } from "../../kit/draftApi.ts";
 import { ago } from "../../kit/format.ts";
 import { useHistory } from "../../kit/history.ts";
-import { heading } from "../../kit/inspector/model.ts";
 import { RemoveDraftButton } from "../../kit/RemoveDraftButton.tsx";
 import {
   DeviceSwitch,

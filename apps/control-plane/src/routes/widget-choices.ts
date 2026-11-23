@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import { displayColumn } from "../kernel/data/query/inputs.js";
 import { workspaceCatalog } from "../kernel/data/query/widget.js";
 import { describeTable, findRows, scopeFor, withData } from "../kernel/data/rows.js";
-import { badRequest, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { badRequest, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { locatePage, UUID } from "../kernel/pages/locate.js";

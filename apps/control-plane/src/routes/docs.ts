@@ -3,10 +3,8 @@ import {
   appOf,
   buildSearchIndex,
   type DocsApp,
-  docsApps,
   FEEDBACK_TABLE,
   loadSearchIndex,
-  type ResourceLike,
   readPage,
   urlOf,
 } from "@volvel/docs-engine";

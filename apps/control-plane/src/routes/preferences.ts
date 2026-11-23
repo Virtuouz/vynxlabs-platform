@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { newId } from "@volvel/db";
 import { Type } from "typebox";
-import { badRequest, conflict, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { badRequest, conflict, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { listOf } from "../pagination.js";

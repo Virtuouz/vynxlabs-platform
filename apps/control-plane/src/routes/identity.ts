@@ -6,7 +6,7 @@ import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH } from "../config.js";
 import { endOperatorGrantsIfNoLonger, keepingAnOperator } from "../kernel/administer.js";
 import type { Trx } from "../kernel/audit.js";
-import { badRequest, forbidden, forbiddenBecause, notFound } from "../kernel/errors.js";
+import { badRequest, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { INSTANCE_ONLY_ROLE } from "../kernel/kinds.js";

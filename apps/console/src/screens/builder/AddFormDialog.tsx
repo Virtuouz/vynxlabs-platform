@@ -21,7 +21,6 @@ import {
   formPlacement,
   formWidget,
   isSystem,
-  manyOf,
   oneOf,
   type PageContext,
   type TableInfo,

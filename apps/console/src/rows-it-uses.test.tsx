@@ -496,6 +496,28 @@ test("WID-M10: a table the chosen one points to is offered as Also from, and its
   expect(last().columns).not.toContain("customer.city");
 });
 
+test("w-builder 4: a column of a followed table that would be named as one the table has is not offered, and says why", () => {
+  const clash: Catalog = {
+    ...withCustomers,
+    tables: [
+      {
+        ...(withCustomers.tables[0] as Catalog["tables"][number]),
+        columns: [
+          ...(withCustomers.tables[0]?.columns ?? []),
+          { name: "customer_name", type: "text", references: null },
+        ],
+      },
+      withCustomers.tables[1] as Catalog["tables"][number],
+    ],
+  };
+  show(<Harness start={listWidget()} definition={list as never} using={clash} />);
+  fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
+  const group = within(panel().getByRole("group", { name: "Columns from Customers" }));
+  expect((group.getByRole("button", { name: "Name" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((group.getByRole("button", { name: "City" }) as HTMLButtonElement).disabled).toBe(false);
+  panel().getByText(/Name is not offered: Invoices already has a column called customer_name/);
+});
+
 test("WID-M10: the columns of a followed table are columns every other control can name", () => {
   const names = columnsNamed(withCustomers, "invoices", ["customer"]).map((one) => one.name);
   expect(names).toContain("customer.name");

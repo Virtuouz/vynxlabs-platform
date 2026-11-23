@@ -625,6 +625,14 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
   const running = runningBundle?.id;
   const ran = new Set(ledger.data?.items.map((row) => row.bundleId));
   const neverRun = (bundles.data?.items ?? []).filter((one) => !ran.has(one.id));
+  // A version is one row, however often it was deployed (a rollback deploys an earlier one
+  // again): the latest deployment of it speaks, newest first, and the count is said.
+  const times = new Map<string, number>();
+  for (const row of ledger.data?.items ?? [])
+    times.set(row.bundleId, (times.get(row.bundleId) ?? 0) + 1);
+  const versions = (ledger.data?.items ?? []).filter(
+    (row, at, all) => all.findIndex((one) => one.bundleId === row.bundleId) === at,
+  );
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-2">
@@ -637,7 +645,7 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
           <EmptyCanvas title="Nothing deployed here yet" />
         ) : (
           <Panel as="div" className="divide-y divide-line">
-            {ledger.data.items.map((row) => (
+            {versions.map((row) => (
               <div key={row.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
                 <Mono className="w-12 shrink-0 text-ink">v{row.bundleVersion}</Mono>
                 <span className="min-w-0 flex-1 truncate">
@@ -645,6 +653,9 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
                 </span>
                 <span className="text-meta text-ink-subtle">
                   {row.createdBy ?? "—"} · {ago(row.createdAt)}
+                  {(times.get(row.bundleId) ?? 1) > 1
+                    ? ` · deployed ${times.get(row.bundleId)} times`
+                    : ""}
                 </span>
                 <span className="flex gap-1">
                   {(row.runningIn ?? []).map((one) => (

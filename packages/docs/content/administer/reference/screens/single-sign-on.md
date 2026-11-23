@@ -11,7 +11,7 @@ The **Single sign-on** screen connects the tenant to an identity provider, so th
 
 The screen is under **Tenant**, in the group **Sign-in**. F1 (**Help for this page**) opens the help topic `tenant-single-sign-on`. The address of an open provider is `?provider=<id>&tab=<tab>`, so a link reaches the tab you were on. The operators' own provider is on a screen of the instance: see [Single sign-on for operators](../../../self-host/reference/console/single-sign-on).
 
-::screenshot{name=administer/sso-provider-setup alt="A provider's Set up tab: the redirect address to enter at the provider, the sign-in address, and a Try signing in button with the facts the last try read."}
+::screenshot{name=administer/sso-provider-setup alt="A provider's Set up tab: the redirect address to enter at the provider, and a Try signing in button above a passed try with the facts it read."}
 
 ## The list of providers
 

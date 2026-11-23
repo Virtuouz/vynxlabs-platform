@@ -103,24 +103,25 @@ const identityProvider = async (claims: Record<string, unknown>) => {
   };
 };
 
-/** A provider for the run's tenant, connected to a small identity provider and tried once, as Ada. */
+/** A provider of end users for the run's tenant (a member's provider needs a domain proved in DNS before a try passes), connected to a small identity provider and tried once, as Ada. */
 const connectAndTry = async (given: Given) => {
   const idp = await identityProvider({
     sub: "ada-7f3c",
     email: "ada@acme.example",
+    email_verified: true,
     name: "Ada Lovelace",
     groups: ["finance"],
   });
   try {
     const base = `/tenants/${given.tenant.id}/identity-providers`;
     const provider = await given.call("POST", base, {
-      audience: "members",
+      audience: "end_users",
       protocol: "oidc",
       name: "Acme Keycloak",
       config: { issuer: idp.issuer, clientId: idp.clientId },
       clientSecret: idp.clientSecret,
+      provision: true,
     });
-    await given.call("POST", `${base}/${provider.id}/domains`, { domain: "acme.example" });
     // The try: the address it gives is opened as a person would, and the provider signs them in.
     const { url } = await given.call("POST", `${base}/${provider.id}/tests`);
     const tab = await given.page.context().newPage();

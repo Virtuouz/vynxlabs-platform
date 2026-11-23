@@ -29,7 +29,7 @@ By the end the tenant has a provider that people can use to sign in, tried once 
 9. Press **Turn on**. The state is **On**, and a button "Sign in with <name>" is on the sign-in screen.
 :::
 
-::screenshot{name=administer/sso-provider-setup alt="A provider's Set up tab: the redirect address to enter at the provider, the sign-in address, and a Try signing in button with the facts the last try read."}
+::screenshot{name=administer/sso-provider-setup alt="A provider's Set up tab: the redirect address to enter at the provider, and a Try signing in button above a passed try with the facts it read."}
 
 ## What a try tells you
 

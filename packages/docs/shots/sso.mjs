@@ -16,7 +16,7 @@ const sso = (name, address, ready, extra = {}) => ({
 });
 
 /** What differs between runs on the provider's screen: its ID in the addresses, and when the last try was. */
-const PROVIDER = [...TIMES, "text=/sso\\/[0-9a-f-]{36}\\//", "text=/^The last try, /"];
+const PROVIDER = [...TIMES, "text=/sso\\/[0-9a-f-]{36}\\//", "text=/^The provider answered /"];
 
 /** The moments and IDs of an audit entry, and of a hostname's record. */
 const ENTRY = [

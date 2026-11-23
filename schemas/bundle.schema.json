@@ -172,7 +172,7 @@
           },
           "path": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._@~-]*(/[A-Za-z0-9][A-Za-z0-9._@~-]*)*$",
+            "pattern": "^[_.]?[A-Za-z0-9][A-Za-z0-9._@~-]*(/[_.]?[A-Za-z0-9][A-Za-z0-9._@~-]*)*$",
             "maxLength": 500,
             "description": "The file's path inside the app, for example assets/index-3f9a.js."
           },

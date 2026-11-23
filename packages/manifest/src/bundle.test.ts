@@ -139,3 +139,37 @@ describe("the format a bundle is written in", () => {
     ]);
   });
 });
+
+describe("the names of an app's files (APP-05)", () => {
+  const app = (path: string) => ({
+    kind: "app" as const,
+    schemaVersion: 1,
+    path: "portal",
+    ownership: "code" as const,
+    body: { title: "Portal", entry: path },
+  });
+  const check = (...paths: string[]) =>
+    checkBundleAssets({
+      formatVersion: 2,
+      manifests: [app("index.html")],
+      assets: ["index.html", ...paths].map((path) => ({
+        app: "portal",
+        path,
+        sha256: "0".repeat(64),
+        size: 1,
+        contentType: "text/plain",
+      })),
+    });
+
+  test("may begin with a dot or an underscore, below the top and for .well-known", () => {
+    expect(check("assets/_chunk.js", ".well-known/x", "_helpers-1a2b.js", "a/.hidden")).toEqual([]);
+  });
+
+  test("never be . or .., nor have a space, and the refusal says how to rename the file", () => {
+    for (const path of ["a/../b", "./x", "a b.png", "café.png", "_/x"]) {
+      expect(check(path).join(" "), path).toMatch(/portal \(app\):/);
+    }
+    expect(check("my logo.png")[0]).toContain('the file "my logo.png"');
+    expect(check("my logo.png")[0]).toContain("build.rollupOptions.output");
+  });
+});

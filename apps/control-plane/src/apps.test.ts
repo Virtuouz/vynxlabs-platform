@@ -46,6 +46,19 @@ const files: Record<string, { app: string; path: string; type: string; content: 
     type: "text/javascript",
     content: Buffer.from('console.log("orders");'),
   },
+  // Names a bundler or a site gives, which began with a letter or a digit before (APP-05).
+  chunk: {
+    app: "portal",
+    path: "assets/_commonjsHelpers-9f8e7d6c.js",
+    type: "text/javascript",
+    content: Buffer.from("export {};"),
+  },
+  wellKnown: {
+    app: "portal",
+    path: ".well-known/assetlinks.json",
+    type: "application/json",
+    content: Buffer.from("[]"),
+  },
   logo: {
     app: "portal",
     path: "logo-horizontal.svg",
@@ -265,7 +278,7 @@ describe("an app in a bundle", () => {
     const refused = await alice.post(`${ws()}/bundles`, bundle());
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("assets_missing");
-    expect(refused.body.errors).toHaveLength(5);
+    expect(refused.body.errors).toHaveLength(7);
 
     const wrong = await alice.put(`${ws()}/bundle-assets/${"0".repeat(64)}`, files.page?.content);
     expect(wrong.status).toBe(400);
@@ -323,7 +336,7 @@ describe("an app in a bundle", () => {
         path: "portal",
         title: "Orders",
         url: "http://localhost:8080/apps/acme/main/portal/",
-        files: 4,
+        files: 6,
         access: ["every end user"],
       },
       { path: "status", title: "Order status", access: ["anyone"] },
@@ -480,6 +493,12 @@ describe("serving by path, on the instance's own address", () => {
     expect((await staff.get("/apps/acme/main/portal/robots.txt")).headers["cache-control"]).toBe(
       "private, no-cache",
     );
+    expect((await staff.get("/apps/acme/main/portal/.well-known/assetlinks.json")).status).toBe(
+      200,
+    );
+    expect(
+      (await staff.get("/apps/acme/main/portal/assets/_commonjsHelpers-9f8e7d6c.js")).status,
+    ).toBe(200);
     // A name with a long word in it is not a hash: it may change at the next deploy (APP-04).
     expect(
       (await staff.get("/apps/acme/main/portal/logo-horizontal.svg")).headers["cache-control"],

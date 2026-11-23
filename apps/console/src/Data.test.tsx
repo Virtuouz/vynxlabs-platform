@@ -1583,3 +1583,107 @@ test("TAB-P9: Shift on a heading sorts by several columns, in the address and in
     "sort=total%2Cnumber",
   );
 });
+
+/** A table with a choice, a list, a reference, a day and a yes/no column, none of them filled in. */
+function openEmptyCells() {
+  const table = orders("ui");
+  const more = (name: string, type: string, extra: object = {}) => ({
+    name,
+    type,
+    required: false,
+    unique: false,
+    default: null,
+    references: null,
+    status: "active",
+    held: null,
+    ...extra,
+  });
+  (table.columns as unknown[]).push(
+    more("state", "enum", { values: [{ value: "open" }, { value: "closed", label: "Closed" }] }),
+    more("tags", "enum_list", { values: [{ value: "rush" }, { value: "gift" }] }),
+    more("customer", "reference", { references: "customers" }),
+    more("due", "date"),
+    more("paid", "boolean"),
+  );
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`GET /api/v1${root}/tables/customers`] = () => [200, { display: "name" }];
+  routes[`GET /api/v1${root}/rows/customers`] = () => [
+    200,
+    { items: [{ id: "c1", name: "Zelda Corp" }], nextCursor: null },
+  ];
+  const empty = { state: null, tags: null, customer: null, due: null, paid: null };
+  routes[`GET /api/v1${root}/rows/orders`] = () => [
+    200,
+    { items: [{ ...rows[0], ...empty }], nextCursor: null },
+  ];
+  routes[`PATCH /api/v1${root}/row/r1/orders`] = (body) => [
+    200,
+    { ...rows[0], ...empty, ...(body as object) },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+}
+/** The cell of a column in the first row. */
+async function firstRowCell(name: string) {
+  const grid = await screen.findByRole("grid");
+  await screen.findByText("A-1");
+  const heads = within(grid).getAllByRole("columnheader");
+  const at = heads.findIndex((head) => head.textContent?.startsWith(name));
+  return grid.querySelector(`[data-cell="1:${at}"]`) as HTMLElement;
+}
+const patched = () => calls.filter((call) => call.method === "PATCH").map((call) => call.body);
+
+test("TAB-P11 and TAB-31: an empty choice, list, reference or day opens its own control, and a yes/no goes round to empty", async () => {
+  openEmptyCells();
+  // A choice: a select of what it offers, and picking one saves it.
+  fireEvent.doubleClick(await firstRowCell("state"));
+  const choice = (await screen.findByLabelText("state")) as HTMLSelectElement;
+  expect(choice.tagName).toBe("SELECT");
+  expect([...choice.options].map((one) => one.textContent)).toEqual(["No value", "open", "Closed"]);
+  fireEvent.change(choice, { target: { value: "closed" } });
+  await waitFor(() => expect(patched()).toEqual([{ state: "closed" }]));
+  await waitFor(() => expect(screen.queryByLabelText("state")).toBeNull());
+
+  // A list, by Enter from the keyboard: the values to tick, in a dialog that Escape leaves.
+  const tags = await firstRowCell("tags");
+  fireEvent.focus(tags);
+  fireEvent.keyDown(tags, { key: "Enter" });
+  let dialog = await screen.findByRole("dialog", { name: "Change tags" });
+  const box = within(dialog).getByRole("combobox");
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: "gift" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(patched().at(-1)).toEqual({ tags: ["gift"] }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // A reference: the row is picked by its name, and the ID is never typed.
+  fireEvent.doubleClick(await firstRowCell("customer"));
+  dialog = await screen.findByRole("dialog", { name: "Change customer" });
+  const picker = within(dialog).getByRole("combobox");
+  fireEvent.click(picker);
+  fireEvent.keyDown(picker, { key: "ArrowDown" });
+  fireEvent.click(await screen.findByRole("option", { name: "Zelda Corp" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(patched().at(-1)).toEqual({ customer: "c1" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // A day: a date field, and Cancel leaves the cell as it was.
+  fireEvent.doubleClick(await firstRowCell("due"));
+  dialog = await screen.findByRole("dialog", { name: "Change due" });
+  expect(within(dialog).getByLabelText("due")).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(patched().length).toBe(3);
+
+  // A yes/no that may be empty goes round: yes, no, empty again.
+  const paid = await firstRowCell("paid");
+  fireEvent.focus(paid);
+  fireEvent.keyDown(paid, { key: "Enter" });
+  await waitFor(() => expect(patched().at(-1)).toEqual({ paid: true }));
+  await screen.findByText("Yes");
+  fireEvent.keyDown(paid, { key: "Enter" });
+  await waitFor(() => expect(patched().at(-1)).toEqual({ paid: false }));
+  await screen.findByText("No");
+  fireEvent.keyDown(paid, { key: "Enter" });
+  await waitFor(() => expect(patched().at(-1)).toEqual({ paid: null }));
+});

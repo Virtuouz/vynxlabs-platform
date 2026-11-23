@@ -13,6 +13,13 @@ export interface GridColumn {
   type: string;
   /** Lets a cell be changed in place. */
   editable?: boolean;
+  /**
+   * The grid asks `editor` for the control that changes this column's cell, in place of a box
+   * to type the raw value in. A cell the screen draws itself (a chip, a name) can then be changed too.
+   */
+  control?: boolean;
+  /** A yes/no cell can go back to having no value: it goes empty, yes, no, empty. */
+  clearable?: boolean;
   sortable?: boolean;
   filterable?: boolean;
 }
@@ -72,6 +79,18 @@ export interface GridProps<Row extends Record<string, unknown>> {
   filterErrors?: Record<string, string>;
   /** Saves one changed cell. A rejection's message is shown in the cell. */
   onEdit?: (row: Row, column: string, value: unknown) => Promise<unknown>;
+  /**
+   * The control that changes a cell of a column with `control`: a choice, a date, a row of
+   * another table. `save` stores the value and closes it, `cancel` closes it with nothing changed.
+   * Return undefined for the grid's own box.
+   */
+  editor?: (edit: {
+    row: Row;
+    column: GridColumn;
+    value: unknown;
+    save: (next: unknown) => Promise<void>;
+    cancel: () => void;
+  }) => ReactNode | undefined;
   /** Replaces how a cell is shown. Return undefined to keep the grid's own rendering. */
   cell?: (row: Row, column: GridColumn) => ReactNode | undefined;
   rowActions?: (row: Row) => ReactNode;
@@ -257,11 +276,13 @@ function EditableCell<Row extends Record<string, unknown>>({
   onEdit,
   editing,
   onEnd,
+  editor,
 }: {
   row: Row;
   column: GridColumn;
   shown: ReactNode;
   onEdit: NonNullable<GridProps<Row>["onEdit"]>;
+  editor?: GridProps<Row>["editor"];
   /** Set by a navigable grid, which decides when a cell is edited. */
   editing?: boolean;
   /** Called when editing ends; `back` is true when focus should return to the cell. */
@@ -299,7 +320,10 @@ function EditableCell<Row extends Record<string, unknown>>({
   const toggling = useRef<() => void>(() => {});
   toggling.current = () => {
     onEnd?.(false);
-    void save(value !== true);
+    // A cell that may be empty goes round: empty, yes, no, empty.
+    void save(
+      column.clearable ? (value === true ? false : value === false ? null : true) : value !== true,
+    );
   };
   const flipping = controlled && editing === true && column.type === "boolean";
   useEffect(() => {
@@ -326,6 +350,40 @@ function EditableCell<Row extends Record<string, unknown>>({
     );
   }
 
+  const control =
+    controlled && editing === true && column.control && editor
+      ? editor({
+          row,
+          column,
+          value,
+          save: async (next) => {
+            setBusy(true);
+            setError(undefined);
+            try {
+              await onEdit(row, column.name, next);
+              onEnd?.(true);
+            } catch (caught) {
+              setError((caught as Error).message);
+              throw caught;
+            } finally {
+              setBusy(false);
+            }
+          },
+          cancel: () => onEnd?.(true),
+        })
+      : undefined;
+  if (control !== undefined) {
+    return (
+      <span className="flex min-w-0 flex-col gap-0.5" aria-busy={busy || undefined}>
+        {control}
+        {error ? (
+          <span role="alert" className="text-meta text-danger">
+            {error}
+          </span>
+        ) : null}
+      </span>
+    );
+  }
   if (text === undefined && controlled) {
     return (
       <span className="flex min-w-0 flex-col gap-0.5">
@@ -502,7 +560,7 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
       return;
     }
     if (!row) return;
-    if (column?.editable && onEdit && props.cell?.(row, column) === undefined) {
+    if (column?.editable && onEdit && (column.control || props.cell?.(row, column) === undefined)) {
       setEditing(`${r}:${c}`);
       return;
     }
@@ -670,19 +728,24 @@ function NavigableGrid<Row extends Record<string, unknown>>(props: GridProps<Row
                           NUMERIC.has(column.type) ? "text-right tabular-nums" : ""
                         } ${lockFirst && index === 0 ? `sticky ${checking ? "left-8" : "left-0"} ${ground}` : ""}`}
                         onDoubleClick={() => {
-                          if (column.editable && onEdit && custom === undefined) {
+                          if (
+                            column.editable &&
+                            onEdit &&
+                            (column.control || custom === undefined)
+                          ) {
                             setActive({ r, c });
                             setEditing(here);
                           }
                         }}
                         {...cellProps(r, c)}
                       >
-                        {column.editable && onEdit && custom === undefined ? (
+                        {column.editable && onEdit && (column.control || custom === undefined) ? (
                           <EditableCell
                             row={row}
                             column={column}
                             shown={shown}
                             onEdit={onEdit}
+                            {...(props.editor ? { editor: props.editor } : {})}
                             editing={editing === here}
                             onEnd={(back) => {
                               setEditing(undefined);

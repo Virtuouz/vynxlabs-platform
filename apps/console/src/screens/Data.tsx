@@ -9,6 +9,7 @@ import {
   Grid,
   type GridColumn,
   type GridSort,
+  keepsKey,
   localWall,
   Menu,
   MoveButtons,
@@ -341,6 +342,8 @@ function RowsBrowser(
       description: column.description,
       type: column.type,
       editable: canChange && column.writable && column.type !== "file",
+      control: CELL_CONTROLS.has(column.type),
+      clearable: !column.required,
       sortable: !["json", "enum_list"].includes(column.type),
       filterable: !["json", "ARRAY"].includes(column.type),
     }));
@@ -549,6 +552,18 @@ function RowsBrowser(
               setBack([]);
               setUrl({ sort: nextSort(sort, column, additive), ...toFirst });
             }}
+            editor={({ column: edited, value, save, cancel }) => {
+              const meta = columns.find((one) => one.name === edited.name);
+              return meta && CELL_CONTROLS.has(meta.type) ? (
+                <CellControl
+                  column={meta}
+                  value={value}
+                  rowsPath={props.rowsPath}
+                  save={save}
+                  cancel={cancel}
+                />
+              ) : undefined;
+            }}
             filters={typed}
             filterErrors={filterErrors}
             onFilter={(column, text) => {
@@ -710,6 +725,132 @@ const listOf = (text: string) =>
     .split(",")
     .map((one) => one.trim())
     .filter(Boolean);
+
+/** The types whose cell is changed in the grid by a control of its own, not by typing the raw value. */
+const CELL_CONTROLS = new Set(["enum", "enum_list", "reference", "date", "timestamp"]);
+
+/**
+ * The control that changes one cell of the grid, where a value is chosen and not typed: a list's
+ * value in a select, and a several-valued list, a row of another table, a day or a moment in a
+ * small dialog that holds the field the row's inspector has. Escape puts the cell back.
+ */
+function CellControl({
+  column,
+  value,
+  rowsPath,
+  save,
+  cancel,
+}: {
+  column: RowColumn;
+  value: unknown;
+  rowsPath: string;
+  save: (next: unknown) => Promise<void>;
+  cancel: () => void;
+}) {
+  const held = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
+  const [text, setText] = useState(
+    column.type === "enum_list"
+      ? held.join(",")
+      : column.type === "timestamp" && typeof value === "string"
+        ? localWall(value, "T")
+        : value == null
+          ? ""
+          : String(value),
+  );
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  if (column.type === "enum") {
+    return (
+      <select
+        // biome-ignore lint/a11y/noAutofocus: the person just asked to change this cell
+        autoFocus
+        aria-label={column.name}
+        value={text}
+        disabled={busy}
+        className="-mx-1.5 h-7 w-[calc(100%+0.75rem)] min-w-24 rounded-inner border border-action bg-surface px-1.5 text-ink"
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          setText(next);
+          setBusy(true);
+          void save(next === "" ? null : next)
+            .catch(() => undefined)
+            .finally(() => setBusy(false));
+        }}
+        onBlur={cancel}
+        onKeyDown={(event) => {
+          // The grid's own keys are not for a cell being changed; the page's go on.
+          if (keepsKey(event)) event.stopPropagation();
+          if (event.key === "Escape") cancel();
+        }}
+      >
+        {valueOptions(column, held[0] ?? "").map((one) => (
+          <option key={one.value} value={one.value}>
+            {one.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  const offered = valueOptions(column, "").slice(1);
+  const options = [
+    ...offered,
+    ...held
+      .filter((one) => !offered.some((known) => known.value === one))
+      .map((one) => ({ value: one, label: `${one} (no longer offered)` })),
+  ];
+  return (
+    // A press inside the dialog bubbles through the portal to the row, which would choose it.
+    // biome-ignore lint/a11y/noStaticElementInteractions: only keeps the press from reaching the row behind the dialog.
+    // biome-ignore lint/a11y/useKeyWithClickEvents: the dialog's own controls take the keys.
+    <span onClick={(event) => event.stopPropagation()}>
+      <Dialog open onClose={cancel} title={`Change ${column.name}`}>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setError(undefined);
+            setBusy(true);
+            try {
+              await save(parseValue(column.type, text));
+            } catch (caught) {
+              setError(failureText(caught));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {column.type === "enum_list" ? (
+            <MultiSelectField
+              label={column.name}
+              inline
+              value={listOf(text)}
+              options={options}
+              onChange={(next) => setText(next.join(","))}
+            />
+          ) : column.type === "reference" ? (
+            <ReferenceField column={column} rowsPath={rowsPath} value={text} onChange={setText} />
+          ) : (
+            <DateField
+              name={column.name}
+              label={column.name}
+              value={text}
+              required={false}
+              {...(column.type === "timestamp" ? { withTime: true, hint: "Your time zone." } : {})}
+              onChange={setText}
+            />
+          )}
+          {error ? <Notice tone="danger">{error}</Notice> : null}
+          <div className="flex justify-end gap-2">
+            <Button onClick={cancel}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={busy}>
+              Save
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+    </span>
+  );
+}
 
 /** A yes/no column: one control in every form, a select, since a typed word is only refused at save. */
 function BooleanField({

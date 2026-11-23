@@ -73,6 +73,8 @@ test("an address says which area and screen it is, and whether it is an editor",
     section: "flows",
     editor: true,
   });
+  // A dashboard looked at has its section's help, not the editor's.
+  expect(whereIs("/t/t1/workspaces/w1/dashboards/d1", false).help).toBe("data-dashboards");
   // A table's own screen fills the window; the list of tables is a page.
   expect(whereIs("/t/t1/workspaces/w1/tables/orders", false).workbench).toBe(true);
   expect(whereIs("/t/t1/workspaces/w1/tables", false).workbench).toBe(false);

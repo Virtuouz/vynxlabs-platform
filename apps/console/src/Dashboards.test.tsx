@@ -421,3 +421,17 @@ test("a widget limited to a group is drawn to a member in that group, and not to
   await new Promise((resolve) => setTimeout(resolve, 100));
   await waitFor(() => expect(screen.queryByText("Billing only.")).toBeNull());
 });
+
+test("F1 on a dashboard that is looked at opens the dashboards' help, and the editor's only while it is edited", async () => {
+  const { resetHelp, getHelpTopic } = await import("./help/store.ts");
+  resetHelp();
+  routes[`GET ${api}/dashboards/d1`] = () => [200, mine];
+  const viewing = show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByLabelText("Held", { selector: "section" });
+  expect(getHelpTopic()).not.toBe("data-dashboards-editor");
+  viewing.unmount();
+  history.replaceState(null, "", "/?edit=1");
+  show(<DashboardView root={root} link="/t/t1/workspaces/w1" id="d1" />);
+  await screen.findByRole("button", { name: "Add to page" });
+  expect(getHelpTopic()).toBe("data-dashboards-editor");
+});

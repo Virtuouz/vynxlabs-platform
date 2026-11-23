@@ -121,3 +121,20 @@ test("a prompt with a submit stays open on a refusal, shows it on the field, and
   await press("Save");
   expect(await asked.answer).toBe("reports/fees2");
 });
+
+test("w-data 4: a prompt says its limit at the field and refuses a longer answer, never cutting it", async () => {
+  mount();
+  const asked = await asking((d) =>
+    d.prompt({ title: "New", label: "Name", action: "Make", maxLength: 5 }),
+  );
+  const box = (await screen.findByLabelText("Name")) as HTMLInputElement;
+  expect(box.getAttribute("maxlength")).toBeNull();
+  expect((await screen.findByRole("dialog")).textContent).toContain("Up to 5 characters.");
+  fireEvent.change(box, { target: { value: "abcdefg" } });
+  expect(box.value).toBe("abcdefg");
+  expect((screen.getByRole("dialog").textContent ?? "")).toContain("Use at most 5 characters. This is 7.");
+  expect((screen.getByRole("button", { name: "Make" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.change(box, { target: { value: "abcde" } });
+  await press("Make");
+  expect(await asked.answer).toBe("abcde");
+});

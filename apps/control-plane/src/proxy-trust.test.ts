@@ -1,5 +1,7 @@
 import { newId } from "@volvel/db";
+import Fastify from "fastify";
 import { afterAll, describe, expect, test } from "vitest";
+import { trustProxy } from "./app.js";
 import { parseTrustedProxies } from "./config.js";
 import { startTestApp, type TestApp } from "./testing.js";
 
@@ -103,5 +105,35 @@ describe("TRUSTED_PROXIES", () => {
     expect(parseTrustedProxies("11")).toMatch(/from 0 to 10/);
     expect(parseTrustedProxies("10.0.0.0/33")).toMatch(/not a network: 10.0.0.0\/33/);
     expect(parseTrustedProxies("proxy.internal")).toMatch(/not a network/);
+  });
+});
+
+describe("X-Forwarded-Host is believed only from a trusted proxy", () => {
+  /** What the instance decides a request's place by: `request.host`, as the front door reads it. */
+  async function hostSeen(
+    trusted: number | string[],
+    peer: string,
+    headers: Record<string, string>,
+  ) {
+    const app = Fastify({ trustProxy: trustProxy(trusted) });
+    app.get("/", async (request) => ({ host: request.host, ip: request.ip }));
+    const response = await app.inject({ url: "/", remoteAddress: peer, headers });
+    await app.close();
+    return response.json() as { host: string; ip: string };
+  }
+  const forged = { host: "volvel.example.com", "x-forwarded-host": "apps.example.com" };
+
+  test("with none trusted, a caller's header does not move the request to another address", async () => {
+    expect((await hostSeen(0, "203.0.113.5", forged)).host).toBe("volvel.example.com");
+  });
+
+  test("with networks, only a peer inside them is believed", async () => {
+    const networks = ["10.0.0.0/8"];
+    expect((await hostSeen(networks, "203.0.113.5", forged)).host).toBe("volvel.example.com");
+    expect((await hostSeen(networks, "10.1.2.3", forged)).host).toBe("apps.example.com");
+  });
+
+  test("with one proxy, the peer is the proxy and its header is believed", async () => {
+    expect((await hostSeen(1, "10.1.2.3", forged)).host).toBe("apps.example.com");
   });
 });

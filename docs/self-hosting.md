@@ -55,9 +55,9 @@ The database is created and migrated on the first start. Open the address, sign 
 
 ### Using your own Postgres or object store
 
-Leave the bundled services out and point the control plane at yours with `DATABASE_URL`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_FORCE_PATH_STYLE`.
+In the compose file, the bundled database and object store are the profiles `postgres` and `objectstore`, which `.env` names in `COMPOSE_PROFILES`. Take one out of that line and point the control plane at yours with `DATABASE_URL`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_FORCE_PATH_STYLE`. For AWS S3 set `S3_ENDPOINT=` to nothing.
 
-The Postgres user must own its database and be allowed to create roles (`CREATEROLE`). It does not need to be a superuser. The platform makes one extra role per database, which it signs in as for every request for a tenant's rows. That role owns nothing, so row policies apply to it, and nothing run under it can become the owner. Its password is derived from the master key and is never stored.
+The Postgres user must own its database and be allowed to create roles (`CREATEROLE`). It does not need to be a superuser. The platform makes one extra role per database, which it signs in as for every request for a tenant's rows. That role owns nothing, so row policies apply to it, and nothing run under it can become the owner. Its password is derived from a secret sealed in the database (the first master key the instance had) and is never stored.
 
 A managed Postgres with point-in-time recovery is the better choice for anything that matters.
 
@@ -100,7 +100,7 @@ The data role's password does not change in a rotation: it is made from a secret
 
 ## Retention
 
-History is removed once it is older than its period. A pass runs every ten minutes, on one replica at a time, and removes a little at a time so that nothing waits on it.
+History is removed once it is older than its period. A pass runs every ten minutes, on one replica at a time, and removes a little at a time in small batches. A background step that waits, such as a data source that does not answer, delays only itself: each step runs on its own, and one still going is not started again.
 
 | Kind | Default | Variable | Shortest | Longest |
 | --- | --- | --- | --- | --- |
@@ -212,7 +212,7 @@ This is the mode for development, and for a single site where only the operator 
 | `MANAGED_WORKER_USER` | `own` | In `process` mode: `own` runs workers as their own user; `same` as the control plane's, for every tenant, by which you say everyone who writes code works for you. Only for development, or a site where that is so |
 | `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID` | `10001` | The user and group workers run as. The worker host reads them too |
 
-Rate limits on webhooks, sign-ins and guests are counted in the database, so they hold across every replica. Each tenant has at most one managed worker at a time, however many replicas or worker hosts run.
+Rate limits on webhooks, sign-ins (members' and end users'), guests' pages, forms, votes and approval pages are counted in the database, so they hold across every replica. Each tenant has at most one managed worker at a time, however many replicas or worker hosts run.
 
 ### Sizing: what one machine runs at once
 
@@ -229,7 +229,7 @@ On top of the slots:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `RUN_SLOTS` | From memory: one per 160 MB past the first 512 MB, at least 2 | Scripts running at once on this machine. 1 GB gives 3, 2 GB gives 9, 4 GB gives 22 |
+| `RUN_SLOTS` | From memory: one per 160 MB past the first 512 MB, at least 2 | Scripts running at once on this machine. 1 GB gives 3, 2 GB gives 9, 4 GB gives 22, when that much memory is reported: a 1 GB machine reports a little less, and gives 2 or 3. A container's own memory limit counts, not the host's memory |
 | `RUN_MEMORY_FLOOR_MB` | A tenth of memory, at least 128 | Free memory below which no worker here takes more work. 0 turns the check off |
 | `MANAGED_WORKERS_MAX` | Twice the run slots | In `process` mode, managed workers alive at once. A worker waiting for a slot costs little; one per tenant with work is what lets tenants take turns |
 
@@ -256,7 +256,7 @@ Every data request has a time limit. Past it, the statement is stopped and the r
 | `DATA_STATEMENT_TIMEOUT_MS` | 15000 | How long one data request may take |
 | `SQL_STATEMENT_TIMEOUT_MS` | 15000 | How long one query written in SQL may run before it is stopped |
 
-Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 2` connections; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `volvel_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
+Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 3` connections (2 more for the queue, 1 to listen for changes to runs), and a tenant on a dedicated database or a data source adds its own: 5 and 5 for each replica for a dedicated database, 4 for a data source; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `volvel_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
 
 ### When the database takes no writes
 
@@ -305,6 +305,8 @@ EGRESS_ALLOW=10.20.0.0/16,git.internal,192.168.1.40
 ```
 
 A name in the list is allowed whatever it resolves to. A network is allowed for any name that resolves into it.
+
+`EGRESS_ALLOW` is for what the instance itself reaches. It does not open anything for a tenant's scripts. What a script may reach is held by the worker host's firewall, which refuses every private, loopback and link-local address except the control plane and the name servers. To let scripts reach an API inside your network, list it on the worker host in `WORKER_EGRESS_ALLOW`, also comma-separated, as networks and host names (names are looked up when the host starts). It is empty unless you set it.
 
 ### OAuth connections
 
@@ -542,7 +544,10 @@ What waits, read from the database at each scrape, so every replica says the sam
 | `volvel_workspace_queue_oldest_seconds{tenant,workspace}` | The oldest wait, by workspace |
 | `volvel_flow_runs{state}` | Flow runs in progress: `running`, `waiting_approval`, `waiting_time` |
 | `volvel_tasks_queued{kind}` | Tasks waiting for a worker |
-| `volvel_workers{kind}` | Workers heard from in the last minute, `managed` or `standalone` |
+| `volvel_database_read_only` | 1 while the database takes no writes |
+| `volvel_memory_total_bytes`, `volvel_memory_available_bytes` | This replica's machine's memory, held to its container's limit |
+| `volvel_db_pool{pool,state}`, `volvel_database_size_bytes`, `volvel_machine_running{machine}` | This replica's connections, the database's size, and the scripts running on each machine |
+| `volvel_workers{kind}` | Workers heard from in the last 90 seconds, `managed` or `standalone` |
 
 What happened, counted by the replica that saw it. Each replica answers for its own; add them up across replicas, as Prometheus does with `sum`:
 

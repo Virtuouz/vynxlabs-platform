@@ -95,7 +95,7 @@ export interface AppOptions {
 }
 
 /** What Fastify is given for `TRUSTED_PROXIES`: a count of hops from this server, or networks. */
-function trustProxy(trusted: number | string[]) {
+export function trustProxy(trusted: number | string[]) {
   return typeof trusted === "number" ? (_address: string, hop: number) => hop < trusted : trusted;
 }
 

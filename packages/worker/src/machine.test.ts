@@ -6,6 +6,7 @@ import {
   formatMachine,
   type MachineProbe,
   MemoryGuard,
+  memoryOf,
   parseMachine,
 } from "./machine.js";
 
@@ -92,5 +93,47 @@ describe("whether a process may signal other users' processes", () => {
     expect(canSignalOtherUsers(0, without)).toBe(false);
     expect(canSignalOtherUsers(0, withKill)).toBe(true);
     expect(canSignalOtherUsers(1000, withKill)).toBe(false);
+  });
+});
+
+describe("memory as a container has it (HOST-24)", () => {
+  const meminfo = "MemTotal: 16339968 kB\nMemAvailable: 12000000 kB\n";
+  const files = (extra: Record<string, string>) => (path: string) =>
+    path === "/proc/meminfo" ? meminfo : extra[path];
+
+  it("is the machine's when nothing holds the container", () => {
+    const total = 16339968 / 1024;
+    expect(memoryOf(files({}))?.totalMb).toBeCloseTo(total);
+    expect(memoryOf(files({ "/sys/fs/cgroup/memory.max": "max\n" }))?.totalMb).toBeCloseTo(total);
+    expect(memoryOf(() => undefined)).toBeUndefined();
+  });
+
+  it("is the limit of a container held to 1 GB, less what it holds (cgroup v2)", () => {
+    const memory = memoryOf(
+      files({
+        "/sys/fs/cgroup/memory.max": `${1024 * 1024 * 1024}\n`,
+        "/sys/fs/cgroup/memory.current": `${300 * 1024 * 1024}\n`,
+        "/sys/fs/cgroup/memory.stat": `anon 1\ninactive_file ${100 * 1024 * 1024}\n`,
+      }),
+    );
+    expect(memory?.totalMb).toBe(1024);
+    expect(memory?.availableMb).toBe(824);
+    // Slots and the floor follow it: three, not ninety-six.
+    expect(defaultSlots(memory?.totalMb ?? 0)).toBe(3);
+  });
+
+  it("reads the older cgroup layout, and ignores a limit as large as the machine", () => {
+    const old = memoryOf(
+      files({
+        "/sys/fs/cgroup/memory/memory.limit_in_bytes": `${2048 * 1024 * 1024}`,
+        "/sys/fs/cgroup/memory/memory.usage_in_bytes": `${512 * 1024 * 1024}`,
+      }),
+    );
+    expect(old?.totalMb).toBe(2048);
+    expect(old?.availableMb).toBe(1536);
+    const unlimited = memoryOf(
+      files({ "/sys/fs/cgroup/memory/memory.limit_in_bytes": "9223372036854771712" }),
+    );
+    expect(unlimited?.totalMb).toBeCloseTo(16339968 / 1024);
   });
 });

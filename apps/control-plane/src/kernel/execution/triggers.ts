@@ -1224,9 +1224,10 @@ export async function fireScheduleNow(
         "The source is still looking from the last time. Try again when it has finished.",
       );
     }
+    await markFired(trx, state);
     return { kind: "script" as const, id: made.run.id };
   }
-  return startTarget(kernel, trx, state, {
+  const started = await startTarget(kernel, trx, state, {
     input: config.input ?? {},
     trigger: {
       type: "schedule",
@@ -1237,6 +1238,18 @@ export async function fireScheduleNow(
       },
     },
   });
+  await markFired(trx, state);
+  return started;
+}
+
+/** Firing a schedule now is a firing: "Last fired" says when, as for its own time. */
+async function markFired(trx: Trx, state: { resource_id: string; node_id: string }) {
+  await trx
+    .updateTable("trigger_state")
+    .set({ last_fired_at: new Date() })
+    .where("resource_id", "=", state.resource_id)
+    .where("node_id", "=", state.node_id)
+    .execute();
 }
 
 /** The next times a schedule fires, as the scheduler works them out. Throws on a bad cron. */

@@ -411,7 +411,7 @@ export function TriggersWorkbench({
         ) : (
           <span
             className="text-ink-subtle"
-            title="This trigger has not started anything yet. Runs started by hand are not counted."
+            title="This trigger has not started anything yet."
           >
             Not fired yet
           </span>
@@ -719,7 +719,7 @@ export function TriggersWorkbench({
                         value: open.lastFiredAt ? (
                           <Time value={open.lastFiredAt} />
                         ) : (
-                          "Not fired yet. Runs started by hand are not counted."
+                          "Not fired yet."
                         ),
                       },
                     ]}

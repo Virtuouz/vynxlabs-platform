@@ -201,3 +201,10 @@ test("a schedule that is opened is remembered for the palette's Recent list", as
     ]),
   );
 });
+
+test("a trigger not fired yet does not say that runs by hand are not counted (Fire now is a firing)", async () => {
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  await screen.findByRole("link", { name: "reminders/send" });
+  expect(document.body.innerHTML).not.toMatch(/started by hand/);
+  expect(screen.getAllByText("Not fired yet").length).toBeGreaterThan(0);
+});

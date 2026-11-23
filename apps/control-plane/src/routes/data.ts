@@ -982,7 +982,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Change some of a row's values",
           description:
-            "Only the columns sent change. The values are checked against the table's columns and its policy. Audited.",
+            "Only the columns sent change. The values are checked against the table's columns and its policy. Not written to the audit log: rows are business data, and each change is announced as a `platform/row-changed` event.",
           tags: ["data"],
           params: RowParams,
           body: AnyObject,
@@ -1140,7 +1140,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Delete a row",
           description:
-            "Deletes the row with the given key, where the table's policy lets the caller. Audited. " +
+            "Deletes the row with the given key, where the table's policy lets the caller. Not written to the audit log: rows are business data, and each change is announced as a `platform/row-changed` event. " +
             "Rows that a reference's `cascade` or `set_null` rule deletes or empties with it are " +
             "not announced as changes; only this row is.",
           tags: ["data"],

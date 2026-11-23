@@ -674,7 +674,7 @@ function WorkspaceDetail({
         <ConnectionPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
       ) : tab === "connections" ? (
         <div className="flex flex-col gap-8">
-          <Connections root={root} />
+          <Connections root={root} production={workspace.data.type === "production"} />
           <ConnectionGroups root={root} />
         </div>
       ) : tab === "variables" && rest ? (

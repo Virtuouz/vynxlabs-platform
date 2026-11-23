@@ -269,26 +269,27 @@ describe("a source's stored password", () => {
     ).toBe(true);
   });
 
-  test("is not kept for another host, port or user, or for a connection no longer encrypted", async () => {
+  test("is dropped for another host, port or user, or a connection no longer encrypted", async () => {
+    const held = async () =>
+      (await alice.get(`${ws()}/data-source-bindings`)).body.items.find(
+        (row: Any) => row.path === "erp",
+      ).hasPassword;
+    const restore = { config: { ...sourceConfig, ssl: true }, password: sourcePassword };
     for (const changed of [{ host: "db.other.example" }, { port: 5999 }, { user: "someone" }]) {
-      const answer = await put({ config: { ...sourceConfig, ...changed } });
-      expect(answer.status, JSON.stringify(changed)).toBe(400);
-      expect(answer.body.errors).toEqual([
-        expect.objectContaining({ path: "/password", message: expect.stringContaining("again") }),
-      ]);
+      expect((await put(restore)).status).toBe(204);
+      expect(await held()).toBe(true);
+      const answer = await put({ config: { ...sourceConfig, ssl: true, ...changed } });
+      expect(answer.status, JSON.stringify(changed)).toBe(204);
+      expect(await held(), JSON.stringify(changed)).toBe(false);
     }
     // Typed again, it goes with the new address.
-    expect(
-      (await put({ config: { ...sourceConfig, port: 5999 }, password: "typed-again" })).status,
-    ).toBe(204);
-    expect(
-      (await put({ config: { ...sourceConfig, ssl: true }, password: sourcePassword })).status,
-    ).toBe(204);
-    expect((await put({ config: { ...sourceConfig, ssl: false } })).status).toBe(400);
-    // Cleared, nothing is left to go anywhere.
-    expect(
-      (await put({ config: { ...sourceConfig, host: "db.other.example" }, password: null })).status,
-    ).toBe(204);
+    const typed = { config: { ...sourceConfig, port: 5999 }, password: "typed-again" };
+    expect((await put(typed)).status).toBe(204);
+    expect(await held()).toBe(true);
+    // Encryption turned off sends it nowhere it was not given for.
+    expect((await put(restore)).status).toBe(204);
+    expect((await put({ config: { ...sourceConfig, ssl: false } })).status).toBe(204);
+    expect(await held()).toBe(false);
   });
 });
 

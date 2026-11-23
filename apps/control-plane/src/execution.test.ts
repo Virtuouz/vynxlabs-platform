@@ -575,6 +575,7 @@ describe("running", () => {
         default: "5",
         value: "80",
         updatedAt: expect.any(String),
+        arrives: false,
         draft: null,
       },
     ]);

@@ -17,6 +17,7 @@ import { badRequest, HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { type BindingName, decryptFor, encryptFor } from "./bindings.js";
 import { BUILTIN_CONFIG_SCHEMAS } from "./connectors.js";
+import { openRow, sealRow } from "./sealed.js";
 
 /** How long a member has to agree at the provider and come back. */
 export const STATE_MINUTES = 10;
@@ -92,9 +93,7 @@ export class TokenRefused extends Error {
   }
 }
 
-const tokensName = (id: BindingName) => `connection-oauth:${id.path}`;
 const stateName = (stateId: string) => `connection-oauth-state:${stateId}`;
-const secretName = (id: BindingName) => `connection:${id.path}`;
 
 /** The binding, checked to be an OAuth one that can be authorized. */
 async function oauthBinding(kernel: Kernel, db: Db | Trx, id: BindingName) {
@@ -114,7 +113,14 @@ async function oauthBinding(kernel: Kernel, db: Db | Trx, id: BindingName) {
     ...row,
     config: row.config as unknown as OAuth2Config,
     secret: row.credential
-      ? await decryptFor(kernel, db, id.tenantId, id.workspaceId, secretName(id), row.credential)
+      ? await openRow(
+          kernel,
+          db,
+          "connection",
+          { tenantId: id.tenantId, workspaceId: id.workspaceId, rowId: row.id, path: id.path },
+          row.credential,
+          "client secret",
+        )
       : undefined,
   };
 }
@@ -311,12 +317,11 @@ async function storeTokens(
   await trx
     .updateTable("connection_binding")
     .set({
-      oauth_tokens: await encryptFor(
+      oauth_tokens: await sealRow(
         kernel,
         trx,
-        id.tenantId,
-        id.workspaceId,
-        tokensName(id),
+        "connection-oauth",
+        { tenantId: id.tenantId, workspaceId: id.workspaceId, rowId: bindingId, path: id.path },
         JSON.stringify(tokens),
       ),
       oauth: JSON.stringify(oauth),
@@ -428,13 +433,13 @@ export async function accessToken(
       );
     }
     const tokens = JSON.parse(
-      await decryptFor(
+      await openRow(
         kernel,
         trx,
-        id.tenantId,
-        id.workspaceId,
-        tokensName(id),
+        "connection-oauth",
+        { tenantId: id.tenantId, workspaceId: id.workspaceId, rowId: binding.id, path: id.path },
         binding.oauth_tokens,
+        "connection",
       ),
     ) as Tokens;
     const now = Date.now();

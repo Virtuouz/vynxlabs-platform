@@ -281,3 +281,32 @@ test("back from the provider, the connection's sheet opens again and tests it", 
   // The address no longer says it came back.
   await waitFor(() => expect(window.location.search).toBe(""));
 });
+
+test("production lists what the next promotion brings, sets it up as its own kind, and never drafts", async () => {
+  rows = [
+    row({
+      path: "mail",
+      connector: "smtp",
+      defined: false,
+      arrives: true,
+      bound: false,
+      config: null,
+      configSchema: smtp,
+      hasCredential: false,
+    }),
+  ];
+  history.replaceState(null, "", "/t/t1/workspaces/w1/connections?setup=mail");
+  show(<Connections root={root} production />);
+  // The address of a refused promotion's entry opens it.
+  const sheet = await screen.findByRole("dialog");
+  expect(within(sheet).getByLabelText("Server")).toBeTruthy();
+  expect(within(sheet).queryByText("A new connection…")).toBeNull();
+  fireEvent.change(within(sheet).getByLabelText("Server"), { target: { value: "smtp.acme.test" } });
+  fireEvent.change(within(sheet).getByLabelText("From"), { target: { value: "ops@acme.test" } });
+  fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(put("/connection-bindings/mail")).toBeTruthy());
+  expect(put("/drafts/mail")).toBeUndefined();
+  expect(put("/connection-bindings/mail")?.body).toMatchObject({
+    config: { host: "smtp.acme.test", from: "ops@acme.test" },
+  });
+});

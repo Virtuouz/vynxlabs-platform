@@ -2,8 +2,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { newId, sql } from "@volvel/db";
 import { type Actor, type Audit, mutate, type Trx } from "../audit.js";
 import { loadCatalog, reconcileReferences, workspaceSchema } from "../data/apply.js";
-import { bindSource, credentialName as sourceCredentialName } from "../data/sources.js";
-import { bindConnection, decryptFor, readConnection } from "../execution/bindings.js";
+import { bindSource, readSourcePassword } from "../data/sources.js";
+import { bindConnection, readConnection } from "../execution/bindings.js";
 import { deployBundle, order } from "../execution/deploy.js";
 import { adoptBundle } from "../execution/promote.js";
 import type { WorkspaceRef } from "../http.js";
@@ -97,20 +97,16 @@ async function copyBindings(
 
   const sources = await trx
     .selectFrom("data_source_binding")
-    .select(["path", "config", "credential"])
+    .select(["id", "path", "config", "credential"])
     .where("workspace_id", "=", source.id)
     .execute();
   for (const bound of sources) {
-    const password = bound.credential
-      ? await decryptFor(
-          kernel,
-          trx,
-          source.tenantId,
-          source.id,
-          sourceCredentialName(bound.path),
-          bound.credential,
-        )
-      : null;
+    const password = await readSourcePassword(
+      kernel,
+      trx,
+      { tenantId: source.tenantId, workspaceId: source.id, path: bound.path },
+      bound,
+    );
     await bindSource(
       kernel,
       trx,
@@ -328,7 +324,7 @@ async function copyWorkspace(
   const made = (
     await trx
       .selectFrom("resource")
-      .select(["path", "kind", "schema_version", "body"])
+      .select(["path", "kind", "key", "title", "meta", "schema_version", "body"])
       .where("workspace_id", "=", source.id)
       .where("ownership", "=", "ui")
       .execute()
@@ -337,6 +333,10 @@ async function copyWorkspace(
     await putResource(kernel, trx, audit, target, {
       path: resource.path,
       kind: resource.kind,
+      // Its identity and what people read come along: a later deploy or promotion matches by key.
+      key: resource.key,
+      title: resource.title,
+      meta: resource.meta,
       schemaVersion: resource.schema_version,
       ownership: "ui",
       body: resource.body,

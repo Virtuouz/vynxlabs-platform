@@ -11,6 +11,7 @@ import { Type } from "typebox";
 import { keepConsoleManaged } from "../kernel/authoring.js";
 import { forgetHealth } from "../kernel/data/health.js";
 import { badRequest, HttpError, notFound } from "../kernel/errors.js";
+import { arrivingManifests } from "../kernel/execution/arriving.js";
 import { bindConnection, bindGroupMember } from "../kernel/execution/bindings.js";
 import {
   AuthorizationRefused,
@@ -382,7 +383,8 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
      *
      * A connection is bound before the bundle that declares it is deployed, so
      * what it is declared as is looked for where it may be: among what is
-     * deployed, then among the drafts, then in the bundles uploaded to the
+     * deployed, then among the drafts, then in the bundles that arrive with the
+     * next promotion, then in the bundles uploaded to the
      * workspace, newest first. One that nothing declares is taken to be HTTP,
      * which is what a connection is unless it says otherwise. A deploy checks
      * every binding again against the bundle it activates.
@@ -424,6 +426,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           : { name, connectors: rows.filter((row) => row.kind === "connector") };
       };
       let found = from(deployed) ?? from([...drafted, ...deployed]);
+      if (!found) {
+        // What the next promotion brings: production is set up for it before it arrives.
+        const arriving = await arrivingManifests(kernel, db, workspaceId);
+        found = from([...arriving, ...deployed]);
+      }
       if (!found) {
         const uploaded = await db
           .selectFrom("bundle")
@@ -2095,6 +2102,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       defined: Type.Boolean({
         description: "Whether a deployed resource declares this connection.",
       }),
+      arrives: Type.Boolean({
+        description:
+          "Declared by a workspace linked to this one, and not deployed here yet: it arrives " +
+          "with the next promotion, and can be set up here before.",
+      }),
       bound: Type.Boolean(),
       config: Type.Union([AnyObject, Type.Null()]),
       configSchema: Type.Object(
@@ -2174,14 +2186,25 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("workspace_id", "=", params.w)
         .where("kind", "=", "connection")
         .execute();
-      const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
-      const connectors = await deployedConnectors(params.w);
+      // What the next promotion brings, which production is set up for before it arrives.
+      const arriving = await arrivingManifests(kernel, db, params.w);
+      const arrives = arriving.filter((one) => one.kind === "connection");
+      const paths = [
+        ...new Set([...definitions, ...bindings, ...arrives].map((row) => row.path)),
+      ].sort();
+      const connectors = [
+        ...(await deployedConnectors(params.w)),
+        ...arriving
+          .filter((one) => one.kind === "connector")
+          .map((one) => ({ path: one.path, body: one.body })),
+      ];
       type Declared = { connector?: string; description?: string } | undefined;
       return {
         items: paths.map((path) => {
           const deployed = definitions.find((row) => row.path === path)?.body as Declared;
+          const coming = arrives.find((row) => row.path === path)?.body as Declared;
           const definition =
-            deployed ?? (drafted.find((row) => row.path === path)?.body as Declared);
+            deployed ?? (drafted.find((row) => row.path === path)?.body as Declared) ?? coming;
           const binding = bindings.find((row) => row.path === path);
           const checked = health.find((row) => row.path === path);
           const connector = definition?.connector ?? "http";
@@ -2190,6 +2213,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             connector,
             description: definition?.description ?? "",
             defined: deployed !== undefined,
+            arrives: deployed === undefined && coming !== undefined,
             bound: binding !== undefined,
             config: binding?.config ?? null,
             configSchema: (connectorSchema(connector, connectors) ??
@@ -2809,15 +2833,25 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const fresh = drafts.filter(
         (draft) => !draft.deleted && !definitions.some((row) => row.path === draft.path),
       );
+      // A variable the next promotion brings, which production gives a value before it arrives.
+      const arrives = (await arrivingManifests(kernel, db, params.w)).filter(
+        (one) =>
+          one.kind === "variable" &&
+          !definitions.some((row) => row.path === one.path) &&
+          !drafts.some((row) => row.path === one.path),
+      );
       const paths = [
-        ...new Set([...definitions, ...values, ...fresh].map((row) => row.path)),
+        ...new Set([...definitions, ...values, ...fresh, ...arrives].map((row) => row.path)),
       ].sort();
       return {
         items: paths.map((path) => {
           const drafted = drafts.find((row) => row.path === path);
           const isNew = fresh.some((row) => row.path === path);
+          const coming = arrives.find((row) => row.path === path);
           const definition = (
-            isNew ? drafted?.body : definitions.find((row) => row.path === path)?.body
+            isNew
+              ? drafted?.body
+              : (definitions.find((row) => row.path === path)?.body ?? coming?.body)
           ) as { description?: string; default?: string } | undefined;
           const draft: "new" | "changed" | "removed" | null = isNew
             ? "new"
@@ -2828,6 +2862,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               : null;
           return {
             draft,
+            arrives: coming !== undefined,
             path,
             description: definition?.description ?? "",
             default: definition?.default ?? null,
@@ -2855,6 +2890,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   default: NullableString,
                   value: NullableString,
                   updatedAt: Type.Optional(NullableTime),
+                  arrives: Type.Optional(
+                    Type.Boolean({
+                      description:
+                        "Declared by a workspace linked to this one, and not deployed here yet: " +
+                        "it arrives with the next promotion, and takes a value here before.",
+                    }),
+                  ),
                   draft: Type.Optional(
                     Type.Union(
                       [

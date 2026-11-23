@@ -17,6 +17,7 @@ import {
 } from "../kit/layout.tsx";
 import { Junction } from "../kit/motifs.tsx";
 import { kindName, objectHref } from "../kit/objects.tsx";
+import { RefusalList } from "../kit/RefusalList.tsx";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
@@ -445,13 +446,7 @@ function ReviewStep({
             {preview.data?.refusal ? (
               <Notice tone="danger">
                 <strong>These changes cannot be deployed yet.</strong> {preview.data.refusal.detail}
-                <ul className="mt-2 mb-0 pl-5">
-                  {preview.data.refusal.errors.map((one) => (
-                    <li key={`${one.path} ${one.message}`}>
-                      <Mono>{one.path}</Mono> {one.message}
-                    </li>
-                  ))}
-                </ul>
+                <RefusalList errors={preview.data.refusal.errors} />
               </Notice>
             ) : preview.data?.summary ? (
               <>
@@ -900,13 +895,10 @@ export function PreviewPanels({
           {data.refusal ? (
             <Notice tone="danger">
               <strong>It cannot be promoted yet.</strong> {data.refusal.detail}
-              <ul className="mt-2 mb-0 pl-5">
-                {data.refusal.errors.map((one) => (
-                  <li key={`${one.path} ${one.message}`}>
-                    <Mono>{one.path}</Mono> {one.message}
-                  </li>
-                ))}
-              </ul>
+              <RefusalList
+                errors={data.refusal.errors}
+                link={link.replace(/\/workspaces\/[^/]+$/, `/workspaces/${data.target.id}`)}
+              />
             </Notice>
           ) : data.summary ? (
             <>

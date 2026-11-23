@@ -50,6 +50,9 @@ export class HttpError extends Error {
 }
 
 /** The built-in connector for any HTTP API. */
+/** How many redirects of one request are followed. */
+const MAX_REDIRECTS = 5;
+
 export const httpConnector: Connector<HttpConfig, HttpClient> = {
   name: "http",
   configSchema: {
@@ -120,21 +123,60 @@ export const httpConnector: Connector<HttpConfig, HttpClient> = {
       const method = (
         options.method ?? (options.json !== undefined || options.body ? "POST" : "GET")
       ).toUpperCase();
-      const response = await fetch(url, {
+      // Names are compared without case: the connection's own header replaces a caller's of the same name.
+      const sent = new Map<string, [string, string]>();
+      const put = (headers: Record<string, string> | undefined) => {
+        for (const [name, value] of Object.entries(headers ?? {})) {
+          sent.set(name.toLowerCase(), [name, value]);
+        }
+      };
+      put(config.headers);
+      if (options.json !== undefined) put({ "content-type": "application/json" });
+      put(options.headers);
+      put(authHeaders);
+      const headers = Object.fromEntries(sent.values());
+      const payload =
+        options.json !== undefined
+          ? JSON.stringify(options.json)
+          : options.body !== undefined
+            ? options.body
+            : undefined;
+      // Redirects are followed by hand: the key and the headers go only where the connection points.
+      const own = new URL(base).origin;
+      let target = url;
+      let response = await fetch(target, {
         method,
         signal,
-        headers: {
-          ...config.headers,
-          ...(options.json !== undefined ? { "content-type": "application/json" } : {}),
-          ...options.headers,
-          ...authHeaders,
-        },
-        ...(options.json !== undefined
-          ? { body: JSON.stringify(options.json) }
-          : options.body !== undefined
-            ? { body: options.body }
-            : {}),
+        headers,
+        redirect: "manual",
+        ...(payload !== undefined ? { body: payload } : {}),
       });
+      for (let hops = 0; response.status >= 300 && response.status < 400; hops++) {
+        const location = response.headers.get("location");
+        if (!location) break;
+        const next = new URL(location, target);
+        if (next.origin !== own) {
+          throw new Error(
+            `${own} sent the request on to ${next.origin}. A connection only calls its own address, so the request was not sent there. Change the connection's address if that is where it should go.`,
+          );
+        }
+        if (hops >= MAX_REDIRECTS) {
+          throw new Error(`${own} sent the request on more than ${MAX_REDIRECTS} times.`);
+        }
+        // As a browser does: a POST answered with 301, 302 or 303 is asked again as a GET.
+        const again =
+          response.status === 303 ||
+          ((response.status === 301 || response.status === 302) && method === "POST");
+        await response.body?.cancel();
+        target = next;
+        response = await fetch(target, {
+          method: again ? "GET" : method,
+          signal,
+          headers,
+          redirect: "manual",
+          ...(!again && payload !== undefined ? { body: payload } : {}),
+        });
+      }
       const text = await response.text();
       const result: HttpResponse = {
         status: response.status,

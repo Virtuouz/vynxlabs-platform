@@ -4,8 +4,8 @@ import type { AddressInfo } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
 import { Worker } from "@volvel/worker";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { decryptFor, encryptFor } from "./kernel/execution/bindings.js";
 import { accessToken } from "./kernel/execution/oauth.js";
+import { openRow, sealRow } from "./kernel/execution/sealed.js";
 import { endTask, queueTask } from "./kernel/execution/tasks.js";
 import { type Client, startTestApp, type TestApp } from "./testing.js";
 
@@ -104,29 +104,21 @@ const location = (response: { headers: Record<string, unknown> }) =>
 async function expireIn(ms: number) {
   const row = await t.db
     .selectFrom("connection_binding")
-    .select(["oauth_tokens"])
+    .select(["id", "oauth_tokens"])
     .where("workspace_id", "=", workspace)
     .where("path", "=", "google")
     .executeTakeFirstOrThrow();
-  const name = "connection-oauth:google";
+  const at = { tenantId: tenant, workspaceId: workspace, rowId: row.id, path: "google" };
   const tokens = JSON.parse(
-    await decryptFor(t.kernel, t.db, tenant, workspace, name, row.oauth_tokens as Buffer),
+    await openRow(t.kernel, t.db, "connection-oauth", at, row.oauth_tokens as Buffer),
   );
   tokens.expiresAt = Date.now() + ms;
   await t.db
     .updateTable("connection_binding")
     .set({
-      oauth_tokens: await encryptFor(
-        t.kernel,
-        t.db,
-        tenant,
-        workspace,
-        name,
-        JSON.stringify(tokens),
-      ),
+      oauth_tokens: await sealRow(t.kernel, t.db, "connection-oauth", at, JSON.stringify(tokens)),
     })
-    .where("workspace_id", "=", workspace)
-    .where("path", "=", "google")
+    .where("id", "=", row.id)
     .execute();
 }
 

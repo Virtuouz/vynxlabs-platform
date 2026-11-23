@@ -658,38 +658,39 @@ export function CommandPalette({
         },
       }));
 
-    if (text === "") {
-      // What the page on screen shows comes first: with a run open, Run again is one press away.
-      const here: Item[] =
-        mode === "all" && current
-          ? [
-              ...current.commands.map((command) => ({
-                key: `c-${command.key}`,
-                label: command.label,
-                icon: command.icon,
-                danger: command.danger,
-                section: current.heading,
-                open: () => {
-                  close();
-                  void command.run();
-                },
-              })),
-              ...(current.pin
-                ? [
-                    {
-                      key: "c-pin",
-                      label: pinned(current.pin) ? "Unpin from the palette" : "Pin to the palette",
-                      icon: pinned(current.pin) ? PinOff : Pin,
-                      section: current.heading,
-                      open: () => {
-                        togglePin(current.pin as Pinnable);
-                        close();
-                      },
+    // What the page on screen shows comes first: with a run open, Run again is one press away.
+    // Typed words find them too, so "Fire it now" is reached by typing it.
+    const here: Item[] =
+      mode === "all" && current
+        ? [
+            ...current.commands.map((command) => ({
+              key: `c-${command.key}`,
+              label: command.label,
+              icon: command.icon,
+              danger: command.danger,
+              section: current.heading,
+              open: () => {
+                close();
+                void command.run();
+              },
+            })),
+            ...(current.pin
+              ? [
+                  {
+                    key: "c-pin",
+                    label: pinned(current.pin) ? "Unpin from the palette" : "Pin to the palette",
+                    icon: pinned(current.pin) ? PinOff : Pin,
+                    section: current.heading,
+                    open: () => {
+                      togglePin(current.pin as Pinnable);
+                      close();
                     },
-                  ]
-                : []),
-            ]
-          : [];
+                  },
+                ]
+              : []),
+          ]
+        : [];
+    if (text === "") {
       const pinnedItems = pins.map((one) =>
         entity({ ...one, workspaceSlug: one.workspaceSlug ?? null, hint: null }, "Pinned"),
       );
@@ -714,7 +715,12 @@ export function CommandPalette({
             : "Other workspaces";
     const results = found.map((one) => entity(one, sectionOf(one)));
     if (mode !== "all") return results;
-    return [...results, ...screens.slice(0, 20), ...actions.filter((one) => matches(one.label))];
+    return [
+      ...here.filter((one) => matches(one.label)),
+      ...results,
+      ...screens.slice(0, 20),
+      ...actions.filter((one) => matches(one.label)),
+    ];
   }, [
     text,
     mode,

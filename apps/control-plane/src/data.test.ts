@@ -365,6 +365,10 @@ describe("the data API", () => {
     });
     expect(again.status).toBe(409);
     expect(again.body.detail).toBe('Another row already has that value for "email".');
+    // The refusal names the field, so the form marks it (walk-fix 29).
+    expect(again.body.errors).toEqual([
+      { path: "/email", message: "Another row already has this value." },
+    ]);
 
     const order = await alice.post(`${ws()}/rows/orders`, {
       number: "A-1",

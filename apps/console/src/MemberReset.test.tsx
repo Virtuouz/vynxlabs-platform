@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 vi.setConfig({ testTimeout: 20_000 });
@@ -83,6 +83,13 @@ beforeEach(() => {
             createdAt: "2026-01-01T00:00:00Z",
             tenants: [],
           },
+          {
+            id: "m1",
+            name: "Rae",
+            email: "rae@acme.test",
+            createdAt: "2026-01-01T00:00:00Z",
+            tenants: [],
+          },
         ],
         nextCursor: null,
       });
@@ -113,6 +120,43 @@ test("a tenant's member page makes the link, says what happens first, and shows 
   expect(document.body.textContent).toContain(
     "https://vx.test/reset-password/tok123tok123tok123tok123",
   );
+});
+
+test("item 26: the result takes the focus on Copy, and closing it gives the focus back to the trigger", async () => {
+  show(<MemberList base={base} />);
+  const trigger = await screen.findByRole("button", { name: "Make a password reset link" });
+  trigger.focus();
+  fireEvent.click(trigger);
+  await answer("Make the link");
+  const copy = await screen.findByRole("button", { name: "Copy the link" });
+  await waitFor(() => expect(document.activeElement).toBe(copy));
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
+});
+
+test("item 29: the link's expiry says the zone it is shown in", async () => {
+  show(<MemberList base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Make a password reset link" }));
+  await answer("Make the link");
+  const dialog = await screen.findByRole("dialog");
+  const time = dialog.querySelector("time") as HTMLElement;
+  expect(time.textContent).toMatch(/\d{2}:\d{2}:\d{2} \S+$/);
+});
+
+test("item 25: an operator's own row offers no reset link and says where to change the password", async () => {
+  history.replaceState(null, "", "/");
+  held = ["member:write", "member:read"];
+  show(<InstanceMembers />);
+  await screen.findAllByText("rae@acme.test");
+  const own = screen
+    .getAllByRole("row")
+    .find((row) => row.textContent?.includes("Rae")) as HTMLElement;
+  expect(within(own).queryByRole("button", { name: "Make a password reset link" })).toBeNull();
+  const others = screen
+    .getAllByRole("row")
+    .find((row) => row.textContent?.includes("Pat")) as HTMLElement;
+  within(others).getByRole("button", { name: "Make a password reset link" });
+  expect(document.body.textContent).toContain("Change your own password on the Account screen");
 });
 
 test("where mail is set up it says the link was emailed and shows none", async () => {

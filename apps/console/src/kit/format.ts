@@ -85,6 +85,11 @@ export function count(n: number): string {
   return new Intl.NumberFormat().format(n);
 }
 
+/** "1 row", "12,480 rows": a count with its noun in the form the count needs. */
+export function counted(n: number, one: string, many = `${one}s`): string {
+  return `${count(n)} ${n === 1 ? one : many}`;
+}
+
 /** "runs, events, and audit": things named in one sentence, joined as the copy joins them. */
 export function listOf(items: readonly string[]): string {
   return new Intl.ListFormat("en-US", { style: "long", type: "conjunction" }).format(items);

@@ -83,6 +83,35 @@ test("no text draws over what is beside it, at any width", async () => {
   }
 });
 
+/**
+ * Phase 30 walk-fix 24: a list's row actions (kit/ListCollection `rowActions`: All members,
+ * Operators, Database locations) wrap inside their cell; none reaches past the table's edge.
+ */
+test("a list's row actions stay inside the table at every width", async () => {
+  const over: string[] = [];
+  for (const width of WIDTHS) {
+    await ctx.page.setViewportSize({ width, height: 900 });
+    for (const path of [
+      "/instance/members",
+      "/instance/operators",
+      "/instance/database-locations",
+    ]) {
+      await open(ctx.page, path);
+      const clipped = await ctx.page.evaluate(() => {
+        const edge = (
+          document.querySelector("main table") as HTMLElement | null
+        )?.parentElement?.getBoundingClientRect().right;
+        if (edge === undefined) return [];
+        return [...document.querySelectorAll<HTMLElement>("[data-row-actions] button")]
+          .filter((button) => button.getBoundingClientRect().right > edge + 1)
+          .map((button) => button.textContent ?? "");
+      });
+      if (clipped.length > 0) over.push(`${path} at ${width}: ${clipped.join(", ")}`);
+    }
+  }
+  expect(over, "row actions that run past the table").toEqual([]);
+});
+
 test("no bordered box sits inside another", async () => {
   await ctx.page.setViewportSize({ width: 1440, height: 900 });
   // Every screen is measured before anything is said, so one finding does not hide the next.

@@ -99,11 +99,17 @@ export function ListCollection<Row>({
         {
           header: "Actions",
           align: "end",
+          // Room for two buttons side by side; past that they wrap inside the cell, never past the table.
+          wide: true,
           cell: (one) => (
             // Pressing an action is not choosing the row.
             // biome-ignore lint/a11y/noStaticElementInteractions: only stops the click reaching the row
             // biome-ignore lint/a11y/useKeyWithClickEvents: the buttons inside take the keyboard
-            <span className="inline-flex gap-2" onClick={(event) => event.stopPropagation()}>
+            <span
+              data-row-actions
+              className="flex flex-wrap items-center justify-end gap-2"
+              onClick={(event) => event.stopPropagation()}
+            >
               <fieldset disabled={!can} className="contents">
                 {rowActions(one, list.reload)}
               </fieldset>

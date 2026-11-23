@@ -2099,3 +2099,39 @@ test("TAB-37: a refused row save names the field, and a refused Add row keeps th
   );
   expect(files).toHaveLength(1);
 });
+
+test("item 28: a retired table with one row says '1 row is kept', not '1 rows'", async () => {
+  routes[`GET /api/v1${root}/tables/orders`] = () => [
+    200,
+    { ...orders("code"), status: "retired", rowCount: 1 },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  const notice = await screen.findByText(/This table is retired/);
+  expect(notice.textContent).toContain("its 1 row is kept");
+  expect(document.body.textContent).not.toContain("1 rows");
+});
+
+test("item 27: the row editor marks a required column required, and says 'optional' only of an optional one", async () => {
+  history.replaceState(history.state, "", "?row=r1");
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  const required = await screen.findByLabelText("number", { selector: "input[name=number]" });
+  const optional = await screen.findByLabelText("total", { selector: "input[name=total]" });
+  const mark = (input: HTMLElement) =>
+    input.closest("[class*=flex-col]")?.querySelector("label")?.parentElement?.textContent;
+  expect(mark(required)).not.toContain("optional");
+  expect(mark(optional)).toContain("optional");
+});
+
+test("item 29: Add row's file column is the inspector's button and name, not the browser's bare control", async () => {
+  openOrderWithCustomerAndFile({});
+  history.replaceState(history.state, "", location.pathname);
+  fireEvent.click(await screen.findByRole("button", { name: "Add row" }));
+  const dialog = await screen.findByRole("dialog");
+  const input = dialog.querySelector("input[type=file]") as HTMLInputElement;
+  expect(input.hidden).toBe(true);
+  within(dialog).getByText("No file chosen");
+  fireEvent.change(input, { target: { files: [new File(["x"], "a.txt")] } });
+  await within(dialog).findByText("a.txt");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Remove" }));
+  within(dialog).getByText("No file chosen");
+});

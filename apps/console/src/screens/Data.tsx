@@ -34,7 +34,7 @@ import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { useAddressBox } from "../kit/addressBox.ts";
 import { type Needs, useNeeds } from "../kit/Can.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
-import { count } from "../kit/format.ts";
+import { count, counted } from "../kit/format.ts";
 import { HealthCell } from "../kit/health.tsx";
 import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
@@ -1289,7 +1289,7 @@ function RowEditor({
             name={column.name}
             label={column.name}
             value={text[column.name] ?? shown(column)}
-            required={false}
+            required={column.required}
             {...(column.type === "timestamp" ? { withTime: true } : {})}
             {...(column.type === "timestamp" && typeof row[column.name] === "string"
               ? { hint: `Your time zone. Stored as ${utcOf(String(row[column.name]))}` }
@@ -1303,7 +1303,7 @@ function RowEditor({
             name={column.name}
             label={column.name}
             value={text[column.name] ?? shown(column)}
-            required={false}
+            required={column.required}
             error={errors[column.name]}
             onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
           />
@@ -1313,7 +1313,7 @@ function RowEditor({
             name={column.name}
             label={column.name}
             value={text[column.name] ?? shown(column)}
-            required={false}
+            required={column.required}
             error={errors[column.name]}
             onChange={(value) => setText((current) => ({ ...current, [column.name]: value }))}
           />
@@ -1373,6 +1373,7 @@ function AddRow({
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<Record<string, File>>({});
+  const fileInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string>();
   const [busy, setBusy] = useState(false);
@@ -1516,20 +1517,50 @@ function AddRow({
               }
             />
           ) : column.type === "file" ? (
-            <label key={column.name} className="flex flex-col gap-1 text-body-sm font-medium">
-              {column.name}
-              <input
-                type="file"
-                className="font-normal"
-                onChange={(event) => {
-                  const file = event.currentTarget.files?.[0];
-                  setFiles((current) => {
-                    const { [column.name]: _removed, ...rest } = current;
-                    return file ? { ...rest, [column.name]: file } : rest;
-                  });
-                }}
-              />
-            </label>
+            <div key={column.name} className="flex flex-col gap-1">
+              <span className="text-body-sm text-ink-muted">{column.name}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  hidden
+                  aria-label={`File for ${column.name}`}
+                  ref={(node) => {
+                    fileInputs.current[column.name] = node;
+                  }}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    setFiles((current) => {
+                      const { [column.name]: _removed, ...rest } = current;
+                      return file ? { ...rest, [column.name]: file } : rest;
+                    });
+                  }}
+                />
+                <Button onClick={() => fileInputs.current[column.name]?.click()}>
+                  {files[column.name] ? "Replace" : "Choose a file"}
+                </Button>
+                {files[column.name] ? (
+                  <>
+                    <span className="font-mono text-code break-all">
+                      {files[column.name]?.name}
+                    </span>
+                    <Button
+                      onClick={() => {
+                        const input = fileInputs.current[column.name];
+                        if (input) input.value = "";
+                        setFiles((current) => {
+                          const { [column.name]: _removed, ...rest } = current;
+                          return rest;
+                        });
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </>
+                ) : (
+                  <span className="text-ink-subtle">No file chosen</span>
+                )}
+              </div>
+            </div>
           ) : column.type === "date" || column.type === "timestamp" ? (
             <DateField
               key={column.name}
@@ -1810,7 +1841,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
       fill
       helpKey="table"
       title={data.name}
-      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${count(data.rowCount)} ${data.rowCount === 1 ? "row" : "rows"}. ${policyText(data.policy)}.${retired ? ` Was managed in the ${data.managedIn === "code" ? "repository" : "console"}.` : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
+      description={`${data.description ? `${data.description.replace(/\.?\s*$/, ".")} ` : ""}${counted(data.rowCount, "row")}. ${policyText(data.policy)}.${retired ? ` Was managed in the ${data.managedIn === "code" ? "repository" : "console"}.` : ` Managed in the ${data.managedIn === "code" ? "repository" : "console"}.`}`}
     >
       <AttachedPages {...workspaceOf(root)} kind="table" path={data.name} />
       {retired ? (
@@ -1831,7 +1862,7 @@ export function TableView({ root, name, link }: { root: string; name: string; li
           }
         >
           This table is retired. It left its definition, so nothing can read or write it, and its{" "}
-          {count(data.rowCount)} rows are kept.{" "}
+          {counted(data.rowCount, "row")} {data.rowCount === 1 ? "is" : "are"} kept.{" "}
           {data.managedIn === "ui"
             ? "Bring it back to use it again, with its columns, its rows and who sees them as they were."
             : "Deploying a definition with this name brings it back."}

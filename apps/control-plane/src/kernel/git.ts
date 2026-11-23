@@ -30,9 +30,9 @@ import { activeConsoleManaged, deployConsoleManaged } from "./authoring.js";
 import { guardedFetch } from "./egress.js";
 import { conflict, HttpError, notFound } from "./errors.js";
 import { decryptFor, encryptFor } from "./execution/bindings.js";
-import { sameOrigin } from "./origin.js";
 import type { WorkspaceRef } from "./http.js";
 import type { Kernel } from "./kernel.js";
+import { sameOrigin } from "./origin.js";
 import { currentAccess } from "./tenant/releases.js";
 
 /**

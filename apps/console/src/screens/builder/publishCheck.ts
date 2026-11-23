@@ -546,6 +546,25 @@ export function problemWords(problem: { path: string; message: string }, body: I
   return place ? `${place}: ${what}` : what;
 }
 
+/**
+ * What a deploy refused, said for this app's publish check. A deploy checks the whole workspace,
+ * so it also refuses for a dashboard or an app that is not this one: the server names it as
+ * "boards/sales (dashboard)". That is said with its name, and is never read as a widget of
+ * this app (it has no Goal because another page does).
+ */
+export function refusalWords(
+  problem: { path: string; message: string },
+  body: InterfaceBody,
+  own: readonly (string | null)[],
+): string {
+  const other = /^(.+) \((\w+)\)$/.exec(problem.path);
+  if (other && !own.includes(other[1] ?? null)) {
+    const said = problem.message.replace(/^\/body\S*\s+/, "");
+    return `${other[1]} (${other[2]}), which this deploy also carries: ${said}.`.replace(/\.\.$/, ".");
+  }
+  return `${problemWords(problem, body)}.`.replace(/\.\.$/, ".");
+}
+
 /** `problemWords` for a message that carries its place: "/body/pages/0/widgets/9/config/x must NOT …". */
 export function plainly(message: string, body: InterfaceBody): string {
   const found = /^(\/body\/pages\/\d+\S*)\s+(.*)$/.exec(message);

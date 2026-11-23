@@ -37,6 +37,7 @@
     "@volvel/compose": "workspace:*",
     "@volvel/control-plane": "workspace:*",
     "@volvel/docs-engine": "workspace:*",
+    "@volvel/docs-site": "workspace:*",
     "@volvel/example-acme": "workspace:*",
     "@volvel/manifest": "workspace:*",
     "@volvel/markup": "workspace:*",

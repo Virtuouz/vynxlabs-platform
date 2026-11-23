@@ -105,7 +105,9 @@ export function DraftPill({ count, onOpen }: { count: number | undefined; onOpen
  * "2 to fix": what keeps the app from being published, beside its name, as a pill that opens the
  * list. The workbench does not move, and nothing is covered, when something needs fixing.
  */
-export function FixPill({ words }: { words: readonly string[] }) {
+export function FixPill({ words: said }: { words: readonly string[] }) {
+  // One failure said twice is one thing to fix.
+  const words = [...new Set(said)];
   if (words.length === 0) return null;
   return (
     <Popover

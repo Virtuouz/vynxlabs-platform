@@ -818,7 +818,9 @@ describe("running", () => {
       state: "canceled",
     });
     expect((await alice.post(`${ws()}/runs/${running}/cancel`)).body.status).toBe("cancelled");
-    expect((await alice.post(`${ws()}/runs/${running}/cancel`)).status).toBe(409);
+    const again = await alice.post(`${ws()}/runs/${running}/cancel`);
+    expect(again.status).toBe(409);
+    expect(again.body.detail).toBe("This run was already canceled.");
     expect((await bob.client.post(`${ws()}/runs/${running}/cancel`)).status).toBe(409);
 
     // The slot is free again: a new run of the same script starts.

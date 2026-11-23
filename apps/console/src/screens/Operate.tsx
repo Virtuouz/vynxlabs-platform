@@ -409,10 +409,7 @@ export function TriggersWorkbench({
         ) : row.lastFiredAt ? (
           <span className="text-ink-muted">{ago(row.lastFiredAt)}</span>
         ) : (
-          <span
-            className="text-ink-subtle"
-            title="This trigger has not started anything yet. Runs started by hand are not counted."
-          >
+          <span className="text-ink-subtle" title="This trigger has not started anything yet.">
             Not fired yet
           </span>
         ),
@@ -719,7 +716,7 @@ export function TriggersWorkbench({
                         value: open.lastFiredAt ? (
                           <Time value={open.lastFiredAt} />
                         ) : (
-                          "Not fired yet. Runs started by hand are not counted."
+                          "Not fired yet."
                         ),
                       },
                     ]}
@@ -791,7 +788,7 @@ export function listening(row: Pick<EventRow, "listeners" | "pausedListeners">):
 const SOURCE: Record<string, string> = {
   script: "A script",
   api: "The API",
-  platform: "The platform",
+  platform: "Volvel",
 };
 
 /** What was published, newest first, with what each one started. */

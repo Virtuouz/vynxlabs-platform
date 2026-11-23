@@ -191,6 +191,22 @@ test("one refusal said by the save and by the deploy is one line, and it links t
   expect(refused[0]?.at).toEqual({ page: "edit", widget: "form" });
 });
 
+test("p31 fc: a refusal said with a place by one and without by the other is one line, counted once", () => {
+  const made = body(form(undefined));
+  const text = "form on Edit invoice: needs a source to show.";
+  const items = checksFor({
+    body: made,
+    known,
+    definitionOf: () => undefined,
+    problems: [{ text }],
+    refusal: [{ text, at: { page: "edit", widget: "form" } }],
+    warnings: [],
+  });
+  const refused = items.filter((one) => one.id.startsWith("refused:"));
+  expect(refused).toHaveLength(1);
+  expect(refused[0]?.at).toEqual({ page: "edit", widget: "form" });
+});
+
 test("a row action with no words and no icon is refused, and named in the check", () => {
   const table: PageWidget = {
     id: "t",

@@ -2892,7 +2892,7 @@ function Definition({
         <ColumnsTable rows={active} actionsOf={editable ? columnActions : undefined} />
         <p className="m-0 text-body-sm text-ink-muted">
           Every table also has <Code>{"id"}</Code>, <Code>{"created_at"}</Code> and{" "}
-          <Code>{"updated_at"}</Code>, which the platform fills in.
+          <Code>{"updated_at"}</Code>, which Volvel fills in.
         </p>
       </section>
 
@@ -2912,9 +2912,10 @@ function Definition({
             empty={null}
             columns={[
               { header: "Column", cell: (row) => <Code>{row.name}</Code> },
-              { header: "Held", cell: (row) => typeLabel(row.type) },
+              { header: "Held", priority: 2, cell: (row) => typeLabel(row.type) },
               {
                 header: "Still holds",
+                priority: 2,
                 cell: (row) => `${count(row.held ?? 0)} ${row.held === 1 ? "value" : "values"}`,
               },
               {
@@ -3438,16 +3439,23 @@ function ChangeSource({
   root,
   row,
   onDone,
+  need,
 }: {
   root: string;
   row: SourceBinding;
   onDone: () => void;
+  need: { can: boolean; reason?: string | undefined };
 }) {
   const [open, setOpen] = useState(false);
   const config = row.config;
   return (
     <>
-      <Button size="small" onClick={() => setOpen(true)}>
+      <Button
+        size="small"
+        disabled={!need.can}
+        {...(need.reason ? { tooltip: need.reason } : {})}
+        onClick={() => setOpen(true)}
+      >
         Change
       </Button>
       <CreateDialog
@@ -3514,11 +3522,14 @@ function ConnectSource({
   onDone: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const need = useSourceWrite(root);
   return (
     <>
       <Button
         size="small"
         variant="primary"
+        disabled={!need.can}
+        {...(need.reason ? { tooltip: need.reason } : {})}
         aria-label={`Connect ${row.path}`}
         onClick={() => setOpen(true)}
       >
@@ -3550,16 +3561,20 @@ function TestSource({
   root,
   row,
   onDone,
+  need,
 }: {
   root: string;
   row: SourceBinding;
   onDone: () => void;
+  need: { can: boolean; reason?: string | undefined };
 }) {
   const [testing, setTesting] = useState(false);
   return (
     <Button
       size="small"
       loading={testing}
+      disabled={!need.can}
+      {...(need.reason ? { tooltip: need.reason } : {})}
       onClick={async () => {
         setTesting(true);
         try {
@@ -3662,15 +3677,26 @@ export function Sources({ root, link }: { root: string; link: string }) {
         },
       ]}
       rowActions={(row, reload) => (
-        <span className="inline-flex flex-wrap items-center justify-end gap-2">
+        <span className="inline-flex flex-wrap items-center justify-end gap-2 max-sm:flex-col max-sm:items-end">
           {row.defined ? (
-            <Link
-              to={`${link}/resources/edit/data_source/${row.path}`}
-              aria-label={`Edit ${row.path}`}
-              className="text-action"
-            >
-              Edit
-            </Link>
+            declare.can ? (
+              <Link
+                to={`${link}/resources/edit/data_source/${row.path}`}
+                aria-label={`Edit ${row.path}`}
+                className="text-action"
+              >
+                Edit
+              </Link>
+            ) : (
+              <Button
+                size="small"
+                disabled
+                aria-label={`Edit ${row.path}`}
+                {...(declare.reason ? { tooltip: declare.reason } : {})}
+              >
+                Edit
+              </Button>
+            )
           ) : null}
           {row.bound ? (
             // On a phone the buttons wrap under each other instead of widening the page.
@@ -3678,7 +3704,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
               root={root}
               row={row}
               onDone={reload}
-              className="max-w-[9.5rem] justify-end sm:max-w-none"
+              className="justify-end max-sm:flex-col max-sm:items-end"
             />
           ) : (
             <ConnectSource root={root} row={row} onDone={reload} />
@@ -3716,6 +3742,15 @@ export function Sources({ root, link }: { root: string; link: string }) {
   );
 }
 
+/** What the server asks to test, connect, change or remove a source here: `data_source:write`. */
+function useSourceWrite(root: string) {
+  return useNeeds({
+    base: root,
+    permission: "data_source:write",
+    what: "this workspace's data sources",
+  });
+}
+
 /** Test, Change and Remove from here of a bound data source: the list's row and the source's own page share them. */
 function SourceActions({
   root,
@@ -3731,12 +3766,14 @@ function SourceActions({
   onUnbound?: () => void;
   className?: string;
 }) {
+  const need = useSourceWrite(root);
   return (
     <span className={`inline-flex flex-wrap items-center gap-2 ${className}`}>
-      <TestSource root={root} row={row} onDone={onDone} />
-      <ChangeSource root={root} row={row} onDone={onDone} />
+      <TestSource root={root} row={row} onDone={onDone} need={need} />
+      <ChangeSource root={root} row={row} onDone={onDone} need={need} />
       <RemoveButton
         label="Remove from here"
+        disabled={need.can ? undefined : need.reason}
         confirm={`Remove "${row.path}" from here? Scripts that use it will fail until it is set up again. Nothing in that database changes.`}
         run={() => api.delete(`${root}/data-source-bindings/${row.path}`)}
         onDone={onUnbound}
@@ -3749,6 +3786,18 @@ interface SourceTable {
   name: string;
   key: string | null;
   columns: (RowColumn & { hasDefault?: boolean })[];
+}
+
+/**
+ * What a source that could not be read says. An answer with no reason of its own, from a source
+ * set to encrypt, most likely met a server that does not offer encrypted connections: said so, with
+ * the way out, instead of "Internal Server Error".
+ */
+export function sourceFailure(message: string, binding: SourceBinding | undefined): string {
+  if (!/^internal server error\.?$/i.test(message.trim())) return message;
+  return binding?.config?.ssl
+    ? `${binding.path} could not be read. It is set to encrypt, and its server may not support encrypted connections. Choose Change and turn Encrypt off, or ask whoever runs the database.`
+    : message;
 }
 
 export function SourceView({ root, path, link }: { root: string; path: string; link: string }) {
@@ -3787,7 +3836,7 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
     >
       {tables.error ? (
         <Notice tone="danger" action={<Button onClick={tables.reload}>Try again</Button>}>
-          {tables.error.message}
+          {sourceFailure(tables.error.message, binding)}
         </Notice>
       ) : !tables.data ? (
         <Loading />

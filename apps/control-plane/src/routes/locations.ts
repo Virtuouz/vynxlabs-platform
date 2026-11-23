@@ -180,7 +180,7 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "Without `connectionString`, only the description of a database already registered is " +
             "changed, and nothing is connected to. " +
-            "The platform connects first, and prepares the database: a catalog of custom " +
+            "Volvel connects first, and prepares the database: a catalog of custom " +
             "tables and a restricted sign-in for row requests. The user given must own the " +
             "database and be allowed to create roles. The address is stored encrypted. Pointing " +
             "a name that tenants use at another database is refused with 409 unless that " +
@@ -251,7 +251,7 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           `.execute(kernel.db);
           if (own.rows[0]?.id === identity) {
             throw badRequest(
-              "That is this instance's own database, the platform's own database. Register a different database for tenants' tables.",
+              "That is this instance's own database. Register a different database for tenants' tables.",
             );
           }
           const others = await db

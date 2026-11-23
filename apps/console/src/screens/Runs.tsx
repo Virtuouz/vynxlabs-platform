@@ -15,7 +15,7 @@ import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { useAddressBox } from "../kit/addressBox.ts";
 import { useArrivals } from "../kit/arrivals.ts";
-import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
+import { type BatchAnswer, inSlices, leftAlone, useBatch } from "../kit/BatchResult.tsx";
 import { useMay, useMayEach } from "../kit/Can.tsx";
 import { CopyIcon, Identifier } from "../kit/copy.tsx";
 import {
@@ -470,11 +470,13 @@ export function RunsWorkbench({
           api.post<BatchAnswer>(`${root}/flow-runs/batch`, { action: flow, ids }),
         ),
       );
-    return {
+    const total = {
       results: answers.flatMap((one) => one.results),
       done: answers.reduce((sum, one) => sum + one.done, 0),
       failed: answers.reduce((sum, one) => sum + one.failed, 0),
     };
+    // Cancel: a run that had finished is left as it is, which the question said.
+    return script === "cancel" || flow === "cancel" ? leftAlone(total) : total;
   };
   const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
   const sample = (ids: string[]) => {
@@ -492,7 +494,8 @@ export function RunsWorkbench({
     if (!sure) return;
     await batch.run(() => runBatch(ids, "cancel", "cancel"), {
       title: "Canceling runs",
-      done: (count) => `${plural(count, "run")} canceled.`,
+      done: (count, left) =>
+        `${plural(count, "run")} canceled${left ? `, ${left} left alone because ${left === 1 ? "it had" : "they had"} finished` : ""}.`,
       name: nameOf,
       retry: (again) => runBatch(again, "cancel", "cancel"),
     });

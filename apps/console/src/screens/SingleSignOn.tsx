@@ -1244,13 +1244,15 @@ function People({ root }: { root: string }) {
         }
         columns={[
           { header: "Person", cell: (row) => row.name || row.email || "Unknown" },
-          { header: "Email at the provider", cell: (row) => row.email ?? "" },
+          { header: "Email at the provider", priority: 2, cell: (row) => row.email ?? "" },
           {
             header: "Subject",
+            priority: 3,
             cell: (row) => <code className="font-mono text-code break-all">{row.subject}</code>,
           },
           {
             header: "Last signed in",
+            priority: 2,
             cell: (row) => (row.lastSignedInAt ? when(row.lastSignedInAt) : "Never"),
           },
           {
@@ -1631,8 +1633,8 @@ export function SingleSignOn({ base }: { base: string }) {
                 </button>
               ),
             },
-            { header: "For", cell: (row) => FOR[row.audience] },
-            { header: "Protocol", cell: (row) => PROTOCOL[row.protocol] },
+            { header: "For", priority: 2, cell: (row) => FOR[row.audience] },
+            { header: "Protocol", priority: 3, cell: (row) => PROTOCOL[row.protocol] },
             { header: "State", cell: (row) => <State provider={row} /> },
           ]}
         />

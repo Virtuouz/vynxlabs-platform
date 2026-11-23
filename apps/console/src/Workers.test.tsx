@@ -2,6 +2,13 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Workers } from "./screens/Execution.tsx";
+
+const opened = vi.hoisted(() => vi.fn());
+vi.mock("./help/store.ts", async (original) => ({
+  ...(await original<typeof import("./help/store.ts")>()),
+  openHelp: opened,
+}));
+
 import { answer, show } from "./testing.tsx";
 
 const base = "/tenants/t1";
@@ -201,4 +208,18 @@ test("a worker credential can be for one workspace, and the list says which (GOV
     name: "Branch office",
     workspaceId: "w1",
   });
+});
+
+test("p31 fc: a refused tenant's notice opens the page of the documentation that covers it, not 'the self-hosting guide'", async () => {
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", managedWorkers: true });
+  routes[`GET ${base}/managed-workers`] = () => ({ state: "refused" });
+  show(<Workers base={base} />);
+  await screen.findByText(/This tenant's code runs on standalone workers only/);
+  expect(document.body.textContent).not.toContain("self-hosting guide");
+  fireEvent.click(
+    screen.getByRole("button", { name: "How managed workers are run and kept apart" }),
+  );
+  expect(opened).toHaveBeenCalledWith(
+    "self-host/explanation/running/managed-workers-and-isolation",
+  );
 });

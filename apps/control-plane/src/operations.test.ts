@@ -267,6 +267,18 @@ describe("runs of every kind, together", () => {
     expect(insight.attempts).toEqual([expect.objectContaining({ attempt: 1, failed: true })]);
   });
 
+  test("a diagnosis says Volvel, never the platform, and says set up, never bind (p31 fc)", () => {
+    const at = { attempt: 1, maxAttempts: 1 };
+    const texts = [
+      diagnose({ ...at, message: "worker did not report for 60s" }),
+      diagnose({ ...at, message: "POST /runs/1/log answered 413 too large" }),
+      diagnose({ ...at, message: "A connection is not bound" }),
+      diagnose({ ...at, message: "The connection erp is not bound", unbound: ["erp"] }),
+    ].map((one) => `${one?.cause} ${one?.next}`);
+    expect(texts.join("\n")).not.toMatch(/platform|\bbind\b|\bbound\b|\bunbound\b/i);
+    expect(texts.join("\n")).toContain("Volvel");
+  });
+
   test("diagnosis knows the common shapes, and stays quiet about the rest", () => {
     const at = { attempt: 1, maxAttempts: 1 };
     expect(
@@ -559,7 +571,7 @@ describe("what a schedule shows of itself and of the runs it started", () => {
     });
   });
 
-  test("a run says which schedule started it, and one started by hand is not its last run (OPS-16, OPS-19)", async () => {
+  test("a run says which schedule started it, and Fire now is a firing: it is the last run and sets Last fired (OPS-16, OPS-19, p31 fc)", async () => {
     await deployWith([nightly(), ofFlow]);
     expect((await listed("orders/shown")).lastRun).toBeNull();
     const byHand = await alice.post(`${ws()}/schedule-firings`, { path: "orders/shown" });
@@ -567,8 +579,8 @@ describe("what a schedule shows of itself and of the runs it started", () => {
     const run = (await alice.get(`${ws()}/runs/${byHand.body.id}`)).body;
     expect(run.trigger).toMatchObject({ type: "schedule", trigger: "orders/shown", manual: true });
     const shown = await listed("orders/shown");
-    expect(shown.lastRun).toBeNull();
-    expect(shown.lastFiredAt).toBeNull();
+    expect(shown.lastRun?.id).toBe(byHand.body.id);
+    expect(shown.lastFiredAt).not.toBeNull();
     // Its own time starts a run that is counted, and says the same.
     await t.db
       .updateTable("trigger_state")
@@ -581,6 +593,7 @@ describe("what a schedule shows of itself and of the runs it started", () => {
     expect(after.lastRun).not.toBeNull();
     expect(after.lastRun.id).not.toBe(byHand.body.id);
     expect(after.lastFiredAt).not.toBeNull();
+    expect(Date.parse(after.lastFiredAt)).toBeGreaterThanOrEqual(Date.parse(shown.lastFiredAt));
     const own = (await alice.get(`${ws()}/runs/${after.lastRun.id}`)).body;
     expect(own.trigger).toMatchObject({ type: "schedule", trigger: "orders/shown" });
   });

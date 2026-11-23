@@ -78,7 +78,7 @@ export function PageHeader({
     <h1
       className={`m-0 min-w-0 ${
         bar
-          ? "truncate text-title"
+          ? "truncate text-title max-sm:basis-full"
           : mono
             ? `font-mono text-title ${compact ? "truncate" : "break-words"}`
             : size === "display-lg"
@@ -103,7 +103,7 @@ export function PageHeader({
           {/* The name and state give way before the actions do, so the bar stays one row. An editor's header gives the name room instead, and the actions wrap under it. */}
           <div
             data-heading-block=""
-            className={`flex min-w-0 flex-1 items-center gap-3 ${bar ? "flex-nowrap" : "min-w-[min(100%,16rem)] flex-wrap"}`}
+            className={`flex min-w-0 flex-1 items-center gap-3 ${bar ? "flex-nowrap max-sm:flex-wrap" : "min-w-[min(100%,16rem)] flex-wrap"}`}
           >
             {heading}
             {state}

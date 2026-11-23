@@ -265,7 +265,7 @@ function Replica() {
               { label: "Most workers alive", value: worked(s.managedWorkersMax) },
               {
                 label: "Database pools",
-                value: `${s.databasePoolSize} for the platform, ${s.dataPoolSize} for rows${
+                value: `${s.databasePoolSize} for Volvel's own work, ${s.dataPoolSize} for rows${
                   s.dataTenantConnections === null
                     ? ""
                     : `, ${s.dataTenantConnections} for one tenant at once`

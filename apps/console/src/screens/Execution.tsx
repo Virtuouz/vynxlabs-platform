@@ -11,6 +11,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { openHelp } from "../help/store.ts";
 import { InputDialog } from "../InputDialog.tsx";
 import { Can, NotAllowed, useMay, useMayOn, useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
@@ -1012,6 +1013,7 @@ export function Variables({ root }: { root: string }) {
           },
           {
             header: "Read by",
+            priority: 3,
             cell: (row) => (
               <UsedBy
                 uses={variableUses(row.path)}
@@ -1024,6 +1026,7 @@ export function Variables({ root }: { root: string }) {
           },
           {
             header: "For",
+            priority: 2,
             cell: (row) => <span className="text-ink-muted">{row.description}</span>,
           },
           {
@@ -1214,8 +1217,8 @@ export function QueuePanel({ base }: { base: string }) {
           />
           {tasks > 0 ? (
             <p className="m-0 text-meta text-ink-muted">
-              {tasks} task{tasks === 1 ? "" : "s"} for the platform waiting too: reading schemas,
-              sending alerts, trying connections.
+              {tasks} task{tasks === 1 ? "" : "s"} for Volvel waiting too: reading schemas, sending
+              alerts, trying connections.
             </p>
           ) : null}
         </>
@@ -1357,8 +1360,17 @@ export function Workers({ base }: { base: string }) {
               <strong>This tenant's code runs on standalone workers only.</strong> People outside
               the instance's operators write its code, and the workers this instance starts run
               beside its control plane, on its network, so it starts none for this tenant. Make a
-              credential below and start a worker with it, or ask the operator to run a worker host:
-              see "Workers the instance starts" in the self-hosting guide.
+              credential below and start a worker with it, or ask the operator to run a worker host.{" "}
+              <button
+                type="button"
+                className="cursor-pointer border-0 bg-transparent p-0 text-action underline"
+                onClick={() =>
+                  openHelp("self-host/explanation/running/managed-workers-and-isolation")
+                }
+              >
+                How managed workers are run and kept apart
+              </button>
+              .
             </Notice>
           ) : managed.data?.state === "shared" && tenant.data?.managedWorkers ? (
             <p className="m-0 text-meta text-ink-muted">
@@ -1467,22 +1479,28 @@ export function Workers({ base }: { base: string }) {
         }>
           as="section"
           title="Credentials for standalone workers"
-          description={`A worker outside the platform signs in with one of these: volvel-worker --url ${instanceUrl} --token-stdin, with the credential on its standard input. The full command is shown when a credential is made.`}
+          description={`A worker outside Volvel signs in with one of these: volvel-worker --url ${instanceUrl} --token-stdin, with the credential on its standard input. The full command is shown when a credential is made.`}
           path={`${base}/worker-credentials`}
           rowKey={(row) => row.id}
           columns={[
             { header: "Name", cell: (row) => row.name },
-            { header: "Credential", cell: (row) => <Code>{`${row.prefix}…`}</Code> },
+            { header: "Credential", priority: 2, cell: (row) => <Code>{`${row.prefix}…`}</Code> },
             {
               header: "Pool",
+              priority: 2,
               cell: (row) => (row.pool ? <Mono>{row.pool}</Mono> : "Default pool"),
             },
             {
               header: "Runs code of",
+              priority: 3,
               cell: (row) =>
                 row.workspaceId ? workspaceName(row.workspaceId) : "Every workspace of the tenant",
             },
-            { header: "Created", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
+            {
+              header: "Created",
+              priority: 3,
+              cell: (row) => <Time value={row.createdAt} mode="ago" />,
+            },
             {
               header: "Status",
               cell: (row) =>

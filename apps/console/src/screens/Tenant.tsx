@@ -393,10 +393,11 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
             </Link>
           ),
         },
-        { header: "Slug", cell: (row) => <Code>{row.slug}</Code> },
-        { header: "Type", cell: (row) => <TypeBadge type={row.type} /> },
+        { header: "Slug", priority: 3, cell: (row) => <Code>{row.slug}</Code> },
+        { header: "Type", priority: 2, cell: (row) => <TypeBadge type={row.type} /> },
         {
           header: "Promotes to",
+          priority: 3,
           cell: (row) =>
             all.find((candidate) => candidate.id === row.linkedWorkspaceId)?.name ?? "",
         },

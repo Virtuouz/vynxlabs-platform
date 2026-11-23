@@ -739,6 +739,12 @@ export async function finishFailed(kernel: Kernel, runId: string, error: RunFail
   );
 }
 
+/** What cancel says of a run or flow run that has ended: a sentence, in American spelling. */
+export function alreadyEnded(what: "run" | "flow run", status: string): string {
+  const said = status === "cancelled" ? "was already canceled" : `already ${status}`;
+  return `This ${what} ${said}.`;
+}
+
 /** Stops a run that is waiting or in progress. A running script hears on its next heartbeat. */
 export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, runId: string) {
   const run = await trx
@@ -750,7 +756,7 @@ export async function cancelRun(kernel: Kernel, trx: Trx, workspaceId: string, r
     .executeTakeFirst();
   if (!run) throw notFound("The run");
   if (run.status !== "queued" && run.status !== "running") {
-    throw conflict(`The run already ${run.status === "succeeded" ? "succeeded" : run.status}.`);
+    throw conflict(alreadyEnded("run", run.status));
   }
   if (run.queue_job_id) {
     await kernel.queue.cancel(queueName(workspaceId, run.pool), run.queue_job_id);

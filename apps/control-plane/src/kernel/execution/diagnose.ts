@@ -128,12 +128,12 @@ export function diagnose(run: FailedRun): Diagnosis | undefined {
   if (/worker did not report for|worker stopped responding/i.test(text))
     return {
       cause: `The worker running it stopped reporting.${exhausted}`,
-      next: "Check that the worker is running and can reach the platform, then run it again.",
+      next: "Check that the worker is running and can reach Volvel, then run it again.",
     };
   if (/^(?:GET|POST|PUT|PATCH|DELETE) \/\S* answered 413\b/.test(text))
     return {
       cause:
-        "The platform refused what the worker sent because it was larger than a request may be (413).",
+        "Volvel refused what the worker sent because it was larger than a request may be (413).",
       next: "Log less in one line, return less, or store it as a file and return its name.",
     };
   if (/The output is larger than/.test(text))
@@ -145,7 +145,7 @@ export function diagnose(run: FailedRun): Diagnosis | undefined {
   if (/\bnot bound\b|\bnot set up\b|\bno binding\b|\bunbound\b/i.test(text))
     return {
       cause: `A connection the script uses is not set up here.${exhausted}`,
-      next: "Bind it under Connections, then run it again.",
+      next: "Set it up under Connections, then run it again.",
       section: "connections",
     };
   if (/\bsecret\b.*\bnot set\b|\bno secret\b/i.test(text))

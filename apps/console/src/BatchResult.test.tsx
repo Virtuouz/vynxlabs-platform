@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { type BatchAnswer, useBatch } from "./kit/BatchResult.tsx";
+import { type BatchAnswer, leftAlone, useBatch } from "./kit/BatchResult.tsx";
 import { show } from "./testing.tsx";
 
 afterEach(cleanup);
@@ -78,4 +78,18 @@ test("a batch of more than a hundred is sent in slices the server accepts, and t
   expect(sizes).toEqual([100, 100, 50]);
   expect(total.results).toHaveLength(250);
   expect(total).toMatchObject({ done: 249, failed: 1 });
+});
+
+test("p31 fc: a cancel that finds a run finished leaves it alone, and says so, not 'not done'", async () => {
+  const mixed = leftAlone(
+    answer([
+      { id: "r1", ok: true, status: 200 },
+      { id: "r2", ok: false, status: 409, detail: "This run already succeeded." },
+    ]),
+  );
+  expect(mixed).toMatchObject({ done: 1, failed: 0, left: 1 });
+  expect(mixed.results.map((one) => one.id)).toEqual(["r1"]);
+  show(<Harness retry={async () => mixed} />);
+  await act(() => start(async () => mixed));
+  expect(await screen.findByText("1 runs canceled.")).toBeTruthy();
 });

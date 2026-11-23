@@ -35,6 +35,9 @@ let scripts: unknown[] = [];
 /** Where the flow was arranged on its page. */
 let arranged: Record<string, { x: number; y: number }> | undefined;
 let clash = false;
+/** What `GET resources` lists, and who owns the flow being opened. */
+let listed: unknown[] = [];
+let owner: "ui" | "code" = "ui";
 
 interface FlowBody {
   nodes: Record<string, Record<string, unknown>>;
@@ -77,6 +80,8 @@ beforeEach(() => {
   scripts = [];
   arranged = undefined;
   clash = false;
+  listed = [];
+  owner = "ui";
   history.replaceState(null, "", "/");
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
@@ -93,7 +98,8 @@ beforeEach(() => {
     if (path === `${api}/drafts/orders/sync`) return send(404, { code: "not_found", detail: "" });
     if (path === `${api}/flows/orders/sync`) return send(200, { layout: arranged });
     if (path === `${api}/resources/orders/sync`)
-      return send(200, { ownership: "ui", body: deployed });
+      return send(200, { ownership: owner, body: deployed });
+    if (path === `${api}/resources`) return send(200, { items: listed });
     if (path === api) return send(200, { timeZone: zone });
     if (path === `${api}/scripts`) return send(200, { items: scripts });
     if (path === "/api/v1/core-nodes") return send(200, { items: [sendEmail, gate] });
@@ -209,6 +215,48 @@ describe("the flow editor, as a person uses it", () => {
     fireEvent.change(await screen.findByLabelText("Subject"), { target: { value: "'Hello'" } });
     const saved = await lastSaved();
     expect(saved.nodes.send).toMatchObject({ inputs: { subject: "'Hello'" }, with: grants });
+  });
+
+  test("a flow of the repository offers only the tables, events and connections the repository defines (p31 fc)", async () => {
+    listed = [
+      { kind: "table", path: "orders", ownership: "code" },
+      { kind: "table", path: "console-notes", ownership: "ui" },
+    ];
+    owner = "code";
+    await openAt(
+      {
+        nodes: {
+          start: manual,
+          send: { type: "script", script: "core/send-email", inputs: {} },
+        },
+        edges: [{ from: "start", to: "send" }],
+      },
+      "send",
+      "Sends a message.",
+    );
+    fireEvent.focus(await screen.findByLabelText("Tables"));
+    expect(await screen.findByRole("option", { name: "orders" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "console-notes" })).toBeNull();
+  });
+
+  test("a flow made in the console offers every table (p31 fc)", async () => {
+    listed = [
+      { kind: "table", path: "orders", ownership: "code" },
+      { kind: "table", path: "console-notes", ownership: "ui" },
+    ];
+    await openAt(
+      {
+        nodes: {
+          start: manual,
+          send: { type: "script", script: "core/send-email", inputs: {} },
+        },
+        edges: [{ from: "start", to: "send" }],
+      },
+      "send",
+      "Sends a message.",
+    );
+    fireEvent.focus(await screen.findByLabelText("Tables"));
+    expect(await screen.findByRole("option", { name: "console-notes" })).toBeTruthy();
   });
 
   test("a name already used in Set values does not delete the other value (FLW-06)", async () => {

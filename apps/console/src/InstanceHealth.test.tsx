@@ -120,3 +120,11 @@ test("a master key with nothing left under its second key says it can go (INS-MP
   show(<InstanceHealth />);
   expect(await screen.findByText(/MASTER_KEY_SECONDARY can be removed/)).toBeTruthy();
 });
+
+test("p31 fc: Health says Volvel, never the platform, for what the database pool is for", async () => {
+  show(<InstanceHealth />);
+  const replica = await screen.findByRole("region", { name: "This replica" });
+  await within(replica).findByText("Started in a worker host");
+  expect(replica.textContent).toContain("for Volvel's own work");
+  expect(replica.textContent).not.toMatch(/platform/i);
+});

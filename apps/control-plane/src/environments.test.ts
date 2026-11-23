@@ -1096,7 +1096,8 @@ describe("database locations", () => {
         connectionString: platformUrl.toString(),
       });
       expect(itself.status, JSON.stringify(itself.body)).toBe(400);
-      expect(itself.body.detail).toMatch(/platform's own database/i);
+      expect(itself.body.detail).toMatch(/this instance's own database/i);
+      expect(itself.body.detail).not.toMatch(/platform/i);
       expect(
         (await t.admin.get("/instance/database-locations/names")).body.items,
       ).not.toContainEqual(expect.objectContaining({ name: "itself" }));

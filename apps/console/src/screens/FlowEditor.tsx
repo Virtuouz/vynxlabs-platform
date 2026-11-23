@@ -168,7 +168,7 @@ const PALETTE: {
   {
     group: "Starts",
     label: "On a form",
-    hint: "When someone fills in a page the platform serves.",
+    hint: "When someone fills in a page Volvel serves.",
     base: "form",
     make: () => ({ type: "trigger", trigger: newForm() }),
   },
@@ -938,9 +938,9 @@ export function FlowEditor({
   const drafts = useLoad<{
     items: { path: string; kind: string; deleted: boolean; mode?: string }[];
   }>(`${root}/drafts`);
-  const events = useLoad<{ items: { path: string; kind: string; body?: { mode?: string } }[] }>(
-    `${root}/resources?limit=200`,
-  );
+  const events = useLoad<{
+    items: { path: string; kind: string; ownership?: string; body?: { mode?: string } }[];
+  }>(`${root}/resources?limit=200`);
 
   const choices = (
     kind: "script" | "flow",
@@ -960,10 +960,14 @@ export function FlowEditor({
   /** What the workspace has of a kind, deployed or still a draft. */
   const ofKind = (kind: string, mode?: string): Option[] => {
     const known = new Map<string, string | undefined>();
+    // A flow of the repository may name only what the repository defines: a deploy refuses the
+    // rest ("is not a table in this repository"), so what was made in the console is not offered.
+    const fromCode = state === "repository";
     for (const one of events.data?.items ?? []) {
+      if (fromCode && one.ownership !== "code") continue;
       if (one.kind === kind && (!mode || one.body?.mode === mode)) known.set(one.path, undefined);
     }
-    for (const draft of drafts.data?.items ?? []) {
+    for (const draft of fromCode ? [] : (drafts.data?.items ?? [])) {
       // A draft of a source says how it is asked, so it is offered where that kind is wanted.
       if (
         draft.kind === kind &&

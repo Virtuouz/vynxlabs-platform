@@ -484,7 +484,7 @@ export function Domains({ base }: { base: string }) {
           A hostname of the client's own, public or internal to their network, serves one app at its
           root, or the portal with every app of a workspace by its path. Point the name at this
           instance with a CNAME or an address record. Whatever terminates TLS in front of the
-          instance must hold the certificate for it: the platform issues none.
+          instance must hold the certificate for it: Volvel issues none.
         </p>
         <p className="m-0">
           Then create the TXT record shown for the hostname and run a check. Once the check finds
@@ -521,6 +521,7 @@ export function Domains({ base }: { base: string }) {
             },
             {
               header: "Serves",
+              priority: 2,
               cell: (row) => (
                 <span>
                   {row.app === "" ? "The portal and every app" : <Code wrap>{row.app}</Code>}{" "}
@@ -531,6 +532,7 @@ export function Domains({ base }: { base: string }) {
             { header: "State", cell: (row) => <State domain={row} /> },
             {
               header: "Last check",
+              priority: 3,
               cell: (row) =>
                 row.verifiedAt && row.recordGoneAt ? (
                   <span className="text-danger">

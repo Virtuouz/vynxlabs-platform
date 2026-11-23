@@ -164,6 +164,24 @@ test("ACC-33: an attribute name given twice is named at its field and nothing is
   });
 });
 
+test("p31 fc: an attribute name that is not usable is refused at its field, in words, before Save", async () => {
+  show(
+    <AttributesDialog
+      base={base}
+      open
+      user={{ id: "u1", email: "pat@x.test", attributes: {} }}
+      onClose={() => {}}
+      onSaved={() => {}}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("Name", { selector: '[name="name-0"]' }), {
+    target: { value: "Bad Name" },
+  });
+  expect(await screen.findByText(/Bad Name cannot be a name/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(calls.some((c) => c.method === "PATCH")).toBe(false);
+});
+
 test("ACC-MP8: a group can say what it is for when made and afterwards", async () => {
   routes.push((method, url) => {
     if (method === "GET" && url.endsWith("/groups")) return [200, { items: [deskGroup] }];

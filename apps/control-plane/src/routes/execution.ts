@@ -2014,13 +2014,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         /** The newest run a trigger started: by its label, or for an event by its target and event. */
         const lastRunOf = async (row: (typeof rows)[number]) => {
           const label = row.node_id ? `${row.path}#${row.node_id}` : row.path;
-          // A run started by hand is not the trigger's own: it says "Last fired" is not counted.
-          const byHand = sql`coalesce(trigger_detail->>'manual', 'false') <> 'true'`;
           const match =
             row.type === "event"
-              ? sql`trigger_type = 'event' and trigger_detail->>'event' = ${row.event_name} and ${byHand}`
+              ? sql`trigger_type = 'event' and trigger_detail->>'event' = ${row.event_name}`
               : // Runs of schedules before phase 29 name them under `schedule`, every other under `trigger`.
-                sql`coalesce(trigger_detail->>'trigger', trigger_detail->>'schedule') = ${label} and ${byHand}`;
+                sql`coalesce(trigger_detail->>'trigger', trigger_detail->>'schedule') = ${label}`;
           const found = await sql<{
             kind: "script" | "flow";
             id: string;

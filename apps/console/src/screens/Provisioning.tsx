@@ -146,15 +146,22 @@ export function Provisioning({
             { header: "Name", cell: (row) => row.name },
             {
               header: "Begins",
+              priority: 3,
               cell: (row) => <code className="font-mono text-code">{row.prefix}…</code>,
             },
-            { header: "Made", cell: (row) => <Time value={row.createdAt} mode="ago" /> },
+            {
+              header: "Made",
+              priority: 3,
+              cell: (row) => <Time value={row.createdAt} mode="ago" />,
+            },
             {
               header: "Expires",
+              priority: 2,
               cell: (row) => (row.expiresAt ? <Time value={row.expiresAt} mode="ago" /> : "Never"),
             },
             {
               header: "Last used",
+              priority: 2,
               cell: (row) => (row.lastUsedAt ? when(row.lastUsedAt) : "Never"),
             },
             {
@@ -360,13 +367,22 @@ function Pushed({ root }: { root: string }) {
                 </span>
               ),
             },
-            { header: "Email", truncate: true, cell: (row) => (row.displayName ? row.email : "—") },
+            {
+              header: "Email",
+              priority: 2,
+              truncate: true,
+              cell: (row) => (row.displayName ? row.email : "—"),
+            },
             {
               header: "State",
               cell: (row) =>
                 row.active ? <StatePill state="active" /> : <StatePill state="off" />,
             },
-            { header: "Last change", cell: (row) => <Time value={row.updatedAt} mode="ago" /> },
+            {
+              header: "Last change",
+              priority: 2,
+              cell: (row) => <Time value={row.updatedAt} mode="ago" />,
+            },
           ]}
         />
         <LoadMore
@@ -399,6 +415,7 @@ function Pushed({ root }: { root: string }) {
                 { header: "When", cell: (row) => <Time value={row.at} mode="ago" /> },
                 {
                   header: "Push",
+                  priority: 2,
                   cell: (row) => (
                     <Mono>
                       {row.method} {row.resource}
@@ -407,9 +424,10 @@ function Pushed({ root }: { root: string }) {
                 },
                 {
                   header: "Answer",
+                  priority: 2,
                   cell: (row) => <StatePill state="failed">{String(row.status)}</StatePill>,
                 },
-                { header: "Why", cell: (row) => row.reason },
+                { header: "Why", priority: 3, cell: (row) => row.reason },
               ]}
             />
           </>

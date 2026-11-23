@@ -998,7 +998,7 @@ export function DatabaseLocations() {
       create={{
         action: "Register database",
         description:
-          "The platform connects first and prepares the database. The user must own it and be allowed to create roles. Registering a name again changes its address.",
+          "Volvel connects first and prepares the database. The user must own it and be allowed to create roles. Registering a name again changes its address.",
         fields: [
           {
             name: "name",

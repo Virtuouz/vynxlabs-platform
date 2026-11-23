@@ -62,7 +62,9 @@ import {
   resultNames,
   searchColumns,
   sourcesOf,
+  tidyVisual,
   visualOf,
+  withConfig,
   withInput,
 } from "./model.ts";
 import {
@@ -224,7 +226,29 @@ function AlsoFrom({ env, input, visual }: { env: Env; input: string; visual: Vis
     if (visual.columns) next.columns = visual.columns.filter((one) => !gone(one));
     if (visual.filters) next.filters = visual.filters.filter((one) => !gone(one.column));
     if (visual.sort) next.sort = visual.sort.filter((one) => !gone(one.by));
-    write(next, "no longer following a table");
+    // What the widget's Display lists of that table goes too, by either name it is known by:
+    // `via.column` in the query, `via_column` in the result.
+    const names = new Set(
+      (options.find((one) => one.via === via)?.columns ?? []).flatMap((column) => [
+        `${via}.${column.name}`,
+        joinedName(via, column.name),
+      ]),
+    );
+    const shown = env.config.columns as { column: string }[] | undefined;
+    const data = env.widget.data?.[input];
+    if (!data) return;
+    let widget = withInput(env.widget, input, {
+      ...(data as DataInput),
+      source: { visual: tidyVisual(next) },
+    });
+    if (Array.isArray(shown) && shown.some((one) => names.has(one.column))) {
+      widget = withConfig(
+        widget,
+        "columns",
+        shown.filter((one) => !names.has(one.column)),
+      );
+    }
+    env.write(widget, "no longer following a table", key);
   };
   const choose = (via: string, column: string, on: boolean) => {
     const name = `${via}.${column}`;

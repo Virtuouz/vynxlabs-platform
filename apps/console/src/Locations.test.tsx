@@ -93,3 +93,11 @@ test("the tenant list is narrowed to a location, and says so when none is there 
 });
 
 const location_search = () => globalThis.location.search;
+
+test("p31 fc: the Register database dialog says Volvel, never the platform", async () => {
+  show(<DatabaseLocations />);
+  fireEvent.click(await screen.findByRole("button", { name: "Register database" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("Volvel connects first");
+  expect(dialog.textContent).not.toMatch(/platform/i);
+});

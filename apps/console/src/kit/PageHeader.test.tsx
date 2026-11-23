@@ -26,3 +26,11 @@ test("a bar heading stays one row", () => {
   );
   expect(container.querySelector("[data-heading-block]")?.className).not.toContain("min-w-[min");
 });
+
+test("p31 fc: a bar heading on a phone puts the state under the name, so the name is not squeezed beside it", () => {
+  const { container } = render(
+    <PageHeader compact bar title="Clinic visits" state={<span>2 to fix</span>} />,
+  );
+  expect(container.querySelector("[data-heading-block]")?.className).toContain("max-sm:flex-wrap");
+  expect(container.querySelector("h1")?.className).toContain("max-sm:basis-full");
+});

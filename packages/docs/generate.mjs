@@ -27,11 +27,60 @@ function existing(folder = GENERATED) {
   });
 }
 
-/** Every file that should be in generated/, as text. */
+/**
+ * Where a generated page lives: in the collection it belongs to, under that collection's
+ * `reference/`. What each page says is drawn from the code; where it is shown is decided here.
+ * The permissions are for whoever administers a tenant, the settings for whoever hosts the
+ * instance, and the rest (kinds, API, command line, error codes, the syntax of pages) for
+ * whoever writes for the product.
+ */
+export function placeOf(name) {
+  if (!name.endsWith(".md")) return name;
+  if (name === "permissions.md") return "administer/reference/permissions.md";
+  if (name === "settings.md") return "self-host/reference/settings.md";
+  return `develop/reference/${name}`;
+}
+
+/** The address a generated page had when it was mounted under `reference/`, without `.md`. */
+const wasAt = (name) => `reference/${name.replace(/\.md$/, "")}`;
+const sameAddress = (one, other) => one.replace(/\/index$/, "") === other.replace(/\/index$/, "");
+
+/** A page's own text, with where it was before the collections existed said in its `moved_from`. */
+function withMoved(name, text) {
+  const was = wasAt(name);
+  const front = /^---\n([\s\S]*?)\n---\n/.exec(text);
+  if (!front) return text;
+  const lines = front[1].split("\n");
+  const at = lines.findIndex((line) => line.startsWith("moved_from:"));
+  if (at === -1) {
+    return text.replace(front[0], `---\n${front[1]}\nmoved_from:\n  - ${was}\n---\n`);
+  }
+  // A generator may write the list on the one line: it already says where the page was.
+  const inline = /^moved_from:\s*\[(.*)\]\s*$/.exec(lines[at]);
+  if (inline) {
+    const listed = inline[1].split(",").map((one) => one.trim().replace(/^["']|["']$/g, ""));
+    if (listed.some((one) => sameAddress(one, was))) return text;
+    lines[at] =
+      `moved_from: [${[...inline[1].split(",").map((one) => one.trim()), JSON.stringify(was)].join(", ")}]`;
+    return text.replace(front[0], `---\n${lines.join("\n")}\n---\n`);
+  }
+  let end = at + 1;
+  while (end < lines.length && lines[end].startsWith("  - ")) end++;
+  const listed = lines.slice(at + 1, end).map((line) => line.slice(4).replace(/^["']|["']$/g, ""));
+  if (listed.some((one) => sameAddress(one, was))) return text;
+  lines.splice(end, 0, `  - ${was}`);
+  return text.replace(front[0], `---\n${lines.join("\n")}\n---\n`);
+}
+
+/** Every file that should be in generated/, as text, by the path it is written to. */
 export async function expected() {
-  const files = generate();
-  for (const [name, text] of await apiFiles()) files.set(name, text);
-  files.set("index.md", referenceIndex(["- [The API](api/index): every route, and what it needs"]));
+  const made = generate();
+  for (const [name, text] of await apiFiles()) made.set(name, text);
+  made.set("index.md", referenceIndex(["- [The API](api/index): every route, and what it needs"]));
+  const files = new Map();
+  for (const [name, text] of made) {
+    files.set(placeOf(name), name.endsWith(".md") ? withMoved(name, text) : text);
+  }
   return files;
 }
 

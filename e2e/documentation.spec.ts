@@ -252,9 +252,7 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
 
   // The reference is in the help too, written from the code.
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(
-    `/t/${made.tenant}/workspaces/${made.dev}/runs?help=reference/errors%23draft_changed`,
-  );
+  await page.goto(`/t/${made.tenant}/workspaces/${made.dev}/runs?help=errors%23draft_changed`);
   await expect(help.getByRole("heading", { name: "Error codes" })).toBeVisible();
   await expect(help.getByText(/Nothing was overwritten/)).toBeVisible();
   await expect(page).toHaveURL(/\/runs$/);

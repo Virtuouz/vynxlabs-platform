@@ -263,7 +263,9 @@ describe("making, copying and removing", () => {
       { path: "handbook/guides/index", source: md("title: Guides\ntype: how-to") },
     ];
     const [one] = changes(planNewPage(typed, "handbook/guides", { title: "Close", name: "close" }));
-    expect(one?.source).toContain("## Goal");
+    expect(one?.source).toContain("## Before you start");
+    expect(one?.source).toContain("## The result");
+    expect(one?.source).not.toContain("## Goal");
     expect(frontmatterOf(one?.source as string)).toEqual({ title: "Close" });
     // A folder with no type leaves the page as it was: a title and nothing under it.
     expect(

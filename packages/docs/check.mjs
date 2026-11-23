@@ -3,6 +3,9 @@
 //   - a page that does not read, validate or link (the same checks as the build);
 //   - a topic the console asks for that no page has;
 //   - a page that names a screenshot the list in screenshots.mjs does not have;
+//   - a word the style guide avoids, or a British spelling, in prose of the product's own pages;
+//   - a page with no fact-check record, or a tutorial or how-to with no run log (unchecked.json
+//     lists the pages that had none when this began, and only gets shorter);
 //   - a page that its folder's `pages:` does not list, or a folder its parent's does not.
 //
 // That every section and editor of the console names a topic at all is held by
@@ -15,7 +18,9 @@ import { GENERATED, stale, write } from "./generate.mjs";
 import { coverage } from "./generators/reference.mjs";
 import { HERE, loadDocs, report } from "./load.mjs";
 import { nameLines, nameProblems, pathProblems, readLock, writeLock } from "./locks.mjs";
+import { recordProblems } from "./records.mjs";
 import { shotNames } from "./screenshots.mjs";
+import { wordProblems } from "./words.mjs";
 
 const REPO = join(HERE, "../..");
 const CONSOLE = join(REPO, "apps/console/src");
@@ -72,7 +77,7 @@ if (covered.share + 1e-9 < floor) {
   );
 }
 
-const { set, issues: found, redirects, written } = loadDocs();
+const { set, issues: found, redirects, written, sources: pageSources } = loadDocs();
 // A warning about a page's type or subjects that is known and not yet mended is listed in
 // lint-allow.json as "<path>:<code>". The list only gets shorter: an entry that no longer fires
 // is a problem, so that it is taken out.
@@ -178,6 +183,36 @@ for (const folder of [...folders].sort()) {
   const at = folder.lastIndexOf("/");
   leftOut(at === -1 ? "" : folder.slice(0, at), folder.slice(at + 1), "the folder");
 }
+
+// The words the style guide avoids, in the product's own pages (never a tenant's site). Pages that
+// have them today are in unchecked.json under "words", which only gets shorter.
+const ratchet = JSON.parse(readFileSync(join(HERE, "unchecked.json"), "utf8"));
+const dirty = new Set();
+for (const path of [...written].sort()) {
+  const found = wordProblems(pageSources.get(path) ?? "");
+  if (found.length > 0) dirty.add(path);
+  if ((ratchet.words ?? []).includes(path)) continue;
+  for (const { line, word, say } of found) {
+    problems.push(`${path}.md:${line}  says "${word}". Write ${say}.`);
+  }
+}
+for (const path of ratchet.words ?? []) {
+  if (!dirty.has(path)) {
+    problems.push(
+      `unchecked.json  "${path}" has none of the avoided words now. Take it out of "words".`,
+    );
+  }
+}
+// A fact-check record for every page, and a run log for a tutorial or how-to.
+const RECORDS = join(REPO, "docs/documentation");
+problems.push(
+  ...recordProblems({
+    written,
+    types: set.types,
+    has: (path) => existsSync(join(RECORDS, path)),
+    unchecked: ratchet.pages,
+  }),
+);
 
 for (const problem of problems) console.error(problem);
 const count = issues.length + problems.length;

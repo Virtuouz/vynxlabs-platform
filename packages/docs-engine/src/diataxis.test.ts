@@ -213,6 +213,21 @@ describe("new pages", () => {
     }
   });
 
+  test("the how-to template is the goal, Before you start, steps, The result, If it does not work", () => {
+    const headings = [...DOC_TEMPLATES["how-to"].matchAll(/^## (.+)$/gm)].map((one) => one[1]);
+    expect(headings).toEqual([
+      "Do the thing",
+      "Before you start",
+      "The result",
+      "If it does not work",
+    ]);
+    expect(DOC_TEMPLATES["how-to"]).not.toContain("## Goal");
+  });
+
+  test("the tutorial template opens with what you will have and how long it takes", () => {
+    expect(DOC_TEMPLATES.tutorial.split("\n")[0]).toMatch(/you will build.*takes about/);
+  });
+
   test("a page whose folder says the type does not repeat it", () => {
     expect(newPageSource("Do it", "how-to", "how-to")).not.toContain("type:");
     expect(newPageSource("Do it", "how-to")).toContain("type: how-to");

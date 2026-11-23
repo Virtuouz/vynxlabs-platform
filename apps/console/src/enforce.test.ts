@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { expect, test } from "vitest";
+import { BRITISH } from "../../../packages/docs/words.mjs";
 
 /**
  * Every list in the console is drawn by `DataTable` (08 §3.6), so a list is learned
@@ -654,8 +655,7 @@ test("no string a person reads is in British spelling", () => {
     "packages/manifest/src",
     "examples/fernhill",
   ];
-  const british =
-    /\b(cancell(?:ed|ing|ation)|colour\w*|greys?|greyed|greying|centred|centre|behaviours?|organis\w+|customis\w+|initialis\w+|synchronis\w+|licence|catalogue|analys(?:e|ed|es|ing)|normalis\w+|recognis\w+|authoris\w+|summaris\w+|visualis\w+|optimis\w+|artefacts?|neighbours?|labelled|labelling|honour\w*|whilst|amongst)\b/i;
+  const british = BRITISH;
   const found: string[] = [];
   const walk = (dir: string): string[] =>
     readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

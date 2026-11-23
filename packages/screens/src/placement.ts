@@ -519,9 +519,7 @@ export function usePlacement({
       const was = dragging;
       end();
       if (was)
-        setSaid(
-          `${how === "stretch" ? "Resize" : "Move"} canceled. ${name} is back where it was.`,
-        );
+        setSaid(`${how === "stretch" ? "Resize" : "Move"} canceled. ${name} is back where it was.`);
     };
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || !dragging) return;

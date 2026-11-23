@@ -149,7 +149,9 @@ test("EXT-10: a tenant administrator turns writing code in the console off, afte
   expect(await screen.findByText(/Writing code in the console is on/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Turn off code in the console" }));
   const dialog = await screen.findByRole("dialog");
-  expect(dialog.textContent).toMatch(/can no longer save or test scripts, connectors and trigger sources/);
+  expect(dialog.textContent).toMatch(
+    /can no longer save or test scripts, connectors and trigger sources/,
+  );
   fireEvent.click(within(dialog).getByRole("button", { name: "Turn off" }));
   await waitFor(() =>
     expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ consoleCode: false }),

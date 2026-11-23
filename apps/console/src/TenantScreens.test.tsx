@@ -319,10 +319,16 @@ test("a tenant whose workers the instance starts is not told that no worker is o
   });
   routes[`GET ${base}/summary`] = () => summary(0);
   routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", managedWorkers: true });
+  routes[`GET ${base}/managed-workers`] = () => ({ state: "host" });
   const view = show(<TenantOverview base={base} tenantId="t1" />);
   await screen.findByText("Nothing needs you");
   expect(screen.queryByText("No worker is online")).toBeNull();
   view.unmount();
+  // The switch on where the instance starts none for anyone is a fault too (GOV-23).
+  routes[`GET ${base}/managed-workers`] = () => ({ state: "unavailable" });
+  const second = show(<TenantOverview base={base} tenantId="t1" />);
+  await screen.findByText("No worker is online");
+  second.unmount();
   // Without managed workers, none online is a fault, as it was.
   routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", managedWorkers: false });
   show(<TenantOverview base={base} tenantId="t1" />);

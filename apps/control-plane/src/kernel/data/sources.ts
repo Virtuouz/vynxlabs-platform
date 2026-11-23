@@ -214,6 +214,13 @@ export function sourceFailure(path: string, error: unknown): unknown {
       "source_refused",
       `No password is set for the data source "${path}". Change it and type the password.`,
     );
+  // Encrypt is on and the server has no SSL: the driver stops before it connects.
+  if (/server does not support SSL/i.test(message))
+    return new HttpError(
+      502,
+      "source_refused",
+      `The data source "${path}" does not accept encrypted connections. Turn Encrypt off for it, or turn SSL on at the server.`,
+    );
   if (code === "28P01" || code === "28000")
     return new HttpError(
       502,

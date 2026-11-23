@@ -27,6 +27,7 @@ import {
   sourceTables,
 } from "../kernel/data/sources.js";
 import { badRequest, notFound } from "../kernel/errors.js";
+import { arrivingManifests } from "../kernel/execution/arriving.js";
 import { access, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { parseRowsQuery, RowsPage, RowsQuery, toRowsPage, WildParams, wildPath } from "./data.js";
@@ -132,6 +133,11 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   path: Type.String(),
                   description: Type.String(),
                   defined: Type.Boolean(),
+                  arrives: Type.Boolean({
+                    description:
+                      "Declared by a workspace linked to this one, and not deployed here yet: it " +
+                      "arrives with the next promotion, and can be bound here before.",
+                  }),
                   bound: Type.Boolean(),
                   config: Type.Union([AnyObject, Type.Null()]),
                   hasPassword: Type.Boolean(),
@@ -168,7 +174,13 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("workspace_id", "=", params.w)
           .execute();
         const setBy = await credentialSetters(db, bindings);
-        const paths = [...new Set([...definitions, ...bindings].map((row) => row.path))].sort();
+        // What the next promotion brings, which production is set up for before it arrives.
+        const arrives = (await arrivingManifests(kernel, db, params.w)).filter(
+          (one) => one.kind === "data_source" && !definitions.some((row) => row.path === one.path),
+        );
+        const paths = [
+          ...new Set([...definitions, ...bindings, ...arrives].map((row) => row.path)),
+        ].sort();
         const checks = await db
           .selectFrom("health_check")
           .selectAll()
@@ -177,15 +189,16 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .execute();
         return {
           items: paths.map((path) => {
-            const definition = definitions.find((row) => row.path === path)?.body as
-              | { description?: string }
-              | undefined;
+            const coming = arrives.find((row) => row.path === path);
+            const definition = (definitions.find((row) => row.path === path)?.body ??
+              coming?.body) as { description?: string } | undefined;
             const binding = bindings.find((row) => row.path === path);
             const check = binding ? checks.find((row) => row.path === path) : undefined;
             return {
               path,
               description: definition?.description ?? "",
-              defined: definition !== undefined,
+              defined: definitions.some((row) => row.path === path),
+              arrives: coming !== undefined,
               bound: binding !== undefined,
               config: binding?.config ?? null,
               hasPassword: Boolean(binding?.credential),

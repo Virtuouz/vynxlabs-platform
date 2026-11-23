@@ -1,11 +1,17 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { Button } from "./Button.tsx";
+import { useInOverlay } from "./overlay.ts";
 import { useContained } from "./Panel.tsx";
 
 /** What a failure's words can lead to: a label and where it goes. */
 export interface FailureHelp {
   label: string;
   onClick: () => void;
+  /**
+   * What to show under the notice when it sits inside a dialog or sheet, where the help panel
+   * would open behind the modal: the explanation itself, and where the whole of it is read.
+   */
+  inline?: { body: () => ReactNode; href: string };
 }
 
 let explainer: ((words: string) => FailureHelp | undefined) | undefined;
@@ -58,6 +64,10 @@ export function Notice({
     action === undefined && tone === "danger" && typeof children === "string"
       ? explainer?.(children)
       : undefined;
+  const inOverlay = useInOverlay();
+  const [open, setOpen] = useState(false);
+  const region = useId();
+  const inline = inOverlay ? help?.inline : undefined;
   return (
     <div
       role={tone === "danger" ? "alert" : "status"}
@@ -66,9 +76,27 @@ export function Notice({
       <div>{children}</div>
       {action}
       {help ? (
-        <Button size="small" variant="quiet" onClick={help.onClick}>
+        <Button
+          size="small"
+          variant="quiet"
+          onClick={inline ? () => setOpen((now) => !now) : help.onClick}
+          {...(inline ? { "aria-expanded": open, "aria-controls": region } : {})}
+        >
           {help.label}
         </Button>
+      ) : null}
+      {inline && open ? (
+        <div id={region} role="region" aria-label="What this means" className="basis-full">
+          <div className="text-ink-muted">{inline.body()}</div>
+          <a
+            href={inline.href}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-block text-action underline"
+          >
+            Open in documentation
+          </a>
+        </div>
       ) : null}
     </div>
   );

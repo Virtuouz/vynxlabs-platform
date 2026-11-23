@@ -1,5 +1,7 @@
 # What lanes left: the final sweep of phase 29
 
+Two lanes share this list: `sweep-server` takes what is in the control plane, the CLI, the SDK and the worker, and the console screens that only show what it adds; `sweep-console` takes what is in the console's screens and the widget packages. An item that is both is the server lane's.
+
 Each item was in a lane's brief and was not built, or was found by a lane. The final sweep builds them, or says why one cannot be (and asks the owner if that trims a decision).
 
 - WID-M4, WID-M6, WID-M10, WID-M11 (findings/widgets.md, missing parts): not built by t3-widgets.

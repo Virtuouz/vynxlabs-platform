@@ -78,8 +78,9 @@ export function ErrorState({
         </span>
         {forbidden ? (
           <span>
-            Ask a member who can give access in this tenant (an owner or administrator) to give you
-            a role with it.
+            {location.pathname.startsWith("/instance/")
+              ? "Ask an operator of this instance to give you access."
+              : "Ask a member who can give access in this tenant (an owner or administrator) to give you a role with it."}
           </span>
         ) : null}
         {requestId ? <RequestId id={requestId} /> : null}

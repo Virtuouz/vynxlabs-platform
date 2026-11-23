@@ -281,7 +281,7 @@ test("a sign-in the provider refused says why, once", async () => {
 });
 
 test("adding a domain says what happened: proved at once at the instance, a record to publish in a tenant (INS-18)", async () => {
-  const toast = vi.spyOn(notify, "success").mockImplementation(() => undefined);
+  const toast = vi.spyOn(notify, "success").mockImplementation(() => 0);
   const instanceBase = "/api/v1/instance/identity-providers";
   routes[`GET ${instanceBase}`] = () => [200, { items: [oidc] }];
   routes[`GET ${instanceBase}/p1`] = () => [200, oidc];

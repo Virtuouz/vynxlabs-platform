@@ -1,4 +1,5 @@
 import { keepPreviousData, QueryClient, QueryClientContext, useQuery } from "@tanstack/react-query";
+import { grants } from "@volvel/manifest";
 import { useCallback, useContext } from "react";
 import { sessionIsOpen, whenRenewed } from "./session.ts";
 
@@ -300,4 +301,8 @@ export interface Me {
   tenants: { id: string; slug: string; name: string }[];
 }
 
-export const isOperator = (me: Me) => me.instancePermissions.includes("tenant:*");
+/**
+ * Whether this person runs the instance: what an operator is given at the instance, however the
+ * role says it (`tenant:*` or everything). The Instance area and the tenant list both ask this.
+ */
+export const isOperator = (me: Me) => grants(me.instancePermissions, "tenant:write");

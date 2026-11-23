@@ -1,6 +1,6 @@
 import { Closing, Notice } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useRef } from "react";
-import { api, type Me, useLoad } from "./api.ts";
+import { api, isOperator, type Me, useLoad } from "./api.ts";
 import { notify } from "./ask.tsx";
 import { clearSession } from "./clearSession.ts";
 import { loadPreferences } from "./prefs.ts";
@@ -14,7 +14,7 @@ import { InstanceAudit, InstanceMembers, Operators } from "./screens/Instance.ts
 import { InstanceBranding } from "./screens/InstanceBranding.tsx";
 import { InstanceTriggers } from "./screens/InstanceTriggers.tsx";
 import { KitSheet } from "./screens/KitSheet.tsx";
-import { NotFound } from "./screens/NotFound.tsx";
+import { ForOperators, NotFound } from "./screens/NotFound.tsx";
 import { SignIn } from "./screens/SignIn.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
 import { beginSession, endSession, useSessionEnded } from "./session.ts";
@@ -151,6 +151,10 @@ export function App() {
   else if (tenant?.tenantId)
     screen = <Tenant key={tenant.tenantId} tenantId={tenant.tenantId} me={me.data} path={path} />;
   else if (path === "/account/api-keys") screen = <Account />;
+  // The whole Instance area is for operators: the server refuses the rest, and says so only after
+  // a header and a create button were drawn over it.
+  else if (path.startsWith("/instance/") && !isOperator(me.data))
+    screen = <ForOperators home="/" homeLabel="Go to your tenants" />;
   else if (path === "/instance/members") screen = <InstanceMembers />;
   else if (path === "/instance/operators") screen = <Operators />;
   else if (path === "/instance/single-sign-on") screen = <SingleSignOn base="/instance" />;

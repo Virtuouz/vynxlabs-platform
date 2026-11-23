@@ -23,11 +23,15 @@ type Scope = "instance" | "tenant" | "tenant-or-instance" | "workspace";
 
 /** How a route decides who may call it. Every route must declare one. */
 export type Access =
-  | { kind: "public" }
+  /** `says` is what a caller needs to bring, when it is not nothing: a token in the address, say. */
+  | { kind: "public"; says?: string }
   /** A member's own account. A service account's key is refused, unless the route says `serviceAccounts`. */
   | { kind: "signed-in"; serviceAccounts?: boolean }
-  /** The handler calls `ctx.authorize` itself, because the target depends on the request body. */
-  | { kind: "custom" }
+  /**
+   * The handler calls `ctx.authorize` itself, because the target depends on the request body.
+   * `says` is what the reference prints: what is decided, and by what.
+   */
+  | { kind: "custom"; says: string }
   /** Called by a worker with a worker credential, under the worker protocol. */
   | { kind: "worker" }
   /** Called by the instance's worker host with WORKER_HOST_TOKEN, to be given leases. */
@@ -41,7 +45,9 @@ export const access = {
   signedIn: { kind: "signed-in" } as Access,
   /** For a route that is not about a person, such as a batch of calls that are each checked alone. */
   signedInOrKey: { kind: "signed-in", serviceAccounts: true } as Access,
-  custom: { kind: "custom" } as Access,
+  /** A public route that asks for something, such as the token that is in its address. */
+  publicWith: (says: string): Access => ({ kind: "public", says }),
+  custom: (says: string): Access => ({ kind: "custom", says }),
   worker: { kind: "worker" } as Access,
   workerHost: { kind: "worker-host" } as Access,
   scim: { kind: "scim" } as Access,

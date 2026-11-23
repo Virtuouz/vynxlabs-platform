@@ -12,6 +12,7 @@ import { resolveResource } from "../kernel/resolve.js";
 import { deleteResource, putResource } from "../kernel/resources.js";
 import { setSecret } from "../kernel/secrets.js";
 import { isTimeZone } from "../kernel/zones.js";
+import { listOf } from "../pagination.js";
 import {
   AnyObject,
   Id,
@@ -181,12 +182,17 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Lists the workspaces the caller may read. A caller who may read none needs `workspace:read` in the tenant to be answered.",
+          ),
+        },
         schema: {
           summary: "Workspaces the caller can read in a tenant",
+          description: "Each workspace the caller may read, with its kind, dev or production.",
           tags: ["tenancy"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Workspace) }) },
+          response: { 200: listOf(Workspace) },
         },
       },
       async ({ ctx, params }) => {
@@ -280,6 +286,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("workspace:read") },
         schema: {
           summary: "One workspace",
+          description: "The workspace's name, its slug and its kind, dev or production.",
           tags: ["tenancy"],
           params: WorkspaceParams,
           response: { 200: Workspace },
@@ -402,7 +409,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "Values are never returned by any route.",
           tags: ["secrets"],
           params: WorkspaceParams,
-          response: { 200: Type.Object({ items: Type.Array(Secret) }) },
+          response: { 200: listOf(Secret) },
         },
       },
       async ({ params }) => {
@@ -490,6 +497,8 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("secret:write") },
         schema: {
           summary: "Set a secret",
+          description:
+            "Replaces the secret's value. The value is never read back by this API, only that it is set. Audited.",
           tags: ["secrets"],
           params: Type.Object({ t: Id, w: Id, name: SecretName }),
           body: Type.Object({ value: Type.String({ minLength: 1, maxLength: 65536 }) }),
@@ -522,6 +531,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("secret:write") },
         schema: {
           summary: "Delete a secret",
+          description: "Removes the secret and its value. Audited.",
           tags: ["secrets"],
           params: Type.Object({ t: Id, w: Id, name: SecretName }),
           response: { 204: NoContent },
@@ -556,10 +566,12 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("resource:read") },
         schema: {
           summary: "Resources in a workspace",
+          description:
+            "What is deployed in the workspace, by path and kind, with whether the console or a repository manages each.",
           tags: ["resources"],
           params: WorkspaceParams,
           querystring: Type.Object({ kind: Type.Optional(Type.String()) }),
-          response: { 200: Type.Object({ items: Type.Array(Resource) }) },
+          response: { 200: listOf(Resource) },
         },
       },
       async ({ ctx, params, query }) => {
@@ -577,6 +589,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("resource:read") },
         schema: {
           summary: "One resource, by path",
+          description: "The resource as it is deployed: its kind, who manages it and its body.",
           tags: ["resources"],
           params: ResourceParams,
           response: { 200: Resource },
@@ -771,6 +784,7 @@ export function workspaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.workspace("resource:write") },
         schema: {
           summary: "Delete the resource at a path",
+          description: "Removes the resource from what the workspace deploys. Audited.",
           tags: ["resources"],
           params: ResourceParams,
           response: { 204: NoContent },

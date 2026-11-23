@@ -45,7 +45,11 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces/:w/interfaces",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs `resource:read` in the workspace, or `interface:read` alone.",
+          ),
+        },
         schema: {
           summary: "The interfaces of a workspace, deployed and in draft",
           description:
@@ -176,7 +180,12 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces/:w/interfaces/*",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Answers for whoever may open an app that serves the interface, and for whoever may read the workspace's resources. An app may call it for someone who is not signed in where the app is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "An interface as it is deployed, with what its tables hold",
           description:

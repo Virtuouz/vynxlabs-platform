@@ -1,7 +1,6 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import {
   appOf,
-  buildApp,
   buildSearchIndex,
   type DocsApp,
   docsApps,
@@ -14,6 +13,7 @@ import {
 import { walk } from "@volvel/markup";
 import { type Static, Type } from "typebox";
 import { appUrl } from "../kernel/apps/address.js";
+import { buildDocs, PRODUCT_CLASHES } from "../kernel/docs/product.js";
 import { type WorkingResource, workingDocs } from "../kernel/docs/working.js";
 import { notFound } from "../kernel/errors.js";
 import type { RequestContext } from "../kernel/http.js";
@@ -163,7 +163,9 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/docs`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs `resource:read` in the workspace, or `doc:read` alone."),
+        },
         schema: {
           summary: "The pages of documentation of a workspace, and the apps that serve them",
           description:
@@ -176,6 +178,20 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             200: Type.Object({
               apps: Type.Array(App),
               pages: Type.Array(PageSummary),
+              issues: Type.Array(
+                Type.Object({
+                  app: Type.String(),
+                  path: Type.String(),
+                  code: Type.String(),
+                  message: Type.String(),
+                }),
+                {
+                  description:
+                    "Pages that take a term or a topic the product's own help has. A deploy refuses " +
+                    "them, and one that was deployed before the product had the name loses it " +
+                    "silently, so they are said here.",
+                },
+              ),
               tables: Type.Array(Table, {
                 description:
                   "The workspace's tables, as its writers see them: a deploy of the documentation " +
@@ -235,7 +251,19 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .filter((one) => one.kind === "app" && one.state !== "removed")
             .map((one) => [one.path, one.body as Record<string, unknown>]),
         );
+        const live = resources.filter((one) => one.state !== "removed");
+        const issues = apps.flatMap((one) =>
+          buildDocs(kernel.config, one, live)
+            .issues.filter((issue) => PRODUCT_CLASHES.includes(issue.code))
+            .map((issue) => ({
+              app: one.path,
+              path: issue.path,
+              code: issue.code,
+              message: issue.message,
+            })),
+        );
         return {
+          issues,
           apps: apps.map((one) => {
             const url = appUrl(kernel, {
               tenantSlug: tenant.slug,
@@ -264,7 +292,9 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/docs/page/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs `resource:read` in the workspace, or `doc:read` alone."),
+        },
         schema: {
           summary: "One page of documentation, as it is being written",
           description:
@@ -305,7 +335,9 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/docs/search`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs `resource:read` in the workspace, or `doc:read` alone."),
+        },
         schema: {
           summary: "Search the workspace's documentation",
           description:
@@ -335,7 +367,7 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const kept = resources.filter((one) => one.state !== "removed");
         const items = [];
         for (const one of apps) {
-          const { set } = buildApp(one, kept);
+          const { set } = buildDocs(kernel.config, one, kept);
           for (const hit of loadSearchIndex(buildSearchIndex(set)).search(query.q, 10)) {
             items.push({
               path: `${one.docs}/${hit.path}`,

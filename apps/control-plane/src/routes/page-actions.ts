@@ -14,7 +14,12 @@ export function pageActionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.post(
       "/tenants/:t/workspaces/:w/page-actions",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Needs what the action itself needs: it runs as the caller. An app may call it for someone who is not signed in where the app is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "Run an action of a page",
           description:

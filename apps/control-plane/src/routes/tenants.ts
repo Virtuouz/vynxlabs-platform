@@ -9,7 +9,7 @@ import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
 import { effectivePolicy } from "../kernel/retention.js";
 import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
-import { likeTerm, pageOf, SearchPageQuery } from "../pagination.js";
+import { likeTerm, listOf, pageOf, SearchPageQuery } from "../pagination.js";
 import {
   ApiKey,
   insertApiKey,
@@ -198,6 +198,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("tenant:write") },
         schema: {
           summary: "Create a tenant",
+          description: "Makes a tenant. Audited at the instance.",
           tags: ["tenancy"],
           body: Type.Object({
             slug: Slug,
@@ -297,6 +298,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenantOrInstance("tenant:read") },
         schema: {
           summary: "One tenant",
+          description: "The tenant's name, its slug and its settings.",
           tags: ["tenancy"],
           params: TenantParams,
           response: {
@@ -328,6 +330,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenantOrInstance("tenant:write") },
         schema: {
           summary: "Rename a tenant, or say whether the instance runs workers for it",
+          description: "Either field may be sent alone. Audited.",
           tags: ["tenancy"],
           params: TenantParams,
           body: Type.Object({
@@ -495,6 +498,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("member:read") },
         schema: {
           summary: "Members of a tenant",
+          description: "The people who hold access to the tenant, with the roles they hold.",
           tags: ["identity"],
           params: TenantParams,
           querystring: SearchPageQuery,
@@ -734,9 +738,11 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("group:read") },
         schema: {
           summary: "Groups in a tenant",
+          description:
+            "The tenant's groups of members. A binding made to a group gives its role to everyone in it.",
           tags: ["identity"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(Group) }) },
+          response: { 200: listOf(Group) },
         },
       },
       async ({ params }) => {
@@ -789,6 +795,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("group:write") },
         schema: {
           summary: "Create a group",
+          description:
+            "Makes an empty group. Add members to it, then bind a role to the group. Audited.",
           tags: ["identity"],
           params: TenantParams,
           body: Type.Object({
@@ -900,6 +908,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("group:read") },
         schema: {
           summary: "One group and its members",
+          description: "The group and the members in it.",
           tags: ["identity"],
           params: GroupParams,
           response: { 200: Type.Object({ ...Group.properties, members: Type.Array(Member) }) },
@@ -963,6 +972,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("group:write") },
         schema: {
           summary: "Add a tenant member to a group",
+          description: "Only a member of the tenant can be added. Audited.",
           tags: ["identity"],
           params: GroupMemberParams,
           response: { 204: NoContent },
@@ -1007,6 +1017,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("group:write") },
         schema: {
           summary: "Remove a member from a group",
+          description:
+            "The member loses what the group's bindings gave, and keeps what is bound to them directly. Audited.",
           tags: ["identity"],
           params: GroupMemberParams,
           response: { 204: NoContent },
@@ -1046,9 +1058,11 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("service_account:read") },
         schema: {
           summary: "Service accounts in a tenant",
+          description:
+            "The accounts that act for programs. A service account holds only what is bound to it.",
           tags: ["identity"],
           params: TenantParams,
-          response: { 200: Type.Object({ items: Type.Array(ServiceAccount) }) },
+          response: { 200: listOf(ServiceAccount) },
         },
       },
       async ({ params }) => {
@@ -1068,6 +1082,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("service_account:write") },
         schema: {
           summary: "Create a service account",
+          description:
+            "A named identity for a program, with no keys until one is made. Bind a role to it to give it anything. Audited.",
           tags: ["identity"],
           params: TenantParams,
           body: Type.Object({
@@ -1204,9 +1220,11 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("service_account:read") },
         schema: {
           summary: "A service account's API keys",
+          description:
+            "The keys made for the account. A key's full value is shown once, when it is made, and is not in this list.",
           tags: ["identity"],
           params: Type.Object({ t: Id, id: Id }),
-          response: { 200: Type.Object({ items: Type.Array(ApiKey) }) },
+          response: { 200: listOf(ApiKey) },
         },
       },
       async ({ params }) => {
@@ -1229,6 +1247,8 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("service_account:write") },
         schema: {
           summary: "Create an API key for a service account",
+          description:
+            "The key acts as the service account. Its value is in the answer and is never shown again. Audited.",
           tags: ["identity"],
           params: Type.Object({ t: Id, id: Id }),
           body: NewApiKeyBody,
@@ -1269,6 +1289,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.tenant("service_account:write") },
         schema: {
           summary: "Revoke a service account's API key",
+          description: "The key stops working. Audited.",
           tags: ["identity"],
           params: Type.Object({ t: Id, id: Id, keyId: Id }),
           response: { 204: NoContent },

@@ -80,6 +80,12 @@ const declared = {
   "add.widget": { keys: ["a"], label: "Add to the page being built", scope: "Editors" },
   save: { keys: ["Mod+S"], label: "Save now", scope: "Editors" },
   run: { keys: ["Mod+Enter"], label: "Run the draft", scope: "Editors" },
+  rename: {
+    keys: ["F2"],
+    label: "Rename the page that is open",
+    scope: "Editors",
+    notInFields: true,
+  },
   undo: { keys: ["Mod+Z"], label: "Undo", scope: "Editors", notInFields: true },
   redo: { keys: ["Shift+Mod+Z", "Ctrl+Y"], label: "Redo", scope: "Editors", notInFields: true },
 

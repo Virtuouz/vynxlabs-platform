@@ -128,7 +128,8 @@ test("a viewer is offered no Pause, Resume or Fire now, and an operator is (OPS-
   expect(screen.queryByRole("button", { name: "Pause this trigger" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Fire now" })).toBeNull();
   cleanup();
-  allowed = ["trigger:write"];
+  // Pausing changes the trigger; firing it starts a run, which is what the server asks for.
+  allowed = ["trigger:write", "run:write"];
   show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
   expect(await screen.findByRole("button", { name: "Pause this trigger" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Fire now" })).toBeTruthy();

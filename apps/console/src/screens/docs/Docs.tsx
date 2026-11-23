@@ -63,7 +63,7 @@ import { useBrand } from "../../kit/brand.tsx";
 import { useNeeds } from "../../kit/Can.tsx";
 import { putOnDraftNow, readDraft } from "../../kit/draftApi.ts";
 import { listOf } from "../../kit/format.ts";
-import { isTyping } from "../../kit/keys.ts";
+import { useShortcut } from "../../kit/keys.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { removeWords } from "../../kit/RemoveDraftButton.tsx";
@@ -1767,18 +1767,6 @@ export function folderItems(rows: readonly DocRow[], page: Pick<DocPage, "path">
  * the key when they have focus, but a page chosen in the tree moves focus to the page's heading.
  */
 function RenameKey({ onRename }: { onRename: () => void }) {
-  const latest = useRef(onRename);
-  latest.current = onRename;
-  useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "F2" || event.defaultPrevented || event.isComposing) return;
-      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
-      if (isTyping(event.target)) return;
-      event.preventDefault();
-      latest.current();
-    };
-    addEventListener("keydown", onKey);
-    return () => removeEventListener("keydown", onKey);
-  }, []);
+  useShortcut("rename", () => onRename());
   return null;
 }

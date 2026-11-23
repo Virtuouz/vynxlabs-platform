@@ -372,3 +372,17 @@ test("?setup= opens the form that makes what a refused promotion names: a variab
 /** What the fields of a form hold, the hidden one a chosen option fills included. */
 const valuesIn = (form: HTMLElement) =>
   [...form.querySelectorAll("input")].map((input) => (input as HTMLInputElement).value);
+
+test("WLK-17h: a Set up link for a variable shows the variable chosen, not a blank choice", async () => {
+  routes[`GET ${root}/variable-values`] = () => [
+    200,
+    { items: [{ path: "region", description: "", default: null, value: null, arrives: true }] },
+  ];
+  routes[`GET ${root}/references`] = () => [200, { items: [] }];
+  history.replaceState(null, "", `${link}/variables?setup=region`);
+  show(<Variables root={root} />);
+  const dialog = await screen.findByRole("dialog");
+  await waitFor(() =>
+    expect((within(dialog).getByRole("combobox") as HTMLInputElement).value).toBe("region"),
+  );
+});

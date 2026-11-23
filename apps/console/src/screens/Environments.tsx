@@ -988,13 +988,16 @@ export function TenantImport() {
                 : "the instance's own database."}
             </li>
             <li>
-              All {report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume
-              each one when the instance it came from has stopped.
+              {report.pausedWorkspaces === 1
+                ? "The workspace arrived with its triggers paused. Resume it"
+                : `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one`}{" "}
+              when the instance it came from has stopped.
             </li>
             {report.cancelled.runs + report.cancelled.flowRuns > 0 ? (
               <li>
-                {report.cancelled.runs} runs and {report.cancelled.flowRuns} flow runs were
-                unfinished in the export, and are recorded as cancelled.
+                {report.cancelled.runs} {report.cancelled.runs === 1 ? "run" : "runs"} and{" "}
+                {report.cancelled.flowRuns} flow {report.cancelled.flowRuns === 1 ? "run" : "runs"}{" "}
+                were unfinished in the export, and are recorded as canceled.
               </li>
             ) : null}
             {report.notCarried.map((line) => (

@@ -49,7 +49,7 @@ const TEXT_FIELD =
  * the one to start on: that would open its calendar (or a phone's picker) before anything was
  * asked, so it is passed over.
  */
-function firstField(root: HTMLElement | null): HTMLElement | undefined {
+export function firstField(root: HTMLElement | null): HTMLElement | undefined {
   return Array.from(root?.querySelectorAll<HTMLElement>(TEXT_FIELD) ?? []).find(
     (field) => !(field.hasAttribute("data-date-input") && !field.hasAttribute("required")),
   );

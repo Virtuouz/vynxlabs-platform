@@ -16,3 +16,16 @@ Paths: `C/` = `apps/console/src/`. No migration. No contract changed. Tests: `C/
 
 ## WLK-05 session sheet close button
 New `dismissible` prop on `Dialog` (`packages/ui/src/Dialog.tsx`): `false` draws no Close button and ignores Esc and backdrop presses. `C/SessionSheet.tsx` uses it, as the page waits on the sheet. Test `WLK-05` (no Close, Esc keeps it). Siblings: no other Dialog passes a no-op `onClose`. Focus trap is the dialog's own (base-ui modal); the test checks the sheet has its controls, a real Tab walk is for the browser. Keyboard: Tab cycles password, Sign in; Esc does nothing. Walk at 390 and with keys only.
+
+# Rows added to the walk file while this lane worked
+
+Taken: WLK-06, WLK-08, WLK-10 (they sit in the shared pieces this lane was already in). Not taken: WLK-07 (data source server and Change form), WLK-09, WLK-11, WLK-12, WLK-15 (mixed lists across data, widgets, access, flows: other lanes), WLK-13, WLK-14 (lane mask2, security).
+
+## WLK-06 a plain error crashed a form
+`C/ListScreen.tsx:199` (`CreateDialog`) and the three siblings `C/screens/Roles.tsx:304`, `Branding.tsx:167`, `Domains.tsx:155` read `error?.fields?.find`: an `Error` thrown by a caller (`takenColumn` in `Data.tsx`) has no `fields`, and is now said in the form's notice. Test `WLK-06` in `C/CreateDialog.test.tsx` (threw "Cannot read properties of undefined (reading 'find')" before). Other `.fields.find` reads: `Environments.tsx:373` and `Authoring.tsx:512` take a value already known to be an `ApiError`/array, left.
+
+## WLK-08 Change shows the details from before a save
+`C/ListScreen.tsx` `CreateDialog`: when it opens, its fields are set from `initial` as it is then. Test `WLK-08`. Siblings: every `CreateDialog` with `initial`: `Data.tsx` ChangeSource (`:2505`) and the two in `Groups.tsx`, `Execution.tsx:1200`, `ListScreen.tsx:370` pass the same piece. Walk: Change a source's host, save, Change again: the new host shows.
+
+## WLK-10 dialogs open on Close
+`packages/ui/src/SideSheet.tsx` now places the focus as `Dialog` does (a `data-autofocus` control, else the first field, else the first control); `Dialog.tsx` exports `firstField`. `packages/ui/src/Dialogs.tsx`: a confirmation starts on its main button, on Cancel when `danger`; a prompt or type-to-confirm keeps its field. `packages/screens/src/actions.tsx`: an action's confirmation without asks starts on its main button. Tests in `packages/ui/src/dialogFocus.test.tsx` (`WLK-10`, two tests). Siblings: every `SideSheet` caller now starts in its first field; callers whose body arrives late still start on Close (SideSheet has no late-field watcher as Dialog has). Left out: the manifest has no flag for an action that destroys, so an action's confirmation never starts on Cancel; asking the owner whether to add `danger` to `confirm` is for the integrator. Walk: Add column, Change source, a widget action's confirmation, a delete confirmation (Cancel focused), at 1440 and 390, by keyboard.

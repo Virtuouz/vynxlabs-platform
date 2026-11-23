@@ -164,7 +164,7 @@ export function TokenRows({
     <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
       <legend className="mb-2 p-0 font-medium">{mode === "tokens" ? "Light" : "Dark"}</legend>
       {THEME_TOKENS.map((token) => {
-        const problem = error?.fields.find((field) =>
+        const problem = error?.fields?.find((field) =>
           field.path.endsWith(`/${mode}/${token}`),
         )?.message;
         const value = values[token] ?? "";

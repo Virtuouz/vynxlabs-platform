@@ -193,10 +193,16 @@ export function CreateDialog({
   const [unpicked, setUnpicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const formId = useId();
+  // Opened again, it starts from what exists now: a save in between changed it.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setValues(initial ?? {});
+  }
   const fieldError = (name: string) =>
     unpicked.includes(name)
       ? "Choose one."
-      : error?.fields.find((field) => field.path === `/body/${name}`)?.message;
+      : error?.fields?.find((field) => field.path === `/body/${name}`)?.message;
   // Cancelled means forgotten: what was typed, a password included, does not wait for the next time.
   const close = () => {
     setValues(initial ?? {});

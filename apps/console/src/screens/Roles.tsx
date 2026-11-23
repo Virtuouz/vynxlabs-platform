@@ -301,7 +301,7 @@ function RoleDialog({
   const [busy, setBusy] = useState(false);
   const readOnly = role !== undefined && (role.builtin || role.managedByResource);
   const fieldError = (field: string) =>
-    error?.fields.find((one) => one.path.startsWith(`/body/${field}`))?.message;
+    error?.fields?.find((one) => one.path.startsWith(`/body/${field}`))?.message;
 
   return (
     <SideSheet

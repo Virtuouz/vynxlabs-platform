@@ -294,7 +294,11 @@ test("WLK-02: signing in from a deep link shows the screen, not a 401 an early r
   history.replaceState(null, "", "/t/t1");
   const refused = () =>
     new Response(
-      JSON.stringify({ status: 401, code: "unauthenticated", detail: "Sign in or send an API key." }),
+      JSON.stringify({
+        status: 401,
+        code: "unauthenticated",
+        detail: "Sign in or send an API key.",
+      }),
       { status: 401 },
     );
   // What index.html asked for while the scripts arrived, before anyone signed in.

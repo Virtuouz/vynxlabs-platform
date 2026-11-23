@@ -31,7 +31,7 @@ async function resume(): Promise<boolean> {
  * organization's sign-in in another tab, and what waited is sent again. Someone else
  * signing in does not resume the page: it is reloaded for them.
  */
-export function SessionSheet({ email }: { email: string }) {
+export function SessionSheet({ email, open }: { email: string; open: boolean }) {
   const [password, setPassword] = useState("");
   const [ways, setWays] = useState<Ways>({ providers: [], password: true });
   const [error, setError] = useState<string>();
@@ -58,7 +58,7 @@ export function SessionSheet({ email }: { email: string }) {
   const here = `${window.location.pathname}${window.location.search}`;
   return (
     <Dialog
-      open
+      open={open}
       onClose={() => {}}
       title="Your session ended"
       description={`Sign in again as ${email} to carry on. Nothing on this page was lost.`}

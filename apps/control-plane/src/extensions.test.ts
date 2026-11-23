@@ -315,7 +315,8 @@ describe("a connector of the tenant's own", () => {
     expect(done.status, JSON.stringify(done.error)).toBe("succeeded");
     expect(done.output).toEqual({
       text: "GOOD DAY, ADA",
-      key: "s3cret-key",
+      // What the connector was given, which a run never shows (SCR-01).
+      key: "[redacted]",
       cancellable: "boolean",
     });
   });

@@ -832,7 +832,7 @@ describe("a flow or script that refuses its input", () => {
     (await alice.get(`${ws()}/rows/invoices?limit=500`)).body.items.length as number;
   /** A button that makes a row, then starts what `start` says, with nothing to give it. */
   const trying = async (start: object) => {
-    const saved = await alice.put(`${ws()}/drafts/screens/invoices`, {
+    const saved = await putSeen(alice, `${ws()}/drafts/screens/invoices`, {
       kind: "interface",
       schemaVersion: 2,
       body: {

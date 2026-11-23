@@ -25,6 +25,7 @@ export function GroupMemberSheet({
   group,
   schema,
   member,
+  open,
   onClose,
   onSaved,
 }: {
@@ -33,6 +34,7 @@ export function GroupMemberSheet({
   schema: Record<string, unknown>;
   /** The member being changed. None for a new one. */
   member?: GroupMemberRow | undefined;
+  open: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -66,7 +68,7 @@ export function GroupMemberSheet({
 
   return (
     <SideSheet
-      open
+      open={open}
       onClose={onClose}
       size="wide"
       title={member ? `Change ${member.key}` : "Add a member"}

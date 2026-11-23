@@ -1432,20 +1432,23 @@ export function ConnectionGroups({ root }: { root: string }) {
           )}
         </Panel>
       ))}
-      {editing ? (
-        <GroupMemberSheet
-          key={`${editing.group.path}/${editing.member?.key ?? ""}`}
-          root={root}
-          group={editing.group.path}
-          schema={editing.group.configSchema}
-          member={editing.member}
-          onClose={() => setEditing(undefined)}
-          onSaved={() => {
-            setEditing(undefined);
-            groups.reload();
-          }}
-        />
-      ) : null}
+      <Closing subject={editing}>
+        {(which, open) => (
+          <GroupMemberSheet
+            key={`${which.group.path}/${which.member?.key ?? ""}`}
+            root={root}
+            group={which.group.path}
+            schema={which.group.configSchema}
+            member={which.member}
+            open={open}
+            onClose={() => setEditing(undefined)}
+            onSaved={() => {
+              setEditing(undefined);
+              groups.reload();
+            }}
+          />
+        )}
+      </Closing>
     </section>
   );
 }

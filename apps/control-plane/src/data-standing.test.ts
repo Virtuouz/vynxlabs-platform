@@ -2,7 +2,7 @@ import { Database, sql } from "@volvel/db";
 import { createTestDatabase, type TestDatabase } from "@volvel/db/testing";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { type Client, startTestApp, type TestApp } from "./testing.js";
+import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
 /**
  * Who may put a data source's table, or SQL, on a page; where a source's stored password may go;
@@ -164,7 +164,7 @@ afterAll(async () => {
 });
 
 const draft = (client: Client, path: string, kind: string, body: object, more: object = {}) =>
-  client.put(`${ws()}/drafts/${path}`, {
+  putSeen(client, `${ws()}/drafts/${path}`, {
     kind,
     schemaVersion: kind === "dashboard" ? 3 : 1,
     body,

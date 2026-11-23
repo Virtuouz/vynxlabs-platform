@@ -1,4 +1,4 @@
-import { Notice } from "@volvel/ui";
+import { Closing, Notice } from "@volvel/ui";
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { api, type Me, useLoad } from "./api.ts";
 import { notify } from "./ask.tsx";
@@ -165,7 +165,9 @@ export function App() {
     <Shell me={me.data} path={path} tenantId={tenant?.tenantId} onSignOut={signOut}>
       {/* Some screens are fetched when first opened. */}
       <Suspense fallback={<Loading />}>{screen}</Suspense>
-      {ended && me.data.principal.email ? <SessionSheet email={me.data.principal.email} /> : null}
+      <Closing subject={ended && me.data.principal.email}>
+        {(email, open) => <SessionSheet email={email} open={open} />}
+      </Closing>
     </Shell>
   );
 }

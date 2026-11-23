@@ -29,7 +29,7 @@ import { SecretField } from "../kit/SecretField.tsx";
 import { Mono, StatePill, Tag } from "../kit/status.tsx";
 import { useOpenRow } from "../kit/useOpenRow.ts";
 import { CopyButton, Page, when } from "../ListScreen.tsx";
-import { Link as RouteLink, useUrlParam } from "../router.tsx";
+import { leaveFirst, Link as RouteLink, useUrlParam } from "../router.tsx";
 import { Provisioning } from "./Provisioning.tsx";
 
 type Audience = "members" | "end_users";
@@ -1366,6 +1366,8 @@ function ProviderDetail({
     permission: instance ? "instance:write" : "sso:write",
   };
   const can = useCan(gate.base, gate.permission);
+  // Changing tab drops what the tab holds unsaved: it asks as leaving the page does.
+  const changeTab = leaveFirst(setTab);
   const guarded = (content: ReactNode) => (
     <Can {...gate} what="this provider">
       {content}
@@ -1479,7 +1481,7 @@ function ProviderDetail({
         <Stepper
           steps={steps}
           current={current}
-          onChoose={(key) => setTab(key === "enforce" ? "setup" : key)}
+          onChoose={(key) => changeTab(key === "enforce" ? "setup" : key)}
         />
       </nav>
       {on && !provider.enforce && provider.audience === "members" ? (
@@ -1498,7 +1500,7 @@ function ProviderDetail({
       <Tabs
         label="Provider sections"
         value={tab}
-        onChange={setTab}
+        onChange={changeTab}
         tabs={[
           {
             id: "setup",

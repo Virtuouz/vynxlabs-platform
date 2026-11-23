@@ -383,3 +383,33 @@ test("ACC-24: a workspace's settings list who holds a role there, and offer to g
   expect(await screen.findByText("ada@acme.test")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Give access" })).toBeTruthy();
 });
+
+test("w-people 7: with approval on, giving a role straight to a member says it applies at once, and a group's does not", async () => {
+  routes.push((method, url) =>
+    method === "GET" && url.endsWith("/access")
+      ? [200, { approval: true, mayChange: true }]
+      : undefined,
+  );
+  show(
+    <GiveAccess
+      base={base}
+      open
+      who={{ type: "member", id: "m1", label: "Ada" }}
+      onClose={() => {}}
+      onGiven={() => {}}
+    />,
+  );
+  expect(await screen.findByText(/applies at once and does not wait/)).toBeTruthy();
+  cleanup();
+  show(
+    <GiveAccess
+      base={base}
+      open
+      who={{ type: "group", id: "g1", label: "Night shift" }}
+      onClose={() => {}}
+      onGiven={() => {}}
+    />,
+  );
+  await waitFor(() => expect(screen.getAllByText("Give access").length).toBeGreaterThan(0));
+  expect(screen.queryByText(/applies at once and does not wait/)).toBeNull();
+});

@@ -10,7 +10,15 @@ import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
 import { effectivePolicy } from "../kernel/retention.js";
 import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
-import { likeTerm, listOf, pageOf, SearchPageQuery } from "../pagination.js";
+import {
+  afterName,
+  likeTerm,
+  listOf,
+  NamedListQuery,
+  nameKey,
+  pageOf,
+  SearchPageQuery,
+} from "../pagination.js";
 import {
   ApiKey,
   insertApiKey,
@@ -885,17 +893,33 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "The tenant's groups of members. A binding made to a group gives its role to everyone in it.",
           tags: ["identity"],
           params: TenantParams,
-          response: { 200: listOf(Group) },
+          querystring: NamedListQuery,
+          response: { 200: pageOf(Group) },
         },
       },
-      async ({ params }) => {
-        const rows = await db
-          .selectFrom("principal_group")
-          .selectAll()
-          .where("tenant_id", "=", params.t)
-          .orderBy("name")
-          .execute();
-        return { items: rows.map(toGroup) };
+      async ({ params, query }) => {
+        let select = db.selectFrom("principal_group").selectAll().where("tenant_id", "=", params.t);
+        if (query.search) {
+          select = select.where((eb) =>
+            eb(eb.fn("lower", ["name"]), "like", likeTerm(query.search as string)),
+          );
+        }
+        const args = pageArgs(query);
+        const after = afterName(args.after);
+        if (after) {
+          select = select.where((eb) =>
+            eb.or([
+              eb("name", ">", after.name),
+              eb.and([eb("name", "=", after.name), eb("id", ">", after.id)]),
+            ]),
+          );
+        }
+        select = select.orderBy("name").orderBy("id");
+        if (query.limit === undefined) {
+          return { items: (await select.execute()).map(toGroup), nextCursor: null };
+        }
+        const rows = await select.limit(query.limit + 1).execute();
+        return toPage(rows, { ...args, limit: query.limit }, nameKey, toGroup);
       },
     );
 

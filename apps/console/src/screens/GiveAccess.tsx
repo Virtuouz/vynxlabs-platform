@@ -31,6 +31,23 @@ const ANYONE = "anonymous:";
 const WHOLE_WORKSPACE = "";
 
 /**
+ * With two-person approval on, a role given straight to a member or to end users still applies at
+ * once; only what is given to a group, a service account or a group of end users waits. Said
+ * where the role is given, so nobody thinks a second person will be asked.
+ */
+export function DirectGrantNote({ base, active }: { base: string; active: boolean }) {
+  const access = useLoad<{ approval?: boolean }>(active ? `${base}/access` : null);
+  if (!active || !access.data?.approval) return null;
+  return (
+    <Notice tone="attention">
+      Changes to this tenant's access wait for a second person, but a role given straight to a
+      member or to end users applies at once and does not wait. A role given to a group, a service
+      account or a group of end users does wait.
+    </Notice>
+  );
+}
+
+/**
  * Giving someone access, starting from who they are (08 §3.40): find them by
  * name or email, among members, groups, service accounts and end users; then
  * say where, the whole tenant or one workspace; then the role, from those that
@@ -248,6 +265,17 @@ export function GiveAccess({
           ]}
           {...(described ? { hint: described } : {})}
           onChange={(next) => setRoleId(next || undefined)}
+        />
+        <DirectGrantNote
+          base={base}
+          active={
+            open &&
+            (!chosen ||
+              chosen === EVERY_END_USER ||
+              chosen === ANYONE ||
+              chosen.startsWith("member:") ||
+              chosen.startsWith("end_user:"))
+          }
         />
         {problem ? <Notice tone="danger">{problem}</Notice> : null}
         {/* Nothing to choose from is said with its reason, not shown as an empty list. */}

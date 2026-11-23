@@ -165,6 +165,22 @@ export async function confirmLeave(): Promise<boolean> {
 }
 
 /**
+ * A change of view inside the page (a tab, a step) that would drop what a screen holds unsaved:
+ * asked first, as leaving the page is. Nothing held, it goes at once.
+ */
+export function leaveFirst<T>(change: (value: T) => void): (value: T) => void {
+  return (value) => {
+    if (blockers.size === 0) {
+      change(value);
+      return;
+    }
+    void confirmLeave().then((leave) => {
+      if (leave) change(value);
+    });
+  };
+}
+
+/**
  * Asks before the page is left while `active`, such as while an editor holds
  * changes it has not saved. `message` says what would be lost.
  */

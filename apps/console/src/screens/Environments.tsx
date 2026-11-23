@@ -247,7 +247,17 @@ export function WorkspaceSettings({
     setLimit(null);
   };
   const save = async () => {
-    if (blank) return;
+    if (blank) {
+      // The field says what is wrong, but at a phone's width it is out of sight: say it here too.
+      notify.error(
+        new Error(
+          limitBad
+            ? "The run limit must be a whole number from 1 to 1000. Correct it, then save."
+            : "A workspace needs a name. Give it one, then save.",
+        ),
+      );
+      return;
+    }
     setSaving(true);
     try {
       await api.patch(root, {
@@ -1412,11 +1422,14 @@ export function TenantImport() {
                     ? "This tenant is on this instance already"
                     : "The tenant is not here yet"}
                 </Check>
-                <Check ok={!inspection.slugTaken}>
-                  {inspection.slugTaken
-                    ? "Its slug is taken here: choose another below"
-                    : "Its slug is free here"}
-                </Check>
+                {/* A tenant that is here already holds the slug itself: that one line says all. */}
+                {inspection.tenantPresent ? null : (
+                  <Check ok={!inspection.slugTaken}>
+                    {inspection.slugTaken
+                      ? "Its slug is taken here: choose another below"
+                      : "Its slug is free here"}
+                  </Check>
+                )}
               </ul>
             </section>
             {inspection.notCarried.length > 0 ? (

@@ -12,7 +12,7 @@ import { Time } from "../kit/Time.tsx";
 import { CreateDialog, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
 import { AccessReleases } from "./AccessReleases.tsx";
-import { GiveAccess } from "./GiveAccess.tsx";
+import { DirectGrantNote, GiveAccess } from "./GiveAccess.tsx";
 import { Groups } from "./Groups.tsx";
 import { type Role, Roles } from "./Roles.tsx";
 
@@ -238,6 +238,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
     <>
       <CollectionView<Member>
         title={framed?.title ?? "Members"}
+        helpKey="members"
         description="People who belong to this tenant. Belonging grants nothing by itself: give access under Access."
         actions={
           <Button variant="primary" onClick={() => setAdding(true)}>
@@ -349,7 +350,7 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
                   rows={[
                     { label: "Email", value: chosen.email },
                     { label: "Status", value: chosen.suspended ? "Suspended" : "Active" },
-                    { label: "Added", value: <Time value={chosen.createdAt} /> },
+                    { label: "Added", value: <Time value={chosen.createdAt} mode="stamp" /> },
                   ]}
                 />
                 <div className="flex flex-col gap-2">
@@ -405,13 +406,16 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
               name: "grants",
               label: "Roles",
               render: ({ value, onChange, error }) => (
-                <RolePairs
-                  value={value || undefined}
-                  onChange={onChange}
-                  error={error}
-                  roles={(roles.data?.items ?? []).filter((role) => !role.workspaceId)}
-                  workspaces={workspaces.data?.items ?? []}
-                />
+                <div className="flex flex-col gap-3">
+                  <RolePairs
+                    value={value || undefined}
+                    onChange={onChange}
+                    error={error}
+                    roles={(roles.data?.items ?? []).filter((role) => !role.workspaceId)}
+                    workspaces={workspaces.data?.items ?? []}
+                  />
+                  <DirectGrantNote base={base} active={adding} />
+                </div>
               ),
             },
           ],
@@ -600,6 +604,7 @@ export function AccessList({ base, framed }: { base: string; framed?: Framed }) 
     <>
       <CollectionView<Binding>
         title={framed?.title ?? "Access"}
+        helpKey="access"
         description="Who holds which role, and where. Access given at the tenant applies to every workspace in it."
         actions={
           <Button variant="primary" onClick={() => setGiving(true)}>

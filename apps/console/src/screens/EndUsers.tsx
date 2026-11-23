@@ -413,12 +413,12 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
                     {
                       label: "Last signed in",
                       value: chosen.lastSignedInAt ? (
-                        <Time value={chosen.lastSignedInAt} />
+                        <Time value={chosen.lastSignedInAt} mode="stamp" />
                       ) : (
                         "Never"
                       ),
                     },
-                    { label: "Added", value: <Time value={chosen.createdAt} /> },
+                    { label: "Added", value: <Time value={chosen.createdAt} mode="stamp" /> },
                     {
                       label: "Groups",
                       value:

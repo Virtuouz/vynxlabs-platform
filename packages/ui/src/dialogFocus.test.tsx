@@ -192,3 +192,31 @@ test("WLK-17i: a question that is canceled returns the focus to the button that 
   fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
   await waitFor(() => expect(document.activeElement).toBe(opener));
 });
+
+test("Tab in a side sheet goes from its last control to its first, and Shift+Tab back, never to the page", async () => {
+  render(
+    <>
+      <button type="button">Behind</button>
+      <SideSheet
+        open
+        onClose={() => undefined}
+        title="Create group"
+        footer={<button type="button">Create</button>}
+      >
+        <input aria-label="Name" />
+      </SideSheet>
+    </>,
+  );
+  const name = await screen.findByLabelText("Name");
+  const create = screen.getByRole("button", { name: "Create" });
+  const close = screen.getByRole("button", { name: "Close" });
+  create.focus();
+  const forward = fireEvent.keyDown(create, { key: "Tab" });
+  expect(forward).toBe(false);
+  expect(document.activeElement).toBe(close);
+  close.focus();
+  expect(fireEvent.keyDown(close, { key: "Tab", shiftKey: true })).toBe(false);
+  expect(document.activeElement).toBe(create);
+  name.focus();
+  expect(fireEvent.keyDown(name, { key: "Tab" })).toBe(true);
+});

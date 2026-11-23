@@ -274,34 +274,38 @@ export function Tenant({ tenantId, me, path }: { tenantId: string; me: Me; path:
   if (operator && !isMember && !grants.data && !grants.error) return null;
   if (operator && !isMember && !grants.data && grants.error) {
     return (
-      <Page title="Your access to this tenant could not be read">
-        <ErrorState error={grants.error} onRetry={grants.reload} />
-      </Page>
+      <div className="px-4 py-4 md:px-8">
+        <Page title="Your access to this tenant could not be read">
+          <ErrorState error={grants.error} onRetry={grants.reload} />
+        </Page>
+      </div>
     );
   }
   if (operator && !isMember && !mine) {
     return (
-      <Page title="You have no access to this tenant">
-        <EmptyState
-          title="Operators see inside a tenant only through an access grant"
-          action={
-            <Button variant="primary" onClick={() => setOpening(true)}>
-              Open operator access
-            </Button>
-          }
-        >
-          A grant is time-limited and needs a reason. The tenant's admins can see it and end it.
-        </EmptyState>
-        <CreateDialog
-          config={grantForm(tenantId, BUILTIN_ROLES)}
-          open={opening}
-          onClose={() => setOpening(false)}
-          onCreated={() => {
-            setOpening(false);
-            grants.reload();
-          }}
-        />
-      </Page>
+      <div className="px-4 py-4 md:px-8">
+        <Page title="You have no access to this tenant">
+          <EmptyState
+            title="Operators see inside a tenant only through an access grant"
+            action={
+              <Button variant="primary" onClick={() => setOpening(true)}>
+                Open operator access
+              </Button>
+            }
+          >
+            A grant is time-limited and needs a reason. The tenant's admins can see it and end it.
+          </EmptyState>
+          <CreateDialog
+            config={grantForm(tenantId, BUILTIN_ROLES)}
+            open={opening}
+            onClose={() => setOpening(false)}
+            onCreated={() => {
+              setOpening(false);
+              grants.reload();
+            }}
+          />
+        </Page>
+      </div>
     );
   }
 
@@ -1267,7 +1271,7 @@ function DescriptionForm({
       <KeyValues
         rows={[
           ...(account.key ? [{ label: "Key", value: account.key, mono: true }] : []),
-          { label: "Created", value: <Time value={account.createdAt} /> },
+          { label: "Created", value: <Time value={account.createdAt} mode="stamp" /> },
         ]}
       />
       <TextField

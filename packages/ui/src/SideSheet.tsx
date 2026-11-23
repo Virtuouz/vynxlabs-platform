@@ -29,6 +29,44 @@ export interface SideSheetProps {
   children: ReactNode;
 }
 
+const TABBABLE =
+  'a[href], button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
+
+/** What a person can reach with Tab inside `root`, in order. */
+function tabbables(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>(TABBABLE)].filter(
+    (one) =>
+      !one.matches(":disabled") &&
+      one.getAttribute("tabindex") !== "-1" &&
+      !one.closest("[hidden], [inert], fieldset:disabled") &&
+      one.getAttribute("aria-hidden") !== "true",
+  );
+}
+
+/**
+ * Tab and Shift+Tab stay in the sheet: from its last control to its first, and back. The page
+ * beneath is not reached, whatever the sheet holds (fields, a picker, a footer).
+ */
+function keepTabInside(event: React.KeyboardEvent<HTMLElement>) {
+  if (event.key !== "Tab" || event.defaultPrevented) return;
+  const root = event.currentTarget;
+  const all = tabbables(root);
+  const first = all[0];
+  const last = all.at(-1);
+  if (!first || !last) {
+    event.preventDefault();
+    return;
+  }
+  const at = document.activeElement;
+  if (event.shiftKey && (at === first || at === root || !root.contains(at))) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && (at === last || !root.contains(at))) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 /**
  * A panel that slides over the right of the screen, for work that needs more
  * room than a dialog and should keep the page beneath in view. On a phone it
@@ -63,6 +101,7 @@ export function SideSheet({
         <Base.Backdrop className="fixed inset-0 layer-sheet bg-scrim transition-opacity motion-slow data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Base.Popup
           ref={popup}
+          onKeyDown={keepTabInside}
           // As a dialog does: what marks itself `data-autofocus`, else the first field to type in
           // or choose from, else the first control. A form does not open with Enter on Close.
           initialFocus={() =>

@@ -398,7 +398,13 @@ const toAuditEntry = (
   action: row.action,
   targetType: row.target_type,
   targetId: row.target_id,
-  targetLabel: nameOf(row.target_type, row.target_id),
+  // A tenant that is gone is not in its table: its creation and its deletion kept its name.
+  targetLabel:
+    nameOf(row.target_type, row.target_id) ??
+    (row.target_type === "tenant" &&
+    typeof (row.details as { name?: unknown } | null)?.name === "string"
+      ? (row.details as { name: string }).name
+      : null),
   details: row.details as Record<string, unknown>,
   ipAddress: row.ip_address,
   userAgent: row.user_agent,

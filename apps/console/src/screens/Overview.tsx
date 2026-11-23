@@ -443,7 +443,7 @@ export function Overview({
   const primary =
     drafts > 0 && workspace.type === "dev" ? (
       <Button variant="primary" onClick={() => navigate(`${link}/changes`)}>
-        Review release
+        Review changes
       </Button>
     ) : (
       <Button onClick={() => navigate(`${link}/runs`)}>Open runs</Button>
@@ -551,7 +551,7 @@ export function Overview({
                     </Link>
                   }
                 >
-                  Release
+                  Deploy
                 </SectionLabel>
                 <Panel className="flex flex-col gap-4 p-4">
                   <div className="flex flex-wrap items-center gap-2 text-body-sm">

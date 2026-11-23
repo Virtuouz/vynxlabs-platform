@@ -84,13 +84,31 @@ export function useOAuthReturn(signedIn: boolean, path: string) {
   }, [signedIn, path]);
 }
 
+/** Whether this page was loaded by a reload of the one before. */
+function reloaded(): boolean {
+  try {
+    const [navigation] = performance.getEntriesByType(
+      "navigation",
+    ) as PerformanceNavigationTiming[];
+    return navigation?.type === "reload";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Opening the console at its root goes back to where the member was last: the
  * workspace, or the tenant, kept by `useRememberPlace`. Only on opening, so the
  * tenant list stays one click away afterward.
  */
 export function useReopenLastPlace(signedIn: boolean) {
-  const opening = useRef(location.pathname === "/" && returnTarget(location.search) === null);
+  // Opening, not looking: a reload, or a list with a filter or a search in its address, stays on it.
+  const opening = useRef(
+    location.pathname === "/" &&
+      location.search === "" &&
+      returnTarget(location.search) === null &&
+      !reloaded(),
+  );
   useEffect(() => {
     if (!signedIn || !opening.current) return;
     opening.current = false;

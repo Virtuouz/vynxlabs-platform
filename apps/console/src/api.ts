@@ -19,6 +19,11 @@ export const askForAccess = () =>
  * expression. Anything else the server said is kept as it was.
  */
 export function fieldWords(message: string): string {
+  const length = /^must NOT have (fewer|more) than (\d+) characters?$/.exec(message);
+  if (length) {
+    const n = Number(length[2]);
+    return `Use ${length[1] === "fewer" ? "at least" : "at most"} ${n} ${n === 1 ? "character" : "characters"}.`;
+  }
   const found = /^must match pattern (.+)$/.exec(message);
   if (!found) return message;
   const pattern = found[1] as string;
@@ -57,7 +62,16 @@ export class ApiError extends Error {
     },
     requestId?: string | null,
   ) {
-    const said = problem.detail ?? problem.title ?? `The request failed (${status}).`;
+    // An address that names something that cannot exist (a slug where an ID goes) is a place
+    // that was not found, not a request whose "params" are not valid.
+    const placeOnly =
+      status === 400 &&
+      problem.code === "validation_failed" &&
+      (problem.errors ?? []).length > 0 &&
+      (problem.errors ?? []).every((one) => one.path.startsWith("/params"));
+    const said = placeOnly
+      ? "That place was not found. Check the address, or go back."
+      : (problem.detail ?? problem.title ?? `The request failed (${status}).`);
     // A refusal that names a permission is owed whom to ask, wherever it is shown.
     super(status === 403 && /permissions?\.$/.test(said) ? `${said} ${askForAccess()}` : said);
     this.status = status;

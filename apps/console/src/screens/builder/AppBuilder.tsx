@@ -31,8 +31,9 @@ import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
 import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, inMenu, movedPage } from "./pageKinds.ts";
-import { problemWords } from "./publishCheck.ts";
+import { openersOf, problemWords } from "./publishCheck.ts";
 import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
+import { definitionOf } from "./registry.ts";
 import { syncSheetActions } from "./sheetActions.ts";
 import type { Start, Started } from "./starters.ts";
 
@@ -373,9 +374,22 @@ export function AppBuilder({
   };
   const removePage = async () => {
     if (!page) return;
+    // What opens this page would open nothing, and the publish refuses it: said before it happens.
+    const opening = openersOf(body, page.id, definitionOf);
     const sure = await ask.confirm({
       title: `Remove the page ${page.title}?`,
-      text: "Its widgets go with it. Nothing in any table is touched.",
+      text: (
+        <>
+          Its widgets go with it. Nothing in any table is touched.
+          {opening.length > 0 ? (
+            <>
+              {" "}
+              {opening.length === 1 ? "This action opens" : "These actions open"} it and will open
+              nothing until you change {opening.length === 1 ? "it" : "them"}: {opening.join("; ")}.
+            </>
+          ) : null}
+        </>
+      ),
       action: "Remove the page",
       danger: true,
     });

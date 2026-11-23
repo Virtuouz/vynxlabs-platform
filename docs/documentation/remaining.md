@@ -23,3 +23,6 @@ Each item was in a lane's brief and was not built, or was found by a lane. The f
 - Not a missing part, said in the phase: unpublishing an app made in the console needs a new field on the app kind (only docs apps have `published`) (t3-config).
 - `volvel dev` for file apps, interfaces and docs (CLI-MP7): build it (the owner's "build them too"); Git sync ignores `entry`/`resources` in volvel.yaml (t3-cli-docs).
 - Bring back does not restore a retired table's description; the filter language has no not-contains; the cell dialog leaves without motion (t3-tables).
+- `objectHref("dashboard")` can open `dashboards/at/<path>`; the Changes list links a draft-only data source to an unbound page; a dashboard draft clash is a message, not DraftClash; Files borrows the help topic `data-tables` (t3-data).
+- The flow editor's list shows one fault per step; `JsonView` would read user data shaped `{stored: "runs/….json"}` as kept apart (t2-walk-flow).
+- `ACC-27`'s "others' operator grants" was not understood by its lane (t3-access).

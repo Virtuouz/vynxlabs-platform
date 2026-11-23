@@ -44,3 +44,27 @@ test("WLK-15: the editor's list names what a deploy would refuse, in the same wo
     ]),
   ).toEqual([]);
 });
+
+test("FLW-22: a loop with no start, and an answer the start cannot reach, are in the list", () => {
+  const loose = {
+    start: { type: "trigger", trigger: { type: "manual" } },
+    a: { type: "set", values: {} },
+    b: { type: "set", values: {} },
+  } as never;
+  const loop = manifestProblems(
+    loose,
+    [
+      { from: "a", to: "b" },
+      { from: "b", to: "a" },
+    ],
+    [],
+  );
+  expect(loop.some((one) => /loops back on itself/.test(one.message))).toBe(true);
+  expect(loop.some((one) => /no trigger leads/.test(one.message))).toBe(true);
+  const unanswered = {
+    start: { type: "trigger", trigger: { type: "webhook", respond: "flow" } },
+    done: { type: "respond", status: 200 },
+  } as never;
+  const found = manifestProblems(unanswered, [], []);
+  expect(found.some((one) => /waits for the flow to answer/.test(one.message))).toBe(true);
+});

@@ -68,3 +68,15 @@ test("names that chain (a becomes b while b becomes b_2) are not renamed twice",
     ["b_2", { v: "steps.a_2.output" }],
   ]);
 });
+
+test("FLW-23: pasted names and types are checked", () => {
+  const clip = (id: string, type: string) =>
+    JSON.stringify({
+      volvelFlowSteps: 1,
+      steps: [{ id, position: { x: 0, y: 0 }, node: { type } }],
+      edges: [],
+    });
+  expect(readClip(clip("Bad Name!", "set"))).toBeUndefined();
+  expect(readClip(clip("fine", "teleport"))).toBeUndefined();
+  expect(readClip(clip("fine", "set"))?.steps).toHaveLength(1);
+});

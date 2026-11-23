@@ -6,6 +6,10 @@ Please report a suspected vulnerability privately, and not in a public issue. Sa
 
 The address to write to, and how quickly a report is answered, are to be set by the owner before the first public release.
 
+## Supported versions
+
+The newest minor version and the one before it get fixes for security problems. Older ones do not: upgrade. The date of the first public release is not set yet, and until it is, nothing has been published to be supported.
+
 ## Two rules
 
 Decision 0001 (`docs/evolution/decisions/0001-execution-boundary.md`) sets where a tenant's code runs and what the control plane reaches on a tenant's behalf.
@@ -60,5 +64,6 @@ Decision 0001 (`docs/evolution/decisions/0001-execution-boundary.md`) sets where
 - Single sign-on is off until a tenant connects a provider, and a provider is created off. Creating people on first sign-in, SHA-1 signatures, sign-ins begun at the provider and requiring single sign-on are each off until turned on, and each is audited when it is.
 - The control plane reads an identity provider's settings, keys and metadata from the addresses a tenant's admin gives, as it reaches a repository a tenant connects, behind the egress guard.
 - An app's pages are served with a content security policy that allows no inline script and nothing from another site. The platform's own sign-in pages have no script at all.
+- A member's console session lasts 7 days from signing in, and an end user's session lasts 30 days. A member signed in at an app's own address has a session of 12 hours there.
 - Passwords of members and end users are hashed with scrypt. Session and link tokens are stored as SHA-256 hashes.
 - Binding a connection lets the tenant's workers reach the address a tenant admin chose; the control plane never does. Binding a data source lets the control plane reach it, behind the egress guard.

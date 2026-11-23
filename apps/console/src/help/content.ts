@@ -1,4 +1,4 @@
-import type { Manifest, PageFile, SearchHit } from "@volvel/docs-engine";
+import type { Manifest, PageFile, PageHit } from "@volvel/docs-engine";
 
 /**
  * The product's documentation, as the console's own files. They are built
@@ -32,10 +32,15 @@ export const loadPage = (path: string) => load<PageFile>(`pages/${path}.json`);
 /** What each field of each kind is, by `<kind>.<path>`, from the kinds' own schemas. */
 export const loadFields = () => load<Record<string, string>>("fields.json");
 
-let searching: Promise<{ search(query: string, limit?: number): SearchHit[] }> | undefined;
+let searching:
+  | Promise<{ grouped(query: string, options?: { limit?: number }): PageHit[] }>
+  | undefined;
 
-/** Searches the help. The index and the code that reads it are fetched the first time something is searched for. */
-export async function searchHelp(query: string): Promise<SearchHit[]> {
+/**
+ * Searches the help: pages, best first, each with the headings and passages on it that matched.
+ * The index and the code that reads it are fetched the first time something is searched for.
+ */
+export async function searchHelp(query: string): Promise<PageHit[]> {
   searching ??= Promise.all([
     load<string>("search.json", "text"),
     import("@volvel/docs-engine"),
@@ -43,7 +48,7 @@ export async function searchHelp(query: string): Promise<SearchHit[]> {
   searching.catch(() => {
     searching = undefined;
   });
-  return (await searching).search(query, 12);
+  return (await searching).grouped(query, { limit: 12 });
 }
 
 /** For tests: forget what was fetched. */

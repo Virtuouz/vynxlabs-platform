@@ -610,7 +610,7 @@ describe("working locally", () => {
     try {
       const page = await (await fetch(server.url)).text();
       const context = JSON.parse(
-        /<script type="application\/json" id="vx-context">(.*?)<\/script>/.exec(
+        /<script type="application\/json" id="vx-context"[^>]*>(.*?)<\/script>/.exec(
           page,
         )?.[1] as string,
       );
@@ -625,6 +625,15 @@ describe("working locally", () => {
         principal: { email: "alice@acme.example" },
       });
       expect(page).toContain("/theme.css");
+      // The page is held to the policy a deployed app has: no inline script but the tooling's own,
+      // which carries this run's nonce (APP-MP1).
+      const policy = (await fetch(server.url)).headers.get("content-security-policy") ?? "";
+      expect(policy).toContain("default-src 'self'");
+      expect(policy).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+'/);
+      expect(policy).not.toMatch(/script-src[^;]*unsafe/);
+      expect(policy).toContain("connect-src 'self' ws://localhost:*");
+      const nonce = /'nonce-([^']+)'/.exec(policy)?.[1];
+      expect(page).toContain(`nonce="${nonce}"`);
       expect((await fetch(`${server.url}portal/acme/sign-in`)).status).toBe(200);
       // The page's source is served as it is, compiled on the way.
       expect((await fetch(`${server.url}main.tsx`)).status).toBe(200);
@@ -638,6 +647,21 @@ describe("working locally", () => {
       expect(rows.items).toHaveLength(1);
     } finally {
       await server.close();
+    }
+    const loose = await startDevServer({
+      directory: example,
+      app: "public",
+      port: 0,
+      strict: false,
+      instance: { url, token },
+      tenant: { id: tenantId, slug: "acme", name: "Acme" },
+      workspace: { id: base.split("/").at(-1) as string, slug: "main" },
+      principal: { type: "member", id: null, name: "Alice", email: "alice@acme.example" },
+    });
+    try {
+      expect((await fetch(loose.url)).headers.get("content-security-policy")).toBeNull();
+    } finally {
+      await loose.close();
     }
     const which = await startDevServer({
       directory: example,

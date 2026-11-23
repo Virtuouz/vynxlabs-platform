@@ -1,4 +1,5 @@
 export * from "./action.js";
+export { APP_POLICY, appPolicy } from "./app-policy.js";
 export {
   ASSET_PATH_PATTERN,
   assetPathProblem,

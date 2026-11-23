@@ -426,3 +426,25 @@ test("there is one formatter: the kit's samples are the widget SDK's formatValue
   }
   expect(sampleOf(43120, { style: "currency", notation: "compact" })).toBe("$43.1k");
 });
+
+test("WID-M11: a saved query is given values of its own, and SQL its numbered values", async () => {
+  const start = listWidget();
+  start.data = { rows: { source: { query: "reports/late" } } };
+  show(<Harness start={start} definition={list as never} />);
+  fireEvent.click(panel().getByRole("button", { name: "Add a value" }));
+  fireEvent.change(panel().getByLabelText("Name of parameter 1"), { target: { value: "days" } });
+  fireEvent.change(panel().getByLabelText("Value of days"), { target: { value: "30" } });
+  const source = () => written.at(-1)?.data?.rows?.source;
+  expect(source()).toEqual({ query: "reports/late", values: { days: 30 } });
+  fireEvent.click(panel().getByRole("button", { name: "Remove the value of days" }));
+  expect(source()).toEqual({ query: "reports/late" });
+});
+
+test("WID-M11: SQL written here keeps its numbered values, and shows them", async () => {
+  const start = listWidget();
+  start.data = { rows: { source: { sql: "select $1::int", values: [7] } } };
+  show(<Harness start={start} definition={list as never} />);
+  expect((panel().getByLabelText("Value of $1") as HTMLInputElement).value).toBe("7");
+  fireEvent.change(panel().getByLabelText("Value of $1"), { target: { value: "9" } });
+  expect(written.at(-1)?.data?.rows?.source).toEqual({ sql: "select $1::int", values: [9] });
+});

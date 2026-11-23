@@ -21,7 +21,7 @@ You will have a published app with one page, a table of Fernhill's appointments 
 
 4. **Choose where it reads from.** In the settings, under **ROWS IT USES**, press **Source**. In the dialog **Where it reads from**, choose **Appointments**. The canvas fills with appointments: Number, Pet name, Status, Starts at, Pet, Species, Client code and Clinic.
 
-5. **Give it a title.** Choose the **Display** tab. Press **Title** under **HEADING**. The field already holds `Table`: press :kbd[Ctrl+A] to select it, type `Visits` and press :kbd[Enter]. The table is headed **Visits**.
+5. **Give it a title.** Choose the **Display** tab. Press **Title** under **HEADING**. The field holds `Table`, selected: type `Visits` and press :kbd[Enter]. The table is headed **Visits**.
 
 6. **Hide two columns.** Under **COLUMNS**, which says "8 of 8 shown", press the eye beside **Pet** (**Hide Pet**), then the eye beside **Client code**. It now says "6 of 8 shown". The table keeps Number, Pet name, Status, Starts at, Species and Clinic.
 

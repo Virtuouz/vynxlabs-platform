@@ -31,7 +31,7 @@ You will have a script that adds up a list of amounts, a version of it deployed 
 
 6. **Name it.** In **Path** type `tut-totals`.
 
-7. **Run the draft.** Click in the code, then press :kbd[Ctrl+Enter] (:kbd[⌘↵] on a Mac). This saves the draft and runs it on a worker without deploying. The **Test pane**, the panel to the right of the code (under it on a narrow screen), shows the result below **Run the draft**: scroll down in the panel if it is out of view. It reads **Succeeded**, and a line "waited … ms · ran … ms". Its log reads `Added up` with `{"count":3,"total":49.75}`. The starter has an example list, `12.5`, `30` and `7.25`, so it needs no input.
+7. **Run the draft.** Click in the code, then press :kbd[Ctrl+Enter] (:kbd[⌘↵] on a Mac). This saves the draft and runs it on a worker without deploying. The **Test pane**, the panel to the right of the code (under it on a narrow screen), shows the result below **Run the draft**, and brings it into view. It reads **Succeeded**, and a line "waited … ms · ran … ms". Its log reads `Added up` with `{"count":3,"total":49.75}`. The starter has an example list, `12.5`, `30` and `7.25`, so it needs no input.
 
 8. **Look at the result.** In the **Test pane**, under **Run of tut-totals: Succeeded**, choose **Input and output**. The output reads `count` 3, `total` 49.75 and `average` 16.583333333333332. **Logs** has the log line and **Details** says how the run went.
 

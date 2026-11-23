@@ -11,7 +11,7 @@ The script editor is where a script is written and tried. Saving makes a draft; 
 
 The editor is reached from **New script** on the [Scripts list](scripts), from a script's **Open editor** or **Open the code**, and from a run's **Edit with this input**. The address is `scripts/new` or `scripts/edit/{path}`. F1 (**Help for this page**) opens the help topic `build-scripts-editor`.
 
-::screenshot{name=console/script-editor alt="The script editor: the header with the Deployed pill and the Offer to an agent, Name and path, Remove, Save draft and Deploy buttons, the Settings disclosure, the code on the left and the test pane with its input form on the right."}
+::screenshot{name=console/script-editor alt="The script editor: the header with the Deployed pill and the Offer to an agent, Name and path, Remove and Save draft buttons, the Settings disclosure, the code on the left and the test pane with its input form on the right."}
 
 ## The header
 
@@ -72,7 +72,7 @@ Beside the code (below it on a narrow window) is the test pane. See [Test a scri
 | Control | What it does |
 | --- | --- |
 | The input form | A form drawn from the input schema, with **Fields** and **JSON** beside it. It keeps the last input while the editor is open. |
-| **Run the draft** / **Save and run** | Starts a test run of the draft on a worker, without deploying anything. It says **Save and run** when there are unsaved changes or the script is new, and saves first. The keys are :kbd[⌘↵] or :kbd[Ctrl+↵], which run it again with the input of the last run, not with what is typed in the form since. |
+| **Run the draft** / **Save and run** | Starts a test run of the draft on a worker, without deploying anything. It says **Save and run** when there are unsaved changes or the script is new, and saves first. The keys are :kbd[⌘↵] or :kbd[Ctrl+↵], which press the same button: they run what the form holds. |
 | **Build with all drafts** | Off: the test builds this script's draft and the drafts it names. On: every draft of the workspace, so another draft that does not build stops the test, with its file and line in the result. |
 | **Result** | The test run: its state and times, **Cancel run** (asks "Cancel this run?" with **Cancel run** and **Keep running**) while it goes, **Open full view**, a **Copy as curl** button, then **Why it failed** with the error and, when it points at a line of the script, **Go to line N**. Below: **Attempts**, then the tabs **Logs**, **Input and output** and **Details**, then **Events it published** ("None." when empty). Before the first test: "Run the draft to see what it returns, and its log, here." |
 | **Problems** | What is wrong with the code. Each item is a line and column and the message; pressing it selects that place in the code. A refusal of the build carries the tag **Build**. The tab says **Problems (N)** when there are any, and "No problems found." when there are none. Only this script's own build errors are listed. |
@@ -97,7 +97,7 @@ A test run is a run of the script with trigger `manual` and no deploy. Its runs 
 | --- | --- |
 | A production workspace | "This is a production workspace. Code is changed in {dev workspace} and reaches production by promotion.", with **Edit it in {dev workspace}**. |
 | Repository code | "This script is defined by the code in the tenant's repository, and is changed there." The source is shown read only. To replace it, make a new script at the same path: deployed, it takes the place with its history and what is bound to it. |
-| A script of the platform (`core/…`) | "This step comes with the platform, and is added to the workspace because a flow uses it. It can be read here and not changed." |
+| A script that comes with Volvel (`core/…`) | "This step comes with Volvel, and is added to the workspace because a flow uses it. It can be read here and not changed." |
 | A script drafted for removal | The notice above. |
 
 Saving a draft of a deployed script the console manages is allowed. Saving a draft of a repository script that has no source here "takes it over from the repository".

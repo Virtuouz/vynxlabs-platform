@@ -56,7 +56,7 @@ A run again keeps the first run's input and tags. A value the first run masked c
 2. Read "Cancel this run of {path}?" and press **Cancel the run**. Press **Keep it** to leave it.
 :::
 
-A run that is queued or running can also be canceled with **Cancel run** on its page, which asks "Cancel this run?" with **Cancel run** and **Keep running**. The worker stops a running script at its next check, and says "Canceling. The worker stops it at its next check." A run that waits for a later time has no **Cancel run** on its page; cancel it from the **Runs** list.
+A run that is queued, running or waiting for a time can also be canceled with **Cancel run** on its page, which asks "Cancel this run?" with **Cancel run** and **Keep running**. The worker stops a running script at its next check, and says "Canceling. The worker stops it at its next check."
 
 ## The result
 

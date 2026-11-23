@@ -38,7 +38,7 @@ A docs app is opened as any app is: by a binding that gives a role to a person, 
 | --- | --- | --- |
 | Stop serving it for now | **Stop publishing…** then **Stop publishing** | The badge reads **Site, not published** at once. After the next deploy the address answers "Nothing here" and "There is no page at this address." The pages and the app are kept. |
 | Serve it again | **Publish again…** then **Publish again** | Served again after the next deploy, with its pages and address as they were. |
-| Remove its app | **Remove the site's app…** then **Remove** | The folder shows no badge and offers **Publish as a site…** again, and the pages stay. The screen's **Deploy N changes** does not count this removal, so it is not deployed from the console: the site keeps being served. To take a site down from the console, use **Stop publishing…**. |
+| Remove its app | **Remove the site's app…** then **Remove** | The folder shows no badge and offers **Publish as a site…** again, and the pages stay. **Deploy N changes** counts the removal, so the button is there for it alone, and the deploy takes the site down. To keep the app and stop serving it for now, use **Stop publishing…**. |
 
 Each says what it did, with an **Undo**.
 

@@ -22,5 +22,5 @@ Checked by: second agent, 2026-11-23. Every label, quoted message and limit in t
 | Claim | Source or run | Checked by | Result |
 | --- | --- | --- | --- |
 | Publish dialog, "<folder> will be a site once deployed.", deploy, the served site; Stop publishing / Publish again served 404 then 200. | run in a dev workspace as a doc writer | second agent, 2026-11-23 | holds as written; the 404 page's words are now quoted |
-| Remove the site's app… takes effect after the next deploy. | run (see the Documentation screen record) | fault: docs deploy of the app's removal | corrected: the page no longer says it is deployed by the next deploy |
+| Remove the site's app… takes effect after the next deploy. | run (see the Documentation screen record) | fault fixed (fa): the removal is a counted change (`removedApps`, model.ts:90) and the deploy stops the site, confirmed in the code and tests | corrected: the page now says Deploy counts the removal |
 | A doc writer cannot make a binding. | doc_writer holds no `binding:*` (roles list from the API) | second agent, 2026-11-23 | holds |

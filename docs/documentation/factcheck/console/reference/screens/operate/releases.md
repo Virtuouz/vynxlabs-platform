@@ -38,9 +38,9 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | Versions list: message "Pulled *commit* from *branch*" for a pull's version | `apps/control-plane/src/kernel/git.ts:1317`; run (v9 "Pulled cdee487 from console/dev") | second agent, 2026-11-23 | checked; added to the page |
-| Not set up here warning, "is not set up in this workspace" | `Release.tsx` (HEAD), `deploy.ts:115,136` | second agent, 2026-11-23 | checked at HEAD; fault: bound/bind words. The instance on 8091 is an older build and still says "Not bound here"; the page follows HEAD (commit 5d18392a) |
-| Nothing deployed: plain notice, Promote disabled with tooltip, no Try again | `Release.tsx` (HEAD, preview.error 409), `promote.ts:112` | second agent, 2026-11-23 | checked at HEAD; fault: releases/nothing to promote. The instance still shows the old state (Try again, spinner text, enabled Promote); not seen fixed |
-| Change where this promotes to needs workspace:write, disabled with reason | `Release.tsx` (HEAD, `useNeeds`) | second agent, 2026-11-23 | checked at HEAD; fault: releases/viewer sees the button. Not seen fixed on the instance |
+| Not set up here warning, "is not set up in this workspace" | `Release.tsx` (HEAD), `deploy.ts:115,136` | second agent, 2026-11-23 | fault fixed (fb): the warning says "Not set up here", confirmed in the code (Release.tsx:473); the page follows it |
+| Nothing deployed: plain notice, Promote disabled with tooltip, no Try again | `Release.tsx` (HEAD, preview.error 409), `promote.ts:112` | second agent, 2026-11-23 | fault fixed (fb): the 409 preview is one notice, no Try again, Promote off with a tooltip, confirmed in the code (Release.tsx:863) |
+| Change where this promotes to needs workspace:write, disabled with reason | `Release.tsx` (HEAD, `useNeeds`) | second agent, 2026-11-23 | fault fixed (fb): the button is off with the reason without `workspace:write` (Release.tsx:928), confirmed in the code |
 | Withdraw the request acts at once | run (Amara, Fernhill Rel dev) | second agent, 2026-11-23 | checked, run |
 | Waiting line "has moved on to v5 since"; sheet "has deployed v5 since. This promotes v4, what was asked for."; promoter's notice | `Promotion.tsx`; run | second agent, 2026-11-23 | checked, run |
 | Earlier sheet ("Revision 1", Bring back), row Set aside dialog, "Set aside 1 draft?", Deploy the 1 chosen | `Release.tsx`; run | second agent, 2026-11-23 | checked, run |

@@ -31,7 +31,7 @@ By the end a Chart on an app page counts Fernhill appointments, shown first as b
 2. For bars with a second breakdown (**Split into colors**), **Several series**, under **Chart type**, puts the colors **One on another** or **Side by side**.
 3. Under **Look**: **Numbers** (how values are written), **Colors** (**App theme**, **Cool**, **Warm** or **Grays**), **Show values on bars** (bar charts only), **Show axis titles**, which says what is along the bottom and up the side, and **Legend** (**Automatic** or **Never**; offered for a pie, a heatmap, or a chart with several breakdowns or values). A chart over time also has **Compare with the period before**, which needs a date range filter on the page, and, for a line or an area, **Smooth the line** and **Mark each point**.
 4. With two or more breakdowns or values, **Along the bottom** and **Up the side** choose which column each axis draws. Left alone, the first breakdown goes along the bottom and the first value up the side.
-5. For a scatter, set **For each** (on **Data**) to a number or date column of the table itself, such as **Minutes**. Then **Scatter** is no longer grayed. Choose it. Each group is a point: its place along the bottom is the value of **For each**, and its height is the measure.
+5. For a scatter, set **For each** (on **Data**) to a number or date column, such as **Minutes**, from the table or from **Also from**. Then **Scatter** is no longer grayed. Choose it. Each group is a point: its place along the bottom is the value of **For each**, and its height is the measure.
 :::
 
 ::screenshot{name=console/widgets-chart-scatter alt="The App Builder with a Chart selected. Chart type shows Scatter chosen and Line, Area and Heatmap grayed with their reasons; the chart shows three points."}
@@ -42,7 +42,7 @@ The chart draws the rows as you asked. In the published app it has the same down
 
 ## If it does not work
 
-- **Scatter is grayed and says "needs a number".** **For each** is a text column, or a column that comes from **Also from**. Use a date or number column of the table itself.
+- **Scatter is grayed and says "needs a number".** **For each** is a text column. Use a date or number column.
 - **Line says "needs a date".** The first **For each** is not a date. Choose a date column.
 - **Pie says "not for time".** A pie cannot be drawn from dates.
 - **Add another measure is not offered.** A chart takes six measures at most.

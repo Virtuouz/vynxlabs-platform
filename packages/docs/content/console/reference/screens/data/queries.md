@@ -48,7 +48,7 @@ Saving says "<path> is saved as a draft. It can be run by name once it is deploy
 | **Path** | Where the query is found, up to 255 characters. |
 | **Title** | What people read in lists, up to 200 characters. Empty is none. |
 
-**Save as a draft** is the one action. When the path changes, the dialog lists the dashboards that name the query: "These dashboards are saved as drafts with the new path" ("This dashboard is saved as a draft with the new path:" for one) for dashboards kept by the console, and "These dashboards are the repository's, so they are not changed here" for the repository's, which find the query by its key until the path is changed in the repository. After **Save as a draft** the screen stays at the old address and says "There is no query at <old path>." until you choose the query by its new path in **Saved queries**. See [Rename or remove a query](../../../how-to/queries/rename-or-remove-a-query).
+**Save as a draft** is the one action. When the path changes, the dialog lists the dashboards that name the query: "These dashboards are saved as drafts with the new path" ("This dashboard is saved as a draft with the new path:" for one) for dashboards kept by the console, and "These dashboards are the repository's, so they are not changed here" for the repository's, which find the query by its key until the path is changed in the repository. After **Save as a draft** the screen moves to the query at its new path. See [Rename or remove a query](../../../how-to/queries/rename-or-remove-a-query).
 
 The button is off, with its reason as a tooltip, for a query defined in the repository's code ("It is defined in the repository's code. Change its path or title there, and give it key: …"), for one being removed, and while the editor has changes you have not saved ("Save the draft first.").
 
@@ -62,7 +62,7 @@ The editor is labeled **The query**. It completes tables, columns and functions 
 | :kbd[Ctrl+S] (:kbd[⌘S]) | Saves it, as **Save** or **Save as…** does. It does nothing on an empty editor. |
 | :kbd[Ctrl+K] (:kbd[⌘K]) | Opens the console's search and jump list. |
 | F1 | Opens help for the page. |
-| :kbd[Ctrl+M] | Monaco's own key: :kbd[Tab] then moves focus on instead of indenting, until you press :kbd[Ctrl+M] again. In the editor :kbd[Tab] indents and :kbd[Esc] does not leave it. |
+| :kbd[Ctrl+M] | Monaco's own key: :kbd[Tab] then moves focus on instead of indenting, until you press :kbd[Ctrl+M] again. In the editor :kbd[Tab] indents and :kbd[Esc] does not leave it. While the editor has focus a line says "Tab indents. Press Ctrl+M, then Tab, to move on." |
 
 The editor is read-only for a query being removed and for someone who may not write SQL. The SQL it takes, and what it refuses, is in the [SQL reference](../../../../develop/reference/queries/sql-reference).
 

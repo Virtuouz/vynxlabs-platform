@@ -35,7 +35,7 @@ A column that does not fit gives way on a narrow window: **Name** stays, and the
 | **Name** | Everyone | The tenant's name, as a link to the tenant. |
 | **Slug** | Everyone | The tenant's slug, in code style. |
 | **Workspaces** | Everyone | How many workspaces it has. |
-| **You** | Operators | **Member**, or **Through a grant** when you are not a member and would enter by an operator access grant. |
+| **You** | Operators | **Member**, or **Not a member**. A tenant you are not in is entered through an operator access grant. |
 | **Tables kept in** | Operators | The database location, or "The instance's database". |
 | **Created** | Everyone | How long ago, with the moment on hover; the date from 7 days on. |
 
@@ -47,7 +47,7 @@ Choosing a row opens the inspector, titled with the tenant's name. It shows:
 | --- | --- |
 | **Slug** | The slug. |
 | **Workspaces** | The count. |
-| **Your access** | Operators. "A member", or "Through an operator access grant, which needs a reason". |
+| **Your access** | Operators. "A member", or "Not a member. Inside it you work through an operator access grant, which needs a reason". |
 | **Tables kept in** | Operators. A link to the database location, or "The instance's database". |
 | **Created** | The date and time. |
 | **ID** | The tenant's ID. |

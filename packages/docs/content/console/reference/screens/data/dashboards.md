@@ -45,7 +45,7 @@ A person who may not read drafts sees dashboards as they are deployed.
 
 ## One dashboard, looked at
 
-The title is the dashboard's name. Under it is its description, or when it has none, a line about whose it is. That line says "Yours. Seen by: <who>." for your own (<who> is "only you", "everyone in this workspace", or the names of the groups written in lower case), "<owner>'s, shared with you. You see the rows you may read." for another's, and "Kept by the workspace, at <path>. You see the rows you may read." for a resource. When a dashboard has a description, that line goes under it.
+The title is the dashboard's name. Under it is its description, or when it has none, a line about whose it is. That line says "Yours. Seen by: <who>." for your own (<who> is "only you", "everyone in this workspace", or the names of the groups as written), "<owner>'s, shared with you. You see the rows you may read." for another's, and "Kept by the workspace, at <path>. You see the rows you may read." for a resource. When a dashboard has a description, that line goes under it.
 
 A line under it gives its freshness: "Last refreshed <time>" (or "Refreshing" while the first read is out, or "Nothing could be read"), then " · N widgets could not be read" when some failed, then "Refreshes every 5 minutes" or "Does not refresh by itself". The button **Refresh now** reads every widget again.
 

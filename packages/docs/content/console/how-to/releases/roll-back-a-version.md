@@ -25,7 +25,7 @@ By the end the workspace runs the version you chose. Runs in progress finish on 
 
 ## The result
 
-The message says "Version N is what runs here now." The list gains a new row at the top: the version, tagged **Running in *workspace***, with "No message". Rolling back does not remove a row. The version you left now has the button **Deploy this version**.
+The message says "Version N is what runs here now." The version you put back moves to the top of the list, tagged **Running in *workspace***, with "deployed N times" after its author and time. Rolling back does not remove a row and does not add one. The version you left now has the button **Deploy this version**.
 
 Nothing about the other workspaces changes. A dev workspace that promotes here still runs its own version, and **How *here* differs from *there*** shows the difference.
 

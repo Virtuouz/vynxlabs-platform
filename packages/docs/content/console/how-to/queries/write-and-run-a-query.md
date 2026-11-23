@@ -63,5 +63,5 @@ The query is in **Saved queries** with its path and description. **Used by** say
 - **"Something already exists at this path. Choose another, or open that one."** The name is taken. The dialog keeps what you typed.
 - **"Leave without saving?"** You pressed **New query** or chose another query with text you have not saved: "Your changes to <path> are not saved." **Stay** keeps it, **Leave** drops it.
 - **"Someone else saved this query after you opened it."** Someone saved the draft first. Nothing of theirs was overwritten. **Copy what I wrote** keeps your text, then **Load their version**.
-- **Tab does not leave the editor.** In the editor :kbd[Tab] indents. :kbd[Ctrl+M] turns that off, and on again.
+- **Tab does not leave the editor.** In the editor :kbd[Tab] indents, and a line under the editor says "Tab indents. Press Ctrl+M, then Tab, to move on." while it has focus. :kbd[Ctrl+M] turns that off, and on again.
 - **The result says "and there were more: the result was cut short".** More rows than **Rows to return**, or more than 5 MB. Raise the number up to 10,000, or add `where` or `limit` to the query.

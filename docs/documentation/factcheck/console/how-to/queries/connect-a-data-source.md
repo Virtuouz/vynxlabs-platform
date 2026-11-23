@@ -22,4 +22,4 @@ Labels, quoted messages and limits of the page were swept against the console an
 
 - Not-run items now run: **Encrypt Yes** against a database with no SSL (Failed "The server does not support SSL connections", added); a member with `data_source:read` only (list and page, see the screen record); the screen at 390 px and in dark (Change drawer, list, source page: no overflow; row clipped at 390, see the screen record's fault).
 - Still not run: Encrypt Yes against a database that has a certificate (no TLS Postgres on this machine; no internet), a source in a production workspace.
-- fault: Internal Server Error on the source's page with Yes against a non-SSL server (see data-sources).
+- fault fixed (fd, fc): the source's page and Test both say 'does not accept encrypted connections. Turn Encrypt off for it, or turn SSL on at the server.' (502 `source_refused`), confirmed on the instance (check and tables routes); the page now quotes it.

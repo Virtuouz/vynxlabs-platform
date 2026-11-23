@@ -23,4 +23,4 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
 
 - Not-run items now run: choosing groups (pick "Floor staff", Seen by followed), the 20-dashboard limit (API and dialog), a member with `dashboard:read` only (Vic; list and a shared dashboard), the refresh timer, a reload after editing, 390 px and dark.
-- Corrected: the too-long name message carries "This is N."; group names in the Seen by line are lower case (fault: see dashboards).
+- Corrected: the too-long name message carries "This is N."; group names in the Seen by line are lower case (fault fixed (fc): names are kept as written, confirmed in the code; the page now says so).

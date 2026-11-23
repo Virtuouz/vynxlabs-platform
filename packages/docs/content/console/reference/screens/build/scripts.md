@@ -121,7 +121,7 @@ When the script has a draft, the tab shows the draft's settings and says so, wit
 
 **Change the settings** opens the same fields as the editor's Settings, except **What it does**, **Use as a flow step** and the input schema, which are only in the editor. **Save as a draft** keeps the change as a draft; nothing that runs changes until the draft is deployed, and the tab then says "Saved as a draft. It runs this way once it is deployed." **Cancel** leaves the form. Every field is in [Script settings](script-settings).
 
-**Change the settings** is not offered in a production workspace ("Settings change in a dev workspace and reach production by promotion."). Without `resource:write` it is grayed out with the reason. A script the repository holds has its settings in `defineScript`: see [Scripts in code](../../../../develop/reference/scripts/define-script).
+**Change the settings** is not offered in a production workspace ("Settings change in a dev workspace and reach production by promotion."), nor for a script the repository holds ("The repository holds this script: change its settings there."). Without `resource:write` it is grayed out with the reason. A script the repository holds has its settings in `defineScript`: see [Scripts in code](../../../../develop/reference/scripts/define-script).
 
 ### Source
 

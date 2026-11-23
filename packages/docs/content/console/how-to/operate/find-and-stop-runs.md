@@ -49,11 +49,10 @@ A canceled run reads **Canceled** and stays in the list, under the **Canceled** 
 ## If it does not work
 
 - **There is no Cancel on a row.** You may not cancel it. The row menu leaves out what you may not do. A run that has finished cannot be canceled.
-- **A run that waits for a time has no Cancel run on its page.** Cancel it from the Runs list, where its row menu has **Cancel**.
 - **"The end is before the start."** **To** is before **From**. Change one. The list is empty until you do.
 - **"No run has this ID."** The run is older than what is kept, belongs to another workspace, or the ID is mistyped.
 - **A flow's steps are not in the list.** Search shows the flow run. A step's run ID typed into the address shows its script and a link, "A step of a flow run."
-- **The dialog says "N done, M not done."** It lists each run that was not done with why, and a request ID to give whoever looks into it. Press **Retry the M not done** to try those again, or **Close**.
+- **The dialog says "N done, M not done."** When some of the runs had finished before the cancel reached them, it adds ", K left alone because they had finished": nothing was wrong with those. It lists each run that was not done with why, and a request ID to give whoever looks into it. Press **Retry the M not done** to try those again, or **Close**.
 
 ## Related
 

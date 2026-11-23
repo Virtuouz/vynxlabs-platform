@@ -24,7 +24,7 @@ One row under the breadcrumbs. On the left:
 | The app's name | The title of the app. |
 | Pencil (**Rename the app**) | Turns the name into a field, **Name of the app**, with a counter "n of 100". :kbd[Enter] or leaving the field keeps the new name; :kbd[Esc] leaves the old one. A name past 100 characters is not saved and not cut: the field stays open for you to shorten it. Not drawn when the workbench is read only. |
 | **N draft changes** | A pill that appears when the draft differs from what is published. It opens the publish check. Under 768 px wide it is not drawn. |
-| **N to fix** | A pill that appears when saving the draft was refused for something that must be fixed first. It opens a list, "To fix before it can be published", in the words of the page: "Money: needs at least 1 button". |
+| **N to fix** | A pill that appears when saving the draft was refused for something that must be fixed first. It opens a list, "To fix before it can be published", in the words of the page: "Money: needs at least 1 button". A failure is listed once, and counted once, however many times it was refused. |
 | The status | "Saving…" while a change waits or is saved; "Saved. Not published yet." when the draft is saved and differs from what is published; "Published." when it does not; "Not saved: …" with the reason when a save failed. Below 1280 px wide the words are kept for a screen reader and are not drawn; the same width hides the words **Desktop**, **Tablet**, **Phone** and **View as**, which leave their icons. |
 
 On the right, from left to right:
@@ -39,7 +39,7 @@ On the right, from left to right:
 | **More ways to publish** (the arrow) | **Publish**, **Open the published app** and **Restore an earlier draft**. **Open the published app** is off until the app has an address, with the tooltip "Publish once, and the app has an address.". |
 | **Hide pages and widgets**, **Hide the settings** | Fold the left and the right pane. The button then reads **Show pages and widgets** or **Show the settings**. The choice is remembered on this device. Only in a window 1024 px wide or more. |
 
-On a window narrower than 1024 px the two panes are sheets. A bar under the header, **Pages and widgets**, opens the left one, and choosing a widget opens the settings as a sheet titled **Settings**. Undo and Redo move behind a **⋯** button (its label is "More: undo, redo and the screen size"). Under 640 px **Desktop**, **Tablet**, **Phone** and **View as** move behind it too, and **Preview** shows only its icon. The name, **Preview** and **Publish** stay on the row.
+On a window narrower than 1024 px the two panes are sheets. A bar under the header, **Pages and widgets**, opens the left one, and choosing a widget opens the settings as a sheet titled **Settings**. Undo and Redo move behind a **⋯** button (its label is "More: undo, redo and the screen size"). Under 640 px **Desktop**, **Tablet**, **Phone** and **View as** move behind it too, and **Preview** shows only its icon. Under 640 px the app's name has the whole row to itself, and the pills **N to fix** and **N draft changes** go under it. **Preview** and **Publish** stay on the bar.
 
 ### View as
 
@@ -80,7 +80,7 @@ The workbench saves 700 ms after the last change, and :kbd[⌘S] or :kbd[Ctrl]+:
 
 ### When someone else saved first
 
-A draft belongs to the workspace, not to a person. Every save says which version of the draft it was made on. If another builder saved after you opened the app, nothing is overwritten and nothing of yours is saved. A notice appears: "Someone else saved this app after you opened it. Nothing of theirs was overwritten, and what you changed is still here, unsaved." and a button, **Load their version**. It asks "Load their version?": "What you changed since you opened the app is replaced by what they saved." Press **Load theirs** to take their draft, or reload the page to read it. Until you do, the status reads "Not saved:" and the reason.
+A draft belongs to the workspace, not to a person. Every save says which version of the draft it was made on. If another builder saved after you opened the app, nothing is overwritten and nothing of yours is saved. A notice appears: "Someone else saved this app after you opened it. Nothing of theirs was overwritten, and what you changed is still here, unsaved." and two buttons. **Copy what I wrote** puts what you wrote on your clipboard ("Copied what you wrote."). **Load their version** asks "Load their version?": "What you changed since you opened the app is replaced by what they saved. Copy it first if you want to keep it." Press **Load theirs** to take their draft, or reload the page to read it. Until you do, the status reads "Not saved:" and the reason.
 
 ### Restore an earlier draft
 
@@ -111,7 +111,7 @@ A draft belongs to the workspace, not to a person. Every save says which version
 | Managed in the repository | A notice: "This app is managed in the repository, so it is shown as it is published and cannot be changed here. Taking it over lets you change it here: the next publish then moves it out of the repository, and changes made there no longer reach it." with **Take over**. After **Take over**, or when the app already has a draft, it says "You are taking this app over from the repository. The next publish moves it out of the repository, and changes made there no longer reach it." See [Take over a repository app](../../../how-to/app-builder/take-over-a-repository-app). |
 | Removed in your drafts | A notice: "This app is removed in your drafts. Nothing changes until that draft is deployed. It is shown as it is published, and cannot be changed here until the removal is taken back." with **Keep this app**. |
 | No app serves it | A notice: "No app serves this yet, so nobody can open it." with **Make an app for it**. It asks for an **Address** (filled from the name) and makes the app draft. |
-| A clash of drafts | The notice and **Load their version** above. The header status reads "Not saved: Someone else saved this draft after you opened it. Reload it, then make your change again." and a request ID, and **Publish** is off. |
+| A clash of drafts | The notice, **Copy what I wrote** and **Load their version** above. The header status reads "Not saved: Someone else saved this draft after you opened it. Reload it, then make your change again." and a request ID, and **Publish** is off. |
 | A save failed | The status reads "Not saved:" and the reason, in red. **Publish** is off. |
 | Publish refused | "You can change this app but not publish it here. Ask someone who may deploy to this workspace: your draft is kept." |
 

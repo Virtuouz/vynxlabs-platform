@@ -31,14 +31,14 @@ A page holds 100 events. The foot says "Showing the first N events." with **Load
 | --- | --- |
 | **When** | How long ago. |
 | **Event** | The name. |
-| **From** | The script that published it, or **A script**, **The API** or **The platform**. |
+| **From** | The script that published it, or **A script**, **The API** or **Volvel**. |
 | **Started** | "N run(s)", or "Nothing" when triggers listened and none started anything, or "Nothing listens" when no trigger listens, or "Listeners are paused" when the triggers that listen are all held. |
 
 ### The inspector
 
 Choosing a row puts the event's ID in the address (`?item=`) and opens it. An ID that no event of this workspace has opens **Event not found**: "No event with that ID is in this workspace. It may belong to another workspace, or have been removed with the older ones."
 
-- **Published by**: the script's run, linked, or **A script**, **The API**, **The platform**.
+- **Published by**: the script's run, linked, or **A script**, **The API**, **Volvel**.
 - **Listening**: how many triggers would start something now: "2 triggers", "1 trigger", "2 triggers, all paused" or "1 trigger, and 1 paused". Only triggers that are on are counted.
 - **Event ID**.
 - A notice when nothing listens: "No flow or script listens for *name* here." or "Every trigger that listens for *name* here is paused, so none of them started anything."
@@ -55,7 +55,7 @@ Choosing a row puts the event's ID in the address (`?item=`) and opens it. An ID
 
 In a production workspace the dialog warns "This is production. Publishing starts what listens for the event, with the payload given here." and, before sending, asks "Publish *name* in production?" ("Every trigger that listens for it starts its work now, with real data.") with **Publish in production** and **Do not publish**. If the event is named on its own page but is not declared, the dialog says "*name* is not declared in this workspace, so there is no payload to ask for."
 
-The platform's own events, whose names begin `platform/`, are not offered: the server refuses a publish of one with "Events under platform/ are published by the platform itself." They appear in the log with **The platform** as publisher. They are listed in [Platform events](../../../../develop/reference/platform-events).
+The platform's own events, whose names begin `platform/`, are not offered: the server refuses a publish of one with "Events under platform/ are published by the platform itself." They appear in the log with **Volvel** as publisher. They are listed in [Platform events](../../../../develop/reference/platform-events).
 
 A platform event is stored only when an event trigger of the workspace listens for it, is turned on, and is not held by a pause of the trigger, the workspace or the instance. A platform event that nothing listens for leaves no trace in this log. A script run that is a step of a flow, or a trigger source's run, publishes the run events too. `platform/deployment-created` is published for a deploy and for a promotion into the workspace. `platform/row-changed` is published for a change made through the console, the API or a script's row operations; a change made by a reference's rule, such as a delete that cascades, is not announced. The stored status of a canceled run is spelled `cancelled`.
 

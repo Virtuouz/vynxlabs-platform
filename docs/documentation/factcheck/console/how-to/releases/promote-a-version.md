@@ -12,4 +12,4 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | bindings_missing, breaking_changes, the release branch commit and its retry | run log | second agent, 2026-11-23 | checked, run |
-| Nothing deployed: "This workspace has nothing deployed, so there is nothing to promote.", Promote disabled | `Release.tsx` (HEAD), `promote.ts:112` | second agent, 2026-11-23 | checked at HEAD; fault: releases/nothing to promote (the instance still shows the old state) |
+| Nothing deployed: "This workspace has nothing deployed, so there is nothing to promote.", Promote disabled | `Release.tsx` (HEAD), `promote.ts:112` | second agent, 2026-11-23 | checked at HEAD; fault fixed (fb): a 409 preview is one notice with Promote off, confirmed in the code (Release.tsx:863) |

@@ -46,7 +46,7 @@ Every change in the editor is saved as you make it: the toolbar says "Saved." Un
 3. Press **Done**. The choice is saved as you make it.
 :::
 
-The line under the name now says "Yours. Seen by: everyone in this workspace." For groups, it names them in lower case, such as "floor staff". People you shared it with can look at it and cannot change it, and each sees only the rows they may read. They need `dashboard:read` and `data:read`.
+The line under the name now says "Yours. Seen by: everyone in this workspace." For groups, it names them as written, such as "Floor staff". People you shared it with can look at it and cannot change it, and each sees only the rows they may read. They need `dashboard:read` and `data:read`.
 
 ## Download what a widget shows
 

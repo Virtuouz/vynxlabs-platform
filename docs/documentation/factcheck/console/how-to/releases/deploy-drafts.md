@@ -12,4 +12,4 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-24. Wri
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
 | Deploy some, Set aside, Earlier / Bring back, This change only, unset-up warning, code in the console off | run log | second agent, 2026-11-23 | checked, run; the old-draft notice (a draft over a day old) not run |
-| "Not set up here, and the deploy still works." at HEAD | `Release.tsx` (HEAD) | second agent, 2026-11-23 | fault: configure bound/bind words; the instance still says "Not bound here" |
+| "Not set up here, and the deploy still works." at HEAD | `Release.tsx` (HEAD) | second agent, 2026-11-23 | fault fixed (fb): the warning says "Not set up here", confirmed in the code (Release.tsx:473) |

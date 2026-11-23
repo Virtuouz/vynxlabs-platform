@@ -42,7 +42,7 @@ The table has these columns.
 | --- | --- |
 | **Not tested** | Set up here and never tested, or changed since the last test. A test is forgotten when the settings, the credential or the connection changes. Saving the same settings keeps it. |
 | **Reached** with "N ms · tested …" | The last test got an answer. |
-| **Failed** with "tested …" and the reason in full under it | The last test did not get one. For an HTTP connection the reason is "HTTP 404: https://… answered 404." |
+| **Failed** with "tested …" and the reason in full under it | The last test did not get one. For an HTTP connection the reason is "HTTP 401: https://… answered 401." |
 | **Not connected** with **Connect** | An OAuth 2.0 connection no one has signed in to the provider for. |
 | **Needs reconnecting** with **Reconnect** | The provider refused to renew the sign-in, or something that identifies the authorization changed. Connect again. |
 
@@ -63,7 +63,7 @@ The list reads its address for these values:
 - `?setup=<path>` or `?item=<path>` opens the sheet of that connection. A refused deploy or promotion links here with `?setup=`. A path with no connection says "There is no connection X here to set up."
 - `?oauth=connected` or `?oauth_error=…` with `&connection=<path>` is where the sign-in with a provider returns. The sheet of the connection opens with what the provider said, for example "The provider said no: access_denied." in part 4. The connection stays **Not connected yet**.
 
-The navigation item shows a badge, "N not set up", while connections wait. The workspace's **Overview** says "N connection has nothing bound here" or "N connections have nothing bound here", with a link to **Configure**.
+The navigation item shows a badge, "N not set up", while connections wait. The workspace's **Overview** says "N connection is not set up here" or "N connections are not set up here", with a link to **Configure**.
 
 ## A connection's page
 
@@ -86,7 +86,7 @@ The sheet is titled **New connection** or, for a connection that exists, **Set u
 
 | Part | What it holds |
 | --- | --- |
-| **1 · What it is** | For a connection that exists: its name, kind and description. For a new one: **Connection**, a list of what is declared and not set up yet, and, outside production, **A new connection…**. A new connection has **Name** ("What scripts call it by.") and **Kind** (**HTTP**, **Mail (SMTP)** or **OAuth 2.0**). A connector of your own is not in **Kind**: declare it first, then choose it in **Connection**. A name takes lowercase letters, digits, dashes, underscores and slashes: "Name it with lowercase letters, digits, dashes and underscores, such as crm or google/sheets." |
+| **1 · What it is** | For a connection that exists: its name, kind and description. For a new one: **Connection**, a list of what is declared and not set up yet, and, outside production, **A new connection…**. A new connection has **Name** ("What scripts call it by.") and **Kind** (**HTTP**, **Mail (SMTP)**, **OAuth 2.0**, or a connector of your own, listed as "<path> (this workspace's own)"). A name takes lowercase letters, digits, dashes, underscores and slashes: "Name it with lowercase letters, digits, dashes and underscores, such as crm or google/sheets." |
 | **2 · Settings** | A form drawn from the kind's settings. **Fields** shows one input for each; **JSON** shows them as JSON. The fields of each kind are in [Connectors](../../../../develop/reference/connectors). |
 | **3 · Token or key**, **Password**, **Client secret** or **Secret** | The credential, named for the kind. |
 | **4 · Save and test** or **Connect and test** | What saving did, and the test. |
@@ -102,8 +102,8 @@ Part 4 shows what happened, once the connection is saved:
 | **Saved** | The settings and credential are stored in this workspace. |
 | **Connected**, **Not connected yet**, **Needs connecting again** (OAuth 2.0) | Whether a member has signed in to the provider. **Connected** shows the scopes the provider gave. **Connect** or **Connect again** sends the browser to the provider. |
 | **Testing…**, then **Waiting for a worker…** after 20 seconds | A worker is trying the connection. A test waits up to 2 minutes for a worker, then fails with "No worker took it in time. Start a worker for this workspace, or let the instance start one." |
-| **Reached (200) in 55 ms.** | The test succeeded. A mail connection has no status: "Reached in 6 ms." |
-| **Failed (HTTP 404): …** or **Failed: …** | The test failed, with the reason. For anything but OAuth 2.0 a button, **Change the token or key** (or the credential's name), takes you to the credential. |
+| **Reached (200) in 55 ms.** | The test succeeded. An HTTP connection is reached when its base address answers with any status, such as "Reached (404) in 55 ms.": the service answered, and many services answer nothing at their base while every path works. A mail connection has no status: "Reached in 6 ms." |
+| **Failed (HTTP 401): …** or **Failed: …** | The test failed, with the reason. An HTTP connection fails with 401, 403 or 407, which the service gave to the credential. For anything but OAuth 2.0 a button, **Change the token or key** (or the credential's name), takes you to the credential. |
 | **Not tested** with **Test** | Saved, not tested. A non-OAuth connection is tested as it is saved. An OAuth 2.0 connection is tested when the provider sends you back. **Test** is off until it is connected. |
 
 A new connection is first declared in a draft and then set up. It shows **Draft, never deployed** until a deploy carries it.
@@ -146,7 +146,7 @@ The console asks the instance which of these you hold, and turns off what you do
 
 A Developer has `connection:write`, `resource:write` and `run:write` and every `:read`. A Workspace admin has `connection:*` and `resource:*`. A Viewer has every `:read` only. See [Who can change what in Configure](../../../../administer/reference/configure/who-can-change-what).
 
-The buttons for groups are not turned off for a person who may only read: pressing one is refused by the instance.
+For a person who may only read, **Add a member**, **Change** and **Remove** of a group are turned off, with the reason and a line above them.
 
 ## Related
 

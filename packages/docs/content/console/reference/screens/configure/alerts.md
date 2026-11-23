@@ -22,7 +22,7 @@ The description reads "Who is told when a script or a flow fails for the last ti
 | Control | What it does |
 | --- | --- |
 | **Start a script** | Chooses a script of the workspace, or **None**. The script is started with the failed run as its input. A script that was chosen and is no longer found stays listed as "*path* (not found)". |
-| **Post to a connection** | Chooses a connection, or **None**. Only connections of the `http` connector that are set up in this workspace are offered. The connection is posted a summary as JSON, with a line of text a chat webhook shows as it is. One that was chosen and is no longer set up stays listed as "*path* (no longer bound)". |
+| **Post to a connection** | Chooses a connection, or **None**. Only connections of the `http` connector that are set up in this workspace are offered. The connection is posted a summary as JSON, with a line of text a chat webhook shows as it is. One that was chosen and is no longer set up stays listed as "*path* (no longer set up here)". |
 | **Save** | Saves both. It says "Alerts will go there from the next failure." Disabled until something changed. Shown only where the screen is editable. |
 | **Send a test alert** | Offered once a connection is chosen. Posts a test through the connection, by a worker. The button reads "Sending…" and then "Waiting for a worker…" if no worker picks it up soon. The result shows "The test alert was posted." or the error. Disabled, with "It needs connection:write.", without that permission. |
 

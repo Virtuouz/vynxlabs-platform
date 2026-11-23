@@ -55,7 +55,7 @@ When it works: "Your password is changed. Your other sessions were signed out." 
 | **Signed in** | How long ago; the date from 7 days on. |
 | (end) | **End**, on every session but the one in use. |
 
-**End** asks "End this session?" ("<device> is signed out and has to sign in again."). **End other sessions** asks "End all other sessions?" ("The other session is signed out. This one stays." or "The other N sessions are signed out. This one stays.") and says "Your other sessions are ended." It is disabled when there is no other session. Empty: "You are not signed in anywhere." A console session lasts 7 days.
+**End** asks "End this session?" ("<device> is signed out and has to sign in again."). **End other sessions** asks "End all other sessions?" ("The other session is signed out. This one stays." or "The other N sessions are signed out. This one stays.") and says "Your other sessions are ended." It is disabled when there is no other session. The list holds 100 sessions at most: with that many, a notice says "Showing the first 100 sessions. More may be signed in: End other sessions ends every one of them, shown or not." Empty: "You are not signed in anywhere." A console session lasts 7 days.
 
 ## Recovery codes
 

@@ -55,10 +55,10 @@ Checked by: second agent, 2026-11-23. Source commit `87000022`.
 | A Developer has `connection:write`, `resource:write`, `run:write` and every `:read`; Workspace admin `connection:*`, `resource:*`; Viewer every `:read`. | `apps/console/src/builtinRoles.ts:19-82` | second agent, 2026-11-23 | holds |
 | Seen at 390 px (dark) and 768 px (light): no page scroll; the table scrolls inside its panel and shows the first columns; the sheet fits. Escape closes the sheet and focus returns to the button that opened it. | walk | second agent, 2026-11-23 | holds |
 
-Sentences that describe a fault (revisit when the fix lands):
+Sentences that described a fault, now closed:
 
-- "For an HTTP connection the reason is 'HTTP 404: https://… answered 404.'" and **Failed (HTTP 404)**: fault: configure, HTTP Test asks the base address itself and reads 404 as Failed.
-- "The buttons for groups are not turned off for a person who may only read": fault: configure, connection-group member buttons are not gated.
-- "The workspace's **Overview** says 'N connection has nothing bound here'": fault: configure, the "bound" words remain.
-- Test of a Mail connection that is new and not deployed: fault: configure (new), the worker route reads the kind from the deployed declaration only and treats an undeclared connection as HTTP (`apps/control-plane/src/routes/worker.ts:168-170`), so the test fails with "Cannot read properties of undefined (reading 'endsWith')". Stated on the how-to page.
-- Connections' New connection panel offers HTTP, Mail and OAuth 2.0 only: fault: extensions (the wizard should offer the workspace's connectors).
+- "For an HTTP connection the reason is 'HTTP 404: https://… answered 404.'" and **Failed (HTTP 404)**: fault fixed (fa): any answer is Reached, only 401, 403 and 407 fail (sdk/http.ts), confirmed in the code; the page now says so.
+- "The buttons for groups are not turned off for a person who may only read": fault fixed (fb): Add a member, Change and Remove are off with the reason without `connection:write` (`ConnectionGroups`), confirmed in the code; the page says so.
+- "The workspace's **Overview** says 'N connection has nothing bound here'": fault fixed (fb): the Overview says "N connection is not set up here", confirmed in the code; the page says so.
+- Test of a Mail connection that is new and not deployed: fault fixed (fa): `boundConnection` uses the binding's own connector, confirmed in the code; the how-to page no longer states the workaround.
+- Connections' New connection panel offers HTTP, Mail and OAuth 2.0 only: fault fixed (fb): Kind lists the workspace's own connectors, confirmed on the instance; the page says so.

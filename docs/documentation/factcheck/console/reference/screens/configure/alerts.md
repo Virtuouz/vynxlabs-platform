@@ -23,5 +23,5 @@ Checked by: second agent, 2026-11-23. This is the one record and the one page fo
 | A second failure within ten minutes was counted: "1 later failure was counted on this alert, not sent on its own." | alerts.ts:260-285; run | holds as run |
 | A flow run that failed (a rejected approval) was alerted: "The failure notification was posted." | run | holds as run |
 | A member without workspace:write: Save is disabled with "You can see where this workspace's alerts go, not change it. It needs workspace:write. …"; Send a test alert still enabled (connection:write). | run | holds as run |
-| "(no longer bound)" beside a connection that is no longer set up. | Alerts.tsx:166 | holds as read; fault: configure, "bound"/"bind" words remain (the product's string). Revisit when it is fixed. |
+| "(no longer bound)" beside a connection that is no longer set up. | Alerts.tsx:166 | fault fixed (fb): the string is "no longer set up here" (Alerts.tsx:166), confirmed in the code; the page says so |
 | 390 px and dark: no horizontal scroll. | run | holds as run |

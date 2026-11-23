@@ -23,7 +23,7 @@ Checked by: second agent, 2026-11-23. Source commit `87000022`.
 
 | Claim | Source | Checked by | Result |
 | --- | --- | --- | --- |
-| Deploy notes and the `bindings_missing` text; `bindings_invalid` exists. | `kernel/execution/deploy.ts:115,642-643,664` | second agent, 2026-11-23 | holds. The note text quoted contains "bound", the code's own words: fault: configure, the "bound" words remain |
+| Deploy notes and the `bindings_missing` text; `bindings_invalid` exists. | `kernel/execution/deploy.ts:115,642-643,664` | second agent, 2026-11-23 | holds. The note text now reads "is not set up in this workspace" (deploy.ts:116); fault fixed (fb), confirmed in the code |
 | OAuth: authorization code with PKCE S256, 10 minutes for the member, refresh 2 minutes ahead; worker never gets the refresh token or the client secret; changing the authorization address forgets the sign-in. | `oauth.ts:23,25,175`; `routes/worker.ts:171-181`; `bindings.ts:78-90` | second agent, 2026-11-23 | holds; the forgetting seen on the instance |
 | A clone: variable values always; Safety on has no connection, group member or secret; off it has them, sealed again; an OAuth connection copied without its tokens. | `kernel/tenancy/clone.ts:59-110` | second agent, 2026-11-23 | holds; run on the instance (OAuth copy read Not connected) |
 | A test runs on a worker and waits up to 2 minutes. | `kernel/execution/tasks.ts:19-23` | second agent, 2026-11-23 | holds |

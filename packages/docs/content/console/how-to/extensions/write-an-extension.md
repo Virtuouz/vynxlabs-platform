@@ -28,7 +28,7 @@ By the end you will have a connector or a trigger source deployed in a dev works
 8. Open **Configure**, then **Connections**. The new connection says **Not set up here**. Press **Set up**, fill in the settings the form shows, and press **Save**. Press **Test again** to try it.
 :::
 
-The **New connection** panel on the **Connections** screen offers only HTTP, mail and OAuth 2.0 as a kind. A connection of your own connector is made as a resource in step 7, and set up here.
+The **New connection** panel on the **Connections** screen also offers the connector, in **Kind**, as "connectors/shop (this workspace's own)". Choose it there to make the connection and set it up in one place, instead of step 7.
 
 ## Write a trigger source
 

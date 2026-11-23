@@ -60,7 +60,7 @@ A page that is to be removed has a **Keep** button in place of the pencil and th
 | **Turn on page feedback…** | A site that does not ask | Opens the feedback dialog. Detail: "Ask readers whether a page helped". |
 | **Turn off page feedback…** | A site that asks | Asks first; keeps the table and its answers. Detail: "Stop asking readers". |
 | **Stop publishing…** / **Publish again…** | A site | Switches the site off or on. Details: "Keeps its pages and its app" and "Served again once deployed". |
-| **Remove the site's app…** | A site | Stops serving it; the pages stay. The screen does not count this removal in **Deploy N changes**: see [Questions the menu asks](#questions-the-menu-asks). |
+| **Remove the site's app…** | A site | Stops serving it once deployed; the pages stay. See [Questions the menu asks](#questions-the-menu-asks). |
 | **Delete…**, **Delete folder…** | Always | Asks you to type the file name. |
 
 ### New page and new folder
@@ -115,7 +115,7 @@ Every change to the tree is saved as drafts at once and says what it did, with a
 
 Each of these says what it did ("<site> will stop being served when you deploy." and so on) with an **Undo**, except **Delete** and **Keep**, which are taken back with **Keep** and by deleting again.
 
-**Remove the site's app…** makes a draft that removes the app. The folder then shows no **Site** badge and offers **Publish as a site…** again. **Deploy N changes** does not count the removal, so with no other change the button is not there, and a deploy of pages does not carry it: the site keeps being served. Stopping a site with **Stop publishing…** is carried by a deploy.
+**Remove the site's app…** makes a draft that removes the app. The folder then shows no **Site** badge and offers **Publish as a site…** again. **Deploy N changes** counts the removal, so with no other change the button is there for it alone, and the deploy stops the site.
 
 ## The page beside the tree
 

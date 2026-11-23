@@ -21,7 +21,7 @@ By the end the Fernhill appointments Table shows a column of the pet each appoin
 3. Press **Breed**. It is checked.
 4. Open **Display**, press **+ Column** and choose **Pet breed**. The column is drawn after the others. A column of another table is named after the reference, then the column: **Pet breed**.
 5. The other table's columns are now also offered by **Only include**, **Sorted by**, **Group rows by** and, in a Chart, **For each** and the measures.
-6. To stop following the table, press the chip again. The conditions and sorts that used its columns are taken away with it. A column you added in **Display** stays in that list: remove it there.
+6. To stop following the table, press the chip again. The conditions, sorts, columns in **Display** and other settings that name its columns are taken away with it.
 :::
 
 ## The result
@@ -34,4 +34,3 @@ The Table shows a **Pet breed** column read from the pets table, one value for e
 - **The chip is grayed, there is no way to check another.** A widget follows six tables at most.
 - **There is no "Also from" row.** The source table has no column that points to another table, or the widget reads a saved query.
 - **The column shows "—".** The other table has no value there for that row. In Fernhill's data, **Breed** is empty for the pets used in these examples.
-- **In a Chart, Scatter is grayed with "needs a number" for a number column of another table.** The type is not recognized for a column that comes through **Also from**. Use a number column of the table itself, or a bar chart.

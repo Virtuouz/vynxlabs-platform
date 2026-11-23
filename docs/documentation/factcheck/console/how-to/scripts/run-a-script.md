@@ -17,4 +17,4 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | A run waiting for a time has no Cancel run on its page (`active` is queued or running). | RP:260 | writer, run on the instance 2026-11-23 | holds (a product fault, said in the report) |
 | A guest cannot start a script. | CP/kernel/errors.ts:39 | second agent, read from the code 2026-11-23 | holds |
 | A guest: 403 "Sign in to start a script." (with a guest that holds `run:write` on the script); 401 "Sign in or send an API key." with none. | CP/routes/execution.ts:1328-1336 | second agent, run on the instance 2026-11-23 (an anonymous binding made and removed) | holds |
-| A run set for later has no Cancel run on its page. | RP:260 | second agent, confirmed on the instance | fault: scripts (the list's "Cancel run for a waiting run" item) |
+| A run set for later has no Cancel run on its page. | RP:260 | second agent, confirmed on the instance | fault fixed (fb): Cancel run is offered while waiting for a time (`LIVE_STATES`), confirmed in the code; the page says so |

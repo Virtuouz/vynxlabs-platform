@@ -52,7 +52,7 @@ The problems below are warnings: they are listed under the editor with the other
 - **"The type "…" is none of tutorial, how-to, reference, explanation."** The page is treated as having no type. Choose one in **Type**: a value that is none of them is shown as "<value> (not a type)".
 - **"This page names 6 subjects, and the first 5 are used."** Remove the ones a reader would look for last.
 - **"The subject "…" is on no other page, so it relates this page to nothing."** Said by a deploy and the build, not the editor. Use the subject on a page of another type, or remove it.
-- **"This page says it is a … in a folder whose index says no type."** Said by a deploy and the build. Put the type on the folder's own page so every page in it has it.
+- **"This page says it is a tutorial, in a folder whose index says no type."** It says "an explanation" for that type. Said by a deploy and the build. Put the type on the folder's own page so every page in it has it.
 - **No cards or Related appear on the served site.** Cards need two types among a collection's pages. Related needs a shared subject, or the same `about`, on pages of different types.
 
 ## Related

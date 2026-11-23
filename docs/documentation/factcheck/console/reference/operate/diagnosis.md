@@ -16,4 +16,4 @@ Checked by: second agent, 2026-11-23. diagnose.ts (the whole file) was read agai
 | Claim | Source | Result |
 | --- | --- | --- |
 | The 22 rows in the order checked. | apps/control-plane/src/kernel/execution/diagnose.ts:80-190 | holds as read |
-| The texts say "Bind … under Connections", "nothing bound", "the platform refused", "reach the platform". | diagnose.ts:107-108,158,... | holds as read (the page quotes what the screen says); fault: configure, "bound"/"bind" words; new: the diagnosis texts also say "the platform" where Volvel or the instance is meant. Revisit when fixed. |
+| The texts say "Bind … under Connections", "nothing bound", "the platform refused", "reach the platform". | diagnose.ts:107-108,158,... | holds as read; fault fixed (fb, fc): the texts say "not set up", "Set it up under Connections" and Volvel, confirmed in the code (diagnose.ts:95-160); the page now quotes them. |

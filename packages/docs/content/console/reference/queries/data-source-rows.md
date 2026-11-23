@@ -49,7 +49,7 @@ Choosing a row opens the **Row** inspector beside the grid, with the row's key a
 
 ## The Add row sheet
 
-**Add row** opens a sheet that says "Required values first. A value left empty is stored as none, or the column's default." The fields are in two groups, **Required** and **Optional**. A column is **Required** when the database says it cannot be empty, even if the database would fill it in: a column that has a default, such as a serial `id`, is still asked for, and the sheet says "<column> needs a value." until it has one. Only columns of a type Volvel can write are in the sheet.
+**Add row** opens a sheet that says "Required values first. A value left empty is stored as none, or the column's default." The fields are in two groups, **Required** and **Optional**. A column is **Required** when the database says it cannot be empty and gives it no value of its own. A column the database fills in (a default, a sequence or an identity, such as a serial `id`) is **Optional**: leave it empty and the database fills it. Only columns of a type Volvel can write are in the sheet.
 
 Up to 1,000 rows are added in one request through the API.
 

@@ -36,7 +36,7 @@ A promotion sends resources. It does not send what belongs to a workspace and no
 - Secrets, and the values a workspace gave to its variables.
 - Bindings: which real system a connection or a data source points to in that workspace.
 
-So a promotion refuses when what the version needs is not set up in the target: a script that reads a secret needs it set in production first. A deploy to a dev workspace is more forgiving: it goes ahead, warns "Not bound here, and the deploy still works", and a run that reaches the missing thing fails until it is set up. A promotion, and a deploy to production, refuse. See [Why a deploy or promotion is refused](../../../develop/reference/releases/refusals).
+So a promotion refuses when what the version needs is not set up in the target: a script that reads a secret needs it set in production first. A deploy to a dev workspace is more forgiving: it goes ahead, warns "Not set up here, and the deploy still works", and a run that reaches the missing thing fails until it is set up. A promotion, and a deploy to production, refuse. See [Why a deploy or promotion is refused](../../../develop/reference/releases/refusals).
 
 A resource that was made in the console and that no bundle carried is left alone by every deploy.
 
@@ -50,7 +50,7 @@ This is why a person who may deploy to dev may not be allowed to promote. The bu
 
 ## A rollback is a deploy
 
-**Roll back to this version** puts an earlier version in place. It is a deploy: it adds a row to the list of versions rather than deleting one, so the list is a record of what ran, in order. Runs in progress finish on the version they started with, and new runs use the version now in place. The screen's word depends on the direction: **Roll back to this version** for an earlier version than the one running, **Deploy this version** for a later one or one that never ran in this workspace.
+**Roll back to this version** puts an earlier version in place. It is a deploy: it deletes no version. The version you put back moves to the top of the list, which counts how often each one was deployed. Runs in progress finish on the version they started with, and new runs use the version now in place. The screen's word depends on the direction: **Roll back to this version** for an earlier version than the one running, **Deploy this version** for a later one or one that never ran in this workspace.
 
 ## What a rename does to this
 

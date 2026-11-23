@@ -82,12 +82,12 @@ Check rows with the checkbox. A bar says "N selected" with **Cancel**, **Run aga
 
 - **Cancel** asks "Cancel N runs?" and leaves finished runs as they are.
 - **Run again** asks "Run N runs again?": scripts run again with the same input on the version they ran, and flows retry from their failed step, or from the start if none failed. A trigger source's runs are left out, and the question says so.
-- The server takes at most 100 runs of one kind at a time; the console sends more in slices of 100 and adds up the answers. When some fail, a dialog says how many were done and not done, and offers a retry for the ones that failed.
+- The server takes at most 100 runs of one kind at a time; the console sends more in slices of 100 and adds up the answers. When some fail, a dialog says how many were done and not done, and offers a retry for the ones that failed. A cancel of a run that had already finished is not a failure: the dialog counts it as "left alone because they had finished".
 - Rows checked and then filtered away are dropped.
 
 ### The inspector
 
-Choosing a row opens the run beside the list and puts the run ID in the address (`?run=`). For a flow run it shows the state, the error, **Started**, **Finished**, **Started by**, **Flow**, **Version**, **Run ID**, and **Open full view**. For a script run it shows the state, how long it waited and ran, **Cancel run** (while queued or running), **Open full view**, a copy-as-curl button (**Copy as curl: run this again with the same input**), a **Why it failed** block with the diagnosis when it failed, and three tabs:
+Choosing a row opens the run beside the list and puts the run ID in the address (`?run=`). For a flow run it shows the state, the error, **Started**, **Finished**, **Started by**, **Flow**, **Version**, **Run ID**, and **Open full view**. For a script run it shows the state, how long it waited and ran, **Cancel run** (while queued, running or waiting for a time), **Open full view**, a copy-as-curl button (**Copy as curl: run this again with the same input**), a **Why it failed** block with the diagnosis when it failed, and three tabs:
 
 - **Logs**: the log, live while the run goes.
 - **Input and output**: **Input**, and **Result**.

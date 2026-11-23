@@ -19,4 +19,4 @@ Checked by: second agent, 2026-11-23. Run in a workspace of my own (Operate chec
 | --- | --- | --- |
 | Steps 1 to 4 under "Cancel runs", the dialogs and their buttons. | Runs.tsx; CancelOlder.tsx; run | holds as run |
 | Notices after Cancel by age. | CancelOlder.tsx:76 | corrected: "N script runs canceled." added |
-| "A run that waits for a time has no Cancel run on its page." | RunPage.tsx:260 | holds as run; fault: scripts, a waiting run's page offers no Cancel run (p31-faults.md). Revisit when fixed. |
+| "A run that waits for a time has no Cancel run on its page." | RunPage.tsx:260 | fault fixed (fb): a waiting run's page offers Cancel run, confirmed in the code; the troubleshooting item is removed. |

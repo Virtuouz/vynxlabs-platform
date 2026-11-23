@@ -36,7 +36,7 @@ The description reads "What starts work here without anyone asking. Pause one to
 | **Trigger** | The path, and `#node` for a flow's start node; below it the kind, the event's name for an event trigger, and the cron line for a schedule. |
 | **Starts** | What it starts, linked, and whether it is a **Script** or a **Flow**. |
 | **State** | See below. |
-| **Last fired** | The state of the last run it started and when, or when it last fired, or "Not fired yet". The hover text is "This trigger has not started anything yet. Runs started by hand are not counted." |
+| **Last fired** | The state of the last run it started and when, or when it last fired, or "Not fired yet". The hover text is "This trigger has not started anything yet." |
 
 ### State
 
@@ -73,7 +73,7 @@ The same commands are in the command palette under **This trigger**: **Pause *pa
 
 #### Fire now
 
-**Fire now** starts one run of a schedule as its next time would, with its input, and leaves its next time where it is. It opens the run's page, which names the schedule as what started it; the schedule's **Last fired** is not changed by it. It is offered for a schedule that is not paused, in a workspace whose triggers are not paused. The server also refuses, with "This schedule is paused, so it cannot be fired now. Resume it first.", "This workspace's triggers are paused, so this schedule cannot be fired now." or "Every trigger in this instance is paused, so this schedule cannot be fired now." A schedule that is only turned off may be fired, to try it. A schedule with a trigger source starts the source, and says "The source is still looking from the last time. Try again when it has finished." if it is busy. A flow's schedule node can be fired too.
+**Fire now** starts one run of a schedule as its next time would, with its input, and leaves its next time where it is. It opens the run's page, which names the schedule as what started it; the schedule's **Last fired** shows it, as a firing like any other. It is offered for a schedule that is not paused, in a workspace whose triggers are not paused. The server also refuses, with "This schedule is paused, so it cannot be fired now. Resume it first.", "This workspace's triggers are paused, so this schedule cannot be fired now." or "Every trigger in this instance is paused, so this schedule cannot be fired now." A schedule that is only turned off may be fired, to try it. A schedule with a trigger source starts the source, and says "The source is still looking from the last time. Try again when it has finished." if it is busy. A flow's schedule node can be fired too.
 
 ### New schedule
 

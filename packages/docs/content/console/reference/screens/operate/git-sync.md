@@ -41,9 +41,9 @@ A workspace cannot follow the default branch: "A workspace cannot follow the def
 | The card **This workspace** | "N changed here": the files of resources that changed in the workspace since the two last agreed. "Last agreed … ago at *commit*" gives when and the commit. |
 | The card of the branch | The branch name, "N changed there", and its head commit with its message, author and time. If the branch does not exist: "The branch does not exist yet: the first push makes it." |
 | **Commit message** | Up to 500 characters; the default is "Deploy from the console". Used by **Push** and **Push with drafts**. |
-| **Push N change(s)** | Commits what is deployed here to the branch, in one commit authored by you. Disabled when nothing changed here, when a file changed on both sides, and when sync is paused. A resource made here that was not on the branch when a pull ran stays under **New here** but is not counted in N after the pull, so **Push** stays disabled until that resource changes again; **Push with drafts** writes it. |
+| **Push N change(s)** | Commits what is deployed here to the branch, in one commit authored by you. Disabled when nothing changed here, when a file changed on both sides, and when sync is paused. A resource made here that was not on the branch when a pull ran stays under **New here** and is counted in N after the pull. |
 | **Pull N change(s)** | Deploys what changed on the branch. Disabled when nothing changed there, while a conflict has no choice for each file, and when sync is paused. |
-| **Push with drafts** | Commits what is deployed and what is drafted, for a developer to pick up. The default message is "Drafts from the console". After it the screen says: "A plain push leaves these files on the branch while their drafts are saved." The drafted files then show under **Files that differ** as **Removed here**, and **Push** offers 1 change; pressing it answers "Already the same: nothing to write." Disabled when a file changed on both sides. |
+| **Push with drafts** | Commits what is deployed and what is drafted, for a developer to pick up. The default message is "Drafts from the console". After it the screen says: "A plain push leaves these files on the branch while their drafts are saved." The drafted files are not listed under **Files that differ** and are not counted for **Push**. Disabled when a file changed on both sides. |
 | **Delete them anyway** | Shown after a pull stopped at a deletion it took for a rename. Asks "Delete *paths* in this workspace?" and, on **Delete them and look again**, pulls again allowing those paths. |
 
 After a push or a pull the screen says what happened: "Committed what is deployed here to the branch.", "Deployed what changed on the branch.", "Already the same: nothing to write.", or the reason it was refused or failed. A push the branch refused says "Nothing was written: the branch changed. Pull first." That happens when a resource file changed on the branch after the screen last compared, so a push from a screen that was open before a developer's commit is refused. A file that is not a resource (a README) changing on the branch does not refuse it: the push goes on top.
@@ -64,7 +64,7 @@ When files changed on both sides, the section **Changed on both sides: choose fo
 
 The chosen side is tagged **Kept**: after **Take branch** it is the branch's side that carries the tag. A file that was removed on one side shows "(removed)". A pull needs a choice for every resource.
 
-When `volvel.yaml` moved the resources folder after the last sync, a file that was then changed on the branch shows as changed on both sides, because the last sync remembers it under its old folder. Choose **Take branch** for it.
+When `volvel.yaml` moves the resources folder after the last sync, a file that is in the old folder at the last sync and in the new one now is read as moved: a file edited here shows as **Changed here**, not as changed on both sides.
 
 ### Files that differ
 
@@ -72,7 +72,7 @@ When nothing is in conflict, **Files that differ** lists each file with a tag: *
 
 ### History
 
-**History** lists the last 50 pushes and pulls of this workspace, newest first: the kind (**Push** or **Pull**; the commit to a release branch after a promotion is listed as **Push**), the outcome tag (`done`, `nothing`, `refused`, `failed`), the commit's first seven characters, the message and when. Empty: "Nothing has been pushed or pulled here yet."
+**History** lists the last 50 pushes and pulls of this workspace, newest first: the kind (**Push**, **Pull** or **Release**, for the commit to a release branch after a promotion), the outcome tag (`done`, `nothing`, `refused`, `failed`), the commit's first seven characters, the message and when. Empty: "Nothing has been pushed or pulled here yet."
 
 ### Branches
 

@@ -76,17 +76,17 @@ When it works, the screen moves to **Deploy to dev**, and a message says "Deploy
 
 ## Deploy to dev, and Versions
 
-**Versions of *workspace*** lists what ran in this workspace, newest first, at most 100.
+**Versions of *workspace*** lists what ran in this workspace, newest first, at most 100 deployments. Each version is one row, however often it was deployed: the row shows its latest deployment, and "deployed N times" after the author and time when it was deployed more than once.
 
 | Part | What it shows or does |
 | --- | --- |
 | **v*N*** | The version number. Numbers belong to the workspace: version 4 in production need not be version 4 in dev. |
-| Message | The message given when it was deployed, "Promoted" for a version a promotion brought, "Pulled *commit* from *branch*" for a version a Git pull made (*commit* is the first seven characters), or "No message". |
-| Author · time | Who deployed it, and when. |
+| Message | The message given when it was last deployed, "Promoted" for a version a promotion brought, "Pulled *commit* from *branch*" for a version a Git pull made (*commit* is the first seven characters), or "No message". |
+| Author · time | Who deployed it last, and when, then "deployed N times" for a version deployed more than once. |
 | **Running in *name*** | One tag for each workspace of the tenant that now runs the same bundle, found by its digest. |
 | **Deploy this version** or **Roll back to this version** | On every version that is not the one running. A version earlier than the one running says **Roll back to this version**; any other says **Deploy this version**. |
 
-The button asks first. The question is "Deploy version N to *workspace*?" or "Roll back *workspace* to version N?" and says: "*Workspace* stops running what it runs now and starts running version N at once. Runs in progress there finish on the version they started with." In production the answer button is **Deploy in production** or **Roll back in production**, and the question is a danger confirmation. In a dev workspace it is **Deploy** or **Roll back**. When it works, a message says "Version N is what runs here now." A rollback or a deploy of an earlier version adds a new row to the list: the list is a record of what ran, in order.
+The button asks first. The question is "Deploy version N to *workspace*?" or "Roll back *workspace* to version N?" and says: "*Workspace* stops running what it runs now and starts running version N at once. Runs in progress there finish on the version they started with." In production the answer button is **Deploy in production** or **Roll back in production**, and the question is a danger confirmation. In a dev workspace it is **Deploy** or **Roll back**. When it works, a message says "Version N is what runs here now." A rollback or a deploy of an earlier version does not add a row: that version moves to the top, with one more "deployed N times".
 
 If putting the version in place would delete something that holds runs, rows or access, and create something of the same kind, it is refused as a suspected rename. The screen asks "Delete *paths* in *workspace*?" with the action **Delete them and look again**, and sends the request again naming each path.
 

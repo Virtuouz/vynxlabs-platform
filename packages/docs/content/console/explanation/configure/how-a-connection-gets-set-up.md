@@ -20,7 +20,7 @@ Because the value belongs to the workspace, it does not travel with the code. A 
 
 A deploy looks at what the bundle's code reads and at what the workspace has set.
 
-- To a **dev workspace**, a deploy goes ahead. It says what is missing as a note: `the connection "stock-orders" is not bound in this workspace`. A run that reaches the missing thing fails with the same words.
+- To a **dev workspace**, a deploy goes ahead. It says what is missing as a note: `the connection "stock-orders" is not set up in this workspace`. A run that reaches the missing thing fails with the same words.
 - To a **production workspace**, and for a **promotion** of any workspace, it refuses with `bindings_missing`: "The workspace is missing something this bundle needs. Set up each one, then deploy again." The refusal lists each one with a link, **Set up**, to the screen that sets it.
 
 What is checked is what code needs: the connections, secrets and variables each script lists, the connections its `onFailure.notify` posts to, what each trigger source lists, the secret a webhook's `verify` is checked against, the data sources a script lists, and the connections a flow step hands to its script. A variable with a default in the code needs no value. A connection group needs nothing: its members are added when they are wanted, with no deploy. A second check, `bindings_invalid`, refuses a deploy to any workspace when something set up does not fit the connector the new bundle gives it, for example a connection set up for one kind and now declared as another.

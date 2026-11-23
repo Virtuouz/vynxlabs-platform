@@ -26,7 +26,7 @@ The page is reached from the [Runs](runs) list (a row's title, **Open**, or **Op
 | **Trace** | The trace ID, with a copy button, for a collector or the logs. |
 | **Run again once** or **Run again N times** | On a run that was run again: links to the first of those. |
 | Tags | Each tag links to the runs list narrowed to it. |
-| **Cancel run** | While the run is queued or running. Asks "Cancel this run?" with **Cancel run** and **Keep running**, then says "Canceling. The worker stops it at its next check." |
+| **Cancel run** | While the run is queued, running or waiting for a time. Asks "Cancel this run?" with **Cancel run** and **Keep running**, then says "Canceling. The worker stops it at its next check." |
 | **Re-run** | A menu: **With the same input**, **With other input…**, **On the version deployed now**. Each asks first. |
 | **Edit with this input** or **Edit in *dev workspace*** | Opens the script in a dev workspace's editor with this run's input loaded: here if this is a dev workspace, otherwise the dev workspace that promotes here. Disabled, with the reason, without `resource:write` there. |
 | Copy as curl | **Copy as curl: run this again with the same input**: the `POST runs/<id>/rerun` call. |
@@ -83,7 +83,7 @@ The log of a script run, and of a step, has: **Search the log** with previous an
 
 ## Since it last worked
 
-For a failed or canceled run, a panel compares it with the last earlier run of the same script or flow that succeeded: "It last succeeded *time* on v*N*." with rows **Input** ("The same as the last success", "Different from the last success" or "Too large to compare here"), **Version** ("The same, v*N*" or "v*A* then, v*B* now") and **Took** ("*now* now, *then* then"). **Show the input's difference** (only if the input differs) opens a diff, "The last success's input" against "This run's input", or says "Only masked values differ." **Compare the source** (a script) or **Compare the flow** (only if the version differs) opens `runs/<id>/compare/<other>`, titled **Compare runs**, which sets the two versions' code or flow side by side, or says "The code is the same in both" with links to each input. If no earlier success exists the panel says "It has not succeeded before here, so there is no earlier run to compare it with."
+For a failed or canceled run, a panel compares it with the last earlier run of the same script or flow that succeeded: "It last succeeded *time* on v*N*." with rows **Input** ("The same as the last success", "Different from the last success" or "Too large to compare here"), **Version** ("The same, v*N*" or "v*A* then, v*B* now") and **Took** ("*now* now, *then* then"). **Show the input's difference** (only if the input differs) opens a diff, "The last success's input" against "This run's input", or says "Only masked values differ." **Compare the source** (a script) or **Compare the flow** (only if the version differs) opens `runs/<id>/compare/<other>`, titled **Compare runs**, which sets the two versions' code or flow side by side, or says "The code is the same in both", naming the version of each run when they differ ("The last success used v*A* and this run v*B*, and the code did not change between them."), with links to each input. If no earlier success exists the panel says "It has not succeeded before here, so there is no earlier run to compare it with."
 
 ## The failure alert
 
@@ -99,7 +99,7 @@ How alerts are chosen is in [Failure alerts](../../../../develop/explanation/ope
 
 ## Commands in the palette
 
-On a script run page the command palette offers, under **This run**: **Cancel this run** (while queued or running), **Run again with the same input** and **Run again on the version deployed now** (not for a step of a flow or a trigger source's run), **Open *script* in the editor**, **Compare with the last success**, **Copy the run ID**. On a flow run: **Cancel this flow run** while it goes, otherwise **Retry from the failed step**, **Retry from the failed step on v*N***, **Run again from the start** (or **Retry the flow run that started this one**), **Open *flow* in the editor**, **Compare with the last success**, **Copy the run ID**.
+On a script run page the command palette offers, under **This run**: **Cancel this run** (while queued, running or waiting for a time), **Run again with the same input** and **Run again on the version deployed now** (not for a step of a flow or a trigger source's run), **Open *script* in the editor**, **Compare with the last success**, **Copy the run ID**. On a flow run: **Cancel this flow run** while it goes, otherwise **Retry from the failed step**, **Retry from the failed step on v*N***, **Run again from the start** (or **Retry the flow run that started this one**), **Open *flow* in the editor**, **Compare with the last success**, **Copy the run ID**.
 
 ## States
 
@@ -109,7 +109,7 @@ On a script run page the command palette offers, under **This run**: **Cancel th
 | Not found | "Go to the runs" beside the not-found notice. |
 | Error | The error with a retry. |
 | Live | The state, times and log update while the run goes. A read that failed and is being tried again shows "Reconnecting…". |
-| Waiting for a time | "Waiting until HH:MM:SS". The page offers **Re-run** and **Edit with this input**, and no **Cancel run**: cancel such a run from the [Runs](runs) list, whose row menu has **Cancel**. |
+| Waiting for a time | "Waiting until HH:MM:SS". The page offers **Cancel run**, **Re-run** and **Edit with this input**. |
 
 ## Permissions
 

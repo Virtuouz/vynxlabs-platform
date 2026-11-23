@@ -16,16 +16,16 @@ The first row that matches is the one shown. The text in italics is what changes
 
 | Failure | Cause the page says | Next step it says | Button |
 | --- | --- | --- | --- |
-| The error names a connection that has nothing set up in this workspace | Connection *names* has nothing bound in this workspace. | Bind *names* under Connections, then run it again. | **Open connections** |
+| The error names a connection that has nothing set up in this workspace | Connection *names* is not set up in this workspace. | Set up *names* under Connections, then run it again. | **Open connections** |
 | The script read a table, connection or other resource it does not declare in what it uses | The script reads the *kind* "*name*" without naming it in what it uses. | Name it in the script's Settings under what it uses, or in its code, then deploy again. | **Open settings** |
 | A secret, variable, connection or connection group the run asked for is not set | The *kind* *name* is not set in this workspace. | Set it under Secrets, Variables or Connections, then run it again. | **Open secrets**, **Open variables** or **Open connections** |
 | The run took longer than its limit of *N* seconds | The run took longer than its limit of *N* seconds. | Raise the script's timeout, or have it do less in one run. | **Open settings** |
 | The script used more memory than allowed (*N* MB) | The script used more memory than the *N* MB it is allowed. | Raise the script's memory, or have it hold less at once. | **Open settings** |
 | The worker's machine ran low on memory | The worker's machine ran low on memory and stopped the script. | Have the script hold less at once, or run it on a worker with more memory. | none |
-| The worker stopped reporting | The worker running it stopped reporting. | Check that the worker is running and can reach the platform, then run it again. | none |
-| The worker's own request to Volvel was refused as too large (413) | The platform refused what the worker sent because it was larger than a request may be (413). | Log less in one line, return less, or store it as a file and return its name. | none |
+| The worker stopped reporting | The worker running it stopped reporting. | Check that the worker is running and can reach Volvel, then run it again. | none |
+| The worker's own request to Volvel was refused as too large (413) | Volvel refused what the worker sent because it was larger than a request may be (413). | Log less in one line, return less, or store it as a file and return its name. | none |
 | The output is larger than a run may keep | The script returned more than a run may keep. | Return less, or store it as a file and return its name. | none |
-| The error says a connection is not bound, has no binding or is unbound | A connection the script uses has nothing bound here. | Bind it under Connections, then run it again. | **Open connections** |
+| The error says a connection is not bound, not set up, has no binding or is unbound | A connection the script uses is not set up here. | Set it up under Connections, then run it again. | **Open connections** |
 | The error says a secret is not set | A secret the script reads is not set in this workspace. | Set it under Secrets. | **Open secrets** |
 | The error says a variable is not set | A variable the script reads has no value here. | Give it a value under Variables. | **Open variables** |
 | The error says the run timed out or hit a time limit | The run took longer than its timeout, "of *N*s" when the run's timeout is known. | Raise the script's timeout, or have it do less in one run. | none |

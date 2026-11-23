@@ -10,4 +10,4 @@ Lines are current at commit `5ebf1c80` (branch phase-31-write-the-docs), 2026-11
 | Autosave 3 seconds. | AU:491 | writer, read from the code 2026-11-23 | holds |
 | Refusal when a deploy cannot go alone: Review all drafts. | kit/DeployMenu.tsx:55-75 | writer, read from the code 2026-11-23 | holds |
 | Not offered in production or for repository code; grayed out without resource:write. | OP:884-994 | writer, read from the code 2026-11-23 | holds |
-| Change the settings is not offered for a repository script. | OP:932 | second agent, run on the instance 2026-11-23 | fault: scripts (new): it is offered; the page names production only |
+| Change the settings is not offered for a repository script. | OP:932 | second agent, run on the instance 2026-11-23 | fault fixed (fb): the guard compares `code`, so Change the settings is not offered for a repository script, confirmed in the code (ObjectPages.tsx:932,992); the page now names both |

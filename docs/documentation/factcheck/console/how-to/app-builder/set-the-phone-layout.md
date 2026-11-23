@@ -19,7 +19,7 @@ Code as of the working tree of branch `phase-31-write-the-docs`, 2026-11-23. Pat
 | Served: phone layout below 42 rem, tablet below 58 rem, container below 28 rem | `PageView.tsx:185-190` | second agent, 2026-11-23 | code; 390 and 768 seen served |
 | Some widgets default to Hide on a phone | `narrow.ts:27-31` | second agent, 2026-11-23 | code only |
 | Under 1024 px the panes are sheets (Pages and widgets bar, settings sheet) | `EditorShell.tsx:126-131` | second agent, 2026-11-23 | holds as run at 390 px |
-| The move question says "Go back to automatic" in its Layout undoes that; the Layout has no control of that name (it has Automatic, and All automatic in the banner) | `AppBuilder.tsx:295` | second agent, 2026-11-23 | fault: app-builder "Go back to automatic" wording; the page does not repeat it |
+| The move question says "Go back to automatic" in its Layout undoes that; the Layout has no control of that name (it has Automatic, and All automatic in the banner) | `AppBuilder.tsx:295` | second agent, 2026-11-23 | fault fixed (fb): the question names the Layout's own words (`ALL_AUTOMATIC`), confirmed in the code; the page does not repeat it |
 
 Checked by: second agent, 2026-11-23
 

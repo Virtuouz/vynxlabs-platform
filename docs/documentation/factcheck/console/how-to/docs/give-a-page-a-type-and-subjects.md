@@ -23,4 +23,4 @@ Checked by: second agent, 2026-11-23. Every label, quoted message and limit in t
 | --- | --- | --- | --- |
 | The warnings and their words (steps, title, heading, type, six subjects, subject on one page, type in an untyped folder). | packages/docs-engine/src/diataxis.ts:120-180 | second agent, 2026-11-23 | holds as written |
 | Cards "What do you want to do?" with a card per type and their sentences; a count "1 page →"; the search window's Any kind and a button per type present; Related up to four per type. | diataxis.ts:32-35, set.ts:636 `RELATED_PER_TYPE = 4`; run on a repository site with how-to and explanation pages | second agent, 2026-11-23 | holds as written |
-| Folder warning grammar. | diataxis.ts:148 writes "says it is a explanation" | fault: new, wording ("a ${type}") | the page writes it "a …", leaving the type's name out |
+| Folder warning grammar. | diataxis.ts:148 writes "says it is a explanation" | fault fixed (fa): "an explanation" (diataxis.ts:148), confirmed in the code | the page writes it "a …", leaving the type's name out |

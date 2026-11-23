@@ -20,4 +20,4 @@ Code as of commit `14f7d5b9` (branch `phase-31-write-the-docs`), 2026-11-23. Wri
 Labels, quoted messages and limits of the page were swept against the console and control-plane source (every bold label and quoted refusal found; messages built from parts checked at their template).
 
 - Not-run items now run: renaming a query that a dashboard names (the dialog lists "This dashboard is saved as a draft with the new path:"; Used by shows the dashboard; both deployed together, the dashboard still ran), and removing a query a dashboard names (the removal and the dashboard's draft deployed together without refusal; the widget then says "The query … was not found.").
-- fault: after Save as a draft the screen says "There is no query at <old path>" (see queries).
+- fault fixed (fb): after Save as a draft the screen moves to the query at its new path, and Discard draft of a renamed query goes to the old path; confirmed on the instance (a new query renamed and discarded); the page no longer has the workaround.

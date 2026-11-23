@@ -46,6 +46,12 @@ const files: Record<string, { app: string; path: string; type: string; content: 
     type: "text/javascript",
     content: Buffer.from('console.log("orders");'),
   },
+  logo: {
+    app: "portal",
+    path: "logo-horizontal.svg",
+    type: "image/svg+xml",
+    content: Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'/>"),
+  },
   robots: { app: "portal", path: "robots.txt", type: "text/plain", content: Buffer.from("hello") },
   status: {
     app: "status",
@@ -114,6 +120,9 @@ function bundle(change: (manifests: BundleManifest[]) => BundleManifest[] = (m) 
 }
 
 const ws = (workspace = prod, of = tenant) => `/tenants/${of}/workspaces/${workspace}`;
+
+const staffCookie = (visitor: { jar: Map<string, string> }) =>
+  [...visitor.jar].map(([name, value]) => `${name}=${value}`).join("; ");
 
 /** A browser at one address: it keeps the cookies it is given and sends them back there. */
 function browser(app: TestApp, host: string) {
@@ -256,7 +265,7 @@ describe("an app in a bundle", () => {
     const refused = await alice.post(`${ws()}/bundles`, bundle());
     expect(refused.status).toBe(409);
     expect(refused.body.code).toBe("assets_missing");
-    expect(refused.body.errors).toHaveLength(4);
+    expect(refused.body.errors).toHaveLength(5);
 
     const wrong = await alice.put(`${ws()}/bundle-assets/${"0".repeat(64)}`, files.page?.content);
     expect(wrong.status).toBe(400);
@@ -314,7 +323,7 @@ describe("an app in a bundle", () => {
         path: "portal",
         title: "Orders",
         url: "http://localhost:8080/apps/acme/main/portal/",
-        files: 3,
+        files: 4,
         access: ["every end user"],
       },
       { path: "status", title: "Order status", access: ["anyone"] },
@@ -437,6 +446,28 @@ describe("serving by path, on the instance's own address", () => {
     });
   });
 
+  test("a member's groups reach an app written as code, as they reach one made in the console (APP-16)", async () => {
+    const staff = browser(t, MAIN);
+    await staff.signInMember("alice@acme.example", PASSWORD);
+    const me = (await alice.get(`/tenants/${tenant}/members`)).body.items.find(
+      (member: Any) => member.email === "alice@acme.example",
+    );
+    const group = await alice.post(`/tenants/${tenant}/groups`, { name: "Night shift" });
+    expect(group.status, JSON.stringify(group.body)).toBe(201);
+    await alice.put(`/tenants/${tenant}/groups/${group.body.id}/members/${me.id}`);
+    try {
+      const page = await staff.get("/apps/acme/main/portal/");
+      const context = JSON.parse(
+        /<script type="application\/json" id="vx-context">(.*?)<\/script>/.exec(
+          page.body,
+        )?.[1] as string,
+      );
+      expect(context.principal.groups).toEqual(["Night shift"]);
+    } finally {
+      await alice.delete(`/tenants/${tenant}/groups/${group.body.id}`);
+    }
+  });
+
   test("files come with their type, hashed ones may be kept, and a screen of the app gets the page", async () => {
     const staff = browser(t, MAIN);
     await staff.signInMember("alice@acme.example", PASSWORD);
@@ -449,10 +480,25 @@ describe("serving by path, on the instance's own address", () => {
     expect((await staff.get("/apps/acme/main/portal/robots.txt")).headers["cache-control"]).toBe(
       "private, no-cache",
     );
+    // A name with a long word in it is not a hash: it may change at the next deploy (APP-04).
+    expect(
+      (await staff.get("/apps/acme/main/portal/logo-horizontal.svg")).headers["cache-control"],
+    ).toBe("private, no-cache");
 
     expect((await staff.get("/apps/acme/main/portal/customers/42")).body).toContain(
       '<div id="app">',
     );
+    // A screen whose last part has a dot is a screen too, to a browser that asks for a page
+    // (APP-15), and a file that is not there is still missing for one that asks for a file.
+    const asked = (path: string, accept: string) =>
+      t.app.inject({
+        url: `/apps/acme/main/portal/${path}`,
+        headers: { host: MAIN, accept, cookie: staffCookie(staff) },
+      });
+    expect(
+      (await asked("users/j.smith", "text/html,application/xhtml+xml,*/*;q=0.8")).statusCode,
+    ).toBe(200);
+    expect((await asked("assets/gone.js", "*/*")).statusCode).toBe(404);
     expect((await staff.get("/apps/acme/main/portal/missing.png")).status).toBe(404);
     expect((await staff.get("/apps/acme/main/portal")).status).toBe(308);
     expect((await staff.get("/apps/acme/main/nothing/")).status).toBe(404);

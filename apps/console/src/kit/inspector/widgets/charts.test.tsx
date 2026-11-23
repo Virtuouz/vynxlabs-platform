@@ -610,3 +610,41 @@ test("WID-M6: a chart takes up to six measures, one row each, and a scatter tile
   expect(scatter.disabled).toBe(true);
   expect(screen.getByText("needs a number")).toBeTruthy();
 });
+
+test("WID-M6: a chart's sort is a row of the Data tab, written to the query", async () => {
+  show(<Harness start={byClinic()} definition={chart} tab="data" />);
+  fireEvent.click(screen.getByRole("button", { name: /^Sorted by/ }));
+  const editor = within(await screen.findByRole("dialog"));
+  fireEvent.click(editor.getByRole("button", { name: "Then by" }));
+  expect(visualOf(last(), "rows").sort).toEqual([{ by: "clinic", descending: true }]);
+  expect(screen.getByRole("button", { name: /^Sorted by\s*Clinic/ })).toBeTruthy();
+});
+
+test("WID-M6: the column along the bottom and the one up the side are chosen from what the chart gives", async () => {
+  const two = widgetOf(
+    "core/chart",
+    "rows",
+    {
+      measures: [
+        { fn: "sum", column: "total", as: "sum_total" },
+        { fn: "sum", column: "target", as: "sum_target" },
+      ],
+      groupBy: [{ column: "clinic" }, { column: "status" }],
+    },
+    { mark: "bar" },
+  );
+  show(<Harness start={two} definition={chart} tab="display" />);
+  fireEvent.click(screen.getByRole("button", { name: /^Along the bottom/ }));
+  fireEvent.click(await screen.findByRole("radio", { name: "Status" }));
+  expect(last().config?.x).toBe("status");
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: /^Up the side/ }));
+  fireEvent.click(await screen.findByRole("radio", { name: "Sum target" }));
+  expect(last().config?.y).toBe("sum_target");
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: /^Up the side/ }));
+  fireEvent.click(await screen.findByRole("radio", { name: "First value" }));
+  expect(last().config?.y).toBeUndefined();
+});

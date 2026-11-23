@@ -567,4 +567,64 @@ describe("the flow editor, as a person uses it", () => {
     expect(box().value).toBe('{ "type": "obj');
     await screen.findByText(/This is not JSON yet/);
   });
+  test("a manual start's input is a form of fields, kept in step with the JSON box", async () => {
+    await openAt({ nodes: { start: manual }, edges: [] }, "start", /What it takes, as JSON Schema/);
+    const box = () => screen.getByLabelText(/What it takes, as JSON Schema/) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole("button", { name: "Add a field" }));
+    fireEvent.change(screen.getByLabelText("Name of field 1"), { target: { value: "client" } });
+    fireEvent.click(screen.getByLabelText("Field 1 is required"));
+    fireEvent.change(screen.getByLabelText("Type of field 1"), { target: { value: "integer" } });
+    fireEvent.change(screen.getByLabelText("Smallest of field 1"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("About field 1"), {
+      target: { value: "The client's number" },
+    });
+    await waitFor(() =>
+      expect(JSON.parse(box().value)).toEqual({
+        type: "object",
+        properties: {
+          client: { type: "integer", description: "The client's number", minimum: 1 },
+        },
+        required: ["client"],
+      }),
+    );
+    // What is typed in the JSON box is what the form shows.
+    fireEvent.change(box(), {
+      target: {
+        value: JSON.stringify({
+          type: "object",
+          properties: { note: { type: "string", maxLength: 20 } },
+        }),
+      },
+    });
+    await waitFor(() =>
+      expect((screen.getByLabelText("Name of field 1") as HTMLInputElement).value).toBe("note"),
+    );
+    expect((screen.getByLabelText("Longest of field 1") as HTMLInputElement).value).toBe("20");
+    fireEvent.click(screen.getByRole("button", { name: "Remove field 1" }));
+    await waitFor(() => expect(box().value).toBe(""));
+  });
+  test("a schema the form cannot show keeps the JSON box and says why", async () => {
+    await openAt(
+      {
+        nodes: {
+          start: {
+            type: "trigger",
+            trigger: {
+              type: "manual",
+              input: {
+                type: "object",
+                properties: { a: { oneOf: [{ type: "string" }, { type: "integer" }] } },
+              },
+            },
+          },
+        },
+        edges: [],
+      },
+      "start",
+      /What it takes, as JSON Schema/,
+    );
+    expect(screen.queryByRole("button", { name: "Add a field" })).toBeNull();
+    expect(screen.getByText(/The form cannot show this schema/)).toBeTruthy();
+    expect(screen.getByText(/"a" uses oneOf/)).toBeTruthy();
+  });
 });

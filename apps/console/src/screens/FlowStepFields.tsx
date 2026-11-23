@@ -1,13 +1,24 @@
 import {
+  Button,
+  CheckboxField,
   ComboboxField,
   MultiSelectField,
   NumberField,
   type Option,
   SelectField,
   TextAreaField,
+  TextField,
 } from "@volvel/ui";
 import { useEffect, useRef, useState } from "react";
 import { useLoad } from "../api.ts";
+import {
+  FIELD_TYPES,
+  type FieldType,
+  fieldsOf,
+  problemsOf,
+  type SchemaRow,
+  schemaOf,
+} from "./inputSchema.ts";
 
 /**
  * Settings that more than one editor draws: the flow editor's inspector, the
@@ -449,6 +460,8 @@ export function InputSchemaField({
     const unsaved = kept?.get();
     return unsaved === undefined ? undefined : problemOf(unsaved);
   });
+  const shown = fieldsOf(value);
+  const [rows, setRows] = useState<SchemaRow[]>(() => ("rows" in shown ? shown.rows : []));
   // A schema changed from elsewhere (undo) is the one shown. Not when drawn: then what was kept is.
   const drawn = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: `kept` is the host's, and changes each draw
@@ -456,6 +469,15 @@ export function InputSchemaField({
     if (!drawn.current) {
       drawn.current = true;
       return;
+    }
+    // The rows follow the schema, unless they are what made it (or are not a schema yet).
+    const next = fieldsOf(value);
+    if ("rows" in next) {
+      setRows((now) =>
+        problemsOf(now).size > 0 || JSON.stringify(schemaOf(now)) === JSON.stringify(value)
+          ? now
+          : next.rows,
+      );
     }
     setText((now) => {
       try {
@@ -480,6 +502,180 @@ export function InputSchemaField({
     if (wrong !== undefined) return;
     onChange(next.trim() === "" ? undefined : (JSON.parse(next) as Record<string, unknown>));
   };
+  /** The form wrote: the JSON box shows what it made, once the rows make a schema. */
+  const write = (next: SchemaRow[]) => {
+    setRows(next);
+    if (problemsOf(next).size > 0) return;
+    const schema = schemaOf(next);
+    setText(textOf(schema));
+    setProblem(undefined);
+    kept?.set(undefined);
+    onChange(schema);
+  };
+  return (
+    <div className="flex flex-col gap-3">
+      <SchemaFields
+        rows={rows}
+        why={"why" in shown ? shown.why : undefined}
+        unsaved={problem !== undefined}
+        onChange={write}
+      />
+      <JsonBox
+        text={text}
+        problem={problem}
+        onChange={read}
+        onBlur={() => {
+          if (problem === undefined && text.trim() !== "") setText(textOf(value));
+        }}
+      />
+    </div>
+  );
+}
+
+const NEW_ROW: SchemaRow = {
+  name: "",
+  type: "string",
+  required: false,
+  description: "",
+  min: undefined,
+  max: undefined,
+};
+
+/**
+ * The fields of the input, one group each: name, type, whether it is required, a short
+ * description, and the limits its type has. A schema the form cannot show says so and why.
+ */
+function SchemaFields({
+  rows,
+  why,
+  unsaved,
+  onChange,
+}: {
+  rows: SchemaRow[];
+  why: string | undefined;
+  unsaved: boolean;
+  onChange: (rows: SchemaRow[]) => void;
+}) {
+  if (why !== undefined) {
+    return (
+      <p className="m-0 text-body-sm text-ink-muted" role="note">
+        The form cannot show this schema. {why} Edit the JSON below.
+      </p>
+    );
+  }
+  const problems = problemsOf(rows);
+  const change = (at: number, patch: Partial<SchemaRow>) =>
+    onChange(rows.map((row, index) => (index === at ? { ...row, ...patch } : row)));
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-3 border-0 p-0" disabled={unsaved}>
+      <legend className="mb-1 p-0 text-body-sm font-medium">What it takes, field by field</legend>
+      {unsaved ? (
+        <p className="m-0 text-meta text-ink-muted">
+          The JSON below is not valid yet. The fields show the schema that is saved, and come back
+          to use when the JSON is valid.
+        </p>
+      ) : rows.length === 0 ? (
+        <p className="m-0 text-meta text-ink-muted">
+          No fields: any object is accepted. Add a field to say what it must hold.
+        </p>
+      ) : null}
+      {rows.map((row, at) => {
+        const n = at + 1;
+        const text = row.type === "string";
+        return (
+          <fieldset
+            // biome-ignore lint/suspicious/noArrayIndexKey: a row is known by its place while its name is typed
+            key={at}
+            className="m-0 flex min-w-0 flex-col gap-2 rounded-control border border-line p-3"
+          >
+            <legend className="px-1 text-meta text-ink-muted">Field {n}</legend>
+            <TextField
+              name={`input-field-${n}-name`}
+              label={`Name of field ${n}`}
+              value={row.name}
+              required
+              {...(problems.get(at) ? { error: problems.get(at) as string } : {})}
+              onChange={(name) => change(at, { name })}
+            />
+            <SelectField
+              name={`input-field-${n}-type`}
+              label={`Type of field ${n}`}
+              value={row.type}
+              options={FIELD_TYPES}
+              onChange={(type) =>
+                change(at, {
+                  type: type as FieldType,
+                  ...(type === "boolean" || (type === "string") !== text
+                    ? { min: undefined, max: undefined }
+                    : {}),
+                })
+              }
+            />
+            <CheckboxField
+              name={`input-field-${n}-required`}
+              label={`Field ${n} is required`}
+              checked={row.required}
+              onChange={(required) => change(at, { required })}
+            />
+            <TextField
+              name={`input-field-${n}-description`}
+              label={`About field ${n}`}
+              value={row.description}
+              required={false}
+              hint="A short description, shown beside the field on the Start form."
+              onChange={(description) => change(at, { description })}
+            />
+            {row.type === "boolean" ? null : (
+              <div className="grid grid-cols-2 gap-2">
+                <NumberField
+                  name={`input-field-${n}-min`}
+                  label={`${text ? "Shortest" : "Smallest"} of field ${n}`}
+                  value={row.min}
+                  required={false}
+                  onChange={(min) => change(at, { min })}
+                />
+                <NumberField
+                  name={`input-field-${n}-max`}
+                  label={`${text ? "Longest" : "Largest"} of field ${n}`}
+                  value={row.max}
+                  required={false}
+                  onChange={(max) => change(at, { max })}
+                />
+              </div>
+            )}
+            <div>
+              <Button
+                size="small"
+                variant="quiet"
+                onClick={() => onChange(rows.filter((_, index) => index !== at))}
+                aria-label={`Remove field ${n}`}
+              >
+                Remove field
+              </Button>
+            </div>
+          </fieldset>
+        );
+      })}
+      <div>
+        <Button size="small" onClick={() => onChange([...rows, { ...NEW_ROW }])}>
+          Add a field
+        </Button>
+      </div>
+    </fieldset>
+  );
+}
+
+function JsonBox({
+  text,
+  problem,
+  onChange,
+  onBlur,
+}: {
+  text: string;
+  problem: string | undefined;
+  onChange: (text: string) => void;
+  onBlur: () => void;
+}) {
   return (
     <TextAreaField
       name="input-schema"
@@ -489,10 +685,8 @@ export function InputSchemaField({
       required={false}
       hint="Input given when the flow is started by hand, from the API, by an agent or as a sub-flow must match it. It draws the Start form and the tool an agent is given. Without one, any object is accepted."
       {...(problem ? { error: problem } : {})}
-      onChange={read}
-      onBlur={() => {
-        if (problem === undefined && text.trim() !== "") setText(textOf(value));
-      }}
+      onChange={onChange}
+      onBlur={onBlur}
     />
   );
 }

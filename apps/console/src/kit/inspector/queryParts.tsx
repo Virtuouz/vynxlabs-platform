@@ -14,7 +14,7 @@ export const NUMERIC = new Set(["integer", "number"]);
 
 /** The columns of the table an input reads, with the ones every table has. */
 export function columnsOf(env: Env, visual: VisualQuery | undefined): CatalogColumn[] {
-  return columnsNamed(env.catalog, visual?.table);
+  return columnsNamed(env.catalog, visual?.table, visual?.joins);
 }
 
 /** The icon of a column's type. */

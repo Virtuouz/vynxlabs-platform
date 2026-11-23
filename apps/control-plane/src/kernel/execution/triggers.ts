@@ -1326,13 +1326,17 @@ export async function fireWebhook(
     .where("trigger_state.type", "=", "webhook")
     .executeTakeFirst();
   if (!state?.enabled) return undefined;
-  if (
-    state.triggers_paused ||
-    (await pausedAlone(kernel, state)) ||
-    (await instanceTriggersPaused(kernel))
-  ) {
+  // What holds it, widest first, so the answer says whose pause it is (OPS-37).
+  const heldBy = (await instanceTriggersPaused(kernel))
+    ? ("instance" as const)
+    : state.triggers_paused
+      ? ("workspace" as const)
+      : (await pausedAlone(kernel, state))
+        ? ("trigger" as const)
+        : undefined;
+  if (heldBy) {
     await recordRefusal(kernel, state, "paused");
-    return { refused: "paused" as const };
+    return { refused: "paused" as const, heldBy };
   }
   const config = state.config as WebhookConfig;
   if (config.verify) {

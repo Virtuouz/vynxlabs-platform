@@ -658,6 +658,24 @@ describe("a bundle with a broken flow is refused at upload, with the flow, node 
     ]);
   });
 
+  test("a tag that does not parse is refused, on a flow's start and on a trigger kind (FLW-27)", async () => {
+    const webhook = { type: "trigger", trigger: { type: "webhook", tags: ["trigger.((("] } };
+    expect(
+      await problems(flow("bad", { start: webhook, a: set({ x: "1" }) }, [["start", "a"]])),
+    ).toEqual([
+      expect.stringMatching(
+        /^bad \(flow\): \/body\/nodes\/start\/trigger\/tags\/0 is not a valid expression: /,
+      ),
+    ]);
+    expect(
+      await problems(
+        manifest("trigger", "bad-hook", { type: "webhook", script: "double", tags: ["a >"] }),
+      ),
+    ).toEqual([
+      expect.stringMatching(/^bad-hook \(trigger\): \/body\/tags\/0 is not a valid expression: /),
+    ]);
+  });
+
   test("expressions that do not parse, and references to things that are not there", async () => {
     expect(
       (
@@ -816,7 +834,8 @@ describe("running a flow", () => {
       input: { sku: "A", quantity: 0 },
     });
     expect(refused.status).toBe(400);
-    expect(refused.body.detail).toContain("/input/quantity");
+    // The words name the field; the path is in `errors`.
+    expect(refused.body.detail).toContain("quantity must be");
     expect(refused.body.errors).toEqual(
       expect.arrayContaining([expect.objectContaining({ path: "/input/quantity" })]),
     );
@@ -825,7 +844,7 @@ describe("running a flow", () => {
 
     const parent = await finished(await start("calls-typed"));
     expect(parent.status).toBe("failed");
-    expect(step(parent, "child").error.message).toContain("/input");
+    expect(step(parent, "child").error.message).toContain("It needs quantity");
   });
 
   test("a failed step takes its error path when it has one", async () => {

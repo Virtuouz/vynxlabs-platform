@@ -154,7 +154,7 @@ export function preferenceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
     );
 
-    /** The caller is a member of the tenant, and the workspace, if any, is the tenant's. */
+    /** The caller is a member of the tenant, or has a grant in it, and the workspace, if any, is the tenant's. */
     async function mayKeep(member: string, tenantId: string, workspaceId: string | null) {
       const belongs = await db
         .selectFrom("tenant_member")
@@ -162,7 +162,18 @@ export function preferenceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .where("tenant_id", "=", tenantId)
         .where("member_id", "=", member)
         .executeTakeFirst();
-      if (!belongs) throw notFound("The tenant");
+      // An operator working through an access grant keeps views while the grant lasts (OPS-39).
+      const granted =
+        belongs ??
+        (await db
+          .selectFrom("access_grant")
+          .select("id")
+          .where("tenant_id", "=", tenantId)
+          .where("member_id", "=", member)
+          .where("revoked_at", "is", null)
+          .where("expires_at", ">", new Date())
+          .executeTakeFirst());
+      if (!granted) throw notFound("The tenant");
       if (workspaceId) {
         const workspace = await db
           .selectFrom("workspace")

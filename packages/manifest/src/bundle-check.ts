@@ -547,6 +547,18 @@ export function bundleExpressions(
         expression: manifest.body.filter,
       });
     }
+    // The tags a start gives each run: one that does not parse is left out at run time, so
+    // it is said here, where it can still be fixed.
+    if (manifest.kind === "trigger" || manifest.kind === "schedule") {
+      const tags = (manifest.body as { tags?: unknown }).tags;
+      for (const [index, tag] of (Array.isArray(tags) ? tags : []).entries()) {
+        if (typeof tag === "string")
+          found.push({
+            where: `${manifest.path} (${manifest.kind}): /body/tags/${index}`,
+            expression: tag,
+          });
+      }
+    }
     if (manifest.kind === "flow") {
       for (const { path, expression } of flowExpressions(manifest.body as unknown as FlowBody)) {
         found.push({ where: `${manifest.path} (flow): ${path}`, expression });

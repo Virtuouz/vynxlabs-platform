@@ -112,6 +112,50 @@ test("new triggers are made in a dev workspace; production says where instead", 
   expect(await screen.findByRole("heading", { name: "New schedule" })).toBeTruthy();
 });
 
+test("a viewer is offered no Pause, Resume or Fire now, and an operator is (OPS-35)", async () => {
+  let allowed: string[] = [];
+  const asked: string[] = [];
+  vi.stubGlobal("fetch", async (address: string) => {
+    asked.push(address);
+    if (address.split("?")[0]?.endsWith("/allowed")) return Response.json({ allowed });
+    return Response.json({ items: [trigger("reminders/hourly", "", "reminders/send", "script")] });
+  });
+  history.replaceState(null, "", `${link}/triggers?trigger=reminders%2Fhourly`);
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  await screen.findByText("schedule trigger");
+  await vi.waitFor(() => expect(asked.some((one) => one.includes("/allowed?"))).toBe(true));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(screen.queryByRole("button", { name: "Pause this trigger" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Fire now" })).toBeNull();
+  cleanup();
+  allowed = ["trigger:write"];
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  expect(await screen.findByRole("button", { name: "Pause this trigger" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Fire now" })).toBeTruthy();
+});
+
+test("a paused trigger says who paused it (OPS-36)", async () => {
+  vi.stubGlobal("fetch", async () =>
+    Response.json({
+      items: [
+        {
+          ...trigger("reminders/hourly", "", "reminders/send", "script"),
+          paused: {
+            at: new Date().toISOString(),
+            by: "m2",
+            byName: "Carl Jones",
+            reason: "Holding for the audit",
+          },
+          pausedBy: "trigger",
+        },
+      ],
+    }),
+  );
+  history.replaceState(null, "", `${link}/triggers?trigger=reminders%2Fhourly`);
+  show(<TriggersWorkbench root={root} link={link} workspacePaused={false} production={false} />);
+  expect(await screen.findByText(/by Carl Jones: Holding for the audit/)).toBeTruthy();
+});
+
 test("a schedule that is opened is remembered for the palette's Recent list", async () => {
   const put: unknown[] = [];
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
@@ -119,6 +163,8 @@ test("a schedule that is opened is remembered for the palette's Recent list", as
       put.push(JSON.parse(init.body as string));
       return new Response(null, { status: 204 });
     }
+    if (address.split("?")[0]?.endsWith("/allowed"))
+      return Response.json({ allowed: ["trigger:write"] });
     return Response.json({ items: [trigger("reminders/hourly", "", "reminders/send", "script")] });
   });
   history.replaceState(null, "", `${link}/triggers?trigger=reminders%2Fhourly`);

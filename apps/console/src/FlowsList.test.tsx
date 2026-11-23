@@ -91,3 +91,41 @@ test("a link to a flow that is only a draft lands in the editor, not on 'not fou
   await waitFor(() => expect(location.pathname).toBe(`${link}/flows/edit/orders/new`));
   expect(screen.queryByText(/was not found/)).toBeNull();
 });
+
+test("a flow page offers Start, Edit and arranging only to who may (FLW-30)", async () => {
+  let allowed: string[] = [];
+  const asked: string[] = [];
+  vi.stubGlobal("fetch", async (address: string) => {
+    asked.push(address);
+    const path = address.split("?")[0] as string;
+    const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200 });
+    if (path === `${api}/allowed`) return json({ allowed });
+    if (path === `${api}/flows/orders/sync`)
+      return json({
+        path: "orders/sync",
+        version: 1,
+        description: "",
+        nodes: { start: { type: "trigger", trigger: { type: "manual" } } },
+        edges: [],
+        layout: {},
+        triggers: [],
+      });
+    return json({ items: [] });
+  });
+  show(<FlowView root={root} path="orders/sync" link={link} editable />);
+  await screen.findByRole("heading", { name: "orders/sync" });
+  await waitFor(() =>
+    expect(asked).toContain(
+      `${api}/allowed?permissions=flow_run%3Awrite,resource%3Awrite,flow%3Awrite`,
+    ),
+  );
+  expect(screen.queryByRole("button", { name: "Start flow" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+  expect(screen.queryByText(/Drag a step/)).toBeNull();
+  cleanup();
+  allowed = ["flow_run:write", "resource:write", "flow:write"];
+  show(<FlowView root={root} path="orders/sync" link={link} editable />);
+  expect(await screen.findByRole("button", { name: "Start flow" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+  expect(screen.getByText(/Drag a step/)).toBeTruthy();
+});

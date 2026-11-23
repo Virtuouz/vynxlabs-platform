@@ -5,8 +5,10 @@ import {
   followCases,
   insertAfter,
   keepsAddress,
+  problemsAt,
   problemsOf,
   rowsToValues,
+  stepNameFor,
   stepOrder,
   valueRowProblem,
 } from "./screens/FlowEditor.tsx";
@@ -235,4 +237,27 @@ test("an approval that asks a group the tenant no longer has is said, once the g
     "ok asks the group gone, which this tenant does not have. Choose another group, or ask a tenant admin to make it.",
   ]);
   expect(problemsOf(nodes, edges, new Map(), new Set(["ops", "gone"]))).toEqual([]);
+});
+
+test("FLW-23: a step named from a script path, a long text and too many cases are said before saving", () => {
+  expect(stepNameFor("jobs/2nd")).toMatch(/^[a-z][a-z0-9_]*$/);
+  expect(stepNameFor("jobs/Daily-Sync")).toMatch(/^[a-z][a-z0-9_]*$/);
+  const start = { type: "trigger", trigger: { type: "manual" } } as never;
+  const cases = Array.from({ length: 21 }, (_, n) => ({ name: `c${n}`, when: "true" }));
+  const found = problemsAt(
+    {
+      start,
+      ask: { type: "approval", title: "x".repeat(201) },
+      pick: { type: "branch", cases },
+      calc: { type: "set", values: { total: "1 + ".repeat(600) } },
+    } as never,
+    [
+      { from: "start", to: "ask" },
+      { from: "start", to: "pick", output: "c0" },
+      { from: "start", to: "calc" },
+    ],
+  ).map((one) => one.message);
+  expect(found.some((m) => /ask.*200/.test(m))).toBe(true);
+  expect(found.some((m) => /pick.*20 cases/.test(m))).toBe(true);
+  expect(found.some((m) => /calc.*2,000/.test(m))).toBe(true);
 });

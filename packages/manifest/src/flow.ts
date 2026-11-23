@@ -207,6 +207,9 @@ export function flowExpressions(body: FlowBody): { path: string; expression: str
     switch (node.type) {
       case "trigger":
         if (node.trigger.type === "event") at("trigger/filter", node.trigger.filter);
+        if ("tags" in node.trigger)
+          for (const [index, tag] of (node.trigger.tags ?? []).entries())
+            at(`trigger/tags/${index}`, tag);
         break;
       case "script":
         at("input", node.input);

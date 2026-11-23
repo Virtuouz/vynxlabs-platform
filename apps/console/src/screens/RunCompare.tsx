@@ -118,14 +118,19 @@ export function RunCompare({
       </span>
       {showInput ? (
         before.data ? (
-          <DiffView
-            before={before.data.input}
-            after={input}
-            beforeLabel="The last success's input"
-            afterLabel="This run's input"
-            testId="input-diff"
-            maxHeight="24rem"
-          />
+          JSON.stringify(before.data.input) === JSON.stringify(input) ? (
+            // The server compared the real values, and the page holds them masked.
+            <p className="m-0 text-meta text-ink-muted">Only masked values differ.</p>
+          ) : (
+            <DiffView
+              before={before.data.input}
+              after={input}
+              beforeLabel="The last success's input"
+              afterLabel="This run's input"
+              testId="input-diff"
+              maxHeight="24rem"
+            />
+          )
         ) : before.error ? (
           <ErrorState error={before.error} onRetry={before.reload} />
         ) : (

@@ -263,8 +263,8 @@ function ConsoleCodeSwitch({ base }: { base: string }) {
   return (
     // panel-allowed: a setting, drawn as a panel beside the form above.
     <section
-      aria-label="Code in the console"
       className="flex max-w-xl flex-col gap-3 rounded-panel border border-line bg-surface p-4"
+      aria-label="Code in the console"
     >
       <h2 className="m-0 text-body font-semibold">Code in the console</h2>
       <p className="m-0">

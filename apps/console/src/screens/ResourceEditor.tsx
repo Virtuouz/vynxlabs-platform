@@ -25,7 +25,7 @@ import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { Link, navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
-import { EventStartFields, TagsField } from "./FlowStepFields.tsx";
+import { EventStartFields, type StartSettings, switchStart, TagsField } from "./FlowStepFields.tsx";
 import {
   FormDesigner,
   type FormTrigger,
@@ -211,6 +211,7 @@ export function ResourceEditor({
   const { dirty } = draft;
   const busy = draft.saving;
   const savedAs = useRef<string>(undefined);
+  const startShelf = useRef(new Map<string, StartSettings>());
   const resources = useLoad<{ items: { path: string; kind: string; body: { mode?: string } }[] }>(
     `${root}/resources`,
   );
@@ -641,14 +642,20 @@ export function ResourceEditor({
                 : { hint: "What a trigger is cannot be changed once it is saved. Make another." })}
               onChange={(type) => {
                 const kept = { script: text("script"), description: text("description") };
-                edit({
-                  body:
+                // What the trigger was set to returns if it is changed back.
+                const { script: _s, description: _d, ...own } = body as StartSettings;
+                const made = switchStart(
+                  startShelf.current,
+                  { ...own, type: text("type") || "webhook" },
+                  type,
+                  () =>
                     type === "event"
-                      ? { type, ...kept, event: "" }
+                      ? { type, event: "" }
                       : type === "form"
-                        ? { ...newForm(), ...kept }
-                        : { type: "webhook", ...kept },
-                });
+                        ? (newForm() as unknown as StartSettings)
+                        : { type: "webhook" },
+                );
+                edit({ body: { ...made, ...kept } });
               }}
             />
             {script}

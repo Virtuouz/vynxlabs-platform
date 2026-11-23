@@ -63,3 +63,25 @@ test("a run that never succeeded says so, and offers nothing to compare", async 
   expect(await screen.findByText(/has not succeeded before/)).toBeTruthy();
   expect(screen.queryByRole("link", { name: /Compare/ })).toBeNull();
 });
+
+test("when only masked values differ, the difference says so instead of showing nothing (OPS-30)", async () => {
+  previous = {
+    run: { id: "r-ok", bundleVersion: 4, startedAt: null, finishedAt: null, durationMs: 800 },
+    bundleVersion: 4,
+    versionChanged: false,
+    inputChanged: true,
+  };
+  show(
+    <RunCompare
+      root={root}
+      link="/t/t1/workspaces/w1"
+      kind="run"
+      id="r-bad"
+      input={{ sku: "A-1", qty: 2 }}
+      durationMs={1500}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Show the input's difference" }));
+  expect(await screen.findByText("Only masked values differ.")).toBeTruthy();
+  expect(screen.queryByTestId("input-diff")).toBeNull();
+});

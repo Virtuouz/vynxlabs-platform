@@ -305,6 +305,62 @@ describe("a run's attempts, and what it ran on", () => {
   });
 });
 
+describe("runs that wait, and runs sorted by how long they took", () => {
+  const listed = async (query = "") =>
+    (await alice.get(`${ws()}/activity?limit=200${query}`)).body as Any;
+
+  test("a run set to start later is waiting for its time, not queued, and a cancel of the queued leaves it (OPS-25)", async () => {
+    const before = (await listed()).stateCounts as Record<string, number>;
+    const later = new Date(Date.now() + 3_600_000).toISOString();
+    const started = await alice.post(`${ws()}/runs`, {
+      script: "orders/sync",
+      input: {},
+      startAfter: later,
+    });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const id = started.body.id as string;
+    const page = await listed();
+    const row = page.items.find((one: Any) => one.id === id);
+    expect(row).toMatchObject({ status: "queued", state: "waiting_time", wakeAt: later });
+    expect(page.stateCounts.waiting_time).toBe((before.waiting_time ?? 0) + 1);
+    expect(page.stateCounts.queued ?? 0).toBe(before.queued ?? 0);
+    expect((await alice.get(`${ws()}/runs/${id}`)).body).toMatchObject({
+      state: "waiting_time",
+      scheduledFor: later,
+    });
+    await alice.post(`${ws()}/runs/cancel`, { include: "queued" });
+    const left = await t.db
+      .selectFrom("run")
+      .select("status")
+      .where("id", "=", id)
+      .executeTakeFirst();
+    expect(left?.status).toBe("queued");
+    expect((await alice.post(`${ws()}/runs/${id}/cancel`)).status).toBe(200);
+  });
+
+  test("the shortest first has the unfinished last, as the longest first does (OPS-34)", async () => {
+    const made = async () =>
+      (await alice.post(`${ws()}/runs`, { script: "orders/sync", input: {} })).body.id as string;
+    const unfinished = await made();
+    const done = await made();
+    await sql`update run set status = 'succeeded', started_at = now() - interval '5 seconds',
+      finished_at = now() where id = ${done}`.execute(t.db);
+    for (const dir of ["asc", "desc"]) {
+      const ids = (await listed(`&sort=duration&dir=${dir}`)).items.map((one: Any) => one.id);
+      expect(ids.indexOf(done), dir).toBeLessThan(ids.indexOf(unfinished));
+    }
+    // Paged one at a time, the order holds across the cursor.
+    const first = (await alice.get(`${ws()}/activity?sort=duration&dir=asc&limit=1`)).body as Any;
+    expect(first.items[0].state).not.toBe("queued");
+    const second = (
+      await alice.get(
+        `${ws()}/activity?sort=duration&dir=asc&limit=200&cursor=${encodeURIComponent(first.nextCursor)}`,
+      )
+    ).body as Any;
+    expect(second.items.map((one: Any) => one.id)).toContain(unfinished);
+  });
+});
+
 describe("a script's own failure alert", () => {
   test("replaces the workspace's default, and does not add to it (C9, D29)", async () => {
     expect(

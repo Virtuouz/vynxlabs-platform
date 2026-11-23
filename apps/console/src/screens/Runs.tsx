@@ -10,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, useLoad } from "../api.ts";
+import { api, useLoad, useMay } from "../api.ts";
 import { ask, copyText, notify } from "../ask.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { useAddressBox } from "../kit/addressBox.ts";
@@ -369,6 +369,10 @@ export function RunsWorkbench({
   const queued = counts.queued ?? 0;
   const inProgress = LIVE.reduce((sum, state) => sum + (counts[state] ?? 0), 0);
   const [cancelOlder, setCancelOlder] = useState(false);
+  // What this person may do is asked before the controls are drawn (OPS-35).
+  const may = useMay(root, "run:write", "flow_run:write");
+  const mayAct = (kind: string) => may(kind === "flow" ? "flow_run:write" : "run:write");
+  const mayAnyRun = may("run:write") || may("flow_run:write");
   const [retryOn, setRetryOn] = useState<Activity>();
   const narrowedBy = [
     url.target ? `of ${url.target}` : "",
@@ -547,9 +551,10 @@ export function RunsWorkbench({
         refresh();
       },
     };
+    const mine = mayAct(one.kind);
     return [
       { label: "Open", onSelect: () => navigate(page) },
-      ...(one.kind === "script" && !going && !one.source
+      ...(mine && one.kind === "script" && !going && !one.source
         ? [
             {
               label: "Run again…",
@@ -561,10 +566,10 @@ export function RunsWorkbench({
             },
           ]
         : []),
-      ...(one.kind === "flow" && one.state === "failed"
+      ...(mine && one.kind === "flow" && one.state === "failed"
         ? [{ label: "Retry from the failed step…", onSelect: () => void flowFromFailed(again) }]
         : []),
-      ...(one.kind === "flow" && !going
+      ...(mine && one.kind === "flow" && !going
         ? [
             {
               label: "Again from the start…",
@@ -576,10 +581,10 @@ export function RunsWorkbench({
             },
           ]
         : []),
-      ...(one.kind === "flow" && !going && !one.source
+      ...(mine && one.kind === "flow" && !going && !one.source
         ? [{ label: "On another version…", onSelect: () => setRetryOn(one) }]
         : []),
-      ...(going
+      ...(mine && going
         ? [
             {
               label: "Cancel",
@@ -849,12 +854,15 @@ export function RunsWorkbench({
           ))}
           <span className="ml-auto flex items-center gap-2">
             {/* It cancels queued script runs: under another state or kind it would act on rows not shown. */}
-            {queued > 0 && (status === "all" || status === "queued") && kind !== "flow" ? (
+            {queued > 0 &&
+            (status === "all" || status === "queued") &&
+            kind !== "flow" &&
+            may("run:write") ? (
               <Button size="small" onClick={cancelQueued}>
                 Cancel {queued} queued
               </Button>
             ) : null}
-            {inProgress > 0 ? (
+            {inProgress > 0 && mayAnyRun ? (
               <Button size="small" onClick={() => setCancelOlder(true)}>
                 Cancel by age…
               </Button>
@@ -995,25 +1003,27 @@ export function RunsWorkbench({
           href={(one) => `${link}/runs/${one.id}`}
           checked={checked}
           onCheck={setChecked}
-          batch={(keys) => (
-            <>
-              <Button
-                size="small"
-                variant="danger"
-                disabled={batch.busy}
-                onClick={() => void cancelChecked([...keys])}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="small"
-                disabled={batch.busy}
-                onClick={() => void againChecked([...keys])}
-              >
-                <RotateCcw aria-hidden="true" size={14} /> Run again
-              </Button>
-            </>
-          )}
+          batch={(keys) =>
+            !mayAnyRun ? null : (
+              <>
+                <Button
+                  size="small"
+                  variant="danger"
+                  disabled={batch.busy}
+                  onClick={() => void cancelChecked([...keys])}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="small"
+                  disabled={batch.busy}
+                  onClick={() => void againChecked([...keys])}
+                >
+                  <RotateCcw aria-hidden="true" size={14} /> Run again
+                </Button>
+              </>
+            )
+          }
           sort={sort}
           onSort={(next) => setUrl({ sort: next?.key, dir: next?.dir })}
           actions={actionsOf}
@@ -1099,6 +1109,7 @@ export function ScriptRunPanel({
   onLocation?: ((location: { file: string; line: number; column: number }) => void) | undefined;
 }) {
   const { run, lines, earlier, error, reconnecting } = useLiveRun(root, runId);
+  const may = useMay(root, "run:write");
   const insight = useLoad<Insight>(
     run && !["queued", "running"].includes(run.status) ? `${root}/runs/${runId}/insight` : null,
   );
@@ -1121,7 +1132,7 @@ export function ScriptRunPanel({
         <StateAnnouncer state={run.state} label={`Run of ${run.script}`} />
         <Reconnecting show={reconnecting} />
         <div className="flex gap-2">
-          {active ? (
+          {active && may("run:write") ? (
             <Button
               size="small"
               variant="danger"

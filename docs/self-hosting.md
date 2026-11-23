@@ -57,7 +57,7 @@ The database is created and migrated on the first start. Open the address, sign 
 
 Leave the bundled services out and point the control plane at yours with `DATABASE_URL`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_FORCE_PATH_STYLE`.
 
-The Postgres user must own its database and be allowed to create roles (`CREATEROLE`). It does not need to be a superuser. The platform makes one extra role per database, which it signs in as for every request for a tenant's rows. That role owns nothing, so row policies apply to it, and nothing run under it can become the owner. Its password is derived from the master key and is never stored.
+The Postgres user must own its database and be allowed to create roles (`CREATEROLE`). It does not need to be a superuser. The platform makes one extra role per database, which it signs in as for every request for a tenant's rows. That role owns nothing, so row policies apply to it, and nothing run under it can become the owner. Its password is derived from a secret kept in the database and is never stored.
 
 A managed Postgres with point-in-time recovery is the better choice for anything that matters.
 
@@ -158,7 +158,7 @@ A tenant's custom tables can live in a database other than the instance's. Its p
 2. In the console, under Instance, Database locations, register it under a name with its connection string. The platform connects, prepares it, and stores the address encrypted with the master key.
 3. Give the name when you create a tenant, or when you import one.
 
-A tenant's location is chosen once. To move an existing tenant, export it and import it into the location you want.
+A tenant's location is chosen once. To move an existing tenant, export it, delete it here when its runs have ended, and import it again with the location you want: an import is refused while the tenant is still on this instance.
 
 If a dedicated database is down, the tenants in it get an error for their tables. Everything else, and every other tenant, keeps working. The Database locations page shows whether each one answers.
 
@@ -237,7 +237,7 @@ The worker host takes the same settings, as `--run-slots`, `--memory-floor` and 
 
 Plan on 2 GB for a machine that runs the control plane and scripts together. Give the database a dedicated CPU for anything past a trial: on a shared CPU it runs at full speed only until its burst credit is spent, and then every tenant's queries slow down together.
 
-`/api/v1/metrics` reports `platform_machine_running`, the scripts running on each machine, and `platform_memory_available_bytes`, this replica's free memory. Alert on a queue that keeps growing (`platform_queue_oldest_seconds`) rather than on full slots: full slots are the limit doing its work.
+`/api/v1/metrics` reports `platform_machine_running`, the scripts running on each machine, and `platform_memory_available_bytes`, this replica's free memory. `platform_memory_total_bytes` is all of its machine's memory. Alert on a queue that keeps growing (`platform_queue_oldest_seconds`) rather than on full slots: full slots are the limit doing its work.
 
 ### Sizing: the database
 
@@ -261,7 +261,7 @@ Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 2` connections; 
 ### When the database takes no writes
 
 A managed Postgres turns itself read-only when its disk is nearly full. The instance keeps serving what reads alone can:
-- `/readyz` stays 200 and reports `"readOnly": true`, so the load balancer keeps sending traffic.
+- `/api/v1/readyz` stays 200 and reports `"readOnly": true`, so the load balancer keeps sending traffic.
 - Tables, runs and the console can be read by members who are already signed in and by API keys.
 - Changes, new sign-ins and new runs are answered 503 `read_only`, with `Retry-After`.
 - The queue, schedules and managed workers stop.
@@ -270,7 +270,7 @@ The instance checks every 10 seconds, and starts them again on its own once the 
 
 It also starts in this state: migrations are checked by reading alone when there are none to apply. An upgrade that brings migrations still needs a database that takes writes.
 
-Watch the database's disk, and alert well before it is full. `platform_database_size_bytes` in the metrics tracks the platform database's size. On Fly, extend the volume with `fly volumes extend`.
+Watch the database's disk, and alert well before it is full. `platform_database_size_bytes` in the metrics tracks the platform database's size, and `platform_database_read_only` is 1 while it takes no writes. On Fly, extend the volume with `fly volumes extend`.
 
 ### When work piles up
 
@@ -502,7 +502,7 @@ The issuer is `http://localhost:8180/realms/acme`. For SAML, give `http://localh
 
 A tenant sets its colors, corner radii, fonts and logo under **Branding**. They apply to its apps, its portal and its sign-in pages. A workspace can override them with a theme in its repository. Values are plain colors, lengths and font lists: nothing that could load a file from elsewhere.
 
-The console keeps its own look whichever tenant is open. An operator brands it once for the instance under **Instance → Branding**, with a product name, a logo and the same tokens.
+The console keeps its own look whichever tenant is open. An operator brands it once for the instance under **Instance → Console branding**, with a product name, a logo and the same colors, corners and fonts.
 
 ## Help and documentation
 

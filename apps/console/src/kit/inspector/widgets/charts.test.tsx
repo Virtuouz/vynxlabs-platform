@@ -522,6 +522,17 @@ test("pivot data: the columns can be cut by another period", async () => {
   ]);
 });
 
+test("pivot data: a third breakdown goes between rows and columns, and can be removed (WID-M7)", async () => {
+  show(<Harness start={visits()} definition={pivot} tab="data" />);
+  fireEvent.click(screen.getByRole("button", { name: "Then by" }));
+  const groups = visualOf(last(), "rows").groupBy ?? [];
+  expect(groups).toHaveLength(3);
+  expect(groups[0]).toEqual({ column: "clinic" });
+  expect(groups[2]).toEqual({ column: "issued_at", bucket: "month" });
+  expect(screen.getByRole("button", { name: /^Then by/ })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /^Columns/ }).textContent).toContain("Issued at");
+});
+
 test("pivot display: shading and the two totals, shown unless switched off", () => {
   show(<Harness start={visits()} definition={pivot} tab="display" />);
   // A new pivot is shaded, as board 15 draws it; the switch turns it off.

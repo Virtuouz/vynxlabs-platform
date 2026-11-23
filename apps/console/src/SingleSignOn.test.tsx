@@ -518,3 +518,103 @@ test("WLK-12: saving an issuer that dropped the client secret says so, and says 
   expect(await screen.findByText(/client secret was dropped/i)).toBeTruthy();
   expect(screen.queryByText("The provider was saved.")).toBeNull();
 });
+
+test("a SAML provider is asked for a name ID format, and the one stored is kept (GOV-P2)", async () => {
+  let current: IdentityProvider = saml;
+  routes[`GET ${base}`] = () => [200, { items: [current] }];
+  routes[`PATCH ${base}/p2`] = (body) => {
+    current = { ...current, config: (body as { config: object }).config };
+    return [200, current];
+  };
+  routes["GET /api/v1/tenants/t1/end-user-groups?limit=200"] = () => [200, { items: [] }];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Customers" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  const format = (await screen.findByLabelText("Name ID format")) as HTMLSelectElement;
+  expect(format.value).toBe("");
+  fireEvent.change(format, {
+    target: { value: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PATCH")).toHaveLength(1));
+  const first = sent("PATCH")[0]?.body as { config: { nameIdFormat: string } };
+  expect(first.config.nameIdFormat).toBe("urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress");
+  // Asked for none again: sent as none, so the server clears it.
+  await screen.findByText("The provider was saved.");
+  fireEvent.change(screen.getByLabelText("Name ID format"), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PATCH")).toHaveLength(2));
+  const second = sent("PATCH")[1]?.body as { config: { nameIdFormat: null } };
+  expect(second.config.nameIdFormat).toBe(null);
+});
+
+test("a SAML provider's metadata is read again by itself, and what it says is shown (GOV-P3)", async () => {
+  let current: IdentityProvider = saml;
+  routes[`GET ${base}`] = () => [200, { items: [current] }];
+  routes[`PATCH ${base}/p2`] = (body) => {
+    const config = (body as { config: Record<string, unknown> }).config;
+    if (config.metadataUrl === "https://idp.example/gone") {
+      return [400, { status: 400, detail: "The metadata could not be read from that address." }];
+    }
+    current = {
+      ...current,
+      config: {
+        ...current.config,
+        entryPoint: "https://idp.example/new-sso",
+        certificates: ["-----BEGIN CERTIFICATE-----\nBBB\n-----END CERTIFICATE-----\n"],
+      },
+    };
+    return [200, current];
+  };
+  routes["GET /api/v1/tenants/t1/end-user-groups?limit=200"] = () => [200, { items: [] }];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Customers" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  const read = (await screen.findByRole("button", {
+    name: "Read the metadata",
+  })) as HTMLButtonElement;
+  expect(read.disabled).toBe(true);
+  fireEvent.input(screen.getByLabelText("Metadata address"), {
+    target: { value: "https://idp.example/gone" },
+  });
+  fireEvent.click(read);
+  expect(await answer("Read the metadata")).toContain("ties between people");
+  await screen.findByText("The metadata could not be read from that address.");
+  fireEvent.input(screen.getByLabelText("Metadata address"), {
+    target: { value: "https://idp.example/metadata" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Read the metadata" }));
+  await answer("Read the metadata");
+  await waitFor(() =>
+    expect((screen.getByLabelText(/^Sign-in address/) as HTMLInputElement).value).toBe(
+      "https://idp.example/new-sso",
+    ),
+  );
+  // Only the metadata went: the address, entity ID and certificates it describes were not sent.
+  expect(sent("PATCH")[1]?.body).toEqual({
+    config: { metadataUrl: "https://idp.example/metadata" },
+  });
+  expect((screen.getByLabelText("Signing certificates") as HTMLTextAreaElement).value).toContain(
+    "BBB",
+  );
+});
+
+test("a member provider shows the address that starts a sign-in, an end users' does not (GOV-P5)", async () => {
+  routes[`GET ${base}`] = () => [200, { items: [oidc, saml] }];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  await screen.findByText(addresses.callback);
+  expect(screen.getByText(addresses.start)).toBeTruthy();
+  expect(screen.getByText(/tile in the provider's app list/)).toBeTruthy();
+});
+
+test("a person made by the instance's provider is said to have no access until an operator gives it (GOV-P4)", async () => {
+  routes["GET /api/v1/instance/identity-providers"] = () => [200, { items: [oidc] }];
+  routes["GET /api/v1/instance/identity-providers/p1/domains"] = () => [200, { items: [] }];
+  show(<SingleSignOn base="/instance" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  await screen.findByText(/has no access until an operator gives it, one person at a time/);
+  // The instance's provider takes no default role: the server refuses one, so none is offered.
+  expect(screen.queryByLabelText("Role given to a new member")).toBeNull();
+});

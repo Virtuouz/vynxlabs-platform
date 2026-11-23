@@ -310,3 +310,18 @@ test("production lists what the next promotion brings, sets it up as its own kin
     config: { host: "smtp.acme.test", from: "ops@acme.test" },
   });
 });
+
+test("a stored credential is removed from the connection's sheet: Save sends credential null (CFG-MP5)", async () => {
+  show(<Connections root={root} />);
+  const shop = (await screen.findByText("shop")).closest("tr") as HTMLElement;
+  fireEvent.click(within(shop).getByRole("button", { name: "Change" }));
+  const sheet = await screen.findByRole("dialog");
+  fireEvent.click(within(sheet).getByRole("button", { name: /^Remove the token or key/ }));
+  expect(within(sheet).getByText(/will be removed when you save/)).toBeTruthy();
+  fireEvent.click(within(sheet).getByRole("button", { name: /^Save/ }));
+  await waitFor(() => expect(put("/connection-bindings/shop")).toBeTruthy());
+  expect(put("/connection-bindings/shop")?.body).toEqual({
+    config: { baseUrl: "https://shop.example" },
+    credential: null,
+  });
+});

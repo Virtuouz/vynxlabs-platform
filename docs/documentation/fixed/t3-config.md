@@ -23,3 +23,10 @@
 - Siblings: the "Set variable" create form in the list still has a one-line Value (left: ListScreen fields have no multi-line kind; a person with a long value uses Change). Secrets page `ReplaceSecret` is another piece, not changed.
 - Seen: each row has Set or Change; the page has a button; the sheet starts with what is stored and may hold several lines.
 - Polish: states: saving disables Save, failure shown in the sheet; lifecycle: set, change, Use default (existing); keyboard: sheet focuses the field. Walk: Variables at 390 px (row actions wrap), page, reload.
+
+## CFG-MP5 = DAT-MP5: remove a stored credential
+- Tests: `Connections.test.tsx` "a stored credential is removed from the connection's sheet ... (CFG-MP5)"; `Data.test.tsx` "a data source's stored password is removed from its Change form ... (DAT-MP5)". Both failed before (no control).
+- Change: shared `apps/console/src/kit/SecretField.tsx` gets `removed` and `onRemove` (Remove beside Replace; a "will be removed when you save" state with Keep the stored one). `ConnectionWizard.tsx` sends `credential: null`. `Data.tsx` `ChangeSource` adds a "Remove the stored password" checkbox when one is stored and sends `password: null`; typing a password and ticking it is refused in words. Routes unchanged (they already take null).
+- Siblings looked at, left: `GroupMemberSheet.tsx` (member credential), `SingleSignOn.tsx` (client secret), `Git.tsx` (token): they use SecretField without `onRemove`, so no Remove appears. Their routes were not checked for null.
+- Seen: a Remove button next to Replace on a connection's credential; a checkbox on the source's Change form.
+- Polish: states: pending removal is shown and can be undone; keyboard: plain buttons; copy says what happens. Walk: Connections > Change on a bound http connection, Sources > Change, at 390 px.

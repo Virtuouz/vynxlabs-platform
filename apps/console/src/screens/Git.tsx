@@ -2,6 +2,7 @@ import { Button, Notice, Panel, TextField } from "@volvel/ui";
 import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, notify } from "../ask.tsx";
+import { Can } from "../kit/Can.tsx";
 import { ago } from "../kit/format.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { SecretField } from "../kit/SecretField.tsx";
@@ -77,175 +78,177 @@ export function RepositorySettings({ base }: { base: string }) {
           still push to the same branches. Check the details below and save to turn sync on.
         </Notice>
       ) : null}
-      {/* panel-allowed: a form, drawn as a panel; what it holds is marked as inside one. */}
-      <form
-        className="flex max-w-xl flex-col gap-3 rounded-panel border border-line bg-surface p-4"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setBusy(true);
-          setProblem(undefined);
-          setSaved(false);
-          try {
-            await api.put(`${base}/git-repository`, {
-              url,
-              defaultBranch,
-              folder,
-              ...(token ? { token } : {}),
-              ...(username.trim() ? { username: username.trim() } : {}),
-              ...(releaseBranch.trim() !== (repository?.releaseBranch ?? "")
-                ? { releaseBranch: releaseBranch.trim() || null }
-                : {}),
-              ...(tenantBranch.trim() !== (repository?.tenantBranch ?? "")
-                ? { tenantBranch: tenantBranch.trim() || null }
-                : {}),
-            });
-            setToken("");
-            setUsername("");
-            setChecked(undefined);
-            setSaved(true);
-            loaded.reload();
-          } catch (error) {
-            setProblem(failureText(error));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <TextField
-          name="url"
-          label="Address"
-          value={url}
-          placeholder="https://github.com/acme/platform.git"
-          hint={
-            repository && !token && otherHost(repository.url, url)
-              ? "This is another host than the stored token was given for. Enter the access token again."
-              : "An HTTPS address, with no user name or token in it."
-          }
-          onChange={setUrl}
-        />
-        <div className="grid grid-cols-2 gap-3">
+      <Can base={base} permission="git:write" what="the repository this tenant is kept in">
+        {/* panel-allowed: a form, drawn as a panel; what it holds is marked as inside one. */}
+        <form
+          className="flex max-w-xl flex-col gap-3 rounded-panel border border-line bg-surface p-4"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setBusy(true);
+            setProblem(undefined);
+            setSaved(false);
+            try {
+              await api.put(`${base}/git-repository`, {
+                url,
+                defaultBranch,
+                folder,
+                ...(token ? { token } : {}),
+                ...(username.trim() ? { username: username.trim() } : {}),
+                ...(releaseBranch.trim() !== (repository?.releaseBranch ?? "")
+                  ? { releaseBranch: releaseBranch.trim() || null }
+                  : {}),
+                ...(tenantBranch.trim() !== (repository?.tenantBranch ?? "")
+                  ? { tenantBranch: tenantBranch.trim() || null }
+                  : {}),
+              });
+              setToken("");
+              setUsername("");
+              setChecked(undefined);
+              setSaved(true);
+              loaded.reload();
+            } catch (error) {
+              setProblem(failureText(error));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
           <TextField
-            name="defaultBranch"
-            label="Default branch"
-            value={defaultBranch}
-            hint="Never written to. Changes reach it by a pull request."
-            onChange={setDefaultBranch}
+            name="url"
+            label="Address"
+            value={url}
+            placeholder="https://github.com/acme/platform.git"
+            hint={
+              repository && !token && otherHost(repository.url, url)
+                ? "This is another host than the stored token was given for. Enter the access token again."
+                : "An HTTPS address, with no user name or token in it."
+            }
+            onChange={setUrl}
           />
+          <div className="grid grid-cols-2 gap-3">
+            <TextField
+              name="defaultBranch"
+              label="Default branch"
+              value={defaultBranch}
+              hint="Never written to. Changes reach it by a pull request."
+              onChange={setDefaultBranch}
+            />
+            <TextField
+              name="folder"
+              label="Folder"
+              value={folder}
+              hint="Where resources made in the console are written."
+              onChange={setFolder}
+            />
+          </div>
           <TextField
-            name="folder"
-            label="Folder"
-            value={folder}
-            hint="Where resources made in the console are written."
-            onChange={setFolder}
+            name="username"
+            label="User name"
+            value={username}
+            autoComplete="off"
+            placeholder="x-access-token"
+            hint="Sent with the token. Most hosts accept the default; Bitbucket and some GitLab tokens need their own. It is kept when you leave this empty."
+            onChange={setUsername}
           />
-        </div>
-        <TextField
-          name="username"
-          label="User name"
-          value={username}
-          autoComplete="off"
-          placeholder="x-access-token"
-          hint="Sent with the token. Most hosts accept the default; Bitbucket and some GitLab tokens need their own. It is kept when you leave this empty."
-          onChange={setUsername}
-        />
-        <div className="grid gap-3 sm:grid-cols-2">
-          <TextField
-            name="releaseBranch"
-            label="Release branch"
-            value={releaseBranch}
-            placeholder="releases"
-            hint="Each promotion commits what production runs to this branch, under the workspace's name. Empty: off."
-            onChange={setReleaseBranch}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <TextField
+              name="releaseBranch"
+              label="Release branch"
+              value={releaseBranch}
+              placeholder="releases"
+              hint="Each promotion commits what production runs to this branch, under the workspace's name. Empty: off."
+              onChange={setReleaseBranch}
+            />
+            <TextField
+              name="tenantBranch"
+              label="Access branch"
+              value={tenantBranch}
+              placeholder="volvel/access"
+              hint="Each access change is committed here, under tenant/, for a developer to merge. Never the default branch. Empty: off."
+              onChange={setTenantBranch}
+            />
+          </div>
+          <SecretField
+            name="token"
+            label="Access token"
+            stored={Boolean(repository)}
+            setAt={repository?.credentialSetAt}
+            setBy={repository?.credentialSetBy}
+            value={token}
+            required
+            autoComplete="off"
+            hint="It needs to read and write the repository's contents: a fine-grained personal access token on GitHub, a project access token on GitLab. It is stored encrypted and never shown again."
+            onChange={setToken}
           />
-          <TextField
-            name="tenantBranch"
-            label="Access branch"
-            value={tenantBranch}
-            placeholder="volvel/access"
-            hint="Each access change is committed here, under tenant/, for a developer to merge. Never the default branch. Empty: off."
-            onChange={setTenantBranch}
-          />
-        </div>
-        <SecretField
-          name="token"
-          label="Access token"
-          stored={Boolean(repository)}
-          setAt={repository?.credentialSetAt}
-          setBy={repository?.credentialSetBy}
-          value={token}
-          required
-          autoComplete="off"
-          hint="It needs to read and write the repository's contents: a fine-grained personal access token on GitHub, a project access token on GitLab. It is stored encrypted and never shown again."
-          onChange={setToken}
-        />
-        {problem ? <Notice tone="danger">{problem}</Notice> : null}
-        {saved ? (
-          <Notice tone="success">Connected. The repository was reached with the token.</Notice>
-        ) : null}
-        {checked ? (
-          <Notice tone={checked.ok ? "success" : "danger"}>
-            {checked.ok
-              ? "The repository was reached with the stored token just now."
-              : (checked.problem ?? "The repository could not be reached.")}
-          </Notice>
-        ) : repository?.verifiedAt ? (
-          <p className="m-0 text-body-sm text-ink-muted">
-            The stored token last reached the repository {ago(repository.verifiedAt)}.
-          </p>
-        ) : null}
-        <div className="flex items-center justify-between gap-2">
-          <Button type="submit" variant="primary" loading={busy}>
-            {busy ? "Reaching the repository…" : repository ? "Save" : "Connect"}
-          </Button>
-          {repository ? (
-            <Button
-              loading={checking}
-              disabled={busy}
-              onClick={async () => {
-                setChecking(true);
-                setSaved(false);
-                try {
-                  setChecked(
-                    await api.post<{ ok: boolean; problem: string | null }>(
-                      `${base}/git-repository/check`,
-                      {},
-                    ),
-                  );
-                  loaded.reload();
-                } catch (error) {
-                  setChecked({ ok: false, problem: failureText(error) });
-                } finally {
-                  setChecking(false);
-                }
-              }}
-            >
-              Check the connection
-            </Button>
+          {problem ? <Notice tone="danger">{problem}</Notice> : null}
+          {saved ? (
+            <Notice tone="success">Connected. The repository was reached with the token.</Notice>
           ) : null}
-          {repository ? (
-            <Button
-              variant="danger"
-              disabled={busy}
-              onClick={async () => {
-                const sure = await ask.confirm({
-                  title: "Disconnect the repository?",
-                  text: "Workspaces stop following their branches. Nothing in the repository is changed.",
-                  action: "Disconnect",
-                  danger: true,
-                });
-                if (!sure) return;
-                await api.delete(`${base}/git-repository`).then(() => {
-                  setUrl("");
+          {checked ? (
+            <Notice tone={checked.ok ? "success" : "danger"}>
+              {checked.ok
+                ? "The repository was reached with the stored token just now."
+                : (checked.problem ?? "The repository could not be reached.")}
+            </Notice>
+          ) : repository?.verifiedAt ? (
+            <p className="m-0 text-body-sm text-ink-muted">
+              The stored token last reached the repository {ago(repository.verifiedAt)}.
+            </p>
+          ) : null}
+          <div className="flex items-center justify-between gap-2">
+            <Button type="submit" variant="primary" loading={busy}>
+              {busy ? "Reaching the repository…" : repository ? "Save" : "Connect"}
+            </Button>
+            {repository ? (
+              <Button
+                loading={checking}
+                disabled={busy}
+                onClick={async () => {
+                  setChecking(true);
                   setSaved(false);
-                  loaded.reload();
-                }, notify.error);
-              }}
-            >
-              Disconnect
-            </Button>
-          ) : null}
-        </div>
-      </form>
+                  try {
+                    setChecked(
+                      await api.post<{ ok: boolean; problem: string | null }>(
+                        `${base}/git-repository/check`,
+                        {},
+                      ),
+                    );
+                    loaded.reload();
+                  } catch (error) {
+                    setChecked({ ok: false, problem: failureText(error) });
+                  } finally {
+                    setChecking(false);
+                  }
+                }}
+              >
+                Check the connection
+              </Button>
+            ) : null}
+            {repository ? (
+              <Button
+                variant="danger"
+                disabled={busy}
+                onClick={async () => {
+                  const sure = await ask.confirm({
+                    title: "Disconnect the repository?",
+                    text: "Workspaces stop following their branches. Nothing in the repository is changed.",
+                    action: "Disconnect",
+                    danger: true,
+                  });
+                  if (!sure) return;
+                  await api.delete(`${base}/git-repository`).then(() => {
+                    setUrl("");
+                    setSaved(false);
+                    loaded.reload();
+                  }, notify.error);
+                }}
+              >
+                Disconnect
+              </Button>
+            ) : null}
+          </div>
+        </form>
+      </Can>
     </Page>
   );
 }

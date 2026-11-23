@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
 import { type ApiError, useLoad } from "./api.ts";
 import { ask, noteWaiting, notify } from "./ask.tsx";
+import { type Needs, useNeeds } from "./kit/Can.tsx";
 import { type DataColumn, DataTable } from "./kit/DataTable.tsx";
 import { keepPlace } from "./kit/focus.ts";
 import { clock } from "./kit/format.ts";
@@ -146,6 +147,12 @@ export interface ListScreenProps<Row> {
    * `create`, it stands beside that button, for a second way in.
    */
   action?: ReactNode;
+  /**
+   * What changing this list takes, and where it is held. Without it, the create button is greyed
+   * under a line that says what it takes, and the row actions are switched off, for someone who
+   * may only read it (GOV-37).
+   */
+  needs?: Needs;
 }
 
 export function Page({
@@ -388,16 +395,30 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
     setSetup(null);
   }, [setup, create, setupField, setSetup]);
 
+  const { can, line, reason } = useNeeds(props.needs);
   const columns: DataColumn<Row>[] = props.rowActions
     ? [
         ...props.columns,
-        { header: "", align: "end", cell: (row) => props.rowActions?.(row, list.reload) },
+        {
+          header: "",
+          align: "end",
+          cell: (row) => (
+            <fieldset disabled={!can} className="contents">
+              {props.rowActions?.(row, list.reload)}
+            </fieldset>
+          ),
+        },
       ]
     : props.columns;
   const createButton = create ? (
     <span className="inline-flex flex-wrap items-center gap-2">
       {props.action}
-      <Button variant="primary" onClick={() => setCreating(true)}>
+      <Button
+        variant="primary"
+        disabled={!can}
+        {...(reason ? { tooltip: reason } : {})}
+        onClick={() => setCreating(true)}
+      >
         {create.action}
       </Button>
     </span>
@@ -413,6 +434,7 @@ export function ListScreen<Row>(props: ListScreenProps<Row>) {
       action={createButton}
     >
       {created ? <Notice tone="attention">{created}</Notice> : null}
+      {line}
       {list.error ? (
         <Notice tone="danger" action={<Button onClick={list.reload}>Try again</Button>}>
           {list.error.message}

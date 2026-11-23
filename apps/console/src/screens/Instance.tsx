@@ -67,6 +67,7 @@ export function InstanceMembers() {
       title="All members"
       description="Every person with an identity on this instance, across all tenants."
       path="/members"
+      needs={{ base: "/instance", permission: "member:write", what: "the members" }}
       rowKey={(row) => row.id}
       paged
       columns={[
@@ -156,6 +157,7 @@ export function Operators() {
       title="Operators"
       description="Members who run this instance. An operator manages tenants and members, and sees inside a tenant only through an access grant."
       path="/bindings"
+      needs={{ base: "/instance", permission: "binding:write", what: "the operators" }}
       rowKey={(row) => row.id}
       search={(row) => row.memberEmail}
       columns={[

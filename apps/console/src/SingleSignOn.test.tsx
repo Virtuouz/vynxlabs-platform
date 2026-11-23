@@ -732,3 +732,28 @@ test("a person made by the instance's provider is said to have no access until a
   // The instance's provider takes no default role: the server refuses one, so none is offered.
   expect(screen.queryByLabelText("Role given to a new member")).toBeNull();
 });
+
+test("a refused field in a provider's settings is said at that field, not in one notice (GOV-37)", async () => {
+  routes[`GET ${base}`] = () => [200, { items: [oidc] }];
+  routes[`PATCH ${base}/p1`] = () => [
+    400,
+    {
+      title: "Bad request",
+      detail: "The provider's settings are not valid.",
+      errors: [{ path: "/body/config/issuer", message: "The issuer must be an https address." }],
+    },
+  ];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Settings" }));
+  const name = (await screen.findAllByLabelText("Name"))[0] as HTMLInputElement;
+  fireEvent.change(name, { target: { value: "Acme Login 2" } });
+  const bar = await screen.findByRole("region", { name: "Unsaved changes" });
+  fireEvent.click(within(bar).getByRole("button", { name: "Save" }));
+  const message = await screen.findByText("The issuer must be an https address.");
+  const issuer = screen.getByLabelText(/Issuer/) as HTMLInputElement;
+  expect(issuer.getAttribute("aria-describedby") ?? "").toContain(message.id);
+  // What was typed stays, and nothing else says it a second time.
+  expect(name.value).toBe("Acme Login 2");
+  expect(screen.getAllByText(/The issuer must be an https address\./)).toHaveLength(1);
+});

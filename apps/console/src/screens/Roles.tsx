@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { failureText, noteWaiting, notify } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { FilterChips, Inspector, SectionLabel } from "../kit/layout.tsx";
 import { consoleLink } from "../kit/objects.tsx";
@@ -446,7 +447,8 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
       ? all.filter((role) => show === "all" || (show === "own" ? !role.builtin : role.builtin))
       : undefined;
   const chosen = all?.find((role) => role.id === selected);
-  const fixed = chosen ? chosen.builtin || chosen.managedByResource : false;
+  const may = useNeeds({ base, permission: "role:write", what: "this tenant's roles" });
+  const fixed = chosen ? chosen.builtin || chosen.managedByResource || !may.can : false;
   const held = chosen ? (bindings.data?.items ?? []).filter((one) => one.roleId === chosen.id) : [];
 
   return (
@@ -480,6 +482,7 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
             ]}
           />,
         )}
+        needs={{ base: base, permission: "role:write", what: "this tenant's roles" }}
         label="Roles"
         rows={rows}
         error={failure?.message}

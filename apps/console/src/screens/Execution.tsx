@@ -173,6 +173,7 @@ export function Scripts({
   return (
     <CollectionView<ScriptRow>
       title="Scripts"
+      needs={{ base: root, permission: "resource:write", what: "this workspace's scripts" }}
       description="Code this workspace runs. Each script declares what it reaches, so a run can reach only that."
       actions={
         editable ? (

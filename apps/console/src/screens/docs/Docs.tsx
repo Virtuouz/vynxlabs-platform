@@ -53,6 +53,7 @@ import { Diagram } from "../../diagrams/Diagram.tsx";
 import { loadManifest } from "../../help/content.ts";
 import { useWorkspaceTerms } from "../../help/glossary.tsx";
 import { useBrand } from "../../kit/brand.tsx";
+import { useNeeds } from "../../kit/Can.tsx";
 import { putOnDraftNow, readDraft } from "../../kit/draftApi.ts";
 import { listOf } from "../../kit/format.ts";
 import { ErrorState, Pending } from "../../kit/LoadState.tsx";
@@ -138,7 +139,7 @@ export function Docs({
   tenantId,
   workspaceId,
   path,
-  editable,
+  editable: editableHere,
 }: {
   root: string;
   link: string;
@@ -149,6 +150,12 @@ export function Docs({
   /** Whether pages can be changed here: only in a dev workspace. */
   editable: boolean;
 }) {
+  const may = useNeeds({
+    base: root,
+    permission: "resource:write",
+    what: "this workspace's pages",
+  });
+  const editable = editableHere && may.can;
   const list = useLoad<DocsList>(`${root}/docs`);
   // Tree changes go out one after another, each with the revisions the one before left.
   const ordered = useRef<Promise<unknown>>(Promise.resolve());
@@ -548,6 +555,7 @@ export function Docs({
 
   return (
     <section className="flex flex-col gap-5">
+      {editableHere ? may.line : null}
       <PageHeader
         title="Documentation"
         description="Pages your team writes. Any top-level folder can be published as its own docs site."

@@ -2,6 +2,7 @@ import { Button, EmptyState, Menu, Notice, SelectField, TextField } from "@volve
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ApiError, api, isOperator, type Me, useLoad } from "../api.ts";
 import { notify } from "../ask.tsx";
+import { Can, useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { useEditorKey } from "../kit/editorKey.ts";
 import { KeyValues } from "../kit/layout.tsx";
@@ -372,6 +373,7 @@ function Workspaces({ base, tenantId }: { base: string; tenantId: string }) {
   return (
     <ListScreen<Workspace>
       title="Workspaces"
+      needs={{ base, permission: "workspace:write", what: "this tenant's workspaces" }}
       description="A workspace is a project or an environment. Each one is production or dev, decided when it is created."
       path={`${base}/workspaces`}
       rowKey={(row) => row.id}
@@ -809,6 +811,7 @@ function WorkspaceDetail({
         <>
           <ListScreen<NamedResource & { id: string; version: number; updatedAt: string }>
             title="Resources"
+            needs={{ base: root, permission: "resource:write", what: "this workspace's resources" }}
             description="Everything deployed to this workspace. Connections, variables, events, schedules and triggers can be made and changed here in a dev workspace. Scripts, flows and apps have screens of their own."
             path={`${root}/resources`}
             rowKey={(row) => row.id}
@@ -1001,6 +1004,7 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
   const accounts = useLoad<{ items: ServiceAccount[] }>(`${base}/service-accounts`);
   const account = accounts.data?.items.find((one) => one.id === id);
   const [giving, setGiving] = useState(false);
+  const may = useNeeds({ base, permission: "service_account:write", what: "this service account" });
   const [accessVersion, setAccessVersion] = useState(0);
   if (accounts.error) return <ErrorState error={accounts.error} onRetry={accounts.reload} />;
   if (!accounts.data) return <Loading />;
@@ -1021,12 +1025,14 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
           </p>
         }
         actions={
-          <RemoveButton
-            label="Delete"
-            confirm={`Delete ${account.name}? Its keys stop working at once.`}
-            run={() => api.delete(`${base}/service-accounts/${id}`)}
-            onDone={() => navigate(`/t/${tenantId}/service-accounts`)}
-          />
+          <fieldset disabled={!may.can} className="contents">
+            <RemoveButton
+              label="Delete"
+              confirm={`Delete ${account.name}? Its keys stop working at once.`}
+              run={() => api.delete(`${base}/service-accounts/${id}`)}
+              onDone={() => navigate(`/t/${tenantId}/service-accounts`)}
+            />
+          </fieldset>
         }
         tabs={[
           {
@@ -1034,7 +1040,9 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
             label: "Identity",
             content: (
               <div className="max-w-xl">
-                <DescriptionForm base={base} account={account} onSaved={accounts.reload} />
+                <Can base={base} permission="service_account:write" what="this service account">
+                  <DescriptionForm base={base} account={account} onSaved={accounts.reload} />
+                </Can>
               </div>
             ),
           },
@@ -1045,6 +1053,7 @@ function ServiceAccountPage({ base, id }: { base: string; id: string }) {
               <ListScreen<KeyRow>
                 as="section"
                 title="Keys"
+                needs={{ base, permission: "service_account:write", what: "this account's keys" }}
                 description="A key acts as the service account, with the access the account has been given."
                 path={keys}
                 rowKey={(row) => row.id}
@@ -1127,6 +1136,11 @@ function ServiceAccountList({ base }: { base: string }) {
             Create service account
           </Button>
         }
+        needs={{
+          base: base,
+          permission: "service_account:write",
+          what: "this tenant's service accounts",
+        }}
         label="Service accounts"
         rows={accounts.data?.items}
         error={accounts.error}

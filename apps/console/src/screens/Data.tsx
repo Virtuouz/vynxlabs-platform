@@ -1503,6 +1503,7 @@ export function Tables({ root, link }: { root: string; link: string }) {
   return (
     <ListScreen<TableSummary>
       title="Tables"
+      needs={{ base: root, permission: "table:write", what: "this workspace's tables" }}
       description="The data this workspace keeps. A table defined in the repository changes when a bundle is deployed. Nothing is ever dropped by a deploy: what leaves a definition is retired and its data kept."
       path={`${root}/tables`}
       rowKey={(row) => `${row.name}:${row.status}:${row.id ?? ""}`}
@@ -3392,6 +3393,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
   return (
     <ListScreen<SourceBinding>
       title="Data sources"
+      needs={{ base: root, permission: "data_source:write", what: "this workspace's data sources" }}
       setupField="path"
       description="Databases outside the platform that this workspace reads and writes. The address and password are set here, never in the repository, so dev and production can point at different databases."
       path={`${root}/data-source-bindings`}

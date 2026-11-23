@@ -92,6 +92,7 @@ export function Flows({
   return (
     <CollectionView<FlowRow>
       title="Flows"
+      needs={{ base: root, permission: "flow:write", what: "this workspace's flows" }}
       description="A flow is a graph of steps the platform runs in order, remembering where it is. It survives a restart."
       actions={
         editable ? (

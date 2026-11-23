@@ -417,6 +417,111 @@ describe("a trigger that cannot start what it is for", () => {
   });
 });
 
+describe("what a schedule shows of itself and of the runs it started", () => {
+  const nightly = (enabled = true) =>
+    manifest("schedule", "orders/shown", {
+      script: "orders/sync",
+      cron: "0 9 * * *",
+      timezone: "America/New_York",
+      enabled,
+    });
+  const ofFlow = manifest("flow", "orders/morning", {
+    nodes: {
+      start: {
+        type: "trigger",
+        trigger: { type: "schedule", cron: "0 9 * * *", timezone: "America/New_York" },
+      },
+      done: { type: "set", values: { ok: "true" } },
+    },
+    edges: [{ from: "start", to: "done" }],
+  });
+  async function deployWith(extra: BundleManifest[]) {
+    const base = bundle();
+    const unsigned = { ...base, manifests: [...base.manifests, ...extra] } as Omit<
+      Bundle,
+      "digest"
+    >;
+    const content = { ...unsigned, digest: bundleDigest(unsigned) } as Bundle;
+    const uploaded = await alice.post(`${ws()}/bundles`, content);
+    expect([200, 201], JSON.stringify(uploaded.body)).toContain(uploaded.status);
+    const deployed = await alice.post(`${ws()}/deployments`, { bundleId: uploaded.body.id });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
+  }
+  const listed = async (path: string) =>
+    ((await alice.get(`${ws()}/triggers`)).body.items as Record<string, any>[]).find(
+      (one) => one.path === path,
+    ) as Record<string, any>;
+
+  test("a flow's schedule says its cron and its zone (OPS-17)", async () => {
+    await deployWith([nightly(), ofFlow]);
+    expect(await listed("orders/shown")).toMatchObject({
+      cron: "0 9 * * *",
+      timezone: "America/New_York",
+    });
+    expect(await listed("orders/morning")).toMatchObject({
+      type: "schedule",
+      cron: "0 9 * * *",
+      timezone: "America/New_York",
+    });
+  });
+
+  test("a run says which schedule started it, and one started by hand is not its last run (OPS-16, OPS-19)", async () => {
+    await deployWith([nightly(), ofFlow]);
+    expect((await listed("orders/shown")).lastRun).toBeNull();
+    const byHand = await alice.post(`${ws()}/schedule-firings`, { path: "orders/shown" });
+    expect(byHand.status, JSON.stringify(byHand.body)).toBe(201);
+    const run = (await alice.get(`${ws()}/runs/${byHand.body.id}`)).body;
+    expect(run.trigger).toMatchObject({ type: "schedule", trigger: "orders/shown", manual: true });
+    const shown = await listed("orders/shown");
+    expect(shown.lastRun).toBeNull();
+    expect(shown.lastFiredAt).toBeNull();
+    // Its own time starts a run that is counted, and says the same.
+    await t.db
+      .updateTable("trigger_state")
+      .set({ next_fire_at: new Date(Date.now() - 60_000) })
+      .where("type", "=", "schedule")
+      .execute();
+    const { fireDueSchedules } = await import("./kernel/execution/triggers.js");
+    await fireDueSchedules(t.kernel);
+    const after = await listed("orders/shown");
+    expect(after.lastRun).not.toBeNull();
+    expect(after.lastRun.id).not.toBe(byHand.body.id);
+    expect(after.lastFiredAt).not.toBeNull();
+    const own = (await alice.get(`${ws()}/runs/${after.lastRun.id}`)).body;
+    expect(own.trigger).toMatchObject({ type: "schedule", trigger: "orders/shown" });
+  });
+
+  test("an event's run says the trigger it came through (OPS-16)", async () => {
+    await deployWith([
+      manifest("event", "orders/seen", { payload: { type: "object" } }),
+      manifest("trigger", "orders/on-seen", {
+        type: "event",
+        script: "orders/sync",
+        event: "orders/seen",
+      }),
+    ]);
+    const published = await alice.post(`${ws()}/events`, { name: "orders/seen", payload: {} });
+    expect(published.status, JSON.stringify(published.body)).toBe(201);
+    expect(published.body.started).toBe(1);
+    const found = (await alice.get(`${ws()}/runs?script=orders/sync`)).body.items.find(
+      (item: { trigger: { type: string } }) => item.trigger.type === "event",
+    );
+    const run = (await alice.get(`${ws()}/runs/${found.id}`)).body;
+    expect(run.trigger).toMatchObject({ type: "event", trigger: "orders/on-seen" });
+  });
+
+  test("a schedule that is turned off has no next time (OPS-20)", async () => {
+    await deployWith([nightly(false)]);
+    const off = await listed("orders/shown");
+    expect(off.enabled).toBe(false);
+    expect(off.nextFireAt).toBeNull();
+    await deployWith([nightly(true)]);
+    expect(new Date((await listed("orders/shown")).nextFireAt).getTime()).toBeGreaterThan(
+      Date.now(),
+    );
+  });
+});
+
 describe("the write path", () => {
   test("every change was audited", () => {
     expect(t.unaudited).toEqual([]);

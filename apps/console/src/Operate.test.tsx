@@ -86,3 +86,26 @@ test("a batch approve may be sent without a note", async () => {
   await waitFor(() => expect(calls.filter((call) => call.method === "POST")).toHaveLength(1));
   expect(calls.find((call) => call.method === "POST")?.body).not.toHaveProperty("comment");
 });
+
+test("a trigger that is off or paused gives no next time, and a held one says it fires when resumed (OPS-20)", async () => {
+  const { nextFireOf } = await import("./screens/Operate.tsx");
+  const now = Date.parse("2026-11-22T12:00:00Z");
+  const row = (change: object) => ({
+    paused: null,
+    enabled: true,
+    draft: null,
+    nextFireAt: "2026-11-22T20:00:00Z",
+    ...change,
+  });
+  const paused = { at: "2026-11-22T11:00:00Z", by: null, reason: "" };
+  expect(nextFireOf(row({}) as never, false, now)).toEqual({
+    kind: "next",
+    at: "2026-11-22T20:00:00Z",
+  });
+  expect(nextFireOf(row({ enabled: false }) as never, false, now)).toEqual({ kind: "off" });
+  expect(nextFireOf(row({ paused }) as never, false, now)).toEqual({ kind: "paused" });
+  expect(nextFireOf(row({}) as never, true, now)).toEqual({ kind: "paused" });
+  expect(
+    nextFireOf(row({ paused, nextFireAt: "2026-11-22T11:30:00Z" }) as never, false, now),
+  ).toEqual({ kind: "resume" });
+});

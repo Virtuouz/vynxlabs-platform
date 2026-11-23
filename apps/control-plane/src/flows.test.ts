@@ -1814,7 +1814,7 @@ describe("schedules that start flows", () => {
     expect(scheduled).toMatchObject({
       status: "succeeded",
       triggerNode: "start",
-      trigger: { type: "schedule", schedule: "typed-hourly" },
+      trigger: { type: "schedule", trigger: "typed-hourly" },
     });
 
     // Fire now: one run, said to be by hand, and the next time stays where it was.

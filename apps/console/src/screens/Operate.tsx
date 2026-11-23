@@ -9,11 +9,11 @@ import {
   ShieldAlert,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { api, useCacheEdit, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { REJECTING } from "../kit/approvals.ts";
-import { type BatchAnswer, useBatch } from "../kit/BatchResult.tsx";
+import { type BatchAnswer, inSlices, useBatch } from "../kit/BatchResult.tsx";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DeployMenu } from "../kit/DeployMenu.tsx";
@@ -93,6 +93,33 @@ const targetLink = (link: string, row: Trigger) =>
 const runLink = (link: string, run: NonNullable<Trigger["lastRun"]>) => `${link}/runs/${run.id}`;
 
 /**
+ * When a trigger fires next, in one rule for every place that says so. One that is turned off or
+ * paused (its own, or its workspace's) does not fire at its next time: a paused schedule that
+ * came due while it was held fires once when it is resumed, and says so instead of a time that
+ * has passed.
+ */
+export function nextFireOf(
+  row: Pick<Trigger, "paused" | "enabled" | "nextFireAt" | "draft">,
+  workspacePaused: boolean,
+  now = Date.now(),
+):
+  | { kind: "next"; at: string }
+  | { kind: "resume" }
+  | { kind: "off" }
+  | { kind: "paused" }
+  | { kind: "none" } {
+  if (row.draft === "new")
+    return row.nextFireAt ? { kind: "next", at: row.nextFireAt } : { kind: "none" };
+  if (!row.enabled) return { kind: "off" };
+  if (row.paused || workspacePaused) {
+    return row.nextFireAt && Date.parse(row.nextFireAt) <= now
+      ? { kind: "resume" }
+      : { kind: "paused" };
+  }
+  return row.nextFireAt ? { kind: "next", at: row.nextFireAt } : { kind: "none" };
+}
+
+/**
  * What a trigger will do, in one rule for every place that lists triggers: a draft that was
  * never deployed starts nothing, a pause (its own or the workspace's) stops it, and an
  * enabled one says when it fires next.
@@ -113,14 +140,26 @@ export function TriggerState({
         <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
       </span>
     );
-  if (row.pausedBy === "instance") return <StatePill state="paused">Instance paused</StatePill>;
+  const next = nextFireOf(row, workspacePaused);
+  const held =
+    next.kind === "resume" ? (
+      <span className="text-meta text-ink-subtle">Fires once when resumed</span>
+    ) : null;
+  const holding = (pill: ReactNode) => (
+    <span className="flex flex-wrap items-center gap-2">
+      {pill}
+      {held}
+    </span>
+  );
+  if (row.pausedBy === "instance")
+    return holding(<StatePill state="paused">Instance paused</StatePill>);
   if (row.paused && row.pausedBy === "workspace")
-    return <StatePill state="paused">Workspace paused</StatePill>;
-  if (row.paused) return <StatePill state="paused" />;
+    return holding(<StatePill state="paused">Workspace paused</StatePill>);
+  if (row.paused) return holding(<StatePill state="paused" />);
   if (!row.enabled) return <StatePill state="off" />;
   if (workspacePaused || row.pausedBy === "workspace")
-    return <StatePill state="paused">Workspace paused</StatePill>;
-  if (row.nextFireAt) return <span className="text-ink-muted">Next {ago(row.nextFireAt)}</span>;
+    return holding(<StatePill state="paused">Workspace paused</StatePill>);
+  if (next.kind === "next") return <span className="text-ink-muted">Next {ago(next.at)}</span>;
   return <StatePill state="on" />;
 }
 
@@ -238,14 +277,16 @@ export function TriggersWorkbench({
       if (reason === null) return;
     }
     const send = (subset: Trigger[]) =>
-      api.post<BatchAnswer>(`${root}/trigger-pauses/batch`, {
-        paused,
-        ...(reason ? { reason } : {}),
-        triggers: subset.map((one) => ({
-          path: one.path,
-          ...(one.node ? { node: one.node } : {}),
-        })),
-      });
+      inSlices(subset, (slice) =>
+        api.post<BatchAnswer>(`${root}/trigger-pauses/batch`, {
+          paused,
+          ...(reason ? { reason } : {}),
+          triggers: slice.map((one) => ({
+            path: one.path,
+            ...(one.node ? { node: one.node } : {}),
+          })),
+        }),
+      );
     await batch.run(() => send(chosen), {
       title: paused ? "Pausing triggers" : "Resuming triggers",
       done: (count) =>
@@ -607,7 +648,14 @@ export function TriggersWorkbench({
                         : []),
                       {
                         label: "Next",
-                        value: open.nextFireAt ? <Time value={open.nextFireAt} /> : "On request",
+                        value: (() => {
+                          const next = nextFireOf(open, workspacePaused);
+                          if (next.kind === "next") return <Time value={next.at} />;
+                          if (next.kind === "resume") return "Fires once when resumed";
+                          if (next.kind === "paused") return "Not while it is paused";
+                          if (next.kind === "off") return "Not while it is turned off";
+                          return "On request";
+                        })(),
                       },
                       {
                         label: "Last fired",
@@ -694,6 +742,8 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
   // The name searched for is in the address, so a reload, a link or a saved view keeps it.
   const [applied, setApplied] = useUrlParam("name", "");
   const [name, setName] = useState(applied);
+  // An address that changes from outside (Back, a saved view) is what the box says.
+  useEffect(() => setName(applied), [applied]);
   // Newest first, a page at a time: older ones are one "Load more" away.
   const list = usePagedList<EventRow>(
     `${root}/events${applied ? `?name=${encodeURIComponent(applied)}` : ""}`,
@@ -1003,15 +1053,17 @@ export function ApprovalsQueue({
     });
     if (comment === null) return;
     const send = (subset: typeof rows) =>
-      api.post<BatchAnswer>(`/tenants/${tenantId}/approvals/batch`, {
-        decision,
-        ...(comment ? { comment } : {}),
-        approvals: subset.map((row) => ({
-          workspaceId: row.workspaceId,
-          flowRunId: row.flowRunId,
-          node: row.node,
-        })),
-      });
+      inSlices(subset, (slice) =>
+        api.post<BatchAnswer>(`/tenants/${tenantId}/approvals/batch`, {
+          decision,
+          ...(comment ? { comment } : {}),
+          approvals: slice.map((row) => ({
+            workspaceId: row.workspaceId,
+            flowRunId: row.flowRunId,
+            node: row.node,
+          })),
+        }),
+      );
     const titleOf = (id: string) =>
       rows.find((row) => `${row.flowRunId}/${row.node}` === id)?.title ?? id;
     await batch.run(() => send(rows), {

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { RunsWorkbench } from "./screens/Runs.tsx";
 import { answer, show } from "./testing.tsx";
@@ -201,5 +201,158 @@ test("Run again from a row asks first, as the run page does", async () => {
     expect(sent).toEqual([
       { address: `/api/v1${root}/runs/r1/rerun`, body: { bundle: "original" } },
     ]),
+  );
+});
+
+/** A list of runs, newest first, that a test can change under the screen. */
+function serveRuns(all: { id: string; state?: string }[], pageSize = 100) {
+  vi.stubGlobal("fetch", async (address: string) => {
+    asked.push(address);
+    const url = new URL(address, "http://x");
+    if (!url.pathname.endsWith("/activity")) {
+      return new Response(JSON.stringify({ items: [] }), { status: 200 });
+    }
+    const at = Number(url.searchParams.get("cursor")?.replace("after:", "") ?? 0);
+    const page = all.slice(at, at + pageSize);
+    const more = at + pageSize < all.length;
+    const rows = page.map((one) => ({
+      kind: "script",
+      id: one.id,
+      target: `job/${one.id}`,
+      status: one.state ?? "succeeded",
+      state: one.state ?? "succeeded",
+      trigger: "schedule",
+      attempt: 1,
+      maxAttempts: 1,
+      error: null,
+      errorSummary: null,
+      outputSummary: null,
+      tags: [],
+      bundleVersion: 1,
+      createdAt: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
+      finishedAt: new Date().toISOString(),
+    }));
+    return new Response(
+      JSON.stringify({
+        items: rows,
+        nextCursor: more ? `after:${at + pageSize}` : null,
+        counts: {},
+        stateCounts: { succeeded: all.length },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  });
+}
+const many = (n: number, from = 1) =>
+  Array.from({ length: n }, (_, i) => ({ id: `r${String(from + i).padStart(3, "0")}` }));
+const shownRows = () =>
+  within(screen.getByRole("grid", { name: "Runs" })).getAllByRole("link", { name: /^job\// });
+
+test("Load more shows the older runs at once, not behind a count of new ones (OPS-10)", async () => {
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?target=ten");
+  serveRuns(many(130));
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "job/r001" });
+  expect(shownRows()).toHaveLength(100);
+  // The reader has a row checked, which holds what arrives, and goes for the older ones.
+  fireEvent.click(
+    within(screen.getByRole("grid", { name: "Runs" })).getAllByRole("checkbox")[1] as HTMLElement,
+  );
+  expect(screen.getByText("1 selected")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+  await waitFor(() => expect(shownRows()).toHaveLength(130));
+  // Held rows are taken away a moment after they are drawn: wait for that to have happened.
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(shownRows()).toHaveLength(130);
+  expect(screen.queryByText(/new runs?$/)).toBeNull();
+});
+
+test("a saved view's search stays in the address and the box (OPS-12)", async () => {
+  serveRuns(many(3));
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "job/r001" });
+  act(() => {
+    history.pushState(null, "", "/t/t1/workspaces/w1/runs?q=alpha");
+    dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await waitFor(() =>
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("alpha"),
+  );
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  expect(location.search).toBe("?q=alpha");
+  expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("alpha");
+});
+
+test("Cancel queued is offered where the list shows queued runs, not under Failed (OPS-15)", async () => {
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?status=failed");
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "reminders/send" });
+  expect(screen.queryByRole("button", { name: /^Cancel \d+ queued/ })).toBeNull();
+  cleanup();
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?status=queued");
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel 2 queued" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("Every queued script run");
+});
+
+test("rows checked and then filtered away are no longer checked or acted on (OPS-13)", async () => {
+  serveRuns(many(4));
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "job/r001" });
+  const grid = screen.getByRole("grid", { name: "Runs" });
+  const boxes = within(grid).getAllByRole("checkbox");
+  fireEvent.click(boxes[1] as HTMLElement);
+  fireEvent.click(boxes[2] as HTMLElement);
+  expect(screen.getByText("2 selected")).toBeTruthy();
+  // A search that takes both away.
+  serveRuns(many(1, 4));
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "r004" } });
+  await waitFor(() => expect(screen.queryByText("2 selected")).toBeNull(), { timeout: 3000 });
+});
+
+test("after Load more, new runs at the top do not push older ones out of the list (OPS-11)", async () => {
+  const older = many(130, 6).map((one, i) => (i === 0 ? { ...one, state: "running" } : one));
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?target=eleven");
+  serveRuns(older);
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByRole("link", { name: "job/r006" });
+  fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+  await waitFor(() => expect(shownRows()).toHaveLength(130));
+  // Five runs start. A running one keeps the list asking again, and the first page shifts.
+  serveRuns([...many(5), ...older]);
+  await waitFor(() => expect(shownRows()).toHaveLength(135), { timeout: 12_000 });
+  const names = shownRows().map((one) => one.textContent?.slice(0, 8));
+  // The ones that were at the end of the first page are still there, once.
+  expect(names).toContain("job/r101");
+  expect(new Set(names).size).toBe(135);
+}, 25_000);
+
+test("a run of a schedule from before the change, and an event's run, link to what started them (OPS-16)", async () => {
+  const detail = (trigger: object) => {
+    const before = globalThis.fetch;
+    vi.stubGlobal("fetch", async (address: string, init?: RequestInit) => {
+      const found = await before(address, init);
+      if (!address.endsWith("/runs/r1")) return found;
+      const body = await found.json();
+      return new Response(JSON.stringify({ ...body, trigger }), { status: 200 });
+    });
+  };
+  history.replaceState(null, "", "/t/t1/workspaces/w1/runs?run=r1");
+  detail({ type: "schedule", schedule: "reminders/hourly" });
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("The SMS gateway said no.");
+  fireEvent.click(screen.getByRole("tab", { name: "Details" }));
+  expect(screen.getByRole("link", { name: /reminders\/hourly/ }).getAttribute("href")).toBe(
+    "/t/t1/workspaces/w1/triggers?trigger=reminders%2Fhourly",
+  );
+  cleanup();
+  detail({ type: "event", trigger: "orders/on-placed", event: "orders/placed", eventId: "e9" });
+  show(<RunsWorkbench root={root} link="/t/t1/workspaces/w1" />);
+  await screen.findByText("The SMS gateway said no.");
+  fireEvent.click(screen.getByRole("tab", { name: "Details" }));
+  expect(screen.getByRole("link", { name: "The event" }).getAttribute("href")).toBe(
+    "/t/t1/workspaces/w1/events?item=e9",
   );
 });

@@ -33,7 +33,7 @@ import { Link, navigate, useUrlParam } from "../router.tsx";
 import {
   type LiveRun,
   LogWindowNote,
-  TRIGGER,
+  startedBy,
   useLiveRun,
   wholeLogDownload,
 } from "./Execution.tsx";
@@ -200,34 +200,6 @@ function RunHeader({
       />
     </div>
   );
-}
-
-/**
- * "Schedule reminders/hourly", with the trigger a link. Nothing for a run that
- * repeats another: the link to that run says it.
- */
-function startedBy(link: string, trigger: { type: string; [detail: string]: unknown }) {
-  if (trigger.type === "retry" || trigger.type === "rerun") return null;
-  // A step of a flow: its flow run, opened on the step.
-  if (trigger.type === "flow" && typeof trigger.flowRunId === "string") {
-    const node = typeof trigger.node === "string" ? trigger.node : "";
-    return (
-      <Link
-        to={`${link}/runs/${trigger.flowRunId}${node ? `?step=${encodeURIComponent(node)}` : ""}`}
-      >
-        Step {node} of a flow run
-      </Link>
-    );
-  }
-  const word = TRIGGER[trigger.type] ?? trigger.type;
-  if (typeof trigger.trigger === "string") {
-    return (
-      <Link to={`${link}/triggers?trigger=${encodeURIComponent(trigger.trigger)}`}>
-        {word} {trigger.trigger}
-      </Link>
-    );
-  }
-  return word;
 }
 
 /**

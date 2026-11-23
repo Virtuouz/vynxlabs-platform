@@ -1822,11 +1822,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         /** The newest run a trigger started: by its label, or for an event by its target and event. */
         const lastRunOf = async (row: (typeof rows)[number]) => {
           const label = row.node_id ? `${row.path}#${row.node_id}` : row.path;
+          // A run started by hand is not the trigger's own: it says "Last fired" is not counted.
+          const byHand = sql`coalesce(trigger_detail->>'manual', 'false') <> 'true'`;
           const match =
             row.type === "event"
-              ? sql`trigger_type = 'event' and trigger_detail->>'event' = ${row.event_name}`
-              : // A schedule names itself under `schedule`, every other trigger under `trigger`.
-                sql`coalesce(trigger_detail->>'trigger', trigger_detail->>'schedule') = ${label}`;
+              ? sql`trigger_type = 'event' and trigger_detail->>'event' = ${row.event_name} and ${byHand}`
+              : // Runs of schedules before phase 29 name them under `schedule`, every other under `trigger`.
+                sql`coalesce(trigger_detail->>'trigger', trigger_detail->>'schedule') = ${label} and ${byHand}`;
           const found = await sql<{
             kind: "script" | "flow";
             id: string;
@@ -1864,7 +1866,10 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             const refusal = refusals.rows.find(
               (one) => one.path === row.path && one.node_id === row.node_id,
             );
-            const body = row.body as { cron?: string; timezone?: string };
+            // A flow's schedule keeps its cron and zone in its trigger's state, not in the flow's body.
+            const body = (
+              typeof (row.config as { cron?: unknown }).cron === "string" ? row.config : row.body
+            ) as { cron?: string; timezone?: string };
             const token =
               mayAddress && (row.type === "webhook" || row.type === "form")
                 ? await webhookToken(kernel, row)
@@ -1909,7 +1914,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               lastSkipReason:
                 (row.config as { lastSkipReason?: "overlap" | "backlog" }).lastSkipReason ??
                 ((row.config as { lastSkippedAt?: string }).lastSkippedAt ? "overlap" : null),
-              nextFireAt: isoOrNull(row.next_fire_at),
+              nextFireAt: row.enabled ? isoOrNull(row.next_fire_at) : null,
               lastFiredAt: isoOrNull(row.last_fired_at),
               url: token ? address : null,
               resourceKind: row.kind,

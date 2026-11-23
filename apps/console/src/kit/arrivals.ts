@@ -42,7 +42,10 @@ export function useArrivals<Row>(
       return;
     }
     const seen = known.current;
-    const fresh = keys.filter((key) => !seen.has(key));
+    // News is what comes before the rows the reader already had: a page that is added at the
+    // end, or a row that fills a gap, is not news and is shown at once.
+    const first = keys.findIndex((key) => seen.has(key));
+    const fresh = keys.filter((key, index) => !seen.has(key) && (first < 0 || index < first));
     for (const key of keys) seen.add(key);
     if (fresh.length === 0) return;
     if (holdRef.current()) setHeld((before) => new Set([...before, ...fresh]));

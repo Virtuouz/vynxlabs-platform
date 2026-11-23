@@ -80,6 +80,44 @@ export function took(run: Pick<Run, "startedAt" | "finishedAt">) {
 
 export const TRIGGER = STARTED_BY;
 
+/**
+ * "Schedule reminders/hourly", with the trigger a link, and an event's run linked to its event.
+ * The one place that says what started a run, for scripts and flows, on the run's page and in
+ * the list's details. Runs of schedules before phase 29 name the schedule under `schedule`.
+ * Nothing for a run that repeats another: the link to that run says it.
+ */
+export function startedBy(link: string, trigger: { type: string; [detail: string]: unknown }) {
+  if (trigger.type === "retry" || trigger.type === "rerun") return null;
+  // A step of a flow: its flow run, opened on the step.
+  if (trigger.type === "flow" && typeof trigger.flowRunId === "string") {
+    const node = typeof trigger.node === "string" ? trigger.node : "";
+    return (
+      <Link
+        to={`${link}/runs/${trigger.flowRunId}${node ? `?step=${encodeURIComponent(node)}` : ""}`}
+      >
+        Step {node} of a flow run
+      </Link>
+    );
+  }
+  const word = TRIGGER[trigger.type] ?? trigger.type;
+  const named = typeof trigger.trigger === "string" ? trigger.trigger : trigger.schedule;
+  const event = typeof trigger.eventId === "string" ? trigger.eventId : undefined;
+  if (typeof named === "string") {
+    return (
+      <span className="inline-flex flex-wrap items-baseline gap-x-2">
+        <Link to={`${link}/triggers?trigger=${encodeURIComponent(named)}`}>
+          {word} {named}
+        </Link>
+        {event ? (
+          <Link to={`${link}/events?item=${encodeURIComponent(event)}`}>The event</Link>
+        ) : null}
+      </span>
+    );
+  }
+  if (event) return <Link to={`${link}/events?item=${encodeURIComponent(event)}`}>{word}</Link>;
+  return word;
+}
+
 interface ScriptRow {
   path: string;
   description: string;

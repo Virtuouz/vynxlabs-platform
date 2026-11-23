@@ -45,6 +45,18 @@ export const Member = Type.Object({
       description: "In the instance's list: whether the account can sign in nowhere.",
     }),
   ),
+  directRoles: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      description: "In a tenant's list: how many roles the member is given directly there.",
+    }),
+  ),
+  groups: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      description: "In a tenant's list: how many groups of the tenant the member is in.",
+    }),
+  ),
 });
 export const toMember = (row: {
   id: string;
@@ -53,11 +65,15 @@ export const toMember = (row: {
   created_at: Date;
   suspended_at?: Date | null;
   disabled_at?: Date | null;
+  direct_roles?: number | string;
+  group_count?: number | string;
 }) => ({
   id: row.id,
   name: row.name,
   email: row.email,
   createdAt: iso(row.created_at),
+  ...(row.direct_roles !== undefined ? { directRoles: Number(row.direct_roles) } : {}),
+  ...(row.group_count !== undefined ? { groups: Number(row.group_count) } : {}),
   ...(row.suspended_at !== undefined ? { suspended: row.suspended_at !== null } : {}),
   ...(row.disabled_at !== undefined ? { disabled: row.disabled_at !== null } : {}),
 });

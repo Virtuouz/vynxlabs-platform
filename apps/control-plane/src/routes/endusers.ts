@@ -56,6 +56,10 @@ const EndUser = Type.Object({
       "Facts about the person that a table's row rules can match: which customer they belong to, which region they cover.",
   }),
   groups: Type.Array(Type.String(), { description: "The names of the groups the person is in." }),
+  signsInWithProvider: Type.Boolean({
+    description:
+      "Whether an identity provider has signed the person in. Such a person may have no password, and is not waiting for an invitation.",
+  }),
   disabled: Type.Boolean(),
   lastSignedInAt: NullableTime,
   createdAt: Time,
@@ -67,6 +71,7 @@ const toEndUser = (row: {
   password_hash: string | null;
   attributes?: Record<string, string>;
   groups?: string[] | null;
+  provider_linked?: boolean | null;
   disabled_at: Date | null;
   last_signed_in_at: Date | null;
   created_at: Date;
@@ -77,6 +82,7 @@ const toEndUser = (row: {
   hasPassword: row.password_hash !== null,
   attributes: row.attributes ?? {},
   groups: row.groups ?? [],
+  signsInWithProvider: row.provider_linked ?? false,
   disabled: row.disabled_at !== null,
   lastSignedInAt: isoOrNull(row.last_signed_in_at),
   createdAt: iso(row.created_at),
@@ -181,6 +187,24 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
     // ----- Managing the pool -----
 
+    /** A tenant's end users, with the names of their groups and whether a provider signed them in. */
+    const endUsers = (tenantId: string) =>
+      db
+        .selectFrom("end_user")
+        .selectAll()
+        .select([
+          sql<string[]>`coalesce((
+              select array_agg(g.name order by g.name)
+              from end_user_group_member m join end_user_group g on g.id = m.group_id
+              where m.end_user_id = end_user.id
+            ), '{}')`.as("groups"),
+          sql<boolean>`exists (select 1 from identity_link l
+              where l.principal_type = 'end_user' and l.principal_id = end_user.id)`.as(
+            "provider_linked",
+          ),
+        ])
+        .where("tenant_id", "=", tenantId);
+
     app.get(
       "/tenants/:t/end-users",
       {
@@ -198,17 +222,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ params, query }) => {
         const args = pageArgs(query);
-        let select = db
-          .selectFrom("end_user")
-          .selectAll()
-          .select(
-            sql<string[]>`coalesce((
-              select array_agg(g.name order by g.name)
-              from end_user_group_member m join end_user_group g on g.id = m.group_id
-              where m.end_user_id = end_user.id
-            ), '{}')`.as("groups"),
-          )
-          .where("tenant_id", "=", params.t);
+        let select = endUsers(params.t);
         if (query.search) {
           const term = `%${query.search.toLowerCase().replace(/[%_\\]/g, "\\$&")}%`;
           select = select.where((eb) =>
@@ -221,6 +235,25 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .limit(args.limit + 1)
           .execute();
         return toPage(rows, args, (row) => row.id, toEndUser);
+      },
+    );
+
+    app.get(
+      "/tenants/:t/end-users/:userId",
+      {
+        config: { access: access.tenant("end_user:read") },
+        schema: {
+          summary: "One end user",
+          description: "So that a link to a person opens whatever page of the list they are on.",
+          tags: ["end users"],
+          params: Type.Object({ t: Id, userId: Id }),
+          response: { 200: EndUser },
+        },
+      },
+      async ({ params }) => {
+        const row = await endUsers(params.t).where("id", "=", params.userId).executeTakeFirst();
+        if (!row) throw notFound("The end user");
+        return toEndUser(row);
       },
     );
 
@@ -407,7 +440,9 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           });
           return { ...updated, groups: await groupsOf(trx, updated.id) };
         });
-        return toEndUser(row);
+        return toEndUser(
+          (await endUsers(params.t).where("id", "=", row.id).executeTakeFirst()) ?? row,
+        );
       },
     );
 

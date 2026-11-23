@@ -310,4 +310,126 @@ describe("releases of access, lane acc2", () => {
     });
     expect(set.body.possible, JSON.stringify(set.body)).toBe(true);
   });
+
+  test("ACC-24: a workspace admin reads the roles and the people to choose from at their workspace", async () => {
+    const dan = await alice.post(`/tenants/${tenant}/members`, {
+      email: "dan@lakeshore.example",
+      name: "dan",
+      password: PASSWORD,
+    });
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: main,
+      principalType: "member",
+      principalId: dan.body.id,
+      roleId: roles.workspace_admin,
+    });
+    const asDan = await t.signIn("dan@lakeshore.example", PASSWORD);
+    expect((await asDan.get(`/tenants/${tenant}/roles`)).status).toBe(403);
+    const there = await asDan.get(`/tenants/${tenant}/roles?workspaceId=${main}`);
+    expect(there.status, JSON.stringify(there.body)).toBe(200);
+    expect(there.body.items.map((role: Any) => role.name)).toContain("viewer");
+    const who = await asDan.get(`/tenants/${tenant}/principals?workspaceId=${main}`);
+    expect(who.status, JSON.stringify(who.body)).toBe(200);
+    expect(who.body.items.length).toBeGreaterThan(0);
+    expect((await asDan.get(`/tenants/${tenant}/principals`)).status).toBe(403);
+    // Nothing is read at a workspace where they hold nothing.
+    const other = await alice.post(`/tenants/${tenant}/workspaces`, {
+      slug: "other",
+      name: "Other",
+      type: "dev",
+    });
+    expect((await asDan.get(`/tenants/${tenant}/roles?workspaceId=${other.body.id}`)).status).toBe(
+      403,
+    );
+  });
+
+  test("ACC-29: two offers to one agent differ by the thing each is at", async () => {
+    const ops = (await alice.get(`/tenants/${tenant}/groups`)).body.items.find(
+      (one: Any) => one.key === "ops",
+    );
+    const resources = `/tenants/${tenant}/workspaces/${main}/resources`;
+    for (const name of ["first", "second"]) {
+      await alice.put(`${resources}/access/${name}-view`, {
+        kind: "binding",
+        schemaVersion: 1,
+        ownership: "code",
+        body: { role: "viewer", principal: { type: "group", key: "ops" } },
+      });
+      const row = await t.db
+        .selectFrom("resource")
+        .select("id")
+        .where("path", "=", `access/${name}-view`)
+        .executeTakeFirstOrThrow();
+      const made = await alice.post(`/tenants/${tenant}/bindings`, {
+        workspaceId: main,
+        resourceId: row.id,
+        principalType: "group",
+        principalId: ops.id,
+        roleId: roles.developer,
+      });
+      expect(made.status, JSON.stringify(made.body)).toBe(201);
+    }
+    const at = (await alice.get(`/tenants/${tenant}/bindings?workspaceId=${main}`)).body
+      .items as Any[];
+    const offered = at.filter((one) => one.resourceId !== null && one.roleName === "developer");
+    expect(offered.map((one) => `${one.resourceKind} ${one.resourcePath}`).sort()).toEqual([
+      "binding access/first-view",
+      "binding access/second-view",
+    ]);
+  });
+
+  test("ACC-30, ACC-31: a member is listed with what they hold, and is read by id wherever they are in the list", async () => {
+    const list = (await alice.get(`/tenants/${tenant}/members`)).body.items as Any[];
+    const by = (name: string) => list.find((one) => one.name === name);
+    expect(by("carol")).toMatchObject({ directRoles: 1, groups: 0 });
+    const eve = await alice.post(`/tenants/${tenant}/members`, {
+      email: "eve@lakeshore.example",
+      name: "eve",
+      password: PASSWORD,
+    });
+    const none = await alice.get(`/tenants/${tenant}/members/${eve.body.id}`);
+    expect(none.status, JSON.stringify(none.body)).toBe(200);
+    expect(none.body).toMatchObject({ email: "eve@lakeshore.example", directRoles: 0, groups: 0 });
+    const ops = (await alice.get(`/tenants/${tenant}/groups`)).body.items.find(
+      (one: Any) => one.key === "ops",
+    );
+    await alice.put(`/tenants/${tenant}/groups/${ops.id}/members/${eve.body.id}`);
+    expect((await alice.get(`/tenants/${tenant}/members/${eve.body.id}`)).body.groups).toBe(1);
+    expect((await alice.get(`/tenants/${tenant}/members/${newId()}`)).status).toBe(404);
+  });
+
+  test("ACC-28, ACC-31: an end user a provider signed in is said to be, and one is read by id", async () => {
+    const made = await alice.post(`/tenants/${tenant}/end-users`, {
+      email: "pat@customer.example",
+      name: "Pat",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const provider = newId();
+    await t.db
+      .insertInto("identity_provider")
+      .values({
+        id: provider,
+        tenant_id: tenant,
+        audience: "end_users",
+        protocol: "oidc",
+        name: "Customers",
+        config: "{}" as never,
+      })
+      .execute();
+    await t.db
+      .insertInto("identity_link")
+      .values({
+        id: newId(),
+        provider_id: provider,
+        tenant_id: tenant,
+        subject: "pat",
+        principal_type: "end_user",
+        principal_id: made.body.endUser.id,
+      })
+      .execute();
+    const one = await alice.get(`/tenants/${tenant}/end-users/${made.body.endUser.id}`);
+    expect(one.status, JSON.stringify(one.body)).toBe(200);
+    expect(one.body).toMatchObject({ hasPassword: false, signsInWithProvider: true });
+    expect((await alice.get(`/tenants/${tenant}/end-users/${newId()}`)).status).toBe(404);
+  });
 });

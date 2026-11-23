@@ -1,7 +1,7 @@
-import { Button, Notice } from "@volvel/ui";
+import { Button, Notice, TextField } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
-import { ask, notify } from "../ask.tsx";
+import { ask, failureText, notify } from "../ask.tsx";
 import { KeyValues, Panel, SectionLabel } from "../kit/layout.tsx";
 import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { StatePill } from "../kit/status.tsx";
@@ -148,6 +148,88 @@ export function RecoveryCodes() {
   );
 }
 
+/**
+ * Changing the password of the account that is signed in. Whoever made the account chose its
+ * first password, so this is how a person comes to be the only one who knows theirs.
+ */
+export function ChangePassword() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string>();
+  const mismatch = again !== "" && again !== next;
+  return (
+    <Panel className="flex flex-col gap-4 p-4 md:p-5">
+      <SectionLabel>Password</SectionLabel>
+      <p className="m-0 max-w-measure text-ink-muted">
+        Choose a password only you know. Every other place you are signed in is signed out.
+      </p>
+      <form
+        className="flex max-w-sm flex-col gap-3"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (mismatch) return;
+          setBusy(true);
+          setProblem(undefined);
+          try {
+            await api.post("/auth/change-password", {
+              currentPassword: current,
+              newPassword: next,
+              revokeOtherSessions: true,
+            });
+            notify.success("Your password is changed. Your other sign-ins are ended.");
+            setCurrent("");
+            setNext("");
+            setAgain("");
+          } catch (error) {
+            setProblem(failureText(error));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <TextField
+          label="Current password"
+          name="current"
+          type="password"
+          value={current}
+          required
+          autoComplete="current-password"
+          onChange={setCurrent}
+        />
+        <TextField
+          label="New password"
+          name="new"
+          type="password"
+          value={next}
+          required
+          minLength={12}
+          autoComplete="new-password"
+          hint="At least 12 characters."
+          onChange={setNext}
+        />
+        <TextField
+          label="New password again"
+          name="again"
+          type="password"
+          value={again}
+          required
+          autoComplete="new-password"
+          error={mismatch ? "The two do not match." : undefined}
+          onChange={setAgain}
+        />
+        {problem ? <Notice tone="danger">{problem}</Notice> : null}
+        <div>
+          <Button type="submit" variant="primary" loading={busy} disabled={mismatch}>
+            Change password
+          </Button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
 export function Account() {
   return (
     <div className="flex flex-col gap-8">
@@ -182,6 +264,7 @@ export function Account() {
           )
         }
       />
+      <ChangePassword />
       <RecoveryCodes />
     </div>
   );

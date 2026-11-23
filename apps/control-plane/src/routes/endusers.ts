@@ -518,6 +518,10 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       name: Type.String(),
       description: Type.String(),
       memberCount: Type.Integer(),
+      managedBy: Type.String({
+        description:
+          "`provider` for one an identity provider pushed, which is changed there, `release` otherwise.",
+      }),
       createdAt: Time,
     });
     const GroupParams = Type.Object({ t: Id, g: Id });
@@ -563,6 +567,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             name: row.name,
             description: row.description,
             memberCount: Number(row.member_count ?? 0),
+            managedBy: row.managed_by,
             createdAt: iso(row.created_at),
           })),
         };
@@ -576,8 +581,9 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Create a group of end users",
           description:
-            "Give a role to the group under Access, and rule a table's rows by it. The name is " +
-            "what a repository's binding and a row rule refer to, so it cannot be changed later.",
+            "Give a role to the group under Access, and rule a table's rows by it. The group's key, " +
+            "made from the name, is what a repository's binding and a row rule refer to, and never " +
+            "changes. The name can be changed.",
           tags: ["end users"],
           params: TenantParams,
           body: Type.Object({
@@ -630,6 +636,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           name: made.row.name,
           description: made.row.description,
           memberCount: 0,
+          managedBy: made.row.managed_by,
           createdAt: iso(made.row.created_at),
         });
       },
@@ -737,6 +744,7 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           name: changed.row.name,
           description: changed.row.description,
           memberCount: changed.members ?? 0,
+          managedBy: changed.row.managed_by,
           createdAt: iso(changed.row.created_at),
         };
       },

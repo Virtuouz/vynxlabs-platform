@@ -425,8 +425,11 @@ export function RemoveButton({
   onDone,
   affected,
   typeToConfirm,
+  disabled,
 }: {
   label?: string;
+  /** Why it cannot be done now, shown as the button's title; the button is then off. */
+  disabled?: string | undefined;
   confirm: string;
   run: () => Promise<unknown>;
   onDone: () => void;
@@ -439,6 +442,8 @@ export function RemoveButton({
     <Button
       variant="danger"
       size="small"
+      disabled={disabled !== undefined}
+      {...(disabled !== undefined ? { title: disabled } : {})}
       onClick={async () => {
         const text = affected?.length
           ? `${question} Used by ${affected.length}: ${listed(affected)}.`

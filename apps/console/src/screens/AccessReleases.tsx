@@ -271,156 +271,156 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
 
   return (
     <div ref={holder} className="contents">
-    <CollectionView<AccessRelease>
-      title={framed?.title ?? "Releases"}
-      description="Every change to the tenant's groups, service accounts, roles and what they are given, from the console or from the repository, with who made it and who approved it."
-      actions={
-        <Button
-          onClick={async () => {
-            setProblem(undefined);
-            if (approval) {
-              const waiting = releases.data?.items.filter(
-                (one) => one.status === "awaiting_approval",
-              ).length;
-              const sure = await ask.confirm({
-                title: "Stop asking for a second person?",
-                text: `From now on, a change to the tenant's groups, service accounts and roles, and to what they are given, applies as soon as it is made, with nobody else approving it. ${
-                  waiting === undefined || waiting === 0
-                    ? "Releases that wait now stay waiting"
-                    : waiting === 1
-                      ? "The 1 release that waits now stays waiting"
-                      : `The ${count(waiting)} releases that wait now stay waiting`
-                } until someone answers them. Asking again needs two people who may release access.`,
-                action: "Stop asking",
-                danger: true,
-              });
-              if (!sure) return;
-            }
-            try {
-              await api.put(`${base}/access/approval`, { required: !approval });
-              notify.success(
-                approval
-                  ? "Changes to access apply at once."
-                  : "Changes to access now wait for a second person.",
-              );
-              access.reload();
-            } catch (error) {
-              setProblem(failed(error));
-            }
-          }}
-        >
-          {approval ? "Stop asking for a second person" : "Ask for a second person"}
-        </Button>
-      }
-      toolbar={toolbarOf(
-        framed,
-        <>
-          {approval ? (
-            <Notice tone="attention" bare>
-              A change to access waits until someone other than whoever made it approves it.
-            </Notice>
-          ) : null}
-          {problem ? <Notice tone="danger">{problem}</Notice> : null}
-        </>,
-      )}
-      label="Releases"
-      rows={releases.data?.items}
-      error={releases.error}
-      onRetry={releases.reload}
-      rowKey={(row) => row.id}
-      columns={[
-        { header: "#", cell: (row) => row.number },
-        {
-          header: "What",
-          cell: (row) => (
-            <span className="flex flex-col">
-              <span className="font-medium">{row.message ?? what(row)}</span>
-              {row.message ? <span className="text-meta text-ink-muted">{what(row)}</span> : null}
-              {row.comment ? (
-                <span className="text-meta text-ink-muted">“{row.comment}”</span>
-              ) : null}
-              {(row.summary.warnings ?? []).map((warning) => (
-                <span key={warning} className="text-meta text-ink-muted">
-                  {warning}
-                </span>
-              ))}
-              {row.summary.changes.length > 3 ? (
-                <span>
-                  <Button size="small" onClick={() => showAll(row)}>
-                    All {row.summary.changes.length} changes
-                  </Button>
-                </span>
-              ) : null}
-            </span>
-          ),
-        },
-        {
-          header: "Status",
-          cell: (row) => {
-            const [label, state] = STATUS[row.status] ?? [row.status, "skipped"];
-            return <StatePill state={state}>{label}</StatePill>;
-          },
-        },
-        {
-          header: "By",
-          priority: 2,
-          cell: (row) => (
-            <span className="flex flex-col">
-              <span>{row.createdBy ?? ORIGIN[row.origin] ?? row.origin}</span>
-              <span className="text-meta text-ink-muted">
-                {ORIGIN[row.origin] ?? row.origin}
-                {row.decidedBy ? `, answered by ${row.decidedBy}` : ""}
-              </span>
-            </span>
-          ),
-        },
-        { header: "When", priority: 2, cell: (row) => <Time value={row.createdAt} mode="ago" /> },
-        {
-          header: "",
-          align: "end",
-          cell: (row) => {
-            if (row.status === "awaiting_approval") {
-              if (!mayChange && !askedByMe(row))
-                return (
-                  <span className="text-meta text-ink-muted">
-                    You may read this, not answer it.
-                  </span>
+      <CollectionView<AccessRelease>
+        title={framed?.title ?? "Releases"}
+        description="Every change to the tenant's groups, service accounts, roles and what they are given, from the console or from the repository, with who made it and who approved it."
+        actions={
+          <Button
+            onClick={async () => {
+              setProblem(undefined);
+              if (approval) {
+                const waiting = releases.data?.items.filter(
+                  (one) => one.status === "awaiting_approval",
+                ).length;
+                const sure = await ask.confirm({
+                  title: "Stop asking for a second person?",
+                  text: `From now on, a change to the tenant's groups, service accounts and roles, and to what they are given, applies as soon as it is made, with nobody else approving it. ${
+                    waiting === undefined || waiting === 0
+                      ? "Releases that wait now stay waiting"
+                      : waiting === 1
+                        ? "The 1 release that waits now stays waiting"
+                        : `The ${count(waiting)} releases that wait now stay waiting`
+                  } until someone answers them. Asking again needs two people who may release access.`,
+                  action: "Stop asking",
+                  danger: true,
+                });
+                if (!sure) return;
+              }
+              try {
+                await api.put(`${base}/access/approval`, { required: !approval });
+                notify.success(
+                  approval
+                    ? "Changes to access apply at once."
+                    : "Changes to access now wait for a second person.",
                 );
-              if (askedByMe(row))
-                return (
-                  <span className="inline-flex flex-col items-end gap-1">
+                access.reload();
+              } catch (error) {
+                setProblem(failed(error));
+              }
+            }}
+          >
+            {approval ? "Stop asking for a second person" : "Ask for a second person"}
+          </Button>
+        }
+        toolbar={toolbarOf(
+          framed,
+          <>
+            {approval ? (
+              <Notice tone="attention" bare>
+                A change to access waits until someone other than whoever made it approves it.
+              </Notice>
+            ) : null}
+            {problem ? <Notice tone="danger">{problem}</Notice> : null}
+          </>,
+        )}
+        label="Releases"
+        rows={releases.data?.items}
+        error={releases.error}
+        onRetry={releases.reload}
+        rowKey={(row) => row.id}
+        columns={[
+          { header: "#", cell: (row) => row.number },
+          {
+            header: "What",
+            cell: (row) => (
+              <span className="flex flex-col">
+                <span className="font-medium">{row.message ?? what(row)}</span>
+                {row.message ? <span className="text-meta text-ink-muted">{what(row)}</span> : null}
+                {row.comment ? (
+                  <span className="text-meta text-ink-muted">“{row.comment}”</span>
+                ) : null}
+                {(row.summary.warnings ?? []).map((warning) => (
+                  <span key={warning} className="text-meta text-ink-muted">
+                    {warning}
+                  </span>
+                ))}
+                {row.summary.changes.length > 3 ? (
+                  <span>
+                    <Button size="small" onClick={() => showAll(row)}>
+                      All {row.summary.changes.length} changes
+                    </Button>
+                  </span>
+                ) : null}
+              </span>
+            ),
+          },
+          {
+            header: "Status",
+            cell: (row) => {
+              const [label, state] = STATUS[row.status] ?? [row.status, "skipped"];
+              return <StatePill state={state}>{label}</StatePill>;
+            },
+          },
+          {
+            header: "By",
+            priority: 2,
+            cell: (row) => (
+              <span className="flex flex-col">
+                <span>{row.createdBy ?? ORIGIN[row.origin] ?? row.origin}</span>
+                <span className="text-meta text-ink-muted">
+                  {ORIGIN[row.origin] ?? row.origin}
+                  {row.decidedBy ? `, answered by ${row.decidedBy}` : ""}
+                </span>
+              </span>
+            ),
+          },
+          { header: "When", priority: 2, cell: (row) => <Time value={row.createdAt} mode="ago" /> },
+          {
+            header: "",
+            align: "end",
+            cell: (row) => {
+              if (row.status === "awaiting_approval") {
+                if (!mayChange && !askedByMe(row))
+                  return (
                     <span className="text-meta text-ink-muted">
-                      You asked for this. Someone else approves it.
+                      You may read this, not answer it.
                     </span>
-                    <Button size="small" onClick={() => decide(row, "withdraw")}>
-                      Withdraw
+                  );
+                if (askedByMe(row))
+                  return (
+                    <span className="inline-flex flex-col items-end gap-1">
+                      <span className="text-meta text-ink-muted">
+                        You asked for this. Someone else approves it.
+                      </span>
+                      <Button size="small" onClick={() => decide(row, "withdraw")}>
+                        Withdraw
+                      </Button>
+                    </span>
+                  );
+                return (
+                  <span className="inline-flex flex-wrap justify-end gap-1">
+                    <Button size="small" variant="primary" onClick={() => decide(row, "approve")}>
+                      Approve
+                    </Button>
+                    <Button size="small" onClick={() => decide(row, "decline")}>
+                      Decline
                     </Button>
                   </span>
                 );
-              return (
-                <span className="inline-flex flex-wrap justify-end gap-1">
-                  <Button size="small" variant="primary" onClick={() => decide(row, "approve")}>
-                    Approve
-                  </Button>
-                  <Button size="small" onClick={() => decide(row, "decline")}>
-                    Decline
-                  </Button>
-                </span>
-              );
-            }
-            return row.status === "applied" && mayChange ? (
-              <Button size="small" onClick={() => back(row)}>
-                Go back to this
-              </Button>
-            ) : null;
+              }
+              return row.status === "applied" && mayChange ? (
+                <Button size="small" onClick={() => back(row)}>
+                  Go back to this
+                </Button>
+              ) : null;
+            },
           },
-        },
-      ]}
-      empty={{
-        title: "No releases yet",
-        text: "A release is recorded when a group, a service account, a role or what one is given changes.",
-      }}
-    />
+        ]}
+        empty={{
+          title: "No releases yet",
+          text: "A release is recorded when a group, a service account, a role or what one is given changes.",
+        }}
+      />
     </div>
   );
 }

@@ -227,7 +227,9 @@ test("going back that waits is said to wait, not to be done (ACC-14)", async () 
   show(<AccessReleases base={base} />);
   fireEvent.click(await screen.findByRole("button", { name: "Go back to this" }));
   await answer("Go back");
-  expect(await screen.findByText("Release 9 waits for a second person. Nothing changed yet.")).toBeTruthy();
+  const said = await screen.findByText("Release 9 waits for a second person. Nothing changed yet.");
+  // A notice among the changes, not a failure under the list.
+  expect(said.closest('[aria-live="polite"]')).not.toBeNull();
   expect(screen.queryByText("The tenant's access is what release 1 left.")).toBeNull();
 });
 
@@ -259,7 +261,12 @@ test("a refusal names its cause, not only that the access is not valid (ACC-21)"
       status: 400,
       code: "validation_failed",
       detail: "The tenant's access is not valid.",
-      errors: [{ path: "group night-shift", message: "/body/description must NOT have more than 500 characters" }],
+      errors: [
+        {
+          path: "group night-shift",
+          message: "/body/description must NOT have more than 500 characters",
+        },
+      ],
     },
   };
   show(<AccessReleases base={base} />);

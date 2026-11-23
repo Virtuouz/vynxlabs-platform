@@ -17,6 +17,8 @@ interface EndUser {
   email: string;
   name: string;
   hasPassword: boolean;
+  /** An identity provider has signed them in: they set no password, and wait for no invitation. */
+  signsInWithProvider?: boolean;
   attributes: Record<string, string>;
   groups: string[];
   disabled: boolean;
@@ -43,7 +45,9 @@ const failed = (error: unknown) => {
 
 function Status({ user }: { user: EndUser }) {
   if (user.disabled) return <StatePill state="disabled" />;
-  if (!user.hasPassword) return <StatePill state="invited" />;
+  // Invited until they have used the invitation, or a provider has signed them in.
+  if (!user.hasPassword && !user.signsInWithProvider && !user.lastSignedInAt)
+    return <StatePill state="invited" />;
   return <StatePill state="active" />;
 }
 
@@ -130,11 +134,12 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
     // A disabled account cannot be sent a link: enable it first.
     ...(user.disabled
       ? []
-      : [
-          user.hasPassword
-            ? { label: "Password reset link", onSelect: () => makeLink(user, "reset") }
-            : { label: "New invitation link", onSelect: () => makeLink(user, "invite") },
-        ]),
+      : user.hasPassword
+        ? [{ label: "Password reset link", onSelect: () => makeLink(user, "reset") }]
+        : // Someone a provider signs in has no password to set: a link would add one beside it.
+          user.signsInWithProvider || user.lastSignedInAt
+          ? []
+          : [{ label: "New invitation link", onSelect: () => makeLink(user, "invite") }]),
     user.disabled
       ? {
           label: "Enable",
@@ -146,11 +151,19 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
         }
       : {
           label: "Disable",
-          onSelect: () =>
-            act(async () => {
+          onSelect: async () => {
+            const sure = await ask.confirm({
+              title: `Disable ${user.email}?`,
+              text: "They are signed out of every app now and cannot sign in until you enable them again. What they were given is kept.",
+              action: "Disable",
+              danger: true,
+            });
+            if (!sure) return;
+            return act(async () => {
               await api.patch(`${base}/end-users/${user.id}`, { disabled: true });
               notify.success(`${user.email} can no longer sign in.`);
-            }),
+            });
+          },
         },
     {
       label: "Delete",
@@ -167,7 +180,12 @@ export function EndUsers({ base, framed }: { base: string; framed?: Framed }) {
     },
   ];
 
-  const chosen = rows.find((row) => row.id === selected);
+  const listed = rows.find((row) => row.id === selected);
+  // A link to someone past the pages loaded opens them all the same: they are read by themselves.
+  const alone = useLoad<EndUser>(
+    selected && page.data && !listed ? `${base}/end-users/${selected}` : null,
+  );
+  const chosen = listed ?? alone.data;
   const pages =
     trail.length > 1 || page.data?.nextCursor ? (
       <div className="flex items-center gap-2 text-meta text-ink-muted">

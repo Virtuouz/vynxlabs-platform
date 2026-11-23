@@ -125,7 +125,7 @@ Prefix `SHL`. Settled from the code at `270e509` (the tree at `~/.local/share/vo
 - **Size:** S. **Milestone:** M1
 
 ### SHL-16 A wrong password spends a recovery code
-- **Outcome:** not a bug (deliberate: the code comment at `S/kernel/auth.ts:180-182` says a wrong password "costs the code", so a code never works twice)
+- **Outcome:** reproduced, and deliberate (D18: kept, and the form says so). The same fault as GOV-12, settled the same way: the code is spent before the password is checked (`S/kernel/auth.ts:180-182`); the sign-in form says it works once even if the password is wrong, and a 401 says the code was used up by this try (fixed in `fixed/gov2.md`, test "a wrong password with a recovery code says the code is spent (GOV-12, D18)")
 - **Severity:** rough
 - **Where:** `S/kernel/auth.ts:182-186`, `C/screens/SignIn.tsx:125,138`.
 - **Evidence:** the code is spent before the password is checked. A typo burns one of ten codes, and the form does not warn. The error text ("not right, or was already used") is shown only for 403.

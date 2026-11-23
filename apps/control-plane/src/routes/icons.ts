@@ -198,6 +198,9 @@ export const iconRoutes =
               "The request body is a PNG of exactly that many pixels each way. The console " +
               "sends each size when a logo is set, drawn from the logo by the browser.",
             tags: ["instance"],
+            consumes: ["image/png"],
+            // Read as bytes, as sent: the schema says only that a body is taken.
+            body: Type.Unknown(),
             params: Type.Object({ size: SizeParam }),
             response: { 204: NoContent },
           },

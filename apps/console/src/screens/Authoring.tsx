@@ -26,6 +26,7 @@ import { Elapsed } from "../kit/Elapsed.tsx";
 import { ago } from "../kit/format.ts";
 import { formatCombo, useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
+import { SectionLabel } from "../kit/layout.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
@@ -879,9 +880,10 @@ export function ScriptEditor({
     </div>
   );
 
+  // The server names a build error by the file the code is in: `<path>.<kind>.ts`.
+  const ownIssues = buildIssues.filter((issue) => issue.file === `${path}.${kind}.ts`);
   const problemCount =
-    markers.filter((marker) => marker.severity === "error").length +
-    buildIssues.filter((issue) => issue.file === `${path}.script.ts`).length;
+    markers.filter((marker) => marker.severity === "error").length + ownIssues.length;
   const codeArea = (height: string) =>
     fromRepository ? (
       <RepositorySource root={root} path={path} />
@@ -1060,7 +1062,7 @@ export function ScriptEditor({
       ) : !editable ? (
         <ProductionNotice
           root={root}
-          noun="Code"
+          noun={`${about.noun.charAt(0).toUpperCase()}${about.noun.slice(1)}`}
           edit={opened ? `${about.edit}/${opened}` : undefined}
         />
       ) : fromRepository ? (
@@ -1185,7 +1187,7 @@ export function ScriptEditor({
                     content: (
                       <ProblemList
                         markers={markers}
-                        build={buildIssues.filter((issue) => issue.file === `${path}.script.ts`)}
+                        build={ownIssues}
                         onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
                       />
                     ),
@@ -1207,7 +1209,22 @@ export function ScriptEditor({
           }
         />
       ) : (
-        codeArea("34rem")
+        <>
+          {codeArea("34rem")}
+          {/* A connector or trigger source has no test pane, and its build errors still need a place. */}
+          {fromRepository ? null : (
+            <section aria-label="Problems" className="flex flex-col gap-2">
+              <SectionLabel>
+                {problemCount > 0 ? `Problems (${problemCount})` : "Problems"}
+              </SectionLabel>
+              <ProblemList
+                markers={markers}
+                build={ownIssues}
+                onShow={(line, column) => setReveal({ line, column, at: Date.now() })}
+              />
+            </section>
+          )}
+        </>
       )}
     </section>
   );

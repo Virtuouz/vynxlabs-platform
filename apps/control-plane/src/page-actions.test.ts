@@ -865,7 +865,8 @@ describe("a flow or script that refuses its input", () => {
     for (const _ of [1, 2]) {
       const refused = await press(alice, "makeandstart", id, { draft: true });
       expect(refused.status).toBe(400);
-      expect(JSON.stringify(refused.body)).toContain("does not match what the flow");
+      // Said once, in words: what is missing, not a path and a schema's phrase.
+      expect(refused.body.detail).toBe("The flow flows/strict refused its input. It needs why.");
     }
     expect(await rows()).toBe(before);
     expect((await rowOf(id)).note ?? null).toBeNull();

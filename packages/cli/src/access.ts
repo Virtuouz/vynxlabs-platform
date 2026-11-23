@@ -113,6 +113,7 @@ export async function tenantAccess(
       message: { type: "string" as const },
       comment: { type: "string" as const },
       "allow-delete": { type: "string" as const, multiple: true as const },
+      yes: { type: "boolean" as const },
     },
   });
   if (!values.tenant) throw new CliError("This needs --tenant <slug>.");
@@ -246,6 +247,34 @@ export async function tenantAccess(
     return;
   }
 
+  if (action === "approval") {
+    const which = positionals[0];
+    if (which !== undefined && which !== "on" && which !== "off") {
+      throw new CliError("Say on or off: volvel tenant approval on|off --tenant <slug>");
+    }
+    if (which === undefined) {
+      const now = await call(base);
+      if (now.status !== 200) throw api.refusal(now, `read the access of ${values.tenant}`);
+      io.out(
+        now.body.approval
+          ? `${values.tenant} asks for a second person to approve a change to its access.`
+          : `${values.tenant} does not ask for a second person: a change to its access applies at once.`,
+      );
+      return;
+    }
+    const set = await call(`${base}/approval`, {
+      method: "PUT",
+      body: { required: which === "on" },
+    });
+    if (set.status !== 200) throw api.refusal(set, `turn approval ${which} for ${values.tenant}`);
+    io.out(
+      which === "on"
+        ? `${values.tenant} now asks for a second person to approve a change to its access.`
+        : `${values.tenant} no longer asks for a second person: a change to its access applies at once.`,
+    );
+    return;
+  }
+
   if (["approve", "decline", "withdraw", "rollback"].includes(action)) {
     const number = Number(positionals[0]);
     if (!Number.isInteger(number)) {
@@ -254,6 +283,32 @@ export async function tenantAccess(
     const release = (await list()).find((one) => one.number === number);
     if (!release) throw new CliError(`${values.tenant} has no release ${number} of its access.`);
     if (action === "rollback") {
+      // What going back takes away is said first, and asked about: a group made since is deleted.
+      const would = await call(`${base}/releases/${release.id}/rollback`);
+      if (would.status !== 200)
+        throw api.refusal(would, `read what going back to release ${number} does`);
+      const removes = would.body.removes as { kind: string; key: string; label: string }[];
+      const warnings = would.body.warnings as string[];
+      if (removes.length > 0) {
+        io.out(`Going back to release ${number} removes what was made since:`);
+        for (const one of removes) {
+          io.out(
+            `  deleted  ${one.kind.padEnd(16)} ${one.key}${one.label && one.label !== one.key ? `  (${one.label})` : ""}`,
+          );
+        }
+      }
+      for (const warning of warnings) io.out(`  Note: ${warning}`);
+      if (removes.length > 0 && !values.yes) {
+        if (!io.confirm) {
+          throw new CliError(
+            `Nothing was changed. Run it again with --yes to go back to release ${number} and remove ${removes.length === 1 ? "that" : "those"}.`,
+          );
+        }
+        if (!(await io.confirm(`Go back to release ${number} of ${values.tenant}'s access?`))) {
+          io.out("Nothing was changed.");
+          return;
+        }
+      }
       const back = await call(`${base}/releases/${release.id}/rollback`, {
         method: "POST",
         body: {},
@@ -267,6 +322,11 @@ export async function tenantAccess(
       for (const line of lines(back.body.summary)) io.out(line);
       return;
     }
+    // Whoever answers sees what it is they are answering.
+    if (action === "approve" || action === "decline") {
+      io.out(`Release ${number} of ${values.tenant}'s access: ${counts(release.summary)}.`);
+      for (const line of lines(release.summary)) io.out(line);
+    }
     const decided = await call(`${base}/releases/${release.id}/decision`, {
       method: "POST",
       body: { decision: action, ...(values.comment ? { comment: values.comment } : {}) },
@@ -277,7 +337,7 @@ export async function tenantAccess(
   }
 
   throw new CliError(
-    "Usage: volvel tenant plan | release | pull | releases | approve <n> | decline <n> | withdraw <n> | rollback <n>, with --tenant <slug>",
+    "Usage: volvel tenant plan | release | pull | releases | approve <n> | decline <n> | withdraw <n> | rollback <n> [--yes] | approval [on|off], with --tenant <slug>",
   );
 }
 
@@ -290,4 +350,5 @@ export const ACCESS_ACTIONS = [
   "decline",
   "withdraw",
   "rollback",
+  "approval",
 ];

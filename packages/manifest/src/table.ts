@@ -25,10 +25,25 @@ export interface TableColumn {
   references?: string;
   /** For a reference. Left out, `restrict`. */
   onDelete?: OnDelete;
-  /** For an enum or an enum_list: a value alone, or with its label and colour. */
+  /** For an enum or an enum_list: a value alone, or with its label and color. */
   values?: (string | EnumValue)[];
   renamedFrom?: string;
 }
+
+/**
+ * Type changes that cannot lose anything, by what the column is now. A text column also becomes
+ * an enum, when every row already holds one of the values (the rows say, not this list).
+ */
+export const COLUMN_WIDENINGS: Record<string, ColumnType[]> = {
+  integer: ["number", "text"],
+  number: ["text"],
+  boolean: ["text"],
+  uuid: ["text"],
+  date: ["text"],
+  timestamp: ["text"],
+  // An enum is text that is held to a list, so letting go of the list loses nothing.
+  enum: ["text"],
+};
 
 export const isEnumType = (type: string): type is "enum" | "enum_list" =>
   type === "enum" || type === "enum_list";
@@ -38,7 +53,7 @@ export function enumValues(values: readonly (string | EnumValue)[] | undefined):
   return (values ?? []).map((one) => (typeof one === "string" ? { value: one } : one));
 }
 
-/** The colour a value is drawn on, as `#rrggbb`, or nothing when it has none. */
+/** The color a value is drawn on, as `#rrggbb`, or nothing when it has none. */
 export function enumColor(color: string | undefined): string | undefined {
   if (!color) return undefined;
   return color in ENUM_COLORS ? ENUM_COLORS[color as keyof typeof ENUM_COLORS] : color;

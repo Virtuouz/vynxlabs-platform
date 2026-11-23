@@ -1,7 +1,7 @@
 /**
  * A number over time as one small line, with no axes: for under a figure,
  * where the shape matters and the values are read elsewhere. It takes the
- * colour of the text around it. To a screen reader it is a picture with
+ * color of the text around it. To a screen reader it is a picture with
  * `label` as its words, so the label says what the line shows: "Loans over
  * the last 12 weeks: from 18 to 31, lowest 12, highest 46".
  */

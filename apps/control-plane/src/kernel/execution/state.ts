@@ -57,6 +57,7 @@ export function stepState(step: {
 
 /** The same for a script run, in SQL, for a column such as `r.status`. */
 export const runStateSql = (status: string) =>
+  // british-ok: `cancelled` is the stored value, said as `canceled`.
   sql<RunState>`case when ${sql.ref(status)} = 'cancelled' then 'canceled' else ${sql.ref(status)}::text end`;
 
 /**

@@ -88,8 +88,13 @@ const Group = Type.Object({
   managedBy: Type.String({
     description: "`provider` for one an identity provider made by pushing it, `release` otherwise.",
   }),
+  signInValues: Type.Array(Type.String(), {
+    description:
+      "What a person's sign-in says that puts them in this group (`membership.sso.values`). Filled by the identity provider's sign-in, not by hand.",
+  }),
   createdAt: Time,
 });
+const SignInValues = Type.Array(Type.String({ minLength: 1, maxLength: 200 }), { maxItems: 50 });
 const toGroup = (row: {
   id: string;
   tenant_id: string;
@@ -97,6 +102,7 @@ const toGroup = (row: {
   name: string;
   description?: string;
   managed_by: string;
+  sso_values?: string[];
   created_at: Date;
 }) => ({
   id: row.id,
@@ -105,6 +111,7 @@ const toGroup = (row: {
   name: row.name,
   description: row.description ?? "",
   managedBy: row.managed_by,
+  signInValues: [...(row.sso_values ?? [])].sort(),
   createdAt: iso(row.created_at),
 });
 
@@ -131,7 +138,14 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Tenants the caller can see",
           description: "Every tenant for an operator. Otherwise the tenants the caller belongs to.",
           tags: ["tenancy"],
-          querystring: SearchPageQuery,
+          querystring: Type.Object({
+            ...SearchPageQuery.properties,
+            dataLocation: Type.Optional(
+              Type.String({
+                description: "Only the tenants that keep their tables in this database location.",
+              }),
+            ),
+          }),
           response: {
             200: pageOf(
               Type.Object({
@@ -178,6 +192,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           select = select.where((eb) =>
             eb.or([eb(eb.fn("lower", ["name"]), "like", term), eb("slug", "like", term)]),
           );
+        }
+        if (query.dataLocation !== undefined) {
+          select = select.where(sql<boolean>`data_location ->> 'ref' = ${query.dataLocation}`);
         }
         if (args.after) select = select.where("id", ">", args.after);
         const rows = await select
@@ -972,6 +989,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           body: Type.Object({
             name: Type.Optional(Name),
             description: Type.Optional(Type.String({ maxLength: ACCESS_DESCRIPTION_MAX })),
+            signInValues: Type.Optional(SignInValues),
           }),
           response: { 200: Group, 202: Waiting },
         },
@@ -985,9 +1003,19 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "This group is made by the identity provider, which names it. Rename it there.",
             );
           }
+          if (now.managedBy === "provider" && body.signInValues !== undefined) {
+            throw conflict(
+              "This group is made by the identity provider, which fills it. Change it there.",
+            );
+          }
           const description =
             body.description?.trim() ?? (now.resource.body.description as string | undefined);
-          const { description: _was, ...rest } = now.resource.body;
+          const { description: _was, membership: _kept, ...rest } = now.resource.body;
+          const values =
+            body.signInValues !== undefined
+              ? [...new Set(body.signInValues.map((one) => one.trim()).filter(Boolean))].sort()
+              : ((now.resource.body.membership as { sso?: { values?: string[] } } | undefined)?.sso
+                  ?.values ?? []);
           const released = await releaseOne(
             trx,
             audit,
@@ -1001,6 +1029,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ...rest,
                   title: body.name?.trim() ?? (now.resource.body.title as string),
                   ...(description ? { description } : {}),
+                  ...(values.length > 0 ? { membership: { sso: { values } } } : {}),
                 },
               },
             },

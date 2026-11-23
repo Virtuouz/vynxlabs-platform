@@ -814,7 +814,7 @@ export interface DataTableTable {
 
 /** What a column keeps beside its type. */
 export interface DataColumnOptions {
-  /** An enum's values, in order, each with its label and colour. */
+  /** An enum's values, in order, each with its label and color. */
   values?: { value: string; label?: string; color?: string }[];
   /** Values the column had and no longer offers. Rows may still hold them. */
   retired?: string[];

@@ -772,6 +772,7 @@ export async function releaseAccess(
   const problems = checkTenantResources(
     puts,
     request.scope === "full" ? await providerManaged(trx, tenantId) : known,
+    current,
   );
   if (problems.length > 0) {
     throw badRequest(
@@ -794,6 +795,22 @@ export async function releaseAccess(
     );
   }
   const { steps, unchanged } = plan(current, request.asks, request.scope === "full", byProvider);
+  if (request.scope === "partial" && steps.length === 0) {
+    // One change that changes nothing is not a release: none is recorded, and nothing waits.
+    await audit({
+      action: "access.unchanged",
+      targetType: "tenant",
+      targetId: tenantId,
+      tenantId,
+      details: { asks: request.asks.length },
+    });
+    return {
+      id: "",
+      number: 0,
+      status: "applied" as const,
+      summary: { created: 0, updated: 0, deleted: 0, unchanged, changes: [], warnings: [] },
+    };
+  }
   if (request.scope === "full") {
     const unsaid = steps
       .filter((step): step is Extract<Step, { op: "delete" }> => step.op === "delete")

@@ -186,6 +186,21 @@ export function fillText(
     : filled;
 }
 
+/**
+ * A confirmation's title. When several records are chosen and the author's title names a field of
+ * one of them, that part is left out, so the title says how many are chosen in its place.
+ */
+export function fillTitle(
+  title: string,
+  row: Row | undefined,
+  label: (column: string) => string,
+  count?: number,
+) {
+  const filled = fillText(title, row, label, count !== undefined);
+  if (count === undefined || filled === title) return filled;
+  return filled.replace(/\s*([?.!:]?)$/, ` (${count} chosen)$1`);
+}
+
 /** What asked fields are, as a form's schema: typed, with the ones that must be given listed. */
 export function askedSchema(ask: readonly AskedField[]) {
   const properties: Record<string, unknown> = {};
@@ -288,7 +303,13 @@ export function useActions(host: ActionsHost): {
 } {
   const toast = useSay();
   const [asking, setAsking] = useState<Asking>();
-  const [rows, setRows] = useState<{ widget: string; input: string; group: Row }>();
+  const [rows, setRows] = useState<{
+    widget: string;
+    input: string;
+    group: Row;
+    format?: unknown;
+    measured?: string[];
+  }>();
   const latest = useRef(host);
   latest.current = host;
   // Whether the address has been told of the question that is open: the address leaving it
@@ -361,7 +382,23 @@ export function useActions(host: ActionsHost): {
           // A clicked point gives its group; a number that isn't broken down (a stat) gives
           // none, and every row behind it is shown.
           const input = request.input;
-          if (input) setRows({ widget: request.widget.id, input, group: request.group ?? {} });
+          if (input) {
+            const visual = (
+              request.widget.data?.[input] as
+                | { source?: { visual?: { measures?: { column?: string }[] } } }
+                | undefined
+            )?.source?.visual;
+            const measured = (visual?.measures ?? []).flatMap((one) =>
+              one.column ? [one.column] : [],
+            );
+            setRows({
+              widget: request.widget.id,
+              input,
+              group: request.group ?? {},
+              format: request.widget.config?.format,
+              measured,
+            });
+          }
         }
       }
       const closing = response.message ?? action.done;
@@ -370,7 +407,7 @@ export function useActions(host: ActionsHost): {
       for (const one of response.notStarted ?? [])
         say(`Saved. The ${one.do} ${one.path} could not be started.`, "danger");
       now.refresh();
-      // A script or a workflow is started and not waited for: what it changes is read as it lands.
+      // A script or a flow is started and not waited for: what it changes is read as it lands.
       if (response.started) {
         for (const wait of AFTER_A_START)
           later.current.push(setTimeout(() => latest.current.refresh(), wait));
@@ -596,7 +633,12 @@ function Confirmation({
     <Dialog
       open={open}
       onClose={() => !busy && onCancel()}
-      title={fillText(words.title, asking.request.row, label, several)}
+      title={fillTitle(
+        words.title,
+        asking.request.row,
+        label,
+        several ? asking.request.records?.length : undefined,
+      )}
       {...(text ? { description: text } : {})}
     >
       {failure && Object.keys(fields).length === 0 ? (
@@ -660,7 +702,7 @@ function RowsBehind({
   client: PageDataClient;
   registry: ViewRegistry;
   filterValues: FilterValues;
-  held: { widget: string; input: string; group: Row };
+  held: { widget: string; input: string; group: Row; format?: unknown; measured?: string[] };
   open: boolean;
   onClose(): void;
 }) {
@@ -717,7 +759,7 @@ function RowsBehind({
         <Skeleton lines={4} label="Loading the rows" />
       ) : (
         <View
-          config={{ ...table.definition.defaults }}
+          config={{ ...table.definition.defaults, ...behindColumns(wire, held) }}
           data={{ rows: toWidgetData(wire) }}
           size={{ w: 12, h: 8, narrow: false }}
           emit={() => undefined}
@@ -726,6 +768,23 @@ function RowsBehind({
       )}
     </SideSheet>
   );
+}
+
+/**
+ * The columns of the rows behind a number. The column the number was made of is written as the
+ * widget writes the number (money kept in cents shows as dollars here too); the others as they are.
+ */
+function behindColumns(
+  wire: WireData,
+  held: { format?: unknown; measured?: string[] },
+): { columns?: { column: string; format?: unknown }[] } {
+  if (!held.format || !held.measured?.length || wire.shape !== "rows") return {};
+  return {
+    columns: wire.columns.map((one) => ({
+      column: one.name,
+      ...(held.measured?.includes(one.name) ? { format: held.format } : {}),
+    })),
+  };
 }
 
 /** The record an event gave, from what it carries. */

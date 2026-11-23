@@ -21,6 +21,8 @@ export function SecretField({
   required = false,
   disabled = false,
   autoComplete = "new-password",
+  removed = false,
+  onRemove,
 }: {
   label: string;
   name: string;
@@ -35,6 +37,10 @@ export function SecretField({
   required?: boolean;
   disabled?: boolean;
   autoComplete?: string;
+  /** The stored one is to be removed when the form is saved. */
+  removed?: boolean;
+  /** Offers Remove beside Replace, and Keep it once chosen. Leave out where a credential cannot be removed. */
+  onRemove?: (removed: boolean) => void;
 }) {
   const [replacing, setReplacing] = useState(false);
   // Saved: the stored value now is the one just given, so the stored line shows again and the
@@ -43,6 +49,21 @@ export function SecretField({
   if (seen !== setAt) {
     setSeen(setAt);
     setReplacing(false);
+  }
+  if (stored && removed) {
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="text-body-sm font-medium text-ink">{label}</span>
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-control border border-line bg-sunken px-3 py-2">
+          <span className="text-body-sm">
+            The stored {label.toLowerCase()} will be removed when you save.
+          </span>
+          <Button size="small" onClick={() => onRemove?.(false)}>
+            Keep the stored one
+          </Button>
+        </div>
+      </div>
+    );
   }
   if (stored && !replacing) {
     return (
@@ -63,13 +84,25 @@ export function SecretField({
             </span>
           </span>
           {disabled ? null : (
-            <Button
-              size="small"
-              aria-label={`Replace the ${label.toLowerCase()}`}
-              onClick={() => setReplacing(true)}
-            >
-              Replace
-            </Button>
+            <span className="flex flex-wrap gap-2">
+              <Button
+                size="small"
+                aria-label={`Replace the ${label.toLowerCase()}`}
+                onClick={() => setReplacing(true)}
+              >
+                Replace
+              </Button>
+              {onRemove ? (
+                <Button
+                  size="small"
+                  variant="danger"
+                  aria-label={`Remove the ${label.toLowerCase()}`}
+                  onClick={() => onRemove(true)}
+                >
+                  Remove
+                </Button>
+              ) : null}
+            </span>
           )}
         </div>
         <span className="text-body-sm text-ink-muted">Stored encrypted. It is never shown.</span>

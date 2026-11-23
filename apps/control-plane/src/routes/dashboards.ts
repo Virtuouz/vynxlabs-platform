@@ -7,8 +7,7 @@ import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../
 import { access, type RequestContext, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { requireStanding } from "../kernel/pages/standing.js";
-import { workspaceTables } from "../kernel/pages.js";
-import { listOf } from "../pagination.js";
+import { unknownTables, workspaceTables } from "../kernel/pages.js";
 import { AnyObject, Id, iso, NoContent, NullableString, Time, WorkspaceParams } from "./shared.js";
 
 /** The most dashboards one member may keep in one workspace. */
@@ -17,6 +16,9 @@ export const MAX_DASHBOARDS = 20;
 const Summary = Type.Object({
   id: Id,
   title: Type.String(),
+  description: Type.Optional(
+    Type.String({ description: "What the dashboard is for, from its body." }),
+  ),
   mine: Type.Boolean({ description: "False for a dashboard another member shared." }),
   owner: Type.String({ description: "Whose it is: their name, or their email." }),
   shared: Type.Boolean({
@@ -42,6 +44,13 @@ const Summary = Type.Object({
 });
 const Dashboard = Type.Object({
   ...Summary.properties,
+  problems: Type.Optional(
+    Type.Array(Type.Object({ path: Type.String(), message: Type.String() }), {
+      description:
+        "What a member's dashboard names that the workspace does not have, such as a table that is " +
+        "not there. It is kept as it is, and drawn as waiting.",
+    }),
+  ),
   body: Type.Unsafe<Record<string, unknown>>({
     ...AnyObject,
     description: "The dashboard: its filters and its widgets. See the `dashboard` schema.",
@@ -100,11 +109,17 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .filter((one) => one.dashboard_id === id)
           .map((one) => ({ id: one.id, name: one.name }));
     };
+    /** What the dashboard says it is for, when it says. */
+    const describing = (body: unknown) => {
+      const description = (body as { description?: unknown } | null)?.description;
+      return typeof description === "string" && description !== "" ? { description } : {};
+    };
     const summary = (row: Row, me: string, sharedWith: { id: string; name: string }[] = []) => ({
       kind: "member" as const,
       path: null,
       id: row.id,
       title: row.title,
+      ...describing(row.body),
       mine: row.member_id === me,
       owner: row.owner_name || row.owner_email,
       shared: row.shared,
@@ -125,9 +140,10 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       )`;
     /** What a member's dashboard holds, as a dashboard of now. */
     const bodyOf = (row: { body: unknown }): DashboardBody => row.body as unknown as DashboardBody;
-    const whole = async (_workspace: WorkspaceRef, row: Row, me: string) => ({
+    const whole = async (workspace: WorkspaceRef, row: Row, me: string) => ({
       ...summary(row, me, (await sharesOf([row.id]))(row.id)),
       body: bodyOf(row) as unknown as Record<string, unknown>,
+      problems: await unknownTables(kernel, workspace, bodyOf(row)),
     });
     /** The dashboards the workspace keeps as resources. Whoever may see dashboards sees them. */
     const kept = (workspace: WorkspaceRef) =>
@@ -143,6 +159,7 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       ownership: row.ownership === "code" ? ("code" as const) : ("ui" as const),
       id: row.id,
       title: row.title || (row.body as { title?: string }).title || row.path,
+      ...describing(row.body),
       mine: false,
       owner: "The workspace",
       shared: true,
@@ -224,7 +241,15 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "Each dashboard the caller may open, with its title.",
           tags: ["dashboards"],
           params: WorkspaceParams,
-          response: { 200: listOf(Summary) },
+          response: {
+            200: Type.Object({
+              items: Type.Array(Summary),
+              mayCreate: Type.Boolean({
+                description:
+                  "Whether the caller may make a dashboard here: whether they hold `dashboard:write`.",
+              }),
+            }),
+          },
         },
       },
       async ({ ctx }) => {
@@ -243,6 +268,10 @@ export function dashboardRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             ...resources.map(keptSummary),
             ...found.map((row) => summary(row, me, shares(row.id))),
           ],
+          mayCreate: await ctx.allowed("dashboard:write", {
+            tenantId: (ctx.workspace as WorkspaceRef).tenantId,
+            workspaceId: (ctx.workspace as WorkspaceRef).id,
+          }),
         };
       },
     );

@@ -1,5 +1,5 @@
 import { Button } from "@volvel/ui";
-import { api } from "../api.ts";
+import { api, type Me, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { ListCollection } from "../kit/ListCollection.tsx";
 import { KeyValues } from "../kit/layout.tsx";
@@ -20,6 +20,11 @@ interface MemberRow {
 }
 
 function ToggleMember({ row, onDone }: { row: MemberRow; onDone: () => void }) {
+  const me = useLoad<Me>("/me");
+  // The server refuses it; the row says so in place of a button that can only fail.
+  if (!row.disabled && me.data?.principal.id === row.id) {
+    return <span className="text-meta text-ink-subtle">You cannot disable your own account.</span>;
+  }
   return (
     <Button
       size="small"
@@ -139,6 +144,7 @@ export function InstanceMembers() {
 }
 
 export function Operators() {
+  const me = useLoad<Me>("/me");
   return (
     <ListCollection<{
       id: string;
@@ -188,13 +194,21 @@ export function Operators() {
         submit: (values) =>
           api.post("/bindings", { memberId: values.memberId, roleId: OPERATOR_ROLE }),
       }}
-      rowActions={(row, reload) => (
-        <RemoveButton
-          confirm={`Remove ${row.memberEmail} as an operator?`}
-          run={() => api.delete(`/bindings/${row.id}`)}
-          onDone={reload}
-        />
-      )}
+      rowActions={(row, reload) => {
+        const yourself = me.data?.principal.email === row.memberEmail;
+        return (
+          <RemoveButton
+            {...(yourself ? { label: "Remove yourself" } : {})}
+            confirm={
+              yourself
+                ? "Remove yourself as an operator? You lose the Instance area at once, and another operator has to add you back."
+                : `Remove ${row.memberEmail} as an operator?`
+            }
+            run={() => api.delete(`/bindings/${row.id}`)}
+            onDone={reload}
+          />
+        );
+      }}
     />
   );
 }

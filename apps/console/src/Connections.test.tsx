@@ -140,7 +140,7 @@ test("the list says what each connection's last Test found, and what needs a mem
   expect(screen.getByText("Reached")).toBeTruthy();
   expect(screen.getByText(/^87 ms · tested/)).toBeTruthy();
   expect(screen.getByText("Needs reconnecting")).toBeTruthy();
-  expect(screen.getByText("Not bound")).toBeTruthy();
+  expect(screen.getByText("Not set up here")).toBeTruthy();
   // Reconnect is the OAuth connection's first action, and goes to its provider.
   fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
   await waitFor(() =>
@@ -186,7 +186,7 @@ test("a new connection is declared in a draft, bound, and tested; a refusal says
     credential: "wrong",
   });
   expect(
-    await within(sheet).findByText("HTTP 401: https://crm.example answered 401."),
+    await within(sheet).findByText("Failed (HTTP 401): https://crm.example answered 401."),
   ).toBeTruthy();
   expect(calls.find((call) => call.url.endsWith("/connection-tests"))?.body).toEqual({
     path: "crm",
@@ -308,6 +308,21 @@ test("production lists what the next promotion brings, sets it up as its own kin
   expect(put("/drafts/mail")).toBeUndefined();
   expect(put("/connection-bindings/mail")?.body).toMatchObject({
     config: { host: "smtp.acme.test", from: "ops@acme.test" },
+  });
+});
+
+test("a stored credential is removed from the connection's sheet: Save sends credential null (CFG-MP5)", async () => {
+  show(<Connections root={root} />);
+  const shop = (await screen.findByText("shop")).closest("tr") as HTMLElement;
+  fireEvent.click(within(shop).getByRole("button", { name: "Change" }));
+  const sheet = await screen.findByRole("dialog");
+  fireEvent.click(within(sheet).getByRole("button", { name: /^Remove the token or key/ }));
+  expect(within(sheet).getByText(/will be removed when you save/)).toBeTruthy();
+  fireEvent.click(within(sheet).getByRole("button", { name: /^Save/ }));
+  await waitFor(() => expect(put("/connection-bindings/shop")).toBeTruthy());
+  expect(put("/connection-bindings/shop")?.body).toEqual({
+    config: { baseUrl: "https://shop.example" },
+    credential: null,
   });
 });
 

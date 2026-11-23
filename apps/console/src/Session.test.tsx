@@ -344,3 +344,31 @@ test("WLK-05: the session sheet cannot be set aside: no Close button, Esc keeps 
   const tabbable = within(sheet).getAllByRole("button");
   expect(tabbable.length).toBeGreaterThan(0);
 });
+
+test("ACC-MP17: inside a tenant the account menu opens what the person may do there, without reading access", async () => {
+  history.replaceState(null, "", "/t/t1/overview");
+  routes["GET /api/v1/tenants/t1/access/member/m1"] = () => [
+    200,
+    {
+      principal: {
+        type: "member",
+        id: "m1",
+        name: "Alice",
+        email: "alice@acme.example",
+        suspended: false,
+        groups: [],
+      },
+      sources: [],
+      permissions: [],
+    },
+  ];
+  show(<App />);
+  fireEvent.click(await screen.findByRole("button", { name: "Your account" }));
+  fireEvent.click(await screen.findByRole("menuitem", { name: "What I may do here" }));
+  await screen.findByRole("heading", { name: "What I may do here" });
+  expect(location.pathname).toBe("/t/t1/members/m1");
+  // It is about oneself: the list of members is for those who may read it, so it is not offered.
+  expect(screen.queryByRole("link", { name: "All members" })).toBeNull();
+  // Outside a tenant there is nothing to ask.
+  history.replaceState(null, "", "/");
+});

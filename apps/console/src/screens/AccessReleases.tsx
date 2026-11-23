@@ -7,6 +7,7 @@ import { count } from "../kit/format.ts";
 import { useWide } from "../kit/layout.tsx";
 import { StatePill } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
+import { useUrlParam } from "../router.tsx";
 import { type Framed, toolbarOf } from "./Members.tsx";
 
 interface Change {
@@ -115,6 +116,9 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
   const releases = useLoad<{ items: AccessRelease[] }>(`${base}/access/releases`);
   const access = useLoad<{ approval: boolean; mayChange?: boolean }>(`${base}/access`);
   const [problem, setProblem] = useState<string>();
+  // One release, with all its changes and what it warns of, has an address: `?release=<id>`.
+  const [openId, setOpenId] = useUrlParam<string>("release", undefined, { push: true });
+  const shown = useRef<string | undefined>(undefined);
   const me = useLoad<Me>("/me");
   // From a tablet up the answers have a column of their own. On a phone they sit under the text,
   // where nothing is clipped, and the column is not drawn.
@@ -228,6 +232,21 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
       </Button>
     ) : null;
   };
+  useEffect(() => {
+    if (!openId) {
+      shown.current = undefined;
+      return;
+    }
+    if (releases.data === undefined || shown.current === openId) return;
+    shown.current = openId;
+    const release = releases.data.items.find((one) => one.id === openId);
+    if (!release) {
+      setProblem("There is no release with that address. It may belong to another tenant.");
+      setOpenId(undefined);
+      return;
+    }
+    void showAll(release).then(() => setOpenId(undefined));
+  });
   /** Every change of a release, whatever its status: the list shows three. */
   const showAll = (release: AccessRelease) =>
     ask.confirm({
@@ -259,7 +278,7 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
         <span className="flex flex-col gap-2">
           <Changes
             release={release}
-            intro={`The tenant's groups, service accounts, roles and what they are given become what they were after release ${release.number}. Who is in each group is not changed, and groups an identity provider made are left alone.${approval ? " It waits for a second person." : ""} Release ${release.number} itself did:`}
+            intro={`The tenant's groups, service accounts, roles and what they are given become what they were after release ${release.number}. Who is in each group is not changed, and groups an identity provider made are left alone. A service account that is gone is made again with no API keys: keys belong to the account, not to a release.${approval ? " It waits for a second person." : ""} Release ${release.number} itself did:`}
           />
           {removing ? (
             <span>
@@ -374,7 +393,19 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
         onRetry={releases.reload}
         rowKey={(row) => row.id}
         columns={[
-          { header: "#", cell: (row) => row.number },
+          {
+            header: "#",
+            cell: (row) => (
+              <Button
+                size="small"
+                variant="quiet"
+                aria-label={`Open release ${row.number}`}
+                onClick={() => setOpenId(row.id)}
+              >
+                {row.number}
+              </Button>
+            ),
+          },
           {
             header: "What",
             cell: (row) => (
@@ -391,7 +422,7 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
                 ))}
                 {row.summary.changes.length > 3 ? (
                   <span>
-                    <Button size="small" onClick={() => showAll(row)}>
+                    <Button size="small" onClick={() => setOpenId(row.id)}>
                       All {row.summary.changes.length} changes
                     </Button>
                   </span>

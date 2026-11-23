@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-// The Approvals widget's drawer writes the widget: which workflows and whose, what each shows,
+// The Approvals widget's drawer writes the widget: which flows and whose, what each shows,
 // and how deciding goes. And what "Add to page" offers for it.
 
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -108,9 +108,9 @@ describe("a new Approvals widget", () => {
 });
 
 describe("Data: which requests", () => {
-  test("the workflows are chips with their real titles, all on when none is chosen", () => {
+  test("the flows are chips with their real titles, all on when none is chosen", () => {
     mount(ApprovalsDataSection);
-    const group = within(screen.getByRole("group", { name: "Workflows" }));
+    const group = within(screen.getByRole("group", { name: "Flows" }));
     expect(group.getByRole("button", { name: /^Stock orders/ }).getAttribute("aria-pressed")).toBe(
       "true",
     );
@@ -120,7 +120,7 @@ describe("Data: which requests", () => {
     expect(screen.getByText(/including those made later/)).toBeTruthy();
   });
 
-  test("switching one off chooses the others; all back on is every workflow again; never none", () => {
+  test("switching one off chooses the others; all back on is every flow again; never none", () => {
     const seen = mount(ApprovalsDataSection);
     fireEvent.click(screen.getByRole("button", { name: /^Time off/ }));
     expect(source(seen.widget).flows).toEqual(["stock/reorder"]);
@@ -139,25 +139,25 @@ describe("Data: which requests", () => {
     expect(source(seen.widget).whose).toBe("mine");
   });
 
-  test("a workflow the widget names that has gone is shown, to be taken off", () => {
+  test("a flow the widget names that has gone is shown, to be taken off", () => {
     const start = fresh();
     start.data = { requests: { source: { approvals: { flows: ["stock/reorder", "gone/flow"] } } } };
     mount(ApprovalsDataSection, start);
     expect(screen.getByRole("button", { name: /^Flow \(not found\)/ })).toBeTruthy();
   });
 
-  test("says who may decide is set on the workflow's step, with a way to it", () => {
+  test("says who may decide is set on the flow's step, with a way to it", () => {
     const start = fresh();
     start.data = { requests: { source: { approvals: { flows: ["stock/reorder"] } } } };
     mount(ApprovalsDataSection, start);
-    expect(screen.getByText(/Who may decide is set on the workflow's step/)).toBeTruthy();
-    const link = screen.getByRole("link", { name: /Open the workflow/ });
+    expect(screen.getByText(/Who may decide is set on the flow's step/)).toBeTruthy();
+    const link = screen.getByRole("link", { name: /Open the flow/ });
     expect(link.getAttribute("href")).toBe("/t/acme/w/dev/flows/edit/stock/reorder");
   });
 });
 
 describe("Display: what each shows", () => {
-  test("the names the workflows' steps give are the list: the first four on, the rest off", () => {
+  test("the names the flows' steps give are the list: the first four on, the rest off", () => {
     expect(offeredNames(flows, undefined)).toEqual([
       "clinic",
       "item",
@@ -168,7 +168,7 @@ describe("Display: what each shows", () => {
       "person",
       "from",
     ]);
-    // Only the workflows asked of.
+    // Only the flows asked of.
     expect(offeredNames(flows, ["hr/time-off"])).toEqual(["person", "from", "total"]);
     mount(ApprovalsFieldsSection);
     expect(screen.getByText("4 of 8 shown")).toBeTruthy();
@@ -191,7 +191,7 @@ describe("Display: what each shows", () => {
     start.config = { fields: [{ name: "clinic" }] };
     const seen = mount(ApprovalsFieldsSection, start);
     fireEvent.click(
-      within(screen.getByRole("group", { name: "More details these workflows give" })).getByRole(
+      within(screen.getByRole("group", { name: "More details these flows give" })).getByRole(
         "button",
         { name: "On hand" },
       ),
@@ -221,12 +221,12 @@ describe("Actions: deciding", () => {
     expect(seen.widget.config?.confirm).toBe(true);
     fireEvent.click(screen.getByRole("switch", { name: /Go to the next one/ }));
     expect(seen.widget.config?.advance).toBe(false);
-    expect(screen.getByText("Who may decide is set on the workflow's step.")).toBeTruthy();
+    expect(screen.getByText("Who may decide is set on the flow's step.")).toBeTruthy();
   });
 });
 
 describe("Add to page", () => {
-  test("offers Approvals when a workflow has an approval step and the page has none", () => {
+  test("offers Approvals when a flow has an approval step and the page has none", () => {
     const offer = approvalsSuggestion(
       [{ path: "stock/reorder", title: "Stock orders" }],
       [{ type: "core/table" }],
@@ -244,10 +244,10 @@ describe("Add to page", () => {
         ],
         [],
       )?.hint,
-    ).toBe("2 workflows ask for a decision");
+    ).toBe("2 flows ask for a decision");
   });
 
-  test("does not, when no workflow asks, or the page already has one", () => {
+  test("does not, when no flow asks, or the page already has one", () => {
     expect(approvalsSuggestion([], [])).toBeUndefined();
     expect(
       approvalsSuggestion([{ path: "a", title: null }], [{ type: "core/approvals" }]),

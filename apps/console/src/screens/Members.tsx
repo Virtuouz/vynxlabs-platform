@@ -1,4 +1,4 @@
-import { Button, TextField } from "@volvel/ui";
+import { Button, SelectField, TextField } from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -72,7 +72,7 @@ export function SectionTabs({
             key={tab.slug}
             to={`/t/${tenantId}/${tab.slug}`}
             current={on}
-            className={`shrink-0 border-b-2 px-2.5 py-2 text-body-sm sm:px-3 ${
+            className={`shrink-0 border-b-2 px-2 py-2 text-body-sm sm:px-3 ${
               on
                 ? "border-action font-medium text-ink"
                 : "border-transparent text-ink-muted hover:text-ink"
@@ -397,41 +397,156 @@ export function MemberList({ base, framed }: { base: string; framed?: Framed }) 
               hint: "Only for a new account. At least 12 characters. They can change it on their Account screen after signing in.",
             },
             {
-              name: "workspaceId",
-              label: "Where they work",
-              options: [
-                { value: "", label: "The whole tenant" },
-                ...(workspaces.data?.items ?? []).map((w) => ({ value: w.id, label: w.name })),
-              ],
-            },
-            {
-              name: "roleId",
-              label: "Role",
-              options: [
-                { value: "", label: "No access yet" },
-                ...(roles.data?.items ?? [])
-                  .filter((role) => !role.workspaceId)
-                  .map((role) => ({ value: role.id, label: role.name })),
-              ],
-              hint: "Given with the membership, in the same change.",
+              name: "grants",
+              label: "Roles",
+              render: ({ value, onChange, error }) => (
+                <RolePairs
+                  value={value || undefined}
+                  onChange={onChange}
+                  error={error}
+                  roles={(roles.data?.items ?? []).filter((role) => !role.workspaceId)}
+                  workspaces={workspaces.data?.items ?? []}
+                />
+              ),
             },
           ],
-          submit: ({ email, name, password, roleId, workspaceId }) =>
-            api.post(`${base}/members`, {
+          submit: ({ email, name, password, grants }) => {
+            const given = readPairs(grants);
+            return api.post(`${base}/members`, {
               email,
               ...(name ? { name } : {}),
               ...(password ? { password } : {}),
-              ...(roleId
-                ? { bindings: [{ roleId, ...(workspaceId ? { workspaceId } : {}) }] }
-                : {}),
-            }),
-          done: (_made, values) =>
-            values.roleId
-              ? `${values.email} is a member, with ${roles.data?.items.find((one) => one.id === values.roleId)?.name ?? "their role"}.`
-              : `${values.email} is a member. They hold no role yet.`,
+              ...(given.length > 0 ? { bindings: given } : {}),
+            });
+          },
+          done: (_made, values) => {
+            const names = readPairs(values.grants).map(
+              (one) => roles.data?.items.find((role) => role.id === one.roleId)?.name ?? "a role",
+            );
+            return names.length > 0
+              ? `${values.email} is a member, with ${names.join(", ")}.`
+              : `${values.email} is a member. They hold no role yet.`;
+          },
         }}
       />
     </>
+  );
+}
+
+const MOST_ROLES = 20;
+interface Pair {
+  roleId: string;
+  workspaceId?: string;
+}
+
+/** What the roles field holds, kept as text by the form: the pairs with a role chosen. */
+function readPairs(value: string | undefined): Pair[] {
+  try {
+    const found = JSON.parse(value ?? "[]") as Pair[];
+    return found
+      .filter((one) => one.roleId)
+      .map((one) => ({
+        roleId: one.roleId,
+        ...(one.workspaceId ? { workspaceId: one.workspaceId } : {}),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Roles to give with the membership, each in the whole tenant or in one workspace. Where a role
+ * applies is asked only once there is a role, so a workspace is never chosen without one.
+ */
+function RolePairs({
+  value,
+  onChange,
+  error,
+  roles,
+  workspaces,
+}: {
+  value: string | undefined;
+  onChange: (value: string) => void;
+  error: string | undefined;
+  roles: Role[];
+  workspaces: WorkspaceRef[];
+}) {
+  const rows: Pair[] = (() => {
+    try {
+      const found = JSON.parse(value ?? "[]") as Pair[];
+      return found.length > 0 ? found : [{ roleId: "" }];
+    } catch {
+      return [{ roleId: "" }];
+    }
+  })();
+  const set = (next: Pair[]) => onChange(JSON.stringify(next));
+  return (
+    <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+      <legend className="mb-1 font-medium text-ink">Roles</legend>
+      {rows.map((row, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a row has no identity but its place
+        <div key={index} className="flex flex-wrap items-end gap-2">
+          <div className="min-w-40 flex-1">
+            <SelectField
+              name={`role-${index}`}
+              label={index === 0 ? "Role" : `Role ${index + 1}`}
+              options={[
+                { value: "", label: index === 0 ? "No access yet" : "Choose a role" },
+                ...roles.map((role) => ({ value: role.id, label: role.name })),
+              ]}
+              value={row.roleId}
+              {...(index === 0 ? { hint: "Given with the membership, in the same change." } : {})}
+              onChange={(roleId) =>
+                set(
+                  rows.map((one, at) =>
+                    at === index ? (roleId ? { ...one, roleId } : { roleId: "" }) : one,
+                  ),
+                )
+              }
+            />
+          </div>
+          {row.roleId ? (
+            <div className="min-w-40 flex-1">
+              <SelectField
+                name={`where-${index}`}
+                label="Where they work"
+                options={[
+                  { value: "", label: "The whole tenant" },
+                  ...workspaces.map((w) => ({ value: w.id, label: w.name })),
+                ]}
+                value={row.workspaceId ?? ""}
+                onChange={(workspaceId) =>
+                  set(
+                    rows.map((one, at) =>
+                      at === index
+                        ? { roleId: one.roleId, ...(workspaceId ? { workspaceId } : {}) }
+                        : one,
+                    ),
+                  )
+                }
+              />
+            </div>
+          ) : null}
+          {rows.length > 1 ? (
+            <Button
+              size="small"
+              aria-label={`Remove role ${index + 1}`}
+              onClick={() => set(rows.filter((_, at) => at !== index))}
+            >
+              Remove
+            </Button>
+          ) : null}
+        </div>
+      ))}
+      {error ? <p className="m-0 text-danger text-meta">{error}</p> : null}
+      {rows.length < MOST_ROLES && rows.at(-1)?.roleId ? (
+        <div>
+          <Button size="small" onClick={() => set([...rows, { roleId: "" }])}>
+            Add another role
+          </Button>
+        </div>
+      ) : null}
+    </fieldset>
   );
 }
 

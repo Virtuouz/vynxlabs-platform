@@ -2,7 +2,7 @@
  * "Shown at the end of the row on hover, and in the detail sheet" (board 13): the row actions of a
  * table or list are also the toolbar of the sheet its click opens. The sheet holds them as its
  * Record detail's own actions, written for the record the sheet is open on, so they run, are
- * greyed with a reason and ask to confirm there as they do on the row. One writer keeps the two in
+ * grayed with a reason and ask to confirm there as they do on the row. One writer keeps the two in
  * step: whatever changes a table's row actions changes the sheet's, and nothing is written twice
  * (an Action group already on the sheet that holds an action keeps it; the detail does not).
  */

@@ -176,8 +176,10 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.instance("instance:write") },
         schema: {
-          summary: "Register a dedicated database, or change its address",
+          summary: "Register a dedicated database, change its address, or change its description",
           description:
+            "Without `connectionString`, only the description of a database already registered is " +
+            "changed, and nothing is connected to. " +
             "The platform connects first, and prepares the database: a catalog of custom " +
             "tables and a restricted sign-in for row requests. The user given must own the " +
             "database and be allowed to create roles. The address is stored encrypted. Pointing " +
@@ -186,28 +188,97 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           tags: ["instance"],
           params: Params,
           body: Type.Object({
-            connectionString: Type.String({
-              minLength: 1,
-              maxLength: 2000,
-              description: "postgres://user:password@host:5432/database",
-            }),
+            connectionString: Type.Optional(
+              Type.String({
+                minLength: 1,
+                maxLength: 2000,
+                description:
+                  "postgres://user:password@host:5432/database. Needed to register a name; left out, the address stays and only the description changes.",
+              }),
+            ),
             description: Type.Optional(Type.String({ maxLength: 500 })),
           }),
           response: { 204: NoContent },
         },
       },
       async ({ ctx, params, body }, reply) => {
+        if (body.connectionString === undefined) {
+          const known = await db
+            .selectFrom("database_location")
+            .select("name")
+            .where("name", "=", params.name)
+            .executeTakeFirst();
+          if (!known) {
+            throw badRequest(
+              `"${params.name}" is not registered yet: give its connection string, postgres://user:password@host/database.`,
+            );
+          }
+          if (body.description === undefined) {
+            throw badRequest("Send a description, a connection string, or both.");
+          }
+          const description = body.description;
+          await ctx.mutate(async (trx, audit) => {
+            await trx
+              .updateTable("database_location")
+              .set({ description, updated_at: new Date() })
+              .where("name", "=", params.name)
+              .execute();
+            await audit({
+              action: "database_location.described",
+              targetType: "database_location",
+              targetId: null,
+              details: { name: params.name, description },
+            });
+          });
+          return reply.code(204).send(null);
+        }
+        const connectionString = body.connectionString;
         let address: ReturnType<typeof shown>;
         try {
-          if (!/^postgres(ql)?:$/.test(new URL(body.connectionString).protocol)) throw new Error();
-          address = shown(body.connectionString);
+          if (!/^postgres(ql)?:$/.test(new URL(connectionString).protocol)) throw new Error();
+          address = shown(connectionString);
         } catch {
           throw badRequest(
             "The connection string must look like postgres://user:password@host/database.",
           );
         }
+        // The platform's own database is not a place for tables of their own, and one database
+        // under two names would give its tenants two shares of one set of connections.
+        const identity = await kernel.data.identify(connectionString).catch(() => null);
+        if (identity !== null) {
+          const own = await sql<{ id: string }>`
+            select (select system_identifier::text from pg_control_system()) || '/' || current_database() as id
+          `.execute(kernel.db);
+          if (own.rows[0]?.id === identity) {
+            throw badRequest(
+              "That is this instance's own database, the platform's own database. Register a different database for tenants' tables.",
+            );
+          }
+          const others = await db
+            .selectFrom("database_location")
+            .select(["name", "connection_encrypted"])
+            .where("name", "!=", params.name)
+            .execute();
+          for (const other of others) {
+            const reached = await Promise.resolve()
+              .then(() =>
+                kernel.data.identify(
+                  kernel.vault.openForInstance(
+                    `database-location:${other.name}`,
+                    other.connection_encrypted,
+                  ),
+                ),
+              )
+              .catch(() => null);
+            if (reached === identity) {
+              throw badRequest(
+                `That is the database "${other.name}" already reaches. Change "${other.name}" instead, or use another database.`,
+              );
+            }
+          }
+        }
         // Prove it works, and prepare it, before any tenant is pointed at it.
-        const store = await kernel.data.connect(body.connectionString).catch((error: Error) => {
+        const store = await kernel.data.connect(connectionString).catch((error: Error) => {
           throw badRequest(`That database could not be prepared. ${error.message}`);
         });
         try {
@@ -216,7 +287,7 @@ export function locationRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           await store.close();
         }
         await ctx.mutate(async (trx, audit) => {
-          const sealed = kernel.data.seal(params.name, body.connectionString);
+          const sealed = kernel.data.seal(params.name, connectionString);
           await trx
             .insertInto("database_location")
             .values({

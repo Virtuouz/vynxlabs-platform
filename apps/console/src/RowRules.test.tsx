@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
-import { type Policy, policyText, RowRulesEditor, ruleText } from "./screens/RowRules.tsx";
+import { type Policy, policyText, RowRulesEditor, ruleText, SeeItAs } from "./screens/RowRules.tsx";
+import { show } from "./testing.tsx";
 
 afterEach(cleanup);
 
@@ -96,3 +97,53 @@ test("an owner column may be text or uuid, and an existing policy is shown as it
   fireEvent.click(screen.getByRole("button", { name: "Save who sees rows" }));
   await waitFor(() => expect(onSave).toHaveBeenCalledWith({ type: "owner", column: "team" }));
 });
+
+test("See it as finds an end user past the first page by searching, and shows each value as the grid does (TAB-40)", async () => {
+  const asked: string[] = [];
+  vi.stubGlobal("fetch", async (address: string) => {
+    asked.push(address);
+    const url = new URL(address, "http://x");
+    if (url.pathname === "/api/v1/tenants/t1/end-users") {
+      const search = url.searchParams.get("search");
+      const items = search
+        ? [{ id: "u201", email: "ada201@x.test", name: "Ada", groups: [] }]
+        : [{ id: "u1", email: "one@x.test", name: "One", groups: [] }];
+      return new Response(JSON.stringify({ items, nextCursor: search ? null : "c1" }));
+    }
+    if (url.pathname === "/api/v1/tenants/t1/workspaces/w1/rows/orders") {
+      return new Response(
+        JSON.stringify({
+          items: [{ id: "r1", note: "Paid", extra: { a: 1 }, paid: true }],
+          nextCursor: null,
+        }),
+      );
+    }
+    return new Response(JSON.stringify({ items: [] }));
+  });
+  show(
+    <SeeItAs
+      root="/tenants/t1/workspaces/w1"
+      table="orders"
+      usersPath="/tenants/t1/end-users"
+      columns={[
+        { name: "note", type: "text" },
+        { name: "extra", type: "json" },
+        { name: "paid", type: "boolean" },
+      ]}
+    />,
+  );
+  const box = await screen.findByRole("combobox", { name: "See it as" });
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  await screen.findByRole("option", { name: /one@x.test/ });
+  fireEvent.input(box, { target: { value: "ada201" } });
+  fireEvent.click(await screen.findByRole("option", { name: /ada201@x.test/ }));
+  await screen.findByText('{"a":1}');
+  expect(screen.queryByText("[object Object]")).toBeNull();
+  expect(screen.getByText("Yes")).toBeTruthy();
+  expect(asked.some((one) => one.includes("end-users") && one.includes("search=ada201"))).toBe(
+    true,
+  );
+  expect(asked.some((one) => one.includes("as=u201"))).toBe(true);
+  vi.unstubAllGlobals();
+}, 30_000);

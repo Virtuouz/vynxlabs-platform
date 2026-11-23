@@ -23,7 +23,7 @@ Not a product fault. The test read the product's names from a built console (`ap
 ## APP-19, CLI-16, TAB-41 prose (no test can see prose; read against the code)
 - `docs/contracts/bundle.md`: new sections "The core range" (`bundleCompatibility`) and "Sources" (`sources`, `consoleSources`, limits, digest).
 - `docs/self-hosting.md`: hostname row (an app at the root, or the portal at `/_` with every app beneath); `portal_reader` beside `portal_user`; "neither portal role includes files"; the guests' API limit is counted in the database (every replica), file downloads in each replica's memory (`guestFiles` is a `MemoryLimiter`).
-- `docs/phases/phase-6-apps.md`: `@vynxlabs/` is `@volvel/`. `README.md`: "Apps page".
+- `docs/phases/phase-6-apps.md`: the old npm scope is `@volvel/`. `README.md`: "Apps page".
 - `docs/sdk-guide.md`: no "phase 17"; `deploy` prints the note, `build` does not; comments in console-edited files are kept (`ontoWritten`), no longer "lost".
 - TAB-41's code half was done by `fixed/tab2.md`. Not mine and not done: the `data/tables.md` lines (page content, below).
 

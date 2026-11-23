@@ -1,14 +1,19 @@
 import { newId } from "@volvel/db";
 import { betterAuth } from "better-auth";
-import { APIError, createAuthEndpoint, createAuthMiddleware } from "better-auth/api";
+import {
+  APIError,
+  createAuthEndpoint,
+  createAuthMiddleware,
+  getSessionFromCtx,
+} from "better-auth/api";
 import { setSessionCookie } from "better-auth/cookies";
 import { openAPI } from "better-auth/plugins/open-api";
 import type { FastifyBaseLogger } from "fastify";
-import { type Config, MIN_PASSWORD_LENGTH } from "../config.js";
+import { CONSOLE_SESSION_DAYS, type Config, MIN_PASSWORD_LENGTH } from "../config.js";
 import { ANONYMOUS, type Db, writeAudit } from "./audit.js";
 import { countHit } from "./ratelimit.js";
 import { finish, stateCookie } from "./sso/flow.js";
-import { memberPasswordRefusedBy } from "./sso/people.js";
+import { memberPasswordRefusedBy, nameOwnedBy } from "./sso/people.js";
 import { findRecoveryCode, RECOVERY_HEADER, useRecoveryCode } from "./sso/recovery.js";
 
 /** The header the route sets for the library: the caller's address as the server worked it out. */
@@ -69,7 +74,12 @@ export function authOptions(
       fields: { emailVerified: "email_verified", ...timestamps },
     },
     session: {
+      // A session is listed and ended by its owner however old it is (Account, Sessions). The
+      // library would ask for one made in the last day to list them.
+      freshAge: 0,
       modelName: "member_session",
+      // Said here and in SECURITY.md, so that a change of the library's default is a choice.
+      expiresIn: CONSOLE_SESSION_DAYS * 86_400,
       fields: {
         userId: "member_id",
         expiresAt: "expires_at",
@@ -190,8 +200,33 @@ export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
     ...authOptions(db, config),
     plugins: [openAPI({ disableDefaultReference: true }), singleSignOn(db, config)],
     hooks: {
+      // A person ending their other sessions is on the record, as ending one is.
+      after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== "/revoke-other-sessions") return;
+        const session = await getSessionFromCtx(ctx);
+        if (!session) return;
+        await writeAudit(db, actorFor(session.user.id, session.session), {
+          action: "member.other_sessions_ended",
+          targetType: "member",
+          targetId: session.user.id,
+        });
+      }),
       // Where a provider is required, a password is no way in.
       before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path === "/update-user") {
+          // A directory that pushes a person's name owns it: a change here would be undone.
+          const sent = (ctx.body as { name?: unknown } | undefined)?.name;
+          if (sent === undefined) return;
+          const session = await getSessionFromCtx(ctx);
+          const owner = session ? await nameOwnedBy(db, session.user.id) : undefined;
+          if (owner) {
+            throw new APIError("FORBIDDEN", {
+              code: "NAME_FROM_DIRECTORY",
+              message: `Your name comes from ${owner}. Change it there.`,
+            });
+          }
+          return;
+        }
         if (ctx.path !== "/sign-in/email") return;
         const email = String((ctx.body as { email?: unknown } | undefined)?.email ?? "");
         const off = await db
@@ -274,6 +309,19 @@ export function createAuth(db: Db, config: Config, log: FastifyBaseLogger) {
               action: "member.signed_out",
               targetType: "member",
               targetId: session.userId,
+            });
+          },
+        },
+      },
+      user: {
+        update: {
+          after: async (user) => {
+            // The library changes a person's own name and nothing else of theirs.
+            await writeAudit(db, actorFor(user.id), {
+              action: "member.renamed",
+              targetType: "member",
+              targetId: user.id,
+              details: { name: user.name },
             });
           },
         },

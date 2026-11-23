@@ -121,6 +121,9 @@ export interface Limits {
 
 export const MIN_PASSWORD_LENGTH = 12;
 
+/** How long a member's console session lasts from sign-in. SECURITY.md says so (D51). */
+export const CONSOLE_SESSION_DAYS = 7;
+
 export interface RetentionDays {
   /** Script runs and flow runs, with their logs, steps and stored payloads, after they end. */
   runsDays: number;
@@ -277,6 +280,14 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       "OTEL_EXPORTER_OTLP_PROTOCOL must be http/json: the only one the platform speaks.",
     );
   }
+  let otlpHeaders: Record<string, string> = {};
+  try {
+    otlpHeaders = readHeaders(value("OTEL_EXPORTER_OTLP_HEADERS"));
+  } catch {
+    problems.push(
+      "OTEL_EXPORTER_OTLP_HEADERS must be pairs like name=value, with a value percent-encoded (write a literal % as %25).",
+    );
+  }
   const otlpInterval = Number(value("OTEL_METRIC_EXPORT_INTERVAL") ?? "60000");
   if (!Number.isFinite(otlpInterval) || otlpInterval < 1000) {
     problems.push("OTEL_METRIC_EXPORT_INTERVAL must be a number of milliseconds, 1000 or more.");
@@ -376,7 +387,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     metricsToken,
     telemetry: {
       endpoint: otlpEndpoint,
-      headers: readHeaders(value("OTEL_EXPORTER_OTLP_HEADERS")),
+      headers: otlpHeaders,
       serviceName: value("OTEL_SERVICE_NAME") ?? "volvel",
       traces: value("OTEL_TRACES_EXPORTER") !== "none",
       metrics: value("OTEL_METRICS_EXPORTER") !== "none",

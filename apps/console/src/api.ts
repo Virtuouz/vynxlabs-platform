@@ -361,7 +361,14 @@ export function useCacheEdit() {
 }
 
 export interface Me {
-  principal: { type: string; id: string; name: string | null; email: string | null };
+  principal: {
+    type: string;
+    id: string;
+    name: string | null;
+    email: string | null;
+    /** The identity provider whose directory sets this person's name, when one does. */
+    nameFrom?: string | null;
+  };
   instancePermissions: string[];
   tenants: { id: string; slug: string; name: string }[];
 }

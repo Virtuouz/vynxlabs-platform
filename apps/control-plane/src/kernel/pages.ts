@@ -100,6 +100,19 @@ export async function dashboardProblems(
   ];
 }
 
+/** The tables of a dashboard that the workspace does not have: said, where the dashboard is kept unfinished. */
+export async function unknownTables(
+  kernel: Kernel,
+  workspace: { id: string; tenantId: string },
+  body: DashboardBody,
+): Promise<Problems> {
+  return missingTables(
+    body,
+    await workspaceTables(kernel, workspace),
+    await sourcePaths(kernel, workspace),
+  );
+}
+
 /** The paths of the workspace's bound data sources: `<source>/<table>` reads a table there. */
 async function sourcePaths(
   kernel: Kernel,

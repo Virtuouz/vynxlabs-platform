@@ -168,6 +168,17 @@ describe("API description", () => {
     });
   });
 
+  test("WLK-15: a run says in its schema that a trigger source's run names its source", async () => {
+    const description = (await app.inject({ url: "/api/v1/openapi.json" })).json();
+    const run =
+      description.paths["/api/v1/tenants/{t}/workspaces/{w}/runs/{id}"].get.responses["200"]
+        .content["application/json"].schema;
+    expect(run.properties.trigger.properties.relay.properties.mode.enum).toEqual([
+      "webhook",
+      "poll",
+    ]);
+  });
+
   test("includes the sign-in routes served by the authentication library", async () => {
     const description = (await app.inject({ url: "/api/v1/openapi.json" })).json();
     expect(description.paths["/api/v1/auth/sign-in/email"]).toBeDefined();

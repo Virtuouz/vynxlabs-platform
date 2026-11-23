@@ -61,7 +61,13 @@ export function describe(node: GraphNode): string {
 /** Lays the graph out left to right. Used for every node that has no saved position. */
 export function autoLayout(nodes: Record<string, GraphNode>, edges: GraphEdge[]): Positions {
   const graph = new dagre.graphlib.Graph();
-  graph.setGraph({ rankdir: "LR", nodesep: 28, ranksep: 64, marginx: 16, marginy: 16 });
+  // The words on the connections (a case's name, "on error") sit between two steps and need room.
+  const longest = Math.max(
+    0,
+    ...edges.map((edge) => (edge.error ? "on error" : (edge.output ?? "")).length),
+  );
+  const ranksep = Math.max(64, longest * 8 + 40);
+  graph.setGraph({ rankdir: "LR", nodesep: 28, ranksep, marginx: 16, marginy: 16 });
   graph.setDefaultEdgeLabel(() => ({}));
   for (const id of Object.keys(nodes).sort()) graph.setNode(id, { width: WIDTH, height: HEIGHT });
   for (const edge of edges) {

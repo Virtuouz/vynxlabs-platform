@@ -72,3 +72,14 @@ test("nodes are buttons that say what they are and how they went, and saved posi
     .map((text) => text.textContent);
   expect(labels.sort()).toEqual(["large", "on error", "otherwise"]);
 });
+
+test("WLK-15: the step after a connection with a long word on it is placed far enough to read it", () => {
+  const two = { a: { type: "trigger" }, b: { type: "join" }, c: { type: "join" } } as never;
+  const plain = autoLayout(two, [{ from: "a", to: "b" }]);
+  const worded = autoLayout(two, [
+    { from: "a", to: "b", output: "otherwise" },
+    { from: "a", to: "c", output: "large" },
+  ]);
+  const gap = (p: ReturnType<typeof autoLayout>) => (p.b?.x as number) - (p.a?.x as number);
+  expect(gap(worded)).toBeGreaterThan(gap(plain) + 40);
+});

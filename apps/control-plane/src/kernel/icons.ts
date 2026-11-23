@@ -40,7 +40,7 @@ export function icoOf(png: Buffer, size: number): Buffer {
   header.writeUInt8(size >= 256 ? 0 : size, 7);
   header.writeUInt8(0, 8); // no palette
   header.writeUInt8(0, 9);
-  header.writeUInt16LE(1, 10); // colour planes
+  header.writeUInt16LE(1, 10); // color planes
   header.writeUInt16LE(32, 12); // bits for each pixel
   header.writeUInt32LE(png.length, 14);
   header.writeUInt32LE(22, 18); // where the image begins
@@ -60,7 +60,7 @@ const drawn = new Map<number, Buffer>();
 
 /**
  * The icon an instance has before anyone gives it a logo: a rounded square in
- * the platform's own colour with a lighter corner, drawn here pixel by pixel.
+ * the platform's own color with a lighter corner, drawn here pixel by pixel.
  */
 export function defaultIcon(size: number): Buffer {
   const made = drawn.get(size);

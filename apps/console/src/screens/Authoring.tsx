@@ -26,7 +26,6 @@ import { Elapsed } from "../kit/Elapsed.tsx";
 import { ago } from "../kit/format.ts";
 import { formatCombo, useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
-import { SectionLabel } from "../kit/layout.tsx";
 import { ProductionNotice } from "../kit/objects.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
@@ -133,6 +132,18 @@ export default async function (
 /** The kinds of resource that are code, each written in the same editor. */
 export type CodeKind = "script" | "connector" | "trigger_source";
 
+interface Uses {
+  connections: string[];
+  secrets: string[];
+  variables: string[];
+  /** A script's, besides the three a trigger source also has. */
+  tables?: string[];
+  sources?: string[];
+  events?: string[];
+  connectionGroups?: string[];
+  [more: string]: string[] | undefined;
+}
+
 interface ScriptBody {
   description?: string;
   /** A script's. */
@@ -141,13 +152,16 @@ interface ScriptBody {
   /** `code` when the input and output were read from the script's own exports. */
   schemaSource?: "code";
   timeoutSeconds?: number;
+  /** A script's: the most memory a run may use, in MB. */
+  memoryMb?: number | undefined;
+  /** A script's: runs at once, or runs at once for each value found at `key` in the input. */
+  concurrency?: number | { key: string; limit: number } | undefined;
+  /** The worker pool it runs on. Without one, the default pool. */
+  worker?: string | undefined;
+  /** A script's: what to do when a run fails for the last time. */
+  onFailure?: { script?: string; notify?: string } | undefined;
   retries?: { limit: number; delaySeconds: number; backoff: boolean };
-  uses?: {
-    connections: string[];
-    secrets: string[];
-    variables: string[];
-    [more: string]: string[];
-  };
+  uses?: Uses;
   /** A connector's: what a connection's configuration must fit. */
   configSchema?: unknown;
   /** A script's: set, it is a step people pick in the flow editor, under this label. */
@@ -158,7 +172,7 @@ interface ScriptBody {
   [more: string]: unknown;
 }
 
-const NO_USES = { connections: [], secrets: [], variables: [] };
+const NO_USES: Uses = { connections: [], secrets: [], variables: [] };
 
 const CODE_KINDS: Record<
   CodeKind,
@@ -284,7 +298,7 @@ export function ScriptEditor({
   kind?: CodeKind;
 }) {
   const about = CODE_KINDS[kind];
-  const uses = (of: ScriptBody) => of.uses ?? NO_USES;
+  const uses = (of: ScriptBody): Uses => of.uses ?? NO_USES;
   const [path, setPath] = useState(opened ?? "");
   const [body, setBody] = useState<ScriptBody>();
   const [state, setState] = useState<"new" | "draft" | "deployed" | "repository" | "removed">(
@@ -369,6 +383,14 @@ export function ScriptEditor({
   const connections = useChoices(root, "connection-bindings", "path");
   const secrets = useChoices(root, "secrets", "name");
   const variables = useChoices(root, "variable-values", "path");
+  const tables = useChoices(root, "tables", "name");
+  const sources = useChoices(root, "data-source-bindings", "path");
+  const groups = useChoices(root, "connection-groups", "path");
+  const events = useChoices(root, "resources?kind=event", "path");
+  const scriptChoices = useChoices(root, "scripts", "path");
+  const pools = useLoad<{ items: { name: string | null }[] }>(
+    `${root.split("/workspaces/")[0]}/worker-pools`,
+  );
   const schemaReading = useTaskEnd(root, reading, (task) => {
     setReading(undefined);
     if (task.status === "failed") {
@@ -387,6 +409,9 @@ export function ScriptEditor({
   });
   // The path this editor saved a new one as. Opening it again would reload what is already on screen.
   const savedAs = useRef<string>(undefined);
+  // The icon and group of a step whose name was cleared to be typed again: the manifest wants a
+  // name of at least one character, so the step is dropped while it is empty, and given back.
+  const clearedStep = useRef<ScriptBody["node"]>(undefined);
   // Where the code lives in the editor, fixed for the editor's life, so a first save keeps its undo history.
   const [modelPath] = useState(() => `${about.list}/${kind}/${opened ?? "new"}.ts`);
 
@@ -521,6 +546,13 @@ export function ScriptEditor({
       schemaText: now?.schemaText ?? schemaText,
       body: merged,
     });
+  };
+  /** Sets what a failing run does, and drops `onFailure` when nothing is left in it. */
+  const changeFailure = (next: { script?: string | undefined; notify?: string | undefined }) => {
+    const now = draft.value();
+    const merged = { ...((now?.body ?? body).onFailure ?? {}), ...next };
+    const kept = Object.fromEntries(Object.entries(merged).filter(([, value]) => value));
+    change({ onFailure: Object.keys(kept).length > 0 ? kept : undefined });
   };
   /** Sets or, given nothing, clears the script's place among the flow editor's steps. */
   const changeNode = (node: ScriptBody["node"]) => {
@@ -725,6 +757,139 @@ export function ScriptEditor({
           />
         </>
       )}
+      {kind === "connector" ? null : (
+        <SelectField
+          name="worker"
+          label="Worker pool"
+          value={body.worker ?? ""}
+          disabled={readOnly}
+          options={[
+            { value: "", label: "The default pool" },
+            ...[
+              ...new Set([
+                ...(pools.data?.items ?? []).flatMap((pool) => (pool.name ? [pool.name] : [])),
+                ...(body.worker ? [body.worker] : []),
+              ]),
+            ].map((name) => ({ value: name, label: name })),
+          ]}
+          hint={`Where a run of this ${about.noun} happens. Pick a pool only when it has to run in a particular place, such as inside a client's network. Test and failure alerts use it too.`}
+          onChange={(worker) => change({ worker: worker === "" ? undefined : worker })}
+        />
+      )}
+      {kind === "script" ? (
+        <>
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField
+              name="memory"
+              label="Memory (MB)"
+              value={body.memoryMb}
+              min={64}
+              max={4096}
+              step={1}
+              placeholder="512"
+              disabled={readOnly}
+              error={fieldError("/body/memoryMb")}
+              hint="The most a run may use. Past it, the run fails. Empty: 512."
+              onChange={(value) => change({ memoryMb: value })}
+            />
+            <NumberField
+              name="concurrency"
+              label="Runs at once"
+              value={
+                typeof body.concurrency === "object" ? body.concurrency.limit : body.concurrency
+              }
+              min={1}
+              max={64}
+              step={1}
+              disabled={readOnly}
+              error={fieldError("/body/concurrency")}
+              hint="Empty: no limit of its own."
+              onChange={(limit) => {
+                const key = typeof body.concurrency === "object" ? body.concurrency.key : "";
+                change({
+                  concurrency: limit === undefined ? undefined : key ? { key, limit } : limit,
+                });
+              }}
+            />
+          </div>
+          <TextField
+            name="concurrencyKey"
+            label="One lane for each value of"
+            value={typeof body.concurrency === "object" ? body.concurrency.key : ""}
+            required={false}
+            placeholder="input.customer"
+            disabled={readOnly || body.concurrency === undefined}
+            hint="Where the value is in the input. Runs with the same value take turns, and runs with other values go ahead. Set runs at once first."
+            onChange={(key) => {
+              const limit =
+                typeof body.concurrency === "object" ? body.concurrency.limit : body.concurrency;
+              if (limit === undefined) return;
+              change({ concurrency: key.trim() ? { key: key.trim(), limit } : limit });
+            }}
+          />
+          <MultiSelectField
+            label="Tables it reads and writes"
+            options={tables}
+            value={uses(body).tables ?? []}
+            disabled={readOnly}
+            placeholder="None"
+            onChange={(value) => change({ uses: { ...uses(body), tables: value } })}
+          />
+          <MultiSelectField
+            label="Data sources it uses"
+            options={sources}
+            value={uses(body).sources ?? []}
+            disabled={readOnly}
+            placeholder="None"
+            onChange={(value) => change({ uses: { ...uses(body), sources: value } })}
+          />
+          <MultiSelectField
+            label="Events it may publish"
+            options={events}
+            value={uses(body).events ?? []}
+            disabled={readOnly}
+            placeholder="None"
+            onChange={(value) => change({ uses: { ...uses(body), events: value } })}
+          />
+          <MultiSelectField
+            label="Connection groups it picks from"
+            options={groups}
+            value={uses(body).connectionGroups ?? []}
+            disabled={readOnly}
+            placeholder="None"
+            onChange={(value) => change({ uses: { ...uses(body), connectionGroups: value } })}
+          />
+          <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
+            <legend className="mb-1 text-body-sm font-medium">
+              When a run fails for the last time
+            </legend>
+            <SelectField
+              name="onFailureScript"
+              label="If it fails for the last time, start"
+              value={body.onFailure?.script ?? ""}
+              disabled={readOnly}
+              options={[
+                { value: "", label: "Nothing of its own" },
+                ...scriptChoices.map((one) => ({ value: one.value, label: one.label })),
+              ]}
+              hint="It is started with the failed run as its input. Its own choice replaces the workspace's default alert."
+              onChange={(script) => changeFailure({ script: script || undefined })}
+            />
+            <SelectField
+              name="onFailureNotify"
+              label="and send a summary through"
+              value={body.onFailure?.notify ?? ""}
+              disabled={readOnly}
+              options={[
+                { value: "", label: "No connection" },
+                ...connections.map((one) => ({ value: one.value, label: one.label })),
+              ]}
+              hint="An HTTP connection that is posted a summary."
+              onChange={(notify) => changeFailure({ notify: notify || undefined })}
+            />
+          </fieldset>
+        </>
+      ) : null}
       {kind === "script" ? (
         <fieldset className="m-0 flex flex-col gap-3 border-0 p-0">
           <legend className="mb-1 text-body-sm font-medium">Use as a flow step</legend>
@@ -736,7 +901,13 @@ export function ScriptEditor({
             maxLength={60}
             disabled={readOnly}
             hint="Give the script a name and it joins the flow editor's steps under it. Leave it empty to keep the script out of them."
-            onChange={(label) => changeNode(label === "" ? undefined : { ...body.node, label })}
+            onChange={(label) => {
+              if (label === "") {
+                clearedStep.current = body.node ?? clearedStep.current;
+                return changeNode(undefined);
+              }
+              changeNode({ ...(body.node ?? clearedStep.current), label });
+            }}
           />
           {body.node ? (
             <>
@@ -1211,12 +1382,11 @@ export function ScriptEditor({
       ) : (
         <>
           {codeArea("34rem")}
-          {/* A connector or trigger source has no test pane, and its build errors still need a place. */}
           {fromRepository ? null : (
             <section aria-label="Problems" className="flex flex-col gap-2">
-              <SectionLabel>
+              <h2 className="m-0 text-label text-ink-subtle uppercase">
                 {problemCount > 0 ? `Problems (${problemCount})` : "Problems"}
-              </SectionLabel>
+              </h2>
               <ProblemList
                 markers={markers}
                 build={ownIssues}

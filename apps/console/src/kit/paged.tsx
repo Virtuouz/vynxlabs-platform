@@ -1,5 +1,5 @@
 import { Button } from "@volvel/ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../api.ts";
 
 interface Page<T> {
@@ -51,43 +51,100 @@ export function usePagedList<T>(
       : withQuery(path, { limit: limit > 0 ? String(limit) : undefined, search: sent });
   const page = useLoad<Page<T>>(first);
 
-  const [more, setMore] = useState<{ items: T[]; nextCursor: string | null }>();
+  // What the reader has loaded past the first page, and which first page it follows.
+  const [view, setView] = useState<{
+    first: string;
+    head: T[];
+    rest: T[];
+    nextCursor: string | null;
+  }>();
   const [loadingMore, setLoadingMore] = useState(false);
   const [moreError, setMoreError] = useState<Error>();
-  // A first page that came again (a new search, a reload) starts the list over.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new first page resets
+  const [again, setAgain] = useState(0);
+  const held = view && view.first === first ? view : undefined;
+  const loaded = useRef<{ count: number; last: unknown }>({ count: 0, last: undefined });
+  loaded.current = { count: held?.rest.length ?? 0, last: held?.rest.at(-1) };
+  // A first page that came again for the same list (a change, a reload) is read again together with
+  // as many pages after it as were on screen, so the reader keeps their place and misses nothing a
+  // new row pushed down. A new search or route starts again at the first page.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new first page or a reload reads again
   useEffect(() => {
-    setMore(undefined);
-    setMoreError(undefined);
-  }, [page.data]);
+    const head = page.data;
+    if (!head || !first) return;
+    const { count: want, last } = loaded.current;
+    if (want === 0) {
+      setView(undefined);
+      setMoreError(undefined);
+      return;
+    }
+    let live = true;
+    (async () => {
+      const rest: T[] = [];
+      let cursor = head.nextCursor;
+      // Far enough that the last row the reader had is on screen again, wherever new rows moved it;
+      // a row with no ID is followed by count.
+      const id = (row: unknown) =>
+        typeof row === "object" && row !== null ? (row as { id?: unknown }).id : undefined;
+      const reached = () =>
+        id(last) !== undefined
+          ? [...head.items, ...rest].some((row) => id(row) === id(last))
+          : rest.length >= want;
+      for (let pages = 0; cursor && !reached() && pages < 100; pages++) {
+        const next = await api.get<Page<T>>(withQuery(first, { cursor }));
+        rest.push(...next.items);
+        cursor = next.nextCursor;
+      }
+      if (live) {
+        setView({ first, head: head.items, rest, nextCursor: cursor });
+        setMoreError(undefined);
+      }
+    })().catch((error) => {
+      if (live) setMoreError(error instanceof Error ? error : new Error(String(error)));
+    });
+    return () => {
+      live = false;
+    };
+  }, [page.data, again]);
 
-  const nextCursor = more ? more.nextCursor : (page.data?.nextCursor ?? null);
+  const nextCursor = held ? held.nextCursor : (page.data?.nextCursor ?? null);
   const loadMore = useCallback(async () => {
-    if (!first || !nextCursor) return;
+    if (!first || !nextCursor || !page.data) return;
     setLoadingMore(true);
     setMoreError(undefined);
     try {
       const next = await api.get<Page<T>>(withQuery(first, { cursor: nextCursor }));
-      setMore((current) => ({
-        items: [...(current?.items ?? []), ...next.items],
-        nextCursor: next.nextCursor,
-      }));
+      setView((current) => {
+        const own = current && current.first === first ? current : undefined;
+        return {
+          first,
+          head: own?.head ?? (page.data as Page<T>).items,
+          rest: [...(own?.rest ?? []), ...next.items],
+          nextCursor: next.nextCursor,
+        };
+      });
     } catch (error) {
       setMoreError(error instanceof Error ? error : new Error(String(error)));
     } finally {
       setLoadingMore(false);
     }
-  }, [first, nextCursor]);
+  }, [first, nextCursor, page.data]);
 
-  // Pages after the first may be stale after a change, so a reload starts over.
+  // What follows a change is read again, as far as the reader had read.
   const reload = useCallback(() => {
-    setMore(undefined);
+    setAgain((one) => one + 1);
     page.reload();
   }, [page.reload]);
 
+  // The same array until a page arrives, so what is made from it (a picker's options) is not
+  // taken for a new list on every render.
+  const items = useMemo(
+    () => (page.data ? [...(held?.head ?? page.data.items), ...(held?.rest ?? [])] : undefined),
+    [page.data, held],
+  );
+
   return {
     /** Every row loaded so far, or nothing before the first page. */
-    items: page.data ? [...page.data.items, ...(more?.items ?? [])] : undefined,
+    items,
     error: page.error,
     moreError,
     /** The first page is coming, or a search just typed has not been answered. */

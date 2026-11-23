@@ -23,7 +23,7 @@ import {
   stepState,
 } from "../kernel/execution/state.js";
 import { kickStarted, notPausedAlone, webhookToken } from "../kernel/execution/triggers.js";
-import { approvalDetail } from "../kernel/flows/approval-detail.js";
+import { approvalDetail, approvalTitle } from "../kernel/flows/approval-detail.js";
 import {
   approvalStepsOf,
   approversOf,
@@ -1438,7 +1438,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Cancel a flow run and the steps it has in progress",
           description:
-            "The steps that are going are cancelled with it. A flow run that has already ended answers 409. Audited.",
+            "The steps that are going are canceled with it. A flow run that has already ended answers 409. Audited.",
           tags: ["flows"],
           params: Type.Object({ t: Id, w: Id, id: Id }),
           response: { 200: FlowRun },
@@ -1530,7 +1530,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       workspaceId: row.workspace_id,
       flow: row.flow_path,
       node: row.node_id,
-      title: String(row.detail.title),
+      title: approvalTitle(row.detail.title, await flowKnown(kernel, db, row.flow_run_id, known)),
       detail: approvalDetail(
         row.detail.detail,
         await flowKnown(kernel, db, row.flow_run_id, known),
@@ -1592,12 +1592,12 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .orderBy("step_run.finished_at", "desc")
         .limit(100);
     type DecidedRow = Awaited<ReturnType<ReturnType<typeof decided>["execute"]>>[number];
-    const toDecided = (row: DecidedRow) => ({
+    const toDecided = async (row: DecidedRow, known: Map<string, Promise<Known>>) => ({
       flowRunId: row.flow_run_id,
       workspaceId: row.workspace_id,
       flow: row.flow_path,
       node: row.node_id,
-      title: String(row.detail.title),
+      title: approvalTitle(row.detail.title, await flowKnown(kernel, db, row.flow_run_id, known)),
       approved: row.status === "succeeded",
       comment: row.decision_comment,
       decidedBy: row.decided_by
@@ -1641,6 +1641,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const rows = await decided(params.t).where(SURFACED).execute();
         const allowed = new Map<string, boolean>();
         const items = [];
+        const known = new Map<string, Promise<Known>>();
         for (const row of rows) {
           if (!allowed.has(row.workspace_id)) {
             allowed.set(
@@ -1651,7 +1652,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }),
             );
           }
-          if (allowed.get(row.workspace_id)) items.push(toDecided(row));
+          if (allowed.get(row.workspace_id)) items.push(await toDecided(row, known));
         }
         if (items.length === 0) await ctx.authorize("approval:read", { tenantId: params.t });
         return { items };
@@ -1707,7 +1708,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const rows = await decided(params.t)
           .where("flow_run.workspace_id", "=", params.w)
           .execute();
-        return { items: rows.map(toDecided) };
+        const known = new Map<string, Promise<Known>>();
+        return { items: await Promise.all(rows.map((row) => toDecided(row, known))) };
       },
     );
 

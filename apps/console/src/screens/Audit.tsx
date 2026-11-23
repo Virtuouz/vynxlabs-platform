@@ -558,7 +558,7 @@ export function AuditTable({
                 </label>
               </>
             }
-            <label className="flex min-w-48 flex-1 flex-col text-meta text-ink-muted sm:max-w-64">
+            <label className="flex min-w-44 flex-1 flex-col text-meta text-ink-muted sm:max-w-64">
               <span className="sr-only">Search</span>
               <input
                 type="search"

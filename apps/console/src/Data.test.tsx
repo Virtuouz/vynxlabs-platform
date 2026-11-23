@@ -411,6 +411,35 @@ test("an external source's tables are browsed, and one without a key cannot be c
   expect(screen.getByText(/no primary key/)).toBeTruthy();
   expect(screen.getByText("hello").closest("button")).toBeNull();
   expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  // What the note says can be done is offered (DAT-23).
+  expect(screen.getByText(/rows can be added but not changed or deleted/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Add row" })).toBeTruthy();
+});
+
+test("DAT-23, DAT-21: a table with no key is added to, and a table's name with a space is encoded in its address", async () => {
+  routes[`GET /api/v1${root}/data-source-tables/erp`] = () => [
+    200,
+    {
+      items: [
+        {
+          name: "order items",
+          key: null,
+          columns: [{ name: "what", type: "text", required: false, writable: true }],
+        },
+      ],
+    },
+  ];
+  routes[`GET /api/v1${root}/source-rows/order%20items/erp`] = () => [
+    200,
+    { items: [{ what: "pen" }], nextCursor: null },
+  ];
+  routes[`POST /api/v1${root}/source-rows/order%20items/erp`] = (body) => [201, { items: [body] }];
+  show(<SourceView root={root} path="erp" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("pen");
+  fireEvent.click(screen.getByRole("button", { name: "Add row" }));
+  fireEvent.input(await screen.findByLabelText("what"), { target: { value: "ink" } });
+  fireEvent.click(screen.getAllByRole("button", { name: "Add row" }).at(-1) as HTMLElement);
+  await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
 });
 
 test("filter text becomes a filter of the column's type", () => {
@@ -806,4 +835,17 @@ test("TAB-05: Create table asks for a new table, so a name in use is refused and
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   expect(await screen.findByText(/already at "codes"/)).toBeTruthy();
   expect(calls.find((call) => call.method === "PUT")?.body).toMatchObject({ create: true });
+});
+
+test("D41: a new data source starts with the connection encrypted", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    { items: [{ path: "erp", description: "", bound: false, config: null, hasPassword: false }] },
+  ];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Connect database" }));
+  const dialog = await screen.findByRole("dialog");
+  expect((within(dialog).getByLabelText("Encrypt the connection") as HTMLSelectElement).value).toBe(
+    "yes",
+  );
 });

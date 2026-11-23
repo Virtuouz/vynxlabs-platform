@@ -570,6 +570,7 @@ export function AppBuilder({
         {clash ? (
           <DraftClash
             what="app"
+            mine={() => (body ? JSON.stringify(body, null, 2) : undefined)}
             onTake={async () => {
               const theirs = await api
                 .get<DraftAnswer>(`${root}/drafts/${path}`)

@@ -1,5 +1,5 @@
 import { newId } from "@volvel/db";
-import { PLATFORM_EVENT_PREFIX, validateJson } from "@volvel/manifest";
+import { PLATFORM_EVENT_PREFIX, type PlatformEventName, validateJson } from "@volvel/manifest";
 import type { Db, Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import { instanceTriggersPaused } from "../execution/control.js";
@@ -190,7 +190,8 @@ export async function publishPlatformEvent(
   event: {
     tenantId: string;
     workspaceId: string;
-    name: string;
+    /** One the platform lists (`PLATFORM_EVENTS`): what is not listed cannot be listened for. */
+    name: PlatformEventName;
     payload: Record<string, unknown>;
     sourceId: string;
     depth: number;

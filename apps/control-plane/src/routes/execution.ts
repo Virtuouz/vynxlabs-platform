@@ -76,6 +76,7 @@ import { eventSchema, publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
 import { access, findWorkspace, guestLimit, type WorkspaceRef } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { METRICS, metricHeader } from "../kernel/metric-list.js";
 import { labelText } from "../kernel/metrics.js";
 import { listOf, PageQuery, pageOf } from "../pagination.js";
 import { describeRequests, PromotionRequest, visibleRequests } from "./promotion-requests.js";
@@ -3834,19 +3835,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const workerCount = (managed: boolean) =>
         Number(workers.rows.find((row) => row.managed === managed)?.n ?? 0);
       const lines = [
-        "# HELP volvel_runs_queued Runs waiting for a worker.",
-        "# TYPE volvel_runs_queued gauge",
-        `volvel_runs_queued ${count("queued")}`,
-        "# HELP volvel_runs_running Runs in progress.",
-        "# TYPE volvel_runs_running gauge",
-        `volvel_runs_running ${count("running")}`,
-        "# HELP volvel_queue_oldest_seconds Age of the oldest run that is due and still waiting.",
-        "# TYPE volvel_queue_oldest_seconds gauge",
-        `volvel_queue_oldest_seconds ${Math.max(0, Math.round(Number(oldest.rows[0]?.seconds ?? 0)))}`,
-        "# HELP volvel_workers Workers heard from recently.",
-        "# TYPE volvel_workers gauge",
-        `volvel_workers{kind="managed"} ${workerCount(true)}`,
-        `volvel_workers{kind="standalone"} ${workerCount(false)}`,
+        ...metricHeader(METRICS.runsQueued),
+        `${METRICS.runsQueued.name} ${count("queued")}`,
+        ...metricHeader(METRICS.runsRunning),
+        `${METRICS.runsRunning.name} ${count("running")}`,
+        ...metricHeader(METRICS.queueOldest),
+        `${METRICS.queueOldest.name} ${Math.max(0, Math.round(Number(oldest.rows[0]?.seconds ?? 0)))}`,
+        ...metricHeader(METRICS.workers),
+        `${METRICS.workers.name}{kind="managed"} ${workerCount(true)}`,
+        `${METRICS.workers.name}{kind="standalone"} ${workerCount(false)}`,
       ];
 
       // Where the work waits, by workspace and pool: from the database, so every replica agrees.
@@ -3868,14 +3865,12 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     `.execute(db);
       if (byPlace) {
         lines.push(
-          "# HELP volvel_workspace_runs_queued Runs due and waiting for a worker, by workspace and pool.",
-          "# TYPE volvel_workspace_runs_queued gauge",
+          ...metricHeader(METRICS.workspaceRunsQueued),
           ...waiting.rows.map(
             (row) =>
-              `volvel_workspace_runs_queued${labelText({ tenant: row.tenant, workspace: row.workspace, pool: row.pool ?? "default" })} ${Number(row.n)}`,
+              `${METRICS.workspaceRunsQueued.name}${labelText({ tenant: row.tenant, workspace: row.workspace, pool: row.pool ?? "default" })} ${Number(row.n)}`,
           ),
-          "# HELP volvel_workspace_queue_oldest_seconds How long the oldest due run of a workspace has waited.",
-          "# TYPE volvel_workspace_queue_oldest_seconds gauge",
+          ...metricHeader(METRICS.workspaceQueueOldest),
         );
         const oldestBy = new Map<string, { tenant: string; workspace: string; seconds: number }>();
         for (const row of waiting.rows) {
@@ -3887,7 +3882,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         for (const one of oldestBy.values()) {
           lines.push(
-            `volvel_workspace_queue_oldest_seconds${labelText({ tenant: one.tenant, workspace: one.workspace })} ${one.seconds}`,
+            `${METRICS.workspaceQueueOldest.name}${labelText({ tenant: one.tenant, workspace: one.workspace })} ${one.seconds}`,
           );
         }
       }
@@ -3896,20 +3891,18 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       where f.status = 'running' group by 1
     `.execute(db);
       lines.push(
-        "# HELP volvel_flow_runs Flow runs in progress, by state.",
-        "# TYPE volvel_flow_runs gauge",
+        ...metricHeader(METRICS.flowRuns),
         ...flows.rows.map(
-          (row) => `volvel_flow_runs${labelText({ state: row.state })} ${Number(row.n)}`,
+          (row) => `${METRICS.flowRuns.name}${labelText({ state: row.state })} ${Number(row.n)}`,
         ),
       );
       const tasks = await sql<{ kind: string; n: string }>`
       select kind, count(*) as n from task where status = 'queued' group by kind
     `.execute(db);
       lines.push(
-        "# HELP volvel_tasks_queued Tasks waiting for a worker, by kind.",
-        "# TYPE volvel_tasks_queued gauge",
+        ...metricHeader(METRICS.tasksQueued),
         ...tasks.rows.map(
-          (row) => `volvel_tasks_queued${labelText({ kind: row.kind })} ${Number(row.n)}`,
+          (row) => `${METRICS.tasksQueued.name}${labelText({ kind: row.kind })} ${Number(row.n)}`,
         ),
       );
       // What each machine that shares its slots is running: the gauge to set an alert on
@@ -3926,19 +3919,17 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       group by w.machine
     `.execute(db);
       lines.push(
-        "# HELP volvel_machine_running Scripts running on each machine whose workers share its run slots.",
-        "# TYPE volvel_machine_running gauge",
+        ...metricHeader(METRICS.machineRunning),
         ...machines.rows.map(
-          (row) => `volvel_machine_running${labelText({ machine: row.machine })} ${row.n}`,
+          (row) => `${METRICS.machineRunning.name}${labelText({ machine: row.machine })} ${row.n}`,
         ),
       );
       const pools = await kernel.data.poolStats();
       lines.push(
-        "# HELP volvel_db_pool Connections of this replica's pools to the platform database: open, idle, and requests waiting for one.",
-        "# TYPE volvel_db_pool gauge",
+        ...metricHeader(METRICS.dbPool),
         ...Object.entries(pools).flatMap(([pool, stats]) =>
           (["total", "idle", "waiting"] as const).map(
-            (state) => `volvel_db_pool${labelText({ pool, state })} ${stats[state]}`,
+            (state) => `${METRICS.dbPool.name}${labelText({ pool, state })} ${stats[state]}`,
           ),
         ),
       );
@@ -3947,22 +3938,18 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     `.execute(db);
       const readOnly = await kernel.readOnly().catch(() => false);
       lines.push(
-        "# HELP volvel_database_size_bytes The platform database's size on disk. Alert well before its volume is full.",
-        "# TYPE volvel_database_size_bytes gauge",
-        `volvel_database_size_bytes ${Number(size.rows[0]?.bytes ?? 0)}`,
-        "# HELP volvel_database_read_only 1 while the platform database takes no writes, such as when its disk is full.",
-        "# TYPE volvel_database_read_only gauge",
-        `volvel_database_read_only ${readOnly ? 1 : 0}`,
+        ...metricHeader(METRICS.databaseSize),
+        `${METRICS.databaseSize.name} ${Number(size.rows[0]?.bytes ?? 0)}`,
+        ...metricHeader(METRICS.databaseReadOnly),
+        `${METRICS.databaseReadOnly.name} ${readOnly ? 1 : 0}`,
       );
       const memory = procProbe.memory();
       if (memory) {
         lines.push(
-          "# HELP volvel_memory_available_bytes Memory this replica's machine can still give out.",
-          "# TYPE volvel_memory_available_bytes gauge",
-          `volvel_memory_available_bytes ${Math.round(memory.availableMb * 1024 * 1024)}`,
-          "# HELP volvel_memory_total_bytes All of this replica's machine's memory.",
-          "# TYPE volvel_memory_total_bytes gauge",
-          `volvel_memory_total_bytes ${Math.round(memory.totalMb * 1024 * 1024)}`,
+          ...metricHeader(METRICS.memoryAvailable),
+          `${METRICS.memoryAvailable.name} ${Math.round(memory.availableMb * 1024 * 1024)}`,
+          ...metricHeader(METRICS.memoryTotal),
+          `${METRICS.memoryTotal.name} ${Math.round(memory.totalMb * 1024 * 1024)}`,
         );
       }
 

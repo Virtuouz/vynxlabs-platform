@@ -29,7 +29,9 @@ export {
   keyMissing,
   PLATFORM_EVENT_PREFIX,
   PLATFORM_EVENTS,
+  type PlatformEventDefinition,
   type PlatformEventField,
+  type PlatformEventName,
 } from "./bundle-check.js";
 export {
   envelopeSchemas,

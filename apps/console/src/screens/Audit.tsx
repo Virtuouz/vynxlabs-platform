@@ -140,7 +140,12 @@ const SINCE: { value: string; label: string; hours: number | null }[] = [
   { value: "24h", label: "Last 24 hours", hours: 24 },
   { value: "7d", label: "Last 7 days", hours: 24 * 7 },
   { value: "30d", label: "Last 30 days", hours: 24 * 30 },
+  { value: "custom", label: "Between dates", hours: null },
 ];
+
+/** A day typed in a date field, as the start or the end of that day where the reader is. */
+const startOfDay = (day: string) => new Date(`${day}T00:00:00`);
+const endOfDay = (day: string) => new Date(`${day}T23:59:59.999`);
 
 /** What the log holds in the range shown, to narrow it by. */
 interface Facets {
@@ -190,6 +195,10 @@ const AUDIT_URL = {
   actor: { type: "string" },
   action: { type: "string" },
   kind: { type: "string" },
+  from: { type: "string" },
+  to: { type: "string" },
+  workspace: { type: "string" },
+  about: { type: "string" },
   q: { type: "string" },
   cols: { type: "list" },
   entry: { type: "string", push: true },
@@ -240,12 +249,21 @@ export function AuditTable({
     from.setMinutes(0, 0, 0);
     filters.set("from", from.toISOString());
   }
+  if (url.since === "custom") {
+    if (url.from) filters.set("from", startOfDay(url.from).toISOString());
+    if (url.to) filters.set("to", endOfDay(url.to).toISOString());
+  }
+  if (url.workspace && tenantLog) filters.set("workspaceId", url.workspace);
+  if (url.about) filters.set("target", url.about);
   if (url.actor) filters.set("actorId", url.actor);
   if (url.action) filters.set("action", url.action);
   if (url.kind) filters.set("targetType", url.kind);
   if (url.q) filters.set("q", url.q);
   const asked = filters.toString();
-  const facets = useLoad<Facets>(tenantLog ? `${path}-facets?${asked}` : null);
+  const facets = useLoad<Facets>(`${path}-facets?${asked}`);
+  const workspaces = useLoad<{ items: { id: string; name?: string }[] }>(
+    tenantLog ? `/tenants/${tenantId}/workspaces` : null,
+  );
 
   // Each first page asked for is the newest; an answer to an earlier one, or to one before the
   // filters changed, is not shown.
@@ -295,7 +313,21 @@ export function AuditTable({
     setUrl({ entry: entry.id });
     setClosed(false);
   };
-  const filtered = Boolean(url.area || url.actor || url.action || url.kind || url.q || hours);
+  const custom = url.since === "custom";
+  const backwards = custom && url.from && url.to && url.to < url.from;
+  const filtered = Boolean(
+    url.area ||
+      url.actor ||
+      url.action ||
+      url.kind ||
+      url.q ||
+      url.about ||
+      url.workspace ||
+      hours ||
+      (custom && (url.from || url.to)),
+  );
+  const aboutName =
+    entries.find((entry) => entry.targetId === url.about)?.targetLabel ?? url.about ?? "";
   const select = "h-8 rounded-control border border-line bg-surface px-2 text-ink";
 
   const columns: CollectionColumn<Entry>[] = [
@@ -417,7 +449,52 @@ export function AuditTable({
                 ))}
               </select>
             </label>
+            {custom ? (
+              <>
+                <label className="flex flex-col text-meta text-ink-muted">
+                  <span className="sr-only">From date</span>
+                  <input
+                    type="date"
+                    value={url.from ?? ""}
+                    max={url.to}
+                    onChange={(event) => setUrl({ from: event.currentTarget.value || undefined })}
+                    className={select}
+                  />
+                </label>
+                <label className="flex flex-col text-meta text-ink-muted">
+                  <span className="sr-only">To date</span>
+                  <input
+                    type="date"
+                    value={url.to ?? ""}
+                    min={url.from}
+                    onChange={(event) => setUrl({ to: event.currentTarget.value || undefined })}
+                    className={select}
+                  />
+                </label>
+              </>
+            ) : null}
             {tenantLog ? (
+              <label className="flex flex-col text-meta text-ink-muted">
+                <span className="sr-only">Workspace</span>
+                <select
+                  value={url.workspace ?? ""}
+                  onChange={(event) =>
+                    setUrl({ workspace: event.currentTarget.value || undefined })
+                  }
+                  className={`${select} max-w-48`}
+                >
+                  <option value="">Every workspace</option>
+                  {(workspaces.data?.items ?? [])
+                    .filter((one) => one.name)
+                    .map((one) => (
+                      <option key={one.id} value={one.id}>
+                        {one.name}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ) : null}
+            {
               <>
                 <label className="flex flex-col text-meta text-ink-muted">
                   <span className="sr-only">Who</span>
@@ -467,7 +544,7 @@ export function AuditTable({
                   </select>
                 </label>
               </>
-            ) : null}
+            }
             <label className="flex min-w-48 flex-1 flex-col text-meta text-ink-muted sm:max-w-64">
               <span className="sr-only">Search</span>
               <input
@@ -479,6 +556,19 @@ export function AuditTable({
               />
             </label>
           </div>
+          {backwards ? (
+            <p className="m-0 text-meta text-danger">The end date is before the start date.</p>
+          ) : null}
+          {url.about ? (
+            <div className="flex flex-wrap items-center gap-2 text-ink-muted">
+              <span>
+                Everything about <span className="font-medium text-ink">{aboutName}</span>
+              </span>
+              <Button size="small" onClick={() => setUrl({ about: undefined })}>
+                Show everything
+              </Button>
+            </div>
+          ) : null}
         </div>
       }
       columns={columns}
@@ -499,6 +589,10 @@ export function AuditTable({
                   setUrl({
                     area: undefined,
                     since: "all",
+                    from: undefined,
+                    to: undefined,
+                    workspace: undefined,
+                    about: undefined,
                     actor: undefined,
                     action: undefined,
                     kind: undefined,
@@ -521,17 +615,32 @@ export function AuditTable({
             setUrl({ entry: undefined });
           }}
           footer={
-            chosen && tenantLog ? (
-              <Button
-                size="small"
-                onClick={() => {
-                  const link = new URL(location.href);
-                  link.searchParams.set("entry", chosen.id);
-                  void copyText(link.toString(), "Link to the entry copied.");
-                }}
-              >
-                Copy a link to it
-              </Button>
+            chosen ? (
+              <div className="flex flex-wrap gap-2">
+                {chosen.targetId ? (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      setClosed(false);
+                      setUrl({ about: chosen.targetId ?? undefined, entry: undefined });
+                    }}
+                  >
+                    Everything about this
+                  </Button>
+                ) : null}
+                {tenantLog ? (
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      const link = new URL(location.href);
+                      link.searchParams.set("entry", chosen.id);
+                      void copyText(link.toString(), "Link to the entry copied.");
+                    }}
+                  >
+                    Copy a link to it
+                  </Button>
+                ) : null}
+              </div>
             ) : undefined
           }
         >

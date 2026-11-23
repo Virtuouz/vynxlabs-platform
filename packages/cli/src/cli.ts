@@ -1166,6 +1166,44 @@ async function runRemote(args: string[], io: Io): Promise<number> {
   return followed.exitCode;
 }
 
+/** `instance triggers [pause [--reason <text>]|resume]`: the operator's emergency stop. */
+async function instanceCommand(rest: string[], io: Io): Promise<void> {
+  const [area, action, ...more] = rest;
+  if (area !== "triggers" || (action !== undefined && action !== "pause" && action !== "resume")) {
+    throw new CliError(
+      "Use: volvel instance triggers, to see where they stand, or volvel instance triggers pause|resume.",
+    );
+  }
+  const settings = await loadSettings(io.env);
+  let reply: ApiReply;
+  if (action === undefined) {
+    reply = await request(settings.url, "/instance/triggers", settings.token);
+    if (reply.status !== 200) throw refusal(reply, "read the instance's triggers");
+  } else {
+    const { values } = parseArgs({ args: more, options: { reason: { type: "string" as const } } });
+    const paused = action === "pause";
+    reply = await request(settings.url, "/instance/triggers", settings.token, {
+      method: "PUT",
+      body: { paused, ...(paused && values.reason ? { reason: values.reason } : {}) },
+    });
+    if (reply.status !== 200) throw refusal(reply, `${action} the instance's triggers`);
+  }
+  const state = reply.body as { paused: boolean; reason: string | null; byEnvironment: boolean };
+  if (!state.paused) {
+    io.out(action === "resume" ? "Triggers are running again." : "Triggers are running.");
+    return;
+  }
+  io.out(
+    action === "pause"
+      ? "Every trigger is paused. Runs already queued or going carry on."
+      : "Every trigger is paused.",
+  );
+  if (state.reason) io.out(`Why: ${state.reason}`);
+  if (state.byEnvironment) {
+    io.out("TRIGGERS_PAUSED is set where the instance runs: unset it and restart to resume.");
+  }
+}
+
 /** What each command does. One for each name in `COMMANDS`, and none besides: the types hold it to that. */
 const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>> = {
   login: async (rest, io) => {
@@ -1214,6 +1252,11 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
     io.out(`${url}`);
     io.out(`Version ${instance.body.coreVersion}, migration level ${instance.body.migrationLevel}`);
     io.out(failing.length === 0 ? "Ready" : `Not ready: ${failing.join(", ")} failing`);
+    if (ready.body?.checks?.database?.readOnly) {
+      io.out(
+        "Read only: the database takes no writes, such as when its disk is full. Reads are served; every change is refused with 503 until it takes writes again.",
+      );
+    }
     return failing.length === 0 ? 0 : 1;
   },
   logout: async (_rest, io) => {
@@ -1249,6 +1292,10 @@ const HANDLERS: Record<CommandName, (rest: string[], io: Io) => Promise<number>>
         ? lines.join("\n")
         : "No sign-in is saved. Run: volvel login --url <url> --token <api key>",
     );
+    return 0;
+  },
+  instance: async (rest, io) => {
+    await instanceCommand(rest, io);
     return 0;
   },
   init: async (rest, io) => {

@@ -72,7 +72,7 @@ export function SectionTabs({
             key={tab.slug}
             to={`/t/${tenantId}/${tab.slug}`}
             current={on}
-            className={`shrink-0 border-b-2 px-2.5 py-2 text-body-sm sm:px-3 ${
+            className={`shrink-0 border-b-2 px-2 py-2 text-body-sm sm:px-3 ${
               on
                 ? "border-action font-medium text-ink"
                 : "border-transparent text-ink-muted hover:text-ink"

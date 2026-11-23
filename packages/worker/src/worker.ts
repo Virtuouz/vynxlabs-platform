@@ -36,6 +36,12 @@ export interface WorkerOptions {
   concurrency?: number;
   /** Stop after this long with nothing to do. Default: never. */
   idleExitSeconds?: number;
+  /**
+   * A file touched each time the control plane answers a request for work, whether or not
+   * there was any: what a health check reads. Default: `volvel-worker-alive` in the
+   * system's temp directory.
+   */
+  heartbeatFile?: string;
   /** Where downloaded bundles are kept. Default: a new directory under the system's temp directory. */
   cacheDir?: string;
   log?: WorkerLog;
@@ -399,6 +405,9 @@ export class Worker {
         },
         abort.signal,
       );
+      // The control plane answered: this worker is well, whether or not there is work.
+      const beat = this.#options.heartbeatFile ?? join(tmpdir(), "volvel-worker-alive");
+      await writeFile(beat, `${new Date().toISOString()}\n`).catch(() => {});
       return reply.job;
     } catch (error) {
       if (this.#stopping) return null;

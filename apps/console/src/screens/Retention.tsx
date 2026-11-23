@@ -36,7 +36,7 @@ const KINDS: { key: Kind; label: string; about: string }[] = [
 ];
 
 /** How long this tenant's history is kept, kind by kind, with the instance's default beside each. */
-export function RetentionSettings({ base }: { base: string }) {
+export function RetentionSettings({ base, bare = false }: { base: string; bare?: boolean }) {
   const loaded = useLoad<Retention>(`${base}/retention`);
   const [draft, setDraft] = useState<Partial<Record<Kind, string>>>({});
   const [busy, setBusy] = useState(false);
@@ -130,11 +130,8 @@ export function RetentionSettings({ base }: { base: string }) {
     }
   };
 
-  return (
-    <Page
-      title="Retention"
-      description="How long this tenant's history is kept. Runs, events and refused requests older than their period are removed within minutes; the audit log is different, as said under it. Leave a field empty to use the instance's default."
-    >
+  const body = (
+    <>
       <form
         className="flex max-w-xl flex-col gap-4"
         onSubmit={(event) => {
@@ -163,6 +160,16 @@ export function RetentionSettings({ base }: { base: string }) {
         onDiscard={() => setDraft({})}
         what="retention"
       />
+    </>
+  );
+  // In a sheet beside a list, the title is the sheet's own.
+  if (bare) return body;
+  return (
+    <Page
+      title="Retention"
+      description="How long this tenant's history is kept. Runs, events and refused requests older than their period are removed within minutes; the audit log is different, as said under it. Leave a field empty to use the instance's default."
+    >
+      {body}
     </Page>
   );
 }

@@ -1,6 +1,7 @@
 import { Button } from "@volvel/ui";
 import { useNavigationGuard } from "../router.tsx";
 import { useShortcut } from "./keys.ts";
+import { READ_ONLY_WORDS, useReadOnly } from "./ReadOnly.tsx";
 
 /**
  * How a page of settings is saved (08 §3.32): changes are made, then saved
@@ -35,6 +36,7 @@ export function SaveBar({
     },
     { enabled: dirty && guard },
   );
+  const readOnly = useReadOnly();
   if (!dirty) return null;
   return (
     <section
@@ -45,11 +47,22 @@ export function SaveBar({
         <span className="font-medium">Unsaved changes</span>
         <span className="text-ink-muted"> to {what}.</span>
       </span>
-      <span className="flex items-center gap-2">
+      <span className="flex flex-wrap items-center gap-2">
+        {readOnly ? (
+          <span className="text-meta text-ink-muted">
+            It cannot be saved now: the instance takes no changes.
+          </span>
+        ) : null}
         <Button disabled={saving} onClick={onDiscard}>
           Discard
         </Button>
-        <Button variant="primary" loading={saving} onClick={onSave}>
+        <Button
+          variant="primary"
+          loading={saving}
+          disabled={readOnly}
+          {...(readOnly ? { tooltip: READ_ONLY_WORDS } : {})}
+          onClick={onSave}
+        >
           Save
         </Button>
       </span>

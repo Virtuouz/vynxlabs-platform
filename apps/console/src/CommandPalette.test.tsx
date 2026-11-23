@@ -65,6 +65,25 @@ beforeEach(() => {
           ],
         });
       }
+      if (q === "zeta") {
+        const one = (kind: string, ref: string) => ({
+          kind,
+          id: `id-${kind}`,
+          ref,
+          workspaceId: W,
+          workspaceSlug: "dev",
+          title: ref,
+          hint: null,
+        });
+        return json({
+          items: [
+            one("variable", "zeta/region"),
+            one("secret", "ZETA_TOKEN"),
+            one("query", "zeta/late-orders"),
+            one("data_source", "zeta/warehouse"),
+          ],
+        });
+      }
       return json({
         items: [
           {
@@ -146,6 +165,30 @@ test("a name finds things here before other workspaces, and opens the one chosen
   press("Enter");
   // A script opens on its own page, where its runs, schedule and code are.
   expect(location.pathname).toBe(`/t/${T}/workspaces/${W}/scripts/reminders/send`);
+});
+
+test("variables, secrets, saved queries and data sources are found, named, and open their own page (SHL-13)", async () => {
+  palette();
+  type("zeta");
+  await screen.findByText("zeta/region");
+  const options = screen.getAllByRole("option").map((one) => one.textContent ?? "");
+  for (const [name, label] of [
+    ["zeta/region", "Variable"],
+    ["ZETA_TOKEN", "Secret"],
+    ["zeta/late-orders", "Query"],
+    ["zeta/warehouse", "Data source"],
+  ] as const) {
+    expect(
+      options.find((one) => one.includes(name)),
+      name,
+    ).toContain(label);
+  }
+  press("ArrowDown");
+  press("ArrowDown");
+  press("Enter");
+  expect(`${location.pathname}${location.search}`).toBe(
+    `/t/${T}/workspaces/${W}/queries?query=zeta%2Flate-orders`,
+  );
 });
 
 test("a pasted run ID opens its run", async () => {

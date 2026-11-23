@@ -16,3 +16,10 @@
 
 ## Found
 - `ObjectPages.test.tsx` "no kind is sent to an editor that does not exist for it (REL-07)" fails on the phase branch already (objectHref of `connection_group` gives the connections list, test expects `resources/edit/connection_group/...`). Not mine.
+
+## CFG-MP3: set a variable where it is
+- Test: `Configure.test.tsx` "CFG-MP3: a variable is set where it is, on its row and on its page, prefilled and over several lines". Failed before (no Change button, no page action).
+- Change: new shared `apps/console/src/screens/VariableSheet.tsx` (textarea, prefilled with the current value, shows the default, saving/failed states); `Execution.tsx` `Variables` row actions "Set"/"Change" (drafts new/removed get none) plus `Closing` sheet; `ObjectPages.tsx` `VariablePage` action "Change value"/"Set value".
+- Siblings: the "Set variable" create form in the list still has a one-line Value (left: ListScreen fields have no multi-line kind; a person with a long value uses Change). Secrets page `ReplaceSecret` is another piece, not changed.
+- Seen: each row has Set or Change; the page has a button; the sheet starts with what is stored and may hold several lines.
+- Polish: states: saving disables Save, failure shown in the sheet; lifecycle: set, change, Use default (existing); keyboard: sheet focuses the field. Walk: Variables at 390 px (row actions wrap), page, reload.

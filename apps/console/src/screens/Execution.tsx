@@ -40,6 +40,7 @@ import {
 import { type GroupMemberRow, GroupMemberSheet } from "./GroupMemberSheet.tsx";
 import { OfferButton } from "./OfferToAgent.tsx";
 import { askToDelete } from "./PromotionConfirm.tsx";
+import { VariableSheet, type VariableValue } from "./VariableSheet.tsx";
 
 type Status = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 /** The badge tone of a run's state, for the run page's mark. */
@@ -873,102 +874,126 @@ export function Connections({ root, production = false }: { root: string; produc
 
 export function Variables({ root }: { root: string }) {
   const variableUses = useReferences(root, "variable");
+  const [editing, setEditing] = useState<{ row: VariableValue; reload: () => void } | null>(null);
   return (
-    <ListScreen<{
-      path: string;
-      description: string;
-      default: string | null;
-      value: string | null;
-      arrives?: boolean;
-      draft?: "new" | "changed" | "removed" | null;
-    }>
-      title="Variables"
-      setupField="path"
-      description="Settings a script reads at run time. Each workspace can set its own value. Without one, the default from the repository applies."
-      path={`${root}/variable-values`}
-      rowKey={(row) => row.path}
-      columns={[
-        {
-          header: "Variable",
-          cell: (row) => (
-            <span className="inline-flex flex-wrap items-center gap-2">
-              {row.draft === "new" ? (
-                // It has no page yet: its editor is where it is.
-                <Link
-                  to={`${consoleLink(root)}/resources/edit/variable/${row.path}`}
-                  className="font-mono text-code text-action"
-                >
-                  {row.path}
-                </Link>
-              ) : row.arrives ? (
-                <Code>{row.path}</Code>
-              ) : (
-                <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />
-              )}
-              {row.draft === "new" ? (
-                <StatePill state="draft">Draft, never deployed</StatePill>
-              ) : row.draft ? (
-                <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
-              ) : row.arrives ? (
-                <Tag tone="neutral">Arrives with the next promotion</Tag>
-              ) : null}
-            </span>
-          ),
-        },
-        {
-          header: "Read by",
-          cell: (row) => (
-            <UsedBy
-              uses={variableUses(row.path)}
-              failed={variableUses.failed}
-              loaded={variableUses.loaded}
-              link={consoleLink(root)}
-              all={`${consoleLink(root)}/variables/${row.path}?tab=used-by`}
-            />
-          ),
-        },
-        { header: "For", cell: (row) => <span className="text-ink-muted">{row.description}</span> },
-        {
-          header: "Value here",
-          cell: (row) =>
-            row.value !== null ? (
-              <Code>{row.value}</Code>
-            ) : (
-              <span className="text-ink-muted">Default: {row.default ?? "none"}</span>
-            ),
-        },
-      ]}
-      empty={{ title: "No variables yet" }}
-      create={{
-        action: "Set variable",
-        fields: [
+    <>
+      <ListScreen<{
+        path: string;
+        description: string;
+        default: string | null;
+        value: string | null;
+        arrives?: boolean;
+        draft?: "new" | "changed" | "removed" | null;
+      }>
+        title="Variables"
+        setupField="path"
+        description="Settings a script reads at run time. Each workspace can set its own value. Without one, the default from the repository applies."
+        path={`${root}/variable-values`}
+        rowKey={(row) => row.path}
+        columns={[
           {
-            name: "path",
-            label: "Variable",
-            choose: {
-              path: `${root}/variable-values`,
-              option: (item: { path: string; description?: string }) => ({
-                value: item.path,
-                label: item.path,
-                ...(item.description ? { hint: item.description } : {}),
-              }),
-            },
+            header: "Variable",
+            cell: (row) => (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                {row.draft === "new" ? (
+                  // It has no page yet: its editor is where it is.
+                  <Link
+                    to={`${consoleLink(root)}/resources/edit/variable/${row.path}`}
+                    className="font-mono text-code text-action"
+                  >
+                    {row.path}
+                  </Link>
+                ) : row.arrives ? (
+                  <Code>{row.path}</Code>
+                ) : (
+                  <ObjectLink link={consoleLink(root)} kind="variable" path={row.path} />
+                )}
+                {row.draft === "new" ? (
+                  <StatePill state="draft">Draft, never deployed</StatePill>
+                ) : row.draft ? (
+                  <Tag tone="draft">{row.draft === "removed" ? "Removing" : "Draft"}</Tag>
+                ) : row.arrives ? (
+                  <Tag tone="neutral">Arrives with the next promotion</Tag>
+                ) : null}
+              </span>
+            ),
           },
-          { name: "value", label: "Value" },
-        ],
-        submit: ({ path = "", value }) => api.put(`${root}/variable-values/${path}`, { value }),
-      }}
-      rowActions={(row, reload) =>
-        row.value !== null ? (
-          <RemoveButton
-            label="Use default"
-            confirm={`Clear the value of ${row.path} in this workspace?`}
-            run={() => api.delete(`${root}/variable-values/${row.path}`)}
-            onDone={reload}
+          {
+            header: "Read by",
+            cell: (row) => (
+              <UsedBy
+                uses={variableUses(row.path)}
+                failed={variableUses.failed}
+                loaded={variableUses.loaded}
+                link={consoleLink(root)}
+                all={`${consoleLink(root)}/variables/${row.path}?tab=used-by`}
+              />
+            ),
+          },
+          {
+            header: "For",
+            cell: (row) => <span className="text-ink-muted">{row.description}</span>,
+          },
+          {
+            header: "Value here",
+            cell: (row) =>
+              row.value !== null ? (
+                <Code>{row.value}</Code>
+              ) : (
+                <span className="text-ink-muted">Default: {row.default ?? "none"}</span>
+              ),
+          },
+        ]}
+        empty={{ title: "No variables yet" }}
+        create={{
+          action: "Set variable",
+          fields: [
+            {
+              name: "path",
+              label: "Variable",
+              choose: {
+                path: `${root}/variable-values`,
+                option: (item: { path: string; description?: string }) => ({
+                  value: item.path,
+                  label: item.path,
+                  ...(item.description ? { hint: item.description } : {}),
+                }),
+              },
+            },
+            { name: "value", label: "Value" },
+          ],
+          submit: ({ path = "", value }) => api.put(`${root}/variable-values/${path}`, { value }),
+        }}
+        rowActions={(row, reload) => (
+          <span className="flex flex-wrap justify-end gap-2">
+            {row.draft === "new" || row.draft === "removed" ? null : (
+              <Button size="small" onClick={() => setEditing({ row, reload })}>
+                {row.value !== null ? "Change" : "Set"}
+              </Button>
+            )}
+            {row.value !== null ? (
+              <RemoveButton
+                label="Use default"
+                confirm={`Clear the value of ${row.path} in this workspace?`}
+                run={() => api.delete(`${root}/variable-values/${row.path}`)}
+                onDone={reload}
+              />
+            ) : null}
+          </span>
+        )}
+      />
+      <Closing subject={editing}>
+        {(one, shown) => (
+          <VariableSheet
+            root={root}
+            open={shown}
+            variable={one.row}
+            onClose={() => setEditing(null)}
+            onSaved={one.reload}
           />
-        ) : null
-      }
-    />
+        )}
+      </Closing>
+    </>
   );
 }
 

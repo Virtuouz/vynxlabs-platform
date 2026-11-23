@@ -6,7 +6,7 @@ import { DeployMenu } from "./kit/DeployMenu.tsx";
 import { Sources } from "./screens/Data.tsx";
 import { Promotion, WorkspaceControls, type WorkspaceSummary } from "./screens/Environments.tsx";
 import { ConnectionGroups, Connections, Variables } from "./screens/Execution.tsx";
-import { ConnectionPage } from "./screens/ObjectPages.tsx";
+import { ConnectionPage, VariablePage } from "./screens/ObjectPages.tsx";
 import { show } from "./testing.tsx";
 
 /**
@@ -372,3 +372,34 @@ test("?setup= opens the form that makes what a refused promotion names: a variab
 /** What the fields of a form hold, the hidden one a chosen option fills included. */
 const valuesIn = (form: HTMLElement) =>
   [...form.querySelectorAll("input")].map((input) => (input as HTMLInputElement).value);
+
+test("CFG-MP3: a variable is set where it is, on its row and on its page, prefilled and over several lines", async () => {
+  const item = {
+    path: "greeting",
+    description: "Said first",
+    default: "Hi",
+    value: "Hello\nthere",
+  };
+  routes[`GET ${root}/variable-values`] = () => [200, { items: [item] }];
+  routes[`GET ${root}/variable-values/greeting`] = () => [200, item];
+  routes[`GET ${root}/references`] = () => [200, { items: [] }];
+  routes[`PUT ${root}/variable-values/greeting`] = () => [204, null];
+  show(<Variables root={root} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Change" }));
+  const sheet = await screen.findByRole("dialog");
+  const box = within(sheet).getByLabelText("Value") as HTMLTextAreaElement;
+  expect(box.tagName).toBe("TEXTAREA");
+  expect(box.value).toBe("Hello\nthere");
+  expect(within(sheet).getByText(/The default is Hi/)).toBeTruthy();
+  fireEvent.change(box, { target: { value: "Hello\nthere\nagain" } });
+  fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ value: "Hello\nthere\nagain" }),
+  );
+  cleanup();
+  show(<VariablePage root={root} link={link} path="greeting" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Change value" }));
+  expect(
+    ((await screen.findByRole("dialog")).querySelector("textarea") as HTMLTextAreaElement).value,
+  ).toBe("Hello\nthere");
+});

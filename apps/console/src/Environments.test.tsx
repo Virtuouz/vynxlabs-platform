@@ -399,7 +399,10 @@ test("a tenant whose database does not answer is deleted only after a second con
 });
 
 test("a workspace's run limit is set from its settings, from 1 to 1000, saved with the others (CFG-MP4)", async () => {
-  routes[`GET /api/v1${base}/workspaces/w-dev`] = () => [200, { timeZone: "UTC", concurrencyLimit: 20 }];
+  routes[`GET /api/v1${base}/workspaces/w-dev`] = () => [
+    200,
+    { timeZone: "UTC", concurrencyLimit: 20 },
+  ];
   routes[`PATCH /api/v1${base}/workspaces/w-dev`] = () => [200, {}];
   show(<WorkspaceSettings base={base} tenantId="t1" workspace={dev} reload={() => {}} />);
   const field = (await screen.findByLabelText("Runs at once")) as HTMLInputElement;

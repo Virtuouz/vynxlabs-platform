@@ -1,4 +1,12 @@
-import { Button, ComboboxField, Notice, NumberField, SelectField, SideSheet, TextField } from "@volvel/ui";
+import {
+  Button,
+  ComboboxField,
+  Notice,
+  NumberField,
+  SelectField,
+  SideSheet,
+  TextField,
+} from "@volvel/ui";
 import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
@@ -219,7 +227,8 @@ export function WorkspaceSettings({
   };
   const shownLimit = limit === null ? storedLimit : limit;
   const limitBad =
-    limit !== null && (limit === undefined || !Number.isInteger(limit) || limit < 1 || limit > 1000);
+    limit !== null &&
+    (limit === undefined || !Number.isInteger(limit) || limit < 1 || limit > 1000);
   const limitChanged = limit !== null && limit !== storedLimit;
   const blank = draft.name.trim() === "" || limitBad;
   const dirty =
@@ -240,7 +249,9 @@ export function WorkspaceSettings({
       await api.patch(root, {
         ...(draft.name.trim() !== workspace.name ? { name: draft.name.trim() } : {}),
         ...(draft.timeZone !== storedZone ? { timeZone: draft.timeZone } : {}),
-        ...(limitChanged && limit !== null && limit !== undefined ? { concurrencyLimit: limit } : {}),
+        ...(limitChanged && limit !== null && limit !== undefined
+          ? { concurrencyLimit: limit }
+          : {}),
         ...(draft.linkedWorkspaceId !== workspace.linkedWorkspaceId
           ? { linkedWorkspaceId: draft.linkedWorkspaceId }
           : {}),

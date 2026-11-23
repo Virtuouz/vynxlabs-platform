@@ -1,4 +1,5 @@
 import { Button } from "@volvel/ui";
+import { useEffect, useRef } from "react";
 import { useNavigationGuard } from "../router.tsx";
 import { useShortcut } from "./keys.ts";
 import { READ_ONLY_WORDS, useReadOnly } from "./ReadOnly.tsx";
@@ -37,11 +38,41 @@ export function SaveBar({
     { enabled: dirty && guard },
   );
   const readOnly = useReadOnly();
+  const bar = useRef<HTMLElement>(null);
+  // Where the person was before the bar took the focus; the bar leaves when it is used, and the
+  // focus goes back there rather than to the page.
+  const before = useRef<HTMLElement | null>(null);
+  const leaving = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!dirty) return;
+    const note = (event: FocusEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && !bar.current?.contains(target)) before.current = target;
+    };
+    document.addEventListener("focusin", note);
+    return () => document.removeEventListener("focusin", note);
+  }, [dirty]);
+  useEffect(() => {
+    const back = leaving.current;
+    if (dirty || !back) return;
+    leaving.current = null;
+    if (back.isConnected) back.focus();
+  }, [dirty]);
+  const use = (action: () => void) => () => {
+    const home = before.current?.isConnected
+      ? before.current
+      : (bar.current?.parentElement?.querySelector<HTMLElement>(
+          "input:not([disabled]), select:not([disabled]), textarea:not([disabled])",
+        ) ?? null);
+    leaving.current = home;
+    action();
+  };
   if (!dirty) return null;
   return (
     <section
+      ref={bar}
       aria-label="Unsaved changes"
-      className="sticky bottom-0 layer-sticky -mx-4 -mb-6 mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-line border-t bg-raised px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:py-3 shadow-overlay md:-mx-6 md:px-6"
+      className="sticky bottom-0 layer-sticky -mx-4 mb-[calc(var(--page-pad-b,0px)*-1)] mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-line border-t bg-raised px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:py-3 shadow-overlay md:-mx-6 md:px-6"
     >
       <span className="text-body-sm">
         <span className="font-medium">Unsaved changes</span>
@@ -53,7 +84,7 @@ export function SaveBar({
             It cannot be saved now: the instance takes no changes.
           </span>
         ) : null}
-        <Button disabled={saving} onClick={onDiscard}>
+        <Button disabled={saving} onClick={use(onDiscard)}>
           Discard
         </Button>
         <Button
@@ -61,7 +92,7 @@ export function SaveBar({
           loading={saving}
           disabled={readOnly}
           {...(readOnly ? { tooltip: READ_ONLY_WORDS } : {})}
-          onClick={onSave}
+          onClick={use(onSave)}
         >
           Save
         </Button>

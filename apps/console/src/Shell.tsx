@@ -1335,9 +1335,9 @@ export function Shell({
                 bleeding
                   ? ""
                   : where.editor
-                    ? "py-4"
+                    ? "py-4 [--page-pad-b:1rem]"
                     : // An overview takes a wide screen's room for a third column; other pages keep a reading width.
-                      `mx-auto py-6 ${where.area === "overview" ? "max-w-[1440px] 3xl:max-w-[1920px]" : "max-w-[1440px]"}`
+                      `mx-auto py-6 [--page-pad-b:1.5rem] ${where.area === "overview" ? "max-w-[1440px] 3xl:max-w-[1920px]" : "max-w-[1440px]"}`
               }`}
             >
               <ErrorBoundary resetOn={path} what="This page">

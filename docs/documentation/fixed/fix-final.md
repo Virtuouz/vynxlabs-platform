@@ -45,3 +45,8 @@ No migration. No contract changed. Tests seen failing first on the code before t
 
 ## Lines for docs
 - None for CHANGELOG beyond: "A script's Settings tab shows its draft's settings, and says when there is a draft."
+
+## Follow-up (coordinator)
+- Save bar: `kit/SaveBar.tsx` margin is `mb-[calc(var(--page-pad-b,0px)*-1)]`; `Shell.tsx` sets `--page-pad-b` with each wrapper (1.5rem for `py-6`, 1rem for the editor's `py-4`). Where no page sets it (dialogs, sheets) it is 0. Test: `ReadOnly.test.tsx`. Callers (SSO, Provisioning, Branding, Environments, InstanceBranding, Retention, KitSheet): walk the end of the scroll.
+- Focus: SaveBar remembers the element focused before it and returns focus there after Discard or Save (else the form's first field). Test: `ReadOnly.test.tsx`.
+- `plural()` in `chartDrawer.tsx` is exported: "status" gives "statuses". Test: `chartAxes.test.tsx`. Replaces the earlier "-mb-6" note and the two Found items.

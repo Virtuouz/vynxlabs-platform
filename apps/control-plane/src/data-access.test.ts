@@ -71,6 +71,15 @@ export const asGroup = { execute: async (input, ctx) => {
   try { await notes.as(input.person).insert({ title: "by them", team: "ops" }); } catch (error) { wrote = error.message; }
   return { theirs, wrote, all: (await notes.find()).length };
 } };
+export const attacher = { execute: async (input, ctx) => {
+  const said = async (work) => { try { await work(); return "allowed"; } catch (error) { return error.message; } };
+  const mine = ctx.table("tasks").as(input.person);
+  return {
+    insert: await said(() => mine.insert({ title: "with a file", attachment: input.file })),
+    update: await said(() => mine.update(input.row, { attachment: input.file })),
+    workspace: await said(() => ctx.table("tasks").insert({ title: "as the workspace", attachment: input.file })),
+  };
+} };
 export const undeclared = { execute: async (input, ctx) => ({ rows: await ctx.table("tasks").find() }) };
 export const erpSync = { execute: async (input, ctx) => {
   const customers = ctx.source("erp").table("customers");
@@ -117,6 +126,7 @@ function bundle(extra: BundleManifest[] = []): Bundle {
       manifest("data_source", "erp", { connector: "postgres" }),
       script("writer", "writer", { tables: ["tasks"] }),
       script("as-person", "asPerson", { tables: ["tasks"] }),
+      script("attacher", "attacher", { tables: ["tasks"] }),
       script("as-group", "asGroup", { tables: ["notes"] }),
       script("undeclared", "undeclared"),
       script("erp-sync", "erpSync", { sources: ["erp"] }),
@@ -800,6 +810,28 @@ describe("files follow the rows that name them (D22)", () => {
     expect((await alice.post(`${ws()}/rows/tasks`, { title: "Z", attachment: mine })).status).toBe(
       201,
     );
+  });
+
+  test("a script acting for a person names only a file that person may read; as the workspace it names any", async () => {
+    const hidden = await upload(alice, "script-hidden.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "Alice's", attachment: hidden });
+    const shown = await upload(alice, "script-shown.txt");
+    await alice.post(`${ws()}/rows/tasks`, { title: "Bob's", attachment: shown, owner_id: bob.id });
+    const row = (await alice.post(`${ws()}/rows/tasks`, { title: "Bob's blank", owner_id: bob.id }))
+      .body.items[0];
+
+    const refused = await ran("attacher", { person: bob.id, file: hidden, row: row.id });
+    expect(refused.status, JSON.stringify(refused.error)).toBe("succeeded");
+    expect(refused.output.insert).toContain("not a file of this workspace");
+    expect(refused.output.update).toContain("not a file of this workspace");
+    expect(refused.output.workspace).toBe("allowed");
+
+    const accepted = await ran("attacher", { person: bob.id, file: shown, row: row.id });
+    expect(accepted.output).toEqual({
+      insert: "allowed",
+      update: "allowed",
+      workspace: "allowed",
+    });
   });
 
   test("DAT-10: a file a row names is not deleted, and the answer says so", async () => {

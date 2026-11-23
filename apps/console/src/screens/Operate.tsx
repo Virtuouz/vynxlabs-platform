@@ -27,6 +27,7 @@ import { Truncate } from "../kit/Truncate.tsx";
 import { ViewsMenu } from "../kit/views.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link, navigate, useQueryValue, useUrlParam } from "../router.tsx";
+import { PublishEventButton } from "./PublishEvent.tsx";
 import { NewScheduleSheet } from "./ScheduleForm.tsx";
 
 // ----- Triggers -----
@@ -746,7 +747,15 @@ const SOURCE: Record<string, string> = {
 };
 
 /** What was published, newest first, with what each one started. */
-export function EventsWorkbench({ root, link }: { root: string; link: string }) {
+export function EventsWorkbench({
+  root,
+  link,
+  production = false,
+}: {
+  root: string;
+  link: string;
+  production?: boolean;
+}) {
   // The name searched for is in the address, so a reload, a link or a saved view keeps it.
   const [applied, setApplied] = useUrlParam("name", "");
   const [name, setName] = useState(applied);
@@ -769,6 +778,7 @@ export function EventsWorkbench({ root, link }: { root: string; link: string }) 
     <CollectionView
       title="Events"
       description="What has been published here, newest first. Flows and scripts listen for an event by name."
+      actions={<PublishEventButton root={root} production={production} onPublished={list.reload} />}
       toolbar={
         <form
           className="flex flex-wrap items-end gap-2"

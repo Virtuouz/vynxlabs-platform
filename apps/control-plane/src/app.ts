@@ -362,10 +362,15 @@ export async function buildApp(options: AppOptions) {
       preCompressed: true,
       cacheControl: false,
       setHeaders(response, path) {
-        // A file under assets has a hash of its content in its name, so it never changes.
+        // A file under assets has a hash of its content in its name, so it never changes. The
+        // help's pictures are named by their path, so a release can change what a name holds.
+        const hashed =
+          /[\\/]assets[\\/]/.test(path) &&
+          !/[\\/]help[\\/]/.test(path) &&
+          /-[\w-]{8}\.[a-z0-9]+(\.(br|gz))?$/i.test(path);
         response.header(
           "cache-control",
-          /[\\/]assets[\\/]/.test(path) ? "public, max-age=31536000, immutable" : "no-cache",
+          hashed ? "public, max-age=31536000, immutable" : "no-cache",
         );
       },
     });
@@ -373,7 +378,9 @@ export async function buildApp(options: AppOptions) {
   app.setNotFoundHandler((request, reply) => {
     const isApi = request.url === "/api" || request.url.startsWith("/api/");
     // The console is a single-page app: any other path is one of its screens.
-    if (consoleDir && request.method === "GET" && !isApi) {
+    // The help's files are asked for by name: one that is not there is missing, not a screen.
+    const isHelpFile = /^\/help\/[^?]*\.[a-z0-9]+(\?|$)/i.test(request.url);
+    if (consoleDir && request.method === "GET" && !isApi && !isHelpFile) {
       return reply.sendFile("index.html");
     }
     return notFoundHandler(request, reply);

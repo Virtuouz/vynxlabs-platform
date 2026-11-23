@@ -78,6 +78,18 @@ function listenersOf(
   return { listeners: active, pausedListeners: on - active };
 }
 
+/**
+ * Where a flow's steps are drawn: the layout its body carries, and over it what was
+ * arranged on the flow page since. A deploy that brings a new layout clears the saved
+ * one, so the newer of the two is what every screen draws.
+ */
+function flowPositions(
+  inBody: unknown,
+  saved: Record<string, { x: number; y: number }> | undefined,
+): Record<string, { x: number; y: number }> {
+  return { ...((inBody as Record<string, { x: number; y: number }> | undefined) ?? {}), ...saved };
+}
+
 function wildPath(params: { "*": string }): string {
   const path = params["*"];
   if (!pathPattern.test(path) || path.length > 255) throw badRequest("The path is not valid.");
@@ -527,7 +539,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             count(*) filter (where created_at > now() - interval '24 hours') as day,
             count(*) filter (where created_at > now() - interval '24 hours' and status = 'failed') as failed,
             count(*) filter (where status = 'running' and exists (
-              select 1 from step_run s where s.flow_run_id = flow_run.id and s.status = 'waiting'
+              select 1 from step_run s
+              where s.flow_run_id = flow_run.id and s.status = 'waiting' and s.detail ? 'title'
             )) as waiting
           from flow_run where workspace_id = ${params.w} and parent_flow_run_id is null
           group by flow_path
@@ -661,10 +674,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           nodes: body.nodes as unknown as Record<string, unknown>,
           edges: body.edges as unknown as Record<string, unknown>[],
           // A flow drawn in the console carries its layout in its body. Others keep it apart.
-          layout: {
-            ...((body.layout as Record<string, { x: number; y: number }> | undefined) ?? {}),
-            ...(layout?.positions ?? {}),
-          },
+          layout: flowPositions(body.layout, layout?.positions),
           triggers: await Promise.all(
             states.map(async (state) => {
               const token =
@@ -1033,10 +1043,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           bundleVersion: row.bundle_version,
           nodes: body.nodes as unknown as Record<string, unknown>,
           edges: body.edges as unknown as Record<string, unknown>[],
-          layout: {
-            ...(positions ?? {}),
-            ...((body.layout as Record<string, { x: number; y: number }> | undefined) ?? {}),
-          },
+          layout: flowPositions(body.layout, positions),
           changed: shape(now) !== shape(manifest),
         };
       },

@@ -225,6 +225,21 @@ describe("a repository with mistakes", () => {
     ]);
   });
 
+  test("catches a name no expression of a flow has, such as `input` (FLW-11)", async () => {
+    const source = `import { defineFlow, defineScript, step, trigger, z } from "@volvel/sdk";\n${script()}export const f = defineFlow({
+      path: "flows/wrong-name",
+      nodes: {
+        start: trigger.manual(),
+        size: step.branch({ big: "input.amount > 100" }),
+        a: step.set({ x: "1" }),
+      },
+      edges: [["start", "size"], ["size", "a", { when: "big" }]],
+    });`;
+    expect(await problems(source)).toEqual([
+      expect.stringMatching(/^flows\/wrong-name \(flow\): .*is not a valid expression: .*input/),
+    ]);
+  });
+
   test("catches a path used twice, an empty repository and code that does not compile", async () => {
     expect(
       await problems(`${head}${script()}export const c = defineConnection({ path: "jobs/a" });`),

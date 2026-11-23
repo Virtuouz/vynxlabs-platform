@@ -333,9 +333,9 @@ function WorkspaceLine({
         {s ? (
           <>
             {failed > 0 ? (
-              <StatePill state="failed">{plural(failed, "failed run")} today</StatePill>
+              <StatePill state="failed">{plural(failed, "failed run")} in 24 hours</StatePill>
             ) : (
-              <StatePill state="ok">No failures today</StatePill>
+              <StatePill state="ok">No failures in 24 hours</StatePill>
             )}
             {s.drafts ? <StatePill state="draft">{plural(s.drafts, "draft")}</StatePill> : null}
           </>

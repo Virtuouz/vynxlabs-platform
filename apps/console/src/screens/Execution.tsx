@@ -22,6 +22,7 @@ import { OneTimeSecret } from "../kit/OneTimeSecret.tsx";
 import { consoleLink, ObjectLink } from "../kit/objects.tsx";
 import { UsedBy, useReferences, usersOf } from "../kit/references.tsx";
 import { mayPass, retryAfter } from "../kit/retry.ts";
+import { STARTED_BY } from "../kit/starts.ts";
 import { Code, Mono, type RunState, StatePill, Tag } from "../kit/status.tsx";
 import { Time } from "../kit/Time.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
@@ -77,17 +78,7 @@ export function took(run: Pick<Run, "startedAt" | "finishedAt">) {
   return between(run.startedAt, run.finishedAt);
 }
 
-export const TRIGGER: Record<string, string> = {
-  manual: "Started by hand",
-  schedule: "Schedule",
-  webhook: "Webhook",
-  event: "Event",
-  form: "Form",
-  flow: "A flow",
-  alert: "Failure handler",
-  rerun: "Re-run",
-  retry: "Retry",
-};
+export const TRIGGER = STARTED_BY;
 
 interface ScriptRow {
   path: string;

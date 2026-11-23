@@ -41,6 +41,10 @@ function messageOf(error: ErrorObject): string {
   if (error.keyword === "pattern" && typeof format === "string") {
     return FORMATS[format] ?? `must be in the ${format} format`;
   }
+  // A field left empty is said to be empty, not to fail the grammar of what it was to hold.
+  if (error.keyword === "pattern" && (error as { data?: unknown }).data === "") {
+    return "is empty: it needs a value";
+  }
   const extra =
     error.keyword === "additionalProperties" ? ` (${String(error.params.additionalProperty)})` : "";
   return `${error.message ?? "is invalid"}${extra}`;
@@ -90,7 +94,7 @@ function toIssues(errors: ErrorObject[] | null | undefined, prefix = ""): Manife
  */
 export class KindRegistry {
   // Body schemas may carry annotation keywords for editors, so unknown keywords are allowed.
-  readonly #ajv = new Ajv2020({ allErrors: true, strict: false });
+  readonly #ajv = new Ajv2020({ allErrors: true, strict: false, verbose: true });
   readonly #manifest: ValidateFunction;
   readonly #stored: ValidateFunction;
   readonly #kinds = new Map<string, Map<number, ValidateFunction>>();

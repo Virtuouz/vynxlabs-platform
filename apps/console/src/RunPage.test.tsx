@@ -220,6 +220,31 @@ test("a flow run is retried from its failed step after saying what runs again an
   expect(calls.find((call) => call.method === "POST")?.body).toEqual({ from: "failed" });
 });
 
+test("a flow run started by another flow is retried through that one, and has no Re-run (FLW-16)", async () => {
+  routes[`GET ${root}/flow-runs/f2`] = () => [
+    200,
+    { ...flowRun, parentFlowRunId: "parent1", retryOf: null },
+  ];
+  show(<RunPage root={root} link={link} id="f2" />);
+  const retryThrough = await screen.findByRole("link", { name: /Retry the flow that started it/ });
+  expect(retryThrough.getAttribute("href")).toBe(`${link}/runs/parent1`);
+  expect(screen.queryByRole("button", { name: /Re-run/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Copy as curl/ })).toBeNull();
+});
+
+test("a flow run's curl starts it again by the retry route, which needs no manual start (FLW-26)", async () => {
+  const copied: string[] = [];
+  vi.stubGlobal("navigator", {
+    clipboard: { writeText: async (text: string) => void copied.push(text) },
+  });
+  show(<RunPage root={root} link={link} id="f2" />);
+  fireEvent.click(await screen.findByRole("button", { name: /Copy as curl/ }));
+  await waitFor(() => expect(copied).toHaveLength(1));
+  expect(copied[0]).toContain(`/flow-runs/f2/retry`);
+  expect(copied[0]).toContain('"from":"start"');
+  expect(copied[0]).not.toContain("sku");
+});
+
 test("a step a retry kept says where it was done", async () => {
   show(<RunPage root={root} link={link} id="f2" />);
   // Steps are chosen on the timeline.

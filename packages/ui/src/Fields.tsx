@@ -302,6 +302,8 @@ export interface TextAreaFieldProps extends Common {
   maxLength?: number;
   disabled?: boolean;
   onChange?: (value: string) => void;
+  /** The field was left. */
+  onBlur?: () => void;
 }
 
 /** How tall a text area grows by itself, in lines. */

@@ -591,7 +591,7 @@ export async function decideFromPage(
       node: wanted.node,
       approve: request.decision === "approve",
       comment,
-      memberId: standing.memberId,
+      decidedBy: { type: "member", id: standing.memberId },
       via: "app",
     });
     await audit({

@@ -89,6 +89,12 @@ test("rejecting needs a comment", async () => {
     }),
   );
   expect(await screen.findByRole("heading", { name: "Rejected. Thank you, Bob." })).toBeTruthy();
+  // The same sentence as the console's approvals say about rejecting (OPS-28).
+  expect(
+    screen.getByText(
+      /Rejecting fails the step: the flow takes its error path, or fails if it has none\./,
+    ),
+  ).toBeTruthy();
 });
 
 test("a link that does not work says so, and where to look instead", async () => {

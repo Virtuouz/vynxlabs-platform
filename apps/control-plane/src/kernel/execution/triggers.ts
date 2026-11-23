@@ -4,7 +4,7 @@ import type { FlowBody, FlowTrigger, FormTrigger, WebhookVerify } from "@volvel/
 import type { TriggerSource } from "@volvel/sdk";
 import { CronExpressionParser } from "cron-parser";
 import type { Trx } from "../audit.js";
-import { badRequest, HttpError, notFound } from "../errors.js";
+import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import type { AppliedResource, KindHook } from "../kinds.js";
 import { observe } from "../metrics.js";
@@ -1013,6 +1013,12 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
         return skip("backlog");
       }
       try {
+        const label = due.node_id ? `${due.path}#${due.node_id}` : due.path;
+        // "Skip a time while its last run goes" holds for a schedule with a source too: the runs
+        // it started carry the schedule's name as the trigger, not as the schedule.
+        if (config.source && config.overlap === "skip" && (await stillGoing(trx, due, label))) {
+          return skip("overlap");
+        }
         if (config.source) {
           // One at a time: a tick that comes while the last is still looking is passed over,
           // so that two never start from the same place.
@@ -1051,7 +1057,6 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
           });
           return { kind: "script" as const, id: made.run.id };
         }
-        const label = due.node_id ? `${due.path}#${due.node_id}` : due.path;
         if (config.overlap === "skip" && (await stillGoing(trx, due, label))) {
           return skip("overlap");
         }
@@ -1122,7 +1127,7 @@ async function stillGoing(trx: Trx, state: TriggerRow, label: string): Promise<b
   const found = await sql<{ id: string }>`
     select id from ${sql.table(table)}
     where workspace_id = ${state.workspace_id} and trigger_type = 'schedule'
-      and trigger_detail->>'schedule' = ${label} and ${going}
+      and coalesce(trigger_detail->>'schedule', trigger_detail->>'trigger') = ${label} and ${going}
     limit 1
   `.execute(trx);
   return found.rows.length > 0;
@@ -1150,6 +1155,21 @@ export async function fireScheduleNow(
     .where("resource.path", "=", path)
     .executeTakeFirst();
   if (!state) throw notFound(node ? `The schedule ${node} of ${path}` : `The schedule ${path}`);
+  // A schedule that is turned off may be fired, to try it. One that is paused may not: the
+  // pause says nothing is to start, and a person who paused it is owed that.
+  const workspace = await trx
+    .selectFrom("workspace")
+    .select("triggers_paused")
+    .where("id", "=", workspaceId)
+    .executeTakeFirst();
+  if (await instanceTriggersPaused(kernel, trx))
+    throw conflict(
+      "Every trigger in this instance is paused, so this schedule cannot be fired now.",
+    );
+  if (workspace?.triggers_paused)
+    throw conflict("This workspace's triggers are paused, so this schedule cannot be fired now.");
+  if (await pausedAlone(kernel, { ...state, path }))
+    throw conflict("This schedule is paused, so it cannot be fired now. Resume it first.");
   const config = state.config as unknown as ScheduleConfig;
   return startTarget(kernel, trx, state, {
     input: config.input ?? {},

@@ -18,6 +18,7 @@ import { FlowGraph, type GraphEdge, type GraphNode, type Positions } from "../Fl
 import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
+import { REJECTING } from "../kit/approvals.ts";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -786,6 +787,7 @@ export function FlowRunView({
   const decide = async (node: string, decision: "approve" | "reject", title: string) => {
     const comment = await ask.prompt({
       title: decision === "approve" ? `Approve “${title}”?` : `Reject “${title}”?`,
+      ...(decision === "reject" ? { text: REJECTING } : {}),
       label: decision === "approve" ? "Note (optional)" : "Why is it rejected?",
       required: decision === "reject",
       multiline: true,

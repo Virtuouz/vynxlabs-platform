@@ -33,6 +33,7 @@ import {
   storeBundle,
 } from "../kernel/execution/bundles.js";
 import { BUILTIN_CONFIG_SCHEMAS, connectorSchema } from "../kernel/execution/connectors.js";
+import { instanceTriggersPaused } from "../kernel/execution/control.js";
 import { deployBundle } from "../kernel/execution/deploy.js";
 import { previewPromotion, promote, promotionOf } from "../kernel/execution/promote.js";
 import { redact, redactError, redactText } from "../kernel/execution/redact.js";
@@ -1274,6 +1275,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "This run is a step of a flow run. Retry the flow run instead.",
           );
         }
+        if (original.trigger_detail?.relay) {
+          throw new HttpError(
+            409,
+            "conflict",
+            `This run is of the trigger source ${original.script_path}, which starts nothing by hand. Its trigger runs it on its own.`,
+          );
+        }
         const input =
           body.input !== undefined
             ? body.input
@@ -1698,6 +1706,19 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                     Type.Object({ at: Time, by: NullableId, reason: Type.String() }),
                     Type.Null(),
                   ]),
+                  pausedBy: Type.Union(
+                    [
+                      Type.Literal("instance"),
+                      Type.Literal("workspace"),
+                      Type.Literal("trigger"),
+                      Type.Null(),
+                    ],
+                    {
+                      description:
+                        "What holds it, widest first: the whole instance, this workspace, or the " +
+                        "trigger's own pause. Null when nothing does.",
+                    },
+                  ),
                   lastRun: Type.Union([
                     Type.Object({
                       kind: Type.Union([Type.Literal("script"), Type.Literal("flow")]),
@@ -1771,6 +1792,15 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .selectAll()
           .where("workspace_id", "=", params.w)
           .execute();
+        const instancePaused = await instanceTriggersPaused(kernel);
+        const workspacePaused =
+          (
+            await db
+              .selectFrom("workspace")
+              .select("triggers_paused")
+              .where("id", "=", params.w)
+              .executeTakeFirst()
+          )?.triggers_paused ?? false;
         const refusals = await sql<{
           path: string;
           node_id: string;
@@ -1847,6 +1877,13 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               paused: pause
                 ? { at: iso(pause.paused_at), by: pause.paused_by, reason: pause.reason }
                 : null,
+              pausedBy: instancePaused
+                ? ("instance" as const)
+                : workspacePaused
+                  ? ("workspace" as const)
+                  : pause
+                    ? ("trigger" as const)
+                    : null,
               lastRun: await lastRunOf(row),
               lastRefusal: refusal
                 ? {
@@ -1909,6 +1946,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             event: body.event ?? null,
             enabled: body.enabled ?? true,
             paused: null,
+            pausedBy: null,
             lastRun: null,
             lastRefusal: null,
             cron: body.cron ?? null,

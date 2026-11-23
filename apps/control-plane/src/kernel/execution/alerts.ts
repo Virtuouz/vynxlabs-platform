@@ -117,7 +117,12 @@ async function alert(
     .select(["failure_alert", "slug"])
     .where("id", "=", failure.workspaceId)
     .executeTakeFirstOrThrow();
-  const wanted: FailureAlert = { ...workspace.failure_alert, ...failure.own };
+  // A script's own `onFailure` replaces the workspace's default; it is not added to it. One that
+  // names nothing (an empty object) asks for nothing of its own, so the default stands.
+  const wanted: FailureAlert =
+    failure.own && (failure.own.script || failure.own.notify)
+      ? failure.own
+      : (workspace.failure_alert ?? {});
   if (!wanted.script && !wanted.notify) return undefined;
 
   // One alert per script or flow per window: the rest are counted on it, not sent.

@@ -222,7 +222,8 @@ describe("runs of every kind, together", () => {
       values (${run.id}, 1, now() - interval '2 minutes', 'error', 'refused', '{}'),
              (${run.id}, 2, now() - interval '1 minute', 'error', 'refused', '{}')`.execute(t.db);
     const insight = (await alice.get(`${ws()}/runs/${run.id}/insight`)).body;
-    expect(insight.attempts.map((one: { attempt: number }) => one.attempt)).toEqual([1, 2]);
+    // Every attempt the run made: the third logged nothing, and is listed all the same.
+    expect(insight.attempts.map((one: { attempt: number }) => one.attempt)).toEqual([1, 2, 3]);
     expect(insight.uses).toEqual([{ connection: "erp", bound: true }]);
     expect(insight.diagnosis).toMatchObject({ section: "connections" });
     expect(insight.diagnosis.cause).toContain("all 3 attempts");
@@ -242,7 +243,9 @@ describe("runs of every kind, together", () => {
 
   test("diagnosis knows the common shapes, and stays quiet about the rest", () => {
     const at = { attempt: 1, maxAttempts: 1 };
-    expect(diagnose({ ...at, message: "x", unbound: ["erp"] })?.section).toBe("connections");
+    expect(
+      diagnose({ ...at, message: "The connection erp is not bound", unbound: ["erp"] })?.section,
+    ).toBe("connections");
     expect(
       diagnose({ ...at, message: "Timed out after 30s", timeoutSeconds: 30 })?.cause,
     ).toContain("30s");

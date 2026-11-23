@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { BUILTIN_ROLES } from "./builtinRoles.ts";
 import { Alerts } from "./screens/Alerts.tsx";
 import { Sources, Tables, TableView } from "./screens/Data.tsx";
-import { Scripts } from "./screens/Execution.tsx";
+import { ConnectionGroups, Scripts } from "./screens/Execution.tsx";
 import { Files } from "./screens/Files.tsx";
 import { Flows } from "./screens/Flows.tsx";
 import { Groups } from "./screens/Groups.tsx";
@@ -234,6 +234,22 @@ const FAMILIES: Family[] = [
     },
   },
   {
+    family: "Connection groups: Add a member, Change",
+    control: /^(Add a member|Change)$/,
+    route: "PUT connection-group-members (connection:write at the workspace)",
+    scopes: WORKSPACE,
+    serves: (has) => has("connection:write"),
+    draw: () => <ConnectionGroups root={root} />,
+  },
+  {
+    family: "Connection groups: Remove a member",
+    control: "Remove",
+    route: "DELETE connection-group-members (connection:write at the workspace)",
+    scopes: WORKSPACE,
+    serves: (has) => has("connection:write"),
+    draw: () => <ConnectionGroups root={root} />,
+  },
+  {
     family: "Event page: Publish",
     control: /^Publish/,
     route: "POST /events (event:write at the workspace, not at one event)",
@@ -363,6 +379,27 @@ function serve(role: string, scope: Scope) {
             paused: null,
             lastRun: null,
             lastRefusal: null,
+          },
+        ],
+      });
+    }
+    if (path === `${root}/connection-groups`) {
+      return body({
+        items: [
+          {
+            path: "mailers",
+            description: "",
+            connector: "smtp",
+            configSchema: { type: "object", properties: { host: { type: "string" } } },
+            draft: null,
+            members: [
+              {
+                key: "acme",
+                label: "Acme",
+                config: { host: "mail.acme.test" },
+                hasCredential: true,
+              },
+            ],
           },
         ],
       });

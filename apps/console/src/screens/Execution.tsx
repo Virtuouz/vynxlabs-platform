@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { InputDialog } from "../InputDialog.tsx";
-import { Can, NotAllowed, useMay, useMayOn } from "../kit/Can.tsx";
+import { Can, NotAllowed, useMay, useMayOn, useNeeds } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { DataTable } from "../kit/DataTable.tsx";
 import { ago, between, count, duration } from "../kit/format.ts";
@@ -1574,6 +1574,12 @@ interface ConnectionGroup {
 export function ConnectionGroups({ root }: { root: string }) {
   const groups = useLoad<{ items: ConnectionGroup[] }>(`${root}/connection-groups`);
   const [editing, setEditing] = useState<{ group: ConnectionGroup; member?: GroupMember }>();
+  // The routes that add, change and remove a member ask `connection:write` of the workspace.
+  const may = useNeeds({
+    base: root,
+    permission: "connection:write",
+    what: "this workspace's connection groups",
+  });
   if (groups.error) return <ErrorState error={groups.error} onRetry={groups.reload} />;
   if (!groups.data) return <Loading />;
 
@@ -1587,6 +1593,7 @@ export function ConnectionGroups({ root }: { root: string }) {
           deploy.
         </p>
       </header>
+      {may.line}
       {groups.data.items.length === 0 ? (
         <p className="m-0 rounded-panel border border-line border-dashed px-4 py-3 text-ink-muted">
           No groups here. A group is declared in the workspace's code with the connection kind it
@@ -1625,7 +1632,13 @@ export function ConnectionGroups({ root }: { root: string }) {
                 Open the draft
               </Button>
             ) : (
-              <Button size="small" variant="primary" onClick={() => setEditing({ group })}>
+              <Button
+                size="small"
+                variant="primary"
+                disabled={!may.can}
+                {...(may.reason ? { title: may.reason } : {})}
+                onClick={() => setEditing({ group })}
+              >
                 Add a member
               </Button>
             )}
@@ -1672,11 +1685,17 @@ export function ConnectionGroups({ root }: { root: string }) {
                   cell: (member) => (
                     <span className="flex flex-wrap justify-end gap-2">
                       {group.declared === false ? null : (
-                        <Button size="small" onClick={() => setEditing({ group, member })}>
+                        <Button
+                          size="small"
+                          disabled={!may.can}
+                          {...(may.reason ? { title: may.reason } : {})}
+                          onClick={() => setEditing({ group, member })}
+                        >
                           Change
                         </Button>
                       )}
                       <RemoveButton
+                        disabled={may.can ? undefined : may.reason}
                         confirm={`Scripts that ask ${group.path} for "${member.key}" will fail until it is added again.`}
                         run={() =>
                           api.delete(`${root}/connection-group-members/${member.key}/${group.path}`)

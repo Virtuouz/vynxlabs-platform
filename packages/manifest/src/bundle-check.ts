@@ -67,7 +67,7 @@ export const PLATFORM_EVENTS: readonly {
     payload: [
       { name: "flowRunId", type: "string", description: "The flow run." },
       { name: "flow", type: "string", description: "The flow's path." },
-      { name: "status", type: "string", description: "succeeded, failed or cancelled." },
+      { name: "status", type: "string", description: "succeeded, failed or `cancelled`." },
     ],
   },
   {

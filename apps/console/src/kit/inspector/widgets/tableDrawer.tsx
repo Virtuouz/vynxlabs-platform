@@ -90,7 +90,7 @@ export function TableColumnsSection({ env, bare, ...source }: TableSectionProps)
   };
   const spec = open ? columns.find((one) => one.column === open.column) : undefined;
   const shownFacts = facts.find((one) => one.name === open?.column);
-  // What Conditions lists for the column is what its badge colours list.
+  // What Conditions lists for the column is what its badge colors list.
   const listed = useColumnValues(
     source.root ?? env.catalog.root,
     table,

@@ -958,7 +958,7 @@ async function cancelInBulk(args: string[], io: Io) {
     total += done.body.cancelled as number;
     if (!done.body.more) break;
   }
-  io.out(`Cancelled ${total} ${values.all ? "" : "queued "}run${total === 1 ? "" : "s"}.`);
+  io.out(`Canceled ${total} ${values.all ? "" : "queued "}run${total === 1 ? "" : "s"}.`);
   if (!values.all) return;
   let flows = 0;
   for (;;) {
@@ -970,7 +970,7 @@ async function cancelInBulk(args: string[], io: Io) {
     flows += done.body.cancelled as number;
     if (!done.body.more) break;
   }
-  io.out(`Cancelled ${flows} flow run${flows === 1 ? "" : "s"}.`);
+  io.out(`Canceled ${flows} flow run${flows === 1 ? "" : "s"}.`);
 }
 
 async function runs(args: string[], io: Io) {

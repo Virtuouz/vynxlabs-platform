@@ -26,6 +26,8 @@ interface Entry {
   targetId: string | null;
   targetLabel?: string | null;
   workspaceId?: string | null;
+  /** Set on an entry of the instance's log that belongs to a tenant that has been deleted. */
+  tenantId?: string | null;
   details: Record<string, unknown>;
   ipAddress: string | null;
   userAgent: string | null;
@@ -229,7 +231,7 @@ export function AuditTable({
   const [linked, setLinked] = useState<Entry>();
   const wide = useWide(WIDE.inspector);
   const tenantId = /^\/tenants\/([^/]+)/.exec(path)?.[1];
-  // Only a tenant's log can be narrowed by what it holds, and exported.
+  // Only a tenant's log has workspaces and saved views.
   const tenantLog = tenantId !== undefined;
 
   // The text searched reaches the address, and the server, once typing pauses.
@@ -293,7 +295,7 @@ export function AuditTable({
 
   // An entry linked to that is not among those loaded is fetched by itself.
   useEffect(() => {
-    if (!url.entry || !tenantLog || entries.some((entry) => entry.id === url.entry)) return;
+    if (!url.entry || entries.some((entry) => entry.id === url.entry)) return;
     let current = true;
     api.get<Entry>(`${path}/${url.entry}`).then(
       (entry) => current && setLinked(entry),
@@ -302,7 +304,7 @@ export function AuditTable({
     return () => {
       current = false;
     };
-  }, [url.entry, entries, path, tenantLog]);
+  }, [url.entry, entries, path]);
 
   const chosen = closed
     ? undefined
@@ -364,6 +366,11 @@ export function AuditTable({
               {entry.action}
             </code>
             {entry.accessGrantId ? <Tag tone="attention">Operator</Tag> : null}
+            {entry.tenantId && !tenantLog ? (
+              <span title={`Tenant ${entry.tenantId}, which has been deleted`}>
+                <Tag>Deleted tenant</Tag>
+              </span>
+            ) : null}
           </span>
         );
       },
@@ -411,11 +418,9 @@ export function AuditTable({
             onChange={(next) => setUrl({ cols: next ?? [] })}
           />
           {tenantId ? <ViewsMenu tenantId={tenantId} list="audit" omit={["entry"]} /> : null}
-          {tenantLog ? (
-            <Button size="small" href={`/api/v1${path}-export?${asked}`} download>
-              <Download aria-hidden="true" size={14} /> CSV
-            </Button>
-          ) : null}
+          <Button size="small" href={`/api/v1${path}-export?${asked}`} download>
+            <Download aria-hidden="true" size={14} /> CSV
+          </Button>
         </span>
       }
       toolbar={
@@ -550,7 +555,7 @@ export function AuditTable({
               <input
                 type="search"
                 value={typed}
-                placeholder="An action, an ID or a kind"
+                placeholder="An action, name, email or host"
                 onChange={(event) => setTyped(event.currentTarget.value)}
                 className={select}
               />

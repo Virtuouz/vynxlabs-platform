@@ -45,6 +45,8 @@ export interface WorkerHostOptions {
   spawn?: typeof spawn;
   /** How long to wait after a worker could not be started, before asking for the next lease. */
   startFailurePauseMs?: number;
+  /** How long to wait before asking again when the control plane has no worker host route. Default 30 s. */
+  routeOffPauseMs?: number;
   /** Touched each time the control plane answers a request for work: what the container's health check reads. */
   heartbeatFile?: string;
   /** Workers alive at once. Default: twice the machine's run slots, as each costs memory too. */
@@ -78,12 +80,17 @@ const ENDED_TRIES = 5;
 /** The host refused the token. There is no point in going on. */
 export class HostTokenRefused extends Error {}
 
+/** The control plane has no worker host route: its MANAGED_WORKERS is not `host`. */
+export class HostRouteOff extends Error {}
+
 export class WorkerHost {
   readonly #options: WorkerHostOptions;
   readonly #url: string;
   readonly #log: WorkerLog;
   readonly #bin: string;
   readonly #workers = new Map<string, ChildProcess>();
+  /** The pause while the control plane has no worker host route, cut short when the host stops. */
+  #resting: AbortController | undefined;
   readonly #probe: MachineProbe;
   readonly #guard: MemoryGuard;
   /** What this machine's workers share. */
@@ -142,6 +149,7 @@ export class WorkerHost {
       );
     }
     this.#guard.start();
+    let routeOffSaid = false;
     while (!this.#stopping) {
       if (this.#workers.size >= max || this.#shortOfMemory()) {
         await sleep(1000);
@@ -149,6 +157,7 @@ export class WorkerHost {
       }
       try {
         const lease = await this.#lease();
+        routeOffSaid = false;
         if (lease && !(await this.#start(lease))) {
           // A start that fails would fail again at once: ask again after a pause, not in a loop.
           await sleep(this.#options.startFailurePauseMs ?? 5000);
@@ -161,6 +170,23 @@ export class WorkerHost {
           return "refused";
         }
         if (this.#stopping) break;
+        if (error instanceof HostRouteOff) {
+          // Said once, not at every try: it is a setting, not a fault that comes and goes.
+          if (!routeOffSaid) {
+            routeOffSaid = true;
+            this.#log(
+              "warn",
+              "The control plane's MANAGED_WORKERS is not set to host, so it starts no workers through this host. Set MANAGED_WORKERS=host there, or stop this host. Asking again every 30 seconds.",
+            );
+          }
+          this.#resting = new AbortController();
+          await sleep(this.#options.routeOffPauseMs ?? 30_000, undefined, {
+            signal: this.#resting.signal,
+          }).catch(() => {});
+          this.#resting = undefined;
+          continue;
+        }
+        routeOffSaid = false;
         this.#log("warn", "The control plane could not be reached. Trying again.", {
           error: (error as Error).message,
         });
@@ -174,6 +200,7 @@ export class WorkerHost {
   async stop(graceSeconds = 30, giveUpSeconds = 10): Promise<void> {
     this.#stopping = true;
     this.#asking?.abort();
+    this.#resting?.abort();
     this.#guard.stop();
     await Promise.all(
       [...this.#workers.entries()].map(
@@ -217,6 +244,7 @@ export class WorkerHost {
       ...(signal ? { signal } : {}),
     });
     if (response.status === 401) throw new HostTokenRefused();
+    if (response.status === 404) throw new HostRouteOff();
     if (!response.ok) {
       throw new Error(`POST ${path} answered ${response.status}: ${await response.text()}`);
     }

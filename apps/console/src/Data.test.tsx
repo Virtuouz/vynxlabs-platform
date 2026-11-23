@@ -458,6 +458,8 @@ test("DAT-23, DAT-21: a table with no key is added to, and a table's name with a
 
 test("filter text becomes a filter of the column's type", () => {
   expect(toFilter("text", " ada ")).toEqual({ op: "contains", value: "ada" });
+  expect(toFilter("text", "!~ ada")).toEqual({ op: "not_contains", value: "ada" });
+  expect(() => toFilter("integer", "!~5")).toThrow(/Only text/);
   expect(toFilter("integer", ">= 5")).toEqual({ op: "gte", value: 5 });
   expect(toFilter("boolean", "yes")).toEqual({ op: "eq", value: true });
   expect(toFilter("date", "< 2026-01-01")).toEqual({ op: "lt", value: "2026-01-01" });
@@ -1189,12 +1191,12 @@ test("WLK-09d: the buttons of a source's row wrap on a phone instead of widening
   expect(unbind.parentElement?.className).toMatch(/max-w-/);
 });
 
-test("WLK-09b: a retired table keeps its pill whole and does not claim to be managed in the repository", async () => {
-  const item = (name: string, status: string, id?: string) => ({
+test("WLK-09b: a retired table keeps its pill whole and says where it was managed", async () => {
+  const item = (name: string, status: string, id?: string, managedIn = "code") => ({
     ...(id ? { id } : {}),
     name,
     status,
-    managedIn: "code",
+    managedIn,
     description: "",
     columnCount: 1,
     rowCount: 3,
@@ -1204,7 +1206,7 @@ test("WLK-09b: a retired table keeps its pill whole and does not claim to be man
     200,
     {
       items: [
-        item("notes", "retired", "id-1"),
+        item("notes", "retired", "id-1", "ui"),
         item("notes", "retired", "id-2"),
         item("orders", "active"),
       ],
@@ -1221,8 +1223,9 @@ test("WLK-09b: a retired table keeps its pill whole and does not claim to be man
   ]);
   const pill = (await screen.findAllByText("Retired"))[0] as HTMLElement;
   expect(pill.closest("span.shrink-0")).toBeTruthy();
-  // The one that is live says where it is managed; the retired one says nothing it does not know.
-  expect(screen.getAllByText("Repository")).toHaveLength(1);
+  // Each says where it is managed, or where it was.
+  expect(screen.getAllByText("Repository")).toHaveLength(2);
+  expect(screen.getAllByText("Console")).toHaveLength(1);
   cleanup();
   history.replaceState(null, "", "/?id=id-2");
   routes[`GET /api/v1${root}/tables/orders`] = () => [
@@ -1232,6 +1235,8 @@ test("WLK-09b: a retired table keeps its pill whole and does not claim to be man
   show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   await screen.findByText(/This table is retired/);
   expect(screen.queryByText(/Managed in the/)).toBeNull();
+  // A retired table that was made in the console can be brought back; one from the repository cannot.
+  expect(screen.queryByRole("button", { name: /Bring back/ })).toBeNull();
   // Opened with its ID, the page asks for that table.
   expect(calls.some((call) => call.url.endsWith("/tables/orders?id=id-2"))).toBe(true);
   history.replaceState(null, "", "/");

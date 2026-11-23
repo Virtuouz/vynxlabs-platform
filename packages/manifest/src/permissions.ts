@@ -113,13 +113,13 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
   },
   {
     kind: "access",
-    label: "Access releases",
+    label: "Access changes",
     group: "Tenant",
     scope: "tenant",
     verbs: {
-      read: "See how the tenant's access was released, and what a release would change.",
+      read: "See how the tenant's access was changed, and what a change from the repository would do.",
       write:
-        "Release the tenant's access from its repository, go back to an earlier release, and approve one that waits.",
+        "Change the tenant's access from its repository, go back to an earlier access change, and approve one that waits.",
     },
   },
   {

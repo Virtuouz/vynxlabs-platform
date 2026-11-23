@@ -1027,7 +1027,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       runtime?.get(asset.path)?.content ?? (await readAsset(kernel, tenant.id, asset.sha256));
     if (isPage || asset.path === entry) {
       // The names of the app's pages: the page that draws before the app is read says them,
-      // so a slow first load shows where the person is going, not grey shapes.
+      // so a slow first load shows where the person is going, not gray shapes.
       const interfaceBody =
         generated && typeof body.interface === "string"
           ? (bundle.manifests.find(

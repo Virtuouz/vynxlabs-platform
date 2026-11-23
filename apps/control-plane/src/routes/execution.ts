@@ -66,7 +66,11 @@ import {
   nextFireTimes,
   webhookToken,
 } from "../kernel/execution/triggers.js";
-import { createWorkerCredential, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
+import {
+  assertPoolNameFree,
+  createWorkerCredential,
+  WORKER_STALE_SECONDS,
+} from "../kernel/execution/workers.js";
 import { awaitResponse } from "../kernel/flows/engine.js";
 import { eventSchema, publishPlatformEvent } from "../kernel/flows/events.js";
 import { pushRelease } from "../kernel/git.js";
@@ -452,11 +456,11 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       for (const stored of uploaded) yield (await loadBundle(kernel, stored)).manifests;
     }
 
-    const configSchemaOf = async (
+    const declarationOf = async (
       workspaceId: string,
       kind: "connection" | "connection_group",
       path: string,
-    ): Promise<object> => {
+    ) => {
       const named = (body: unknown) => (body as { connector?: string } | undefined)?.connector;
       const [deployed, drafted] = await Promise.all([
         db
@@ -491,6 +495,14 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           if (found) break;
         }
       }
+      return found;
+    };
+    const configSchemaOf = async (
+      workspaceId: string,
+      kind: "connection" | "connection_group",
+      path: string,
+    ): Promise<object> => {
+      const found = await declarationOf(workspaceId, kind, path);
       if (!found) return BUILTIN_CONFIG_SCHEMAS.http as object;
       const schema = connectorSchema(found.name, found.connectors);
       if (!schema) {
@@ -2377,6 +2389,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           "config",
           "credential",
           "oauth",
+          "connector",
           "updated_at",
           "credential_set_at",
           "credential_set_by_type",
@@ -2454,6 +2467,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           // Nothing declares it: it is as HTTP only when its settings fit HTTP's, else unknown.
           const connector =
             definition?.connector ??
+            binding?.connector ??
             (binding &&
             validateJson(BUILTIN_CONFIG_SCHEMAS.http as object, binding.config ?? {}).length > 0
               ? "unknown"
@@ -2850,6 +2864,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         const path = wildPath(params);
+        const declared = await declarationOf(params.w, "connection", path);
         const issues = validateJson(
           await configSchemaOf(params.w, "connection", path),
           body.config,
@@ -2864,6 +2879,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             { tenantId: params.t, workspaceId: params.w, path },
             body.config,
             body.credential,
+            declared?.name,
           );
           // What a Test found says nothing about settings it did not try.
           if (changed) await forgetHealth(trx, params.w, path);
@@ -3384,6 +3400,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
+        if (body.pool) assertPoolNameFree(body.pool);
         const created = await ctx.mutate(async (trx, audit) => {
           if (body.workspaceId) {
             const workspace = await trx

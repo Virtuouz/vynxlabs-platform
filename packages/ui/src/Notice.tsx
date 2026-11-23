@@ -55,7 +55,7 @@ export function EmptyState({
   title: string;
   children?: ReactNode;
   action?: ReactNode;
-  /** In a card that is already a box (a widget's): no box of its own, and centred in the room the card has. */
+  /** In a card that is already a box (a widget's): no box of its own, and centered in the room the card has. */
   inCard?: boolean;
 }) {
   return (

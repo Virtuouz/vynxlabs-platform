@@ -8,6 +8,8 @@ describe("an audit action in plain words", () => {
     expect(actionWords("app_domain.enabled")).toBe("Hostname enabled");
     expect(actionWords("access_grant.revoked")).toBe("Operator access revoked");
     expect(actionWords("portal.logo_set")).toBe("Portal logo set");
+    expect(actionWords("run.cancelled")).toBe("Run canceled");
+    expect(actionWords("flow_run.bulk_cancelled")).toBe("Flow run bulk canceled");
     expect(actionWords("operator.access")).toBe("Operator opened the tenant");
   });
 

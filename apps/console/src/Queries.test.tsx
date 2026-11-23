@@ -11,11 +11,13 @@ const api = `/api/v1${root}`;
 const link = "/t/t1/workspaces/w1";
 let calls: { method: string; url: string; body: unknown; query?: string }[];
 let maySql = true;
+let maySave: boolean | undefined;
 let listed: Record<string, unknown>[] | undefined;
 
 beforeEach(() => {
   calls = [];
   maySql = true;
+  maySave = true;
   listed = undefined;
   history.replaceState(null, "", "/");
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
@@ -24,7 +26,7 @@ beforeEach(() => {
     const path = address.split("?")[0] as string;
     calls.push({ method, url: path, body, query: address.split("?")[1] ?? "" });
     if (path === `${api}/queries/schema`) {
-      return new Response(JSON.stringify({ tables: [], functions: [], maySql }));
+      return new Response(JSON.stringify({ tables: [], functions: [], maySql, maySave }));
     }
     if (path.startsWith(`${api}/queries/saved/`)) {
       return new Response(
@@ -228,4 +230,51 @@ describe("what uses a saved query (REL-MP7)", () => {
     const list = await screen.findByRole("list", { name: "What uses reports/fees" });
     expect(list.textContent).toContain("boards/fees");
   });
+});
+
+describe("what the Queries screen offers, and what it says of one that is not there", () => {
+  test("Save is not offered to someone who may not keep a query, and the words say what it takes (DAT-24)", async () => {
+    maySave = false;
+    await write("select 1");
+    expect((screen.getByRole("button", { name: "Save as…" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText(/resource:write/)).toBeTruthy();
+  }, 30_000);
+
+  test("Save is not offered in a production workspace, where queries are promoted (DAT-24)", async () => {
+    show(<Queries root={root} link={link} editable={false} />);
+    const box = (await screen.findByLabelText("The query")) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "select 1" } });
+    expect((screen.getByRole("button", { name: "Save as…" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.getByText(/dev workspace/)).toBeTruthy();
+  }, 30_000);
+
+  test("one that the repository keeps says that saving takes it over (DAT-24)", async () => {
+    listed = [
+      {
+        path: "reports/fees",
+        description: "",
+        sql: "select 1",
+        parameters: [],
+        ownership: "code",
+        draft: null,
+      },
+    ];
+    history.replaceState(null, "", "/?query=reports/fees");
+    show(<Queries root={root} link={link} />);
+    await screen.findByText(/Saving a draft of it takes it over/);
+  }, 30_000);
+
+  test("an address that names no query says so, with a way to a new one (DAT-26)", async () => {
+    history.replaceState(null, "", "/?query=reports/gone");
+    show(<Queries root={root} link={link} />);
+    await screen.findByText(/There is no query at reports\/gone/);
+    expect(screen.queryByText("A new query")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "New query" }));
+    await screen.findByText("A new query");
+    expect(window.location.search).toBe("");
+  }, 30_000);
 });

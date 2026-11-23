@@ -5,7 +5,18 @@ export type Filter =
   | {
       column: string;
       /** Default `eq`. */
-      op?: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "has" | "contains" | "is_null";
+      op?:
+        | "eq"
+        | "ne"
+        | "gt"
+        | "gte"
+        | "lt"
+        | "lte"
+        | "in"
+        | "has"
+        | "contains"
+        | "not_contains"
+        | "is_null";
       value?: unknown;
     };
 
@@ -116,11 +127,11 @@ function spec<Value>(type: string) {
   });
 }
 
-/** One value of an enum column, written in full: with what people read and the colour it is drawn on. */
+/** One value of an enum column, written in full: with what people read and the color it is drawn on. */
 export interface EnumValueSpec<Value extends string = string> {
   value: Value;
   label?: string;
-  /** gray, red, orange, amber, green, teal, blue, violet or pink, or any colour as `#rrggbb`. */
+  /** gray, red, orange, amber, green, teal, blue, violet or pink, or any color as `#rrggbb`. */
   color?: string;
   /** The value's previous spelling. Rows that hold it are rewritten on deploy. */
   renamedFrom?: string;

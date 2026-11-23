@@ -60,8 +60,8 @@ const AllowDelete = Type.Optional(
   Type.Array(Type.String({ maxLength: 200 }), {
     maxItems: 500,
     description:
-      "What a full release may remove, each as `<kind>/<key>`. Without it, removing what the " +
-      "tenant has and the release does not is refused with `delete_not_allowed`.",
+      "What a full access change may remove, each as `<kind>/<key>`. Without it, removing what the " +
+      "tenant has and the access change does not is refused with `delete_not_allowed`.",
   }),
 );
 
@@ -76,7 +76,7 @@ const EMPTY: AccessSummary = {
   warnings: [],
 };
 
-/** A tenant's access as resources: reading it, releasing it, and the releases there were. */
+/** A tenant's access as resources: reading it, changing it, and the access changes there were. */
 export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
   return async (app) => {
     const { db } = kernel;
@@ -143,7 +143,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               }),
               mayChange: Type.Boolean({
                 description:
-                  "Whether the caller may change access: answer a release that waits, or go back to one.",
+                  "Whether the caller may change access: answer an access change that waits, or go back to one.",
               }),
               resources: Type.Array(Resource),
               files: Type.Array(Type.Object({ path: Type.String(), content: Type.String() })),
@@ -175,8 +175,8 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "Say whether a change to access waits for a second person",
           description:
-            "With it on, a release and every change to a group, a service account or a role made " +
-            "in the console waits until someone else who may release approves it. Turning it on " +
+            "With it on, an access change and every change to a group, a service account or a role made " +
+            "in the console waits until someone else who may change approves it. Turning it on " +
             "needs two who may.",
           tags: ["access"],
           params: Type.Object({ t: Id }),
@@ -191,7 +191,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             throw new HttpError(
               409,
               "approval_needs_two",
-              "Approval needs two people who may release the tenant's access, so that one can answer the other. Give a second member a role with access:write first.",
+              "Approval needs two people who may change the tenant's access, so that one can answer the other. Give a second member a role with access:write first.",
             );
           }
         }
@@ -231,8 +231,8 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         schema: {
           summary: "What releasing a set would change",
           description:
-            "Found by carrying the release out and taking it all back, so it is exactly what the " +
-            "release would then do, including why it would be refused.",
+            "Found by carrying the access change out and taking it all back, so it is exactly what the " +
+            "access change would then do, including why it would be refused.",
           tags: ["access"],
           params: Type.Object({ t: Id }),
           body: ReleaseBody,
@@ -249,7 +249,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               ]),
               summary: Type.Union([Summary, Type.Null()]),
               waits: Type.Boolean({
-                description: "Whether the release would wait for a second person.",
+                description: "Whether the access change would wait for a second person.",
               }),
             }),
           },
@@ -306,11 +306,11 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenant("access:write") },
         schema: {
-          summary: "Release the tenant's access",
+          summary: "Change the tenant's access",
           description:
             "Changes the tenant's groups, service accounts, roles and what they are given to " +
             "match the set, in one transaction. What the set does not have is removed only when " +
-            "allowed by name. When the tenant asks for a second person, the release waits (202) " +
+            "allowed by name. When the tenant asks for a second person, the access change waits (202) " +
             "and nothing changes until it is approved.",
           tags: ["access"],
           params: Type.Object({ t: Id }),
@@ -348,7 +348,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           : reply.code(202).send({
               ...released,
               waiting: true as const,
-              detail: `Release ${released.number} waits for a second person. Nothing changed yet: someone else who may release access has to approve it.`,
+              detail: `Access change ${released.number} waits for a second person. Nothing changed yet: someone else who may change access has to approve it.`,
             });
       },
     );
@@ -358,13 +358,13 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: {
           access: access.custom(
-            "Needs access:read. Without it, a person reads the releases they asked for themselves.",
+            "Needs access:read. Without it, a person reads the access changes they asked for themselves.",
           ),
         },
         schema: {
-          summary: "The releases of the tenant's access, newest first",
+          summary: "The access changes of the tenant's access, newest first",
           description:
-            "Each release of the tenant's access as a set: who asked, what it changed and how it ended.",
+            "Each access change of the tenant's access as a set: who asked, what it changed and how it ended.",
           tags: ["access"],
           params: Type.Object({ t: Id }),
           response: { 200: listOf(Release) },
@@ -391,11 +391,11 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: {
           access: access.custom(
-            "Whoever asked withdraws their own release with no permission. Approving or declining needs access:write.",
+            "Whoever asked withdraws their own access change with no permission. Approving or declining needs access:write.",
           ),
         },
         schema: {
-          summary: "Approve, decline or withdraw a release that waits",
+          summary: "Approve, decline or withdraw an access change that waits",
           description:
             "Approving applies it, and is done by someone other than whoever asked. If the " +
             "tenant's access changed since it was asked for, so that it would do something else, " +
@@ -451,7 +451,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenant("access:write") },
         schema: {
-          summary: "What going back to an access release would do",
+          summary: "What going back to an access change would do",
           description:
             "Read-only: the asks that going back would make, and the keys of what it removes " +
             "because it was made since (`allowDelete`, as `kind/key`). Changes nothing.",
@@ -480,9 +480,9 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       {
         config: { access: access.tenant("access:write") },
         schema: {
-          summary: "Go back to the access an earlier release left",
+          summary: "Go back to the access an earlier access change left",
           description:
-            "A new release of that release's whole set. What was made since is removed, and it " +
+            "A new access change of that access change's whole set. What was made since is removed, and it " +
             "waits for approval like any other. Groups an identity provider made are untouched.",
           tags: ["access"],
           params: Type.Object({ t: Id, id: Id }),
@@ -511,7 +511,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             scope: "full",
             asks: back.asks,
             allowDelete: back.allowDelete,
-            message: `Back to release ${back.number}`,
+            message: `Back to access change ${back.number}`,
             origin: "rollback",
             notes: back.warnings,
           });
@@ -521,7 +521,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           : reply.code(202).send({
               ...released,
               waiting: true as const,
-              detail: `Release ${released.number} waits for a second person. Nothing changed yet: someone else who may release access has to approve it.`,
+              detail: `Access change ${released.number} waits for a second person. Nothing changed yet: someone else who may change access has to approve it.`,
             });
       },
     );

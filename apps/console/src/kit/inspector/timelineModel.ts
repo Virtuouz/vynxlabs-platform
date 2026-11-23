@@ -36,7 +36,7 @@ export function stepSummary(
     case "delete":
       return `Remove ${refWords(ctx, step.record)}`;
     case "flow":
-      return step.path ? `Run the workflow ${step.path}` : "Run a workflow";
+      return step.path ? `Run the flow ${step.path}` : "Run a flow";
     case "script":
       return step.path ? `Run the script ${step.path}` : "Run a script";
     case "open": {

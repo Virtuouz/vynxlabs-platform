@@ -174,9 +174,10 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "cannot be imported from this one, and is uploaded again.",
           tags: ["portability"],
           response: {
-            200: Type.Object({
-              items: Type.Array(Type.Object({ ...Staged.properties, here: Type.Boolean() })),
-            }),
+            200: Type.Object(
+              { items: Type.Array(Type.Object({ ...Staged.properties, here: Type.Boolean() })) },
+              { description: "Every one there is. The list has no cursor." },
+            ),
           },
         },
       },
@@ -329,29 +330,40 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             await rm(path, { force: true });
             throw error;
           }
-          const inspection = await inspectImport(kernel, path, {
-            passphrase: headers["x-export-passphrase"],
-          });
           const expiresAt = new Date(Date.now() + STAGE_HOURS * 3_600_000);
-          await ctx.mutate(async (trx, audit) => {
-            await trx
-              .insertInto("import_staging")
-              .values({
-                id,
-                created_by: ctx.principal.type === "member" ? ctx.principal.id : null,
-                file_name: query.name ?? "export.tar",
-                size_bytes: size,
-                inspection: JSON.stringify(inspection),
-                expires_at: expiresAt,
-              })
-              .execute();
-            await audit({
-              action: "tenant_import.staged",
-              targetType: "import",
-              targetId: id,
-              details: { bytes: size, tenant: inspection.tenant?.slug ?? null },
+          let inspection: Awaited<ReturnType<typeof inspectImport>>;
+          try {
+            inspection = await inspectImport(kernel, path, {
+              passphrase: headers["x-export-passphrase"],
             });
-          });
+          } catch (error) {
+            await rm(path, { force: true });
+            throw error;
+          }
+          try {
+            await ctx.mutate(async (trx, audit) => {
+              await trx
+                .insertInto("import_staging")
+                .values({
+                  id,
+                  created_by: ctx.principal.type === "member" ? ctx.principal.id : null,
+                  file_name: query.name ?? "export.tar",
+                  size_bytes: size,
+                  inspection: JSON.stringify(inspection),
+                  expires_at: expiresAt,
+                })
+                .execute();
+              await audit({
+                action: "tenant_import.staged",
+                targetType: "import",
+                targetId: id,
+                details: { bytes: size, tenant: inspection.tenant?.slug ?? null },
+              });
+            });
+          } catch (error) {
+            await rm(path, { force: true });
+            throw error;
+          }
           return reply.code(201).send({
             id,
             fileName: query.name ?? "export.tar",

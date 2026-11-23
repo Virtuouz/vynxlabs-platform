@@ -111,7 +111,7 @@ describe("a tenant's access, from its repository", () => {
     const released = await tenant("release", "--message", "Bring up the tenant");
     expect(released.err).toBe("");
     expect(released.out).toContain(
-      "Released lakeshore's access as release 1: 3 created, 0 updated, 0 deleted, 0 unchanged.",
+      "Changed lakeshore's access as access change 1: 3 created, 0 updated, 0 deleted, 0 unchanged.",
     );
     expect((await tenant("release")).out).toContain("0 created, 0 updated, 0 deleted, 3 unchanged");
     const listed = (await tenant("releases")).out.split("\n");
@@ -178,16 +178,16 @@ describe("a tenant's access, from its repository", () => {
     // It says what it removes, and without a terminal to ask at, does nothing until told to.
     const asked = await tenant("rollback", "1");
     expect(asked.code).toBe(1);
-    expect(asked.out).toContain("Going back to release 1 removes what was made since:");
+    expect(asked.out).toContain("Going back to access change 1 removes what was made since:");
     expect(asked.out).toContain("deleted  group            night-shift");
     expect(asked.err).toContain("Nothing was changed. Run it again with --yes");
     const back = await tenant("rollback", "1", "--yes");
     expect(back.err).toBe("");
-    expect(back.out).toContain("lakeshore's access is what release 1 left, as release");
+    expect(back.out).toContain("lakeshore's access is what access change 1 left, as access change");
     expect(back.out).toContain("updated  group            tech-desk  (Tech Desk)");
     expect(back.out).toContain("created  service_account  helpdesk-assistant");
     expect(back.out).toContain("deleted  group            night-shift");
-    expect((await tenant("rollback", "99", "--yes")).err).toContain("has no release 99");
+    expect((await tenant("rollback", "99", "--yes")).err).toContain("has no access change 99");
     expect((await cli(["tenant", "plan", "--dir", repo])).err).toContain("--tenant <slug>");
   });
 
@@ -226,15 +226,15 @@ describe("a tenant's access, from its repository", () => {
     const waits = await tenant("release", "--allow-delete", "service_account/helpdesk-assistant");
     expect(waits.err, waits.out).toBe("");
     expect(waits.out).toContain("waits for a second person");
-    const number = /Release (\d+) of/.exec(waits.out)?.[1] as string;
+    const number = /Access change (\d+) of/.exec(waits.out)?.[1] as string;
     const bobKey = await t.signIn("bob@lakeshore.example", PASSWORD);
     const token = (await bobKey.post("/api-keys", { name: "cli-bob" })).body.token;
     expect((await cli(["login", "--url", serverUrl, "--token", token])).code).toBe(0);
     const approved = await tenant("approve", number);
     expect(approved.err).toBe("");
-    expect(approved.out).toContain(`Release ${number} of lakeshore's access:`);
+    expect(approved.out).toContain(`Access change ${number} of lakeshore's access:`);
     expect(approved.out).toContain("created  group            weekend  (Weekend)");
-    expect(approved.out).toContain(`Release ${number} of lakeshore's access is applied.`);
+    expect(approved.out).toContain(`Access change ${number} of lakeshore's access is applied.`);
     expect((await tenant("approval", "off")).out).toContain("no longer asks");
   });
 });

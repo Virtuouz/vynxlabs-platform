@@ -10,6 +10,12 @@ function single(type: string, trimmed: string): Condition {
   if (/^(!\s*empty|!\s*null|not\s+empty|not\s+null)$/i.test(trimmed))
     return { op: "is_null", value: false };
   if (/^(empty|null)$/i.test(trimmed)) return { op: "is_null", value: true };
+  // `!~x`, or `not containing x`: text that does not hold x anywhere.
+  const without = /^(?:!~|not\s+containing\s+)\s*(.+)$/i.exec(trimmed);
+  if (without) {
+    if (type !== "text") throw new Error("Only text can be searched with !~.");
+    return { op: "not_contains", value: (without[1] as string).trim() };
+  }
   const negated = /^(?:!=|!|not\s+)\s*(.+)$/i.exec(trimmed);
   if (negated) {
     if (type === "enum_list")
@@ -43,7 +49,7 @@ function single(type: string, trimmed: string): Condition {
  *
  * - text to look for; `empty`; `!empty` for any value
  * - `> 100`, `>= 100`, `< 100`, `<= 100`; a range `10..20`, or `10..` and `..20`
- * - `!x` for rows that are not x
+ * - `!x` for rows that are not exactly x; `!~x` for text that does not hold x
  * - `a | b` for rows that are a or b
  */
 export function toFilter(type: string, text: string): Condition | null {

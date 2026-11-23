@@ -59,7 +59,7 @@ function isLight(color: string): boolean {
 
 /**
  * The colors of a chart's series, in the order they are given out. Neighbours differ in hue as
- * well as in lightness (teal, amber, violet, green, coral, blue, grey), so that two series drawn
+ * well as in lightness (teal, amber, violet, green, coral, blue, gray), so that two series drawn
  * side by side are never two greens, in either theme. The first is the theme's action color.
  */
 export function seriesColors(tokens: ChartTokens): string[] {

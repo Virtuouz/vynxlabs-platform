@@ -41,6 +41,8 @@ export interface CatalogTable {
   policy: TablePolicy;
   /** Paths the table has had before its current one. */
   previousNames: string[];
+  /** Where it was managed when it was retired: `code` or `ui`. */
+  managedIn?: string | null;
   /** The column that stands for a row where another table refers to it. */
   display?: string | null;
   columns: CatalogColumn[];

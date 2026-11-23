@@ -517,3 +517,33 @@ test("an operator turns workers off for a tenant and reads its retention from th
   await within(history).findByText(/Runs 30 days, events 14, refused requests 7, audit log 400/);
   expect(await within(history).findByRole("button", { name: "Change how long" })).toBeTruthy();
 });
+
+test("a tenant admin turns writing code in the console off and on, after being asked (D17)", async () => {
+  let on = true;
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", mayRename: true, consoleCode: on });
+  routes[`PATCH ${base}`] = (body) => {
+    on = (body as { consoleCode: boolean }).consoleCode;
+    return {};
+  };
+  show(<TenantOverview base={base} tenantId="t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Turn off code in the console" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/Turn off code in the console for Acme/)).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Turn off" }));
+  await waitFor(() =>
+    expect(calls.find((c) => c.method === "PATCH")?.body).toEqual({ consoleCode: false }),
+  );
+  expect(await screen.findByRole("button", { name: "Turn on code in the console" })).toBeTruthy();
+});
+
+test("someone who may not change the tenant is not offered the switch", async () => {
+  routes[`GET ${base}`] = () => ({
+    name: "Acme",
+    slug: "acme",
+    mayRename: false,
+    consoleCode: true,
+  });
+  show(<TenantOverview base={base} tenantId="t1" />);
+  await screen.findByRole("heading", { name: "Acme" });
+  expect(screen.queryByRole("button", { name: /code in the console/ })).toBeNull();
+});

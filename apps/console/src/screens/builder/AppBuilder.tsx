@@ -320,7 +320,7 @@ export function AppBuilder({
         notify.success("Nothing has changed since it was last published.");
         return;
       }
-      await api.post(`${root}/changes/deploy`, { paths, message: `Publish ${body.title}` });
+      await api.post(`${root}/changes/deploy`, { paths, message: `Deploy ${body.title}` });
       revision.current = undefined;
       setReviewing(false);
       // One truth: what is deployed is read again, and the drafts waiting, before "Published." is said, so the header never reads both.

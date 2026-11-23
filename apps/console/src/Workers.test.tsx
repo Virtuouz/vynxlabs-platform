@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Workers } from "./screens/Execution.tsx";
-import { show } from "./testing.tsx";
+import { answer, show } from "./testing.tsx";
 
 const base = "/tenants/t1";
 let routes: Record<string, (body: unknown) => unknown>;
@@ -54,6 +54,7 @@ test("Workers says what the instance does from the state, not from the switch al
   // Where the instance does start them, it says so, and turning the switch asks the state again.
   state = "host";
   fireEvent.click(screen.getByRole("button", { name: "Run only on our own workers" }));
+  await answer("Stop");
   await screen.findByRole("button", { name: "Let the instance run workers" });
   await waitFor(() => expect(reads()).toBeGreaterThan(before));
   expect(screen.getByText("The instance starts no workers for this tenant.")).toBeTruthy();
@@ -73,6 +74,83 @@ test("where the instance starts workers, the line says so (GOV-23)", async () =>
   routes[`GET ${base}/managed-workers`] = () => ({ state: "host" });
   show(<Workers base={base} />);
   await screen.findByText("The instance starts workers for the default pool when there is work.");
+});
+
+test("turning the instance's workers off says what waits, and asks first (GOV-35)", async () => {
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", managedWorkers: true });
+  routes[`GET ${base}/managed-workers`] = () => ({ state: "host" });
+  routes[`GET ${base}/worker-pools`] = () => ({
+    items: [
+      {
+        id: null,
+        name: null,
+        description: "",
+        credentials: 0,
+        online: 0,
+        lastSeenAt: null,
+        workspaces: [],
+        managed: true,
+      },
+    ],
+  });
+  routes[`PATCH ${base}`] = () => ({});
+  show(<Workers base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Run only on our own workers" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("Stop the instance starting workers?");
+  expect(dialog.textContent).toContain("No credential serves the default pool");
+  fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(calls.filter((call) => call.method === "PATCH")).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Run only on our own workers" }));
+  fireEvent.click(
+    await within(await screen.findByRole("dialog")).findByRole("button", { name: "Stop" }),
+  );
+  await waitFor(() =>
+    expect(calls.filter((call) => call.method === "PATCH")[0]?.body).toEqual({
+      managedWorkers: false,
+    }),
+  );
+});
+
+test("the worker command hands the credential on standard input, never on the command line (GOV-36)", async () => {
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", managedWorkers: false });
+  routes[`GET ${base}/managed-workers`] = () => ({ state: "off" });
+  routes[`POST ${base}/worker-credentials`] = () => ({
+    id: "c1",
+    name: "lan-1",
+    prefix: "vwk_abc",
+    token: "vwk_abcdef0123456789",
+  });
+  show(<Workers base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Create credential/ }));
+  fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "lan-1" } });
+  fireEvent.submit(screen.getByLabelText("Name").closest("form") as HTMLFormElement);
+  const command = await screen.findByText(
+    /vwk_abcdef0123456789.*volvel-worker|volvel-worker.*vwk_abcdef0123456789/,
+  );
+  expect(command.textContent).toContain("--token-stdin");
+  expect(command.textContent).not.toMatch(/--token\s/);
+  expect(command.textContent).toContain("vwk_abcdef0123456789");
+});
+
+test("a member who may not change workers is told so, and nothing offers to (GOV-37)", async () => {
+  routes["GET /me"] = () => ({
+    principal: { type: "member", id: "m1", name: "Rae", email: null },
+    instancePermissions: [],
+    tenants: [],
+  });
+  routes[`GET ${base}/access/member/m1`] = () => ({
+    principal: {},
+    sources: [],
+    permissions: [{ permission: "worker:read" }],
+  });
+  routes[`GET ${base}`] = () => ({ name: "Acme", slug: "acme", managedWorkers: true });
+  routes[`GET ${base}/managed-workers`] = () => ({ state: "host" });
+  show(<Workers base={base} />);
+  await screen.findByText(/You can see this tenant's workers, not change them|not change it/);
+  const button = await screen.findByRole("button", { name: "Run only on our own workers" });
+  expect((button.closest("fieldset") as HTMLFieldSetElement).disabled).toBe(true);
 });
 
 test("a worker credential can be for one workspace, and the list says which (GOV-P7)", async () => {

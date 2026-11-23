@@ -119,7 +119,11 @@ export function HelpPanel({
         ready.screenshots?.includes(name) ? `/help/assets/screenshots/${name}.png` : null,
       term: (props: Record<string, string>) => {
         const term = props.id ? ready.terms[props.id] : undefined;
-        return term ? { short: term.short, href: `${INSIDE}${term.path}` } : null;
+        // On the page that explains it, "More about" would lead to where the reader is.
+        if (!term) return null;
+        return term.path === shown.path
+          ? { short: term.short }
+          : { short: term.short, href: `${INSIDE}${term.path}` };
       },
     };
   }, [ready, shown, fields]);

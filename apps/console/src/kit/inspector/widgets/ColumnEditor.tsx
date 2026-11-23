@@ -1,6 +1,6 @@
 /**
  * One column of a table, edited (boards 12 and 13, "Column · Total", "Column · Status"): its
- * heading, how it is shown, alignment and width, sorting, a total, and a colour for each value
+ * heading, how it is shown, alignment and width, sorting, a total, and a color for each value
  * of a choice shown as a badge. It opens from a row of the Display tab, and from a click on the
  * heading on the canvas, where it is drawn beside that heading.
  */

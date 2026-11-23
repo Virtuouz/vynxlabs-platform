@@ -187,8 +187,8 @@ export function PublishCheck({
         <h2 className="m-0 text-title font-semibold">{heading}</h2>
         <p className="m-0 text-body-sm text-ink-muted">
           {deployed === null
-            ? `Publishes to ${workspace.data?.name ?? "this workspace"} for the first time. Nobody sees it until then.`
-            : `Publishes to ${workspace.data?.name ?? "this workspace"}. The live app keeps working until then.`}
+            ? `Deploys to ${workspace.data?.name ?? "this workspace"} for the first time. Nobody sees it until then.`
+            : `Deploys to ${workspace.data?.name ?? "this workspace"}. The live app keeps working until then.`}
         </p>
       </header>
       {unasked ? (

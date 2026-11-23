@@ -140,6 +140,30 @@ describe("a connection says what it is, and what is drafted is listed (CFG-05, C
     expect(after).toMatchObject({ defined: false, bound: true, connector: "smtp" });
   });
 
+  test("a connection keeps the connector it was bound as, however many uploads came after", async () => {
+    const declared = manifest("connection", "kept-mail", { connector: "smtp" });
+    expect((await deploy(lone, bundle([declared]))).status).toBe(201);
+    const bound = await alice.put(`${ws(lone)}/connection-bindings/kept-mail`, {
+      config: { host: "mail.test", from: "ops@acme.example" },
+      credential: "pw",
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBe(204);
+    // The declaration goes, and so many bundles follow that the one that held it is out of reach.
+    expect((await deploy(lone, bundle([manifest("variable", "gone0", {})]))).status).toBe(201);
+    for (let n = 0; n < 205; n++) {
+      const later = await alice.post(
+        `${ws(lone)}/bundles`,
+        bundle([manifest("variable", `after${n}`, {})]),
+      );
+      expect(later.status, JSON.stringify(later.body)).toBe(201);
+    }
+    expect(await connectionOf(lone, "kept-mail")).toMatchObject({
+      defined: false,
+      bound: true,
+      connector: "smtp",
+    });
+  }, 180_000);
+
   test("a drafted connection is listed with its draft state, and found by its path", async () => {
     const saved = await alice.put(`${ws(lone)}/drafts/crm`, {
       kind: "connection",

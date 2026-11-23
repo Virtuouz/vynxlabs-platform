@@ -74,7 +74,7 @@ export const formatFor = <V extends 1 | 2 | 3 | 4>(
  * What a file's path inside an app may be made of: parts of letters, digits and `. _ @ ~ -`,
  * each starting with a letter or a digit. A part may also start with `_` or `.` followed by one
  * (such as a bundler's `_commonjsHelpers-1a2b.js`, or `.well-known/assetlinks.json`), but
- * never be `.` or `..`, and the path never starts with `_/`, which the platform keeps.
+ * never be `.` or `..`, and the path never starts with `_/`, which Volvel keeps.
  */
 export const ASSET_PATH_PATTERN =
   "^[_.]?[A-Za-z0-9][A-Za-z0-9._@~-]*(/[_.]?[A-Za-z0-9][A-Za-z0-9._@~-]*)*$";

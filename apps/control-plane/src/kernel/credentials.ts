@@ -56,7 +56,7 @@ export async function credentialSetters(db: Db | Trx, rows: (Stamped | undefined
       row?.credential_set_by_type && row.credential_set_by_id
         ? (names.get(`${row.credential_set_by_type}:${row.credential_set_by_id}`) ?? null)
         : row?.credential_set_by_type === "system"
-          ? "the platform"
+          ? "Volvel"
           : null,
   });
 }

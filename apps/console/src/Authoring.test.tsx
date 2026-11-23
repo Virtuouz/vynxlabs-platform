@@ -105,10 +105,19 @@ test("a new script's first save and run keeps the editor, and shows the run it s
 
   // The code and the test pane are side by side; running needs no tab.
   const pane = screen.getByRole("region", { name: "Test pane" });
+  const brought = vi.fn();
+  Element.prototype.scrollIntoView = brought;
   fireEvent.click(within(pane).getByRole("button", { name: "Save and run" }));
 
   // The result shows in the pane, beside the code.
   expect(await within(pane).findByRole("tablist", { name: "About this run" })).toBeTruthy();
+  // Round 4: the form sits above the result, so a run brings the result into view.
+  await waitFor(() => expect(brought).toHaveBeenCalled());
+  expect(brought.mock.contexts[0]).toBe(
+    within(pane)
+      .getByRole("tablist", { name: "What the test run gave" })
+      .closest("div[class*='scroll-mt']"),
+  );
   expect(location.pathname).toBe("/t/t1/workspaces/w1/scripts/edit/hello/greet");
   // The editor that saved it is still there, and did not read back what it just saved.
   expect(screen.getByLabelText("Source of hello/greet")).toBe(code);

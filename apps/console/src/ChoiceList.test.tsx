@@ -30,3 +30,19 @@ test("w-data 2: a long hint gives way, so every row keeps its name", () => {
   expect(name.className).toContain("min-w-[40%]");
   expect(hint.getAttribute("title")).toContain("grouped by week");
 });
+
+test("round 4: a name reads whole, wrapping where it must, and the row grows with it", () => {
+  render(
+    <ChoiceList
+      label="Where it reads from"
+      value={undefined}
+      onChange={() => {}}
+      options={[{ value: "t", label: "loans in library-loans-and-returns-archive" }]}
+    />,
+  );
+  const name = screen.getByText("loans in library-loans-and-returns-archive");
+  expect(name.className).not.toContain("truncate");
+  expect(name.className).toContain("[overflow-wrap:anywhere]");
+  expect(name.closest("label")?.className).toContain("min-h-9");
+  expect(name.closest("label")?.className).not.toMatch(/(^| )h-9( |$)/);
+});

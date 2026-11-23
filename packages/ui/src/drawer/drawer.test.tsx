@@ -36,6 +36,24 @@ describe("drawer editor", () => {
     expect(document.activeElement).toBe(row);
   });
 
+  test("round 4: a field that opens holding a default text has it selected, so typing replaces it", async () => {
+    render(
+      <DrawerRow
+        label="Title"
+        value="Table"
+        editor={<input aria-label="Name field" defaultValue="Table" />}
+      />,
+    );
+    const select = vi.spyOn(HTMLInputElement.prototype, "select");
+    fireEvent.click(screen.getByRole("button", { name: /Title/ }));
+    const field = (await screen.findByLabelText("Name field")) as HTMLInputElement;
+    await waitFor(() => expect(document.activeElement).toBe(field));
+    // happy-dom keeps no selection range of its own, so the call is what is read.
+    await waitFor(() => expect(select).toHaveBeenCalled());
+    expect(select.mock.contexts[0]).toBe(field);
+    select.mockRestore();
+  });
+
   test("Done closes it and runs onDone", async () => {
     const onDone = vi.fn();
     render(

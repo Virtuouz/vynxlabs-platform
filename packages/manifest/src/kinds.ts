@@ -491,7 +491,7 @@ const webhookOptions = {
   },
 };
 
-/** A form that starts something: a page the platform serves, with these fields. */
+/** A form that starts something: a page Volvel serves, with these fields. */
 const formOptions = {
   title: {
     type: "string",
@@ -606,7 +606,7 @@ export const triggerKind: KindDefinition = {
         properties: {
           type: {
             const: "form",
-            description: "Starts when someone sends a form the platform serves.",
+            description: "Starts when someone sends a form Volvel serves.",
           },
           script: { ...path, description: "The script it starts." },
           enabled: { type: "boolean", description: TRIGGER_ENABLED },
@@ -1043,7 +1043,7 @@ export const BUILTIN_CONNECTOR_LIST: readonly BuiltinConnector[] = [
     name: "oauth2",
     label: "API with OAuth 2.0",
     description:
-      "An API a member authorizes once in the console. The platform keeps the tokens and refreshes them, and a script is given the access token alone, never the refresh token or the client's secret.",
+      "An API a member authorizes once in the console. Volvel keeps the tokens and refreshes them, and a script is given the access token alone, never the refresh token or the client's secret.",
     client: "`HttpClient`, which sends the access token as a bearer token.",
   },
 ];

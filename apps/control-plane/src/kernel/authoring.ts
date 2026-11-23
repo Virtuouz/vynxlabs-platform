@@ -179,7 +179,7 @@ export async function saveDraft(
     throw badRequest("The manifest is not valid.", [
       {
         path: "/path",
-        message: `paths under ${CORE_PREFIX} are kept for the platform's own nodes. Choose another path`,
+        message: `paths under ${CORE_PREFIX} are kept for Volvel's own nodes. Choose another path`,
       },
     ]);
   }
@@ -214,7 +214,7 @@ export async function saveDraft(
       throw badRequest("The manifest is not valid.", [
         {
           path: "/path",
-          message: `paths under ${CORE_PREFIX} are kept for the platform's own nodes`,
+          message: `paths under ${CORE_PREFIX} are kept for Volvel's own nodes`,
         },
       ]);
     }

@@ -49,7 +49,7 @@ const Tenant = Type.Object({
   name: Type.String(),
   dataLocation: Type.Union([Type.String(), Type.Null()], {
     description:
-      "The dedicated database that holds this tenant's custom tables, or null for the platform database.",
+      "The dedicated database that holds this tenant's custom tables, or null for Volvel's own database.",
   }),
   managedWorkers: Type.Boolean({
     description:

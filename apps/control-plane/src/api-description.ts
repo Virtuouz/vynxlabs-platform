@@ -88,7 +88,7 @@ export const API_POLICY =
   "90 days after the release that says so.";
 
 export const API_DESCRIPTION =
-  "The one public API of the platform. Errors are RFC 9457 problem details " +
+  "The one public API of Volvel. Errors are RFC 9457 problem details " +
   "(application/problem+json) with a stable `code` and the `requestId`; every code is listed " +
   "under `x-error-codes`. Sign in through `/api/v1/auth/sign-in/email` for a session cookie, or " +
   "send `Authorization: Bearer <api key>`, where a key begins `vxk_`. Each route says what it " +

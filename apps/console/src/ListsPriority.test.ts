@@ -7,11 +7,11 @@ import { expect, test } from "vitest";
 // at 390 px. The scan reads every `columns={[ ... ]}` of the screens.
 const screens = join(dirname(fileURLToPath(import.meta.url)), "screens");
 
-test("p31 fc: every list of four columns or more gives its columns a priority", () => {
+test("p31 fc: every list of four columns or more gives its columns a priority, also a list of columns kept in a constant (the keys' lists, round 4)", () => {
   const bare: string[] = [];
   for (const file of readdirSync(screens).filter((name) => name.endsWith(".tsx"))) {
     const text = readFileSync(join(screens, file), "utf8");
-    for (const found of text.matchAll(/columns=\{\[/g)) {
+    for (const found of text.matchAll(/columns=\{\[|(?:const|let) \w*[cC]olumns\b[^=\n]*=\s*\[/g)) {
       let depth = 0;
       let at = (found.index ?? 0) + found[0].length - 1;
       const from = at;

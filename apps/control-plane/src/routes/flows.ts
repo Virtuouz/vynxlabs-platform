@@ -2078,7 +2078,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params, body }, reply) => {
         if (body.name.startsWith("platform/")) {
-          throw badRequest("Events under platform/ are published by the platform itself.");
+          throw badRequest("Events under platform/ are published by Volvel itself.");
         }
         const published = await ctx.mutate(async (trx, audit) => {
           const result = await publishEvent(kernel, trx, {

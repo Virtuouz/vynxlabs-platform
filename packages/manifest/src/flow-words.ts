@@ -114,14 +114,14 @@ export const FLOW_STARTS: Record<FlowTrigger["type"], FlowStartWords> = {
   event: {
     label: "On an event",
     description:
-      "Starts when an event of the workspace, or one the platform publishes, is published, and the optional `filter` gives true.",
+      "Starts when an event of the workspace, or one Volvel publishes, is published, and the optional `filter` gives true.",
     gives:
       "The event's payload. The `filter` reads the whole event as `event`, with its `name` and its `payload`.",
   },
   form: {
     label: "On a form",
     description:
-      "Starts when someone fills in a page the platform serves from the fields the start lists.",
+      "Starts when someone fills in a page Volvel serves from the fields the start lists.",
     gives: "An object with one value for each field of the form.",
   },
 };

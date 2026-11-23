@@ -154,3 +154,37 @@ test("a list's row actions sit under the first cell on a phone, and are the last
   );
   vi.unstubAllGlobals();
 });
+
+test("round 4: beside an inspector a list waits longer to show its second and third tiers", () => {
+  const draw = (beside: boolean) => {
+    cleanup();
+    show(
+      <DataTable
+        label="Places"
+        {...(beside ? { beside } : {})}
+        rows={[{ id: "a", a: "A", b: "B", c: "C" }]}
+        rowKey={(row) => row.id}
+        empty={<p>None</p>}
+        columns={[
+          { header: "One", cell: (row) => row.a },
+          { header: "Two", priority: 2, cell: (row) => row.b },
+          { header: "Three", priority: 3, cell: (row) => row.c },
+        ]}
+      />,
+    );
+    return [
+      screen.getByRole("columnheader", { name: "Two" }).className,
+      screen.getByRole("columnheader", { name: "Three" }).className,
+      (document.querySelector("table") as HTMLElement).className,
+    ];
+  };
+  const [two, three, table] = draw(false);
+  expect(two).toContain("sm:table-cell");
+  expect(three).toContain("lg:table-cell");
+  expect(table).toContain("lg:min-w-");
+  const [twoBeside, threeBeside, tableBeside] = draw(true);
+  expect(twoBeside).toContain("xl:table-cell");
+  expect(threeBeside).toContain("2xl:table-cell");
+  expect(tableBeside).toContain("xl:min-w-");
+  expect(tableBeside).not.toMatch(/(^| )(sm|lg):min-w-/);
+});

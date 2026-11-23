@@ -193,7 +193,7 @@ export async function closeAllSources() {
   await Promise.all(open.map((pool) => pool.db.destroy()));
 }
 
-/** Problems reaching a source are the binding's, not the platform's. */
+/** Problems reaching a source are the binding's, not Volvel's. */
 export function sourceFailure(path: string, error: unknown): unknown {
   if (error instanceof HttpError) return error;
   const code = (error as { code?: string }).code ?? "";

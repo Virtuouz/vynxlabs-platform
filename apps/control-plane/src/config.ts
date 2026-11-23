@@ -97,7 +97,7 @@ export interface Limits {
   runMemoryFloorMb: number | undefined;
   /** Managed workers alive at once beside the control plane. Undefined: twice the run slots. */
   managedWorkersMax: number | undefined;
-  /** Connections to the platform database for the platform's own work. */
+  /** Connections to Volvel's own database for the platform's own work. */
   databasePoolSize: number;
   /** Connections for every tenant's row requests on the platform database. */
   dataPoolSize: number;
@@ -276,9 +276,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   }
   const otlpProtocol = value("OTEL_EXPORTER_OTLP_PROTOCOL") ?? "http/json";
   if (otlpEndpoint !== undefined && otlpProtocol !== "http/json") {
-    problems.push(
-      "OTEL_EXPORTER_OTLP_PROTOCOL must be http/json: the only one the platform speaks.",
-    );
+    problems.push("OTEL_EXPORTER_OTLP_PROTOCOL must be http/json: the only one Volvel speaks.");
   }
   let otlpHeaders: Record<string, string> = {};
   try {

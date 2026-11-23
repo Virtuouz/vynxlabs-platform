@@ -96,3 +96,24 @@ test("R-last: a state of one word is not cut to a letter in a narrow row; a long
   expect(one?.parentElement?.className).not.toContain("min-w-0");
   expect(many?.className).toContain("truncate");
 });
+
+test("round 4: a status given as one word of text, with or without a detail, is never cut", () => {
+  const { container } = render(
+    <>
+      <StatePill state="ok">Reached</StatePill>
+      <StatePill state="failed" detail="tested 3 days ago">
+        Failed
+      </StatePill>
+    </>,
+  );
+  const cuts = [...container.querySelectorAll("[data-cut]")] as HTMLElement[];
+  for (const label of [cuts[0], cuts[1]]) {
+    expect(label?.className).toContain("whitespace-nowrap");
+    expect(label?.className).toContain("shrink-0");
+    expect(label?.className).not.toContain("truncate");
+  }
+  // The detail is what gives way.
+  expect(cuts[2]?.textContent).toBe("tested 3 days ago");
+  expect(cuts[2]?.className).toContain("truncate");
+  expect(cuts[1]?.parentElement?.className).toContain("min-w-0");
+});

@@ -161,7 +161,7 @@ export function refuseUnstorable(input: unknown): void {
   const found = unstorable(input);
   if (found) {
     throw badRequest(
-      `The input has text the platform cannot store, at ${found}: a null character, or half of a character. Remove it and send again.`,
+      `The input has text Volvel cannot store, at ${found}: a null character, or half of a character. Remove it and send again.`,
     );
   }
 }

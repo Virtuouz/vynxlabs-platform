@@ -618,8 +618,8 @@ async function dev(args: string[], io: Io) {
   io.out(`${server.app.path} is at ${server.url}`);
   io.out(
     values["no-strict"]
-      ? "The page is served without the platform's content policy (--no-strict), so it may do what a deployed app cannot."
-      : "The page is served under the platform's content policy: no inline script, nothing from another site. A browser's console says what it refused; --no-strict turns this off.",
+      ? "The page is served without Volvel's content policy (--no-strict), so it may do what a deployed app cannot."
+      : "The page is served under Volvel's content policy: no inline script, nothing from another site. A browser's console says what it refused; --no-strict turns this off.",
   );
   io.out(
     `It reads and writes ${values.tenant}/${values.workspace} on ${settings.url}, as ${describe(me.principal)}. Press Ctrl+C to stop.`,
@@ -930,7 +930,7 @@ async function tenant(args: string[], io: Io) {
     io.out(
       report.tenant.dataLocation
         ? `Its custom tables are in the database location "${report.tenant.dataLocation}".`
-        : "Its custom tables are in the platform database.",
+        : "Its custom tables are in Volvel's own database.",
     );
     io.out(
       `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one when the instance it came from has stopped.`,

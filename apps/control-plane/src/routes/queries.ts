@@ -43,7 +43,7 @@ export const QueryResultSchema = Type.Object({
       { sql: Type.String(), parameters: Type.Array(Type.Unknown()) },
       {
         description:
-          "For a query built from menus: the SQL the platform wrote for it, as someone would " +
+          "For a query built from menus: the SQL Volvel wrote for it, as someone would " +
           "write it, and the values of its parameters. It is what turning the query into SQL gives.",
       },
     ),

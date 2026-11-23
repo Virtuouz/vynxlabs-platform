@@ -751,7 +751,7 @@ export function appRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             "The app is then served at the hostname's root, once the registration is " +
             "enabled. Point the name at this instance with a CNAME or an address record, " +
             "and have whatever terminates TLS in front of the instance hold a certificate " +
-            "for it. The platform issues no certificates. The answer carries a DNS TXT " +
+            "for it. Volvel issues no certificates. The answer carries a DNS TXT " +
             "record to create: it shows that whoever controls the name agrees.",
           tags: ["domains"],
           params: TenantParams,

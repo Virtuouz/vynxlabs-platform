@@ -396,7 +396,7 @@ export function portabilityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               dataLocation: Type.Optional(
                 Type.String({
                   description:
-                    "A registered dedicated database for the tenant's custom tables. Without it they go in the platform database.",
+                    "A registered dedicated database for the tenant's custom tables. Without it they go in Volvel's own database.",
                 }),
               ),
             }),

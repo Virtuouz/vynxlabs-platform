@@ -208,7 +208,7 @@
                   },
                   {
                     "type": "object",
-                    "description": "Starts when an event of the workspace, or one the platform publishes, is published, and the optional `filter` gives true.",
+                    "description": "Starts when an event of the workspace, or one Volvel publishes, is published, and the optional `filter` gives true.",
                     "properties": {
                       "type": {
                         "const": "event",
@@ -245,7 +245,7 @@
                   },
                   {
                     "type": "object",
-                    "description": "Starts when someone fills in a page the platform serves from the fields the start lists.",
+                    "description": "Starts when someone fills in a page Volvel serves from the fields the start lists.",
                     "properties": {
                       "type": {
                         "const": "form",

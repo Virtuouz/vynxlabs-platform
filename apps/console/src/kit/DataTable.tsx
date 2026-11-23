@@ -72,6 +72,11 @@ const breakable = (cell: ReactNode): ReactNode =>
   typeof cell === "string" && /[@.\-_/]./.test(cell) ? <Breakable>{cell}</Breakable> : cell;
 
 const SHOWN = { 1: "", 2: "hidden sm:table-cell", 3: "hidden lg:table-cell" } as const;
+/**
+ * Beside an inspector the list has a third less room: its second tier of columns waits for a wide
+ * screen and its third for a wider one, so its last column (the actions) is not under the panel.
+ */
+const SHOWN_BESIDE = { 1: "", 2: "hidden xl:table-cell", 3: "hidden 2xl:table-cell" } as const;
 const PAD: Record<Density, string> = { compact: "py-0.5", standard: "py-2", comfortable: "py-3" };
 /** Row heights the virtual list estimates with, matching the paddings above. */
 const HEIGHT: Record<Density, number> = { compact: 28, standard: 36, comfortable: 44 };
@@ -100,6 +105,8 @@ export function nextSort(current: SortState, key: string): SortState {
 export interface DataTableProps<Row> {
   /** Names the list for screen readers. */
   label: string;
+  /** An inspector is drawn beside the list, so it has less room: fewer columns at each width. */
+  beside?: boolean;
   columns: DataColumn<Row>[];
   rows: Row[] | undefined;
   rowKey: (row: Row) => string;
@@ -195,7 +202,9 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
     filtered,
     footer,
     arriving,
+    beside = false,
   } = props;
+  const tier = beside ? SHOWN_BESIDE : SHOWN;
   const columns = useMemo(
     () => chooseColumns(allColumns, columnsShown),
     [allColumns, columnsShown],
@@ -445,7 +454,11 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
           aria-rowcount={grid ? shown.length + 1 : undefined}
           onKeyDown={onKeyDown}
           style={minimums as CSSProperties}
-          className="w-full min-w-[var(--table-min-1)] table-fixed border-collapse text-left sm:min-w-[var(--table-min-2)] lg:min-w-[var(--table-min-3)]"
+          className={`w-full min-w-[var(--table-min-1)] table-fixed border-collapse text-left ${
+            beside
+              ? "xl:min-w-[var(--table-min-2)] 2xl:min-w-[var(--table-min-3)]"
+              : "sm:min-w-[var(--table-min-2)] lg:min-w-[var(--table-min-3)]"
+          }`}
           aria-busy={refreshing || undefined}
         >
           <thead
@@ -489,7 +502,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                         : undefined
                     }
                     // A width asked for is for a table with room: on a phone the columns take what they need, or the one beside it is squeezed.
-                    className={`whitespace-nowrap px-3 py-2 font-medium ${column.wide ? "w-[14rem]" : column.width ? `${column.width} max-sm:w-auto` : ""} ${SHOWN[column.priority ?? 1]} ${
+                    className={`whitespace-nowrap px-3 py-2 font-medium ${column.wide ? "w-[14rem]" : column.width ? `${column.width} max-sm:w-auto` : ""} ${tier[column.priority ?? 1]} ${
                       column.align === "end" ? "text-right" : ""
                     } ${edges}`}
                   >
@@ -636,7 +649,7 @@ export function DataTable<Row>(props: DataTableProps<Row>) {
                       <td
                         key={columnKey(column)}
                         {...common}
-                        className={`px-3 [overflow-wrap:anywhere] ${PAD[density]} ${SHOWN[column.priority ?? 1]} ${
+                        className={`px-3 [overflow-wrap:anywhere] ${PAD[density]} ${tier[column.priority ?? 1]} ${
                           column.align === "end" ? "text-right tabular-nums" : ""
                         } ${column.truncate ? "truncate" : ""} ${edges} ${ring}`}
                         onPointerEnter={column.truncate ? fullOnHover : undefined}

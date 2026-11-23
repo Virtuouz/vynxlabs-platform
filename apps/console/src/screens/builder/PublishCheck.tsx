@@ -184,7 +184,12 @@ export function PublishCheck({
         : "Ready to publish";
 
   return (
-    <div data-publish-check="" className="flex flex-col gap-3 p-4 text-ink">
+    // The popover around it does not scroll, so the check does: every change is listed, and the
+    // Publish button stays in view at the foot.
+    <div
+      data-publish-check=""
+      className="flex max-h-[var(--available-height,90vh)] flex-col gap-3 overflow-y-auto p-4 text-ink"
+    >
       <header className="flex flex-col gap-0.5">
         <h2 className="m-0 text-title font-semibold">{heading}</h2>
         <p className="m-0 text-body-sm text-ink-muted">
@@ -245,7 +250,7 @@ export function PublishCheck({
             {lines.length === 0 ? (
               <p className="m-0 text-body-sm text-ink-muted">The app is as people see it now.</p>
             ) : (
-              <ul className="m-0 flex max-h-40 list-none flex-col gap-1 overflow-y-auto p-0 text-body-sm">
+              <ul className="m-0 flex list-none flex-col gap-1 p-0 text-body-sm">
                 {lines.map((line) => (
                   <li key={line}>{line}</li>
                 ))}
@@ -262,7 +267,7 @@ export function PublishCheck({
           ) : null}
         </>
       )}
-      <footer className="flex items-center justify-between gap-3">
+      <footer className="sticky -bottom-4 -mx-4 -mb-4 flex items-center justify-between gap-3 bg-raised px-4 py-3">
         {tryGroup && tryName ? (
           <button
             type="button"

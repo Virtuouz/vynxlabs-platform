@@ -295,7 +295,7 @@ export function definitionProblems(definition: WidgetDefinition): string[] {
   if (definition.role !== undefined) {
     if (!WIDGET_ROLES.includes(definition.role)) say(`there is no role "${definition.role}"`);
     else if (!definition.type.startsWith("core/"))
-      say("only the platform's own widgets hold other widgets or set the page's filters");
+      say("only Volvel's own widgets hold other widgets or set the page's filters");
   }
   for (const name of Object.keys(definition.data)) {
     if (!NAME.test(name)) say(`data input "${name}" is not a name`);

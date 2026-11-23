@@ -161,18 +161,23 @@ export function StatePill({
   const word = state === "waiting_time" && until ? `Waiting until ${clock(until)}` : label;
   // A state of one word is never cut to a letter: it keeps its own width and its neighbours give
   // way. A longer one still shortens, with the whole of it on hover.
-  const oneWord = children === undefined && detail === undefined && !/\s/.test(word);
+  // The word it shows: a label given as text counts as well as the state's own.
+  const shown = typeof children === "string" ? children : children === undefined ? word : null;
+  const oneWord = shown !== null && !/\s/.test(shown);
   return (
     <span
       onPointerEnter={fullOnHover}
-      className={`inline-flex max-w-full items-center gap-1.5 ${oneWord ? "" : "min-w-0"}`}
+      className={`inline-flex max-w-full items-center gap-1.5 ${oneWord && detail === undefined ? "" : "min-w-0"}`}
     >
       <Icon
         aria-hidden="true"
         size={14}
         className={`shrink-0 ${tone} ${state === "running" ? "animate-spin-slow" : ""}`}
       />
-      <span data-cut="" className={`${oneWord ? "whitespace-nowrap" : "truncate"} ${tone}`}>
+      <span
+        data-cut=""
+        className={`${oneWord ? "shrink-0 whitespace-nowrap" : "truncate"} ${tone}`}
+      >
         {children ?? word}
       </span>
       {detail ? (

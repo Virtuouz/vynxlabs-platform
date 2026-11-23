@@ -84,14 +84,28 @@ export function ColumnEditorBody({
       <div className="flex flex-col gap-1.5">
         <span className="text-body-sm text-ink-muted">Shown as</span>
         {number ? (
-          <div className="overflow-hidden rounded-control border border-line-control">
-            <NumberFormatRow
-              label="Format"
-              value={asNumberFormat(spec.format ?? facts?.format)}
-              sample={123.45}
-              onChange={(next) => onChange({ format: next as ValueFormat })}
-            />
-          </div>
+          <>
+            <div className="overflow-hidden rounded-control border border-line-control">
+              <NumberFormatRow
+                label="Format"
+                value={asNumberFormat(spec.format ?? facts?.format)}
+                sample={123.45}
+                onChange={(next) => onChange({ format: next as ValueFormat })}
+              />
+            </div>
+            <FullSegments>
+              <SegmentedControl
+                label="Drawn as"
+                value={spec.as === "bar" || spec.as === "delta" ? spec.as : "text"}
+                options={[
+                  { value: "text", label: "Number" },
+                  { value: "bar", label: "Bar" },
+                  { value: "delta", label: "Change" },
+                ]}
+                onChange={(next) => onChange({ as: next })}
+              />
+            </FullSegments>
+          </>
         ) : isDateType(type) ? (
           <p className="m-0 text-body-sm text-ink">Date, as the table writes dates</p>
         ) : (

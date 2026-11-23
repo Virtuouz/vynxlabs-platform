@@ -22,6 +22,7 @@ import { EmptyCanvas, NextStep, PageHeader, Panel, SectionLabel } from "../kit/l
 import { Junction, Wire } from "../kit/motifs.tsx";
 import { triggerKey } from "../kit/objects.tsx";
 import { EnvTag, Mono, StatePill } from "../kit/status.tsx";
+import { useInstanceStartsWorkers } from "../kit/useInstanceStartsWorkers.ts";
 import { Link, navigate } from "../router.tsx";
 import type { WorkspaceCounts } from "../Shell.tsx";
 import { type Trigger, TriggerState } from "./Operate.tsx";
@@ -187,9 +188,7 @@ function FirstRun({
       key: "worker",
       done: (counts.workersOnline ?? 0) > 0 || managedWorkers,
       title: "A worker to run code",
-      detail: managedWorkers
-        ? "The instance starts workers for this tenant when there is work."
-        : "Start a worker with a credential, so scripts have somewhere to run.",
+      detail: "Start a worker with a credential, so scripts have somewhere to run.",
       to: `${tenantLink}/workers`,
       action: "Workers",
     },
@@ -269,6 +268,7 @@ export function Overview({
   const summary = useLoad<WorkspaceCounts>(`${root}/summary`);
   const tenantRoot = root.split("/workspaces/")[0] ?? "";
   const tenant = useLoad<{ managedWorkers?: boolean }>(tenantRoot);
+  const startsWorkers = useInstanceStartsWorkers(tenantRoot, tenant.data?.managedWorkers);
   const triggers = useLoad<{ items: Trigger[] }>(`${root}/triggers`);
   const stats = useLoad<RunStats>(`${root}/run-stats?hours=24`);
   const counts = summary.data;
@@ -485,7 +485,7 @@ export function Overview({
                   counts={counts}
                   link={link}
                   tenantLink={link.split("/workspaces/")[0] ?? ""}
-                  managedWorkers={tenant.data?.managedWorkers === true}
+                  managedWorkers={startsWorkers === true}
                   dev={workspace.type === "dev"}
                 />
               </Panel>

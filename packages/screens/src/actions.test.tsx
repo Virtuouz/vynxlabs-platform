@@ -88,6 +88,7 @@ function TableView(props: WidgetViewProps<Record<string, unknown>> & Extra) {
   return (
     <div data-close={props.close ? "yes" : "no"} data-selected={props.selectedRecord ?? ""}>
       <span data-testid="listens">{String(listens?.("rowClick"))}</span>
+      <span data-testid="columns">{JSON.stringify(props.config?.columns ?? null)}</span>
       {rows.map((row) => (
         <div key={String(row.id)}>
           <button type="button" onClick={() => emit("rowClick", { record: String(row.id) })}>
@@ -502,6 +503,44 @@ describe("the browser's steps", () => {
       { month: "2026-11" },
     );
     expect(screen.getByText("The rows behind it")).toBeTruthy();
+  });
+});
+
+describe("the rows behind a money number", () => {
+  test("WLK-11: the column the number was made of is written as the widget writes it", async () => {
+    const client = clientOf({ client: [{ do: "rows" }] });
+    client.behind.mockResolvedValue({
+      shape: "rows",
+      columns: [col("number"), col("total", "number")],
+      rows: [{ number: "BEHIND-1", total: 135795 }],
+    });
+    const points: PageWidget = {
+      id: "points",
+      type: "test/points",
+      at,
+      config: { format: { style: "currency", currency: "USD", minorUnits: true } },
+      data: {
+        totals: {
+          source: {
+            visual: {
+              table: "invoices",
+              measures: [{ fn: "sum", column: "total" }],
+              groupBy: [{ column: "status" }],
+            },
+          },
+        } as never,
+      },
+      on: { pointClick: { steps: [{ do: "rows" }] } },
+    };
+    show([points], client);
+    fireEvent.click(await screen.findByText("Point"));
+    expect(await screen.findByText("BEHIND-1")).toBeTruthy();
+    // The table draws a column with the format it is given: the number's, for the number's column.
+    const columns = JSON.parse(screen.getByTestId("columns").textContent ?? "null");
+    expect(columns).toEqual([
+      { column: "number" },
+      { column: "total", format: { style: "currency", currency: "USD", minorUnits: true } },
+    ]);
   });
 });
 

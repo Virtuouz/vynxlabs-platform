@@ -5,6 +5,7 @@ import { TAG_PATTERN } from "../kernel/execution/runs.js";
 import type { RequestContext } from "../kernel/http.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
+import { listOf } from "../pagination.js";
 import { Id, NoContent, NullableString } from "./shared.js";
 
 /** What each kind of resource is read with: the permission its own list asks for. */
@@ -77,7 +78,11 @@ export function searchRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/search",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs a signed-in member or a service account's key. It finds only what the caller may read.",
+          ),
+        },
         schema: {
           summary: "Find resources, runs and people by name",
           description:
@@ -293,7 +298,7 @@ export function searchRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "Newest first. What is gone, or no longer readable, is left out.",
           tags: ["identity"],
           querystring: Type.Object({ tenant: Id }),
-          response: { 200: Type.Object({ items: Type.Array(RecentItem) }) },
+          response: { 200: listOf(RecentItem, 20) },
         },
       },
       async ({ ctx, query }) => {

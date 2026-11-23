@@ -16,6 +16,7 @@ let puts: { body: { body: FlowBody } }[];
 let zone: string | undefined;
 let deployed: FlowBody;
 let scripts: unknown[] = [];
+let clash = false;
 
 interface FlowBody {
   nodes: Record<string, Record<string, unknown>>;
@@ -56,12 +57,15 @@ beforeEach(() => {
   puts = [];
   zone = undefined;
   scripts = [];
+  clash = false;
   history.replaceState(null, "", "/");
   vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
     const method = init.method ?? "GET";
     const path = address.split("?")[0] as string;
     const send = (status: number, reply: unknown) =>
       new Response(reply === null ? null : JSON.stringify(reply), { status });
+    if (method === "PUT" && clash && path === `${api}/drafts/orders/sync`)
+      return send(409, { status: 409, code: "draft_changed", detail: "Someone else saved this." });
     if (method === "PUT" && path === `${api}/drafts/orders/sync`) {
       puts.push({ body: JSON.parse(init.body as string) });
       return send(200, { revision: puts.length });
@@ -194,6 +198,25 @@ describe("the flow editor, as a person uses it", () => {
     expect(saved.edges.some((edge) => edge.from === "branch" && edge.output === undefined)).toBe(
       false,
     );
+  });
+
+  test("WLK-17c: a draft saved from another window is said, not 'Saving...', and what was written can be copied", async () => {
+    clash = true;
+    await openAt(
+      {
+        nodes: { start: manual, first: { type: "set", values: { a: "1" } } },
+        edges: [{ from: "start", to: "first" }],
+      },
+      "first",
+      "Values",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Add step/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /^Branch/ }));
+    expect(await screen.findByRole("button", { name: "Copy what I wrote" })).toBeTruthy();
+    const status = screen
+      .getAllByRole("status")
+      .find((one) => /Saving|Not saved|Could not save/.test(one.textContent ?? ""));
+    expect(status?.textContent).toBe("Not saved: someone else saved this flow");
   });
 
   test("WLK-15: in Add step, Enter in the search adds the first match", async () => {

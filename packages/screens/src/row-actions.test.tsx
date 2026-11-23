@@ -196,7 +196,7 @@ describe("confirming an action on several rows", () => {
         name: "Remove",
       }),
     );
-    expect(await screen.findByText("Remove?")).toBeTruthy();
+    expect(await screen.findByText("Remove (2 chosen)?")).toBeTruthy();
     expect(screen.queryByText(/INV-1/, { selector: "[role=dialog] *" })).toBeNull();
   });
 });

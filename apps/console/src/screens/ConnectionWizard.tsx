@@ -111,6 +111,24 @@ const NEW = "__new";
 const PATH = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)*$/;
 
 /** Where a provider sends the member back, which the app registered with it must list. */
+/** Whether a connection's settings now point at another origin than the ones held (D10): the stored credential does not go along. */
+export function addressChanged(
+  held: Record<string, unknown> | null | undefined,
+  now: Record<string, unknown>,
+): boolean {
+  if (held == null) return false;
+  const place = (value: unknown) => {
+    try {
+      return new URL(String(value)).origin;
+    } catch {
+      return String(value ?? "");
+    }
+  };
+  return ["baseUrl", "host", "port", "tokenUrl"].some(
+    (field) => place(held[field]) !== place(now[field]),
+  );
+}
+
 export const callbackAddress = () => `${location.origin}/api/v1/oauth/connections/callback`;
 
 /** Sends the browser to the provider to authorize a connection, and back here after. */
@@ -222,21 +240,8 @@ export function ConnectionWizard({
   };
   const hasCredential = saved?.hasCredential ?? chosen?.hasCredential ?? false;
   // Another address keeps no credential that was given for the old one: it is typed again.
-  const held = (saved ?? chosen)?.config;
-  const place = (value: unknown) => {
-    try {
-      return new URL(String(value)).origin;
-    } catch {
-      return String(value ?? "");
-    }
-  };
   const addressMoved =
-    hasCredential &&
-    credential === "" &&
-    held != null &&
-    ["baseUrl", "host", "port", "tokenUrl"].some(
-      (field) => place(held[field]) !== place(config[field]),
-    );
+    hasCredential && credential === "" && addressChanged((saved ?? chosen)?.config, config);
 
   // A preset fills in what it knows, and keeps the client the member typed.
   const applyPreset = (which: keyof typeof OAUTH_PRESETS, tenant = msTenant) => {

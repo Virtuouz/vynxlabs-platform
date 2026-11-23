@@ -27,6 +27,8 @@ export {
   checkBundleManifests,
   keyMissing,
   PLATFORM_EVENT_PREFIX,
+  PLATFORM_EVENTS,
+  type PlatformEventField,
 } from "./bundle-check.js";
 export {
   envelopeSchemas,
@@ -249,6 +251,7 @@ export {
   type TablePolicy,
 } from "./table.js";
 export {
+  ACCESS_DESCRIPTION_MAX,
   checkTenantResources,
   isTenantFile,
   isTenantKind,

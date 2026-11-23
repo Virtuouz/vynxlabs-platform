@@ -409,8 +409,9 @@ export function RunButton({
         title={draft ? `Run ${script}, as deployed` : `Run ${script}`}
         action="Run"
         schema={schema}
-        onSubmit={async (input) => {
-          const run = await api.post<Run>(`${root}/runs`, { script, input });
+        timing
+        onSubmit={async (input, timing) => {
+          const run = await api.post<Run>(`${root}/runs`, { script, input, ...timing });
           navigate(`${runsLink}/${run.id}`);
         }}
       />
@@ -756,7 +757,19 @@ export function Connections({ root, production = false }: { root: string; produc
     setItem(null);
   }, [setup, list.data, setSetup, setItem]);
   const newButton = (
-    <Button variant="primary" onClick={() => setEditing({})}>
+    <Button
+      variant="primary"
+      onClick={() => {
+        // In production a connection is set up only if one waits: otherwise the form would be empty.
+        if (production && list.data?.items.every((item) => item.bound)) {
+          notify.info(
+            "Nothing waits to be set up here. A connection is declared in a dev workspace and arrives here with a promotion.",
+          );
+          return;
+        }
+        setEditing({});
+      }}
+    >
       {production ? "Set up a connection" : "New connection"}
     </Button>
   );
@@ -804,7 +817,11 @@ export function Connections({ root, production = false }: { root: string; produc
           },
           {
             header: "Kind",
-            cell: (row) => CONNECTOR_NAMES[row.connector] ?? <Code>{row.connector}</Code>,
+            cell: (row) => (
+              <span className="whitespace-nowrap">
+                {CONNECTOR_NAMES[row.connector] ?? <Code>{row.connector}</Code>}
+              </span>
+            ),
           },
           {
             header: "Points to",

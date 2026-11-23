@@ -127,7 +127,6 @@ export function EffectiveAccess({
   const groups = [...new Set(shown.map((one) => one.group))];
   const checking = PERMISSION.test(wanted) && !wanted.includes("*");
   const held = checking ? permissions.find((one) => one.permission === wanted) : undefined;
-  const holds = held !== undefined;
   // Where it is held matters: promoting, for one, is checked in the workspace promoted to.
   const heldWhere = held
     ? [
@@ -141,6 +140,8 @@ export function EffectiveAccess({
         ),
       ]
     : [];
+  // Allowed only when a source that counts gives it: a suspended member's bindings count for nothing.
+  const holds = held !== undefined && heldWhere.length > 0;
   const everything = sources.some((source) => source.role.permissions.includes("*:*"));
   return (
     <section className="flex flex-col gap-4" aria-label="Access">
@@ -187,15 +188,24 @@ export function EffectiveAccess({
                   ? "everywhere in the tenant."
                   : heldWhere.length > 0
                     ? `only in: ${heldWhere.join(", ")}.`
-                    : "by no binding that counts now."}
+                    : ""}
               </span>
             </p>
           ) : (
             <p className="m-0 flex flex-wrap items-center gap-2" role="status">
               <StatePill state="denied" />
               <span className="text-meta text-ink-muted">
-                {principal.name} does not hold <Mono>{wanted}</Mono> anywhere. A role with it, bound
-                to them or a group of theirs where it is needed, would give it.
+                {held !== undefined ? (
+                  <>
+                    {principal.name} is given <Mono>{wanted}</Mono>, but none of it counts while
+                    they are suspended. It counts again when they are resumed.
+                  </>
+                ) : (
+                  <>
+                    {principal.name} does not hold <Mono>{wanted}</Mono> anywhere. A role with it,
+                    bound to them or a group of theirs where it is needed, would give it.
+                  </>
+                )}
               </span>
             </p>
           )

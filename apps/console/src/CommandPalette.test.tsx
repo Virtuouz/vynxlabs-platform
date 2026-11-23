@@ -224,6 +224,34 @@ test("/run picks a script, asks for its input, and starts it", async () => {
   await waitFor(() => expect(location.pathname).toBe(`/t/${T}/workspaces/${W}/runs/new-run`));
 });
 
+test("/run can start the script later and with a priority (OPS-MP8)", async () => {
+  palette();
+  type("/run");
+  await waitFor(() =>
+    expect(screen.getAllByRole("option")[0]?.textContent).toContain("Run script"),
+  );
+  press("Enter");
+  await screen.findByText("agent/find-client");
+  type("find");
+  press("Enter");
+  fireEvent.input(await screen.findByLabelText("Name"), { target: { value: "Fernhill" } });
+  fireEvent.change(screen.getByLabelText("Start"), { target: { value: "later" } });
+  const at = new Date(Date.now() + 7_200_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const field = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}:${pad(at.getMinutes())}`;
+  fireEvent.change(screen.getByLabelText("Starts at"), { target: { value: field } });
+  fireEvent.change(screen.getByLabelText("Priority"), { target: { value: "-5" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run" }));
+  await waitFor(() =>
+    expect(calls.find((one) => one.method === "POST")?.body).toEqual({
+      script: "agent/find-client",
+      input: { name: "Fernhill" },
+      startAfter: new Date(field).toISOString(),
+      priority: -5,
+    }),
+  );
+});
+
 test("⌘↵ runs what is chosen without opening its page", async () => {
   palette();
   type("reminders");

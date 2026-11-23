@@ -8,7 +8,7 @@ import {
   planRename,
   setFrontmatter,
 } from "@volvel/docs-engine";
-import { Button, Doc, Panel, TextField } from "@volvel/ui";
+import { Button, Doc, Notice, Panel, TextField } from "@volvel/ui";
 import { CircleAlert, CircleCheck, ExternalLink, FilePen, Pencil } from "lucide-react";
 import { type KeyboardEvent, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { api, useLoad } from "../../api.ts";
@@ -27,7 +27,7 @@ import { MarkdownEditor } from "../../kit/markdown/MarkdownEditor.tsx";
 import { PageHeader } from "../../kit/PageHeader.tsx";
 import { useTitleObject } from "../../kit/title.ts";
 import { navigate, useNavigationGuard, useQueryValue } from "../../router.tsx";
-import { deletePage, folderItems, MoveDialog, PATH, useProduct } from "./Docs.tsx";
+import { deletePage, folderItems, keepPage, MoveDialog, PATH, useProduct } from "./Docs.tsx";
 import {
   appFor,
   type DocPage,
@@ -218,7 +218,8 @@ export function DocEditor({
   );
 
   const save = async () => {
-    if (placed || source === undefined) return;
+    // A page drafted for removal is kept first: saving would bring it back without being asked.
+    if (placed || source === undefined || opened.data?.page.state === "removed") return;
     setTaken(undefined);
     sent.current = { title, fresh, problems: errors.length > 0, path: where };
     await draft.save(fresh);
@@ -383,7 +384,7 @@ export function DocEditor({
             ) : page && page.state !== "deployed" ? (
               <span className="inline-flex items-center gap-1 rounded-full border border-attention/60 bg-attention-soft px-2 py-0.5 text-meta text-attention">
                 <FilePen aria-hidden="true" size={14} />
-                Draft
+                {page.state === "removed" ? "To be removed" : "Draft"}
               </span>
             ) : null}
           </span>
@@ -463,6 +464,27 @@ export function DocEditor({
           </>
         }
       />
+      {page?.state === "removed" ? (
+        <Notice
+          tone="attention"
+          action={
+            <Button
+              size="small"
+              onClick={async () => {
+                if (!(await keepPage(root, page))) return;
+                setSource(undefined);
+                list.reload();
+                opened.reload();
+              }}
+            >
+              Keep this page
+            </Button>
+          }
+        >
+          A draft removes this page. It is gone once that is deployed. What is shown is what is
+          deployed now; keep the page to change it.
+        </Notice>
+      ) : null}
       {draft.clashed ? (
         <DraftClash
           what="page"
@@ -482,6 +504,7 @@ export function DocEditor({
           label={`Source of ${where || "the new page"}`}
           path={`docs/${where || "new"}.md`}
           value={source}
+          readOnly={page?.state === "removed"}
           onChange={typeSource}
           onSave={save}
           problems={problems}

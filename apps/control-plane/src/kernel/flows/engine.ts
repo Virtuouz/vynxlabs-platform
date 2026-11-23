@@ -16,13 +16,16 @@ import { badRequest, conflict, HttpError, notFound } from "../errors.js";
 import { bundleManifest } from "../execution/bundles.js";
 import { summarize } from "../execution/redact.js";
 import {
+  announceCanceled,
   cancelRun,
   MAX_TAGS,
   refuseUnstorable,
   startRun,
   storable,
   storePayload,
+  takeCanceled,
 } from "../execution/runs.js";
+import { inputWords } from "../input-words.js";
 import type { Kernel } from "../kernel.js";
 import { observe } from "../metrics.js";
 import { type AliasUse, formerPaths, resolveResource } from "../resolve.js";
@@ -138,13 +141,7 @@ export async function checkFlowStart(
   if (entry?.type === "trigger" && entry.trigger.type === "manual" && entry.trigger.input) {
     const issues = validateJson(entry.trigger.input, request.input ?? {}, "/input");
     if (issues.length > 0) {
-      throw badRequest(
-        `The input does not match what the flow ${request.flow} takes: ${issues
-          .slice(0, 3)
-          .map((issue) => `${issue.path} ${issue.message}`)
-          .join("; ")}.`,
-        issues,
-      );
+      throw badRequest(`The flow ${request.flow} refused its input. ${inputWords(issues)}`, issues);
     }
   }
   return { request, workspace, bundle, manifest, body, alias, triggerNode };
@@ -423,6 +420,7 @@ interface Finished {
 export async function advance(kernel: Kernel, flowRunId: string): Promise<void> {
   const started: string[] = [];
   const asking: string[] = [];
+  let canceled: ReturnType<typeof takeCanceled> = [];
   const finished = await kernel.db.transaction().execute(async (trx) => {
     await sql`select pg_advisory_xact_lock(hashtextextended(${flowRunId}, 1))`.execute(trx);
     const flowRun = await trx
@@ -442,8 +440,10 @@ export async function advance(kernel: Kernel, flowRunId: string): Promise<void> 
     const result = await pass.run();
     started.push(...pass.started);
     asking.push(...pass.asking);
+    canceled = takeCanceled(trx);
     return result;
   });
+  await announceCanceled(kernel, canceled);
   // Flow runs started as steps take their own first step now that they are committed.
   for (const child of started) kickFlow(kernel, child);
   // Approvers are told of a step that waits for them once it is committed, and never twice.

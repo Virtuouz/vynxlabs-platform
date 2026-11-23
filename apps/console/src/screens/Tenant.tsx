@@ -582,9 +582,18 @@ function WorkspaceDetail({
           editable={workspace.data.type === "dev"}
         />
       ) : tab === "events" && rest ? (
-        <EventPage root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} path={rest} />
+        <EventPage
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          path={rest}
+          production={workspace.data.type === "production"}
+        />
       ) : tab === "events" ? (
-        <EventsWorkbench root={root} link={`/t/${tenantId}/workspaces/${workspaceId}`} />
+        <EventsWorkbench
+          root={root}
+          link={`/t/${tenantId}/workspaces/${workspaceId}`}
+          production={workspace.data.type === "production"}
+        />
       ) : tab === "tables" && rest ? (
         <TableView
           key={rest}

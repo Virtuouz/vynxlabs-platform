@@ -1,14 +1,8 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
-import {
-  buildApp,
-  type DocSet,
-  type DocsApp,
-  docsApps,
-  type ResourceLike,
-  urlOf,
-} from "@volvel/docs-engine";
+import { type DocSet, type DocsApp, docsApps, type ResourceLike, urlOf } from "@volvel/docs-engine";
 import { type Static, Type } from "typebox";
 import { appUrl } from "../kernel/apps/address.js";
+import { buildDocs } from "../kernel/docs/product.js";
 import type { RequestContext, WorkspaceRef } from "../kernel/http.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -137,7 +131,12 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const apps: Built[] = [];
       for (const app of docsApps(rows)) {
         const row = rows.find((one) => one.kind === "app" && one.path === app.path);
-        if (row) apps.push({ app, id: row.id, set: buildApp(app, [...rows, ...around]).set });
+        if (row)
+          apps.push({
+            app,
+            id: row.id,
+            set: buildDocs(kernel.config, app, [...rows, ...around]).set,
+          });
       }
       kept.set(workspaceId, { bundle, apps });
       if (kept.size > 200) kept.delete(kept.keys().next().value as string);
@@ -214,7 +213,12 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces/:w/terms",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Answers each term as the caller reads the resource it describes. An app may call it for someone who is not signed in, who then gets only what is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "What the workspace's words mean, to this caller",
           description:

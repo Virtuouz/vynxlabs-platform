@@ -83,3 +83,23 @@ describe("chart engine", () => {
     expect(chartSpec({ hconcat: [] }, undefined, 240)).toEqual({ hconcat: [] });
   });
 });
+
+describe("numbers in a chart follow the reader's locale (D38)", () => {
+  test("a German reader's axis and a US reader's are written differently", async () => {
+    const script = (locale: string) => `
+      import { chartSpec, createChartView, loadChartEngine } from ${JSON.stringify(engine)};
+      const engine = await loadChartEngine();
+      const spec = chartSpec({ mark: "bar", encoding: {
+        x: { field: "m", type: "nominal" },
+        y: { field: "n", type: "quantitative", axis: { format: ",~f", values: [0, 1500, 3000] } } } },
+        [{ m: "a", n: 3000 }], 200);
+      const view = createChartView(engine, spec, {}, undefined, ${JSON.stringify(locale)});
+      process.stdout.write(await view.toSVG());
+      view.finalize();
+    `;
+    const draw2 = (locale: string) =>
+      run(process.execPath, ["--input-type=module", "--eval", script(locale)]);
+    expect((await draw2("en-US")).stdout).toContain("1,500");
+    expect((await draw2("de-DE")).stdout).toContain("1.500");
+  });
+});

@@ -39,6 +39,7 @@ import {
   updateProvider,
 } from "../kernel/sso/providers.js";
 import { samlMetadata } from "../kernel/sso/saml.js";
+import { listOf } from "../pagination.js";
 import { AnyObject, Id, iso, isoOrNull, NoContent, NullableId, NullableTime } from "./shared.js";
 
 const NullableString = Type.Union([Type.String(), Type.Null()]);
@@ -222,9 +223,10 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: `The identity providers of ${of}`,
+            description: `The providers that people at ${of} may sign in through, with their settings and never their secrets.`,
             tags,
             params: ListParams,
-            response: { 200: Type.Object({ items: Type.Array(ProviderView) }) },
+            response: { 200: listOf(ProviderView) },
           },
         },
         async ({ params }) => ({
@@ -286,6 +288,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: "One identity provider",
+            description: "The provider's settings, without its secret.",
             tags,
             params: Params,
             response: { 200: ProviderView },
@@ -400,9 +403,10 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: "The email domains a provider signs in",
+            description: "A person whose email is at one of these domains is sent to the provider.",
             tags,
             params: Params,
-            response: { 200: Type.Object({ items: Type.Array(DomainView) }) },
+            response: { 200: listOf(DomainView) },
           },
         },
         async ({ params }) => {
@@ -569,9 +573,10 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: "The people tied to a provider",
+            description: "The people whose sign-in the provider has been used for.",
             tags,
             params: Params,
-            response: { 200: Type.Object({ items: Type.Array(LinkView) }) },
+            response: { 200: listOf(LinkView, 1000) },
           },
         },
         async ({ params }) => {
@@ -689,9 +694,10 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           config: { access: read },
           schema: {
             summary: "Which of the provider's groups put people in which groups here",
+            description: "Each map from a group the provider sends to a group here.",
             tags,
             params: Params,
-            response: { 200: Type.Object({ items: Type.Array(GroupMapView) }) },
+            response: { 200: listOf(GroupMapView) },
           },
         },
         async ({ params }) => ({ items: await maps(await provider(params as { p: string })) }),
@@ -711,7 +717,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             tags,
             params: Params,
             body: Type.Object({ items: Type.Array(GroupMap, { maxItems: 500 }) }),
-            response: { 200: Type.Object({ items: Type.Array(GroupMapView) }) },
+            response: { 200: listOf(GroupMapView) },
           },
         },
         async ({ ctx, params, body }) => {
@@ -971,7 +977,12 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/sso/:p/callback",
       {
-        config: { access: access.public, rateLimit: SSO_LIMIT },
+        config: {
+          access: access.publicWith(
+            "Needs the `state` of a sign-in that this instance began, which the provider sends back.",
+          ),
+          rateLimit: SSO_LIMIT,
+        },
         schema: {
           summary: "Where an OIDC provider sends a member back",
           description:
@@ -1032,7 +1043,12 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       posted.post(
         "/sso/:p/acs",
         {
-          config: { access: access.public, rateLimit: SSO_LIMIT },
+          config: {
+            access: access.publicWith(
+              "Needs a SAML response from the provider for a sign-in that this instance began.",
+            ),
+            rateLimit: SSO_LIMIT,
+          },
           schema: {
             summary: "Where a SAML provider posts a member's sign-in",
             description:

@@ -1,5 +1,6 @@
 import type { View } from "vega";
 import type { Config, TopLevelSpec } from "vega-lite";
+import { localeOf } from "./dates.ts";
 
 /** The three libraries that draw a chart. */
 export interface ChartEngine {
@@ -47,6 +48,37 @@ export function chartSpec(
   };
 }
 
+/** What d3 needs to write numbers the way a locale does, read from Intl so no table is kept. */
+export function numberLocale(locale: string): {
+  decimal: string;
+  thousands: string;
+  grouping: number[];
+  currency: [string, string];
+} {
+  let use = "en-US";
+  try {
+    use = Intl.NumberFormat.supportedLocalesOf(locale)[0] ?? "en-US";
+  } catch {
+    use = "en-US";
+  }
+  const parts = new Intl.NumberFormat(use, { minimumFractionDigits: 2 }).formatToParts(1234567.5);
+  const decimal = parts.find((part) => part.type === "decimal")?.value ?? ".";
+  const thousands = parts.find((part) => part.type === "group")?.value ?? ",";
+  const integers = parts.filter((part) => part.type === "integer");
+  const last = integers[integers.length - 1]?.value.length ?? 3;
+  const money = new Intl.NumberFormat(use, { style: "currency", currency: "USD" }).formatToParts(1);
+  const symbolAt = money.findIndex((part) => part.type === "currency");
+  const integerAt = money.findIndex((part) => part.type === "integer");
+  const symbol = money[symbolAt]?.value ?? "$";
+  const space = money.find((part) => part.type === "literal")?.value ?? "";
+  return {
+    decimal,
+    thousands,
+    grouping: [last],
+    currency: symbolAt < integerAt ? [symbol, ""] : ["", `${space}${symbol}`],
+  };
+}
+
 /**
  * Compiles a Vega-Lite spec and builds its view. Expressions are parsed to a
  * syntax tree and run by the interpreter, so nothing is evaluated from a
@@ -58,7 +90,10 @@ export function createChartView(
   spec: object,
   config: Config,
   container?: Element,
+  locale?: string,
 ): View {
+  // Axes and labels write numbers as the reader does (D38).
+  engine.vega.formatLocale(numberLocale(locale ?? localeOf()));
   const compiled = engine.lite.compile(spec as TopLevelSpec, { config }).spec;
   const runtime = engine.vega.parse(compiled, undefined, { ast: true });
   return new engine.vega.View(runtime, {

@@ -180,6 +180,16 @@ test("an export needs the passphrase typed twice the same", async () => {
   expect(sent("POST")).toHaveLength(0);
 });
 
+test("a short export passphrase is refused in words, not by the browser's bubble", async () => {
+  show(<TenantExport base={base} slug="acme" />);
+  fireEvent.input(screen.getByLabelText("Passphrase"), { target: { value: "too short" } });
+  fireEvent.input(screen.getByLabelText("Passphrase again"), { target: { value: "too short" } });
+  expect(screen.getByRole("alert").textContent).toBe("Use at least 12 characters.");
+  fireEvent.click(screen.getByRole("button", { name: "Export tenant" }));
+  expect(sent("POST")).toHaveLength(0);
+  expect(screen.getByRole("alert").textContent).toBe("Use at least 12 characters.");
+});
+
 const inspection = {
   problem: null,
   tenant: { id: "t9", slug: "acme", name: "Acme Corp" },
@@ -396,4 +406,19 @@ test("a tenant whose database does not answer is deleted only after a second con
   fireEvent.click(anyway);
   await waitFor(() => expect(done).toHaveBeenCalled());
   expect(sentBodies).toEqual([{ confirm: "acme" }, { confirm: "acme", tablesLeftBehind: true }]);
+});
+
+test("WLK-17f: a file with no signature is a note, not a failure, and its long line wraps", async () => {
+  routes["GET /api/v1/instance/database-locations/names"] = () => [200, { items: [] }];
+  routes["POST /api/v1/instance/tenant-imports/staged"] = () => [
+    201,
+    staged({ authenticated: false, formatVersion: 1 } as never),
+  ];
+  show(<TenantImport />);
+  const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
+  fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });
+  fireEvent.submit(screen.getByLabelText("Export file").closest("form") as HTMLFormElement);
+  const line = (await screen.findByText(/Format 1 has no signature/)).closest("li");
+  expect(line?.getAttribute("data-check")).toBe("note");
+  expect(line?.querySelector("span")?.className).toContain("break-words");
 });

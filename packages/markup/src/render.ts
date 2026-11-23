@@ -334,7 +334,8 @@ export function tabsOf(node: Component): { label: string; node: Node }[] {
     return node.children
       .filter((child) => child.type === "code")
       .map((child) => ({
-        label: (child.type === "code" && (titleOf(child.meta) ?? child.lang?.split("/")[0])) || "Code",
+        label:
+          (child.type === "code" && (titleOf(child.meta) ?? child.lang?.split("/")[0])) || "Code",
         node: child,
       }));
   }

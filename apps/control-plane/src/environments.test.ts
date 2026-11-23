@@ -835,6 +835,29 @@ describe("worker pools", () => {
     expect(listed.find((item: Any) => item.name === "on the plant floor").pool).toBe("plant-floor");
   });
 
+  test("what an operator turned off, a tenant admin cannot turn on (D16)", async () => {
+    // The tenant admin's own switch goes both ways.
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: true })).status).toBe(200);
+    // The operator's off is the machine's: the tenant admin is refused, in words.
+    const off = await t.admin.patch(`/tenants/${tenant}`, { managedWorkers: false });
+    expect(off.body.managedWorkers).toBe(false);
+    const refused = await alice.patch(`/tenants/${tenant}`, { managedWorkers: true });
+    expect(refused.status, JSON.stringify(refused.body)).toBe(403);
+    expect(refused.body.detail).toMatch(/An operator of this instance turned this off/);
+    expect((await alice.get(`/tenants/${tenant}`)).body).toMatchObject({
+      managedWorkers: false,
+      managedWorkersLocked: true,
+    });
+    // Switching it off again, or renaming, is not refused.
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: false })).status).toBe(200);
+    expect((await alice.get(`/tenants/${tenant}`)).body.managedWorkersLocked).toBe(true);
+    // Only an operator turns it on, and then it is the tenant's again.
+    expect((await t.admin.patch(`/tenants/${tenant}`, { managedWorkers: true })).status).toBe(200);
+    expect((await alice.get(`/tenants/${tenant}`)).body.managedWorkersLocked).toBe(false);
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: false })).status).toBe(200);
+    expect((await alice.patch(`/tenants/${tenant}`, { managedWorkers: true })).status).toBe(200);
+  });
+
   test("a pool's name is checked when the bundle is uploaded", async () => {
     const bad = script("bad");
     (bad.body as Any).worker = "Plant Floor";

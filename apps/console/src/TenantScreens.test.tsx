@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { Workers } from "./screens/Execution.tsx";
 import { MembersAndAccess } from "./screens/Members.tsx";
 import { Tenant } from "./screens/Tenant.tsx";
 import { TenantOverview } from "./screens/TenantOverview.tsx";
@@ -384,4 +385,13 @@ test("a failed read of the access grants is said as that, not as having no acces
   show(<Tenant tenantId="t1" me={operatorMe} path="/t/t1" />);
   await screen.findByText(/The database is not answering/);
   expect(screen.queryByText("You have no access to this tenant")).toBeNull();
+});
+
+test("Workers does not offer a tenant admin the switch an operator turned off (D16)", async () => {
+  routes[`GET ${base}`] = () => ({ managedWorkers: false, managedWorkersLocked: true });
+  routes[`GET ${base}/managed-workers`] = () => ({ state: "off" });
+  routes[`GET ${base}/worker-pools`] = () => ({ items: [] });
+  show(<Workers base={base} />);
+  await screen.findByText("An operator turned this off. Only an operator can turn it on again.");
+  expect(screen.queryByRole("button", { name: "Let the instance run workers" })).toBeNull();
 });

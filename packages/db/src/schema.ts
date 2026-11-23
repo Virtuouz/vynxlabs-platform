@@ -32,6 +32,8 @@ export interface TenantTable {
   name: string;
   data_location: ColumnType<DataLocation, string | undefined, string>;
   managed_workers: Generated<boolean>;
+  /** An operator turned managed workers off: only an operator turns them on. */
+  managed_workers_locked: Generated<boolean>;
   console_code: Generated<boolean>;
   /** Whether a change to the tenant's access waits for a second person. */
   access_approval: Generated<boolean>;

@@ -2,8 +2,8 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { type DataLocation, newId } from "@volvel/db";
 import { Type } from "typebox";
 import { MIN_PASSWORD_LENGTH, RETENTION_BOUNDS } from "../config.js";
-import { endSessions, keepingAnAdmin } from "../kernel/administer.js";
-import { badRequest, conflict, notFound } from "../kernel/errors.js";
+import { endSessions, isOperator, keepingAnAdmin } from "../kernel/administer.js";
+import { badRequest, conflict, forbiddenBecause, notFound } from "../kernel/errors.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { createMember } from "../kernel/members.js";
@@ -46,6 +46,10 @@ const Tenant = Type.Object({
     description:
       "Whether the instance starts workers for this tenant. False when the tenant runs everything on workers of its own.",
   }),
+  managedWorkersLocked: Type.Boolean({
+    description:
+      "True when an operator turned managed workers off. Then only an operator can turn them on again.",
+  }),
   createdAt: Time,
 });
 const toTenant = (row: {
@@ -54,6 +58,7 @@ const toTenant = (row: {
   name: string;
   data_location: DataLocation;
   managed_workers: boolean;
+  managed_workers_locked?: boolean;
   created_at: Date;
 }) => ({
   id: row.id,
@@ -61,6 +66,7 @@ const toTenant = (row: {
   name: row.name,
   dataLocation: row.data_location.kind === "dedicated" ? row.data_location.ref : null,
   managedWorkers: row.managed_workers,
+  managedWorkersLocked: row.managed_workers_locked ?? false,
   createdAt: iso(row.created_at),
 });
 
@@ -137,7 +143,15 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const { principal } = ctx;
         let select = db
           .selectFrom("tenant")
-          .select(["id", "slug", "name", "data_location", "managed_workers", "created_at"]);
+          .select([
+            "id",
+            "slug",
+            "name",
+            "data_location",
+            "managed_workers",
+            "managed_workers_locked",
+            "created_at",
+          ]);
         if (!(await ctx.allowed("tenant:read", {}))) {
           select =
             principal.type === "member"
@@ -249,7 +263,15 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 ? { data_location: JSON.stringify({ kind: "dedicated", ref: body.dataLocation }) }
                 : {}),
             })
-            .returning(["id", "slug", "name", "data_location", "managed_workers", "created_at"])
+            .returning([
+              "id",
+              "slug",
+              "name",
+              "data_location",
+              "managed_workers",
+              "managed_workers_locked",
+              "created_at",
+            ])
             .executeTakeFirstOrThrow();
           // The tenant's own log starts with its creation.
           await audit({
@@ -312,7 +334,15 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }) => {
         const row = await db
           .selectFrom("tenant")
-          .select(["id", "slug", "name", "data_location", "managed_workers", "created_at"])
+          .select([
+            "id",
+            "slug",
+            "name",
+            "data_location",
+            "managed_workers",
+            "managed_workers_locked",
+            "created_at",
+          ])
           .where("id", "=", params.t)
           .executeTakeFirstOrThrow();
         return {
@@ -341,17 +371,46 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (body.name === undefined && body.managedWorkers === undefined) {
           throw badRequest("Send a name, or managedWorkers.");
         }
+        const operator =
+          ctx.principal.type === "member" &&
+          ctx.principal.id !== null &&
+          (await isOperator(db, ctx.principal.id));
         const row = await ctx.mutate(async (trx, audit) => {
+          if (body.managedWorkers === true && !operator) {
+            const held = await trx
+              .selectFrom("tenant")
+              .select("managed_workers_locked")
+              .where("id", "=", params.t)
+              .executeTakeFirstOrThrow();
+            if (held.managed_workers_locked) {
+              throw forbiddenBecause(
+                "An operator of this instance turned this off. Only an operator can turn it on again.",
+              );
+            }
+          }
           const updated = await trx
             .updateTable("tenant")
             .set({
               ...(body.name !== undefined ? { name: body.name } : {}),
               ...(body.managedWorkers !== undefined
-                ? { managed_workers: body.managedWorkers }
+                ? {
+                    managed_workers: body.managedWorkers,
+                    // An operator's off is kept for operators. What a tenant admin does with it
+                    // changes nothing about whose it is: they may only turn it off again.
+                    ...(operator ? { managed_workers_locked: body.managedWorkers === false } : {}),
+                  }
                 : {}),
             })
             .where("id", "=", params.t)
-            .returning(["id", "slug", "name", "data_location", "managed_workers", "created_at"])
+            .returning([
+              "id",
+              "slug",
+              "name",
+              "data_location",
+              "managed_workers",
+              "managed_workers_locked",
+              "created_at",
+            ])
             .executeTakeFirstOrThrow();
           await audit({
             action: "tenant.updated",

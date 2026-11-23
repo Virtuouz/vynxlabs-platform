@@ -77,6 +77,8 @@ export async function expressionContext(
   db: Db | Trx,
   flowRun: { id: string; trigger_node: string },
   extra: Record<string, unknown> = {},
+  /** Masks an output before an expression sees it, for a reader who may not see secrets. */
+  shield?: (step: ContextStep, output: unknown) => Promise<unknown>,
 ): Promise<Record<string, unknown>> {
   const steps = (await db
     .selectFrom("step_run")
@@ -92,5 +94,13 @@ export async function expressionContext(
     ])
     .where("flow_run_id", "=", flowRun.id)
     .execute()) as ContextStep[];
-  return buildContext(steps, flowRun.trigger_node, (step) => readOutput(db, step), extra);
+  return buildContext(
+    steps,
+    flowRun.trigger_node,
+    async (step) => {
+      const output = await readOutput(db, step);
+      return shield ? shield(step, output) : output;
+    },
+    extra,
+  );
 }

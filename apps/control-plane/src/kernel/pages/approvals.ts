@@ -4,7 +4,7 @@ import { DEFAULT_PRODUCT_NAME } from "../../routes/branding.js";
 import type { Db, Principal } from "../audit.js";
 import { check } from "../authorize.js";
 import { badRequest, conflict, forbiddenBecause, HttpError, notFound } from "../errors.js";
-import { redact } from "../execution/redact.js";
+import { approvalDetail } from "../flows/approval-detail.js";
 import { approversOf, approverTitles, describeApprovers, isApprover } from "../flows/approvers.js";
 import { decideApproval, kickFlow } from "../flows/engine.js";
 import type { RequestContext } from "../http.js";
@@ -123,7 +123,7 @@ export function fieldsOf(
   detail: unknown,
   widget: PageWidget,
 ): { name: string; label: string; value: unknown }[] {
-  const safe = redact(detail ?? null);
+  const safe = approvalDetail(detail);
   if (safe === null || safe === undefined) return [];
   const named = namedFields(widget);
   if (safe === null || typeof safe !== "object" || Array.isArray(safe)) {

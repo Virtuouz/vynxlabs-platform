@@ -515,6 +515,26 @@ export async function accessToken(
   throw unusable(`The connection ${id.path} needs connecting again in the console: ${problem}`);
 }
 
+/** The tokens a connection holds, as stored, without asking the provider. For masking: nothing is refreshed. */
+export async function storedTokens(
+  kernel: Kernel,
+  db: Db | Trx,
+  id: BindingName,
+): Promise<string[]> {
+  const row = await db
+    .selectFrom("connection_binding")
+    .select("oauth_tokens")
+    .where("tenant_id", "=", id.tenantId)
+    .where("workspace_id", "=", id.workspaceId)
+    .where("path", "=", id.path)
+    .executeTakeFirst();
+  if (!row?.oauth_tokens) return [];
+  const tokens = JSON.parse(
+    await decryptFor(kernel, db, id.tenantId, id.workspaceId, tokensName(id), row.oauth_tokens),
+  ) as Tokens;
+  return [tokens.accessToken, tokens.refreshToken].filter((t): t is string => !!t);
+}
+
 /** Forgets authorizations that were never finished. */
 export async function removeExpiredAuthorizations(db: Db): Promise<void> {
   await db

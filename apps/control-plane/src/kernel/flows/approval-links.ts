@@ -12,6 +12,7 @@ import { mutate } from "../audit.js";
 import { check } from "../authorize.js";
 import { forbidden, HttpError } from "../errors.js";
 import type { Kernel } from "../kernel.js";
+import { approvalDetail } from "./approval-detail.js";
 import { approverMembers, approversOf, isApprover } from "./approvers.js";
 
 /** How long a link works, unless the approval times out sooner. */
@@ -122,7 +123,7 @@ export async function mailApprovers(
       details: { node, members: members.map((member) => member.id), endsAt: ends.toISOString() },
     });
   });
-  const said = shown(detail.detail);
+  const said = shown(approvalDetail(detail.detail));
   for (const { member, token } of links) {
     const url = new URL(`/approve/${token}`, kernel.hosts.mainOrigin).toString();
     await kernel.mail.send({

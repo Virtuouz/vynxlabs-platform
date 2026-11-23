@@ -14,6 +14,7 @@ import {
   stepState,
 } from "../kernel/execution/state.js";
 import { kickStarted, webhookToken } from "../kernel/execution/triggers.js";
+import { approvalDetail } from "../kernel/flows/approval-detail.js";
 import {
   approvalStepsOf,
   approversOf,
@@ -22,7 +23,7 @@ import {
   isApprover,
   mayDecide,
 } from "../kernel/flows/approvers.js";
-import { expressionContext } from "../kernel/flows/context.js";
+import { type ContextStep, expressionContext } from "../kernel/flows/context.js";
 import {
   cancelFlowRun,
   decideApproval,
@@ -30,7 +31,7 @@ import {
   kickFlow,
   startFlowRun,
 } from "../kernel/flows/engine.js";
-import { publishEvent } from "../kernel/flows/events.js";
+import { eventSchema, publishEvent } from "../kernel/flows/events.js";
 import { ExpressionError } from "../kernel/flows/expressions.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -297,7 +298,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         }
         let found = db
           .selectFrom("flow_run")
-          .select(["id", "trigger_node", "created_at"])
+          .select(["id", "trigger_node", "trigger_detail", "created_at"])
           .select(flowStateSql("flow_run").as("state"))
           .where("workspace_id", "=", params.w);
         if (query.flowRun) found = found.where("id", "=", query.flowRun);
@@ -311,11 +312,34 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const shown = { id: run.id, createdAt: iso(run.created_at), state: run.state as RunState };
         let extra: Record<string, unknown> = {};
         let note: string | undefined;
+        // The expression sees what the run page shows: a test on a masked field cannot be used
+        // to guess it, so the context is masked before it is evaluated, not the answer.
+        const shield = async (step: ContextStep, output: unknown) => {
+          let schema: Record<string, unknown> | undefined;
+          if (step.run_id) {
+            const ran = await db
+              .selectFrom("run")
+              .select(["bundle_id", "script_path"])
+              .where("id", "=", step.run_id)
+              .executeTakeFirst();
+            if (ran) schema = (await payloadSchemas(kernel, ran.bundle_id, ran.script_path)).output;
+          } else if (
+            step.node_id === run.trigger_node &&
+            typeof (run.trigger_detail as { event?: unknown } | null)?.event === "string"
+          ) {
+            schema = await eventSchema(
+              db,
+              params.w,
+              (run.trigger_detail as { event: string }).event,
+            );
+          }
+          return redact(output, schema);
+        };
         try {
           if (query.items) {
             const items = await kernel.expressions.evaluate(
               query.items,
-              await expressionContext(db, run),
+              await expressionContext(db, run, {}, shield),
             );
             if (!Array.isArray(items) || items.length === 0) {
               return {
@@ -328,7 +352,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           }
           const value = await kernel.expressions.evaluate(
             query.expression,
-            await expressionContext(db, run, extra),
+            await expressionContext(db, run, extra, shield),
           );
           return { value, ...(note ? { note } : {}), flowRun: shown };
         } catch (error) {
@@ -1364,7 +1388,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       flow: row.flow_path,
       node: row.node_id,
       title: String(row.detail.title),
-      detail: redact(row.detail.detail ?? null),
+      detail: approvalDetail(row.detail.detail),
       waitingSince: iso(row.started_at),
       timesOutAt: isoOrNull(row.wake_at),
       approvers: await (async () => {
@@ -1722,6 +1746,9 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 `.execute(db)
               ).rows;
         const names = [...new Set(rows.map((row) => row.name))];
+        // An event is shown as the run it started is: by its key names and by its schema.
+        const schemas = new Map<string, Record<string, unknown> | undefined>();
+        for (const name of names) schemas.set(name, await eventSchema(db, params.w, name));
         const listening =
           names.length === 0
             ? []
@@ -1745,7 +1772,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             return {
               id: row.id,
               name: row.name,
-              payload: row.payload,
+              payload: redact(row.payload, schemas.get(row.name)) as Record<string, unknown>,
               source: { type: row.source_type, id: row.source_id },
               occurredAt: iso(row.occurred_at),
               publishedBy: script ? { run: script.id, script: script.script_path } : null,

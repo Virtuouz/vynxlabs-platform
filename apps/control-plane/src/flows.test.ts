@@ -1407,6 +1407,22 @@ describe("events and triggers", () => {
     expect(listed[0].source).toMatchObject({ type: "api" });
   });
 
+  test("an event is listed as the run it started shows it: masked by key name", async () => {
+    const sent = await alice.post(`${ws()}/events`, {
+      name: "orders/placed",
+      payload: { id: "o-3", total: 5, apiKey: "k-live-98765", password: "hunter22" },
+    });
+    expect(sent.status, JSON.stringify(sent.body)).toBe(201);
+    const listed = (await alice.get(`${ws()}/events?id=${sent.body.id}`)).body.items;
+    expect(JSON.stringify(listed)).not.toContain("k-live-98765");
+    expect(listed[0].payload).toEqual({
+      id: "o-3",
+      total: 5,
+      apiKey: "[redacted]",
+      password: "[redacted]",
+    });
+  });
+
   test("a payload that breaks the schema, an unknown event and a platform name are refused", async () => {
     const wrong = await alice.post(`${ws()}/events`, {
       name: "orders/placed",

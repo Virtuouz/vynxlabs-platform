@@ -188,6 +188,35 @@ describe("what an expression gives", () => {
     expect(context.now).toBeInstanceOf(Date);
   });
 
+  test("shows what the run page shows: a masked field is masked before it is evaluated, so a test cannot guess it", async () => {
+    await alice.put(`${ws()}/drafts/orders/secrets`, {
+      kind: "flow",
+      schemaVersion: 1,
+      body: {
+        nodes: {
+          start: { type: "trigger", trigger: { type: "manual" } },
+          keep: { type: "set", values: { accessToken: "trigger.apiKey", plain: "'ok'" } },
+        },
+        edges: [{ from: "start", to: "keep" }],
+      },
+    });
+    const started = await alice.post(`${ws()}/test-runs`, {
+      flow: "orders/secrets",
+      input: { apiKey: "k-live-98765", password: "hunter22" },
+    });
+    expect(started.status, JSON.stringify(started.body)).toBe(201);
+    const run = started.body.runId as string;
+    await finished(run);
+    const ask = (expression: string) => value({ expression, flowRun: run }, reader);
+    expect((await ask("trigger.apiKey")).body.value).toBe("[redacted]");
+    expect((await ask("trigger.password")).body.value).toBe("[redacted]");
+    expect((await ask("steps.keep.output.accessToken")).body.value).toBe("[redacted]");
+    expect((await ask("steps.keep.output.plain")).body.value).toBe("ok");
+    // A test on the real value would say whether a guess is right.
+    expect((await ask("trigger.apiKey == 'k-live-98765'")).body.value).toBe(false);
+    expect((await ask("trigger.apiKey.startsWith('k-')")).body.value).toBe(false);
+  });
+
   test("is for those who may read flow runs, in the run's own workspace", async () => {
     expect((await value({ expression: "1", flowRun: testRun }, reader)).status).toBe(200);
     // A run of another workspace is not there.

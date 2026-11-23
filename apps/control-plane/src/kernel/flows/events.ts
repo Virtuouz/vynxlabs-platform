@@ -1,6 +1,6 @@
 import { newId } from "@volvel/db";
 import { PLATFORM_EVENT_PREFIX, validateJson } from "@volvel/manifest";
-import type { Trx } from "../audit.js";
+import type { Db, Trx } from "../audit.js";
 import { badRequest, HttpError, notFound } from "../errors.js";
 import { instanceTriggersPaused } from "../execution/control.js";
 import { kickStarted, notPausedAlone, startTarget } from "../execution/triggers.js";
@@ -29,6 +29,16 @@ export interface PublishEvent {
  * After the transaction commits, pass `started` to `kickStarted` so that flow
  * runs take their first step at once.
  */
+/** The schema an event's payload is held to, by the name it has now or had. Undefined for one that is not defined. */
+export async function eventSchema(
+  db: Db | Trx,
+  workspaceId: string,
+  name: string,
+): Promise<Record<string, unknown> | undefined> {
+  const found = await resolveResource(db, workspaceId, name, { kind: "event" });
+  return (found?.resource.body as { payload?: Record<string, unknown> } | undefined)?.payload;
+}
+
 export async function publishEvent(kernel: Kernel, trx: Trx, asked: PublishEvent) {
   let event = asked;
   const depth = event.depth ?? 0;

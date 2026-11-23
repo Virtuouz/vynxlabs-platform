@@ -51,6 +51,7 @@ function bundle(): Bundle {
         input: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
       }),
       script("orders/purge", "purge", { description: "Removes everything." }),
+      script("orders/keys", "keys", { description: "Gives back a key." }),
       script("orders/call-back", "callBack", {
         description: "Schedules a call to a customer.",
         input: {
@@ -157,6 +158,7 @@ function bundle(): Bundle {
     code:
       'export const greet = { execute: async (input) => ({ greeting: "Hello " + input.name }) };\n' +
       "export const purge = { execute: async () => ({ purged: true }) };\n" +
+      'export const keys = { execute: async () => ({ token: "t-live-12345", ok: 1 }) };\n' +
       "export const callBack = { execute: async (input) => ({ scheduled: input.at }) };\n" +
       'export const fail = { execute: async () => { throw new Error("The phone line is down."); } };\n',
   };
@@ -386,6 +388,85 @@ describe("an agent's tools", () => {
       );
     }
     expect(run).toMatchObject({ status: "succeeded", output: { done: { refunded: "A-7" } } });
+  }, 60_000);
+});
+
+describe("what an agent is shown of another's work", () => {
+  test("is masked as it is on screen, and the agent's own run is given as it is (D13)", async () => {
+    // An agent that may read runs and approvals, started nothing of its own.
+    const reads = (
+      await alice.post(`/tenants/${tenant}/roles`, {
+        name: "reads_everything",
+        description: "reads",
+        permissions: ["workspace:read", "run:read", "flow_run:read", "approval:read"],
+      })
+    ).body.id as string;
+    const account = (await alice.post(`/tenants/${tenant}/service-accounts`, { name: "reader" }))
+      .body.id as string;
+    await alice.post(`/tenants/${tenant}/bindings`, {
+      workspaceId: workspace,
+      principalType: "service_account",
+      principalId: account,
+      roleId: reads,
+    });
+    const reader = await connect(await keyOf(account));
+    try {
+      // Another's script run: the output has a key that names a secret.
+      const hers = await alice.post(`${ws()}/runs`, { script: "orders/keys", input: {} });
+      let got = answer(
+        await reader.callTool({ name: "get_run", arguments: { runId: hers.body.id } }),
+      );
+      for (let i = 0; i < 50 && ["queued", "running"].includes(got.status); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        got = answer(
+          await reader.callTool({ name: "get_run", arguments: { runId: hers.body.id } }),
+        );
+      }
+      expect(got.output).toEqual({ token: "[redacted]", ok: 1 });
+      // The same run, as the API shows it.
+      expect((await alice.get(`${ws()}/runs/${hers.body.id}`)).body.output).toEqual({
+        token: "[redacted]",
+        ok: 1,
+      });
+
+      // Another's flow run.
+      const flow = await alice.post(`${ws()}/flow-runs`, {
+        flow: "orders/escalate",
+        input: { order: "A-1" },
+      });
+      for (let i = 0; i < 50; i++) {
+        const state = (await alice.get(`${ws()}/flow-runs/${flow.body.id}`)).body.status;
+        if (state === "succeeded") break;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      await t.db
+        .updateTable("flow_run")
+        .set({ output: JSON.stringify({ password: "hunter22", ok: 1 }) })
+        .where("id", "=", flow.body.id)
+        .execute();
+      const seen = answer(
+        await reader.callTool({ name: "get_flow_run", arguments: { flowRunId: flow.body.id } }),
+      );
+      expect(seen.output).toEqual({ password: "[redacted]", ok: 1 });
+
+      // A waiting approval.
+      const waiting = {
+        flowRunId: (
+          await alice.post(`${ws()}/flow-runs`, {
+            flow: "orders/refund",
+            input: { order: "A-8", apiKey: "k-live-98765" },
+          })
+        ).body.id as string,
+      };
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const listed = answer(await reader.callTool({ name: "list_approvals", arguments: {} }));
+      const mine = listed.approvals.find(
+        (one: { flowRunId: string }) => one.flowRunId === waiting.flowRunId,
+      );
+      expect(mine.detail).toEqual({ order: "A-8", apiKey: "[redacted]" });
+    } finally {
+      await reader.close();
+    }
   }, 60_000);
 });
 

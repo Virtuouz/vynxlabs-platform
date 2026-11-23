@@ -253,25 +253,34 @@ test("the shortcuts, the SQL functions, the audit actions, the events and the me
 });
 
 test("the reference's first page leads to every page made from a list, and a changed list makes them old (M9)", async () => {
-  const index = (await expected()).get("index.md") ?? "";
+  const files = await expected();
+  const index = files.get("develop/reference/index.md") ?? "";
   for (const link of [
     "widgets/index",
     "flows/index",
     "connectors",
     "shortcuts",
     "sql-functions",
-    "audit-actions",
+    "administer/reference/audit-actions",
     "platform-events",
-    "metrics",
+    "self-host/reference/metrics",
+    "sdk/index",
   ]) {
     expect(index, link).toContain(`(${link})`);
   }
+  // Each is mounted where its readers are: the operator's metrics with the instance's settings.
+  expect(files.has("self-host/reference/metrics.md")).toBe(true);
+  expect(files.has("administer/reference/audit-actions.md")).toBe(true);
+  expect(files.has("develop/reference/widgets/table.md")).toBe(true);
+  expect(files.has("develop/reference/sdk/sdk.md")).toBe(true);
   await write();
-  const file = join(GENERATED, "metrics.md");
+  const file = join(GENERATED, "self-host/reference/metrics.md");
   const kept = readFileSync(file, "utf8");
   try {
     writeFileSync(file, `${kept}\nA series that has since been added.\n`);
-    expect(await stale()).toContain("generated/metrics.md is not what the code says now.");
+    expect(await stale()).toContain(
+      "generated/self-host/reference/metrics.md is not what the code says now.",
+    );
   } finally {
     writeFileSync(file, kept);
   }

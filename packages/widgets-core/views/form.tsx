@@ -163,6 +163,20 @@ const jsonText = (value: unknown) =>
       ? value
       : JSON.stringify(value, null, 2);
 
+/** A moment as the reader's clock writes it, `2026-03-09T14:30`: what a time field is given. */
+export function localTime(instant: string): string {
+  const at = new Date(instant);
+  if (Number.isNaN(at.getTime())) return instant;
+  const two = (n: number) => String(n).padStart(2, "0");
+  return `${at.getFullYear()}-${two(at.getMonth() + 1)}-${two(at.getDate())}T${two(at.getHours())}:${two(at.getMinutes())}`;
+}
+
+/** What the reader typed on their clock, as the moment it is: ISO 8601 in UTC, which the rows take. */
+export function instantOf(typed: string): string {
+  const at = new Date(typed);
+  return Number.isNaN(at.getTime()) ? typed : at.toISOString();
+}
+
 /** Today as the page reads it: the day on the clock of the browser, as its date filters do. */
 export function today(now = new Date()): string {
   const two = (n: number) => String(n).padStart(2, "0");
@@ -616,9 +630,9 @@ function FormBody({
             key={name}
             {...common}
             withTime
-            timeZone="UTC"
-            value={typeof held === "string" ? held : ""}
-            onChange={(next) => set(name, next === "" ? undefined : next)}
+            // Typed on the reader's clock and kept as the moment it is, with its zone (D21).
+            value={typeof held === "string" ? localTime(held) : ""}
+            onChange={(next) => set(name, next === "" ? undefined : instantOf(next))}
           />
         );
       case "longtext":

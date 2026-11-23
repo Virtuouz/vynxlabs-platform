@@ -18,6 +18,7 @@ import type { RequestContext } from "../../http.js";
 import type { Kernel } from "../../kernel.js";
 import { type ApprovalsWire, readApprovals } from "../../pages/approvals.js";
 import { principalEmail } from "../../pages/who.js";
+import { todayIn } from "../../zones.js";
 import {
   describeTable,
   type Filter,
@@ -607,7 +608,11 @@ export async function readWidget(
             }
             const range =
               one.op === "last"
-                ? lastRange((one.value as LastValue).count, (one.value as LastValue).unit)
+                ? lastRange(
+                    (one.value as LastValue).count,
+                    (one.value as LastValue).unit,
+                    todayIn(request.zone),
+                  )
                 : {
                     from: (one.value as string[])[0] as string,
                     to: (one.value as string[])[1] as string,
@@ -800,6 +805,7 @@ export async function readWidget(
       filters: request.filters,
       values: request.values,
       catalog: catalog.visual,
+      zone: request.zone,
       ...(request.follow ? { follow: { pageId: request.follow.pageId, place } } : {}),
     };
     const offset = decodeCursor(request.only?.input === name ? request.only.cursor : undefined);

@@ -1,8 +1,10 @@
 import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { Type } from "typebox";
+import { badRequest } from "../kernel/errors.js";
 import { access, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { runAction } from "../kernel/pages/act.js";
+import { isTimeZone } from "../kernel/zones.js";
 import { AnyObject, Id } from "./shared.js";
 
 /**
@@ -56,6 +58,13 @@ export function pageActionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               ),
               inputs: Type.Optional(AnyObject),
               draft: Type.Optional(Type.Boolean()),
+              zone: Type.Optional(
+                Type.String({
+                  maxLength: 64,
+                  description:
+                    "The reader's time zone, such as America/Los_Angeles: what a step's today and now are, and where a day begins for a time. UTC when left out.",
+                }),
+              ),
             },
             { additionalProperties: false },
           ),
@@ -77,7 +86,12 @@ export function pageActionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ ctx, params, body }) => runAction(kernel, ctx as RequestContext, params, body),
+      async ({ ctx, params, body }) => {
+        if (body.zone !== undefined && !isTimeZone(body.zone)) {
+          throw badRequest(`${body.zone} is not a time zone.`);
+        }
+        return runAction(kernel, ctx as RequestContext, params, body);
+      },
     );
   };
 }

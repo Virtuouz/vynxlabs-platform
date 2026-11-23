@@ -786,6 +786,29 @@ describe("a summary says the period it was cut into, and the days asked for (WID
   });
 });
 
+describe("a date range in the reader's zone (D21)", () => {
+  test("the day a row was made in is the reader's day, whatever UTC's is", async () => {
+    // Everything was made a moment ago. Of these two zones, one is on another day than UTC now.
+    for (const zone of ["Pacific/Kiritimati", "Pacific/Pago_Pago"]) {
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(new Date());
+      const answer = await alice.get(
+        `${ws()}/widget-data?of=dashboard&path=boards/by-team&widget=recent&zone=${zone}&filters=${encodeURIComponent(
+          JSON.stringify({ when: { from: today, to: today } }),
+        )}`,
+      );
+      expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+      expect(answer.body.inputs.rows.rows.length, zone).toBe(3);
+      // And "today" by name is that day too.
+      const named = await alice.get(
+        `${ws()}/widget-data?of=dashboard&path=boards/by-team&widget=recent&zone=${zone}&filters=${encodeURIComponent(
+          JSON.stringify({ when: "today" }),
+        )}`,
+      );
+      expect(named.body.inputs.rows.rows.length, `${zone} today`).toBe(3);
+    }
+  });
+});
+
 describe("a dashboard's widget over SQL", () => {
   test("is read under each table's row policy, for whoever asks", async () => {
     // Members who hold the permission to read dashboards and rows, in a group a rule names.

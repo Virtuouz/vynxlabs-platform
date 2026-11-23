@@ -10,7 +10,7 @@ import { badRequest, forbidden, forbiddenBecause, notFound } from "../kernel/err
 import { access, guestLimit, type RequestContext } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { locatePage, UUID } from "../kernel/pages/locate.js";
-import { isTimeZone } from "../kernel/zones.js";
+import { isTimeZone, todayIn } from "../kernel/zones.js";
 import { AnyObject, Id } from "./shared.js";
 
 /** The most values a choice filter offers. */
@@ -184,7 +184,7 @@ export function widgetDataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
 
         const widget = widgets.find((one) => one.id === query.widget);
         if (!widget) throw notFound("The widget");
-        const values = resolveFilters(filters, given);
+        const values = resolveFilters(filters, given, todayIn(query.zone));
         const inputs = await readWidget(kernel, {
           ...at,
           ctx: ctx as RequestContext,

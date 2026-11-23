@@ -224,7 +224,7 @@ test("a screen has help beside it on F1, with the team's own notes, and nothing 
   await help.getByRole("searchbox", { name: "Search the help" }).fill("approval");
   await help
     .getByRole("list", { name: "Pages found" })
-    .getByRole("button", { name: /^Approvals/ })
+    .getByRole("button", { name: /^Approvals Console ›/ })
     .click();
   await expect(help.getByRole("heading", { name: /Approvals/ })).toBeVisible();
   await help.getByRole("button", { name: "Back to the help for this page" }).click();

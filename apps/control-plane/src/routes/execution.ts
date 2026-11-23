@@ -101,6 +101,13 @@ const pathPattern = new RegExp(PATH_PATTERN);
 
 /** The worker version that first takes tasks. An older one is shown as needing an update. */
 const TASKS_SINCE = "0.6.0";
+/**
+ * The oldest worker that is up to date: the one that takes tasks, but never newer than this
+ * control plane, so that a worker of the release's own version is not called older.
+ */
+function oldestCurrentWorker(controlPlane: string): string {
+  return olderThan(controlPlane, TASKS_SINCE) ? controlPlane : TASKS_SINCE;
+}
 /** Whether a version is older than another, or unknown. */
 function olderThan(version: string | null, than: string): boolean {
   if (!version) return true;
@@ -3606,7 +3613,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             credentialName: row.name,
             managed: row.managed,
             version: row.version,
-            outdated: olderThan(row.version, TASKS_SINCE),
+            outdated: olderThan(row.version, oldestCurrentWorker(kernel.version)),
             startedAt: iso(row.started_at),
             lastSeenAt: iso(row.last_seen_at),
             running: holding

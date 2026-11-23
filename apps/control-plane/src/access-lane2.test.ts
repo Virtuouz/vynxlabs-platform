@@ -221,13 +221,16 @@ describe("releases of access, lane acc2", () => {
     const back = await alice.post(`${at()}/releases/${here.id}/rollback`);
     expect(back.status, JSON.stringify(back.body)).toBe(202);
     expect(back.body.waiting).toBe(true);
-    expect(back.body.detail).toContain(`Access change ${back.body.number} waits`);
+    expect(back.body.detail).toContain(`Access change ${back.body.release.number} waits`);
     const now = (await alice.get(at())).body.resources as Any[];
     const full = await alice.post(`${at()}/releases`, {
       resources: now.map((one) => (one.key === "ops" ? group("ops", "Operations") : one)),
     });
     expect(full.status).toBe(202);
     expect(full.body.waiting).toBe(true);
+    // One shape for a change that waits, wherever access is changed.
+    expect(Object.keys(full.body).sort()).toEqual(["detail", "release", "waiting"]);
+    expect(Object.keys(back.body).sort()).toEqual(["detail", "release", "waiting"]);
     await alice.put(`${at()}/approval`, { required: false });
   });
 

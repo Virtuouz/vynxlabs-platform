@@ -118,6 +118,13 @@ function bundle(
       event: "platform/run-finished",
       filter: "event.payload.status != 'succeeded'",
     }),
+    // Hears of a flow run that was canceled: the same rule as for a script run.
+    manifest("trigger", "on-flow-canceled", {
+      type: "event",
+      script: "finished-sink",
+      event: "platform/flow-run-finished",
+      filter: "event.payload.status == 'cancelled'",
+    }),
     manifest("trigger", "on-failure", {
       type: "event",
       script: "sink",
@@ -1452,6 +1459,28 @@ describe("waiting", () => {
     expect((await read(id)).error.message).toBe(
       'The step "gate" failed: Nobody decided before the approval timed out.',
     );
+  });
+
+  test("a canceled flow run is heard of by platform/flow-run-finished, as a canceled script run is", async () => {
+    const id = await start("slow-flow", { ms: 20_000 });
+    await until(
+      () => read(id),
+      (r) => step(r, "work")?.runId != null,
+    );
+    expect((await alice.post(`${ws()}/flow-runs/${id}/cancel`)).body.status).toBe("cancelled");
+    const heard = await until(
+      async () => {
+        const items = (await alice.get(`${ws()}/runs?script=finished-sink&limit=100`)).body
+          .items as Any[];
+        for (const candidate of items.filter((r) => r.status === "succeeded")) {
+          const found = (await alice.get(`${ws()}/runs/${candidate.id}`)).body;
+          if (found.input.flowRunId === id) return found;
+        }
+        return undefined;
+      },
+      (found) => found !== undefined,
+    );
+    expect(heard.input).toMatchObject({ flowRunId: id, flow: "slow-flow", status: "cancelled" });
   });
 
   test("a flow run can be canceled, and its running step is canceled with it", async () => {

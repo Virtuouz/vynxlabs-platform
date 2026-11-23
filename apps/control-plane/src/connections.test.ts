@@ -233,6 +233,26 @@ afterAll(async () => {
   outside?.close();
 });
 
+describe("a mail connection that is not deployed yet", () => {
+  test("is tried as a mail connection, and no raw error reaches the screen", async () => {
+    const made = await alice.put(`${ws()}/drafts/mailer`, {
+      kind: "connection",
+      schemaVersion: 1,
+      body: { connector: "smtp" },
+    });
+    expect(made.status, JSON.stringify(made.body)).toBeLessThan(300);
+    const bound = await alice.put(`${ws()}/connection-bindings/mailer`, {
+      config: { host: "127.0.0.1", port: 1, from: "a@b.example" },
+    });
+    expect(bound.status, JSON.stringify(bound.body)).toBe(204);
+    const task = await tried("mailer");
+    expect(task.result.ok).toBe(false);
+    expect(task.result.message).not.toMatch(/Cannot read properties|endsWith|undefined/);
+    await alice.delete(`${ws()}/connection-bindings/mailer`);
+    await alice.delete(`${ws()}/drafts/mailer`);
+  });
+});
+
 describe("a connection's health is what its last Test found", () => {
   test("a wrong credential fails with the status, a right one is reached, and a change forgets it", async () => {
     const bind = (credential?: string) =>

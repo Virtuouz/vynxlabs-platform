@@ -110,13 +110,48 @@ describe("what is wrong with a tenant's access", () => {
       ]),
     ).toEqual([
       "group Tech Desk: a key is lowercase letters, digits, hyphens and underscores, starting with a letter or a digit.",
-      "group no-title: /body must have required property 'title'",
+      "group no-title (groups/no-title.group.yaml): /body must have required property 'title'",
       "tenant role device-lender: a role's key is its name: lowercase letters, digits and underscores, starting with a letter.",
       'tenant role odd: /body/permissions "nonsense:write" is not a permission a role can give.',
       'tenant binding to-nothing: /body/principal names the group "gone", which is not defined.',
       "group tech-desk: is defined twice. A key belongs to one group.",
       'member ada: "member" is not a kind a tenant\'s access is made of.',
     ]);
+  });
+
+  test("a role and a binding take a title, as every resource file has one", () => {
+    expect(
+      checkTenantResources([
+        {
+          kind: "tenant_role",
+          key: "lender",
+          body: { title: "Lender", permissions: ["run:write"] },
+        },
+        { kind: "tenant_binding", key: "b", body: { ...binding.body, title: "Lend" } },
+        desk,
+      ]),
+    ).toEqual([]);
+  });
+
+  test("a field a kind does not take names the file it is in", () => {
+    expect(
+      checkTenantResources([
+        { kind: "tenant_role", key: "lender", body: { permissions: ["run:write"], colour: "red" } },
+      ]),
+    ).toEqual([
+      "tenant role lender (roles/lender.tenant_role.yaml): /body must NOT have additional properties (colour)",
+    ]);
+  });
+
+  test("a title in a role's or a binding's file is read and set aside, as nothing keeps it", () => {
+    const read = parseTenantFiles([
+      {
+        path: "tenant/lender.tenant_role.yaml",
+        content: "title: Lender\nschemaVersion: 1\nbody:\n  permissions: [run:write]\n",
+      },
+    ]);
+    expect(read.problems).toEqual([]);
+    expect(read.resources[0]?.body).toEqual({ permissions: ["run:write"] });
   });
 
   test("a binding may name what the tenant has beside the set", () => {

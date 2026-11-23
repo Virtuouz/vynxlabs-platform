@@ -223,7 +223,7 @@ export async function readGroupMember(kernel: Kernel, db: Db | Trx, id: MemberNa
 export async function readConnection(kernel: Kernel, db: Db | Trx, id: BindingName) {
   const row = await db
     .selectFrom("connection_binding")
-    .select(["id", "config", "credential", "oauth"])
+    .select(["id", "config", "credential", "oauth", "connector"])
     .where("workspace_id", "=", id.workspaceId)
     .where("tenant_id", "=", id.tenantId)
     .where("path", "=", id.path)
@@ -232,6 +232,8 @@ export async function readConnection(kernel: Kernel, db: Db | Trx, id: BindingNa
   return {
     config: row.config,
     oauth: row.oauth,
+    /** The kind it was bound as, when that was known: one not deployed yet has no declaration to ask. */
+    connector: row.connector,
     credential: row.credential
       ? await openRow(
           kernel,

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { COMMAND_NOTES } from "./commands.js";
+import { COMMAND_NOTES, COMMANDS } from "./commands.js";
 
 test("CLI-16 the note on --dir names every command that reads a repository from it", () => {
   const note = COMMAND_NOTES[0];
@@ -7,4 +7,9 @@ test("CLI-16 the note on --dir names every command that reads a repository from 
   for (const name of ["build", "schemas", "run", "dev", "deploy", "pull", "tenant plan"]) {
     expect(note, name).toContain(name);
   }
+});
+
+test("run --remote says it runs this build as a preview, not the deployed version", () => {
+  const remote = COMMANDS.find((one) => one.usage.includes("--remote"));
+  expect(remote?.summary).toContain("not the deployed version");
 });

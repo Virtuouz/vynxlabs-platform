@@ -592,6 +592,17 @@ test("turning a served hostname off says what stops, and asks first (GOV-35)", a
   await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ enabled: false }));
 });
 
+test("a hostname an operator enabled without proof says it serves, though nothing proves the name is the tenant's", async () => {
+  const unproved = { ...domain, enabled: true, verifiedAt: null };
+  routes[`GET /api/v1${base}/domains`] = () => [200, { items: [unproved] }];
+  routes[`GET /api/v1${base}/workspaces`] = () => [200, { items: [] }];
+  show(<Domains base={base} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Details/, hidden: true }));
+  const sheet = (await screen.findAllByRole("dialog")).at(-1)?.textContent ?? "";
+  expect(sheet).toContain("Serving, though the name is not verified");
+  expect(sheet).toContain("An operator of this instance enabled it");
+});
+
 test("a member who may not change hostnames is told so, and the way to add one is off (GOV-37)", async () => {
   routes["GET /api/v1/me"] = () => [
     200,

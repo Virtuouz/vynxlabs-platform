@@ -619,7 +619,7 @@ describe("working locally", () => {
         base: "/",
         // No logo is set, so the app is told so and shows none (APP-10).
         tenant: { slug: "acme", logo: false },
-        app: { path: "public" },
+        app: { path: "public", title: "Acme notices" },
         // Sign-in pages are reached through this server, so a person comes back to it.
         portal: "/portal/acme",
         principal: { email: "alice@acme.example" },
@@ -632,6 +632,8 @@ describe("working locally", () => {
       expect(policy).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]+'/);
       expect(policy).not.toMatch(/script-src[^;]*unsafe/);
       expect(policy).toContain("connect-src 'self' ws://localhost:*");
+      // A policy has no way to write an IPv6 host: the browser warns of one.
+      expect(policy).not.toContain("[::1]");
       const nonce = /'nonce-([^']+)'/.exec(policy)?.[1];
       expect(page).toContain(`nonce="${nonce}"`);
       expect((await fetch(`${server.url}portal/acme/sign-in`)).status).toBe(200);

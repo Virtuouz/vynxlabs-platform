@@ -381,6 +381,9 @@ export function deviceOf(userAgent: string | null | undefined): string {
   return [browser ?? "A browser", system ? `on ${system}` : undefined].filter(Boolean).join(" ");
 }
 
+/** The most sessions the sign-in library's list answers with: its page of rows. */
+const SESSION_LIST_CAP = 100;
+
 /**
  * Where the person is signed in, with the one they are using marked, and the others ended one by
  * one or all together. Ending the one in use is signing out, which the account menu does.
@@ -456,39 +459,47 @@ export function Sessions() {
           {list.error.message}
         </Notice>
       ) : rows ? (
-        <DataTable<SessionRow>
-          variant="static"
-          label="Sessions"
-          rows={rows}
-          rowKey={(row) => row.id}
-          empty="You are not signed in anywhere."
-          columns={[
-            {
-              header: "Device",
-              cell: (row) => (
-                <span className="flex flex-wrap items-center gap-2">
-                  {deviceOf(row.userAgent)}
-                  {row.id === mine ? <StatePill state="active">This session</StatePill> : null}
-                </span>
-              ),
-            },
-            { header: "Address", priority: 2, cell: (row) => row.ipAddress ?? "Not known" },
-            {
-              header: "Signed in",
-              cell: (row) => <Time value={row.createdAt} mode="ago" />,
-            },
-            {
-              header: "",
-              align: "end",
-              cell: (row) =>
-                row.id === mine ? null : (
-                  <Button variant="danger" size="small" onClick={() => end(row)}>
-                    End
-                  </Button>
+        <>
+          {rows.length >= SESSION_LIST_CAP ? (
+            <Notice tone="info">
+              Showing the first {SESSION_LIST_CAP} sessions. More may be signed in: End other
+              sessions ends every one of them, shown or not.
+            </Notice>
+          ) : null}
+          <DataTable<SessionRow>
+            variant="static"
+            label="Sessions"
+            rows={rows}
+            rowKey={(row) => row.id}
+            empty="You are not signed in anywhere."
+            columns={[
+              {
+                header: "Device",
+                cell: (row) => (
+                  <span className="flex flex-wrap items-center gap-2">
+                    {deviceOf(row.userAgent)}
+                    {row.id === mine ? <StatePill state="active">This session</StatePill> : null}
+                  </span>
                 ),
-            },
-          ]}
-        />
+              },
+              { header: "Address", priority: 2, cell: (row) => row.ipAddress ?? "Not known" },
+              {
+                header: "Signed in",
+                cell: (row) => <Time value={row.createdAt} mode="ago" />,
+              },
+              {
+                header: "",
+                align: "end",
+                cell: (row) =>
+                  row.id === mine ? null : (
+                    <Button variant="danger" size="small" onClick={() => end(row)}>
+                      End
+                    </Button>
+                  ),
+              },
+            ]}
+          />
+        </>
       ) : (
         <Loading />
       )}

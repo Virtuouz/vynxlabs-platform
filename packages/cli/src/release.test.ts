@@ -289,3 +289,42 @@ test("promote --message is kept with the version it makes (CLI-MP2)", async () =
     await new Promise((done) => server.close(done));
   }
 });
+
+test("a service account's key does everything a CI job needs, by tenant and workspace slug", async () => {
+  const tenantId = (await alice.get("/tenants")).body.items[0].id as string;
+  const admin = await t.db
+    .selectFrom("role")
+    .select("id")
+    .where("builtin", "=", true)
+    .where("name", "=", "tenant_admin")
+    .executeTakeFirstOrThrow();
+  const account = await alice.post(`/tenants/${tenantId}/service-accounts`, { name: "ci" });
+  expect(account.status, JSON.stringify(account.body)).toBe(201);
+  const bound = await alice.post(`/tenants/${tenantId}/bindings`, {
+    principalType: "service_account",
+    principalId: account.body.id,
+    roleId: admin.id,
+  });
+  expect(bound.status, JSON.stringify(bound.body)).toBe(201);
+  const key = await alice.post(
+    `/tenants/${tenantId}/service-accounts/${account.body.id}/api-keys`,
+    {
+      name: "ci",
+    },
+  );
+  const env = {
+    VOLVEL_URL: url,
+    VOLVEL_TOKEN: key.body.token as string,
+    XDG_CONFIG_HOME: "/nonexistent",
+  };
+
+  await writeFile(join(repo, "src", "index.ts"), source("from ci"));
+  const deployed = await cli(["deploy", ...target, "--dir", repo], env);
+  expect(deployed.err).not.toContain("Could not list tenants");
+  expect(deployed.code, deployed.err).toBe(0);
+  const preview = await cli(["promote", ...target, "--preview"], env);
+  expect(preview.err).not.toContain("Could not list tenants");
+  const runs = await cli(["runs", ...target], env);
+  expect(runs.err).not.toContain("Could not list tenants");
+  expect(runs.code, runs.err).toBe(0);
+});

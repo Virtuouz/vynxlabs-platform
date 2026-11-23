@@ -1,5 +1,5 @@
 /**
- * Every series an instance serves at `/metrics`, declared once: its name, what kind it is, the
+ * Every series an instance serves at `/api/v1/metrics`, declared once: its name, what kind it is, the
  * labels it carries and what it means. What counts or reads a series takes its name and its
  * words from here, and the reference's page of metrics is drawn from this list, so a series
  * that is not here is not served.

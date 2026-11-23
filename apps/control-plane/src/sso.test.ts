@@ -1687,3 +1687,12 @@ describe("the write path", () => {
     expect(t.unexercised((route) => /\/(identity-providers|sso)(\/|$)/.test(route))).toEqual([]);
   });
 });
+
+test("each reason a sign-in is refused reads the same on an app's page as on the console's sign-in", async () => {
+  const { SSO_REFUSAL_REASONS, SSO_REFUSAL_WORDS } = await import("@volvel/manifest");
+  const { SsoRefusal } = await import("./kernel/sso/people.js");
+  for (const reason of SSO_REFUSAL_REASONS) {
+    // What the server refuses with is what the console's sign-in screen says for the same reason.
+    expect(new SsoRefusal(reason, "anything").message, reason).toBe(SSO_REFUSAL_WORDS[reason]);
+  }
+});

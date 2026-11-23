@@ -259,6 +259,11 @@ export {
   validateJson,
 } from "./registry.js";
 export {
+  SSO_REFUSAL_REASONS,
+  SSO_REFUSAL_WORDS,
+  type SsoRefusalReason,
+} from "./sso-words.js";
+export {
   COLUMN_WIDENINGS,
   checkTable,
   conditionColumn,

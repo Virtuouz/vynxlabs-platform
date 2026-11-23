@@ -65,6 +65,8 @@ export interface DocsTable {
 
 export interface DocsList {
   apps: DocsApp[];
+  /** Deployed apps a draft removes: a deploy of the documentation carries the removal. */
+  removedApps?: string[];
   pages: DocPage[];
   /** Pages that take a term or a topic the product's own help has, as the server found them. */
   issues?: { app: string; path: string; code: string; message: string }[];
@@ -84,12 +86,14 @@ export function pendingOf(list: DocsList) {
   const tables = list.tables.filter(
     (table) => table.state !== "deployed" && table.state !== "removed" && named.has(table.path),
   );
+  // A removal of an app is a change like any other, and a page removed beside it needs it.
+  const removed = list.removedApps ?? [];
   return {
     pages,
     apps,
     tables,
-    paths: [...pages, ...apps, ...tables].map((one) => one.path),
-    count: pages.length + apps.length + tables.length,
+    paths: [...pages, ...apps, ...tables].map((one) => one.path).concat(removed),
+    count: pages.length + apps.length + tables.length + removed.length,
   };
 }
 

@@ -193,21 +193,30 @@ export async function buildBundle(options: BuildOptions): Promise<Bundle> {
   return (await buildRepository(options)).bundle;
 }
 
-/** The apps a repository defines, with where each one's source is. */
-export async function appSources(options: BuildOptions): Promise<AppSource[]> {
-  const { entry, resources } = await placesOf(options);
-  const { definitions } = await loadDefinitions({ ...options, entry, resources });
+/** The apps made of files among a repository's definitions, with where each one's source is. */
+function appSourcesOf(definitions: readonly (readonly [string, Definition])[]): AppSource[] {
   return (
     definitions
       .map(([, definition]) => definition)
       .filter((definition) => definition.kind === "app")
       // An app that serves an interface has no files of its own to build.
       .filter((definition) => typeof (definition as { source?: unknown }).source === "string")
-      .map((definition) => ({
-        path: definition.path,
-        source: (definition as unknown as { source: string }).source,
-      }))
+      .map((definition) => {
+        const title = (definition.toManifest(definition.path).body as { title?: unknown }).title;
+        return {
+          path: definition.path,
+          title: typeof title === "string" && title !== "" ? title : definition.path,
+          source: (definition as unknown as { source: string }).source,
+        };
+      })
   );
+}
+
+/** The apps a repository defines, with where each one's source is. */
+export async function appSources(options: BuildOptions): Promise<AppSource[]> {
+  const { entry, resources } = await placesOf(options);
+  const { definitions } = await loadDefinitions({ ...options, entry, resources });
+  return appSourcesOf(definitions);
 }
 
 /** Compiles a tenant repository: its manifests, its code, and its apps. */
@@ -288,15 +297,8 @@ export async function buildRepository(given: BuildOptions): Promise<Built> {
   ]);
   if (problems.length > 0) throw new BuildError(problems);
 
-  const apps = definitions
-    .map(([, definition]) => definition)
-    .filter((definition) => definition.kind === "app")
-    // An app that serves an interface has no files of its own to build.
-    .filter((definition) => typeof (definition as { source?: unknown }).source === "string")
-    .map((definition) => ({
-      path: definition.path,
-      source: (definition as unknown as { source: string }).source,
-    }));
+  const apps = appSourcesOf(definitions);
+
   const built: BuiltApps = given.withoutAppSources
     ? { assets: [], files: new Map() }
     : await buildApps(directory, apps);

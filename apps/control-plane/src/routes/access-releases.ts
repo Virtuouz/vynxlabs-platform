@@ -15,7 +15,7 @@ import {
   rollbackAsks,
 } from "../kernel/tenant/releases.js";
 import { listOf } from "../pagination.js";
-import { Id, NullableId, NullableString, Time } from "./shared.js";
+import { Id, NullableId, NullableString, Time, waiting } from "./shared.js";
 
 const Resource = Type.Object({
   kind: Type.String(),
@@ -37,6 +37,21 @@ const Summary = Type.Object({
   ),
   warnings: Type.Array(Type.String()),
 });
+
+/** What a change that waits for a second person answers: the same shape wherever access is changed. */
+const WaitingRelease = Type.Object(
+  {
+    waiting: Type.Literal(true),
+    release: Type.Object({
+      id: Id,
+      number: Type.Integer(),
+      status: Type.String(),
+      summary: Summary,
+    }),
+    detail: Type.String(),
+  },
+  { description: "Nothing changed yet. The tenant asks for a second person to approve it." },
+);
 const Release = Type.Object({
   id: Id,
   number: Type.Integer(),
@@ -322,14 +337,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               status: Type.String(),
               summary: Summary,
             }),
-            202: Type.Object({
-              waiting: Type.Literal(true),
-              detail: Type.String(),
-              id: Id,
-              number: Type.Integer(),
-              status: Type.String(),
-              summary: Summary,
-            }),
+            202: WaitingRelease,
           },
         },
       },
@@ -346,8 +354,13 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return released.status === "applied"
           ? reply.code(201).send(released)
           : reply.code(202).send({
-              ...released,
-              waiting: true as const,
+              ...waiting(released),
+              release: {
+                id: released.id,
+                number: released.number,
+                status: released.status,
+                summary: released.summary,
+              },
               detail: `Access change ${released.number} waits for a second person. Nothing changed yet: someone else who may change access has to approve it.`,
             });
       },
@@ -493,14 +506,7 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               status: Type.String(),
               summary: Summary,
             }),
-            202: Type.Object({
-              waiting: Type.Literal(true),
-              detail: Type.String(),
-              id: Id,
-              number: Type.Integer(),
-              status: Type.String(),
-              summary: Summary,
-            }),
+            202: WaitingRelease,
           },
         },
       },
@@ -519,8 +525,13 @@ export function accessReleaseRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return released.status === "applied"
           ? reply.code(201).send(released)
           : reply.code(202).send({
-              ...released,
-              waiting: true as const,
+              ...waiting(released),
+              release: {
+                id: released.id,
+                number: released.number,
+                status: released.status,
+                summary: released.summary,
+              },
               detail: `Access change ${released.number} waits for a second person. Nothing changed yet: someone else who may change access has to approve it.`,
             });
       },

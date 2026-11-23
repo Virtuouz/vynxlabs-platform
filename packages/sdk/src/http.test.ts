@@ -24,7 +24,10 @@ beforeAll(async () => {
   secondUrl = await listen(second);
   first = createServer((request, response) => {
     seen.push({ server: "first", headers: request.headers });
-    if (request.url === "/away") {
+    if (request.headers["x-probe"]) {
+      // A service whose base address is nothing, whose paths work: the answer depends on the key.
+      response.writeHead(request.headers["x-probe"] === "bad" ? 401 : 404).end();
+    } else if (request.url === "/away") {
       response.writeHead(302, { location: `${secondUrl}/landed` }).end();
     } else if (request.url === "/within") {
       response.writeHead(302, { location: "/final" }).end();
@@ -76,4 +79,17 @@ test("the connection's authorization replaces a caller's of another case", async
   );
   await bearer.get("/final", { headers: { Authorization: "Bearer other" } });
   expect(seen[0]?.headers.authorization).toBe("Bearer tok");
+});
+
+test("Test says an answer from the service means it was reached, and a refusal of the key does not", async () => {
+  const probe = (kind: string) =>
+    httpConnector.test?.(
+      { baseUrl: firstUrl, headers: { "x-probe": kind }, auth: { type: "bearer" } },
+      undefined,
+      signal,
+    );
+  // The base address answers 404, as many services' do: calls to its paths still work.
+  await expect(probe("missing")).resolves.toMatchObject({ status: 404 });
+  // The credentials were refused: that is a failure, with the status.
+  await expect(probe("bad")).rejects.toMatchObject({ status: 401 });
 });

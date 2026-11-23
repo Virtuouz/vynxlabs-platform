@@ -435,6 +435,16 @@ test("a person ends every other session at once, after being asked (SHL-MP2)", a
   await waitFor(() => expect(document.activeElement).not.toBe(document.body));
 });
 
+test("a list of sessions that fills the library's page says it may be longer", async () => {
+  accountRoutes();
+  const many = Array.from({ length: 100 }, (_, n) => aSession(`s${n + 1}`, FIREFOX, "10.0.0.2"));
+  routes["GET /api/v1/auth/list-sessions"] = () => [200, many];
+  routes["GET /api/v1/auth/get-session"] = () => [200, { session: { id: "s1" }, user: {} }];
+  show(<Account />);
+  const panel = await screen.findByRole("region", { name: "Sessions" });
+  expect(await within(panel).findByText(/Showing the first 100 sessions/)).toBeTruthy();
+});
+
 test("sessions that cannot be read say so, and can be asked for again (SHL-MP2)", async () => {
   accountRoutes();
   let refuse = true;

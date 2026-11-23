@@ -660,7 +660,6 @@ async function promote(args: string[], io: Io): Promise<number> {
   say.out(
     `Bundle ${String(bundle.digest).slice(0, 12)}, version ${bundle.version} here, to ${where}.`,
   );
-  const breaking = (summary.breaking ?? []) as { message: string }[];
   if (!possible) {
     throw new CliError(
       [
@@ -669,6 +668,7 @@ async function promote(args: string[], io: Io): Promise<number> {
       ].join("\n"),
     );
   }
+  const breaking = (summary.breaking ?? []) as { message: string }[];
   if (values.preview) {
     say.out(`Promoting would leave ${where} with: ${counts(summary)}.`);
     for (const line of describeChanges(summary)) say.out(line);
@@ -784,14 +784,18 @@ async function rollback(args: string[], io: Io): Promise<number> {
         workspace: values.workspace,
         type: workspace.type,
         version: deployed.body.bundleVersion,
+        restoredFrom: version,
         summary: deployed.body.summary,
         message,
       }),
     );
     return 0;
   }
+  // Going back to a version whose console resources differ from today's makes a new version.
   io.out(
-    `${values.workspace} (${workspace.type}) runs version ${deployed.body.bundleVersion} again: ${counts(deployed.body.summary)}.`,
+    deployed.body.bundleVersion === version
+      ? `${values.workspace} (${workspace.type}) runs version ${version} again: ${counts(deployed.body.summary)}.`
+      : `${values.workspace} (${workspace.type}) runs what version ${version} had, as version ${deployed.body.bundleVersion}: ${counts(deployed.body.summary)}.`,
   );
   for (const line of describeChanges(deployed.body.summary, MAX_DEPLOY_LINES)) io.out(line);
   return 0;

@@ -40,6 +40,18 @@ const CODES: Record<number, ErrorCode> = {
   503: "unavailable",
 };
 
+/** Addresses whose last part is a credential: whoever has it may act. */
+const SECRET_PATHS = /\/(hooks|member-password-links|approval-links)\/[^/?]+/g;
+
+/**
+ * A request's path as it may be said back or written down. Some addresses hold a secret
+ * (a webhook's token, a link's token), and neither an error body, a trace nor a log line
+ * may carry it.
+ */
+export function publicPath(request: { url: string }): string {
+  return (request.url.split("?")[0] as string).replace(SECRET_PATHS, "/$1/:token");
+}
+
 export function sendProblem(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -63,7 +75,7 @@ export function sendProblem(
       CODES[status] ??
       (status >= 500 ? "internal_error" : "bad_request"),
     ...(fields.detail ? { detail: fields.detail } : {}),
-    instance: request.url.split("?")[0] as string,
+    instance: publicPath(request),
     requestId: request.id,
     ...(fields.errors ? { errors: fields.errors } : {}),
   };
@@ -72,7 +84,7 @@ export function sendProblem(
 
 export function notFoundHandler(request: FastifyRequest, reply: FastifyReply) {
   return sendProblem(request, reply, 404, {
-    detail: `No route matches ${request.method} ${request.url.split("?")[0]}.`,
+    detail: `No route matches ${request.method} ${publicPath(request)}.`,
   });
 }
 

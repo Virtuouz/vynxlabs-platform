@@ -546,11 +546,14 @@ describe("going back, and asking a second person", () => {
     expect((await alice.put(`${at()}/approval`, { required: true })).status).toBe(200);
     const asked = await release([lender, desk("Service Desk"), students, assistant, lends, sees]);
     expect(asked.status, JSON.stringify(asked.body)).toBe(202);
-    expect(asked.body).toMatchObject({ status: "awaiting_approval", summary: { updated: 1 } });
+    expect(asked.body).toMatchObject({
+      waiting: true,
+      release: { status: "awaiting_approval", summary: { updated: 1 } },
+    });
     // Nothing changed yet.
     expect((await current()).find((one) => one.key === "tech-desk").body.title).toBe("Tech Desk");
 
-    const decide = (client: Client, decision: string, id = asked.body.id) =>
+    const decide = (client: Client, decision: string, id = asked.body.release.id) =>
       client.post(`${at()}/releases/${id}/decision`, { decision });
     const own = await decide(alice, "approve");
     expect(own.status).toBe(409);
@@ -570,18 +573,18 @@ describe("going back, and asking a second person", () => {
       {},
       bob,
     );
-    expect((await decide(alice, "approve", other.body.id)).status).toBe(200);
+    expect((await decide(alice, "approve", other.body.release.id)).status).toBe(200);
     // The release that was asked against the old state is marked so, not left waiting (REL-16).
     const listed = ((await alice.get(`${at()}/releases`)).body.items as Any[]).find(
-      (one) => one.id === stale.body.id,
+      (one) => one.id === stale.body.release.id,
     );
     expect(listed.status).toBe("superseded");
-    const late = await decide(bob, "approve", stale.body.id);
+    const late = await decide(bob, "approve", stale.body.release.id);
     // It was marked superseded when the other applied (ACC-15), so it is not left saying it waits.
     expect(late.status).toBe(409);
     expect(late.body.message ?? late.body.detail).toContain("superseded");
-    expect((await decide(bob, "withdraw", stale.body.id)).status).toBe(409);
-    expect((await decide(alice, "withdraw", stale.body.id)).status).toBe(409);
+    expect((await decide(bob, "withdraw", stale.body.release.id)).status).toBe(409);
+    expect((await decide(alice, "withdraw", stale.body.release.id)).status).toBe(409);
 
     // What the console changes waits the same way: a group made there is not there yet.
     const made = await alice.post(`/tenants/${tenant}/groups`, { name: "Night shift" });

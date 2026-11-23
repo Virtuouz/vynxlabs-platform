@@ -175,6 +175,10 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           response: {
             200: Type.Object({
               apps: Type.Array(App),
+              removedApps: Type.Array(Type.String(), {
+                description:
+                  "The paths of deployed apps that a draft removes. A deploy of the documentation carries them, with the pages that go with them.",
+              }),
               pages: Type.Array(PageSummary),
               issues: Type.Array(
                 Type.Object({
@@ -203,7 +207,7 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       },
       async ({ ctx, params }) => {
         const workspace = await enter(ctx, params);
-        const { resources, apps } = await working(workspace.id);
+        const { resources, apps, removedApps } = await working(workspace.id);
         const [liveTables, draftTables] = await Promise.all([
           db
             .selectFrom("resource")
@@ -262,6 +266,7 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         );
         return {
           issues,
+          removedApps,
           apps: apps.map((one) => {
             const url = appUrl(kernel, {
               tenantSlug: tenant.slug,

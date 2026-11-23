@@ -1,4 +1,5 @@
 import { newId } from "@volvel/db";
+import { SSO_REFUSAL_WORDS, type SsoRefusalReason } from "@volvel/manifest";
 import { isOperator } from "../administer.js";
 import { type Actor, type Audit, type Db, type Trx, writeAudit } from "../audit.js";
 import { createEndUser } from "../endusers.js";
@@ -19,21 +20,7 @@ export interface Asserted {
   attributes: Record<string, string>;
 }
 
-export type RefusalReason =
-  | "provider_off"
-  | "provider_error"
-  | "invalid_answer"
-  | "replayed"
-  | "expired"
-  | "no_subject"
-  | "no_email"
-  | "email_unverified"
-  | "domain_not_proved"
-  | "email_not_trusted"
-  | "no_account"
-  | "not_in_tenant"
-  | "disabled"
-  | "runs_instance";
+export type RefusalReason = SsoRefusalReason;
 
 /** A sign-in that was refused, with a reason for the record and words for the person. */
 export class SsoRefusal extends Error {
@@ -41,8 +28,9 @@ export class SsoRefusal extends Error {
   /** More for the audit log and for an administrator. Never shown to the person signing in. */
   readonly detail: string | undefined;
 
-  constructor(reason: RefusalReason, message: string, detail?: string) {
-    super(message);
+  /** The words are the reason's own, the same wherever it is said; the second argument is no longer used. */
+  constructor(reason: RefusalReason, _said: string, detail?: string) {
+    super(SSO_REFUSAL_WORDS[reason]);
     this.name = "SsoRefusal";
     this.reason = reason;
     this.detail = detail;

@@ -18,6 +18,23 @@ describe("volvel-worker-host's settings", () => {
     expect(result.stderr).toContain("--max-workers must be a positive whole number.");
   });
 
+  test("an empty value is no value: the shipped compose passes the managed worker settings empty", () => {
+    const result = spawnSync(process.execPath, [bin, "--url", "http://127.0.0.1:1"], {
+      env: {
+        PATH: process.env.PATH ?? "",
+        WORKER_HOST_TOKEN: "t".repeat(40),
+        MANAGED_WORKER_UID: "",
+        MANAGED_WORKER_GID: "",
+        MANAGED_WORKER_USERS: "",
+        MANAGED_WORKERS_MAX: "",
+      },
+      encoding: "utf8",
+      timeout: 3000,
+    });
+    expect(result.stderr).not.toContain("must be");
+    expect(result.status).not.toBe(2);
+  });
+
   test("MANAGED_WORKERS_MAX is read, and checked, as the instance's setting of that name is (HOST-20)", () => {
     const result = run(["--url", "http://127.0.0.1:1"], { MANAGED_WORKERS_MAX: "0" });
     expect(result.status).toBe(2);

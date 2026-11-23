@@ -35,12 +35,14 @@ import {
 } from "../kernel/flows/approvers.js";
 import { type ContextStep, expressionContext } from "../kernel/flows/context.js";
 import {
+  announceCanceledFlows,
   cancelFlowRun,
   decideApproval,
   deciderOf,
   keptNodes,
   kickFlow,
   startFlowRun,
+  takeCanceledFlows,
 } from "../kernel/flows/engine.js";
 import { eventSchema, publishEvent } from "../kernel/flows/events.js";
 import { ExpressionError } from "../kernel/flows/expressions.js";
@@ -1505,9 +1507,11 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       async ({ ctx, params }) => {
         await authorizeRun(ctx, params, "flow_run:write");
         let ended: ReturnType<typeof takeCanceled> = [];
+        let endedFlows: ReturnType<typeof takeCanceledFlows> = [];
         const cancelled = await ctx.mutate(async (trx, audit) => {
           const flowRun = await cancelFlowRun(kernel, trx, params.w, params.id);
           ended = takeCanceled(trx);
+          endedFlows = takeCanceledFlows(trx);
           await audit({
             action: "flow_run.cancelled",
             targetType: "flow_run",
@@ -1521,6 +1525,7 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         // A canceled sub-flow lets the flow that started it move on.
         if (cancelled.parent_flow_run_id) kickFlow(kernel, cancelled.parent_flow_run_id);
         await announceCanceled(kernel, ended);
+        await announceCanceledFlows(kernel, endedFlows);
         return toFlowRun(
           await flowRuns(params.w).where("flow_run.id", "=", params.id).executeTakeFirstOrThrow(),
         );

@@ -489,3 +489,96 @@ export function isGrantablePermission(permission: string): boolean {
 export const APP_FACING_KINDS: readonly string[] = PERMISSION_KINDS.filter(
   (entry) => entry.appFacing,
 ).map((entry) => entry.kind);
+
+/**
+ * Whether a role's permission list grants `kind:verb`. A permission marked explicit is granted
+ * only by its own name: no `*` reaches it, so nobody holds it by having been given everything.
+ * The one rule, for the permission check and for every screen that shows what a role gives.
+ */
+export function grants(permissions: readonly string[], permission: string): boolean {
+  const [kind, verb] = permission.split(":");
+  if (isExplicitKind(kind ?? "")) return permissions.includes(permission);
+  return permissions.some((held) => {
+    const [heldKind, heldVerb] = held.split(":");
+    return (heldKind === "*" || heldKind === kind) && (heldVerb === "*" || heldVerb === verb);
+  });
+}
+
+/** What an interface knows of a kind when it writes a wildcard out: the API's list serves it. */
+export interface KindOfPermission {
+  kind: string;
+  scope: string;
+  explicit?: boolean | undefined;
+  verbs: readonly string[];
+}
+
+/** The permissions a wildcard stands for: never an explicit kind, nor one only the instance checks. */
+function standsFor(kinds: readonly KindOfPermission[], held: string): string[] {
+  const [k, v] = held.split(":") as [string, string];
+  const out: string[] = [];
+  for (const entry of kinds) {
+    if (entry.explicit || entry.scope === "instance") continue;
+    if (k !== "*" && entry.kind !== k) continue;
+    for (const verb of entry.verbs) if (v === "*" || verb === v) out.push(`${entry.kind}:${verb}`);
+  }
+  return out;
+}
+
+const isWildcard = (held: string) => held.startsWith("*:") || held.endsWith(":*");
+
+/**
+ * Turns one box on or off. A wildcard that covers the box is first written out as the
+ * permissions it stands for (and no others: a wildcard never gave an explicit permission), so
+ * that taking one away leaves the rest and gives nothing new.
+ */
+export function setPermission(
+  held: readonly string[],
+  kinds: readonly KindOfPermission[],
+  kind: string,
+  verb: string,
+  on: boolean,
+): string[] {
+  const target = `${kind}:${verb}`;
+  if (on) return grants(held, target) ? [...held] : [...held, target];
+  const next = new Set<string>();
+  for (const one of held) {
+    if (one === target) continue;
+    if (isWildcard(one) && grants([one], target)) {
+      for (const each of standsFor(kinds, one)) if (each !== target) next.add(each);
+    } else {
+      next.add(one);
+    }
+  }
+  return [...next];
+}
+
+/**
+ * "Everything" for one verb. On: `*:verb`, replacing the named permissions of that verb it
+ * covers, and leaving explicit ones and every other verb as they are. Off: takes away only that
+ * verb, from `*:*` and `kind:*` too, and leaves what is given by name for an explicit kind.
+ */
+export function setEveryone(
+  held: readonly string[],
+  kinds: readonly KindOfPermission[],
+  verb: string,
+  on: boolean,
+): string[] {
+  const other = verb === "read" ? "write" : "read";
+  const explicit = new Set(kinds.filter((one) => one.explicit).map((one) => one.kind));
+  const next = new Set<string>();
+  for (const one of held) {
+    const [k, v] = one.split(":") as [string, string];
+    const covered = !explicit.has(k) && (v === verb || (v === "*" && !on));
+    if (on) {
+      if (!(v === verb && !explicit.has(k) && k !== "*")) next.add(one);
+      continue;
+    }
+    if (!covered) {
+      next.add(one);
+    } else if (v === "*") {
+      next.add(`${k}:${other}`);
+    }
+  }
+  if (on && !grants([...next], `*:${verb}`) && !next.has("*:*")) next.add(`*:${verb}`);
+  return [...next];
+}

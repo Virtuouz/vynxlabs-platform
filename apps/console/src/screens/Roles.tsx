@@ -1,3 +1,4 @@
+import { grants, type KindOfPermission, setEveryone, setPermission } from "@volvel/manifest";
 import { Button, Closing, Notice, SideSheet, TextField, Toggletip, Tooltip } from "@volvel/ui";
 import { X } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -34,18 +35,25 @@ interface PermissionKind {
 
 type Verb = "read" | "write";
 
-/** Whether a set of permissions allows `kind:verb`, counting `*` on either side. */
+/** The kinds as the manifest's wildcard rules read them. */
+const asKinds = (kinds: readonly PermissionKind[]): KindOfPermission[] =>
+  kinds.map((entry) => ({
+    kind: entry.kind,
+    scope: entry.scope,
+    explicit: entry.explicit === true,
+    verbs: entry.verbs.map((one) => one.verb),
+  }));
+
+/** Whether a role's permissions give `kind:verb`: a wildcard never gives an explicit one. */
 export function allows(held: readonly string[], kind: string, verb: Verb): boolean {
-  return held.some((one) => {
-    const [k, v] = one.split(":");
-    return (k === "*" || k === kind) && (v === "*" || v === verb);
-  });
+  return grants(held, `${kind}:${verb}`);
 }
 
-/**
- * Turns one box on or off. A wildcard that covers the box is first written out
- * as the permissions it stands for, so that taking one away leaves the rest.
- */
+/** Kinds a tenant's role can use: the ones only the instance checks are left out of the picker. */
+const usable = (kinds: readonly PermissionKind[]) =>
+  kinds.filter((entry) => entry.scope !== "instance");
+
+/** Turns one box on or off, writing a covering wildcard out as exactly what it gave. */
 export function toggle(
   held: readonly string[],
   kinds: readonly PermissionKind[],
@@ -53,26 +61,7 @@ export function toggle(
   verb: Verb,
   on: boolean,
 ): string[] {
-  const target = `${kind}:${verb}`;
-  if (on) return allows(held, kind, verb) ? [...held] : [...held, target];
-  const next = new Set<string>();
-  for (const one of held) {
-    const [k, v] = one.split(":") as [string, string];
-    const covers = (k === "*" || k === kind) && (v === "*" || v === verb);
-    if (!covers) {
-      next.add(one);
-      continue;
-    }
-    // Write the wildcard out, then leave the one box off.
-    for (const entry of kinds) {
-      if (k !== "*" && entry.kind !== k) continue;
-      for (const { verb: each, permission } of entry.verbs) {
-        if (v !== "*" && each !== v) continue;
-        if (permission !== target) next.add(permission);
-      }
-    }
-  }
-  return [...next];
+  return setPermission(held, asKinds(kinds), kind, verb, on);
 }
 
 /** A grid of what a role allows: one row per kind of thing, one box per verb. */
@@ -102,7 +91,7 @@ export function PermissionPicker({
   });
   const everything = value.includes("*:*");
   const needle = query.trim().toLowerCase();
-  const shown = kinds.filter(
+  const shown = usable(kinds).filter(
     (entry) =>
       needle === "" ||
       entry.label.toLowerCase().includes(needle) ||
@@ -111,18 +100,7 @@ export function PermissionPicker({
   );
   const groups = [...new Set(shown.map((entry) => entry.group))];
 
-  const all = (verb: Verb, on: boolean) => {
-    if (on) {
-      onChange([...value.filter((one) => !one.endsWith(`:${verb}`)), `*:${verb}`]);
-      return;
-    }
-    onChange(
-      value.filter((one) => {
-        const [, v] = one.split(":");
-        return v !== verb && v !== "*";
-      }),
-    );
-  };
+  const all = (verb: Verb, on: boolean) => onChange(setEveryone(value, asKinds(kinds), verb, on));
   const box = "size-4 accent-[var(--vx-action)] disabled:opacity-50";
 
   return (
@@ -281,8 +259,9 @@ export function PermissionPicker({
 }
 
 /** A short account of a role's permissions for a table cell. */
-function Summary({ role, kinds }: { role: Role; kinds: readonly PermissionKind[] }) {
-  if (role.permissions.includes("*:*")) return <span>Everything</span>;
+function Summary({ role, kinds: all }: { role: Role; kinds: readonly PermissionKind[] }) {
+  const kinds = usable(all);
+  if (role.permissions.includes("*:*")) return <span>Everything but what is given by name</span>;
   const read = kinds.filter((entry) => allows(role.permissions, entry.kind, "read")).length;
   const write = kinds.filter(
     (entry) =>
@@ -408,8 +387,10 @@ function RoleDialog({
 type Show = "all" | "own" | "builtin";
 
 /** What a role allows, in a few lines a person reads at a glance. */
-export function inShort(role: Role, kinds: readonly PermissionKind[]): string[] {
-  if (role.permissions.includes("*:*")) return ["Everything, everywhere it is given."];
+export function inShort(role: Role, every: readonly PermissionKind[]): string[] {
+  const kinds = usable(every);
+  if (role.permissions.includes("*:*"))
+    return ["Everything, everywhere it is given, except what is given by name."];
   const groups = [...new Set(kinds.map((entry) => entry.group))];
   const lines: string[] = [];
   for (const group of groups) {

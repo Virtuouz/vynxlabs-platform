@@ -1,8 +1,8 @@
 import { sql } from "@volvel/db";
-import { APP_FACING_KINDS, isExplicitKind } from "@volvel/manifest";
+import { APP_FACING_KINDS, grants } from "@volvel/manifest";
 import type { Db, Principal, Trx } from "./audit.js";
 
-export { PERMISSION_PATTERN } from "@volvel/manifest";
+export { grants, PERMISSION_PATTERN } from "@volvel/manifest";
 
 export interface Target {
   tenantId?: string | undefined;
@@ -24,20 +24,6 @@ export interface Decision {
    * the caller should answer as if the tenant did not exist.
    */
   related: boolean;
-}
-
-/**
- * Whether a role's permission list grants `kind:verb`. A permission marked
- * explicit is granted only by its own name: no `*` reaches it, so nobody holds
- * it by having been given everything.
- */
-export function grants(permissions: readonly string[], permission: string): boolean {
-  const [kind, verb] = permission.split(":");
-  if (isExplicitKind(kind ?? "")) return permissions.includes(permission);
-  return permissions.some((held) => {
-    const [heldKind, heldVerb] = held.split(":");
-    return (heldKind === "*" || heldKind === kind) && (heldVerb === "*" || heldVerb === verb);
-  });
 }
 
 /**

@@ -17,6 +17,8 @@ const kinds = [
   kind("secret", "Workspace"),
   kind("data", "Data"),
   kind("audit", "Tenant", ["read"]),
+  { ...kind("sql", "Data"), explicit: true },
+  { ...kind("tenant", "Instance"), scope: "instance" as const },
 ];
 const role = (over: object) => ({
   id: "r1",
@@ -69,6 +71,18 @@ test("a box reads through wildcards, and taking one away writes the wildcard out
   ]);
   // Already allowed by a wildcard: nothing is added.
   expect(toggle(["*:*"], kinds, "data", "read", true)).toEqual(["*:*"]);
+});
+
+test("taking one box from a wildcard gives nothing the wildcard never gave", () => {
+  for (const wildcard of [["*:*"], ["*:read"]]) {
+    const next = toggle(wildcard, kinds, "secret", "write", false);
+    // Not sql (given only by its own name), nor a kind only the instance checks.
+    expect(next.filter((one) => one.startsWith("sql:") || one.startsWith("tenant:"))).toEqual([]);
+    expect(next).not.toContain("secret:write");
+  }
+  expect(allows(["*:*"], "sql", "read")).toBe(false);
+  expect(allows(["*:*", "sql:read"], "sql", "read")).toBe(true);
+  // "Everything" ticked and unticked leaves a named explicit permission and other verbs alone.
 });
 
 test("a role is created by ticking boxes, with no permission typed", async () => {

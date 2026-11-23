@@ -30,6 +30,16 @@ Migration adds `flow_run.output_ref`; `engine.ts` `#finish` writes it, `seedRetr
 ## OPS-04 (94d9e22)
 `triggers.ts` `fireDueSchedules`: an error that is not an `HttpError` rolls that start back, moves the schedule's next time on in its own transaction, logs it, and the loop goes on. Test: `trigger-limits.test.ts` (failed before). Left out: "record why" on the trigger (OPS-08's); it is logged only. Siblings `publishEvent`, `relaySource`: not changed.
 
+## Tests at the level a person works
+`apps/console/src/FlowEditorWalk.test.tsx` renders `FlowEditor` with a stubbed API, chooses a step by the address, does what a person does, and reads the autosaved draft. Seven tests, run in a scratch worktree at 8d4fa3e (removed after): all seven failed there, and pass here.
+- FLW-03: renaming a loaded schedule saved `timezone: America/New_York`; now none.
+- FLW-04 (editor): renaming a webhook start saved no `key`; now `key: hook`.
+- FLW-05: editing the Subject field saved the step without `with`; now the grants stay.
+- FLW-06: typing a taken name saved `{one: "2"}`, the first value gone; now not saved until the name is its own.
+- FLW-07: a Branch added mid-flow saved `{from: branch, to: second}` with no case; now `output: yes`.
+- FLW-08: renaming a case past another's name, and removing a case, left connections on a case that was not there; now they follow or go. The old failure for the rename was the collision on `ab`; the new test also passes where there is no rename form.
+Nothing further was found wrong by these tests. The helper tests in `FlowEditor.test.tsx` and `FlowSteps.test.tsx` stay as unit tests.
+
 ## Screens to walk
 Flow editor on a Fernhill instance, at 1440/768/390, light and dark, keyboard, reload: rename a schedule step (zone unchanged) and a webhook step (message, key kept); Add step > Branch and Fail mid-flow (edges drawn, "To fix"); branch cases (Enter or blur renames, taken name refused, Remove drops the edge, Undo); Set values and Headers (Add, Remove, duplicate name flagged, limit); a script step with an edited field (grants kept); a flow run with a 300 KB input, Run again. Gate: states (taken name, limit reached, too large) shown on the row; lifecycle Add/rename/remove/undo; keyboard Enter commits a case name; copy plain. The browser walk was not run.
 

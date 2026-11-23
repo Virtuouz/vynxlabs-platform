@@ -18,9 +18,9 @@ You will have a page in Fernhill's rota guide that ends with "Was this page help
 
 2. **Turn feedback on for the rota guide.** Press **More for Fernhill rota guide**, then **Turn on page feedback…**, which says "Ask readers whether a page helped". The dialog says "Each page ends with “Was this page helpful? Yes / No”." and lists what turning it on does: it makes or uses a table `docs-feedback` that keeps the answers of every site of the workspace, it changes the site `rota-site`, "Nothing about who answered is kept: no name, no address", and the change is a draft until you deploy. In a workspace that has no `docs-feedback` the button reads **Make the table and turn it on**. Where the table exists it reads **Turn it on**. Press the button. The page says "Fernhill rota guide will ask its readers when you deploy." and a button **Deploy 1 change** appears.
 
-3. **Add a page.** Press **More for Fernhill rota guide**, then **New page here**. A row opens with **Page title**, **File name**, a **Type** menu and **Save**. Type `Swap a shift` as the title. The file name fills in as `swap-a-shift`. Choose **How-to guide** in **Type** and press **Save**. The editor opens on the page with a template: `## Goal`, a `:::steps` block, and `## If it does not work`.
+3. **Add a page.** Press **More for Fernhill rota guide**, then **New page here**. A row opens with **Page title**, **File name**, a **Type** menu and **Save**. Type `Swap a shift` as the title. The file name fills in as `swap-a-shift`. Choose **How-to guide** in **Type** and press **Save**. The editor opens on the page with a template: `## Do the thing`, `## Before you start`, a `:::steps` block, `## The result` and `## If it does not work`.
 
-4. **Write it.** Click in the template at `## Goal`, select to the end of the text, and replace it with:
+4. **Write it.** Click in the template at the line `## Do the thing`, press :kbd[Home], then :kbd[Ctrl+Shift+End] to select to the end of the text, and replace it with:
 
    ```markdown
    ## Swap a shift with a colleague
@@ -41,7 +41,7 @@ You will have a page in Fernhill's rota guide that ends with "Was this page help
 
 5. **Deploy.** Back on the list, press the **Deploy** button at the top, which says how many changes it deploys. The dialog says "Readers see them at once. Nothing but documentation is deployed." Press **Deploy**.
 
-6. **Read it as a reader.** Open `/apps/fernhill/sandbox/rota-site/swap-a-shift` on the instance. The page shows **Swap a shift**, the label **HOW-TO GUIDE**, your text, and at the foot "Was this page helpful?" with **Yes** and **No**. The site's home page, `/apps/fernhill/sandbox/rota-site/`, has no such question: it is on the pages.
+6. **Read it as a reader.** Open `/apps/fernhill/sandbox/rota-site/swap-a-shift` on the instance. The page shows **Swap a shift**, the label **HOW-TO GUIDE**, your text, and at the foot "Was this page helpful?" with **Yes** and **No**. The site's home page, `/apps/fernhill/sandbox/rota-site/`, asks it too.
 
    ::screenshot{name=console/tut-docs-feedback alt="The rota guide's Swap a shift page ending with Was this page helpful, with Yes and No buttons"}
 

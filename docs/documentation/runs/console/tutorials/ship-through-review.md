@@ -28,3 +28,6 @@ Decline of a request; **Withdraw the request**; **Change where this promotes to*
 ## Product notes
 - After a rollback the **Versions of Live** list repeats rows (`v1` twice, `v2` twice), with the labels "RUNNING IN DEV" and "RUNNING IN LIVE" on different rows, and the older `v1` also marked **Roll back to this version**; the list was read as it stood and not understood fully.
 - The change list for a one-line edit also reports "Changes the input it takes."
+
+## Second check (2026-11-24)
+Walked again in one pass in a tenant of my own (`Chk Ship`, workspaces `Live` and `Dev`, member `chk.dev@example.com`), 1440 light, steps 1-12 including the colleague's request, the admin's two-dialog promotion, and the rollback. 390 px dark: the Promote step stacks, no sideways scroll. Not run: **Decline…**, **Withdraw the request**, **Change where this promotes to**. Note: on the Versions list of Live, the promoted `v2` carries RUNNING IN DEV beside RUNNING IN LIVE (a label of the other workspace on a production list); not changed on the page.

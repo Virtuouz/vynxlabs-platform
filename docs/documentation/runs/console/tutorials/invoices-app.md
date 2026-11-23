@@ -19,3 +19,6 @@
 
 ## Not run
 The refusal on the server (an API call as Maya) was not made; the page quotes the screen's own sentence. Whether View as Billing enables the button was not seen (the menu lists Me, Billing, Practice managers, Front desk, hilltop, northside, riverside). 768 and 390 px; dark; keyboard-only.
+
+## Second check (2026-11-24)
+Walked again in one pass as `chk Invoices` (address `chk-invoices`; Maya built, Rowan used, Maya looked), 1440 light, current code. Step 4 (sort) was done after step 3 as the page orders it. Steps 5, 6, 8, 11 corrected on the page (see the record). Cleanup tested: the old `TUT-001` was deleted from Data > Tables > `invoices` as the page's last section says, then recreated. 390 px dark: Rowan's app shows cards, no sideways scroll, **New invoice** modal fits; builder at 390 shows its "scroll sideways" note.

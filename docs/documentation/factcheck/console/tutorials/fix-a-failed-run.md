@@ -1,6 +1,6 @@
 # Fact-check record: console/tutorials/fix-a-failed-run
 
-Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026-11-23 (run log). "Checked by" is left for the second agent.
+Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026-11-23 (run log). "Checked by" for the rows below: second agent, 2026-11-24.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -14,3 +14,10 @@ Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026
 | "Since it last worked" lists Input, Version, Took and Compare the source | run; `apps/console/src/screens/RunCompare.tsx` | writer, run | holds |
 | Overview's "Open failed runs" opens runs narrowed to failed | run | writer, run | holds |
 | Starting and re-running needs `run:write` | `packages/docs/generated` permissions: "Start a script and cancel a run" | writer | holds |
+| Steps 1-8 in one pass (outage on, failed run, outage off, Overview, failed list, run page, re-run) | instance walk | second agent, run | holds except below |
+| Pressing a row in the failed runs list opens a side panel ("Why it failed", **Open full view**), not the run page | instance walk; Runs list | second agent, run | corrected: step 5 names the panel and **Open full view** |
+| Several `reminders/send` rows share the 503 result: the newest is first | instance walk | second agent, run | corrected: step 5 says top row |
+| **Compare the source** shows only when the version changed; a same-version failure reads Version "The same, v54" and has no button | `RunCompare.tsx:96-116`; instance walk | second agent, run | corrected: step 7 rewritten; compare page removed from What you built. fault fixed (fb/fc): compare page names both versions, not reached here |
+| Re-run, menu, dialog "Run reminders/send again? / With the same input, on version 54, the one it ran.", **Run again**, new run Succeeded with "Re-run of a run" | instance walk | second agent, run | holds |
+
+Checked by: second agent, 2026-11-24.

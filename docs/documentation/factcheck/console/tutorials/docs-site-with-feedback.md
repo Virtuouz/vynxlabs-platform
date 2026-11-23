@@ -1,6 +1,6 @@
 # Fact-check record: console/tutorials/docs-site-with-feedback
 
-Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026-11-23 (run log). "Checked by" is left for the second agent.
+Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026-11-23 (run log). "Checked by" for the rows below: second agent, 2026-11-24.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -14,3 +14,10 @@ Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026
 | No name or address kept (dialog text) | `Docs.tsx:1411` | writer | holds (text only) |
 | The site's home page shows no question | run | writer, run | observed; reason not read |
 | A doc writer may deploy documentation | run (Sam deployed) | writer, run | holds |
+| Steps 1-4 as Sam: Documentation list, menus, the dialog texts of **Turn on page feedback…** ("already keeps" branch; button **Turn it on**), **New page here** row, file name `swap-a-shift`, "No problems / This page would deploy as it is." | instance walk | second agent, run | holds |
+| The how-to template is `## Do the thing`, `## Before you start`, `:::steps`, `## The result`, `## If it does not work` | instance walk; `diataxis.ts` | second agent, run | corrected: page said `## Goal` |
+| Steps 6-7: the served page ends "Was this page helpful?" Yes / No; the site's home page now asks too | instance walk (rota-site, deployed earlier) | second agent, run | corrected: page said the home page has no question. fault fixed (fe) |
+| Step 5 **Deploy** as Sam is refused: "This needs the deployment:write permission" while any app removal is drafted in the workspace (`removedApps` counts an App Builder app, here `tut-visits`) | instance walk; `kernel/docs/working.ts:83`, `routes/authoring.ts:1149-1165` | second agent, run | fault: docs Deploy of a doc writer refused by another kind's removal. Steps 5-9 not rerun; the writer's run of them stands |
+| Steps 8-9 (Maya sees the row; the supplies site's dialog) | writer's run | writer | not rerun, see above |
+
+Checked by: second agent, 2026-11-24.

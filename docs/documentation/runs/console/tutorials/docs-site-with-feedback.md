@@ -21,3 +21,6 @@ The first-site case (making the table); a reader on a phone; Sam's refusal at ta
 
 ## Product notes
 - A site's home page (`index.md`) shows no feedback question although feedback is on for the site; its other pages do.
+
+## Second check (2026-11-24)
+Walked again as Sam, 1440 light, steps 1-4 (feedback on for the rota guide and the supplies guide, **New page here**, writing `swap-a-shift`), after turning feedback off on both sites (they had it on from the writer's run). STOPPED at step 5: Sam's **Deploy** answered "This needs the deployment:write permission" because an App Builder app `tut-visits` was drafted for removal and the docs screen counts it (see the record). A deploy by API was not made. Steps 6-9 are the writer's run; the served home page was seen to ask the question already (deployed earlier). The Fernhill rota guide now holds drafts of mine (`swap-a-shift`, feedback on again) that were not deployed. 390 px dark: the docs page has no sideways scroll.

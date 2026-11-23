@@ -1,6 +1,6 @@
 # Fact-check record: console/tutorials/ship-through-review
 
-Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026-11-23 (run log). "Checked by" is left for the second agent.
+Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026-11-23 (run log). "Checked by" for the rows below: second agent, 2026-11-24.
 
 | Claim | Source (file:line) | Checked by | Result |
 | --- | --- | --- | --- |
@@ -15,3 +15,11 @@ Code as of commit `5ebf1c80`, 2026-11-23. Written by the page's writer; run 2026
 | Rolling back asks "Roll back Live to version 1?" and the button is **Roll back in production** | run | writer, run | holds |
 | Promoting needs `promotion:write`; deploying `deployment:write` | `packages/manifest/src/permissions.ts:282` | writer | holds |
 | Production numbers its versions apart from dev's | run (dev v2 became Live v1) | writer, run | holds |
+| Steps 1-9 in a tenant of my own (`Chk Ship`, `chk-ship`, member `chk.dev@example.com`) | instance walk | second agent, run | holds |
+| Steps 10-12: request as the colleague, decide as admin (two dialogs), roll back | instance walk | second agent, run | holds except below |
+| After signing in as the colleague the first screen is the Tenants list, not the workspace | instance walk | second agent, run | corrected: step 10 says how to reach Dev |
+| After a rollback the Versions of Live list has `v1` once at the top ("No message", "deployed 2 times", RUNNING IN LIVE), `v2` below with **Deploy this version** | instance walk | second agent, run | corrected: page said a new entry; fault fixed (versions listed once) |
+| A one-line description edit deploys "Changes what it says it does." only | instance walk | second agent, run | holds; fault fixed (no "changes the input") |
+| 390 px dark: Promote step stacks, no sideways scroll | instance walk | second agent, run | holds |
+
+Checked by: second agent, 2026-11-24.

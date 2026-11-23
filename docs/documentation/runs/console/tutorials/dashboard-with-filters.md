@@ -22,3 +22,6 @@ Nothing found wrong in the page as written; the order of steps 3-5 was taken fro
 
 ## Not run
 Whether the chart redraws to one bar under the clinic filter (the figure did; the chart was not read). **Share**. 768 and 390 px; dark; keyboard-only.
+
+## Second check (2026-11-24)
+Walked again in one pass as `chk Visit mix`, 1440 light; no step differed. Reload of the filtered address restored it. 390 px dark: dashboard has no sideways scroll. Not run: **Share**; whether the chart shows one bar under the clinic filter.

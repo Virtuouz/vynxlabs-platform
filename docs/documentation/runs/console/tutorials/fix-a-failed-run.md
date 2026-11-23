@@ -20,3 +20,6 @@ Retry from the failed step (flow). The production workspace `clinics`. Versions 
 
 ## Product notes
 - The "Since it last worked" panel said "v37 then, v38 now", while the comparison page said both runs used version 38. One of the two is wrong or means something else.
+
+## Second check (2026-11-24)
+Walked again in one pass, 1440 light: run well (v54), outage on, run failed, outage off, Overview > Open failed runs > row > Open full view, Why it failed, Since it last worked (Version "The same, v54", no **Compare the source**), **Re-run** > same input > **Run again** (Succeeded). The seeded stand-ins were left with the outage off. 390 px dark: run page has no sideways scroll. Not run: a version-changed failure and the compare page; retry from the failed step of a flow.

@@ -137,7 +137,8 @@ test("a draft flow is tested, read, previewed and undone without leaving its edi
   // A step removed by mistake comes back with ⌘Z, and the draft keeps it.
   await steps.getByRole("button", { name: /^check/ }).click();
   await aside.getByRole("button", { name: "Remove this step" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
+  // Removing never asks (D34): the message offers Undo, and ⌘Z does the same.
+  await expect(page.getByText(/^Removed check\./)).toBeVisible();
   await expect(canvas.getByText("check", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("status").filter({ hasText: /Draft saved/ })).toBeVisible({
     timeout: 10_000,
@@ -356,6 +357,8 @@ test("steps are duplicated, copied into another flow, and a renamed case keeps i
   const settings = page.getByRole("complementary", { name: "The chosen step" });
   const name = settings.getByRole("group", { name: "Cases, tried in order" }).getByLabel("Name");
   await name.fill("huge");
+  // A case is renamed on Enter or when the field is left, not on each key (FLW).
+  await name.press("Enter");
   await saved("orders/other", (flow) => {
     const edges = (flow as unknown as { edges: { from: string; to: string; output?: string }[] })
       .edges;

@@ -89,11 +89,35 @@ test("a new script has no errors, keeps its undo history, and runs with ⌘↵ f
   await page.keyboard.press("Control+z");
   await expect(editor.getByText("//note")).toHaveCount(0);
 
-  // ⌘↵ with the code focused saves the draft and runs it, and the run shows beside the code.
-  const lines = await editor.locator(".view-line").count();
-  await page.keyboard.press("Control+Enter");
+  // A run's input is checked against the script's schema (SCR-05), so the starter's required name is
+  // given, and sent with the form's own button: ⌘↵ runs again with the last input sent (the first
+  // run also saves the draft).
   const run = page.getByRole("region", { name: "Test pane" });
+  await run.getByLabel("Name").fill("Ada");
+  await run.getByRole("button", { name: "Save and run" }).click();
   await run.getByRole("tablist", { name: "About this run" }).waitFor();
+  await expect(run.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });
+  // ⌘↵ with the code focused saves the draft and runs it, and the run shows beside the code.
+  await editor.locator(".view-lines").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("//again");
+  const lines = await editor.locator(".view-line").count();
+  const started = page.waitForResponse(
+    (response) => response.url().endsWith("/test-runs") && response.request().method() === "POST",
+  );
+  await page.keyboard.press("Control+Enter");
+  // ⌘↵ starts a second run, with the input remembered, and it succeeds.
+  const second = (await (await started).json()).runId as string;
+  expect(second).toBeTruthy();
+  await expect(page.getByText("Unsaved changes")).toHaveCount(0, { timeout: 15_000 });
+  await expect
+    .poll(
+      async () =>
+        (await call(page, "GET", `/tenants/${tenant.id}/workspaces/${dev.id}/runs/${second}`))
+          .status,
+      { timeout: 60_000 },
+    )
+    .toBe("succeeded");
   await expectNoAxeViolations(page, "the script editor with a run");
   await expect(page).toHaveURL(/\/scripts\/edit\/hello\/greet$/);
   await expect(run.getByText("Succeeded").first()).toBeVisible({ timeout: 60_000 });

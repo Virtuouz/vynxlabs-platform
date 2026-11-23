@@ -1,4 +1,5 @@
 import { Link } from "../router.tsx";
+import { inWords } from "./refusalWords.ts";
 import { Mono } from "./status.tsx";
 
 /** What a refused deploy or promotion names: a path and a sentence. */
@@ -42,7 +43,7 @@ export function RefusalList({ errors, link }: { errors: RefusalEntry[]; link?: s
         const address = link ? setUpAddress(link, one) : undefined;
         return (
           <li key={`${one.path} ${one.message}`}>
-            <Mono>{one.path}</Mono> {one.message}
+            <Mono>{one.path}</Mono> {inWords(one.message)}
             {address ? (
               <>
                 {" "}

@@ -1,4 +1,9 @@
-import { FORM_RESERVED_NAMES, RESPONSE_HEADERS_REFUSED } from "@volvel/manifest";
+import {
+  checkFlow,
+  FORM_RESERVED_NAMES,
+  type FlowBody as ManifestFlow,
+  RESPONSE_HEADERS_REFUSED,
+} from "@volvel/manifest";
 import {
   Appear,
   Button,
@@ -61,6 +66,7 @@ import { formatCombo, isTyping, keysOf, useShortcut } from "../kit/keys.ts";
 import { Loading } from "../kit/LoadState.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
+import { inWords } from "../kit/refusalWords.ts";
 import { retryAfter } from "../kit/retry.ts";
 import { SplitPane } from "../kit/SplitPane.tsx";
 import { type RunState, STATE_STROKE, StatePill, Tag } from "../kit/status.tsx";
@@ -441,6 +447,33 @@ export interface Problem {
   node?: string;
   /** The inspector field it is about: `script`, `title`, `inputs/<name>`… */
   field?: string;
+}
+
+/**
+ * What the build and a deploy check about a flow's graph that the editor's own list did not
+ * name, in words. A step the editor already names is left to it, so one fault is said once.
+ */
+export function manifestProblems(
+  nodes: Record<string, FlowNode>,
+  edges: GraphEdge[],
+  named: Problem[],
+): Problem[] {
+  let issues: { path: string; message: string }[];
+  try {
+    issues = checkFlow({ nodes, edges } as unknown as ManifestFlow);
+  } catch {
+    return [];
+  }
+  const seen = new Set(named.map((one) => one.node).filter(Boolean));
+  const out: Problem[] = [];
+  for (const issue of issues) {
+    const node = /^\/body\/nodes\/([^/]+)/.exec(issue.path)?.[1];
+    if (node && seen.has(node)) continue;
+    // A fault of the flow as a whole is said once, and only when nothing else is.
+    if (!node && named.length > 0) continue;
+    out.push({ message: inWords(`${issue.path} ${issue.message}`), ...(node ? { node } : {}) });
+  }
+  return out;
 }
 
 /** What is wrong with a flow that can be seen without asking the server, as words. */
@@ -888,10 +921,12 @@ export function FlowEditor({
     [nodes],
   );
   const flowEdges = useMemo(() => edges.map(toFlowEdge), [edges]);
-  const found = useMemo(
-    () => problemsAt(flowNodes, flowEdges, specs),
-    [flowNodes, flowEdges, specs],
-  );
+  const found = useMemo(() => {
+    const own = problemsAt(flowNodes, flowEdges, specs);
+    // What a deploy refuses is told here too, in the same words, so the two lists agree.
+    const refused = manifestProblems(flowNodes, flowEdges, own);
+    return [...own, ...refused];
+  }, [flowNodes, flowEdges, specs]);
   const chosen = nodes.find((node) => node.id === selected);
 
   const add = (entry: { base: string; make: () => FlowNode }) => {
@@ -2190,7 +2225,7 @@ export function FlowEditor({
                         disabled={dirty && starterId !== starter.id}
                         onClick={() => {
                           setStarterId(starter.id);
-                          open(starter.body as unknown as FlowBody);
+                          open(starter.body as unknown as ManifestFlow);
                         }}
                       >
                         {starter.label}

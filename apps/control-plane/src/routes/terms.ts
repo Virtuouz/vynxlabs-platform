@@ -2,7 +2,7 @@ import type { FastifyPluginAsyncTypebox } from "@fastify/type-provider-typebox";
 import { type DocSet, type DocsApp, docsApps, type ResourceLike, urlOf } from "@volvel/docs-engine";
 import { type Static, Type } from "typebox";
 import { appUrl } from "../kernel/apps/address.js";
-import { buildWorkspaceApp } from "../kernel/docs/product.js";
+import { buildDocs } from "../kernel/docs/product.js";
 import type { RequestContext, WorkspaceRef } from "../kernel/http.js";
 import { access, findWorkspace, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
@@ -135,7 +135,7 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           apps.push({
             app,
             id: row.id,
-            set: buildWorkspaceApp(kernel.config, app, [...rows, ...around]).set,
+            set: buildDocs(kernel.config, app, [...rows, ...around]).set,
           });
       }
       kept.set(workspaceId, { bundle, apps });
@@ -213,7 +213,12 @@ export function termRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/workspaces/:w/terms",
       {
-        config: { access: access.custom, rateLimit: guestLimit },
+        config: {
+          access: access.custom(
+            "Answers each term as the caller reads the resource it describes. An app may call it for someone who is not signed in, who then gets only what is open to anyone.",
+          ),
+          rateLimit: guestLimit,
+        },
         schema: {
           summary: "What the workspace's words mean, to this caller",
           description:

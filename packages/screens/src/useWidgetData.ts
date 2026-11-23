@@ -72,8 +72,8 @@ export function useWidgetData({
   // What the widget is and reads, without what only asks again.
   const groupRows = widget.config?.groupRows;
   const of = JSON.stringify([widget.type, widget.data, filterValues, chosen, groupRows]);
-  // Rows grouped by day are grouped by the reader's days, which the server has to be told.
-  const zone = groupRows ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
+  // Which day it is, and where a day begins, are the reader's (D21): the server is told their zone.
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const [inputs, setInputs] = useState<Record<string, WireData> | undefined>(() => {
     const had = kept?.get(widget.id);
     return reads && had?.of === of ? had.inputs : undefined;

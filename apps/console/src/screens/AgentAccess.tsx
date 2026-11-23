@@ -39,7 +39,7 @@ export function AgentAccess({ base, account }: { base: string; account: string }
     ? JSON.stringify(
         {
           mcpServers: {
-            platform: {
+            volvel: {
               type: "http",
               url: offered.data.address,
               headers: { Authorization: "Bearer <one of this account's API keys>" },

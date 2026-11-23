@@ -50,6 +50,19 @@ const problems = [];
 
 // The pages of reference are what the code says now. A checkout that has never
 // been built has none yet, and is given them: only a copy that is there can be old.
+// `pnpm docs:check` asks this first (`--staleness`), before the API's generator rewrites
+// every page: asked after it, nothing could ever be old.
+if (process.argv.includes("--staleness")) {
+  const old = existsSync(GENERATED) ? stale() : [];
+  for (const one of old) console.error(`${one} Run pnpm docs:generate.`);
+  if (old.length > 0) {
+    console.error(
+      `\ndocs:check found ${old.length} generated page${old.length === 1 ? "" : "s"} out of date.`,
+    );
+    process.exit(1);
+  }
+  process.exit(0);
+}
 if (!existsSync(GENERATED)) write();
 for (const one of stale()) {
   problems.push(`${one} Run pnpm docs:generate.`);

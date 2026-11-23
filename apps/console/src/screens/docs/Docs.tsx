@@ -583,12 +583,12 @@ export function Docs({
           ) : null
         }
       />
-      {data.clashes && data.clashes.length > 0 ? (
+      {data.issues?.length ? (
         <Notice tone="attention">
-          {data.clashes.length === 1
-            ? "A page takes a name the product already has, so it is left out of its site, and a deploy is refused until it is renamed."
-            : `${data.clashes.length} pages take a name the product already has, so they are left out of their site, and a deploy is refused until they are renamed.`}{" "}
-          {data.clashes[0]?.path}: {data.clashes[0]?.message}
+          {data.issues.length === 1 ? "A page takes" : `${data.issues.length} pages take`} a term or
+          a topic that the product's own help has, so a site leaves it out and a deploy is refused:{" "}
+          {[...new Set(data.issues.map((issue) => issue.path))].join(", ")}. Give it another id in
+          the page.
         </Notice>
       ) : null}
       {data.pages.length === 0 && data.apps.length === 0 && !editing ? (

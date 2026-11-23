@@ -25,16 +25,21 @@ const published: InterfaceBody = {
 };
 let calls: string[];
 let summary: Record<string, unknown>;
+/** The one app in the list: a test changes it before it opens the builder. */
+let listed: Record<string, unknown>;
 
 beforeEach(() => {
   window.history.replaceState(null, "", "/");
   calls = [];
+  listed = { path: "screens/sales", title: "Sales", deployed: true, app: "sales" };
   const routes: Record<string, [number, unknown]> = {
     [`GET ${api}/interfaces/screens/sales`]: [200, { body: published }],
     [`GET ${api}/drafts/screens/sales`]: [200, { revision: 1, body: published }],
     [`GET ${api}/interfaces`]: [
       200,
-      { items: [{ path: "screens/sales", title: "Sales", deployed: true, app: "sales" }] },
+      {
+        items: [listed],
+      },
     ],
     [`GET ${api}/drafts`]: [200, { items: [] }],
     [`GET ${api}/apps`]: [200, { items: [{ path: "sales", url: "https://sales.example" }] }],
@@ -97,4 +102,27 @@ test("someone who may edit sees the builder as it was", async () => {
 test("the line says production when it is production, and what is needed when it is a permission", () => {
   expect(readOnlyWords("Apps", "production")).toContain("production workspace");
   expect(readOnlyWords("Apps", "permission")).toContain("permission");
+});
+
+test("an app the repository manages is read only until it is taken over, and says what that does (BLD-10, D35)", async () => {
+  summary = { mayAuthor: true, authorBlockedBy: null };
+  Object.assign(listed, { ownership: "code", draft: false });
+  await open();
+  expect(screen.getByText(/managed in the repository/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Rename the app" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Add to page" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Take over" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Rename the app" })).toBeTruthy());
+  expect(screen.getByText(/moves it out of the repository/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
+  expect(calls.some((call) => call.startsWith("PUT"))).toBe(false);
+});
+
+test("an app the repository manages that already has a draft is being taken over, and is edited", async () => {
+  summary = { mayAuthor: true, authorBlockedBy: null };
+  Object.assign(listed, { ownership: "code", draft: true });
+  await open();
+  expect(screen.queryByRole("button", { name: "Take over" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Rename the app" })).toBeTruthy();
+  expect(screen.getByText(/taking this app over from the repository/i)).toBeTruthy();
 });

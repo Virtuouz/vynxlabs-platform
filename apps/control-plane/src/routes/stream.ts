@@ -15,7 +15,11 @@ export function streamRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       "/tenants/:t/stream",
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom(
+            "Needs a sign-in. The caller is sent the events of what they may read: runs where they hold `run:read`, flow runs where they hold `flow_run:read`, and their own runs and flow runs otherwise.",
+          ),
+        },
         schema: {
           summary: "What changes in the tenant's runs, as server-sent events",
           description:

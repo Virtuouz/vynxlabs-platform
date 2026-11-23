@@ -348,6 +348,12 @@ describe("setting a provider up to push", () => {
       bulk: { supported: false },
       filter: { supported: true, maxResults: 200 },
     });
+    // A provider shows this address to its administrator, so it must lead somewhere.
+    const documentation: string | undefined = config.body.documentationUri;
+    if (documentation) {
+      const there = await t.app.inject({ url: new URL(documentation).pathname });
+      expect(there.statusCode, `${documentation} answers`).toBeLessThan(400);
+    }
     expect(
       (await push(staff, "GET", "/ResourceTypes")).body.Resources.map((r: Any) => r.id),
     ).toEqual(["User", "Group"]);

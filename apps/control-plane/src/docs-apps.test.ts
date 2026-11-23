@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FEEDBACK_COLUMNS, FEEDBACK_TABLE } from "@volvel/docs-engine";
-import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
+import { type Bundle, type BundleManifest, bundleDigest, fileSchemas } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { type Client, putSeen, startTestApp, type TestApp } from "./testing.js";
 
@@ -206,6 +206,28 @@ afterAll(async () => {
 });
 
 const HELP = "/apps/acme/main/help/";
+
+describe("what the app kind says of its feedback table", () => {
+  test("it names every column a deploy requires", () => {
+    const schema = fileSchemas().find((one) => one.kind === "app")?.schema;
+    const find = (node: unknown): string | undefined => {
+      if (!node || typeof node !== "object") return undefined;
+      const record = node as Record<string, unknown>;
+      const feedback = record.feedback as { description?: string } | undefined;
+      if (feedback?.description) return feedback.description;
+      for (const value of Object.values(record)) {
+        const found = find(value);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    const said = find(schema);
+    expect(said).toBeDefined();
+    for (const column of Object.keys(FEEDBACK_COLUMNS)) {
+      expect(said, `the text names ${column}`).toContain(`\`${column}\``);
+    }
+  });
+});
 
 describe("a folder of pages served as a docs app", () => {
   test("it deploys, and is listed with the workspace's apps as documentation", async () => {
@@ -771,7 +793,7 @@ describe("someone who writes documentation in the console, and is not a develope
     expect((await wren.get(`${devWs()}/docs`)).body).toEqual({
       apps: [],
       pages: [],
-      clashes: [],
+      issues: [],
       tables: [],
     });
     // Someone bound to nothing is refused, by the name of what they lack.
@@ -830,6 +852,20 @@ describe("someone who writes documentation in the console, and is not a develope
       ["guide/support/refunds", "Refunds", "guide-site", "support/refunds", "new"],
     ]);
     expect(listed.pages[1].topic).toBe("guide-refunds");
+  });
+
+  test("a page that takes a name the product's help has is said to, as a deploy would refuse it", async () => {
+    const clash = text(
+      "title: Words\nterms:\n  - id: workspace\n    term: workspace\n    short: Ours.",
+    );
+    expect((await save(wren, "guide/words", clash)).status).toBe(200);
+    const issues = (await wren.get(`${devWs()}/docs`)).body.issues;
+    expect(issues).toEqual([
+      expect.objectContaining({ app: "guide-site", path: "guide/words", code: "term_reserved" }),
+    ]);
+    // What the preview and the terms read agree with the list: the name is not a tenant's.
+    expect((await wren.delete(`${devWs()}/drafts/guide/words`)).status).toBeLessThan(300);
+    expect((await wren.get(`${devWs()}/docs`)).body.issues).toEqual([]);
   });
 
   test("the list says of each page what another page's links are checked against", async () => {
@@ -990,7 +1026,7 @@ describe("someone who writes documentation in the console, and is not a develope
     expect((await wren.delete(`${devWs()}/drafts/guide/support/exchanges`)).status).toBe(204);
   });
 
-  test("DOC-08 and DOC-09 a draft preview, the terms and the search leave out what a deploy would refuse: a term the product owns", async () => {
+  test("DOC-08 a draft preview, the terms and the search leave out what a deploy would refuse: a term the product owns", async () => {
     const at = (url: string) => t.app.inject({ url, headers: { host: MAIN, ...wren.headers } });
     expect(
       (
@@ -1009,14 +1045,6 @@ describe("someone who writes documentation in the console, and is not a develope
     expect(preview.body).not.toContain("Ours alone.");
     const known = (await wren.get(`${devWs()}/terms`)).body.terms as Any[];
     expect(known.map((one) => one.id)).not.toContain("workspace");
-    // DOC-09: and the list of pages says so, so that its writer is told before a deploy is refused.
-    expect((await wren.get(`${devWs()}/docs`)).body.clashes).toEqual([
-      expect.objectContaining({
-        app: "guide-site",
-        path: "guide/clash",
-        message: expect.stringContaining('The term "workspace" is one of the product\'s own'),
-      }),
-    ]);
     expect((await wren.delete(`${devWs()}/drafts/guide/clash`)).status).toBe(204);
   });
 

@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import swagger from "@fastify/swagger";
@@ -7,6 +5,13 @@ import type { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
 import { type Database, newId } from "@volvel/db";
 import Fastify, { type RouteOptions } from "fastify";
 import { Type } from "typebox";
+import {
+  API_DESCRIPTION,
+  API_TAGS,
+  errorCodeList,
+  finish,
+  SECURITY_SCHEMES,
+} from "./api-description.js";
 import type { Config, LogLevel } from "./config.js";
 import { installFrontDoor } from "./kernel/apps/front.js";
 import { SYSTEM } from "./kernel/audit.js";
@@ -26,7 +31,7 @@ import {
   withTrace,
 } from "./kernel/telemetry.js";
 import { takeReleased } from "./kernel/tenant/releases.js";
-import { errorHandler, notFoundHandler } from "./problem.js";
+import { errorHandler, notFoundHandler, Problem } from "./problem.js";
 import { accessRoutes } from "./routes/access.js";
 import { accessReleaseRoutes } from "./routes/access-releases.js";
 import { alertRoutes } from "./routes/alerts.js";
@@ -210,14 +215,12 @@ export async function buildApp(options: AppOptions) {
       info: {
         title: "Volvel API",
         version: options.version,
-        description:
-          "The one public API of the platform. Errors are RFC 9457 problem details " +
-          "(application/problem+json) with a stable `code` and the `requestId`. " +
-          "Sign in through `/api/v1/auth/sign-in/email` for a session cookie, or send " +
-          "`Authorization: Bearer <api key>`. Each route says what it needs under `x-access`: " +
-          "a permission and where it is checked, or that it is public, for anyone signed in, " +
-          "or decided by the route itself from what is asked for.",
+        description: API_DESCRIPTION,
       },
+      // Every path below already begins `/api/v1`, so the server is the instance itself.
+      servers: [{ url: "/", description: "This instance" }],
+      tags: API_TAGS.map((tag) => ({ ...tag })),
+      components: { securitySchemes: SECURITY_SCHEMES },
     },
     // What a route needs is in its own configuration. It is written into the description
     // from there, so the two cannot differ.
@@ -247,12 +250,18 @@ export async function buildApp(options: AppOptions) {
     );
     description = {
       ...own,
+      "x-error-codes": errorCodeList(),
       paths: { ...own.paths, ...authPaths },
       components: {
         ...own.components,
-        schemas: { ...auth.components?.schemas, ...own.components?.schemas },
+        schemas: {
+          ...auth.components?.schemas,
+          ...own.components?.schemas,
+          Problem: { ...Problem, $id: undefined },
+        },
       },
     };
+    finish(description as unknown as Parameters<typeof finish>[0]);
     return description;
   }
 
@@ -315,6 +324,8 @@ export async function buildApp(options: AppOptions) {
           config: { access: access.public },
           schema: {
             summary: "This API description",
+            description:
+              "This document, as OpenAPI 3.1: every route of the API with what it needs and how it can fail, and the sign-in library's routes.",
             tags: ["instance"],
             response: { 200: Type.Object({}, { additionalProperties: true }) },
           },
@@ -327,30 +338,38 @@ export async function buildApp(options: AppOptions) {
 
   // What a browser asks for at the root of a site, whatever page it is on: the icon for its
   // tab, and what the console is called when it is kept on a home screen.
-  app.get("/favicon.ico", { config: { access: access.public } }, async (_request, reply) => {
-    const icon = (await instanceIcon(kernel, 32)) ?? defaultIcon(32);
-    return reply
-      .header("content-type", "image/x-icon")
-      .header("x-content-type-options", "nosniff")
-      .header("cache-control", "public, max-age=300")
-      .send(icoOf(icon, 32));
-  });
-  app.get("/site.webmanifest", { config: { access: access.public } }, async (_request, reply) => {
-    const branding = await kernel.db
-      .selectFrom("instance_branding")
-      .select("product_name")
-      .executeTakeFirst();
-    return reply
-      .header("content-type", "application/manifest+json")
-      .header("cache-control", "public, max-age=300")
-      .send(
-        webManifest(
-          branding?.product_name ?? "Console",
-          `${API_PREFIX}/instance/branding/icons`,
-          "/",
-        ),
-      );
-  });
+  app.get(
+    "/favicon.ico",
+    { config: { access: access.public }, schema: { hide: true } },
+    async (_request, reply) => {
+      const icon = (await instanceIcon(kernel, 32)) ?? defaultIcon(32);
+      return reply
+        .header("content-type", "image/x-icon")
+        .header("x-content-type-options", "nosniff")
+        .header("cache-control", "public, max-age=300")
+        .send(icoOf(icon, 32));
+    },
+  );
+  app.get(
+    "/site.webmanifest",
+    { config: { access: access.public }, schema: { hide: true } },
+    async (_request, reply) => {
+      const branding = await kernel.db
+        .selectFrom("instance_branding")
+        .select("product_name")
+        .executeTakeFirst();
+      return reply
+        .header("content-type", "application/manifest+json")
+        .header("cache-control", "public, max-age=300")
+        .send(
+          webManifest(
+            branding?.product_name ?? "Console",
+            `${API_PREFIX}/instance/branding/icons`,
+            "/",
+          ),
+        );
+    },
+  );
 
   const consoleDir = consoleDirectory(options.config);
   if (consoleDir) {

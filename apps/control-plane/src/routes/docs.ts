@@ -3,17 +3,15 @@ import {
   appOf,
   buildSearchIndex,
   type DocsApp,
-  docsApps,
   FEEDBACK_TABLE,
   loadSearchIndex,
-  type ResourceLike,
   readPage,
   urlOf,
 } from "@volvel/docs-engine";
 import { walk } from "@volvel/markup";
 import { type Static, Type } from "typebox";
 import { appUrl } from "../kernel/apps/address.js";
-import { buildWorkspaceApp } from "../kernel/docs/product.js";
+import { buildDocs, PRODUCT_CLASHES } from "../kernel/docs/product.js";
 import { type WorkingResource, workingDocs } from "../kernel/docs/working.js";
 import { notFound } from "../kernel/errors.js";
 import type { RequestContext } from "../kernel/http.js";
@@ -163,7 +161,9 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/docs`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs `resource:read` in the workspace, or `doc:read` alone."),
+        },
         schema: {
           summary: "The pages of documentation of a workspace, and the apps that serve them",
           description:
@@ -176,13 +176,18 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             200: Type.Object({
               apps: Type.Array(App),
               pages: Type.Array(PageSummary),
-              clashes: Type.Array(
-                Type.Object({ app: Type.String(), path: Type.String(), message: Type.String() }),
+              issues: Type.Array(
+                Type.Object({
+                  app: Type.String(),
+                  path: Type.String(),
+                  code: Type.String(),
+                  message: Type.String(),
+                }),
                 {
                   description:
-                    "Each term or topic of a page that takes a name the product's own help has: it is " +
-                    "left out of the site, and a deploy is refused until it is renamed. Found now, so " +
-                    "a name the product took after the page was written is shown before the deploy.",
+                    "Pages that take a term or a topic the product's own help has. A deploy refuses " +
+                    "them, and one that was deployed before the product had the name loses it " +
+                    "silently, so they are said here.",
                 },
               ),
               tables: Type.Array(Table, {
@@ -244,7 +249,19 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .filter((one) => one.kind === "app" && one.state !== "removed")
             .map((one) => [one.path, one.body as Record<string, unknown>]),
         );
+        const live = resources.filter((one) => one.state !== "removed");
+        const issues = apps.flatMap((one) =>
+          buildDocs(kernel.config, one, live)
+            .issues.filter((issue) => PRODUCT_CLASHES.includes(issue.code))
+            .map((issue) => ({
+              app: one.path,
+              path: issue.path,
+              code: issue.code,
+              message: issue.message,
+            })),
+        );
         return {
+          issues,
           apps: apps.map((one) => {
             const url = appUrl(kernel, {
               tenantSlug: tenant.slug,
@@ -265,15 +282,6 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .filter((one) => one.kind === "doc")
             .map((one) => summary(one, apps))
             .sort((a, b) => a.path.localeCompare(b.path)),
-          clashes: apps.flatMap((one) =>
-            buildWorkspaceApp(
-              kernel.config,
-              one,
-              resources.filter((row) => row.state !== "removed"),
-            )
-              .issues.filter((issue) => ["term_reserved", "topic_reserved"].includes(issue.code))
-              .map((issue) => ({ app: one.path, path: issue.path, message: issue.message })),
-          ),
           tables: seen.sort((a, b) => a.path.localeCompare(b.path)),
         };
       },
@@ -282,7 +290,9 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/docs/page/*`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs `resource:read` in the workspace, or `doc:read` alone."),
+        },
         schema: {
           summary: "One page of documentation, as it is being written",
           description:
@@ -323,7 +333,9 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     app.get(
       `${base}/docs/search`,
       {
-        config: { access: access.custom },
+        config: {
+          access: access.custom("Needs `resource:read` in the workspace, or `doc:read` alone."),
+        },
         schema: {
           summary: "Search the workspace's documentation",
           description:
@@ -353,7 +365,7 @@ export function docRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const kept = resources.filter((one) => one.state !== "removed");
         const items = [];
         for (const one of apps) {
-          const { set } = buildWorkspaceApp(kernel.config, one, kept);
+          const { set } = buildDocs(kernel.config, one, kept);
           for (const hit of loadSearchIndex(buildSearchIndex(set)).search(query.q, 10)) {
             items.push({
               path: `${one.docs}/${hit.path}`,

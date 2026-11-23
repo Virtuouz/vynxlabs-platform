@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildApp } from "@volvel/docs-engine";
+import { buildApp, type DocsApp, type ResourceLike } from "@volvel/docs-engine";
 import type { Config } from "../../config.js";
 
 /** Where the console's built files are: where the image put them, or beside this code in a checkout. */
@@ -46,16 +46,19 @@ export function productNames(config: Pick<Config, "consoleDir">): ProductNames |
   return read.get(folder);
 }
 
+/** The issues that mean a page took a name the product's own help has. */
+export const PRODUCT_CLASHES = ["term_reserved", "topic_reserved"];
+
 /**
- * A workspace's docs app built as a deploy builds it: held to the names the
- * product's own help has taken. Every place that builds one for a person to
- * see (a draft preview, the search of drafts, the terms) goes through this, so
- * that none shows what the deployed site would drop.
+ * A docs app built from a workspace's resources, held to the names the product keeps for its
+ * own help, as a deploy holds it. Every place that builds a workspace's docs for someone to see
+ * (a draft preview, search, the terms route) builds them here, so that none shows as fine what
+ * a deploy would refuse.
  */
-export function buildWorkspaceApp(
+export function buildDocs(
   config: Pick<Config, "consoleDir">,
-  app: Parameters<typeof buildApp>[0],
-  resources: Parameters<typeof buildApp>[1],
+  app: DocsApp,
+  resources: readonly ResourceLike[],
 ) {
   return buildApp(app, resources, { product: productNames(config) });
 }

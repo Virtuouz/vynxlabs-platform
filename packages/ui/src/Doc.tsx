@@ -130,30 +130,31 @@ export interface DocProps extends Omit<ReactOptions, "components"> {
   components?: Components;
 }
 
+/** The last object given, for as long as each of its values is the one it had. */
+function useShallowStable<T extends object>(next: T): T {
+  const last = useRef(next);
+  const a = last.current as Record<string, unknown>;
+  const b = next as Record<string, unknown>;
+  const keys = Object.keys(b);
+  const same =
+    Object.keys(a).length === keys.length && keys.every((key) => Object.is(a[key], b[key]));
+  if (!same) last.current = next;
+  return last.current;
+}
+
 /**
  * A page of documentation, from its tree. Text and its layout come from the
  * same stylesheet a served site uses. Alerts, tabs, folded sections, keys and
  * terms are the kit's own, so they look and behave as they do everywhere else.
  */
-export function Doc({ tree, more, asServed, components, ...given }: DocProps) {
-  // Every other prop is a render option: taken whole, so an option added to the renderer is never dropped here.
-  const last = useRef<ReactOptions>({});
-  const options: ReactOptions = {};
-  for (const [name, value] of Object.entries(given)) {
-    if (value !== undefined) (options as Record<string, unknown>)[name] = value;
-  }
-  // The same object while no option has changed, so the page is not drawn again for nothing.
-  const same =
-    Object.keys(options).length === Object.keys(last.current).length &&
-    Object.entries(options).every(
-      ([name, value]) => (last.current as Record<string, unknown>)[name] === value,
-    );
-  if (!same) last.current = options;
-  const kept = last.current;
+export function Doc({ tree, more, asServed, components, ...rest }: DocProps) {
+  // Every other prop is an option of the drawing, passed on as it is, so that an option the
+  // renderer gains is never dropped here. Held to the last object that is the same by value.
+  const options: ReactOptions = useShallowStable(rest);
   const drawn = useMemo(() => {
     if (asServed) {
       return renderReact(tree, {
-        ...kept,
+        ...options,
         components: { ...servedComponents(more), ...components },
       });
     }
@@ -179,10 +180,10 @@ export function Doc({ tree, more, asServed, components, ...given }: DocProps) {
       );
     };
     return renderReact(tree, {
-      ...kept,
+      ...options,
       components: { ...KIT, term: drawTerm, ...components },
     });
-  }, [tree, more, asServed, components, kept]);
+  }, [tree, more, asServed, components, options]);
   return (
     <div className={asServed ? "vd-doc vd-served" : "vd-doc"}>
       <style href="volvel-doc" precedence="default">

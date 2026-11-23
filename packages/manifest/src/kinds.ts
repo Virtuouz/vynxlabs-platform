@@ -1339,7 +1339,7 @@ export const appKind: KindDefinition = {
   body: {
     type: "object",
     properties: {
-      title: { type: "string", minLength: 1, maxLength: 200 },
+      title: { type: "string", minLength: 1, maxLength: 100 },
       description: { type: "string", maxLength: 500 },
       entry: {
         type: "string",
@@ -1367,10 +1367,10 @@ export const appKind: KindDefinition = {
         type: "object",
         description:
           "For an app that serves documentation: ask readers whether a page helped, and keep each " +
-          "answer as a row of a table of the workspace's. The table needs exactly these six " +
-          "columns: `site_key` (text, required), `page` (text, required), `helpful` (boolean, " +
-          "required), `site` (text), `version` (text) and `at` (timestamp). A reader answers " +
-          "once for each page, and nothing about who they are is kept.",
+          "answer as a row of a table of the workspace's. The table has exactly the columns " +
+          "`site_key` (text, the key of the site's app), `site` (text), `page` (text), `helpful` " +
+          "(boolean), `version` (text) and `at` (timestamp). A reader answers once for each " +
+          "page, and nothing about who they are is kept.",
         properties: {
           table: { ...path, description: "The table the answers are kept in." },
         },

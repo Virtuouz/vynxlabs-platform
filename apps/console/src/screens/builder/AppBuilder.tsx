@@ -7,7 +7,6 @@ import { DraftClash } from "../../kit/DraftClash.tsx";
 import { isDraftClash, putDraft } from "../../kit/draftApi.ts";
 import { ago } from "../../kit/format.ts";
 import { useHistory } from "../../kit/history.ts";
-import { heading } from "../../kit/inspector/model.ts";
 import { RemoveDraftButton } from "../../kit/RemoveDraftButton.tsx";
 import {
   DeviceSwitch,
@@ -31,8 +30,9 @@ import { PageEditor } from "./PageEditor.tsx";
 import { PagesList } from "./PagesList.tsx";
 import { PublishCheck } from "./PublishCheck.tsx";
 import { canAddPage, inMenu, movedPage } from "./pageKinds.ts";
-import { problemWords } from "./publishCheck.ts";
+import { openersOf, problemWords } from "./publishCheck.ts";
 import { ReadOnlyLine, useReadOnly } from "./ReadOnly.tsx";
+import { definitionOf } from "./registry.ts";
 import { syncSheetActions } from "./sheetActions.ts";
 import type { Start, Started } from "./starters.ts";
 
@@ -107,12 +107,19 @@ export function AppBuilder({
   const deployed = useLoad<{ body: InterfaceBody }>(`${root}/interfaces/${path}`);
   const { groups } = useGroupKeys(root);
   /** Someone who may not edit here reads the app as it is published; nothing is changed, saved or published. */
-  const { known, readOnly: mayNot, why } = useReadOnly(root);
+  const { known: summaryKnown, readOnly: mayNot, why } = useReadOnly(root);
+  // What the list says of it: waited for, since whether the repository manages it decides whether it can be changed.
+  const known = summaryKnown && (list.data !== undefined || list.error !== undefined);
+  const listedHere = list.data?.items.find((item) => item.path === path);
+  /** Whether the repository manages it, with no draft yet: it is looked at until the person takes it over (D35). */
+  const [tookOver, setTookOver] = useState(false);
+  const fromRepository = listedHere?.ownership === "code";
+  const repository = fromRepository && !listedHere?.draft && !tookOver;
   /** The draft removes this app: it is shown as it is published, and nothing is saved from here. */
   const [removal, setRemoval] = useState(false);
   /** Someone else saved the draft first: nothing is saved until their version is loaded. */
   const [clash, setClash] = useState(false);
-  const readOnly = mayNot || removal;
+  const readOnly = mayNot || removal || repository;
   /** The screen sizes whose hand-made layout the builder has agreed to write, until the page is left. */
   const agreed = useRef(new Set<string>());
   const [restoring, setRestoring] = useState(false);
@@ -373,9 +380,22 @@ export function AppBuilder({
   };
   const removePage = async () => {
     if (!page) return;
+    // What opens this page would open nothing, and the publish refuses it: said before it happens.
+    const opening = openersOf(body, page.id, definitionOf);
     const sure = await ask.confirm({
       title: `Remove the page ${page.title}?`,
-      text: "Its widgets go with it. Nothing in any table is touched.",
+      text: (
+        <>
+          Its widgets go with it. Nothing in any table is touched.
+          {opening.length > 0 ? (
+            <>
+              {" "}
+              {opening.length === 1 ? "This action opens" : "These actions open"} it and will open
+              nothing until you change {opening.length === 1 ? "it" : "them"}: {opening.join("; ")}.
+            </>
+          ) : null}
+        </>
+      ),
       action: "Remove the page",
       danger: true,
     });
@@ -523,6 +543,20 @@ export function AppBuilder({
           </Notice>
         ) : mayNot ? (
           <ReadOnlyLine what="Apps" why={why} />
+        ) : repository ? (
+          <Notice
+            tone="attention"
+            action={<Button onClick={() => setTookOver(true)}>Take over</Button>}
+          >
+            This app is managed in the repository, so it is shown as it is published and cannot be
+            changed here. Taking it over lets you change it here: the next publish then moves it out
+            of the repository, and changes made there no longer reach it.
+          </Notice>
+        ) : fromRepository ? (
+          <Notice tone="attention">
+            You are taking this app over from the repository. The next publish moves it out of the
+            repository, and changes made there no longer reach it.
+          </Notice>
         ) : null}
         {clash ? (
           <DraftClash

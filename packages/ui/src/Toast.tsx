@@ -237,7 +237,7 @@ export function ToastProvider({
       {children}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: holding the messages while they are pointed at is not an action */}
       <div
-        className="pointer-events-none fixed right-4 bottom-4 left-4 layer-toast flex flex-col items-end gap-2"
+        className="pointer-events-none fixed right-4 bottom-4 left-4 layer-toast flex flex-col items-end gap-2 md:items-center"
         onMouseEnter={hold}
         onMouseLeave={release}
         onFocus={hold}
@@ -249,10 +249,10 @@ export function ToastProvider({
          * Both lists are always on the page, so what is added to them is read out once, as it
          * appears: the others politely, a failure as an alert. The text is never in the page twice.
          */}
-        <div aria-live="polite" className="flex flex-col items-end gap-2">
+        <div aria-live="polite" className="flex flex-col items-end gap-2 md:items-center">
           {visible.filter((toast) => toast.tone !== "danger").map(card)}
         </div>
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-2 md:items-center">
           {visible.filter((toast) => toast.tone === "danger").map(card)}
         </div>
       </div>

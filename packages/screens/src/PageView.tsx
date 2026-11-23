@@ -758,7 +758,12 @@ function Cell({
                 const denied =
                   building && !ctx.viewing
                     ? undefined
-                    : whyNotRun(actionAt(widget, at), actor, ctx.groupNames);
+                    : whyNotRun(
+                        actionAt(widget, at),
+                        actor,
+                        ctx.groupNames,
+                        at === "config/edit" ? "edit this" : "do this",
+                      );
                 if (denied) return denied;
                 const when = actionAt(widget, at)?.when;
                 const records = { this: record ? thisRow : null, event: row };

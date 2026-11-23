@@ -1,5 +1,6 @@
 import { keepPreviousData, QueryClient, QueryClientContext, useQuery } from "@tanstack/react-query";
 import { useCallback, useContext } from "react";
+import { sessionIsOpen, whenRenewed } from "./session.ts";
 
 /** A failed API call, carrying the problem document the server sent. */
 export class ApiError extends Error {
@@ -94,14 +95,27 @@ function takeEarly(path: string): Promise<Response> | undefined {
   return kept;
 }
 
+/**
+ * Sends a request to the API. A 401 on a signed-in page means the session ended:
+ * the request waits for the person to sign in again (see `session.ts`) and is sent
+ * once more, so the page and what it holds are not lost. Sign-in itself, and a
+ * page nobody signed in to, get the plain answer.
+ */
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const send = () => fetch(`/api/v1${path}`, { credentials: "same-origin", ...init });
+  const response = await send();
+  if (response.status !== 401 || !sessionIsOpen() || path.startsWith("/auth/")) return response;
+  await whenRenewed();
+  return send();
+}
+
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const early = method === "GET" ? takeEarly(path) : undefined;
   const response = await (early?.catch(() => undefined) ?? Promise.resolve(undefined)).then(
     (kept) =>
       kept ??
-      fetch(`/api/v1${path}`, {
+      apiFetch(path, {
         method,
-        credentials: "same-origin",
         ...(body === undefined
           ? {}
           : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
@@ -143,6 +157,12 @@ function fallbackClient(): QueryClient {
     });
   }
   return fallback;
+}
+
+/** Forgets every read the page holds, so what one person read is never shown to the next. */
+export function clearReads() {
+  active?.clear();
+  fallback?.clear();
 }
 
 export function setActiveClient(client: QueryClient) {
@@ -187,9 +207,8 @@ export const api = {
   delete: <T>(path: string) => call<T>("DELETE", path),
   /** Sends a file's bytes as they are. */
   upload: async <T>(path: string, file: File, method: "POST" | "PUT" = "POST"): Promise<T> => {
-    const response = await fetch(`/api/v1${path}`, {
+    const response = await apiFetch(path, {
       method,
-      credentials: "same-origin",
       headers: { "content-type": file.type || "application/octet-stream" },
       body: file,
     });

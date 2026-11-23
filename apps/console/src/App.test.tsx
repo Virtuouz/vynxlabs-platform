@@ -3,6 +3,7 @@ import { cleanup, fireEvent, renderHook, screen, waitFor, within } from "@testin
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { App, returnTarget, useReopenLastPlace } from "./App.tsx";
 import { match } from "./router.tsx";
+import { endSession } from "./session.ts";
 import { show } from "./testing.tsx";
 
 type Handler = (body: unknown) => [number, unknown];
@@ -34,6 +35,10 @@ beforeEach(() => {
       signedIn = true;
       return [200, { token: "x" }];
     },
+    "GET /api/v1/sso/providers?email=alice%40acme.example": () => [
+      200,
+      { providers: [], password: true },
+    ],
     "GET /api/v1/tenants?limit=50": () => [
       200,
       {
@@ -54,6 +59,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  endSession();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });

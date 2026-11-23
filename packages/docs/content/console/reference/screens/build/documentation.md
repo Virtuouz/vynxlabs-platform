@@ -22,10 +22,15 @@ In a :term[dev workspace]{id=dev-workspace} the tree is where pages and folders 
 
 - Drag a row by its grip: a line between two rows puts it there, a folder that fills in puts it inside. A closed folder held over for a moment opens.
 - Press the pencil, or :kbd[F2], to change a title and a file's name together. Renaming a file moves its address, and the old one leads to the new one for 90 days.
+- A new page can start from a type. Choosing **Tutorial**, **How-to guide**, **Reference** or **Explanation** gives the page that kind's outline to write over, and sets the type on the page unless the folder's own page already says it. Choosing nothing starts a page with only its title.
 - A folder's menu makes a page or a folder in it, moves it, copies it, deletes it with everything in it, and publishes a top-level folder as a site.
 - A change can be undone from the message that says it was made.
 
 The file's name is under each title. A page that is not deployed as it is carries a draft mark beside its title.
+
+## What the words on a served page mean
+
+A term on a served page shows what it means when the reader hovers or focuses it. Terms the page's own site defines, and terms of the product's own documentation, are told to everyone who can read the page. A term that names a table, a column, a script or another resource of the workspace is told only to a reader who may already use that resource: to anyone else, such as a visitor to a public site, it is the word alone, the same as when the resource has nothing to say. `::field` shows what a field of a kind is, from the product's documentation.
 
 ## Asking readers
 

@@ -82,6 +82,16 @@ describe.each(["higher-ed-devices", "fernhill"])("the %s example", (name) => {
         "handbook/front-desk/invoices",
         "handbook/index",
       ]);
+      // It uses the four types where they are natural, and says nothing the docs check would warn of.
+      expect(built.warnings).toEqual([]);
+      const source = (path: string) =>
+        String(
+          (built.bundle.manifests.find((one) => one.path === path)?.body as { source?: string })
+            .source,
+        );
+      expect(source("handbook/front-desk/index")).toContain("type: how-to");
+      expect(source("handbook/front-desk/invoices")).toContain("type: explanation");
+      expect(source("handbook/front-desk/checking-in/late-arrivals")).toContain("type: reference");
     } else {
       // It says no key, title or tool name, so it still deploys to an instance from before them.
       expect(built.bundle.formatVersion).toBeLessThan(4);

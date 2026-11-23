@@ -2,6 +2,7 @@
 title: Booking a visit
 description: Which slot to give, how long to book, and what to ask.
 topic: desk-booking
+subjects: [visits]
 about:
   - table: appointments
 extends: [data-tables]

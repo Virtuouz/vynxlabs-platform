@@ -301,3 +301,36 @@ test("a pull that stopped at what looks like a rename offers to delete those pat
   await screen.findByText("Deployed what changed on the branch.");
   expect(sent("POST").map((call) => call.body)).toEqual([{}, { allowDelete: ["orders/old"] }]);
 });
+
+test("REL-MP3: the repository form has the user name, the release and access branches, and a check that reaches it again", async () => {
+  const stored = {
+    ...repository,
+    releaseBranch: null,
+    tenantBranch: "volvel/access",
+    verifiedAt: "2026-11-20T10:00:00.000Z",
+  };
+  routes["GET /api/v1/tenants/t1/git-repository"] = () => [200, { repository: stored }];
+  routes["PUT /api/v1/tenants/t1/git-repository"] = () => [200, stored];
+  routes["POST /api/v1/tenants/t1/git-repository/check"] = () => [
+    200,
+    { ok: false, problem: "The repository refused the access token.", repository: stored },
+  ];
+  show(<RepositorySettings base="/tenants/t1" />);
+  expect(((await screen.findByLabelText("Access branch")) as HTMLInputElement).value).toBe(
+    "volvel/access",
+  );
+  fireEvent.change(screen.getByLabelText("Release branch"), { target: { value: "releases" } });
+  fireEvent.change(screen.getByLabelText("User name"), { target: { value: "ci-bot" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PUT")).toHaveLength(1));
+  expect(sent("PUT")[0]?.body).toEqual({
+    url: repository.url,
+    defaultBranch: "main",
+    folder: "platform",
+    username: "ci-bot",
+    releaseBranch: "releases",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Check the connection" }));
+  expect((await screen.findByText(/refused the access token/)).textContent).toBeTruthy();
+  expect(sent("POST")).toHaveLength(1);
+});

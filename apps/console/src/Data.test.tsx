@@ -658,9 +658,9 @@ test("a data source's stored password is removed from its Change form: password 
   fireEvent.click(within(dialog).getByLabelText("Remove the stored password"));
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   await waitFor(() =>
-    expect((calls.find((call) => call.method === "PUT")?.body as { password?: null }).password).toBe(
-      null,
-    ),
+    expect(
+      ((calls.find((call) => call.method === "PUT")?.body ?? {}) as { password?: null }).password,
+    ).toBe(null),
   );
 });
 

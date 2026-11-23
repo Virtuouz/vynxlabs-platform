@@ -30,3 +30,10 @@
 - Siblings looked at, left: `GroupMemberSheet.tsx` (member credential), `SingleSignOn.tsx` (client secret), `Git.tsx` (token): they use SecretField without `onRemove`, so no Remove appears. Their routes were not checked for null.
 - Seen: a Remove button next to Replace on a connection's credential; a checkbox on the source's Change form.
 - Polish: states: pending removal is shown and can be undone; keyboard: plain buttons; copy says what happens. Walk: Connections > Change on a bound http connection, Sources > Change, at 390 px.
+
+## REL-MP3: repository fields
+- Test: `Git.test.tsx` "REL-MP3: the repository form has the user name, the release and access branches, and a check ...". Failed before.
+- Change: `apps/console/src/screens/Git.tsx` `RepositorySettings`: User name (write-only: the API does not return it, so it is sent only when typed), Release branch, Access branch (sent only when changed, empty sends null), "Check the connection" (POST `git-repository/check`), and "last reached ... ago" from `verifiedAt`. API unchanged.
+- Siblings: the Release branch is read in `GitSync.tsx` `ReleaseBranch` (its empty state said "A release branch is set on the tenant's repository", which is now true); nothing else edits the repository.
+- Left: the stored user name is not shown because the repository response has no `username`; adding it is a contract change not asked for.
+- Polish: states: checking (loading button), ok, problem (danger notice); copy plain. Walk: Repository at 390 px (branches stack under 640 px), reload.

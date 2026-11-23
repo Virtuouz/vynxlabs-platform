@@ -273,3 +273,54 @@ test("a bound connection's page has Unbind, which asks naming what uses it, then
   expect(screen.queryByRole("button", { name: "Unbind" })).toBeNull();
   history.replaceState(null, "", "/");
 });
+
+test("a script's page shows the settings it runs with, as the editor sets them (SCR-08)", async () => {
+  routes[`${root}/scripts`] = () => [
+    200,
+    { items: [{ path: "orders/sync", description: "", ownership: "ui", lastRun: null }] },
+  ];
+  routes[`${root}/references`] = () => [200, { items: [] }];
+  routes[`${root}/resources/orders/sync`] = () => [
+    200,
+    {
+      kind: "script",
+      path: "orders/sync",
+      ownership: "ui",
+      version: 3,
+      body: {
+        timeoutSeconds: 90,
+        memoryMb: 512,
+        concurrency: { key: "/customer", limit: 2 },
+        worker: "heavy",
+        onFailure: { notify: "ops" },
+        retries: { limit: 3, delaySeconds: 10, backoff: true },
+        uses: {
+          connections: ["erp"],
+          secrets: [],
+          variables: [],
+          tables: ["orders"],
+          sources: ["warehouse"],
+          events: ["order/synced"],
+          connectionGroups: ["crm/accounts"],
+        },
+      },
+    },
+  ];
+  show(<ScriptPage root={root} link={link} path="orders/sync" />);
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  const text = async (label: string) => (await screen.findByText(label)).nextElementSibling;
+  expect((await text("Memory"))?.textContent).toBe("512 MB");
+  expect((await text("Runs at once"))?.textContent).toBe("2 for each value of /customer");
+  expect((await text("Worker pool"))?.textContent).toBe("heavy");
+  expect((await text("Tables"))?.textContent).toBe("orders");
+  expect((await text("Data sources"))?.textContent).toBe("warehouse");
+  expect((await text("Events it may publish"))?.textContent).toBe("order/synced");
+  expect((await text("Connection groups"))?.textContent).toBe("crm/accounts");
+  expect(
+    (await text("Sends a summary through, when it fails for the last time"))?.textContent,
+  ).toBe("ops");
+  expect((await text("Tries again"))?.textContent).toBe(
+    "3 times, 10 seconds apart, waiting longer each time",
+  );
+  expect((await text("Stops after"))?.textContent).toBe("90 seconds");
+});

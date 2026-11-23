@@ -309,7 +309,7 @@ export function ssoRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               "the people the provider covers, and ends their open sessions at once, except the caller's; " +
               "the people who run the instance keep their passwords and sessions. Turning a " +
               "provider off does not stop a directory pushing people to it. " +
-              "Saving turns a paused provider back on.",
+              "Turning a paused provider on, or changing its settings, turns it back on; a rename does not.",
             tags,
             params: Params,
             body: Type.Object(Settings),

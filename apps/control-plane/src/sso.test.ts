@@ -1623,12 +1623,21 @@ describe("a tenant with providers, exported and imported", () => {
         headers: { host: MAIN },
       });
       expect(paused.headers.location).toBe("/?sso_error=provider_off");
-      // The key it was sealed with came too: saving it again works, and turns it back on
-      // once its domain is proved to this instance.
-      const saved = await there.patch(`${providers()}/${customers.id}`, { name: "Acme Customers" });
+      // A rename says nothing about this instance's addresses: the provider stays paused (GOV-31),
+      // and a provider of members can be renamed before its domain is proved.
+      const renamed = await there.patch(`${providers()}/${members.id}`, { name: "Acme SAML 2" });
+      expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
+      expect(renamed.body.paused).toBe(true);
+      const stillOff = await there.patch(`${providers()}/${customers.id}`, {
+        name: "Acme Customers",
+      });
+      expect(stillOff.body.paused).toBe(true);
+      // The key it was sealed with came too: turning it on works, and for a provider of members
+      // only once its domain is proved to this instance.
+      const saved = await there.patch(`${providers()}/${customers.id}`, { enabled: true });
       expect(saved.status, JSON.stringify(saved.body)).toBe(200);
       expect(saved.body.paused).toBe(false);
-      const resumed = await there.patch(`${providers()}/${members.id}`, { name: "Acme SAML" });
+      const resumed = await there.patch(`${providers()}/${members.id}`, { enabled: true });
       expect(resumed.status).toBe(409);
       expect(resumed.body.code).toBe("domain_needed");
       const metadata = await b.app.inject({

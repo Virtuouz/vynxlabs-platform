@@ -1203,6 +1203,20 @@ describe("reading the audit log", () => {
     expect(found.length).toBeGreaterThan(0);
     // A wildcard in the text is looked for, not used.
     expect((await alice.client.get(`${base}?q=%25%25%25`)).body.items).toEqual([]);
+    // The text is also looked for in what a target or an actor is called now (GOV-32): the email
+    // beside "Who" and "To", a workspace's name.
+    const named = ofMembers.find((entry) => entry.targetLabel?.includes("@"));
+    const byEmail = (
+      await alice.client.get(
+        `${base}?limit=200&q=${encodeURIComponent((named?.targetLabel ?? "").toUpperCase())}`,
+      )
+    ).body.items as { targetId: string }[];
+    expect(byEmail.length).toBeGreaterThan(0);
+    expect(byEmail.some((entry) => entry.targetId === named?.targetId)).toBe(true);
+    const byActorName = (
+      await alice.client.get(`${base}?limit=200&q=${encodeURIComponent("alice@")}`)
+    ).body.items as { actorId: string }[];
+    expect(byActorName.some((entry) => entry.actorId === alice.id)).toBe(true);
 
     // One entry by its ID, for a link to it.
     const one = found[0] as { id?: string };

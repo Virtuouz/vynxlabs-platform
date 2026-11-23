@@ -213,7 +213,8 @@ export const AuditQuery = Type.Object({
     Type.String({
       minLength: 1,
       maxLength: 200,
-      description: "Entries whose action, target or kind of target holds this text.",
+      description:
+        "Entries whose action, target, kind of target, or the name now given to the target or actor (an email, a hostname) holds this text.",
     }),
   ),
   from: Type.Optional(
@@ -258,6 +259,15 @@ async function auditSelect(kernel: Kernel, tenantId: string | null, query: Audit
         eb("action", "ilike", like),
         eb("target_id", "ilike", like),
         eb("target_type", "ilike", like),
+        // What a target or an actor is called now: an email, a hostname, a name (GOV-32).
+        // Entries hold IDs, so the text is resolved to the IDs of what is so called.
+        ...Object.entries(TARGET_NAMES).flatMap(([type, { table, column }]) => {
+          const called = sql<string>`(select id::text from ${sql.table(table)} where ${sql.ref(column)}::text ilike ${like})`;
+          return [
+            eb.and([eb("target_type", "=", type), sql<boolean>`target_id in ${called}`]),
+            eb.and([eb("actor_type", "=", type), sql<boolean>`actor_id::text in ${called}`]),
+          ];
+        }),
       ]),
     );
   }

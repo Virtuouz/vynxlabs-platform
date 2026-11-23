@@ -564,3 +564,34 @@ test("p31 fc: switching a followed table off also takes its columns out of Displ
     { column: "number" },
   ]);
 });
+
+test("p31 fe: switching a followed table off takes out every setting that names its columns", async () => {
+  const start = listWidget();
+  start.config = {
+    ...(start.config ?? {}),
+    title: "number",
+    subtitle: "customer_name",
+    right: "customer.city",
+    columns: [{ column: "number" }, { column: "customer_city" }],
+  };
+  start.data = {
+    rows: {
+      source: { visual: { table: "invoices", joins: ["customer"] } },
+      filters: [
+        { filter: "q", columns: ["number", "customer.name"] },
+        { filter: "town", column: "customer.city" },
+        { filter: "paid", column: "status" },
+      ],
+    },
+  };
+  show(<Harness start={start} definition={list as never} using={withCustomers} />);
+  fireEvent.click(panel().getByRole("button", { name: /Customers/ }));
+  const widget = written.at(-1) as PageWidget;
+  expect(widget.config).toMatchObject({ title: "number", columns: [{ column: "number" }] });
+  expect(widget.config).not.toHaveProperty("subtitle");
+  expect(widget.config).not.toHaveProperty("right");
+  expect(widget.data?.rows?.filters).toEqual([
+    { filter: "q", columns: ["number"] },
+    { filter: "paid", column: "status" },
+  ]);
+});

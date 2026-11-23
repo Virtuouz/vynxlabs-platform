@@ -64,8 +64,8 @@ import {
   sourcesOf,
   tidyVisual,
   visualOf,
-  withConfig,
   withInput,
+  withoutColumns,
 } from "./model.ts";
 import {
   ChoiceList,
@@ -234,20 +234,18 @@ function AlsoFrom({ env, input, visual }: { env: Env; input: string; visual: Vis
         joinedName(via, column.name),
       ]),
     );
-    const shown = env.config.columns as { column: string }[] | undefined;
     const data = env.widget.data?.[input];
     if (!data) return;
-    let widget = withInput(env.widget, input, {
-      ...(data as DataInput),
-      source: { visual: tidyVisual(next) },
-    });
-    if (Array.isArray(shown) && shown.some((one) => names.has(one.column))) {
-      widget = withConfig(
-        widget,
-        "columns",
-        shown.filter((one) => !names.has(one.column)),
-      );
-    }
+    // Everything of the widget that names a column of that table goes too, in one place.
+    const widget = withoutColumns(
+      env.definition,
+      withInput(env.widget, input, {
+        ...(data as DataInput),
+        source: { visual: tidyVisual(next) },
+      }),
+      input,
+      names,
+    );
     env.write(widget, "no longer following a table", key);
   };
   const choose = (via: string, column: string, on: boolean) => {

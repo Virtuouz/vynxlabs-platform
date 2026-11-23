@@ -391,6 +391,68 @@ export function renamedResult(
   return next;
 }
 
+/**
+ * A widget without the settings that name any of `names` (the columns of a table no longer
+ * followed, by either name they are known by): a column setting that names one is unset, a list
+ * of columns or fields loses its entries, and a page filter bound to one loses it from its
+ * binding, which goes when nothing is left for it to narrow.
+ */
+export function withoutColumns(
+  definition: WidgetDefinition,
+  widget: PageWidget,
+  input: string,
+  names: ReadonlySet<string>,
+): PageWidget {
+  const named = (value: unknown): boolean =>
+    typeof value === "string"
+      ? names.has(value)
+      : Boolean(value) &&
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        names.has(String((value as { column?: unknown }).column));
+  let next = widget;
+  const places = new Set(["columns"]);
+  for (const [name, schema] of Object.entries(definition.config.properties)) {
+    const hint = schema["x-volvel"];
+    if (
+      hint &&
+      (hint.of ?? input) === input &&
+      ["column", "columns", "slots", "groupRows", "fields"].includes(hint.control)
+    ) {
+      places.add(name);
+    }
+  }
+  for (const name of places) {
+    const value = next.config?.[name];
+    if (Array.isArray(value)) {
+      if (value.some(named)) {
+        next = withConfig(
+          next,
+          name,
+          value.filter((one) => !named(one)),
+        );
+      }
+    } else if (named(value)) {
+      next = withConfig(next, name, undefined);
+    }
+  }
+  const filters = next.data?.[input]?.filters;
+  if (
+    next.data?.[input] &&
+    filters?.some((one) => [one.column, ...(one.columns ?? [])].some((c) => c && names.has(c)))
+  ) {
+    const kept = filters.flatMap((one) => {
+      if (one.column && names.has(one.column)) return [];
+      if (!one.columns) return [one];
+      const columns = one.columns.filter((c) => !names.has(c));
+      return columns.length > 0 ? [{ ...one, columns }] : [];
+    });
+    const { filters: _before, ...rest } = next.data[input] as DataInput;
+    next = withInput(next, input, kept.length > 0 ? { ...rest, filters: kept } : rest);
+  }
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Page filters
 

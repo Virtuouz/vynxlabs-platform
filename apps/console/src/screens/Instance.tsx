@@ -44,6 +44,8 @@ function ToggleMember({ row, onDone }: { row: MemberRow; onDone: () => void }) {
               notify.success(
                 `${row.email} is disabled. These tenants now have no admin: ${left.map((one) => one.name).join(", ")}. An operator can open access to each from its page.`,
               );
+            } else {
+              notify.success(`${row.email} is ${row.disabled ? "enabled" : "disabled"}.`);
             }
             onDone();
           }, notify.error);

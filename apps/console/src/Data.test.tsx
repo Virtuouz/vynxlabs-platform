@@ -290,6 +290,8 @@ test("a table made in the console is changed by saving its definition", async ()
   await waitFor(() =>
     expect(saved().body.columns.paid).toEqual({ type: "boolean", default: false }),
   );
+  // It says what was made, not only that something was.
+  expect(await screen.findByText("The column paid was added.")).toBeTruthy();
 });
 
 test("a refused save of an enum's values or a reference's rule keeps its dialog open, with what was typed", async () => {
@@ -656,7 +658,7 @@ test("WLK-07: another host asks for the password again instead of dropping it in
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   await waitFor(() =>
     expect(
-      (calls.find((call) => call.method === "PUT")?.body as { password: string }).password,
+      ((calls.find((call) => call.method === "PUT")?.body ?? {}) as { password?: string }).password,
     ).toBe("s3cret"),
   );
 });

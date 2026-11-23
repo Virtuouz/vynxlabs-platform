@@ -2402,6 +2402,7 @@ function Definition({
               hint: "Optional.",
             },
           ],
+          done: (_result, sent) => `The column ${sent.name} was added.`,
           submit: ({
             name = "",
             type = "text",
@@ -2515,7 +2516,7 @@ function sourceBody({
 function pointsElsewhere(was: SourceBinding["config"], now: Record<string, string | undefined>) {
   if (!was) return false;
   return (
-    was.host.toLowerCase() !== (now.host ?? "").toLowerCase() ||
+    (was.host ?? "").toLowerCase() !== (now.host ?? "").toLowerCase() ||
     (was.port ?? 5432) !== (now.port ? Number(now.port) : 5432) ||
     was.user !== now.user ||
     (was.ssl === true && now.ssl !== "yes")

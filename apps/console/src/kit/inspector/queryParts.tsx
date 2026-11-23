@@ -169,7 +169,10 @@ export function ChoiceList<Value extends string>({
                 {one.label}
               </span>
               {one.hint ? (
-                <span className="min-w-0 max-w-[50%] truncate text-meta text-ink-muted" title={one.hint}>
+                <span
+                  className="min-w-0 max-w-[50%] truncate text-meta text-ink-muted"
+                  title={one.hint}
+                >
                   {one.hint}
                 </span>
               ) : null}

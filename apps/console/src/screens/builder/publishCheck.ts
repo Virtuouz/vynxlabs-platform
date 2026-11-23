@@ -560,7 +560,10 @@ export function refusalWords(
   const other = /^(.+) \((\w+)\)$/.exec(problem.path);
   if (other && !own.includes(other[1] ?? null)) {
     const said = problem.message.replace(/^\/body\S*\s+/, "");
-    return `${other[1]} (${other[2]}), which this deploy also carries: ${said}.`.replace(/\.\.$/, ".");
+    return `${other[1]} (${other[2]}), which this deploy also carries: ${said}.`.replace(
+      /\.\.$/,
+      ".",
+    );
   }
   return `${problemWords(problem, body)}.`.replace(/\.\.$/, ".");
 }

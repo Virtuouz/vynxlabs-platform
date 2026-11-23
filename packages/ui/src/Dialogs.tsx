@@ -109,7 +109,10 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
   // The limit is said at the field and refused, never cut quietly while a person types.
   const limit = asked?.kind === "prompt" ? asked.options.maxLength : undefined;
   const tooLong =
-    asked?.kind === "prompt" && limit !== undefined && !asked.options.multiline && text.length > limit;
+    asked?.kind === "prompt" &&
+    limit !== undefined &&
+    !asked.options.multiline &&
+    text.length > limit;
   const lengthSaid = tooLong
     ? `Use at most ${limit} characters. This is ${text.length}.`
     : undefined;
@@ -181,7 +184,9 @@ export function DialogsProvider({ children }: { children: ReactNode }) {
                   label={asked.options.label}
                   value={text}
                   required={required}
-                  {...(fieldError || lengthSaid ? { error: (fieldError ?? lengthSaid) as string } : {})}
+                  {...(fieldError || lengthSaid
+                    ? { error: (fieldError ?? lengthSaid) as string }
+                    : {})}
                   {...(asked.options.hint || limit
                     ? {
                         hint: [asked.options.hint, limit ? `Up to ${limit} characters.` : undefined]

@@ -219,7 +219,11 @@ describe("the header of an open query", () => {
         draft: "new",
       },
     ];
-    history.replaceState(null, "", "/?query=reports/a-rather-long-path/of-many/parts/fees-by-device-and-week");
+    history.replaceState(
+      null,
+      "",
+      "/?query=reports/a-rather-long-path/of-many/parts/fees-by-device-and-week",
+    );
     show(<Queries root={root} link={link} />);
     const pill = await screen.findByText("Draft, never deployed");
     const path = screen

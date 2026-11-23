@@ -270,18 +270,17 @@ test("w-builder 6: a deploy's refusal about another dashboard or app is said wit
     known,
     definitionOf: () => undefined,
     problems: [],
-    refusal: [
-      { text: said },
-      { text: second },
-      { text: said },
-    ],
+    refusal: [{ text: said }, { text: second }, { text: said }],
     warnings: [],
   });
   expect(items.filter((one) => one.text.includes("labs/goal"))).toHaveLength(2);
   // This app's own refusal is in its page's words.
   expect(
     refusalWords(
-      { path: "clinic/app (interface)", message: "/body/pages/0/widgets/0/config/fields must NOT have fewer than 1 items" },
+      {
+        path: "clinic/app (interface)",
+        message: "/body/pages/0/widgets/0/config/fields must NOT have fewer than 1 items",
+      },
       made,
       own,
     ),

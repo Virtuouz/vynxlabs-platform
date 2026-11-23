@@ -821,7 +821,9 @@ test("an app that is opened is remembered for the palette's Recent list", async 
 test("w-builder 1: an app named in the address by its path (as the palette's Recent list has it) opens", async () => {
   routes[`GET /api/v1${base}/workspaces/w1/apps`] = () => [
     200,
-    { items: [appRow("a1", "portal/orders", "Orders"), appRow("a2", "back-office", "Back office")] },
+    {
+      items: [appRow("a1", "portal/orders", "Orders"), appRow("a2", "back-office", "Back office")],
+    },
   ];
   history.replaceState(null, "", "/?app=portal%2Forders");
   show(<Apps root={`${base}/workspaces/w1`} />);

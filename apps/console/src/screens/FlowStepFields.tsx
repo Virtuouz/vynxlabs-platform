@@ -595,9 +595,7 @@ function SchemaFields({
   }
   const all = problemsOf(rows);
   // A field just added has no name yet: that is said once its name has been left, not before.
-  const problems = new Map(
-    [...all].filter(([at]) => rows[at]?.name.trim() !== "" || left.has(at)),
-  );
+  const problems = new Map([...all].filter(([at]) => rows[at]?.name.trim() !== "" || left.has(at)));
   const change = (at: number, patch: Partial<SchemaRow>) =>
     onChange(rows.map((row, index) => (index === at ? { ...row, ...patch } : row)));
   return (
@@ -632,7 +630,7 @@ function SchemaFields({
             key={at}
             className="m-0 flex min-w-0 flex-col gap-2 rounded-control border border-line p-3"
             onBlur={(event) => {
-              if ((event.target as HTMLInputElement).name === `input-field-${n}-name`)
+              if ((event.target as unknown as HTMLInputElement).name === `input-field-${n}-name`)
                 setLeft((before) => new Set(before).add(at));
             }}
           >

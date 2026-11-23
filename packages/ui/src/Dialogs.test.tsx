@@ -132,7 +132,9 @@ test("w-data 4: a prompt says its limit at the field and refuses a longer answer
   expect((await screen.findByRole("dialog")).textContent).toContain("Up to 5 characters.");
   fireEvent.change(box, { target: { value: "abcdefg" } });
   expect(box.value).toBe("abcdefg");
-  expect((screen.getByRole("dialog").textContent ?? "")).toContain("Use at most 5 characters. This is 7.");
+  expect(screen.getByRole("dialog").textContent ?? "").toContain(
+    "Use at most 5 characters. This is 7.",
+  );
   expect((screen.getByRole("button", { name: "Make" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.change(box, { target: { value: "abcde" } });
   await press("Make");

@@ -163,6 +163,30 @@ describe("saved views", () => {
     expect(elsewhere.status).toBe(404);
   });
 
+  test("an operator working through an access grant may save a view while it lasts (OPS-39)", async () => {
+    const solo = (await t.admin.post("/tenants", { slug: "granted", name: "Granted" })).body.id;
+    const role = (
+      await t.db
+        .selectFrom("role")
+        .select("id")
+        .where("name", "=", "tenant_admin")
+        .executeTakeFirst()
+    )?.id;
+    const view = { tenantId: solo, list: "audit", name: "Mine", state: {} };
+    expect((await t.admin.post("/me/views", view)).status).toBe(404);
+    const grant = await t.admin.post(`/tenants/${solo}/access-grants`, {
+      reason: "Looking into it",
+      roleId: role,
+    });
+    expect(grant.status, JSON.stringify(grant.body)).toBe(201);
+    const saved = await t.admin.post("/me/views", view);
+    expect(saved.status, JSON.stringify(saved.body)).toBe(201);
+    expect((await t.admin.delete(`/tenants/${solo}/access-grants/${grant.body.id}`)).status).toBe(
+      204,
+    );
+    expect((await t.admin.post("/me/views", { ...view, name: "Again" })).status).toBe(404);
+  });
+
   test("are deleted by their maker", async () => {
     expect((await alice.delete(`/me/views/${view}`)).status).toBe(204);
     expect(

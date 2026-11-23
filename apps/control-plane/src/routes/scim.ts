@@ -37,7 +37,8 @@ import {
   userFields,
   userResource,
 } from "../kernel/sso/scim.js";
-import { AnyObject, Id, iso, isoOrNull, NoContent, NullableTime } from "./shared.js";
+import { PageQuery } from "../pagination.js";
+import { AnyObject, Id, iso, isoOrNull, NoContent, NullableTime, pageArgs } from "./shared.js";
 
 const SCIM_TYPE = "application/scim+json";
 const MAX_PAGE = 200;
@@ -194,12 +195,16 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           schema: {
             summary: "The people a provider has pushed, and the pushes it was refused",
             description:
-              "Who arrived, whether each is active, and the newest refusals with their reason. " +
-              "Nothing a refused push carried is kept.",
+              "Who arrived, a page at a time, whether each is active, and the newest refusals " +
+              "with their reason. Nothing a refused push carried is kept.",
             tags,
             params: Params,
+            querystring: PageQuery,
             response: {
               200: Type.Object({
+                nextCursor: Type.Union([Type.String(), Type.Null()], {
+                  description: "Pass it back as `cursor` for the next people. Null at the end.",
+                }),
                 people: Type.Array(
                   Type.Object({
                     userName: Type.String(),
@@ -222,15 +227,23 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             },
           },
         },
-        async ({ params }) => {
+        async ({ params, query }) => {
           const found = await provider(params);
-          const people = await kernel.db
+          const args = pageArgs(query);
+          const fetched = await kernel.db
             .selectFrom("scim_user")
             .select(["user_name", "email", "display_name", "active", "updated_at"])
             .where("provider_id", "=", found.id)
+            .$if(args.after !== undefined, (q) => q.where("user_name", ">", args.after as string))
             .orderBy("user_name")
-            .limit(1000)
+            .limit(args.limit + 1)
             .execute();
+          const people = fetched.slice(0, args.limit);
+          const last = people.at(-1);
+          const nextCursor =
+            fetched.length > args.limit && last
+              ? Buffer.from(last.user_name, "utf8").toString("base64url")
+              : null;
           const refusals = await kernel.db
             .selectFrom("scim_refusal")
             .selectAll()
@@ -238,6 +251,7 @@ export function scimRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             .orderBy("occurred_at", "desc")
             .execute();
           return {
+            nextCursor,
             people: people.map((row) => ({
               userName: row.user_name,
               email: row.email,

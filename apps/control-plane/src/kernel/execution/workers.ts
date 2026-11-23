@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { newId, sql } from "@volvel/db";
 import type { FastifyRequest } from "fastify";
 import type { Db, Trx } from "../audit.js";
-import { unauthenticated } from "../errors.js";
+import { badRequest, unauthenticated } from "../errors.js";
 import type { Kernel } from "../kernel.js";
 import { hashApiKey } from "../principal.js";
 import type { WorkerScope } from "./runs.js";
@@ -211,3 +211,15 @@ export async function machineHasRoom(
 
 /** A worker not heard from for this long is no longer listed. */
 export const WORKER_STALE_SECONDS = 90;
+
+/** The queue of scripts that name no pool is shown as this. A pool of that name would look the same. */
+export const DEFAULT_POOL_NAME = "default";
+
+/** Whether a pool may be called this: `default` is the pool that is not a record. */
+export function assertPoolNameFree(name: string) {
+  if (name === DEFAULT_POOL_NAME) {
+    throw badRequest(
+      `A pool cannot be called ${DEFAULT_POOL_NAME}: that is the name of the queue for scripts that name no pool. Choose another name.`,
+    );
+  }
+}

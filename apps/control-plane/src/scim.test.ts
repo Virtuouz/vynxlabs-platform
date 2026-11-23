@@ -543,6 +543,23 @@ describe("a tenant's members, pushed as Entra pushes them", () => {
     expect(seen.body.people.map((one: { email: string }) => one.email)).toContain(
       "bob@acme.example",
     );
+    // The people come a page at a time, and the answer says there are more (GOV-34).
+    await push(staff, "POST", "/Users", entraUser("cy@acme.example", "c-1"));
+    await push(staff, "POST", "/Users", entraUser("di@acme.example", "d-1"));
+    const page = (await alice.get(`${provisioning(staff)}/pushed?limit=2`)).body;
+    expect(page.people).toHaveLength(2);
+    expect(typeof page.nextCursor).toBe("string");
+    const next = (
+      await alice.get(
+        `${provisioning(staff)}/pushed?limit=2&cursor=${encodeURIComponent(page.nextCursor)}`,
+      )
+    ).body;
+    expect(next.people.length).toBeGreaterThan(0);
+    expect(next.people[0].userName).not.toBe(page.people[0].userName);
+    await t.db
+      .deleteFrom("scim_user")
+      .where("user_name", "in", ["cy@acme.example", "di@acme.example"])
+      .execute();
     const nameless = await push(staff, "POST", "/Users", { schemas: [USER], active: true });
     expect(nameless.status).toBe(400);
     const noEmail = await push(staff, "POST", "/Users", { schemas: [USER], userName: "bob2" });

@@ -3,7 +3,7 @@ import { newId, sql } from "@volvel/db";
 import { Type } from "typebox";
 import { conflict, notFound } from "../kernel/errors.js";
 import { hasOutsideCodeWriters, workerUserMode } from "../kernel/execution/isolation.js";
-import { WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
+import { assertPoolNameFree, WORKER_STALE_SECONDS } from "../kernel/execution/workers.js";
 import { access } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { listOf } from "../pagination.js";
@@ -182,6 +182,7 @@ export function poolRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
       },
       async ({ ctx, params, body }, reply) => {
+        assertPoolNameFree(body.name);
         const made = await ctx.mutate(async (trx, audit) => {
           const taken = await trx
             .selectFrom("worker_pool")

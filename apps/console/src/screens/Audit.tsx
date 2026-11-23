@@ -555,7 +555,7 @@ export function AuditTable({
               <input
                 type="search"
                 value={typed}
-                placeholder="An action, an ID or a kind"
+                placeholder="An action, name, email or host"
                 onChange={(event) => setTyped(event.currentTarget.value)}
                 className={select}
               />

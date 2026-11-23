@@ -2,6 +2,7 @@ import { TextField } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
+import { Can } from "../kit/Can.tsx";
 import { count } from "../kit/format.ts";
 import { ErrorState, Pending } from "../kit/LoadState.tsx";
 import { SaveBar } from "../kit/SaveBar.tsx";
@@ -131,7 +132,7 @@ export function RetentionSettings({ base, bare = false }: { base: string; bare?:
   };
 
   const body = (
-    <>
+    <Can base={base} permission="tenant:write" what="how long this tenant's history is kept">
       <form
         className="flex max-w-xl flex-col gap-4"
         onSubmit={(event) => {
@@ -160,7 +161,7 @@ export function RetentionSettings({ base, bare = false }: { base: string; bare?:
         onDiscard={() => setDraft({})}
         what="retention"
       />
-    </>
+    </Can>
   );
   // In a sheet beside a list, the title is the sheet's own.
   if (bare) return body;

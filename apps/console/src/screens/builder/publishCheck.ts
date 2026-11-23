@@ -402,17 +402,22 @@ export function checksFor(input: {
 
   // What saving and deploying refuse, in the server's words. The same refusal said by both, or by
   // the same place twice, is listed once.
-  const said = new Set<string>();
+  // By its words: said once with a place and once without is one line, which keeps the place.
+  const said = new Map<string, CheckItem>();
   for (const one of [...input.problems, ...input.refusal]) {
-    const key = `${one.at?.widget ?? ""}|${one.text}`;
-    if (said.has(key)) continue;
-    said.add(key);
-    items.push({
-      id: `refused:${key}`,
+    const have = said.get(one.text);
+    if (have) {
+      if (!have.at && one.at) have.at = one.at;
+      continue;
+    }
+    const item: CheckItem = {
+      id: `refused:${one.text}`,
       state: "fail",
       text: one.text,
       ...(one.at ? { at: one.at } : {}),
-    });
+    };
+    said.set(one.text, item);
+    items.push(item);
   }
   for (const message of input.warnings) {
     items.push({ id: `warned:${message}`, state: "warn", text: message });

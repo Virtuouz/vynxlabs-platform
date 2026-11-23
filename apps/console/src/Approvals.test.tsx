@@ -339,3 +339,13 @@ test("the first step says the instance starts workers where it does (GOV-23)", a
   show(<Overview root={root} link={link} workspace={workspace} />);
   await screen.findByText(/1 of 4 done/);
 });
+
+test("p31 fc: the overview's one column can shrink below its widest line, so a phone does not scroll sideways", async () => {
+  routes[`GET ${root}/summary`] = () => [200, summary(2)];
+  routes[`GET ${root}/triggers`] = () => [200, { items: [] }];
+  show(<Overview root={root} link={link} workspace={workspace} />);
+  await screen.findByText("2 runs are waiting for you");
+  const grid = document.querySelector("#first-steps, [class*='xl:grid-cols']") as HTMLElement;
+  expect(grid.className).toContain("grid-cols-[minmax(0,1fr)]");
+  expect(grid.firstElementChild?.className).toContain("min-w-0");
+});

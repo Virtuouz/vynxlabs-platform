@@ -596,6 +596,9 @@ export function AttributesDialog({
     if (seen.has(key)) repeats.add(index);
     else seen.set(key, index);
   });
+  // The server's rule, said at the field: lowercase letters, digits and underscores, starting with a letter.
+  const unusable = (name: string) => name.trim() !== "" && !/^[a-z][a-z0-9_]{0,62}$/.test(name.trim());
+  const badNames = rows.filter(([name]) => unusable(name)).length;
   const change = (index: number, at: 0 | 1, text: string) =>
     setRows((before) =>
       before.map((row, each) =>
@@ -614,7 +617,7 @@ export function AttributesDialog({
         className="flex flex-col gap-3"
         onSubmit={async (event) => {
           event.preventDefault();
-          if (repeats.size > 0) return;
+          if (repeats.size > 0 || badNames > 0) return;
           setBusy(true);
           setProblem(undefined);
           try {
@@ -644,7 +647,11 @@ export function AttributesDialog({
               placeholder="customer_id"
               {...(repeats.has(index)
                 ? { error: `${name.trim()} is given twice. Each name takes one value.` }
-                : {})}
+                : unusable(name)
+                  ? {
+                      error: `${name.trim()} cannot be a name. Use lowercase letters, digits and underscores, starting with a letter, up to 63 characters.`,
+                    }
+                  : {})}
               onChange={(text) => change(index, 0, text)}
             />
             <TextField

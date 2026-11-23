@@ -476,8 +476,8 @@ export function Overview({
       {summary.error ? <ErrorState error={summary.error} onRetry={summary.reload} /> : null}
 
       {/* From 1920 px, three columns: what needs you, how it runs and ships, what starts it. */}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] 3xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)]">
-        <div className="flex flex-col gap-6 3xl:grid 3xl:grid-cols-2 3xl:items-start">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] 3xl:grid-cols-[minmax(0,2.2fr)_minmax(0,1fr)]">
+        <div className="flex min-w-0 flex-col gap-6 3xl:grid 3xl:grid-cols-2 3xl:items-start">
           <div className="flex min-w-0 flex-col gap-6">
             {firstRun && counts ? (
               <Panel>

@@ -6,7 +6,7 @@ import { fingerprint, Vault } from "./kernel/crypto.js";
 import { decryptFor, encryptFor } from "./kernel/execution/bindings.js";
 import { DATA_ROLE_SECRET, instanceSecret } from "./kernel/instance-secrets.js";
 import { createKernel, type Kernel } from "./kernel/kernel.js";
-import { rekey } from "./kernel/rekey.js";
+import { rekey, rekeyDataRole } from "./kernel/rekey.js";
 import { revealSecret, setSecret } from "./kernel/secrets.js";
 import { openSecrets } from "./kernel/sso/providers.js";
 import { tenantKey } from "./kernel/tenant-keys.js";
@@ -272,5 +272,39 @@ describe("rotating the master key", () => {
       .execute();
     expect(audit.length).toBeGreaterThanOrEqual(2);
     expect(audit[0]?.details).toMatchObject({ masterKey: fingerprint(newKey) });
+  });
+});
+
+describe("the data role's seed", () => {
+  let t: TestApp;
+  beforeAll(async () => {
+    t = await startTestApp();
+  }, 60_000);
+  afterAll(async () => {
+    await t?.stop();
+  });
+  const restart = (): Kernel =>
+    createKernel(t.database, t.kernel.storage, "1.2.3", t.kernel.config, t.kernel.log);
+
+  test("the data role's seed can be changed, and an instance that starts after reads its tables (D19)", async () => {
+    const before = await instanceSecret(t.db, t.kernel.vault, DATA_ROLE_SECRET, () =>
+      randomBytes(32),
+    );
+    await rekeyDataRole(t.kernel);
+    const after = await instanceSecret(t.db, t.kernel.vault, DATA_ROLE_SECRET, () =>
+      randomBytes(32),
+    );
+    expect(after).not.toEqual(before);
+    expect(after.length).toBe(32);
+    // The change is on the audit log.
+    const logged = await sql<{ n: string }>`
+      select count(*) as n from audit_entry where action = 'instance.data_role_rekeyed'
+    `.execute(t.db);
+    expect(Number(logged.rows[0]?.n)).toBe(1);
+    // An instance that starts now makes the role's password from the new seed, and signs in with it.
+    const starting = restart();
+    const store = await starting.data.platform();
+    await store.ping();
+    expect(store.role).toBe((await t.kernel.data.platform()).role);
   });
 });

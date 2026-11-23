@@ -55,9 +55,9 @@ The database is created and migrated on the first start. Open the address, sign 
 
 ### Using your own Postgres or object store
 
-Leave the bundled services out and point the control plane at yours with `DATABASE_URL`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_FORCE_PATH_STYLE`.
+In the compose file, the bundled database and object store are the profiles `postgres` and `objectstore`, which `.env` names in `COMPOSE_PROFILES`. Take one out of that line and point the control plane at yours with `DATABASE_URL`, `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_FORCE_PATH_STYLE`. For AWS S3 set `S3_ENDPOINT=` to nothing.
 
-The Postgres user must own its database and be allowed to create roles (`CREATEROLE`). It does not need to be a superuser. The platform makes one extra role per database, which it signs in as for every request for a tenant's rows. That role owns nothing, so row policies apply to it, and nothing run under it can become the owner. Its password is derived from a secret kept in the database and is never stored.
+The Postgres user must own its database and be allowed to create roles (`CREATEROLE`). It does not need to be a superuser. The platform makes one extra role per database, which it signs in as for every request for a tenant's rows. That role owns nothing, so row policies apply to it, and nothing run under it can become the owner. Its password is derived from a secret sealed in the database (the first master key the instance had) and is never stored.
 
 A managed Postgres with point-in-time recovery is the better choice for anything that matters.
 
@@ -94,13 +94,13 @@ With several replicas, a replica that knows only the old key cannot open what a 
 2. Restart every replica with the two swapped. Values move to the new key as replicas start, and the ten-minute pass catches any sealed meanwhile by a replica not yet restarted.
 3. When the status says `secondaryRemovable`, restart without the second key.
 
-The data role's password does not change in a rotation: it is made from a secret kept in the database, which was the master key the instance had when it upgraded to this version, and is sealed with whichever key is current.
+The data role's password does not change in a rotation: it is made from a secret kept in the database, which was the master key the instance had when it upgraded to this version, and is sealed with whichever key is current. To change it, stop every replica, run `node dist/main.js rekey --data-role` once, and start them again: the command makes a new random seed, and each instance makes the role's password and signing key from it as it starts. A replica left running on the old seed cannot read tenants' tables until it is restarted.
 
 **Backups taken before a rotation need the old key.** Keep each key for as long as the backups it sealed. A value no key opens is reported by the status and the `rekey` command, by place and row, and never changed.
 
 ## Retention
 
-History is removed once it is older than its period. A pass runs every ten minutes, on one replica at a time, and removes a little at a time so that nothing waits on it.
+History is removed once it is older than its period. A pass runs every ten minutes, on one replica at a time, and removes a little at a time in small batches. A background step that waits, such as a data source that does not answer, delays only itself: each step runs on its own, and one still going is not started again.
 
 | Kind | Default | Variable | Shortest | Longest |
 | --- | --- | --- | --- | --- |
@@ -191,9 +191,9 @@ Where those workers run is set by `MANAGED_WORKERS`.
 
 ### `host`: in a worker host (the default in `deploy/compose`)
 
-A worker host is the same image, started as `volvel-worker-host`, in a container of its own. It asks the control plane for a tenant with work, gets a credential for it, and starts a worker with it, as `vxrun` (uid and gid 10001). The compose file puts it on a network, `execution`, with the control plane and nothing else of the instance's: the database and the object store are on another network, `data`, which it is not on. A tenant's script can reach the control plane and the internet, and not the database, the object store, or the control plane's environment.
+A worker host is the same image, started as `volvel-worker-host`, in a container of its own. It asks the control plane for a tenant with work, gets a credential for it, and starts a worker with it, as a user of its own: the next free one of `MANAGED_WORKER_USERS` (256), from uid and gid 10001, with a private directory that only it can open. The host needs `CAP_CHOWN`, `CAP_DAC_OVERRIDE` and `CAP_KILL` besides `CAP_SETUID` and `CAP_SETGID`; the compose file gives them. The compose file puts it on a network, `execution`, with the control plane and nothing else of the instance's: the database and the object store are on another network, `data`, which it is not on. A tenant's script can reach the control plane and the internet, and not the database, the object store, or the control plane's environment.
 
-The host runs as root in its container, holding only `CAP_SETUID` and `CAP_SETGID`, to start workers as `vxrun`, and `CAP_NET_ADMIN`. With `NET_ADMIN` it adds firewall rules at start that refuse `vxrun` loopback, private and link-local addresses, cloud metadata among them, other than the control plane and the container's name servers. Without it, it says so in its log, and only the network keeps workers from the instance's services: block `169.254.169.254` at the machine if the instance runs in a cloud. The rules are made once, at start, for the control plane's address then; restart the worker host if the control plane's container is recreated with another address.
+The host runs as root in its container, holding only the capabilities above and `CAP_NET_ADMIN`. With `NET_ADMIN` it adds firewall rules at start that refuse workers loopback, private and link-local addresses, cloud metadata among them, other than the control plane (IPv4 or IPv6, from `VOLVEL_URL` or `--url`), the container's name servers and what `WORKER_EGRESS_ALLOW` lists. Without it, it says so in its log, and only the network keeps workers from the instance's services: block `169.254.169.254` at the machine if the instance runs in a cloud. The rules are made once, at start, for the control plane's address then; restart the worker host if the control plane's container is recreated with another address.
 
 The control plane and the host share a secret, `WORKER_HOST_TOKEN` (`openssl rand -hex 32`, at least 32 characters). The host never gives it to a worker.
 
@@ -201,7 +201,7 @@ The control plane and the host share a secret, `WORKER_HOST_TOKEN` (`openssl ran
 
 Without a worker host, the control plane starts workers itself, on its own machine and its own network. They can reach whatever the control plane reaches, so it starts them only for tenants whose code only the operators write. A tenant whose code is written by anyone else, a member or a group with `code:write` who holds no instance-wide role, or any service account, gets none, and its Workers page says it runs on standalone workers only. `true`, from before there was a worker host, means `process`.
 
-These workers run as `vxrun` too, where the container may switch users, so that a script can neither read the control plane's environment nor signal it. The control plane runs on a copy of node, `node-cp`, that may switch users, and workers run on plain node, which may not. Switching users needs the container's `CAP_SETUID` and `CAP_SETGID`, which Docker gives by default. Without them the image starts the control plane on plain node, says so, and workers run as the control plane's own user.
+These workers run as a user of their own too, where the container may switch users, so that a script can neither read the control plane's environment nor signal it. The control plane runs on a copy of node, `node-cp`, that may switch users, and workers run on plain node, which may not. Switching users needs the container's `CAP_SETUID` and `CAP_SETGID`, which Docker gives by default. Without them the image starts the control plane on plain node, says so, and workers run as the control plane's own user.
 
 This is the mode for development, and for a single site where only the operator writes code.
 
@@ -212,7 +212,7 @@ This is the mode for development, and for a single site where only the operator 
 | `MANAGED_WORKER_USER` | `own` | In `process` mode: `own` runs workers as their own user; `same` as the control plane's, for every tenant, by which you say everyone who writes code works for you. Only for development, or a site where that is so |
 | `MANAGED_WORKER_UID`, `MANAGED_WORKER_GID` | `10001` | The user and group workers run as. The worker host reads them too |
 
-Rate limits on webhooks, sign-ins and guests are counted in the database, so they hold across every replica. Each tenant has at most one managed worker at a time, however many replicas or worker hosts run.
+Rate limits on webhooks, sign-ins (members' and end users'), guests' pages, forms, votes and approval pages are counted in the database, so they hold across every replica. Each tenant has at most one managed worker at a time, however many replicas or worker hosts run.
 
 ### Sizing: what one machine runs at once
 
@@ -229,7 +229,7 @@ On top of the slots:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `RUN_SLOTS` | From memory: one per 160 MB past the first 512 MB, at least 2 | Scripts running at once on this machine. 1 GB gives 3, 2 GB gives 9, 4 GB gives 22 |
+| `RUN_SLOTS` | From memory: one per 160 MB past the first 512 MB, at least 2 | Scripts running at once on this machine. 1 GB gives 3, 2 GB gives 9, 4 GB gives 22, when that much memory is reported: a 1 GB machine reports a little less, and gives 2 or 3. A container's own memory limit counts, not the host's memory |
 | `RUN_MEMORY_FLOOR_MB` | A tenth of memory, at least 128 | Free memory below which no worker here takes more work. 0 turns the check off |
 | `MANAGED_WORKERS_MAX` | Twice the run slots | In `process` mode, managed workers alive at once. A worker waiting for a slot costs little; one per tenant with work is what lets tenants take turns |
 
@@ -237,7 +237,7 @@ The worker host takes the same settings, as `--run-slots`, `--memory-floor` and 
 
 Plan on 2 GB for a machine that runs the control plane and scripts together. Give the database a dedicated CPU for anything past a trial: on a shared CPU it runs at full speed only until its burst credit is spent, and then every tenant's queries slow down together.
 
-`/api/v1/metrics` reports `platform_machine_running`, the scripts running on each machine, and `platform_memory_available_bytes`, this replica's free memory. `platform_memory_total_bytes` is all of its machine's memory. Alert on a queue that keeps growing (`platform_queue_oldest_seconds`) rather than on full slots: full slots are the limit doing its work.
+`/api/v1/metrics` reports `volvel_machine_running`, the scripts running on each machine, and `volvel_memory_available_bytes`, this replica's free memory. `volvel_memory_total_bytes` is all of its machine's memory. Alert on a queue that keeps growing (`volvel_queue_oldest_seconds`) rather than on full slots: full slots are the limit doing its work.
 
 ### Sizing: the database
 
@@ -256,7 +256,7 @@ Every data request has a time limit. Past it, the statement is stopped and the r
 | `DATA_STATEMENT_TIMEOUT_MS` | 15000 | How long one data request may take |
 | `SQL_STATEMENT_TIMEOUT_MS` | 15000 | How long one query written in SQL may run before it is stopped |
 
-Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 2` connections; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `platform_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
+Each replica opens up to `DATABASE_POOL_SIZE + DATA_POOL_SIZE + 3` connections (2 more for the queue, 1 to listen for changes to runs), and a tenant on a dedicated database or a data source adds its own: 5 and 5 for each replica for a dedicated database, 4 for a data source; keep their total across replicas under the database's `max_connections`. A tenant on a dedicated database has that database's connections to itself and no share. `volvel_db_pool{pool,state}` in the metrics shows each pool's open, idle and waiting connections: a `waiting` above 0 that does not go away means a pool too small, or a database too slow.
 
 ### When the database takes no writes
 
@@ -270,7 +270,7 @@ The instance checks every 10 seconds, and starts them again on its own once the 
 
 It also starts in this state: migrations are checked by reading alone when there are none to apply. An upgrade that brings migrations still needs a database that takes writes.
 
-Watch the database's disk, and alert well before it is full. `platform_database_size_bytes` in the metrics tracks the platform database's size, and `platform_database_read_only` is 1 while it takes no writes. On Fly, extend the volume with `fly volumes extend`.
+Watch the database's disk, and alert well before it is full. `volvel_database_size_bytes` in the metrics tracks the platform database's size, and `volvel_database_read_only` is 1 while it takes no writes. On Fly, extend the volume with `fly volumes extend`.
 
 ### When work piles up
 
@@ -305,6 +305,8 @@ EGRESS_ALLOW=10.20.0.0/16,git.internal,192.168.1.40
 ```
 
 A name in the list is allowed whatever it resolves to. A network is allowed for any name that resolves into it.
+
+`EGRESS_ALLOW` is for what the instance itself reaches. It does not open anything for a tenant's scripts. What a script may reach is held by the worker host's firewall, which refuses every private, loopback and link-local address except the control plane and the name servers. To let scripts reach an API inside your network, list it on the worker host in `WORKER_EGRESS_ALLOW`, also comma-separated, as networks and host names (names are looked up when the host starts). It is empty unless you set it.
 
 ### OAuth connections
 
@@ -536,31 +538,34 @@ What waits, read from the database at each scrape, so every replica says the sam
 
 | Series | What it is |
 | --- | --- |
-| `platform_runs_queued`, `platform_runs_running` | Runs waiting, and in progress, on the whole instance |
-| `platform_queue_oldest_seconds` | How long the oldest due run has waited |
-| `platform_workspace_runs_queued{tenant,workspace,pool}` | Due runs waiting, by workspace and pool |
-| `platform_workspace_queue_oldest_seconds{tenant,workspace}` | The oldest wait, by workspace |
-| `platform_flow_runs{state}` | Flow runs in progress: `running`, `waiting_approval`, `waiting_time` |
-| `platform_tasks_queued{kind}` | Tasks waiting for a worker |
-| `platform_workers{kind}` | Workers heard from in the last minute, `managed` or `standalone` |
+| `volvel_runs_queued`, `volvel_runs_running` | Runs waiting, and in progress, on the whole instance |
+| `volvel_queue_oldest_seconds` | How long the oldest due run has waited |
+| `volvel_workspace_runs_queued{tenant,workspace,pool}` | Due runs waiting, by workspace and pool |
+| `volvel_workspace_queue_oldest_seconds{tenant,workspace}` | The oldest wait, by workspace |
+| `volvel_flow_runs{state}` | Flow runs in progress: `running`, `waiting_approval`, `waiting_time` |
+| `volvel_tasks_queued{kind}` | Tasks waiting for a worker |
+| `volvel_database_read_only` | 1 while the database takes no writes |
+| `volvel_memory_total_bytes`, `volvel_memory_available_bytes` | This replica's machine's memory, held to its container's limit |
+| `volvel_db_pool{pool,state}`, `volvel_database_size_bytes`, `volvel_machine_running{machine}` | This replica's connections, the database's size, and the scripts running on each machine |
+| `volvel_workers{kind}` | Workers heard from in the last 90 seconds, `managed` or `standalone` |
 
 What happened, counted by the replica that saw it. Each replica answers for its own; add them up across replicas, as Prometheus does with `sum`:
 
 | Series | What it is |
 | --- | --- |
-| `platform_runs_finished_total{tenant,workspace,state}` | Script runs that ended: `succeeded`, `failed`, `cancelled` |
-| `platform_run_duration_seconds{tenant,workspace}` | A histogram of how long runs took |
-| `platform_run_queue_wait_seconds{tenant,workspace}` | A histogram of how long runs waited for a worker, from when they were due |
-| `platform_flow_runs_finished_total{state}` | Flow runs that ended |
-| `platform_webhook_refusals_total{reason}` | Refused webhook requests: `signature`, `body`, `paused` |
-| `platform_alerts_total{outcome}` | Failure alerts `delivered`, `failed`, or `suppressed` as a repeat |
+| `volvel_runs_finished_total{tenant,workspace,state}` | Script runs that ended: `succeeded`, `failed`, `cancelled` |
+| `volvel_run_duration_seconds{tenant,workspace}` | A histogram of how long runs took |
+| `volvel_run_queue_wait_seconds{tenant,workspace}` | A histogram of how long runs waited for a worker, from when they were due |
+| `volvel_flow_runs_finished_total{state}` | Flow runs that ended |
+| `volvel_webhook_refusals_total{reason}` | Refused webhook requests: `signature`, `body`, `paused` |
+| `volvel_alerts_total{outcome}` | Failure alerts `delivered`, `failed`, or `suppressed` as a repeat |
 
 Requests, counted by each replica:
 
 | Series | What it is |
 | --- | --- |
-| `platform_http_requests_total{method,route,status}` | Requests answered. `route` is the route's pattern, such as `/api/v1/tenants/:t/workspaces/:w/runs`, never an address with an ID in it |
-| `platform_http_request_duration_seconds{method,route}` | How long they took. A worker waiting for work holds its request open, so its route is slow by design |
+| `volvel_http_requests_total{method,route,status}` | Requests answered. `route` is the route's pattern, such as `/api/v1/tenants/:t/workspaces/:w/runs`, never an address with an ID in it |
+| `volvel_http_request_duration_seconds{method,route}` | How long they took. A worker waiting for work holds its request open, so its route is slow by design |
 
 Workspaces are labeled by their slugs. On an instance with very many tenants, set `METRICS_WORKSPACE_LABELS=false`: the per-workspace queue series are left out, and the counted ones carry no tenant or workspace.
 

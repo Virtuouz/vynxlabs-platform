@@ -29,6 +29,7 @@ export interface ConfigVar {
     | "Retention"
     | "Telemetry"
     | "Network"
+    | "Worker host"
     | "Files of the image";
 }
 
@@ -291,7 +292,7 @@ export const CONFIG_VARS = {
   EGRESS_ALLOW: {
     group: "Network",
     description:
-      "Private networks and hosts the control plane itself may reach, as a list with commas: `10.0.0.0/8,db.internal`. It applies to a Git remote, an identity provider, a data source, an OAuth token address and a hostname check; everything else private is refused there. Scripts and connections run on workers, so what they reach is set by the network and firewall of the worker's host, not by this list.",
+      "Private networks and host names that the instance itself may reach for a tenant, as a list with commas: `10.0.0.0/8,db.internal`. That is identity providers, Git remotes, data sources, OAuth token addresses and hostname checks. Everything else private is refused. A script is not held to this list: what a script reaches is `WORKER_EGRESS_ALLOW` on its worker host.",
   },
 
   TRUSTED_PROXIES: {
@@ -308,6 +309,29 @@ export const CONFIG_VARS = {
   SCREENS_DIR: {
     group: "Files of the image",
     description: "Where the built files of the app that draws interfaces are. The image sets it.",
+  },
+} as const satisfies Record<string, ConfigVar>;
+
+/**
+ * What the worker host, the start script of its image and a standalone worker read, which the
+ * control plane does not. The page of settings draws these beside `CONFIG_VARS`.
+ */
+export const WORKER_VARS = {
+  VOLVEL_URL: {
+    group: "Worker host",
+    description:
+      "The control plane's address, for the worker host and a standalone worker. `--url` also sets it. The worker host's firewall lets workers reach this address, and the name servers, only.",
+  },
+  VOLVEL_WORKER_TOKEN: {
+    group: "Worker host",
+    secret: true,
+    description:
+      "A standalone worker's credential. Prefer `--token-file`: an environment is shown by `docker inspect`.",
+  },
+  WORKER_EGRESS_ALLOW: {
+    group: "Worker host",
+    description:
+      "Private networks and host names that a tenant's scripts may reach, as a list with commas, such as an API inside your network: `10.20.0.0/16,api.internal`. Set on the worker host. Without it, a script reaches no private, loopback or link-local address, and that is the whole firewall; the control plane's address and the name servers are always open. Names are looked up when the host starts. It does nothing without the `NET_ADMIN` capability. It is not `EGRESS_ALLOW`, which is what the instance itself may reach.",
   },
 } as const satisfies Record<string, ConfigVar>;
 

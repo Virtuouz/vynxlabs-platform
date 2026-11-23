@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readOtlpHeaders } from "./otlp-headers.js";
 
 /**
  * A worker's own part of a trace: one span for each attempt it executes, sent
@@ -21,11 +22,7 @@ export function telemetryFromEnv(env: NodeJS.ProcessEnv): WorkerTelemetry | unde
   if (!endpoint || !/^https?:\/\//.test(endpoint) || env.OTEL_TRACES_EXPORTER === "none") {
     return undefined;
   }
-  const headers: Record<string, string> = {};
-  for (const pair of (env.OTEL_EXPORTER_OTLP_HEADERS ?? "").split(",")) {
-    const at = pair.indexOf("=");
-    if (at > 0) headers[pair.slice(0, at).trim().toLowerCase()] = pair.slice(at + 1).trim();
-  }
+  const headers = readOtlpHeaders(env.OTEL_EXPORTER_OTLP_HEADERS);
   return { endpoint, headers, serviceName: env.OTEL_SERVICE_NAME ?? "volvel-worker" };
 }
 

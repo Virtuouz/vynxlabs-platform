@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { sql } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { sweepAppFiles, sweepDueAppFiles } from "./kernel/apps/assets.js";
@@ -534,6 +535,25 @@ describe("serving by path, on the instance's own address", () => {
     expect(page.body).toContain("Order status");
     expect(page.body).toContain('"principal":{"type":"anonymous"');
     expect((await visitor.get("/apps/acme/main/portal/assets/app-3f9a1c7e.js")).status).toBe(303);
+  });
+
+  test("one page with its files is one counted request, not one for each file (HOST-21)", async () => {
+    const counted = async () =>
+      Number(
+        (
+          await sql<{ n: string }>`
+            select coalesce(sum(hits), 0) as n from rate_limit where key like 'front:guest-pages:%'
+          `.execute(t.db)
+        ).rows[0]?.n,
+      );
+    const before = await counted();
+    const visitor = browser(t, MAIN);
+    expect((await visitor.get("/apps/acme/main/status/")).status).toBe(200);
+    for (const file of ["app-3f9a1c7e.js", "style.css", "font.woff2", "logo.png", "icon.svg"]) {
+      await visitor.get(`/apps/acme/main/status/assets/${file}`);
+    }
+    // One page, five files: one write to the database.
+    expect((await counted()) - before).toBe(1);
   });
 });
 

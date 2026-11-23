@@ -95,7 +95,7 @@ export interface AppOptions {
 }
 
 /** What Fastify is given for `TRUSTED_PROXIES`: a count of hops from this server, or networks. */
-function trustProxy(trusted: number | string[]) {
+export function trustProxy(trusted: number | string[]) {
   return typeof trusted === "number" ? (_address: string, hop: number) => hop < trusted : trusted;
 }
 
@@ -173,7 +173,7 @@ export async function buildApp(options: AppOptions) {
     const kind = request.routeOptions.config?.access?.kind;
     // A worker asking for work, and a scrape, are not work anyone follows.
     if (!kernel.telemetry.tracing || kind === "worker" || kind === "worker-host") return;
-    if (route.endsWith("/metrics") || route.endsWith("/health")) return;
+    if (request.routeOptions.config?.traced === false) return;
     const end = Date.now();
     kernel.telemetry.span({
       ...request.trace,

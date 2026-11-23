@@ -7,7 +7,7 @@
 import { FRONTMATTER_SCHEMA } from "@volvel/docs-engine";
 import { ERROR_CODES, PERMISSION_KINDS, platformKinds, TENANT_KINDS } from "@volvel/manifest";
 import { COMPONENTS, PROFILES } from "@volvel/markup";
-import { CONFIG_VARS } from "../../../apps/control-plane/dist/config-vars.js";
+import { CONFIG_VARS, WORKER_VARS } from "../../../apps/control-plane/dist/config-vars.js";
 import { COMMAND_GROUPS, COMMAND_NAME, COMMAND_NOTES, COMMANDS } from "../../cli/dist/commands.js";
 import { cell, fieldsOf, fieldTable, page } from "./schema.mjs";
 
@@ -110,7 +110,8 @@ function kinds(list) {
 }
 
 function config() {
-  const groups = [...new Set(Object.values(CONFIG_VARS).map((entry) => entry.group))];
+  const everything = { ...CONFIG_VARS, ...WORKER_VARS };
+  const groups = [...new Set(Object.values(everything).map((entry) => entry.group))];
   return page(
     {
       title: "Settings",
@@ -124,7 +125,7 @@ function config() {
         "",
         "| Variable | When not set | What it is |",
         "| --- | --- | --- |",
-        ...Object.entries(CONFIG_VARS)
+        ...Object.entries(everything)
           .filter(([, entry]) => entry.group === group)
           .map(
             ([name, entry]) =>

@@ -30,6 +30,8 @@ export class S3ObjectStore implements ObjectStore {
     this.#client = new S3Client({
       region: config.region,
       forcePathStyle: config.forcePathStyle,
+      // A store that accepts and never answers must not hold a pass, a lock or a probe for ever.
+      requestHandler: { connectionTimeout: 5_000, requestTimeout: 60_000 },
       credentials: { accessKeyId: config.accessKeyId, secretAccessKey: config.secretAccessKey },
       ...(config.endpoint ? { endpoint: config.endpoint } : {}),
     });

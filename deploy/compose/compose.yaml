@@ -17,17 +17,28 @@ services:
     build:
       context: ../..
     restart: unless-stopped
+    # The bundled database and object store are in profiles, named by COMPOSE_PROFILES in `.env`.
+    # Leave one out and give DATABASE_URL, or the S3 settings, of your own.
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
       objectstore:
         condition: service_healthy
+        required: false
     environment:
-      DATABASE_URL: postgres://platform:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/platform
-      S3_ENDPOINT: http://objectstore:8333
-      S3_BUCKET: platform
-      S3_ACCESS_KEY_ID: platform
-      S3_SECRET_ACCESS_KEY: ${OBJECTSTORE_SECRET:?set OBJECTSTORE_SECRET in .env}
+      DATABASE_URL: ${DATABASE_URL:-postgres://platform:${POSTGRES_PASSWORD:-}@postgres:5432/platform}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-}
+      DATA_POOL_SIZE: ${DATA_POOL_SIZE:-}
+      DATA_TENANT_CONNECTIONS: ${DATA_TENANT_CONNECTIONS:-}
+      DATA_STATEMENT_TIMEOUT_MS: ${DATA_STATEMENT_TIMEOUT_MS:-}
+      SQL_STATEMENT_TIMEOUT_MS: ${SQL_STATEMENT_TIMEOUT_MS:-}
+      S3_ENDPOINT: ${S3_ENDPOINT-http://objectstore:8333}
+      S3_REGION: ${S3_REGION:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-}
+      S3_BUCKET: ${S3_BUCKET:-platform}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-platform}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-${OBJECTSTORE_SECRET:-}}
       PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL in .env}
       AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
       MASTER_KEY: ${MASTER_KEY:?set MASTER_KEY in .env}
@@ -43,7 +54,35 @@ services:
       SMTP_URL: ${SMTP_URL:-}
       MAIL_FROM: ${MAIL_FROM:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      DOCS_URL: ${DOCS_URL:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      METRICS_WORKSPACE_LABELS: ${METRICS_WORKSPACE_LABELS:-}
+      MANAGED_WORKER_USER: ${MANAGED_WORKER_USER:-}
+      MANAGED_WORKER_UID: ${MANAGED_WORKER_UID:-}
+      MANAGED_WORKER_GID: ${MANAGED_WORKER_GID:-}
+      MANAGED_WORKER_USERS: ${MANAGED_WORKER_USERS:-}
+      MANAGED_WORKERS_MAX: ${MANAGED_WORKERS_MAX:-}
+      RUN_SLOTS: ${RUN_SLOTS:-}
+      RUN_MEMORY_FLOOR_MB: ${RUN_MEMORY_FLOOR_MB:-}
+      SCHEDULE_BACKLOG_LIMIT: ${SCHEDULE_BACKLOG_LIMIT:-}
+      TRIGGERS_PAUSED: ${TRIGGERS_PAUSED:-}
+      RETENTION_RUNS_DAYS: ${RETENTION_RUNS_DAYS:-}
+      RETENTION_EVENTS_DAYS: ${RETENTION_EVENTS_DAYS:-}
+      RETENTION_REFUSALS_DAYS: ${RETENTION_REFUSALS_DAYS:-}
+      RETENTION_AUDIT_DAYS: ${RETENTION_AUDIT_DAYS:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-}
+      OTEL_TRACES_EXPORTER: ${OTEL_TRACES_EXPORTER:-}
+      OTEL_METRICS_EXPORTER: ${OTEL_METRICS_EXPORTER:-}
+      OTEL_METRIC_EXPORT_INTERVAL: ${OTEL_METRIC_EXPORT_INTERVAL:-}
     networks: [data, execution]
+    # A signal reaches the control plane itself, and finished child processes are collected.
+    init: true
+    # Docker's 10 seconds are not enough: stopping lets a managed worker of `process` mode finish
+    # a script for up to 30 seconds, then ends it, then gives up 10 seconds later.
+    stop_grace_period: 60s
     ports:
       - "${VOLVEL_BIND:-127.0.0.1:8080}:8080"
     healthcheck:
@@ -76,14 +115,37 @@ services:
     environment:
       VOLVEL_URL: http://control-plane:8080
       WORKER_HOST_TOKEN: ${WORKER_HOST_TOKEN:?set WORKER_HOST_TOKEN in .env}
+      # What the host starts, and how many: sizes it as it is sized on its own machine.
+      RUN_SLOTS: ${RUN_SLOTS:-}
+      RUN_MEMORY_FLOOR_MB: ${RUN_MEMORY_FLOOR_MB:-}
+      MANAGED_WORKERS_MAX: ${MANAGED_WORKERS_MAX:-}
+      MANAGED_WORKER_UID: ${MANAGED_WORKER_UID:-}
+      MANAGED_WORKER_GID: ${MANAGED_WORKER_GID:-}
+      MANAGED_WORKER_USERS: ${MANAGED_WORKER_USERS:-}
+      # What a script may reach that is private: nothing, unless listed. Not EGRESS_ALLOW.
+      WORKER_EGRESS_ALLOW: ${WORKER_EGRESS_ALLOW:-}
     networks: [execution]
+    init: true
+    # Healthy while the control plane answered the host's last request for work (it asks every
+    # 20 seconds at most). A host that cannot reach it, or that was refused, is not.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const age = Date.now() - require('fs').statSync(require('os').tmpdir() + '/volvel-host-alive').mtimeMs; process.exit(age < 90000 ? 0 : 1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   postgres:
+    profiles: [postgres]
     image: postgres:18
     restart: unless-stopped
     environment:
       POSTGRES_USER: platform
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
       POSTGRES_DB: platform
     networks: [data]
     volumes:
@@ -95,13 +157,14 @@ services:
       retries: 20
 
   objectstore:
+    profiles: [objectstore]
     image: chrislusf/seaweedfs:4.53
     restart: unless-stopped
     # Telemetry off: the platform must never call home, and neither may its bundled services.
     command: server -s3 -dir=/data -ip.bind=0.0.0.0 -master.telemetry=false
     environment:
       AWS_ACCESS_KEY_ID: platform
-      AWS_SECRET_ACCESS_KEY: ${OBJECTSTORE_SECRET:?set OBJECTSTORE_SECRET in .env}
+      AWS_SECRET_ACCESS_KEY: ${OBJECTSTORE_SECRET:-}
     networks: [data]
     volumes:
       - objectstore:/data

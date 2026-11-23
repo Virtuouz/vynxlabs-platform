@@ -60,7 +60,7 @@ import {
   searchPage,
 } from "./docs.js";
 import type { Place } from "./hosts.js";
-import { Limiter } from "./limit.js";
+import { isStaticFile, Limiter, MemoryLimiter } from "./limit.js";
 import {
   forgotPage,
   formPage,
@@ -166,10 +166,12 @@ function decodeSegments(path: string): string[] | null {
 export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
   const { db } = kernel;
   /** How often someone who is not signed in may ask for pages and files, and send forms. */
-  const guestPages = new Limiter(600, 60);
-  const forms = new Limiter(20, 60);
+  const guestPages = new Limiter(db, "guest-pages", 600, 60);
+  /** Files that are only sent: counted here, in this process, not in the database. */
+  const guestFiles = new MemoryLimiter(1200, 60);
+  const forms = new Limiter(db, "forms", 20, 60);
   /** Readers' answers to whether a page helped: a reader answers a few at most in a minute. */
-  const votes = new Limiter(30, 60);
+  const votes = new Limiter(db, "votes", 30, 60);
 
   const tenantBy = (column: "slug" | "id", value: string) =>
     db
@@ -270,7 +272,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     }
     if (isPost) {
       if (!ownForm(request)) return plain(reply, 403, "This form was sent from another site.");
-      if (!forms.allow(`${request.ip} ${tenant.id}`)) {
+      if (!(await forms.allow(`${request.ip} ${tenant.id}`))) {
         return plain(reply, 429, "Too many attempts. Wait a minute and try again.");
       }
     }
@@ -592,9 +594,9 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
 
   // ----- Single sign-on for end users -----
 
-  const starts = new Limiter(30, 60);
+  const starts = new Limiter(db, "sso-starts", 30, 60);
   /** Many people of one organization share an address, so this is generous. It is there to stop a flood. */
-  const answers = new Limiter(300, 60);
+  const answers = new Limiter(db, "sso-answers", 300, 60);
 
   /**
    * An end user's single sign-on. It begins and ends at the address the person
@@ -649,7 +651,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
       ].join("; ");
 
     if (at.step === "start" && !isPost) {
-      if (!starts.allow(`${request.ip} ${tenant.id}`)) {
+      if (!(await starts.allow(`${request.ip} ${tenant.id}`))) {
         return plain(reply, 429, "Too many attempts. Wait a minute and try again.");
       }
       try {
@@ -696,7 +698,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     if ((at.step === "callback" && !isPost) || (at.step === "acs" && isPost)) {
       // The provider was given the instance's own address for apps, and answers nowhere else.
       if (place.kind === "domain") return missing();
-      if (!answers.allow(`${request.ip} ${tenant.id}`)) {
+      if (!(await answers.allow(`${request.ip} ${tenant.id}`))) {
         return plain(reply, 429, "Too many attempts. Wait a minute and try again.");
       }
       try {
@@ -928,7 +930,10 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     const file = fixedApp !== undefined ? rest : rest.slice(manifest.path.length + 1);
 
     const principal = await resolvePrincipal(kernel, request, tenant.id);
-    if (principal.type === "anonymous" && !guestPages.allow(request.ip)) {
+    if (
+      principal.type === "anonymous" &&
+      !(await (isStaticFile(file) ? guestFiles : guestPages).allow(request.ip))
+    ) {
       return plain(reply, 429, "Too many requests. Wait a minute and try again.");
     }
     const resource = await db
@@ -1178,7 +1183,7 @@ export function installFrontDoor(app: FastifyInstance, kernel: Kernel): void {
     if (at.file === "_feedback") {
       if (request.method !== "POST" || !at.app.feedback) return send(404, notFoundPage(drawn));
       if (!ownForm(request)) return plain(reply, 403, "This form was sent from another site.");
-      if (!votes.allow(`${request.ip} ${at.workspaceId}`)) {
+      if (!(await votes.allow(`${request.ip} ${at.workspaceId}`))) {
         return plain(reply, 429, "Too many answers. Wait a minute and try again.");
       }
       const form = await readForm(request.raw, 2048);

@@ -1472,8 +1472,8 @@ describe("operator health and guards", () => {
     const metrics = await t.admin.get("/metrics");
     expect(metrics.status).toBe(200);
     expect(metrics.headers["content-type"]).toMatch(/^text\/plain/);
-    expect(metrics.body).toMatch(/^platform_runs_queued \d+$/m);
-    expect(metrics.body).toMatch(/^platform_workers\{kind="standalone"\} \d+$/m);
+    expect(metrics.body).toMatch(/^volvel_runs_queued \d+$/m);
+    expect(metrics.body).toMatch(/^volvel_workers\{kind="standalone"\} \d+$/m);
   });
 
   test("a backlog shows by workspace and pool on the queue and in the metrics, with what ran before", async () => {
@@ -1493,36 +1493,36 @@ describe("operator health and guards", () => {
 
       const metrics = (await t.admin.get("/metrics")).body as string;
       const queued =
-        /^platform_workspace_runs_queued\{tenant="acme",workspace="main-dev",pool="default"\} (\d+)$/m.exec(
+        /^volvel_workspace_runs_queued\{tenant="acme",workspace="main-dev",pool="default"\} (\d+)$/m.exec(
           metrics,
         );
       expect(Number(queued?.[1])).toBeGreaterThanOrEqual(2);
       expect(metrics).toMatch(
-        /^platform_workspace_queue_oldest_seconds\{tenant="acme",workspace="main-dev"\} \d+$/m,
+        /^volvel_workspace_queue_oldest_seconds\{tenant="acme",workspace="main-dev"\} \d+$/m,
       );
       // Runs that ended earlier in this file were counted, with their workspace named.
       expect(metrics).toMatch(
-        /^platform_runs_finished_total\{tenant="acme",workspace="main-dev",state="succeeded"\} \d+$/m,
+        /^volvel_runs_finished_total\{tenant="acme",workspace="main-dev",state="succeeded"\} \d+$/m,
       );
       expect(metrics).toMatch(
-        /^platform_run_duration_seconds_bucket\{tenant="acme",workspace="main-dev",le="\+Inf"\} \d+$/m,
+        /^volvel_run_duration_seconds_bucket\{tenant="acme",workspace="main-dev",le="\+Inf"\} \d+$/m,
       );
       expect(metrics).toMatch(
-        /^platform_run_queue_wait_seconds_count\{tenant="acme",workspace="main-dev"\} \d+$/m,
+        /^volvel_run_queue_wait_seconds_count\{tenant="acme",workspace="main-dev"\} \d+$/m,
       );
-      expect(metrics).toMatch(/^platform_alerts_total\{outcome="delivered"\} \d+$/m);
+      expect(metrics).toMatch(/^volvel_alerts_total\{outcome="delivered"\} \d+$/m);
       // What the instance holds itself to under load: its pools and its database.
-      expect(metrics).toMatch(/^platform_db_pool\{pool="platform",state="waiting"\} \d+$/m);
-      expect(metrics).toMatch(/^platform_db_pool\{pool="rows",state="total"\} \d+$/m);
-      expect(metrics).toMatch(/^platform_database_size_bytes \d+$/m);
-      expect(metrics).toMatch(/^platform_database_read_only 0$/m);
+      expect(metrics).toMatch(/^volvel_db_pool\{pool="platform",state="waiting"\} \d+$/m);
+      expect(metrics).toMatch(/^volvel_db_pool\{pool="rows",state="total"\} \d+$/m);
+      expect(metrics).toMatch(/^volvel_database_size_bytes \d+$/m);
+      expect(metrics).toMatch(/^volvel_database_read_only 0$/m);
 
       // Without workspace labels, the counted series carry none.
       t.kernel.config.metricsWorkspaceLabels = false;
       try {
         const plain = (await t.admin.get("/metrics")).body as string;
-        expect(plain).not.toContain("platform_workspace_runs_queued");
-        expect(plain).toMatch(/^platform_runs_finished_total\{state="succeeded"\} \d+$/m);
+        expect(plain).not.toContain("volvel_workspace_runs_queued");
+        expect(plain).toMatch(/^volvel_runs_finished_total\{state="succeeded"\} \d+$/m);
       } finally {
         t.kernel.config.metricsWorkspaceLabels = true;
       }

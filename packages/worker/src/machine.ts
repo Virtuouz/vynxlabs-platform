@@ -44,18 +44,56 @@ function readNumber(text: string, field: string): number | undefined {
   return match ? Number(match[1]) / 1024 : undefined;
 }
 
+/**
+ * Memory as this process may use it: what the machine has, held to the container's limit and
+ * use where there is one (cgroup v2, then v1). A container held to 1 GB on a 16 GB machine has
+ * 1 GB, whatever `/proc/meminfo` says. `read` returns a file's text, or undefined.
+ */
+export function memoryOf(
+  read: (path: string) => string | undefined,
+): { totalMb: number; availableMb: number } | undefined {
+  const meminfo = read("/proc/meminfo");
+  if (meminfo === undefined) return undefined;
+  const machineTotal = readNumber(meminfo, "MemTotal");
+  const machineAvailable = readNumber(meminfo, "MemAvailable");
+  if (machineTotal === undefined || machineAvailable === undefined) return undefined;
+  const MB = 1024 * 1024;
+  const bytes = (text: string | undefined) => {
+    const value = text?.trim();
+    return value && /^\d+$/.test(value) ? Number(value) : undefined;
+  };
+  // v2 says `max` for none; v1 says a number near 2^63.
+  let limit = bytes(read("/sys/fs/cgroup/memory.max"));
+  let used = bytes(read("/sys/fs/cgroup/memory.current"));
+  let cache = readStat(read("/sys/fs/cgroup/memory.stat"), "inactive_file");
+  if (limit === undefined) {
+    limit = bytes(read("/sys/fs/cgroup/memory/memory.limit_in_bytes"));
+    used = bytes(read("/sys/fs/cgroup/memory/memory.usage_in_bytes"));
+    cache = readStat(read("/sys/fs/cgroup/memory/memory.stat"), "total_inactive_file");
+  }
+  if (limit === undefined || limit / MB >= machineTotal) {
+    return { totalMb: machineTotal, availableMb: machineAvailable };
+  }
+  // What the container still has: its limit less what it holds that cannot be given back.
+  const held = Math.max(0, (used ?? 0) - (cache ?? 0));
+  const free = Math.max(0, limit - held) / MB;
+  return { totalMb: limit / MB, availableMb: Math.min(machineAvailable, free) };
+}
+
+function readStat(text: string | undefined, field: string): number | undefined {
+  const match = text ? new RegExp(`^${field} (\\d+)$`, "m").exec(text) : null;
+  return match ? Number(match[1]) : undefined;
+}
+
 export const procProbe: MachineProbe = {
   memory() {
-    try {
-      const text = readFileSync("/proc/meminfo", "utf8");
-      const totalMb = readNumber(text, "MemTotal");
-      const availableMb = readNumber(text, "MemAvailable");
-      return totalMb === undefined || availableMb === undefined
-        ? undefined
-        : { totalMb, availableMb };
-    } catch {
-      return undefined;
-    }
+    return memoryOf((path) => {
+      try {
+        return readFileSync(path, "utf8");
+      } catch {
+        return undefined;
+      }
+    });
   },
   rssMb(pid) {
     try {

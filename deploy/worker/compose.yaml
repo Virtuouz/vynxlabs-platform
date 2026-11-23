@@ -12,6 +12,10 @@ services:
   worker:
     image: ${VOLVEL_IMAGE:?set VOLVEL_IMAGE in .env}
     restart: unless-stopped
+    init: true
+    # A worker finishes the scripts it has before it stops, however long they run; Docker's 10
+    # seconds would cut them off. Raise this to the longest script you run.
+    stop_grace_period: 300s
     # The worker ships inside the platform image.
     # The credential is read from a secret file, not the environment: an environment is
     # shown by `docker inspect` and read by other processes of the same user.

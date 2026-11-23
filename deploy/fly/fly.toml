@@ -8,13 +8,21 @@ primary_region = "iad"
 # Room to swap, so that a machine short of memory slows down instead of stalling.
 # Scripts are held to the machine's run slots and memory floor before it comes to that.
 swap_size_mb = 512
+# Seconds a stopping machine has to finish. The control plane lets workers finish a script for
+# 30 seconds, ends them, and gives up 10 later; the worker host's machines need the same.
+kill_timeout = 60
 
 [env]
   PORT = "8080"
+  # Fly's private network, where the workers reach the control plane (`<app>.internal`), is
+  # IPv6 only. "::" answers on IPv6 and on IPv4.
+  HOST = "::"
   LOG_LEVEL = "info"
 
 [http_service]
   internal_port = 8080
+  # The control plane's group. Named, so the `workers` group of the README has no service.
+  processes = ["app"]
   force_https = true
   # The control plane will run the scheduler and queue, so it must not sleep.
   auto_stop_machines = "off"

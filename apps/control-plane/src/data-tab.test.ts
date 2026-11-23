@@ -340,4 +340,65 @@ describe("tables and their names", () => {
     expect(await rows(alice, "alpha", "", own)).toEqual([]);
     expect((await alice.get(`${ws(own)}/tables/beta`)).status).toBe(200);
   });
+
+  test("TAB-07: of two retired columns with one name, the one asked for is dropped", async () => {
+    const own = (
+      await alice.post(`/tenants/${tenant}/workspaces`, { slug: "tab-07", name: "Purge", type: "dev" })
+    ).body.id as string;
+    const withX = (type: string, marker: string) =>
+      deploy(bundle([table("things", { x: { type }, keep: { type: "text" } })], marker), own);
+    const without = (marker: string) =>
+      deploy(bundle([table("things", { keep: { type: "text" } })], marker), own);
+    expect((await withX("text", "t1")).status).toBe(201);
+    expect((await without("t2")).status).toBe(201);
+    expect((await withX("integer", "t3")).status).toBe(201);
+    expect((await without("t4")).status).toBe(201);
+    const listed = (await alice.get(`${ws(own)}/tables/things`)).body.columns.filter(
+      (column: Any) => column.name === "x",
+    );
+    expect(listed.map((column: Any) => [column.type, column.status])).toEqual([
+      ["text", "retired"],
+      ["integer", "retired"],
+    ]);
+    // A name that means two is refused, and drops neither.
+    const refused = await alice.post(`${ws(own)}/table-purges`, { table: "things", column: "x" });
+    expect(refused.status).toBe(409);
+    const stillThere = async () =>
+      (await alice.get(`${ws(own)}/tables/things`)).body.columns
+        .filter((column: Any) => column.name === "x")
+        .map((column: Any) => column.type);
+    expect(await stillThere()).toEqual(["text", "integer"]);
+    const second = listed[1];
+    const purged = await alice.post(`${ws(own)}/table-purges`, {
+      table: "things",
+      column: "x",
+      columnId: second.id,
+    });
+    expect(purged.body).toEqual({ dropped: "column" });
+    expect(await stillThere()).toEqual(["text"]);
+  });
+
+  test("TAB-08: a retired table's rows are not deleted or held by the rows it referred to", async () => {
+    const own = (
+      await alice.post(`/tenants/${tenant}/workspaces`, { slug: "tab-08", name: "Keys", type: "dev" })
+    ).body.id as string;
+    const parent = table("parents", { name: { type: "text" } });
+    const child = (rule: string) =>
+      table("children", { parent: { type: "reference", references: "parents", onDelete: rule } });
+    for (const rule of ["cascade", "restrict"]) {
+      const marker = (step: string) => `${rule} ${step}`;
+      expect((await deploy(bundle([parent, child(rule)], marker("a")), own)).status).toBe(201);
+      const made = (await alice.post(`${ws(own)}/rows/parents`, { name: rule })).body.items[0];
+      await alice.post(`${ws(own)}/rows/children`, { parent: made.id });
+      expect((await deploy(bundle([parent], marker("b")), own)).status).toBe(201);
+      const gone = await alice.delete(`${ws(own)}/row/${made.id}/parents`);
+      expect(gone.status, `${rule}: ${JSON.stringify(gone.body)}`).toBe(204);
+      expect(await stored(own, "t_children", "parent"), rule).toHaveLength(1);
+      // It comes back with its row, whose parent is gone, and is not refused for it.
+      const back = await deploy(bundle([parent, child(rule)], marker("c")), own);
+      expect(back.status, JSON.stringify(back.body)).toBe(201);
+      expect(await stored(own, "t_children", "parent")).toHaveLength(1);
+      await sql`delete from ${sql.id(workspaceSchema(own), "t_children")}`.execute(data);
+    }
+  });
 });

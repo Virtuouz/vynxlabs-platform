@@ -105,7 +105,7 @@ describe("deploying with something unbound", () => {
     });
     expect(deployed.status, JSON.stringify(deployed.body)).toBe(201);
     expect(deployed.body.summary.warnings).toEqual([
-      { path: "/connections/erp", message: 'the connection "erp" is not bound in this workspace' },
+      { path: "/connections/erp", message: 'the connection "erp" is not set up in this workspace' },
     ]);
 
     const toProd = await alice.post(`${ws(prod)}/bundles`, bundle("one"));
@@ -133,7 +133,7 @@ describe("looking before deploying (CLI-MP1)", () => {
     expect(seen.status, JSON.stringify(seen.body)).toBe(200);
     expect(seen.body).toMatchObject({ possible: true, refusal: null });
     expect(seen.body.summary.warnings).toEqual([
-      { path: "/connections/erp", message: 'the connection "erp" is not bound in this workspace' },
+      { path: "/connections/erp", message: 'the connection "erp" is not set up in this workspace' },
     ]);
     // Production is told what it would refuse, as a deploy there is.
     const toProd = await alice.post(`${ws(prod)}/bundles?preview=true`, bundle("two"));

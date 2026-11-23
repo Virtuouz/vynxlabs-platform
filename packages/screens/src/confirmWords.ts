@@ -1,4 +1,4 @@
-import { formatDay } from "@volvel/widgets";
+import { formatDay, formatMoment } from "@volvel/widgets";
 
 type Row = Readonly<Record<string, unknown>>;
 
@@ -82,10 +82,12 @@ function recordWords(input: ConfirmInput): string {
   const dated = (name: string) => {
     const value = row[name];
     const kind = types.get(name);
-    return typeof value === "string" &&
-      (kind === undefined || kind === "date" || kind === "timestamp")
-      ? formatDay(value)
-      : undefined;
+    if (typeof value !== "string") return undefined;
+    // A timestamp is the day on the reader's clock, as the table's cell writes it; a date is the day itself.
+    if (kind === "timestamp" || (kind === undefined && /T\d/.test(value))) {
+      return formatMoment(value, false);
+    }
+    return kind === undefined || kind === "date" ? formatDay(value) : undefined;
   };
   for (const name of WHEN) {
     day = dated(name);

@@ -1,7 +1,7 @@
 import { type PageWidget, widgetTables } from "@volvel/manifest";
 import { Button, Notice, SelectField, SideSheet, Tabs } from "@volvel/ui";
 import { ArrowUpRight } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { ask, failureText, noteWaiting } from "../ask.tsx";
 import { useNeeds } from "../kit/Can.tsx";
@@ -459,7 +459,7 @@ export function Apps({ root }: { root: string }) {
   const [version, setVersion] = useState(0);
   return (
     <>
-      <AppList key={version} root={root} onShare={setSharing} />
+      <AppList root={root} refresh={version} onShare={setSharing} />
       <ShareDialog
         root={root}
         app={sharing}
@@ -473,8 +473,22 @@ export function Apps({ root }: { root: string }) {
   );
 }
 
-function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) => void }) {
+function AppList({
+  root,
+  refresh,
+  onShare,
+}: {
+  root: string;
+  /** Counted up when what is shared may have changed: the list is read again, and stays where it is. */
+  refresh: number;
+  onShare: (app: AppSummary) => void;
+}) {
   const list = useLoad<{ items: AppSummary[] }>(`${root}/apps`);
+  const reload = list.reload;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only when `refresh` counts up
+  useEffect(() => {
+    if (refresh > 0) reload();
+  }, [refresh]);
   const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
   const share = useNeeds({ base: root, permission: "binding:write", what: "who may open an app" });
   // Taking a draft back is a change of a draft: `interface:write` or `doc:write` is enough for an

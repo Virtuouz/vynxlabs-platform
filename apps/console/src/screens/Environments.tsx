@@ -11,7 +11,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { ApiError, api, apiFetch, useLoad } from "../api.ts";
 import { ask, notify } from "../ask.tsx";
 import { Can, useNeeds } from "../kit/Can.tsx";
-import { count } from "../kit/format.ts";
+import { count, endSentence } from "../kit/format.ts";
 import { ListCollection } from "../kit/ListCollection.tsx";
 import { ErrorState, Loading } from "../kit/LoadState.tsx";
 import {
@@ -137,8 +137,8 @@ export function WorkspaceControls({
           }
         >
           A new dev workspace with what is deployed here, and its rows and files if you choose. With
-          Safety on it gets no connection, data source, group member or secret value until you bind
-          them. With Safety off it gets this workspace's.
+          Safety on it gets no connection, data source, group member or secret value until you set
+          them up. With Safety off it gets this workspace's.
         </SettingsRow>
         <SettingsRow
           title={<span className="text-danger">Delete workspace</span>}
@@ -230,10 +230,12 @@ export function WorkspaceSettings({
     linkedWorkspaceId: linked !== undefined ? linked : workspace.linkedWorkspaceId,
   };
   const shownLimit = limit === null ? storedLimit : limit;
+  // Emptied, the field means the limit stays as it is: there is no workspace without one.
   const limitBad =
     limit !== null &&
-    (limit === undefined || !Number.isInteger(limit) || limit < 1 || limit > 1000);
-  const limitChanged = limit !== null && limit !== storedLimit;
+    limit !== undefined &&
+    (!Number.isInteger(limit) || limit < 1 || limit > 1000);
+  const limitChanged = limit !== null && limit !== undefined && limit !== storedLimit;
   const blank = draft.name.trim() === "" || limitBad;
   const dirty =
     limitChanged ||
@@ -263,9 +265,7 @@ export function WorkspaceSettings({
       await api.patch(root, {
         ...(draft.name.trim() !== workspace.name ? { name: draft.name.trim() } : {}),
         ...(draft.timeZone !== storedZone ? { timeZone: draft.timeZone } : {}),
-        ...(limitChanged && limit !== null && limit !== undefined
-          ? { concurrencyLimit: limit }
-          : {}),
+        ...(limitChanged ? { concurrencyLimit: limit } : {}),
         ...(draft.linkedWorkspaceId !== workspace.linkedWorkspaceId
           ? { linkedWorkspaceId: draft.linkedWorkspaceId }
           : {}),
@@ -339,7 +339,11 @@ export function WorkspaceSettings({
                 max={1000}
                 step={1}
                 onChange={setLimit}
-                hint="1 to 1000."
+                hint={
+                  limit === undefined && storedLimit !== undefined
+                    ? `Left empty, it stays at ${storedLimit}.`
+                    : "1 to 1000."
+                }
                 {...(limitBad ? { error: "A whole number from 1 to 1000." } : {})}
               />
             </div>
@@ -579,7 +583,7 @@ function CloneDialog({
               clone.report.dataSources ||
               clone.report.connectionGroupMembers
                 ? "Its connections, data sources, group members and secrets were copied: it can reach the same systems as the original. A connection that signs in with OAuth is not signed in: connect it again."
-                : "It has no connections, data sources or secret values, so it cannot reach a real system until you bind it."}
+                : "It has no connections, data sources or secret values, so it cannot reach a real system until you set it up."}
             </p>
           )}
           <div className="flex justify-end gap-2">
@@ -1312,12 +1316,16 @@ export function TenantImport() {
                 ? `the database location "${report.tenant.dataLocation}".`
                 : "the instance's own database."}
             </li>
-            <li>
-              {report.pausedWorkspaces === 1
-                ? "The workspace arrived with its triggers paused. Resume it"
-                : `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one`}{" "}
-              when the instance it came from has stopped.
-            </li>
+            {report.pausedWorkspaces > 0 ? (
+              <li>
+                {report.pausedWorkspaces === 1
+                  ? "The workspace arrived with its triggers paused. Resume it"
+                  : `All ${report.pausedWorkspaces} workspaces arrived with their triggers paused. Resume each one`}{" "}
+                when the instance it came from has stopped.
+              </li>
+            ) : (
+              <li>The tenant had no workspaces, so there are no triggers to resume.</li>
+            )}
             {report.cancelled.runs + report.cancelled.flowRuns > 0 ? (
               <li>
                 {report.cancelled.runs} {report.cancelled.runs === 1 ? "run" : "runs"} and{" "}
@@ -1694,7 +1702,7 @@ export function DeleteTenantButton({
             // The tenant's own database does not answer: its tables cannot be dropped now.
             const again = await ask.confirm({
               title: `Delete ${tenant.name} without dropping its tables?`,
-              text: `${(error as ApiError).message} If you go on, the tenant is deleted here and its tables stay in that database, where someone who runs it must drop them. The entry in the instance's log says which. If the database comes back first, cancel and delete again.`,
+              text: `${endSentence((error as ApiError).message)} If you go on, the tenant is deleted here and its tables stay in that database, where someone who runs it must drop them. The entry in the instance's log says which. If the database comes back first, cancel and delete again.`,
               action: "Delete anyway",
               danger: true,
             });

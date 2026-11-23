@@ -84,7 +84,7 @@ export function Tenants({ me }: { me: Me }) {
                 header: "You",
                 priority: 2 as const,
                 cell: (row: TenantRow) =>
-                  member(row) ? <Tag tone="live">Member</Tag> : <Tag>Through a grant</Tag>,
+                  member(row) ? <Tag tone="live">Member</Tag> : <Tag>Not a member</Tag>,
               },
               {
                 header: "Tables kept in",
@@ -122,7 +122,7 @@ export function Tenants({ me }: { me: Me }) {
                         label: "Your access",
                         value: member(row)
                           ? "A member"
-                          : "Through an operator access grant, which needs a reason",
+                          : "Not a member. Inside it you work through an operator access grant, which needs a reason",
                       },
                       {
                         label: "Tables kept in",

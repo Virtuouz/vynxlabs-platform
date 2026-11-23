@@ -163,7 +163,7 @@ export function Alerts({
               options={[
                 { value: "", label: "None" },
                 ...(connections.data || connections.error
-                  ? held(notifyPath, connectionOptions, "no longer bound")
+                  ? held(notifyPath, connectionOptions, "no longer set up here")
                   : connectionOptions),
               ]}
               onChange={setNotifyPath}

@@ -929,7 +929,7 @@ function ScriptSettings({
   ];
   const set = rows.filter((row) => row.value !== undefined);
   // Code that a repository holds is changed there, and production is changed by promotion.
-  const mayChange = !production && found.data?.ownership !== "repository";
+  const mayChange = !production && found.data?.ownership !== "code";
   if (editing) {
     return (
       <ScriptSettingsForm

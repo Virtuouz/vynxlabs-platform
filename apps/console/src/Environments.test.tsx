@@ -170,7 +170,7 @@ test("cloning asks about data and safety, and says what the copy can reach", asy
     { timeout: 5000 },
   );
   expect(screen.getByRole("dialog").textContent).toContain(
-    "it cannot reach a real system until you bind it",
+    "it cannot reach a real system until you set it up",
   );
   expect(screen.getByRole("button", { name: "Open the copy" })).toBeTruthy();
 });
@@ -295,6 +295,46 @@ test("an import is uploaded and checked first, then imported with its passphrase
   expect(page).toContain("Not carried: API keys");
 });
 
+test("an import of a tenant with no workspaces does not say All 0 workspaces arrived (P31)", async () => {
+  routes["GET /api/v1/instance/database-locations/names"] = () => [200, { items: [] }];
+  routes["POST /api/v1/instance/tenant-imports/staged"] = () => [201, staged()];
+  routes["GET /api/v1/instance/tenant-imports/staged/s1"] = () => [
+    200,
+    staged({ passphraseOk: true, slugTaken: false }),
+  ];
+  routes["POST /api/v1/instance/tenant-imports/staged/s1/import"] = () => [
+    201,
+    {
+      tenant: { id: "t9", slug: "acme-2", name: "Acme Corp", dataLocation: null },
+      counts: {},
+      members: { created: 0, linked: 0 },
+      objects: 0,
+      cancelled: { runs: 0, flowRuns: 0 },
+      pausedWorkspaces: 0,
+      notCarried: [],
+    },
+  ];
+  show(<TenantImport />);
+  const file = new File(["tar bytes"], "acme.tar", { type: "application/x-tar" });
+  fireEvent.change(screen.getByLabelText("Export file"), { target: { files: [file] } });
+  fireEvent.submit(screen.getByLabelText("Export file").closest("form") as HTMLFormElement);
+  await screen.findByText("Acme Corp");
+  fireEvent.input(screen.getByLabelText("Its passphrase"), { target: { value: "the passphrase" } });
+  fireEvent.input(screen.getByLabelText("Slug on this instance"), { target: { value: "acme-2" } });
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await screen.findByText("The passphrase opens it");
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Import tenant" }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
+  fireEvent.submit(screen.getByLabelText("Its passphrase").closest("form") as HTMLFormElement);
+  await screen.findByText(/was imported/);
+  const page = document.body.textContent ?? "";
+  expect(page).not.toContain("All 0 workspaces");
+  expect(page).toContain("no workspaces");
+});
+
 test("an upload kept by another replica is said so, and asked for again", async () => {
   routes["GET /api/v1/instance/database-locations/names"] = () => [200, { items: [] }];
   routes["POST /api/v1/instance/tenant-imports/staged"] = () => [201, staged()];
@@ -414,6 +454,8 @@ test("a tenant whose database does not answer is deleted only after a second con
   const anyway = await screen.findByRole("button", { name: "Delete anyway" });
   const second = anyway.closest('[role="dialog"]')?.textContent ?? "";
   expect(second).toContain("could not be reached");
+  // The refusal's words end in a full stop before ours begin (P31).
+  expect(second).toContain("no route to host. If you go on");
   expect(second).toContain("its tables stay in that database");
   fireEvent.click(anyway);
   await waitFor(() => expect(done).toHaveBeenCalled());
@@ -438,6 +480,23 @@ test("a workspace's run limit is set from its settings, from 1 to 1000, saved wi
   fireEvent.input(field, { target: { value: "5" } });
   fireEvent.click(await screen.findByRole("button", { name: "Save" }));
   await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ concurrencyLimit: 5 }));
+});
+
+test("a run limit left empty is saved with the other settings, and says it stays as it is (P31)", async () => {
+  routes[`GET /api/v1${base}/workspaces/w-dev`] = () => [
+    200,
+    { timeZone: "UTC", concurrencyLimit: 20 },
+  ];
+  routes[`PATCH /api/v1${base}/workspaces/w-dev`] = () => [200, {}];
+  show(<WorkspaceSettings base={base} tenantId="t1" workspace={dev} reload={() => {}} />);
+  const field = (await screen.findByLabelText("Runs at once")) as HTMLInputElement;
+  await waitFor(() => expect(field.value).toBe("20"));
+  fireEvent.input(field, { target: { value: "" } });
+  expect(await screen.findByText("Left empty, it stays at 20.")).toBeTruthy();
+  expect(screen.queryByText("A whole number from 1 to 1000.")).toBeNull();
+  fireEvent.input(screen.getByLabelText("Workspace name"), { target: { value: "Dev 2" } });
+  fireEvent.click(await screen.findByRole("button", { name: "Save" }));
+  await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ name: "Dev 2" }));
 });
 
 test("an upload that waits is listed after a reload, opened again, and thrown away (INS-MP11)", async () => {

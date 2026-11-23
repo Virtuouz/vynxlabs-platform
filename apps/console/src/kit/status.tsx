@@ -43,6 +43,17 @@ export type RunState =
   | "canceled"
   | "skipped";
 
+/**
+ * The states of a run that is not over: the ones that can be canceled. One rule for the Runs row
+ * menu and the run page.
+ */
+export const LIVE_STATES: readonly RunState[] = [
+  "queued",
+  "running",
+  "waiting_approval",
+  "waiting_time",
+];
+
 type Tone = "neutral" | "subtle" | "action" | "attention" | "success" | "danger";
 const TONE: Record<Tone, string> = {
   neutral: "text-ink-muted",

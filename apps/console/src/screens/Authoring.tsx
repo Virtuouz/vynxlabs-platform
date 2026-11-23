@@ -423,6 +423,7 @@ export function ScriptEditor({
   useShortcut("save", () => saveShortcut.current());
   // ⌘↵ or Ctrl+Enter runs the draft, from anywhere in the editor.
   const runShortcut = useRef<() => void>(() => {});
+  const inputPane = useRef<HTMLDivElement>(null);
   useShortcut("run", () => runShortcut.current(), { enabled: kind === "script" });
 
   // Changes not saved are not lost by a click elsewhere, Back, or closing the tab.
@@ -580,10 +581,16 @@ export function ScriptEditor({
     }
   };
 
-  // The shortcut runs it again with the last input.
+  // The shortcut is the Run button: one path, with what the test pane holds now, validated and
+  // saved first as the button does. Where the form is not drawn there is nothing to press, and the
+  // last input is used.
   runShortcut.current = readOnly
     ? () => {}
-    : () => void test(testInput).catch((error) => setProblem(failureText(error)));
+    : () => {
+        const press = inputPane.current?.querySelector<HTMLButtonElement>('button[type="submit"]');
+        if (press) press.click();
+        else void test(testInput).catch((error) => setProblem(failureText(error)));
+      };
 
   /** The schema the input form is drawn from: the one read from the code, or the one written. */
   const inputSchema = (() => {
@@ -778,7 +785,7 @@ export function ScriptEditor({
           <Link to={`${link}/scripts/${path}`}>its page</Link>, or edit it in the dev workspace.
         </p>
       ) : (
-        <>
+        <div ref={inputPane} className="flex flex-col gap-3">
           <InputForm
             // Drawn again when the schema changes, starting from the last input.
             key={`${JSON.stringify(inputSchema ?? null)}:${formKey}`}
@@ -800,7 +807,7 @@ export function ScriptEditor({
               {formatCombo("Mod+Enter")}
             </kbd>
           </p>
-        </>
+        </div>
       )}
     </div>
   );

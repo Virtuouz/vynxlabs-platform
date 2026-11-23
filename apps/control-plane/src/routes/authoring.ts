@@ -355,6 +355,13 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         return {
           items: rows.map((row) => ({
             ...summarize(row, owned.get(row.key)),
+            // A dashboard is named in its body until a title is set apart from it.
+            ...(row.kind === "dashboard" &&
+            !row.deleted &&
+            row.title === null &&
+            typeof (row.body as { title?: unknown }).title === "string"
+              ? { title: (row.body as { title: string }).title }
+              : {}),
             ...(row.kind === "trigger_source" &&
             !row.deleted &&
             ((row.body as { mode?: unknown }).mode === "poll" ||
@@ -1026,7 +1033,7 @@ export function authoringRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "Found by deploying them and taking it all back, so the answer is exactly what a " +
             "deploy would then do, including every refusal: code that does not build, a " +
-            "manifest that is not valid, a connection that is not bound. Needs " +
+            "manifest that is not valid, a connection that is not set up here. Needs " +
             "`deployment:read`; `interface:write` is enough for the interfaces and apps named in " +
             "`paths`, as it is to deploy them.",
           tags: ["authoring"],

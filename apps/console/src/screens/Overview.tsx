@@ -382,7 +382,7 @@ export function Overview({
           <NextStep
             tone="attention"
             icon={<Plug aria-hidden="true" size={16} />}
-            title={`${unbound} connection${unbound === 1 ? " has" : "s have"} nothing bound here`}
+            title={`${unbound} connection${unbound === 1 ? " is" : "s are"} not set up here`}
             detail="A run that reaches it fails until it points somewhere."
             action={
               <Button size="small" onClick={() => navigate(`${link}/connections`)}>
@@ -517,7 +517,7 @@ export function Overview({
                           tone="success"
                           icon={<CircleCheck aria-hidden="true" size={16} />}
                           title="Nothing needs you here"
-                          detail="No failed runs in the last 24 hours, nothing waiting, everything bound."
+                          detail="No failed runs in the last 24 hours, nothing waiting, everything set up."
                         />
                       ) : null}
                     </>

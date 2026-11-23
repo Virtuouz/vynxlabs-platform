@@ -83,7 +83,7 @@ const ABOUT: Record<EditedKind, { noun: string; example: string; says: string; f
   data_source: {
     noun: "data source",
     example: "erp/orders",
-    says: "A Postgres database outside the platform that scripts, queries and pages in this workspace read and write. This declares its name and what it is for. Its address and password are set under Data sources, in each workspace, so that dev and production can point at different databases.",
+    says: "A Postgres database outside Volvel that scripts, queries and pages in this workspace read and write. This declares its name and what it is for. Its address and password are set under Data sources, in each workspace, so that dev and production can point at different databases.",
     fresh: { connector: "postgres" },
   },
   trigger: {

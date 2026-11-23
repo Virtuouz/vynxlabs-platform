@@ -385,8 +385,8 @@ export function ConnectionWizard({
                 value={choice}
                 hint={
                   production
-                    ? "One the next promotion brings, or that is declared here, and nothing has bound yet."
-                    : "One the workspace's resources declare and nothing has bound yet, or a new one."
+                    ? "One the next promotion brings, or that is declared here, and not set up here yet."
+                    : "One the workspace's resources declare and not set up here yet, or a new one."
                 }
                 options={[
                   ...declared.map((candidate) => ({
@@ -424,12 +424,13 @@ export function ConnectionWizard({
                     label="Kind"
                     name="kind"
                     value={newKind}
-                    options={(kinds.data?.items ?? [])
-                      .filter((kind) => kind.builtin)
-                      .map((kind) => ({
-                        value: kind.name,
-                        label: CONNECTOR_NAMES[kind.name] ?? kind.name,
-                      }))}
+                    // The kinds every worker has, then the workspace's own connectors.
+                    options={(kinds.data?.items ?? []).map((kind) => ({
+                      value: kind.name,
+                      label: kind.builtin
+                        ? (CONNECTOR_NAMES[kind.name] ?? kind.name)
+                        : `${kind.name} (this workspace's own)`,
+                    }))}
                     onChange={(value) => {
                       setNewKind(value);
                       setConfig({});

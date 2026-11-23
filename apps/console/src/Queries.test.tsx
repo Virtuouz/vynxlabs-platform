@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { cleanup, configure, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, configure, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { Queries } from "./screens/Queries.tsx";
 import { show } from "./testing.tsx";
@@ -306,5 +306,117 @@ describe("what the Queries screen offers, and what it says of one that is not th
     fireEvent.click(screen.getByRole("button", { name: "New query" }));
     await screen.findByText("A new query");
     expect(window.location.search).toBe("");
+  }, 30_000);
+
+  test("a query renamed from its Name and path is followed to its new path (P31)", async () => {
+    const before = globalThis.fetch;
+    let renamed = false;
+    vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+      const method = init.method ?? "GET";
+      const path = address.split("?")[0] as string;
+      if (method === "GET" && path === `${api}/drafts/reports/fees`) {
+        return new Response(JSON.stringify({ detail: "none" }), { status: 404 });
+      }
+      if (method === "GET" && path === `${api}/resources/reports/fees`) {
+        return new Response(
+          JSON.stringify({
+            kind: "query",
+            schemaVersion: 1,
+            body: { sql: "select 1" },
+            title: null,
+            key: "reports/fees",
+          }),
+        );
+      }
+      if (method === "PUT" && path === `${api}/drafts/reports/fees`) {
+        renamed = true;
+        return new Response(JSON.stringify({ revision: 1, body: {} }));
+      }
+      if (path === `${api}/queries` && renamed) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              {
+                path: "reports/costs",
+                description: "",
+                sql: "select 1",
+                parameters: [],
+                ownership: "ui",
+                draft: "changed",
+              },
+            ],
+          }),
+        );
+      }
+      return before(address, init);
+    });
+    history.replaceState(null, "", "/?query=reports/fees");
+    show(<Queries root={root} link={link} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Name and path" }));
+    const dialog = await screen.findByRole("dialog");
+    const field = await within(dialog).findByLabelText("Path");
+    fireEvent.change(field, { target: { value: "reports/costs" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save as a draft" }));
+    await waitFor(() => expect(renamed).toBe(true));
+    await waitFor(() =>
+      expect(decodeURIComponent(window.location.search)).toContain("reports/costs"),
+    );
+    await new Promise((done) => setTimeout(done, 300));
+    expect(screen.queryByText(/There is no (saved )?query at/)).toBeNull();
+    expect(screen.getAllByText("reports/costs").length).toBeGreaterThan(0);
+  }, 30_000);
+
+  test("discarding the draft of a renamed query goes back to the path it has deployed (P31)", async () => {
+    const before = globalThis.fetch;
+    let discarded = false;
+    vi.stubGlobal("fetch", async (address: string, init: RequestInit = {}) => {
+      const method = init.method ?? "GET";
+      const path = address.split("?")[0] as string;
+      if (method === "DELETE" && path.startsWith(`${api}/drafts/reports/costs`)) {
+        discarded = true;
+        return new Response(null, { status: 204 });
+      }
+      if (path === `${api}/queries`) {
+        return new Response(
+          JSON.stringify({
+            items: [
+              discarded
+                ? {
+                    path: "reports/fees",
+                    description: "",
+                    sql: "select 1",
+                    parameters: [],
+                    ownership: "ui",
+                    draft: null,
+                  }
+                : {
+                    path: "reports/costs",
+                    description: "",
+                    sql: "select 1",
+                    parameters: [],
+                    ownership: "ui",
+                    draft: "changed",
+                    renamedFrom: "reports/fees",
+                  },
+            ],
+          }),
+        );
+      }
+      if (method === "GET" && path.startsWith(`${api}/drafts/`)) {
+        return new Response(JSON.stringify({ detail: "none" }), { status: 404 });
+      }
+      return before(address, init);
+    });
+    history.replaceState(null, "", "/?query=reports/costs");
+    show(<Queries root={root} link={link} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Discard draft" }));
+    fireEvent.click(
+      await within(await screen.findByRole("dialog")).findByRole("button", { name: "Discard" }),
+    );
+    await waitFor(() => expect(discarded).toBe(true));
+    await waitFor(() =>
+      expect(decodeURIComponent(window.location.search)).toContain("reports/fees"),
+    );
+    expect(screen.queryByText(/There is no saved query at/)).toBeNull();
   }, 30_000);
 });

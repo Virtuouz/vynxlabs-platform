@@ -777,6 +777,27 @@ export function formatDay(value: unknown, now: Date = new Date()): string | unde
     : `${month} ${day}, ${found[1]}`;
 }
 
+/**
+ * A moment as the reader's own clock reads it: "Dec 3, 6:20 PM", or "Dec 3" without the time, and
+ * the year when it is not this one. The one way a cell and a confirmation say a timestamp, so
+ * they never name different days; `undefined` for text that is not a moment.
+ */
+export function formatMoment(
+  value: unknown,
+  withTime = true,
+  now: Date = new Date(),
+): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return undefined;
+  return at.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(at.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+    ...(withTime ? { hour: "numeric", minute: "2-digit" } : {}),
+  });
+}
+
 /** A stored word as a chip reads it: "no_show" is "No show", "paid" is "Paid". */
 export function sentenceCase(value: string): string {
   const spaced = value.replace(/_+/g, " ").trim();

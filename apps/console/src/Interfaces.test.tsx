@@ -408,7 +408,10 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
   show(<Apps root={root} />);
   // The app's inspector opens on choosing it, and sharing starts there.
   fireEvent.click(await screen.findByText("Sales"));
-  fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+  const opener = await screen.findByRole("button", { name: "Share" });
+  // A press focuses the control, as in a browser.
+  opener.focus();
+  fireEvent.click(opener);
   const dialog = within(await screen.findByRole("dialog", { name: "Share Sales" }));
   await dialog.findByText("Nobody else yet.");
   // It says what comes with the app, so nobody is surprised by it.
@@ -437,6 +440,12 @@ test("sharing an app gives a group the app and the tables it shows, and stopping
     "b2",
     "b3",
   ]);
+  // Escape closes the sheet, and the focus is back on the Share that opened it (P31).
+  fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Share Sales" })).toBeNull());
+  await waitFor(() =>
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Share" })),
+  );
 });
 
 test("stopping to share an app keeps the tables another shared app reads, and says so (APP-12, APP-14)", async () => {

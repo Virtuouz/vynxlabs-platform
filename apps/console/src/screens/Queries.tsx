@@ -601,6 +601,12 @@ export function Queries({
                     navigate(location.pathname, { replace: true });
                     return;
                   }
+                  // The draft that renamed it is gone: the query is at the path it has deployed.
+                  if (did === "discarded" && current.renamedFrom) {
+                    saved.reload();
+                    setOpen(current.renamedFrom);
+                    return;
+                  }
                   // A discarded draft or a removal taken back: the query is as it is deployed, and
                   // what was on screen is not the query's any more. A removal made opens as one.
                   void takeTheirs();

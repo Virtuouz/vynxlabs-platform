@@ -113,7 +113,7 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
       .filter((path) => !connections.has(path))
       .map((path) => ({
         path: `/connections/${path}`,
-        message: `the connection "${path}" is not bound in this workspace`,
+        message: `the connection "${path}" is not set up in this workspace`,
       })),
     ...[...need.secrets]
       .sort()
@@ -134,7 +134,7 @@ async function missingBindings(trx: Trx, workspace: WorkspaceRef, manifests: Bun
       .filter((path) => !sources.has(path))
       .map((path) => ({
         path: `/sources/${path}`,
-        message: `the data source "${path}" is not bound in this workspace`,
+        message: `the data source "${path}" is not set up in this workspace`,
       })),
   ];
 }
@@ -678,7 +678,7 @@ export async function deployBundle(
     throw new HttpError(
       409,
       "bindings_invalid",
-      `Something bound in this workspace does not fit the connector this bundle gives it. Bind it again, then ${again}.`,
+      `Something set up in this workspace does not fit the connector this bundle gives it. Set it up again, then ${again}.`,
       unfit,
     );
   }

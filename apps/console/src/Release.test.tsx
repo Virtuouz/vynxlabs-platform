@@ -264,6 +264,50 @@ test("a promotion that changes an agent's tool says so, asks, and sends that it 
   expect(retry.getAttribute("href")).toBe("/t/t1/workspaces/w2/git");
 });
 
+test("a Promote step with nothing deployed says so once: no spinner, no retry, Promote off with the reason (P31)", async () => {
+  const linked: Place = { ...dev, linkedWorkspaceId: "w2" };
+  const target = { id: "w2", name: "Clinics", type: "production", linkedWorkspaceId: null };
+  vi.stubGlobal("fetch", async (address: string) => {
+    const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
+    if (address.includes("/promotion-preview")) {
+      return json(
+        {
+          status: 409,
+          detail: "This workspace has nothing deployed, so there is nothing to promote.",
+        },
+        409,
+      );
+    }
+    if (address.endsWith("/drift")) {
+      return json({
+        target: { ...target, slug: "main" },
+        versions: { here: 8, there: 7 },
+        counts: { changed: 0, only_here: 0, only_there: 0, in_sync: 0 },
+        items: [],
+      });
+    }
+    return json({ items: address.endsWith("/tenants/t1/workspaces") ? [linked, target] : [] });
+  });
+  show(
+    <Release
+      base="/tenants/t1"
+      root={root}
+      link={link}
+      workspace={linked}
+      step="promote"
+      reload={() => {}}
+    />,
+  );
+  await screen.findAllByText(/nothing to promote/);
+  expect(screen.queryByText("Working out what promoting would do…")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  const promote = screen.getByRole("button", {
+    name: /Promote to production/,
+  }) as HTMLButtonElement;
+  expect(promote.disabled).toBe(true);
+  expect(screen.getAllByText(/nothing to promote/)).toHaveLength(1);
+});
+
 test("a file that differs from the branch says how: new, removed or changed, and on which side", () => {
   expect(
     ["new_here", "removed_here", "new_there", "removed_there", "changed"].map((change) =>

@@ -257,12 +257,13 @@ interface SourceColumn {
   data_type: string;
   is_nullable: string;
   column_default: string | null;
+  is_identity: string;
 }
 
 /** The tables of a source's schema, as the platform can read and write them. */
 export async function sourceTables(db: AnyDb, schema: string): Promise<RowTarget[]> {
   const columns = await sql<SourceColumn>`
-    select c.table_name, c.column_name, c.data_type, c.is_nullable, c.column_default
+    select c.table_name, c.column_name, c.data_type, c.is_nullable, c.column_default, c.is_identity
     from information_schema.columns c
     join information_schema.tables t on t.table_schema = c.table_schema and t.table_name = c.table_name
     where c.table_schema = ${schema} and t.table_type = 'BASE TABLE'
@@ -297,7 +298,7 @@ export async function sourceTables(db: AnyDb, schema: string): Promise<RowTarget
             physicalName: column.column_name,
             type: type ?? column.data_type,
             required: column.is_nullable === "NO",
-            hasDefault: column.column_default !== null,
+            hasDefault: column.column_default !== null || column.is_identity === "YES",
             writable: type !== null,
           };
         }),

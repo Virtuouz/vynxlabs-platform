@@ -85,7 +85,7 @@ export function environmentRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description:
             "The copy is a dev workspace linked to the one it came from, and its triggers start " +
             "paused. With `safe` (the default) it gets no connection, no data source and no " +
-            "secret value, so it cannot reach a real system until someone binds it. Needs " +
+            "secret value, so it cannot reach a real system until someone sets it up. Needs " +
             "`workspace:write` in the tenant. Copying data also needs `data_all:read` and " +
             "`file:read` in the source, and turning safety off also needs `secret:write` and " +
             "`connection:write` there. The copying runs after this answers: read the clone to see how it went.",

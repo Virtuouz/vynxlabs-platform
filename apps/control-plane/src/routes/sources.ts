@@ -158,7 +158,7 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   arrives: Type.Boolean({
                     description:
                       "Declared by a workspace linked to this one, and not deployed here yet: it " +
-                      "arrives with the next promotion, and can be bound here before.",
+                      "arrives with the next promotion, and can be set up here before.",
                   }),
                   bound: Type.Boolean(),
                   config: Type.Union([AnyObject, Type.Null()]),
@@ -362,6 +362,10 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       name: Type.String(),
                       type: Type.String(),
                       required: Type.Boolean(),
+                      hasDefault: Type.Boolean({
+                        description:
+                          "The database fills the column in when a row is added without it (a default, a sequence, an identity).",
+                      }),
                       writable: Type.Boolean(),
                     }),
                   ),
@@ -380,10 +384,11 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           items: tables.map((table) => ({
             name: table.name,
             key: table.key,
-            columns: table.columns.map(({ name, type, required, writable }) => ({
+            columns: table.columns.map(({ name, type, required, hasDefault, writable }) => ({
               name,
               type,
               required,
+              hasDefault,
               writable,
             })),
           })),

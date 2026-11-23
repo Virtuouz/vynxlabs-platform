@@ -280,7 +280,13 @@ export function CreateDialog({
       onSubmit={async (event) => {
         event.preventDefault();
         const missing = config.fields
-          .filter((f) => f.pick && !(f.when && !f.when(values)) && !values[f.name])
+          // A list to choose from is chosen from, unless the field says it is optional.
+          .filter(
+            (f) =>
+              (f.pick || (f.choose && f.required !== false)) &&
+              !(f.when && !f.when(values)) &&
+              !values[f.name],
+          )
           .map((f) => f.name);
         setUnpicked(missing);
         if (missing.length > 0) return;

@@ -226,7 +226,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                 .execute();
         const mayRename = new Map<string, boolean>();
         for (const row of rows.slice(0, args.limit)) {
-          mayRename.set(row.id, await ctx.allowed("tenant:write", { tenantId: row.id }));
+          mayRename.set(row.id, await ctx.allowed("tenant:write", { tenantId: row.id, orInstance: true }));
         }
         return toPage(
           rows,
@@ -396,7 +396,7 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             mayRename: false,
           };
         }
-        return { ...whole, mayRename: await ctx.allowed("tenant:write", { tenantId: params.t }) };
+        return { ...whole, mayRename: await ctx.allowed("tenant:write", { tenantId: params.t, orInstance: true }) };
       },
     );
 

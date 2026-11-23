@@ -84,8 +84,8 @@ export function diagnose(run: FailedRun): Diagnosis | undefined {
   if (unbound.length > 0) {
     const names = unbound.join(", ");
     return {
-      cause: `Connection ${names} has nothing bound in this workspace.${exhausted}`,
-      next: `Bind ${names} under Connections, then run it again.`,
+      cause: `Connection ${names} is not set up in this workspace.${exhausted}`,
+      next: `Set up ${names} under Connections, then run it again.`,
       section: "connections",
     };
   }
@@ -142,9 +142,9 @@ export function diagnose(run: FailedRun): Diagnosis | undefined {
       next: "Return less, or store it as a file and return its name.",
     };
 
-  if (/\bnot bound\b|\bno binding\b|\bunbound\b/i.test(text))
+  if (/\bnot bound\b|\bnot set up\b|\bno binding\b|\bunbound\b/i.test(text))
     return {
-      cause: `A connection the script uses has nothing bound here.${exhausted}`,
+      cause: `A connection the script uses is not set up here.${exhausted}`,
       next: "Bind it under Connections, then run it again.",
       section: "connections",
     };

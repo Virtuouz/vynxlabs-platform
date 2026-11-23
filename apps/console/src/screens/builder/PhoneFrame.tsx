@@ -1,6 +1,13 @@
 import { Ellipsis, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 
+/** The words of the control that takes a hand-made place back, here and in the question that names it. */
+export const ALL_AUTOMATIC = "All automatic";
+
+/** What the builder asks before the first hand-made place on a device; it names controls that exist. */
+export const layoutByHandText = (device: "tablet" | "phone") =>
+  `The ${device} layout is made from the desktop one. Moving a widget here gives it a place of its own on the ${device}, and it stops following the desktop. Choosing Automatic in the widget's Layout, or ${ALL_AUTOMATIC} above the page, undoes that.`;
+
 /**
  * "Phone layout is made from the desktop one. 1 widget changed by hand." (board 6). The tablet's
  * says the same of the tablet. Counts the widgets with a place of their own for that device.
@@ -44,7 +51,7 @@ export function DeviceBanner({
           onClick={onAutomatic}
           className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-meta text-action underline outline-offset-2 focus-visible:outline-2 focus-visible:outline-focus"
         >
-          All automatic
+          {ALL_AUTOMATIC}
         </button>
       ) : null}
     </p>

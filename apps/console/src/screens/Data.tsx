@@ -3534,7 +3534,7 @@ function ConnectSource({
         config={{
           action: `Connect ${row.path}`,
           description:
-            "Where this workspace reaches the database. The password is stored sealed and never shown again. The platform never changes the database's structure.",
+            "Where this workspace reaches the database. The password is stored sealed and never shown again. Volvel never changes the database's structure.",
           fields: SOURCE_FIELDS,
           done: () => `${row.path} was connected.`,
           submit: (values) =>
@@ -3595,7 +3595,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
       title="Data sources"
       needs={{ base: root, permission: "data_source:write", what: "this workspace's data sources" }}
       setupField="path"
-      description="Databases outside the platform that this workspace reads and writes. The address and password are set here, never in the repository, so dev and production can point at different databases."
+      description="Databases outside Volvel that this workspace reads and writes. The address and password are set here, never in the repository, so dev and production can point at different databases."
       path={`${root}/data-source-bindings`}
       rowKey={(row) => row.path}
       action={
@@ -3692,7 +3692,7 @@ export function Sources({ root, link }: { root: string; link: string }) {
       create={{
         action: "Connect database",
         description:
-          "Connecting a source that is already connected replaces its details. Leave the password empty to keep the stored one. It is dropped when the host, port or user changes or encryption is turned off: then type it again. The platform never changes the database's structure.",
+          "Connecting a source that is already connected replaces its details. Leave the password empty to keep the stored one. It is dropped when the host, port or user changes or encryption is turned off: then type it again. Volvel never changes the database's structure.",
         fields: [
           {
             name: "path",
@@ -3748,7 +3748,7 @@ function SourceActions({
 interface SourceTable {
   name: string;
   key: string | null;
-  columns: RowColumn[];
+  columns: (RowColumn & { hasDefault?: boolean })[];
 }
 
 export function SourceView({ root, path, link }: { root: string; path: string; link: string }) {
@@ -3765,7 +3765,7 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
       fill
       helpKey="source"
       title={path}
-      description="An external database. Rows are read and written there directly. The platform does not change its structure, and its own access rules apply."
+      description="An external database. Rows are read and written there directly. Volvel does not change its structure, and its own access rules apply."
       action={
         <span className="flex flex-wrap items-center gap-3">
           {binding?.bound ? (
@@ -3838,7 +3838,11 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
                 what: "the rows of this table",
               }}
               canAdd
-              columns={table.columns}
+              // A column the database fills in (a sequence, a default) is not asked for.
+              columns={table.columns.map((column) => ({
+                ...column,
+                required: column.required && !column.hasDefault,
+              }))}
               {...(table.key
                 ? {}
                 : {

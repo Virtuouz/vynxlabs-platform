@@ -138,9 +138,12 @@ export function SplitPane({
 
   const shown = collapsed === "first" ? 0 : collapsed === "second" ? 100 : size;
   const along = vertical ? "flex-col" : "flex-col lg:flex-row";
+  // Stacked (below a laptop's width) the first pane has no width to take and no height to be
+  // given: it keeps its least room and shares the height with the second by the kept share, so
+  // what fills it (a code area) is never left at a few pixels.
   const firstSize = vertical
     ? "h-[var(--vx-split)] shrink-0"
-    : "lg:w-[var(--vx-split)] lg:max-w-[calc(100%-var(--vx-keep))] lg:shrink-0";
+    : "max-lg:min-h-[var(--vx-min-first)] max-lg:[flex-grow:var(--vx-grow-first)] lg:w-[var(--vx-split)] lg:max-w-[calc(100%-var(--vx-keep))] lg:shrink-0";
   const bar = vertical
     ? "h-3 w-full cursor-row-resize flex-col"
     : "hidden w-3 shrink-0 cursor-col-resize lg:flex";
@@ -154,7 +157,14 @@ export function SplitPane({
       className={`flex min-h-0 ${along} ${vertical ? "" : "gap-3 lg:gap-0"} ${className}`}
       // The second pane keeps its least room whatever share was kept (a narrower window than the share was set in).
       style={
-        { "--vx-split": `${size}%`, "--vx-keep": `${minSecond + 12}px` } as React.CSSProperties
+        {
+          "--vx-split": `${size}%`,
+          "--vx-keep": `${minSecond + 12}px`,
+          "--vx-min-first": `${minFirst}px`,
+          "--vx-min-second": `${minSecond}px`,
+          "--vx-grow-first": size,
+          "--vx-grow-second": 100 - size,
+        } as React.CSSProperties
       }
     >
       {collapsed === "first" ? (
@@ -192,7 +202,11 @@ export function SplitPane({
       {collapsed === "second" ? (
         rail("second")
       ) : (
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{second}</div>
+        <div
+          className={`flex min-h-0 min-w-0 flex-1 flex-col ${vertical ? "" : "max-lg:min-h-[var(--vx-min-second)] max-lg:[flex-grow:var(--vx-grow-second)]"}`}
+        >
+          {second}
+        </div>
       )}
     </div>
   );

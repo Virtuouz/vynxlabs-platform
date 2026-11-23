@@ -17,3 +17,10 @@
 - **Siblings looked at:** every `request.ip` use (audit actor, sessions, guests, forms, votes, approval links, SCIM, end-user sign-in) takes the same one address through Fastify. Not changed: `X-Forwarded-Host` still decides the place when a peer is trusted (`kernel/apps/hosts.ts:91`); the guide must say the proxy overwrites all three headers. With the default one hop and no proxy at all, a caller can still write the last header entry: say so in the guide, and use `TRUSTED_PROXIES=0`.
 - **A person sees:** a member who signs in wrong 21 times in a minute from one address gets 429 (the library said 3 in 10 s, in memory, per replica); behind a CDN plus proxy nobody shares a bucket of 3.
 - **Left for the writing phase:** the settings page is drawn from `config-vars.ts`; the guide's proxy section should name `TRUSTED_PROXIES` and the three headers.
+
+## HOST-18 IPv6 forms of private addresses pass the egress guard
+
+- **Commit:** "Phase 29: NAT64, 6to4, Teredo and site-local addresses are refused like the private ones they carry (HOST-18)".
+- **Changed:** `apps/control-plane/src/kernel/egress.ts` (`internal` gains `64:ff9b::/96`, `64:ff9b:1::/48`, `2002::/16`, `2001::/32`, `fec0::/10`; `ipv6Bytes` and `embeddedIpv4` read mapped and NAT64 forms by their bits, in hex as `isIP` and DNS give them; an operator's `EGRESS_ALLOW` network still opens the IPv4 a mapped or NAT64 address carries); `deploy/image/volvel-worker-host` firewall lists get the same IPv6 networks and `192.0.0.0/24`.
+- **Test:** `egress.test.ts` "other forms an internal address can take in IPv6 are refused too (HOST-18)"; it failed on `64:ff9b::a00:1` before. The shell script is only syntax-checked (`sh -n`): no container was run here.
+- **Siblings:** every caller goes through `addressAllowed` (`guardedFetch`, `checkHost`, the lookup). A public NAT64 or 6to4 address is also refused now; an operator who needs one lists it in `EGRESS_ALLOW`.

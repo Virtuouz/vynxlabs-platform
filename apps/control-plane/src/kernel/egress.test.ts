@@ -54,6 +54,27 @@ describe("which addresses the instance reaches for a tenant", () => {
     }
   });
 
+  test("other forms an internal address can take in IPv6 are refused too (HOST-18)", () => {
+    for (const address of [
+      "64:ff9b::a00:1", // NAT64 of 10.0.0.1, as a resolver answers it
+      "64:ff9b::7f00:1",
+      "64:ff9b:1::a00:1",
+      "2002:a00:1::", // 6to4 of 10.0.0.1
+      "2002:808:808::1", // 6to4 of a public address: still refused as a network
+      "2001::1", // Teredo
+      "fec0::1", // site-local
+      "::ffff:a00:1", // mapped 10.0.0.1, in hex
+      "::ffff:a9fe:a9fe",
+      "0:0:0:0:0:ffff:7f00:1",
+    ]) {
+      expect(addressAllowed("example", address), address).toBe(false);
+    }
+    // An operator who allows the IPv4 network allows it in the mapped form.
+    configureEgress({ networks: ["10.0.0.0/8"], hosts: [] });
+    expect(addressAllowed("x", "::ffff:a00:1")).toBe(true);
+    expect(addressAllowed("x", "64:ff9b::a00:1")).toBe(true);
+  });
+
   test("the operator can allow a network or a name", () => {
     configureEgress({ networks: ["10.0.0.0/8"], hosts: ["git.internal"] });
     expect(addressAllowed("anything", "10.9.9.9")).toBe(true);

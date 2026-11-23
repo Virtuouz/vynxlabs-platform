@@ -57,7 +57,10 @@ export function UsedBy({
   if (uses.length === 0) return <span className="text-ink-subtle">Nothing deployed uses it</span>;
   const users = [...new Map(uses.map((one) => [one.by.path, one.by])).values()];
   return (
-    <span data-used-by="" className="block min-w-0 font-mono text-code text-ink-muted [overflow-wrap:anywhere]">
+    <span
+      data-used-by=""
+      className="block min-w-0 font-mono text-code text-ink-muted [overflow-wrap:anywhere]"
+    >
       {users.slice(0, 3).map((by, index) => (
         <span key={by.path}>
           {index > 0 ? ", " : ""}

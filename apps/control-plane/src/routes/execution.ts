@@ -1587,8 +1587,7 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           row.started_by_id === ctx.principal.id &&
           row.started_by_type === ctx.principal.type;
         // To someone who may not read runs, a run that is not theirs does not exist.
-        if (!mayReadAll && !own)
-          await ctx.authorize("run:read", at);
+        if (!mayReadAll && !own) await ctx.authorize("run:read", at);
         if (!row) throw notFound("The run");
         // Values the run was given are masked wherever they turn up, as well as secret-named keys.
         const known = await servedValues(kernel, db, row);
@@ -1728,7 +1727,9 @@ export function executionRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       `${base}/runs/:id/cancel`,
       {
         config: {
-          access: access.custom("Needs `run:write` at the workspace or at the run's script itself."),
+          access: access.custom(
+            "Needs `run:write` at the workspace or at the run's script itself.",
+          ),
         },
         schema: {
           summary: "Cancel a run that is waiting or in progress",

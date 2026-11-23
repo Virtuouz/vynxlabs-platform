@@ -1225,13 +1225,11 @@ describe("someone bound on one flow or one script reaches that one (phase 29, r-
       403,
     );
     expect((await gina_.post(`${ws()}/flow-runs/${others}/cancel`)).status).toBe(403);
-    expect((await gina_.post(`${ws()}/flow-runs`, { flow: "parent", input: { n: 1 } })).status).toBe(
-      403,
-    );
-    // Writes she was not given: the flow's drawing, a script.
     expect(
-      (await gina_.put(`${ws()}/flow-layouts/linear`, { positions: {} })).status,
+      (await gina_.post(`${ws()}/flow-runs`, { flow: "parent", input: { n: 1 } })).status,
     ).toBe(403);
+    // Writes she was not given: the flow's drawing, a script.
+    expect((await gina_.put(`${ws()}/flow-layouts/linear`, { positions: {} })).status).toBe(403);
     expect((await gina_.get(`${ws()}/runs`)).status).toBe(403);
 
     // Someone with no grant is refused all of it.
@@ -1247,8 +1245,9 @@ describe("someone bound on one flow or one script reaches that one (phase 29, r-
     expect(
       (await nogrant.post(`${ws()}/flow-runs/${started.body.id}/retry`, { from: "start" })).status,
     ).toBeGreaterThanOrEqual(403);
-    expect((await nogrant.post(`${ws()}/flow-runs`, { flow: "linear", input: {} })).status)
-      .toBeGreaterThanOrEqual(403);
+    expect(
+      (await nogrant.post(`${ws()}/flow-runs`, { flow: "linear", input: {} })).status,
+    ).toBeGreaterThanOrEqual(403);
   });
 
   test("reads, runs and re-runs the script it was given, and no other", async () => {

@@ -355,9 +355,7 @@ export function Scripts({
             }
           >
             <div className="flex flex-col gap-4">
-              {missing ? (
-                <NotAllowed permission={missing} what="this script" />
-              ) : null}
+              {missing ? <NotAllowed permission={missing} what="this script" /> : null}
               {open.lastRun?.status === "failed" ? (
                 <Notice tone="danger">
                   {open.failedInARow > 1

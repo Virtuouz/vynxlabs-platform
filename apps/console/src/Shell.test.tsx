@@ -5,8 +5,8 @@ import type { Me } from "./api.ts";
 import { monogram } from "./kit/brand.tsx";
 import { whereIs } from "./nav.ts";
 import { navigate } from "./router.tsx";
-import { ACCESS_TABS } from "./screens/Members.tsx";
 import { Shell } from "./Shell.tsx";
+import { ACCESS_TABS } from "./screens/Members.tsx";
 import { show } from "./testing.tsx";
 import { applyThemeChoice } from "./theme.ts";
 

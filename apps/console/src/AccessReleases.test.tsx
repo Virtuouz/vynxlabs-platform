@@ -140,7 +140,8 @@ test("from a tablet up the answers have a column wide enough for their buttons (
   show(<AccessReleases base={base} />);
   const button = await screen.findByRole("button", { name: "Go back to this" });
   const cell = button.closest("td") as HTMLElement;
-  const header = screen.getAllByRole("columnheader")[(cell.cellIndex as number) ?? -1];
+  const index = [...(cell.parentElement as HTMLElement).children].indexOf(cell);
+  const header = screen.getAllByRole("columnheader")[index];
   expect(header?.className).toContain("w-44");
 });
 

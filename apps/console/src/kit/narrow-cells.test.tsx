@@ -14,9 +14,7 @@ afterEach(cleanup);
 test("what uses a thing wraps inside its cell, and asks for no minimum width of its own", () => {
   show(
     <UsedBy
-      uses={[
-        { by: { kind: "script", path: "billing/record-payment" }, how: "reads" },
-      ] as never}
+      uses={[{ by: { kind: "script", path: "billing/record-payment" }, how: "reads" }] as never}
     />,
   );
   const cell = document.querySelector("[data-used-by]") as HTMLElement;
@@ -31,6 +29,7 @@ test("a wide column keeps 14rem and counts twice in the table's own minimum", ()
       label="Things"
       rows={[{ id: "a", path: "billing/record-payment", kind: "script" }]}
       rowKey={(row) => row.id}
+      empty={<p>None</p>}
       columns={[
         { header: "Path", wide: true, cell: (row) => row.path },
         { header: "Kind", cell: (row) => row.kind },

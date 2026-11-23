@@ -468,7 +468,8 @@ export function KitSheet() {
 
       <section className="flex flex-col gap-3">
         <SectionLabel>Saving a page</SectionLabel>
-        <div className="relative overflow-hidden rounded-panel border border-line">
+        {/* Not at the page's end: the bar does not reach into the page's bottom padding here. */}
+        <div className="relative overflow-hidden rounded-panel border border-line [--page-pad-b:0px]">
           <SaveBar dirty guard={false} onSave={() => {}} onDiscard={() => {}} what="an example" />
         </div>
       </section>

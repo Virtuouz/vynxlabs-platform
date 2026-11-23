@@ -166,7 +166,7 @@ describe("the example integration", () => {
     expect(refused.code).toBe(1);
     expect(refused.err).toBe(
       [
-        "Could not deploy to main. The workspace is missing something this bundle needs. Bind each one, then deploy again.",
+        "Could not deploy to main. The workspace is missing something this bundle needs. Set up each one, then deploy again.",
         '  - the connection "alerts" is not bound in this workspace',
         '  - the connection "erp" is not bound in this workspace',
         '  - the connection "shop" is not bound in this workspace',

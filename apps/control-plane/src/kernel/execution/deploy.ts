@@ -616,11 +616,8 @@ export async function deployBundle(
   const warnOnly = current.type === "dev" && options.promotedFrom === undefined;
   summary.warnings.unshift(...(warnOnly ? needed : []));
   const missing = warnOnly ? [] : needed;
-  // Production takes what arrives by promotion: it is promoted again there, not deployed.
-  const again =
-    current.type === "production" || options.promotedFrom !== undefined
-      ? "promote again"
-      : "deploy again";
+  // What was promoted is promoted again; what was deployed, to production too, is deployed again.
+  const again = options.promotedFrom !== undefined ? "promote again" : "deploy again";
   if (missing.length > 0) {
     throw new HttpError(
       409,

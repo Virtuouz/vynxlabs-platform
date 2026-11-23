@@ -3748,7 +3748,7 @@ function SourceActions({
 interface SourceTable {
   name: string;
   key: string | null;
-  columns: RowColumn[];
+  columns: (RowColumn & { hasDefault?: boolean })[];
 }
 
 export function SourceView({ root, path, link }: { root: string; path: string; link: string }) {
@@ -3838,7 +3838,11 @@ export function SourceView({ root, path, link }: { root: string; path: string; l
                 what: "the rows of this table",
               }}
               canAdd
-              columns={table.columns}
+              // A column the database fills in (a sequence, a default) is not asked for.
+              columns={table.columns.map((column) => ({
+                ...column,
+                required: column.required && !column.hasDefault,
+              }))}
               {...(table.key
                 ? {}
                 : {

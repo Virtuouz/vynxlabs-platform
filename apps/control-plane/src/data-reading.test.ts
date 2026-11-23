@@ -265,6 +265,16 @@ describe("DAT-21: a source's table with a space in its name", () => {
   });
 });
 
+describe("P31: a source's column the database fills in", () => {
+  test("says it has a default, so a form does not ask for it", async () => {
+    const tables = await alice.get(`${ws()}/data-source-tables/erp`);
+    const customers = tables.body.items.find((one: Any) => one.name === "customers");
+    const column = (name: string) => customers.columns.find((one: Any) => one.name === name);
+    expect(column("id")).toMatchObject({ required: true, hasDefault: true });
+    expect(column("name")).toMatchObject({ required: true, hasDefault: false });
+  });
+});
+
 describe("DAT-22: the columns of a SQL result", () => {
   const run = (text: string) => alice.post(`${ws()}/queries/run`, { sql: text });
 

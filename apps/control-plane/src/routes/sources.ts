@@ -362,6 +362,10 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                       name: Type.String(),
                       type: Type.String(),
                       required: Type.Boolean(),
+                      hasDefault: Type.Boolean({
+                        description:
+                          "The database fills the column in when a row is added without it (a default, a sequence, an identity).",
+                      }),
                       writable: Type.Boolean(),
                     }),
                   ),
@@ -380,10 +384,11 @@ export function sourceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           items: tables.map((table) => ({
             name: table.name,
             key: table.key,
-            columns: table.columns.map(({ name, type, required, writable }) => ({
+            columns: table.columns.map(({ name, type, required, hasDefault, writable }) => ({
               name,
               type,
               required,
+              hasDefault,
               writable,
             })),
           })),

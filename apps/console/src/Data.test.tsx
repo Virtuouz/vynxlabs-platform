@@ -456,6 +456,37 @@ test("DAT-23, DAT-21: a table with no key is added to, and a table's name with a
   await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
 });
 
+test("a source's column the database fills in is not asked for when a row is added (P31)", async () => {
+  routes[`GET /api/v1${root}/data-source-tables/erp`] = () => [
+    200,
+    {
+      items: [
+        {
+          name: "customers",
+          key: "id",
+          columns: [
+            { name: "id", type: "integer", required: true, hasDefault: true, writable: true },
+            { name: "name", type: "text", required: true, hasDefault: false, writable: true },
+          ],
+        },
+      ],
+    },
+  ];
+  routes[`GET /api/v1${root}/source-rows/customers/erp`] = () => [
+    200,
+    { items: [{ id: 1, name: "Ada" }], nextCursor: null },
+  ];
+  routes[`POST /api/v1${root}/source-rows/customers/erp`] = (body) => [201, body];
+  show(<SourceView root={root} path="erp" link="/t/t1/workspaces/w1" />);
+  await screen.findByText("Ada");
+  fireEvent.click(screen.getByRole("button", { name: "Add row" }));
+  fireEvent.input(await screen.findByLabelText("name"), { target: { value: "Bo" } });
+  fireEvent.click(screen.getAllByRole("button", { name: "Add row" }).at(-1) as HTMLElement);
+  await waitFor(() => expect(calls.some((call) => call.method === "POST")).toBe(true));
+  expect(screen.queryByText("id needs a value.")).toBeNull();
+  expect(calls.find((call) => call.method === "POST")?.body).toEqual({ name: "Bo" });
+});
+
 test("filter text becomes a filter of the column's type", () => {
   expect(toFilter("text", " ada ")).toEqual({ op: "contains", value: "ada" });
   expect(toFilter("text", "!~ ada")).toEqual({ op: "not_contains", value: "ada" });

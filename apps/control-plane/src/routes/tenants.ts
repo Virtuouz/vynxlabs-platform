@@ -141,7 +141,9 @@ export function tenantRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   eb
                     .selectFrom("tenant_member")
                     .select("tenant_id")
-                    .where("member_id", "=", principal.id as string),
+                    .where("member_id", "=", principal.id as string)
+                    // Nothing in a tenant a member is suspended in would open, so it is not listed.
+                    .where("suspended_at", "is", null),
                 )
               : select.where("id", "=", principal.tenantId as string);
         }

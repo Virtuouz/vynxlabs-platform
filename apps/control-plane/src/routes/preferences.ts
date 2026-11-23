@@ -14,7 +14,7 @@ import { AnyObject, Id, iso, NoContent, Time } from "./shared.js";
 
 /** The settings a member may keep, by the shape of their key. Anything else is refused. */
 export const PREFERENCE_KEY =
-  /^(theme|panel|shortcuts\.single-key|editor\.[a-z][a-z-]{0,30}|density:[a-z][a-z0-9-]{0,39}|split:[a-z][a-z0-9-]{0,39}|palette\.pins:[0-9a-f-]{36}|seen:[a-z][a-z0-9-]{0,39}|operator\.strip)$/;
+  /^(theme|panel|shortcuts\.single-key|editor\.[a-z][a-z-]{0,30}|density:[a-z][a-z0-9-]{0,39}|split:[a-z][a-z0-9-]{0,39}|terms\.underline|palette\.pins:(?:none|[0-9a-f-]{36})|seen:[a-z][a-z0-9-]{0,39}|operator\.strip)$/;
 /** The largest one value may be, written out. */
 export const MAX_PREFERENCE_BYTES = 4096;
 /** The most settings one member keeps, and the most views of one list. */

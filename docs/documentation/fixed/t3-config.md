@@ -44,3 +44,10 @@
 - Siblings: `ReleaseBranch` reads the operations too for its own "last commit" line; two reads of one list (left, cheap).
 - Seen: under Git sync, a History list (kind, status, commit, message, when) and a Branches list (workspace, branch, follows or release, state, error).
 - Polish: states: loading text, empty ("Nothing has been pushed or pulled here yet."), error with retry. Walk: Git sync at 390 px (rows wrap), dev and production.
+
+## REL-MP7: "Used by" for queries, sources (dashboards and docs: not possible, see Left)
+- Tests: `apps/control-plane/src/summary.test.ts` "a query is used by the dashboard that shows it, and a data source by the script that reads it (REL-MP7)" (seen failing with `references.ts` reverted); `Queries.test.tsx` "the open query says which dashboards show it, linked"; `Data.test.tsx` "a data source's row says which scripts use it (REL-MP7)". All failed before.
+- Change: `apps/control-plane/src/kernel/references.ts` new targets `query` (widgets of dashboards and interfaces, via `widgetQueries`) and `data_source` (`uses.sources`), and `uses.events` now counts as "may publish it". Console: `Queries.tsx` sidebar "Used by" (shared `ReferenceList`), `Data.tsx` `Sources` "Used by" column (shared `UsedBy`). The route's contract is unchanged (`kind` is a free string).
+- Siblings: connections, variables, secrets, events, scripts already show it. Queries.tsx is also in lane t3-data (one section added next to the Tables section).
+- Left: dashboards and docs. Nothing in a manifest names a dashboard or a doc (an app names an interface, not a dashboard; doc links are prose and are not parsed), so there is no use to list. Asked: should an app or a doc link become a reference? Not decided here.
+- Polish: states: Reading, Could not be read, "Nothing deployed uses it" in the column; "Nothing uses it, deployed or in a draft." under a query. Walk: Queries with a saved query open (aside under the editor at 390 px), Data sources at 390 px (column hidden below tablet).

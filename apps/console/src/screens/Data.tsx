@@ -38,6 +38,7 @@ import { useHistory } from "../kit/history.ts";
 import { useShortcut } from "../kit/keys.ts";
 import { ErrorState, Loading, Pending } from "../kit/LoadState.tsx";
 import { Inspector } from "../kit/layout.tsx";
+import { UsedBy, useReferences } from "../kit/references.tsx";
 import { Code, StatePill, Tag } from "../kit/status.tsx";
 import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
@@ -2765,6 +2766,7 @@ function TestSource({
 }
 
 export function Sources({ root, link }: { root: string; link: string }) {
+  const sourceUses = useReferences(root, "data_source");
   return (
     <ListScreen<SourceBinding>
       title="Data sources"
@@ -2803,6 +2805,18 @@ export function Sources({ root, link }: { root: string; link: string }) {
             ) : (
               <StatePill state="unbound" />
             ),
+        },
+        {
+          header: "Used by",
+          priority: 2,
+          cell: (row) => (
+            <UsedBy
+              uses={sourceUses(row.path)}
+              failed={sourceUses.failed}
+              loaded={sourceUses.loaded}
+              link={link}
+            />
+          ),
         },
         {
           header: "Password",

@@ -1100,3 +1100,35 @@ test("TAB-28: a time is shown, typed and read in the reader's zone, with UTC on 
   await screen.findByText("A-1");
   expect(await screen.findAllByTitle("2026-11-01T10:00:00.000Z (UTC)")).not.toHaveLength(0);
 });
+
+test("a data source's row says which scripts use it (REL-MP7)", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          description: "",
+          bound: true,
+          config: { host: "erp.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  routes[`GET /api/v1${root}/references`] = () => [
+    200,
+    {
+      items: [
+        {
+          target: { kind: "data_source", name: "erp" },
+          by: { kind: "script", path: "orders/sync" },
+          how: "reads and writes it",
+        },
+      ],
+    },
+  ];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  expect(await screen.findByRole("link", { name: "orders/sync" })).toBeTruthy();
+});

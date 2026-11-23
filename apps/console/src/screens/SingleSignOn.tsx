@@ -677,8 +677,26 @@ function Settings({
       className="flex max-w-measure flex-col gap-3"
       onSubmit={async (event) => {
         event.preventDefault();
-        setBusy(true);
         setError(undefined);
+        // Subjects belong to the issuer that gave them: another issuer may use one for another
+        // person. Saying so first is what lets the ties go with the old one.
+        const moved = saml
+          ? (config.idpIssuer ?? "") !== (provider.config.idpIssuer ?? "")
+          : (config.issuer ?? "") !== (provider.config.issuer ?? "");
+        if (moved) {
+          const sure = await ask.confirm({
+            title: saml ? "Change the identity provider's entity ID?" : "Change the issuer?",
+            text: `The ties between people and this provider's sign-ins are removed. The next time each person signs in, they are found by their email again.${
+              saml
+                ? ""
+                : " A client secret stored for the old address is not sent to a new one: give it again if the address changes."
+            }`,
+            action: "Change it",
+            danger: true,
+          });
+          if (!sure) return;
+        }
+        setBusy(true);
         try {
           const { spCertificate: _ours, ...sent } = config;
           const saved = await api.patch<IdentityProvider>(root, {

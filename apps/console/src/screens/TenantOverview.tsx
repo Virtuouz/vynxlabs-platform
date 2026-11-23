@@ -134,14 +134,16 @@ export function TenantOverview({ base, tenantId }: { base: string; tenantId: str
   // Workers the instance starts on demand exit when idle: none online is then the normal state.
   if (c?.workersOnline === 0 && startsWorkers === false) {
     attention.push(
-      <NextStep
-        key="workers"
-        tone="danger"
-        icon={<Cpu aria-hidden="true" size={16} />}
-        title="No worker is online"
-        detail="Runs wait in the queue until one connects."
-        action={<Go to={t("workers")}>Workers</Go>}
-      />,
+      // Whether a worker is connected is the machine's state, so a picture leaves this row out (screenshot.css).
+      <div key="workers" data-worker-state>
+        <NextStep
+          tone="danger"
+          icon={<Cpu aria-hidden="true" size={16} />}
+          title="No worker is online"
+          detail="Runs wait in the queue until one connects."
+          action={<Go to={t("workers")}>Workers</Go>}
+        />
+      </div>,
     );
   }
 

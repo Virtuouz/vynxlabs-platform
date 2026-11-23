@@ -23,3 +23,11 @@ time {
 .sr-only time {
   display: none !important;
 }
+
+/*
+ * Whether a worker is online is the machine's state, not the screen's: the row that
+ * says none is leaves the picture, so it looks the same with a worker or without.
+ */
+[data-worker-state] {
+  display: none !important;
+}

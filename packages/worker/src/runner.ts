@@ -179,7 +179,11 @@ async function task(message: Extract<ToRunner, { t: "task" }>) {
           result = {
             ok: false,
             ...(typeof status === "number" ? { status } : {}),
-            message: (error as Error).message ?? String(error),
+            // A connector's own words are shown. A fault in it is not: it is not a finding about the connection.
+            message:
+              error instanceof TypeError || error instanceof RangeError
+                ? `The ${bound.connector} connector could not read this connection's settings, so it was not tried. Check them and try again.`
+                : ((error as Error).message ?? String(error)),
             latencyMs: latency(),
           };
         }

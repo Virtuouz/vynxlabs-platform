@@ -167,7 +167,7 @@ export function workerRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         .executeTakeFirst();
       const declared = (definition?.body as { connector?: string } | undefined)?.connector;
       const oauth = bound.oauth !== null || isOAuthSettings(bound.config);
-      const connector = declared ?? (oauth ? "oauth2" : "http");
+      const connector = declared ?? bound.connector ?? (oauth ? "oauth2" : "http");
       if (connector === "oauth2" || oauth) {
         // The worker is handed the access token, refreshed when it is about to run out.
         // The client's secret and the refresh token stay here.

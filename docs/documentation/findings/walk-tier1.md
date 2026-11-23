@@ -101,3 +101,16 @@ Walked on the throwaway instance at `8f8fa3f7`. Rows of the same shape as the ot
 - A service account's decision has no name in `decidedSteps` (`kernel/pages/approvals.ts`) or the retry plan's `approvalsKept`: they read `member` only (opsb).
 - `fireScheduleNow` ignores a schedule's `source` (opsb; OPS findings).
 - A child flow run's ID, and an exact run ID older than the When filter, say "No run has this ID" (opsb, OPS-33).
+
+### WLK-17 From the connections, drafts and releases walk (on the tier 1 build: check each still holds)
+- Connections at 390 and 768: columns overlap, "Failed" cut to "F…", "Used by" runs into "Kind" (`screens/Execution.tsx:717-760`).
+- A group member's address changed with a stored credential: no warning, and Save drops it (`GroupMemberSheet.tsx:121`); the wizard warns. One rule, as D10 and WLK-07.
+- Flow editor, same draft in two windows: the status stays "Saving…", and the notice has no "Copy what I wrote" (`FlowEditor.tsx:1403-1409`).
+- App builder clash shows "Not saved: … Reload it" beside the notice's "Load their version" (`AppBuilder.tsx:182-185`); its removal view says "Saved. Not published yet."
+- Docs editor: a removed page opens as an ordinary editable draft: no removal state.
+- Schedule editor at 390: title cut to "C…", status pills under the buttons (`ResourceEditor.tsx` header).
+- Import check: "Members 0" for 4 (INS-11, maybe fixed since); the format 1 line is a red cross though the import is allowed, and overflows its card at 1440 and 390.
+- Production "Set up a connection" with nothing arriving opens "New connection" with an empty form and a disabled Save: say there is nothing to set up, or offer what can be.
+- Git sync shows the branch in capitals.
+- Focus falls to the body after Discard, Keep and "Load their version".
+- The refusal list is one run-on paragraph and says "then deploy again" in production; the Release list says "Removes the trigger_source."; "1 workspaces"; Set up links for a secret or variable do not select it.

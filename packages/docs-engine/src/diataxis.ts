@@ -186,9 +186,9 @@ export function diataxisIssues(entry: DocEntry, context: DiataxisContext): DocIs
 /** The source a new page of each type starts from, under its frontmatter. */
 export const DOC_TEMPLATES: Record<DocType, string> = {
   tutorial:
-    "In this tutorial you will build something small, and it works at the end.\n\n## Before you start\n\nWhat the reader needs: an account, a table, ten minutes.\n\n:::steps\n1. The first thing to do, and what they see when it works.\n2. The next thing.\n:::\n\n## What you built\n\nWhat now exists, and where to go next.\n",
+    "In this tutorial you will build something small, and it works at the end. It takes about ten minutes.\n\n## Before you start\n\nWhat the reader needs: an account, a table, ten minutes.\n\n:::steps\n1. The first thing to do, and what they see when it works.\n2. The next thing.\n:::\n\n## What you built\n\nWhat now exists, and where to go next.\n",
   "how-to":
-    "## Goal\n\nOne sentence on what the reader will have done at the end.\n\n:::steps\n1. The first step.\n2. The next step.\n:::\n\n## If it does not work\n\nThe one or two things that go wrong, and what to do.\n",
+    "## Do the thing\n\nOne sentence on what the reader will have done at the end.\n\n## Before you start\n\nWhat the reader needs, and who can give it.\n\n:::steps\n1. The first step.\n2. The next step.\n:::\n\n## The result\n\nWhat the reader now sees.\n\n## If it does not work\n\nThe one or two things that go wrong, and what to do.\n",
   reference:
     "What this is, in a sentence. Then the facts, in tables and lists, in a fixed order.\n\n## Fields\n\n| Name | What it is |\n| --- | --- |\n| | |\n",
   explanation:

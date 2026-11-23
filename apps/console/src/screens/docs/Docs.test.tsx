@@ -1300,6 +1300,16 @@ describe("DOC-03 types and subjects in the docs editor", () => {
     expect(within(shown).getByRole("link", { name: "Reference" })).toBeTruthy();
   });
 
+  test("the read view of a page draws its type and related pages as the served site does", async () => {
+    typed();
+    docs("handbook/support/refunds");
+    const related = await screen.findByRole("complementary", { name: "Related" });
+    expect(document.querySelector(".eyebrow")?.textContent).toBe("How-to guide");
+    expect(within(related).getByRole("link", { name: "Refund limits" }).getAttribute("href")).toBe(
+      `${link}/docs/handbook/limits/refund-limits`,
+    );
+  });
+
   test("a new page offers a type, and starts from that type's template", async () => {
     typed();
     docs();

@@ -10,6 +10,8 @@ import { BuildError } from "./errors.js";
 /** An app as the repository defines it: its path, and the directory its page is in. */
 export interface AppSource {
   path: string;
+  /** What people read: the app's title, or its path when it has none. */
+  title: string;
   source: string;
 }
 

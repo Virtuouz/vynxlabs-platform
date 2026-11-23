@@ -44,6 +44,28 @@ async function tenantHasLogo(instance: string, tenantId: string): Promise<boolea
     .catch(() => undefined);
 }
 
+/**
+ * Where the development server's reload socket may be connected to. A policy has no way to
+ * write an IPv6 address as a host, so a page opened at `[::1]` is served by `'self'`, which the
+ * browser matches to the socket of the same host and port.
+ */
+const DEV_SOCKETS = ["ws://localhost:*", "ws://127.0.0.1:*"];
+
+/**
+ * Gives the nonce to the scripts the development tooling put in the page and to no other: an
+ * inline script the app's own `index.html` carries is refused, as the instance refuses it.
+ * `own` is what the app's file said before the tooling worked on it.
+ */
+export function nonceToolingScripts(html: string, own: string, nonce: string): string {
+  const inline = /<script\b(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/gi;
+  const mine = new Set([...own.matchAll(inline)].map((one) => one[2]));
+  return html.replace(inline, (whole, attributes: string, body: string) =>
+    mine.has(body) || /\bnonce=|type=["']application\/json["']/.test(attributes)
+      ? whole
+      : whole.replace(/^<script\b/i, `<script nonce="${nonce}"`),
+  );
+}
+
 const forHtml = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
 /**
@@ -105,7 +127,7 @@ export async function startDevServer(options: DevOptions) {
     api: "/api/v1",
     tenant: { ...options.tenant, ...(logo === undefined ? {} : { logo }) },
     workspace: options.workspace,
-    app: { path: app.path, title: app.path },
+    app: { path: app.path, title: app.title },
     base: "/",
     // The sign-in pages are the instance's, reached through this server, so that a person
     // who signs in comes back here and not to the instance.
@@ -116,19 +138,38 @@ export async function startDevServer(options: DevOptions) {
   // The development server's own inline scripts carry a nonce made for this run, and its
   // reload socket is the one thing besides the page's own origin that may be connected to.
   const nonce = randomBytes(16).toString("base64");
-  const policy =
-    options.strict === false
-      ? undefined
-      : appPolicy({ nonce, connect: ["ws://localhost:*", "ws://127.0.0.1:*", "ws://[::1]:*"] });
+  const policy = options.strict === false ? undefined : appPolicy({ nonce, connect: DEV_SOCKETS });
+  const own = new Map<string, string>();
   const settings = viteSettings(resolve(directory, app.source), plugins);
   const server = await vite.createServer({
     ...settings,
     base: "/",
     logLevel: "warn",
     clearScreen: false,
-    ...(policy ? { html: { cspNonce: nonce } } : {}),
     plugins: [
       ...("plugins" in settings ? (settings.plugins as unknown[]) : []),
+      ...(policy
+        ? [
+            {
+              name: "volvel-app-policy",
+              // Before the tooling: what the app's own file says.
+              transformIndexHtml: {
+                order: "pre" as const,
+                handler: (html: string, context: { path: string }) => {
+                  own.set(context.path, html);
+                },
+              },
+            },
+            {
+              name: "volvel-app-nonce",
+              transformIndexHtml: {
+                order: "post" as const,
+                handler: (html: string, context: { path: string }) =>
+                  nonceToolingScripts(html, own.get(context.path) ?? "", nonce),
+              },
+            },
+          ]
+        : []),
       {
         name: "volvel-app-context",
         transformIndexHtml: () => [

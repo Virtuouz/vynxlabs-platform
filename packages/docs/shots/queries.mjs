@@ -1,5 +1,117 @@
 // The pictures of the area "queries". Each entry is described at SHOTS in ../screenshots.mjs;
 // its `setup` names a scene of e2e/scenes/queries.ts (or "handbook", "visit-notes", "fernhill").
-// import { PHONE, THEMES, TIMES, VIEW } from "./common.mjs";
+import { THEMES, TIMES, VIEW } from "./common.mjs";
 
-export default [];
+export default [
+  {
+    name: "console/queries-parameters",
+    address: "queries?query=reports%2Fvisits-by-clinic",
+    as: "admin",
+    setup: "queries-saved",
+    themes: THEMES,
+    // Tall: the panel of the parameter is under the editor and the field.
+    viewport: { width: 1440, height: 1150 },
+    ready: [{ text: "reports/visits-by-clinic" }],
+    steps: [{ focus: "summary.font-medium" }, { press: "Enter" }, { text: "Name of parameter 1" }],
+    mask: TIMES,
+  },
+  {
+    name: "console/data-source-connect",
+    address: "sources",
+    as: "admin",
+    setup: "queries-source-connect",
+    themes: THEMES,
+    viewport: VIEW,
+    ready: [{ text: "Not set up here" }],
+    steps: [{ click: { role: "button", name: "Connect library-loans" } }, { role: "dialog" }],
+    // Not the connection's state: behind the dialog's overlay it would be painted over its title.
+    mask: TIMES.filter((one) => one !== "[data-volatile]"),
+  },
+  {
+    name: "console/data-source-rows",
+    address: "sources/library-loans",
+    as: "admin",
+    setup: "queries-source-rows",
+    themes: THEMES,
+    viewport: VIEW,
+    ready: [{ text: "The Dispossessed" }],
+    steps: [],
+    mask: TIMES,
+  },
+  {
+    name: "console/dashboard-edit",
+    // The scene's `at` ends in "?edit=1&shot=": the dashboard's own address has no room for a slash.
+    address: "",
+    as: "admin",
+    setup: "queries-dashboard",
+    themes: THEMES,
+    viewport: VIEW,
+    ready: [{ role: "heading", name: "Clinic visits" }],
+    steps: [{ click: { role: "button", name: "Visits" } }],
+    mask: TIMES,
+  },
+  {
+    name: "console/dashboard-resource",
+    address: "dashboards/at/boards/clinic-visits",
+    as: "admin",
+    setup: "queries-kept-dashboard",
+    themes: THEMES,
+    viewport: VIEW,
+    ready: [{ text: "Discard draft" }],
+    steps: [],
+    mask: TIMES,
+  },
+  {
+    name: "console/queries-editor",
+    address: "queries?query=reports%2Fvisits-by-clinic",
+    as: "admin",
+    setup: "queries-saved",
+    themes: THEMES,
+    // Tall: the result is under the editor and the field.
+    viewport: { width: 1440, height: 1250 },
+    ready: [{ text: "reports/visits-by-clinic" }],
+    steps: [{ click: { role: "button", name: "Run" } }, { text: "3 rows" }],
+    // The line that says how long the run took.
+    mask: [...TIMES, 'p:has-text("3 rows")'],
+  },
+  {
+    name: "console/data-sources-list",
+    address: "sources",
+    as: "admin",
+    setup: "queries-source-listed",
+    themes: THEMES,
+    viewport: VIEW,
+    ready: [{ role: "button", name: "Test" }],
+    steps: [{ click: { role: "button", name: "Test" } }, { text: "Reached" }],
+    // How long the test took.
+    mask: [...TIMES, "text=/\\d+ ms/"],
+  },
+  {
+    name: "console/dashboards-list",
+    address: "dashboards",
+    as: "admin",
+    setup: "queries-dashboards",
+    themes: THEMES,
+    viewport: VIEW,
+    ready: [{ text: "My week" }, { text: "Clinic visits" }],
+    steps: [],
+    mask: TIMES,
+  },
+  {
+    name: "console/dashboard-editor",
+    address: "",
+    as: "admin",
+    setup: "queries-dashboard",
+    themes: THEMES,
+    viewport: VIEW,
+    ready: [{ role: "heading", name: "Clinic visits" }],
+    steps: [
+      { click: { role: "button", name: "Appointments" } },
+      { focus: 'button:has-text("Source")' },
+      { press: "Enter" },
+      { role: "heading", name: "Where it reads from" },
+      { text: "loans in library-loans" },
+    ],
+    mask: TIMES,
+  },
+];

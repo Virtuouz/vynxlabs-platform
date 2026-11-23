@@ -15,8 +15,8 @@ import { topicsAsked } from "./asked.mjs";
 import { GENERATED, stale, write } from "./generate.mjs";
 import { coverage } from "./generators/reference.mjs";
 import { HERE, loadDocs, report } from "./load.mjs";
-import { shotNames } from "./screenshots.mjs";
 import { nameLines, nameProblems, pathProblems, readLock, writeLock } from "./locks.mjs";
+import { shotNames } from "./screenshots.mjs";
 
 const REPO = join(HERE, "../..");
 const CONSOLE = join(REPO, "apps/console/src");

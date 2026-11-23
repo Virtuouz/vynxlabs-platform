@@ -164,6 +164,19 @@ test("opening the console at its root goes back to the last workspace, once", as
   expect(location.pathname).toBe("/");
 });
 
+test("a tenant list with a filter in its address stays on it when the console opens (INS-fix)", async () => {
+  routes["GET /api/v1/me/recent"] = () => [
+    200,
+    { items: [{ tenantId: "t1", workspaceId: "w1", visitedAt: "2026-11-14T00:00:00.000Z" }] },
+  ];
+  history.replaceState(null, "", "/?dataLocation=cdrloc&q=acme");
+  renderHook(() => useReopenLastPlace(true));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(location.pathname).toBe("/");
+  expect(location.search).toBe("?dataLocation=cdrloc&q=acme");
+  history.replaceState(null, "", "/");
+});
+
 test("a member with nowhere remembered stays on the tenant list", async () => {
   routes["GET /api/v1/me/recent"] = () => [200, { items: [] }];
   renderHook(() => useReopenLastPlace(true));

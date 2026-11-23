@@ -38,7 +38,24 @@ const words = (text: string) =>
     .replace(/\bcancell/gi, (one) => one.slice(0, 6))
     .trim();
 
+/** Actions whose stored name keeps a word the console no longer uses: access changes were releases. */
+const WHOLE: Record<string, string> = {
+  "access.released": "Access change applied",
+  "access.release_requested": "Access change asked for",
+  "access.release_declined": "Access change declined",
+  "access.release_withdrawn": "Access change withdrawn",
+  "access.release_superseded": "Access change superseded",
+  "access.approval_changed": "Approval of access changes changed",
+};
+
+/** What a kind of target is called, from its stored name: "tenant_release" is an access change. */
+export function targetTypeWords(type: string): string {
+  return type === "tenant_release" ? "access change" : type.replace(/_/g, " ");
+}
+
 export function actionWords(action: string): string {
+  const whole = WHOLE[action];
+  if (whole) return whole;
   const at = action.indexOf(".");
   if (at < 0) return capitalize(words(action));
   const subject = action.slice(0, at);

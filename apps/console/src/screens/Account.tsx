@@ -129,7 +129,7 @@ export function RecoveryCodes() {
       <KeyValues
         rows={[
           { label: "Codes left", value: madeAt ? String(left) : "None made yet" },
-          ...(madeAt ? [{ label: "Made", value: <Time value={madeAt} /> }] : []),
+          ...(madeAt ? [{ label: "Made", value: <Time value={madeAt} mode="stamp" /> }] : []),
         ]}
       />
       {madeAt && left <= 2 && !codes ? (

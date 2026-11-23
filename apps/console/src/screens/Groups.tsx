@@ -247,6 +247,7 @@ export function Groups({ base, framed }: { base: string; framed?: Framed }) {
     <>
       <CollectionView<MemberGroup>
         title={framed?.title ?? "Groups"}
+        helpKey="groups"
         description="A group is a set of members that can be given access together. Give a group a role under Access."
         actions={
           <Button variant="primary" onClick={() => setCreating(true)}>

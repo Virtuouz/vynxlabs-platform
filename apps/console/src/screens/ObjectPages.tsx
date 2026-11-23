@@ -123,10 +123,20 @@ export function ConnectionPage({ root, link, path }: { root: string; link: strin
                         : "Only set up here",
                   },
                   ...(one.oauth?.connectedAt
-                    ? [{ label: "Connected", value: <Time value={one.oauth.connectedAt} /> }]
+                    ? [
+                        {
+                          label: "Connected",
+                          value: <Time value={one.oauth.connectedAt} mode="stamp" />,
+                        },
+                      ]
                     : []),
                   ...(one.updatedAt
-                    ? [{ label: "Last changed", value: <Time value={one.updatedAt} /> }]
+                    ? [
+                        {
+                          label: "Last changed",
+                          value: <Time value={one.updatedAt} mode="stamp" />,
+                        },
+                      ]
                     : []),
                   ...(one.health && !one.health.ok && one.health.problem
                     ? [{ label: "Last check", value: one.health.problem }]
@@ -216,7 +226,7 @@ export function VariablePage({ root, link, path }: { root: string; link: string;
                     ? [{ label: "Default", value: one.default, mono: true }]
                     : []),
                   ...(one.updatedAt
-                    ? [{ label: "Last set", value: <Time value={one.updatedAt} /> }]
+                    ? [{ label: "Last set", value: <Time value={one.updatedAt} mode="stamp" /> }]
                     : []),
                 ]}
               />

@@ -76,11 +76,18 @@ export function InstanceMembers() {
           cell: (row) => (
             <span className="flex min-w-0 flex-col gap-0.5">
               <span className="font-medium">{row.name}</span>
-              <span className="truncate text-meta text-ink-subtle sm:hidden">{row.email}</span>
+              <span title={row.email} className="truncate text-meta text-ink-subtle sm:hidden">
+                {row.email}
+              </span>
             </span>
           ),
         },
-        { header: "Email", priority: 2, truncate: true, cell: (row) => row.email },
+        {
+          header: "Email",
+          priority: 2,
+          truncate: true,
+          cell: (row) => <span title={row.email}>{row.email}</span>,
+        },
         {
           header: "Tenants",
           priority: 3,
@@ -134,7 +141,7 @@ export function InstanceMembers() {
                     : "Belongs to no tenant",
               },
               { label: "State", value: row.disabled ? "Disabled: signs in nowhere" : "Active" },
-              { label: "Created", value: <Time value={row.createdAt} /> },
+              { label: "Created", value: <Time value={row.createdAt} mode="stamp" /> },
               { label: "ID", value: row.id, mono: true },
             ]}
           />

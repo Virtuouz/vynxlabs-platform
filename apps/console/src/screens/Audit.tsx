@@ -3,7 +3,7 @@ import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type ApiError, api, useLoad } from "../api.ts";
 import { copyText } from "../ask.tsx";
-import { actionWords } from "../audit-words.ts";
+import { actionWords, targetTypeWords } from "../audit-words.ts";
 import { useAddressBox } from "../kit/addressBox.ts";
 import { type CollectionColumn, CollectionView } from "../kit/CollectionView.tsx";
 import { stamp } from "../kit/format.ts";
@@ -117,14 +117,17 @@ const VERB_TONE: Record<Verb, TagTone> = {
   Other: "neutral",
 };
 const VERBS: [Verb, RegExp][] = [
-  ["Delete", /(deleted|removed|revoked|ended|purged|retired|unbound|cleared|disabled)$/],
+  ["Delete", /(deleted|removed|revoked|ended|purged|retired|unbound|cleared)$/],
   ["Create", /(created|added|invited|issued|registered|uploaded|imported|opened|bound|cloned)$/],
   [
     "Execute",
     /(started|cancelled|decided|approved|rejected|deployed|activated|promoted|published|exported|signed_in|signed_out|handed_off|checked|requested|finished)$/,
   ],
   ["Read", /(read|viewed|listed|downloaded|access)$/],
-  ["Update", /(updated|changed|saved|set|renamed|enabled|paused|resumed|verified|replaced)$/],
+  [
+    "Update",
+    /(updated|changed|saved|set|renamed|enabled|disabled|paused|resumed|verified|replaced)$/,
+  ],
 ];
 
 /** What kind of thing an action did, read from how its name ends. */
@@ -418,7 +421,12 @@ export function AuditTable({
             onChange={(next) => setUrl({ cols: next ?? [] })}
           />
           {tenantId ? <ViewsMenu tenantId={tenantId} list="audit" omit={["entry"]} /> : null}
-          <Button size="small" href={`/api/v1${path}-export?${asked}`} download>
+          <Button
+            size="small"
+            href={`/api/v1${path}-export?${asked}`}
+            download
+            tooltip="The file's times are in UTC, ending in Z. The list shows yours."
+          >
             <Download aria-hidden="true" size={14} /> CSV
           </Button>
         </span>
@@ -543,7 +551,7 @@ export function AuditTable({
                     <option value="">Anything</option>
                     {(facets.data?.targetTypes ?? []).map((one) => (
                       <option key={one.value} value={one.value}>
-                        {one.value.replace(/_/g, " ")} ({one.count})
+                        {targetTypeWords(one.value)} ({one.count})
                       </option>
                     ))}
                   </select>
@@ -656,7 +664,7 @@ export function AuditTable({
                   { label: "When", value: <Time value={chosen.occurredAt} />, mono: true },
                   { label: "Who", value: who(chosen) },
                   { label: "Action", value: chosen.action, mono: true },
-                  { label: "Kind", value: chosen.targetType },
+                  { label: "Kind", value: targetTypeWords(chosen.targetType) },
                   ...(chosen.targetLabel ? [{ label: "Name", value: chosen.targetLabel }] : []),
                   { label: "ID", value: chosen.targetId ?? "", mono: true },
                   { label: "From", value: chosen.ipAddress ?? "", mono: true },

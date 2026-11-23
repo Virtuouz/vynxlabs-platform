@@ -139,7 +139,7 @@ export function Tenants({ me }: { me: Me }) {
                       },
                     ]
                   : []),
-                { label: "Created", value: <Time value={row.createdAt} /> },
+                { label: "Created", value: <Time value={row.createdAt} mode="stamp" /> },
                 { label: "ID", value: row.id, mono: true },
               ]}
             />

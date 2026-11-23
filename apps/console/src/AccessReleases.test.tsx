@@ -319,3 +319,41 @@ test("ACC-MP14: one release is opened from its address, with its changes and war
   expect((await screen.findByRole("dialog")).textContent).toContain("Access change 1");
   expect(location.search).toContain("release=r1");
 });
+
+test("a role given to a group is worded as being given, not as making an access developer (w-people 2)", async () => {
+  release(1);
+  const items = [
+    release(7, {
+      message: null,
+      summary: {
+        created: 1,
+        updated: 0,
+        deleted: 0,
+        changes: [
+          {
+            change: "created",
+            kind: "tenant_binding",
+            key: "b",
+            label: "developer to group night-shift",
+          },
+        ],
+      },
+    }),
+  ];
+  const original = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) =>
+    address.endsWith("/access/releases")
+      ? new Response(JSON.stringify({ items }), { status: 200 })
+      : original(address, init),
+  );
+  show(<AccessReleases base={base} />);
+  expect(await screen.findByText("Gives developer to group night-shift.")).toBeTruthy();
+  expect(document.body.textContent).not.toContain("Makes the access");
+  expect(document.body.textContent).not.toContain("may release access");
+});
+
+test("the list is the page's own box, with no wrapper that insets it from its sibling tabs (w-people 1)", async () => {
+  const view = show(<AccessReleases base={base} />);
+  await screen.findByText("Made the group Night shift");
+  expect(view.container.querySelector("div.contents")).toBeNull();
+});

@@ -369,6 +369,8 @@ test("a verdict made for another slug or passphrase does not enable the import, 
   here = true;
   fireEvent.click(screen.getByRole("button", { name: "Check again" }));
   await screen.findByText("This tenant is on this instance already");
+  // INS-fix: it does not also say its slug is free beside that.
+  expect(screen.queryByText("Its slug is free here")).toBeNull();
   expect(importButton().disabled).toBe(true);
   // Throwing it away leaves nothing of what was typed.
   fireEvent.click(screen.getByRole("button", { name: "Throw it away" }));
@@ -431,6 +433,8 @@ test("a workspace's run limit is set from its settings, from 1 to 1000, saved wi
   expect(await screen.findByText("A whole number from 1 to 1000.")).toBeTruthy();
   fireEvent.click(await screen.findByRole("button", { name: "Save" }));
   expect(sent("PATCH")).toHaveLength(0);
+  // A click that saves nothing says why, where it is seen on a phone too.
+  expect(await screen.findByText(/run limit must be a whole number from 1 to 1000/)).toBeTruthy();
   fireEvent.input(field, { target: { value: "5" } });
   fireEvent.click(await screen.findByRole("button", { name: "Save" }));
   await waitFor(() => expect(sent("PATCH")[0]?.body).toEqual({ concurrencyLimit: 5 }));

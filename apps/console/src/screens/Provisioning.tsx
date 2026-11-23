@@ -360,7 +360,7 @@ function Pushed({ root }: { root: string }) {
                 </span>
               ),
             },
-            { header: "Email", truncate: true, cell: (row) => row.email },
+            { header: "Email", truncate: true, cell: (row) => (row.displayName ? row.email : "—") },
             {
               header: "State",
               cell: (row) =>

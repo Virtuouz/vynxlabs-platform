@@ -30,7 +30,7 @@ import { access, guestLimit } from "../kernel/http.js";
 import type { Kernel } from "../kernel/kernel.js";
 import { requireEndUserPasswordAllowed } from "../kernel/sso/people.js";
 import { accessResource, freeKey, releaseOne } from "../kernel/tenant/releases.js";
-import { listOf, PageQuery, pageOf } from "../pagination.js";
+import { afterName, likeTerm, NamedListQuery, nameKey, PageQuery, pageOf } from "../pagination.js";
 import {
   Id,
   iso,
@@ -548,11 +548,12 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           description: "Each group of end users in the tenant.",
           tags: ["end users"],
           params: TenantParams,
-          response: { 200: listOf(Group) },
+          querystring: NamedListQuery,
+          response: { 200: pageOf(Group) },
         },
       },
-      async ({ params }) => {
-        const rows = await db
+      async ({ params, query }) => {
+        let select = db
           .selectFrom("end_user_group")
           .selectAll("end_user_group")
           .select((eb) =>
@@ -562,21 +563,41 @@ export function endUserRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
               .whereRef("end_user_group_member.group_id", "=", "end_user_group.id")
               .as("member_count"),
           )
-          .where("tenant_id", "=", params.t)
-          .orderBy("name")
-          .execute();
-        return {
-          items: rows.map((row) => ({
-            id: row.id,
-            key: row.key,
-            name: row.name,
-            description: row.description,
-            memberCount: Number(row.member_count ?? 0),
-            managedBy: row.managed_by,
-            signInValues: [...row.sso_values].sort(),
-            createdAt: iso(row.created_at),
-          })),
-        };
+          .where("tenant_id", "=", params.t);
+        if (query.search) {
+          select = select.where((eb) =>
+            eb(eb.fn("lower", ["end_user_group.name"]), "like", likeTerm(query.search as string)),
+          );
+        }
+        const args = pageArgs(query);
+        const after = afterName(args.after);
+        if (after) {
+          select = select.where((eb) =>
+            eb.or([
+              eb("end_user_group.name", ">", after.name),
+              eb.and([
+                eb("end_user_group.name", "=", after.name),
+                eb("end_user_group.id", ">", after.id),
+              ]),
+            ]),
+          );
+        }
+        select = select.orderBy("end_user_group.name").orderBy("end_user_group.id");
+        const toItem = (row: Awaited<ReturnType<typeof select.execute>>[number]) => ({
+          id: row.id,
+          key: row.key,
+          name: row.name,
+          description: row.description,
+          memberCount: Number(row.member_count ?? 0),
+          managedBy: row.managed_by,
+          signInValues: [...row.sso_values].sort(),
+          createdAt: iso(row.created_at),
+        });
+        if (query.limit === undefined) {
+          return { items: (await select.execute()).map(toItem), nextCursor: null };
+        }
+        const rows = await select.limit(query.limit + 1).execute();
+        return toPage(rows, { ...args, limit: query.limit }, nameKey, toItem);
       },
     );
 

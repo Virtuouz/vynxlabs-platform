@@ -241,7 +241,7 @@ function panelFor(
           entries: [
             {
               key: "api-keys",
-              label: "API keys",
+              label: "Account",
               icon: KeyRound,
               to: "/account/api-keys",
               current: where.section === "/account/api-keys",
@@ -669,7 +669,7 @@ function AccountMenu({
           onSelect: () => navigate("/account/api-keys"),
         },
         {
-          label: "API keys",
+          label: "Account",
           icon: <KeyRound aria-hidden="true" size={16} />,
           onSelect: () => navigate("/account/api-keys"),
         },
@@ -826,7 +826,7 @@ export function Shell({
     if (tenantId) return TENANT_SECTIONS.find((section) => section.slug === where.section)?.label;
     if (where.area === "instance")
       return INSTANCE_SECTIONS.find((section) => section.to === where.section)?.label;
-    if (where.area === "account") return "API keys";
+    if (where.area === "account") return "Your account";
     return undefined;
   })();
 
@@ -937,7 +937,7 @@ export function Shell({
         });
     list.push({
       key: "account",
-      label: "API keys",
+      label: "Account",
       where: "Your account",
       to: "/account/api-keys",
       icon: KeyRound,

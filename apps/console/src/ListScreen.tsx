@@ -232,6 +232,12 @@ export function CreateDialog({
   const unplaced = (caught: ApiError) =>
     caught.fields?.find((one) => !config.fields.some((field) => one.path === `/body/${field.name}`))
       ?.message;
+  // A refusal every field of which is shown at its field is not said again in a banner.
+  const placed = (caught: ApiError) =>
+    (caught.fields ?? []).length > 0 &&
+    (caught.fields ?? []).every((one) =>
+      config.fields.some((field) => one.path === `/body/${field.name}`),
+    );
   const fieldError = (name: string) =>
     unpicked.includes(name)
       ? "Choose one."
@@ -361,7 +367,7 @@ export function CreateDialog({
           />
         ),
       )}
-      {error ? (
+      {error && !placed(error) ? (
         <Notice tone="danger">{[error.message, unplaced(error)].filter(Boolean).join(" ")}</Notice>
       ) : null}
       {roomy ? null : <div className="mt-1 flex justify-end gap-2">{buttons}</div>}

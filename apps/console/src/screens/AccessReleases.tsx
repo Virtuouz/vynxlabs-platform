@@ -62,15 +62,22 @@ const KIND: Record<string, string> = {
 };
 const VERB: Record<string, string> = { created: "Makes", updated: "Changes", deleted: "Removes" };
 
+/** One change in words: "Makes the group Night shift", "Gives developer to group night-shift". */
+function phrase(one: AccessRelease["summary"]["changes"][number]): string {
+  if (one.kind === "tenant_binding") {
+    const verb = { created: "Gives", updated: "Changes what is given:", deleted: "Takes away" }[
+      one.change as "created" | "updated" | "deleted"
+    ];
+    return `${verb ?? one.change} ${one.label}`;
+  }
+  return `${VERB[one.change] ?? one.change} the ${KIND[one.kind] ?? one.kind} ${one.label}`;
+}
+
 /** What an access change did, or would do, in words: at most three, then how many more. */
 function what(release: AccessRelease): string {
   const changes = release.summary.changes;
   if (changes.length === 0) return "Changed nothing";
-  const said = changes
-    .slice(0, 3)
-    .map(
-      (one) => `${VERB[one.change] ?? one.change} the ${KIND[one.kind] ?? one.kind} ${one.label}`,
-    );
+  const said = changes.slice(0, 3).map(phrase);
   return `${said.join(". ")}${changes.length > 3 ? `, and ${changes.length - 3} more` : ""}.`;
 }
 /** Every change an access change made or would make, one to a line. */
@@ -85,9 +92,7 @@ function Changes({ release, intro }: { release: AccessRelease; intro: string }) 
       ) : (
         <ul className="m-0 max-h-64 overflow-auto pl-5 text-left">
           {changes.map((one) => (
-            <li key={`${one.kind}/${one.key}/${one.change}`}>
-              {VERB[one.change] ?? one.change} the {KIND[one.kind] ?? one.kind} {one.label}
-            </li>
+            <li key={`${one.kind}/${one.key}/${one.change}`}>{phrase(one)}</li>
           ))}
         </ul>
       )}
@@ -126,14 +131,13 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
   const approval = access.data?.approval ?? false;
   // The button that was pressed leaves the list once it is answered: focus goes to what is left of
   // the list, not to the page body.
-  const holder = useRef<HTMLDivElement>(null);
   const [refocus, setRefocus] = useState(false);
   useEffect(() => {
     if (!refocus || releases.data === undefined) return;
-    const table = holder.current?.querySelector<HTMLElement>("table");
+    const table = document.querySelector<HTMLElement>("table");
     const target =
       table?.querySelector<HTMLElement>("tbody button, tbody a") ??
-      holder.current?.querySelector<HTMLElement>("h1, h2");
+      document.querySelector<HTMLElement>("h1, h2");
     if (target) {
       if (!target.matches("button, a")) target.tabIndex = -1;
       target.focus();
@@ -334,142 +338,141 @@ export function AccessReleases({ base, framed }: { base: string; framed?: Framed
   };
 
   return (
-    <div ref={holder} className="contents">
-      <CollectionView<AccessRelease>
-        title={framed?.title ?? "Access changes"}
-        description="Every change to the tenant's groups, service accounts, roles and what they are given, from the console or from the repository, with who made it and who approved it."
-        actions={
-          <Button
-            onClick={async () => {
-              setProblem(undefined);
-              if (approval) {
-                const waiting = releases.data?.items.filter(
-                  (one) => one.status === "awaiting_approval",
-                ).length;
-                const sure = await ask.confirm({
-                  title: "Stop asking for a second person?",
-                  text: `From now on, a change to the tenant's groups, service accounts and roles, and to what they are given, applies as soon as it is made, with nobody else approving it. ${
-                    waiting === undefined || waiting === 0
-                      ? "Access changes that wait now stay waiting"
-                      : waiting === 1
-                        ? "The 1 access change that waits now stays waiting"
-                        : `The ${count(waiting)} access changes that wait now stay waiting`
-                  } until someone answers them. Asking again needs two people who may release access.`,
-                  action: "Stop asking",
-                  danger: true,
-                });
-                if (!sure) return;
-              }
-              try {
-                await api.put(`${base}/access/approval`, { required: !approval });
-                notify.success(
-                  approval
-                    ? "Changes to access apply at once."
-                    : "Changes to access now wait for a second person.",
-                );
-                access.reload();
-              } catch (error) {
-                setProblem(failed(error));
-              }
-            }}
-          >
-            {approval ? "Stop asking for a second person" : "Ask for a second person"}
-          </Button>
-        }
-        toolbar={toolbarOf(
-          framed,
-          <>
-            {approval ? (
-              <Notice tone="attention" bare>
-                A change to access waits until someone other than whoever made it approves it.
-              </Notice>
-            ) : null}
-            {problem ? <Notice tone="danger">{problem}</Notice> : null}
-          </>,
-        )}
-        label="Access changes"
-        rows={releases.data?.items}
-        error={releases.error}
-        onRetry={releases.reload}
-        rowKey={(row) => row.id}
-        columns={[
-          {
-            header: "#",
-            cell: (row) => (
-              <Button
-                size="small"
-                variant="quiet"
-                aria-label={`Open access change ${row.number}`}
-                onClick={() => setOpenId(row.id)}
-              >
-                {row.number}
-              </Button>
-            ),
-          },
-          {
-            header: "What",
-            cell: (row) => (
-              <span className="flex flex-col">
-                <span className="font-medium">{row.message ?? what(row)}</span>
-                {row.message ? <span className="text-meta text-ink-muted">{what(row)}</span> : null}
-                {row.comment ? (
-                  <span className="text-meta text-ink-muted">“{row.comment}”</span>
-                ) : null}
-                {(row.summary.warnings ?? []).map((warning) => (
-                  <span key={warning} className="text-meta text-ink-muted">
-                    {warning}
-                  </span>
-                ))}
-                {row.summary.changes.length > 3 ? (
-                  <span>
-                    <Button size="small" onClick={() => setOpenId(row.id)}>
-                      All {row.summary.changes.length} changes
-                    </Button>
-                  </span>
-                ) : null}
-                {/* On a phone the columns beside this one are not shown: who, when, and what to do. */}
-                {wide ? null : (
-                  <span className="mt-1 flex flex-col gap-1">
-                    <span className="text-meta text-ink-muted">
-                      {row.createdBy ?? ORIGIN[row.origin] ?? row.origin},{" "}
-                      <Time value={row.createdAt} mode="ago" />
-                    </span>
-                    <span className="flex flex-wrap gap-1">{actionsOf(row)}</span>
-                  </span>
-                )}
-              </span>
-            ),
-          },
-          {
-            header: "Status",
-            cell: (row) => {
-              const [label, state] = STATUS[row.status] ?? [row.status, "skipped"];
-              return <StatePill state={state}>{label}</StatePill>;
-            },
-          },
-          {
-            header: "By",
-            priority: 2,
-            cell: (row) => (
-              <span className="flex flex-col">
-                <span>{row.createdBy ?? ORIGIN[row.origin] ?? row.origin}</span>
-                <span className="text-meta text-ink-muted">
-                  {ORIGIN[row.origin] ?? row.origin}
-                  {row.decidedBy ? `, answered by ${row.decidedBy}` : ""}
+    <CollectionView<AccessRelease>
+      title={framed?.title ?? "Access changes"}
+      helpKey="access-changes"
+      description="Every change to the tenant's groups, service accounts, roles and what they are given, from the console or from the repository, with who made it and who approved it."
+      actions={
+        <Button
+          onClick={async () => {
+            setProblem(undefined);
+            if (approval) {
+              const waiting = releases.data?.items.filter(
+                (one) => one.status === "awaiting_approval",
+              ).length;
+              const sure = await ask.confirm({
+                title: "Stop asking for a second person?",
+                text: `From now on, a change to the tenant's groups, service accounts and roles, and to what they are given, applies as soon as it is made, with nobody else approving it. ${
+                  waiting === undefined || waiting === 0
+                    ? "Access changes that wait now stay waiting"
+                    : waiting === 1
+                      ? "The 1 access change that waits now stays waiting"
+                      : `The ${count(waiting)} access changes that wait now stay waiting`
+                } until someone answers them. Asking again needs two people who may approve access changes.`,
+                action: "Stop asking",
+                danger: true,
+              });
+              if (!sure) return;
+            }
+            try {
+              await api.put(`${base}/access/approval`, { required: !approval });
+              notify.success(
+                approval
+                  ? "Changes to access apply at once."
+                  : "Changes to access now wait for a second person.",
+              );
+              access.reload();
+            } catch (error) {
+              setProblem(failed(error));
+            }
+          }}
+        >
+          {approval ? "Stop asking for a second person" : "Ask for a second person"}
+        </Button>
+      }
+      toolbar={toolbarOf(
+        framed,
+        <>
+          {approval ? (
+            <Notice tone="attention" bare>
+              A change to access waits until someone other than whoever made it approves it.
+            </Notice>
+          ) : null}
+          {problem ? <Notice tone="danger">{problem}</Notice> : null}
+        </>,
+      )}
+      label="Access changes"
+      rows={releases.data?.items}
+      error={releases.error}
+      onRetry={releases.reload}
+      rowKey={(row) => row.id}
+      columns={[
+        {
+          header: "#",
+          cell: (row) => (
+            <Button
+              size="small"
+              variant="quiet"
+              aria-label={`Open access change ${row.number}`}
+              onClick={() => setOpenId(row.id)}
+            >
+              {row.number}
+            </Button>
+          ),
+        },
+        {
+          header: "What",
+          cell: (row) => (
+            <span className="flex flex-col">
+              <span className="font-medium">{row.message ?? what(row)}</span>
+              {row.message ? <span className="text-meta text-ink-muted">{what(row)}</span> : null}
+              {row.comment ? (
+                <span className="text-meta text-ink-muted">“{row.comment}”</span>
+              ) : null}
+              {(row.summary.warnings ?? []).map((warning) => (
+                <span key={warning} className="text-meta text-ink-muted">
+                  {warning}
                 </span>
-              </span>
-            ),
+              ))}
+              {row.summary.changes.length > 3 ? (
+                <span>
+                  <Button size="small" onClick={() => setOpenId(row.id)}>
+                    All {row.summary.changes.length} changes
+                  </Button>
+                </span>
+              ) : null}
+              {/* On a phone the columns beside this one are not shown: who, when, and what to do. */}
+              {wide ? null : (
+                <span className="mt-1 flex flex-col gap-1">
+                  <span className="text-meta text-ink-muted">
+                    {row.createdBy ?? ORIGIN[row.origin] ?? row.origin},{" "}
+                    <Time value={row.createdAt} mode="ago" />
+                  </span>
+                  <span className="flex flex-wrap gap-1">{actionsOf(row)}</span>
+                </span>
+              )}
+            </span>
+          ),
+        },
+        {
+          header: "Status",
+          cell: (row) => {
+            const [label, state] = STATUS[row.status] ?? [row.status, "skipped"];
+            return <StatePill state={state}>{label}</StatePill>;
           },
-          { header: "When", priority: 2, cell: (row) => <Time value={row.createdAt} mode="ago" /> },
-          ...(wide
-            ? [{ header: "", align: "end" as const, cell: (row: AccessRelease) => actionsOf(row) }]
-            : []),
-        ]}
-        empty={{
-          title: "No access changes yet",
-          text: "An access change is recorded when a group, a service account, a role or what one is given changes.",
-        }}
-      />
-    </div>
+        },
+        {
+          header: "By",
+          priority: 2,
+          cell: (row) => (
+            <span className="flex flex-col">
+              <span>{row.createdBy ?? ORIGIN[row.origin] ?? row.origin}</span>
+              <span className="text-meta text-ink-muted">
+                {ORIGIN[row.origin] ?? row.origin}
+                {row.decidedBy ? `, answered by ${row.decidedBy}` : ""}
+              </span>
+            </span>
+          ),
+        },
+        { header: "When", priority: 2, cell: (row) => <Time value={row.createdAt} mode="ago" /> },
+        ...(wide
+          ? [{ header: "", align: "end" as const, cell: (row: AccessRelease) => actionsOf(row) }]
+          : []),
+      ]}
+      empty={{
+        title: "No access changes yet",
+        text: "An access change is recorded when a group, a service account, a role or what one is given changes.",
+      }}
+    />
   );
 }

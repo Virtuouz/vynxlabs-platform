@@ -762,6 +762,8 @@ describe("deleting a tenant", () => {
     expect((await gina.get("/me")).body.tenants).toEqual([]);
     const record = (await t.admin.get("/audit?action=tenant.deleted")).body.items[0];
     expect(record.details).toMatchObject({ slug: "globex", workspaces: 1, tables: 1, files: 1 });
+    // The tenant is gone from its table, and its entry still says what it was called.
+    expect(record.targetLabel).toBe("globex");
     // The other tenant is as it was.
     expect((await alice.get(`${ws(shop)}/rows/docs`)).body.items).toHaveLength(2);
     // A new tenant can take the name.

@@ -455,6 +455,7 @@ export function Roles({ base, framed }: { base: string; framed?: Framed }) {
     <>
       <CollectionView<Role>
         title={framed?.title ?? "Roles"}
+        helpKey="roles"
         description="A role is a named set of permissions. Give a role to a person, a group or a service account under Access."
         actions={
           <Button variant="primary" onClick={() => setOpen("new")}>

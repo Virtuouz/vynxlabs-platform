@@ -397,6 +397,9 @@ export const queryRoutes =
               items: Type.Array(
                 Type.Object({
                   path: Type.String(),
+                  title: Type.Optional(
+                    Type.String({ description: "What people read, when it has one." }),
+                  ),
                   description: Type.String(),
                   sql: Type.String(),
                   parameters: Type.Array(Parameter),
@@ -421,13 +424,13 @@ export const queryRoutes =
       async ({ params }) => {
         const deployed = await db
           .selectFrom("resource")
-          .select(["path", "key", "body", "ownership"])
+          .select(["path", "key", "title", "body", "ownership"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "query")
           .execute();
         const drafts = await db
           .selectFrom("resource_draft")
-          .select(["path", "key", "body", "deleted"])
+          .select(["path", "key", "title", "body", "deleted"])
           .where("workspace_id", "=", params.w)
           .where("kind", "=", "query")
           .execute();
@@ -437,10 +440,12 @@ export const queryRoutes =
           ownership: string,
           draft: "new" | "changed" | "removed" | null,
           renamedFrom?: string,
+          title?: string | null,
         ) => {
           const body = (raw ?? {}) as Partial<QueryBody>;
           return {
             path,
+            ...(title ? { title } : {}),
             description: body.description ?? "",
             sql: body.sql ?? "",
             parameters: body.parameters ?? [],
@@ -462,11 +467,13 @@ export const queryRoutes =
               one.ownership,
               draft ? (draft.deleted ? "removed" : "changed") : null,
               moved ? one.path : undefined,
+              // A draft's title is what it will have; a draft that changes none carries the old one.
+              draft && !draft.deleted ? draft.title : one.title,
             );
           }),
           ...drafts
             .filter((one) => !one.deleted && !deployed.some((row) => row.key === one.key))
-            .map((one) => item(one.path, one.body, "ui", "new")),
+            .map((one) => item(one.path, one.body, "ui", "new", undefined, one.title)),
         ].sort((a, b) => a.path.localeCompare(b.path));
         return { items };
       },

@@ -635,6 +635,21 @@ describe("queries kept by name", () => {
     expect((await alice.get(`${ws()}/queries`)).body.items).toHaveLength(1);
   });
 
+  test("the list gives a query's title, deployed or in a draft (DAT-30)", async () => {
+    const made = await alice.put(`${ws()}/drafts/reports/titled`, {
+      kind: "query",
+      schemaVersion: 1,
+      body: { sql: "select 1 as one" },
+      title: "Fees by device",
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(200);
+    const listed = (await alice.get(`${ws()}/queries`)).body.items as Any[];
+    expect(listed.find((one) => one.path === "reports/titled")).toMatchObject({
+      title: "Fees by device",
+    });
+    await alice.delete(`${ws()}/drafts/reports/titled`);
+  });
+
   test("it is run with its parameters by name, their defaults, and a refusal for one that does not fit", async () => {
     const all = await saved(alice, "reports/fees");
     expect(all.status, JSON.stringify(all.body)).toBe(200);

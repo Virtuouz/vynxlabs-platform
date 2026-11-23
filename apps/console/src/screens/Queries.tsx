@@ -1,5 +1,5 @@
-import { parameterMisfit } from "@volvel/manifest";
-import { Button, type GridColumn, Notice, SelectField, TextField } from "@volvel/ui";
+import { parameterMisfit, QUERY_PARAMETER_TYPES } from "@volvel/manifest";
+import { Button, CheckboxField, type GridColumn, Notice, SelectField, TextField } from "@volvel/ui";
 import { Play, Save } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { type ApiError, api, useLoad, useLoadOf } from "../api.ts";
@@ -60,6 +60,9 @@ interface Parameter {
 
 interface SavedQuery {
   path: string;
+  title?: string;
+  /** The deployed path, when a draft renames the query. */
+  renamedFrom?: string;
   description: string;
   sql: string;
   parameters: Parameter[];
@@ -94,11 +97,101 @@ export function readTyped(
   return problem ? { problem: `Must be ${problem}.` } : { value };
 }
 
-/** The parameters a query's text uses: what a saved query says of them, or a text one. */
-function parametersFor(text: string, known: SavedQuery | undefined): Parameter[] {
+/** The parameters a query's text uses: what is known of them, or a text one for each `$n`. */
+function parametersFor(text: string, known: Parameter[]): Parameter[] {
   return Array.from(
     { length: parametersIn(text) },
-    (_, at) => known?.parameters[at] ?? { name: `$${at + 1}`, type: "text" },
+    (_, at) => known[at] ?? { name: `$${at + 1}`, type: "text" },
+  );
+}
+
+/** What is typed for a query, as saved together: the text, what it is for, and its parameters. */
+interface QueryDraft {
+  sql: string;
+  description: string;
+  declared: Parameter[];
+}
+
+/** The most rows one run may ask for, which the server holds to as well. */
+const MOST_ROWS = 10_000;
+const NAME = /^[a-z][a-z0-9_]*$/;
+const NAME_WORDS = "Lowercase letters, digits and underscores, starting with a letter.";
+
+/** What a parameter's default is, as typed. */
+const defaultText = (value: unknown) =>
+  value === undefined || value === null ? "" : String(value);
+
+/** What is wrong with what each parameter says of itself: its name, and a default that does not fit. */
+function declaredProblems(all: Parameter[]) {
+  return all.map((one, at) => ({
+    name: one.name.startsWith("$")
+      ? undefined
+      : !NAME.test(one.name)
+        ? NAME_WORDS
+        : all.some((other, place) => place !== at && other.name === one.name)
+          ? "Another parameter has this name."
+          : undefined,
+    default:
+      typeof one.default === "string" && one.default.trim() !== ""
+        ? readTyped(one.type, one.default).problem
+        : undefined,
+  }));
+}
+
+/** A parameter as the manifest keeps it: a default as its type, an empty label and a false `required` left out. */
+function written(one: Parameter, place: number): Parameter {
+  const given = typeof one.default === "string" ? readTyped(one.type, one.default) : undefined;
+  const value = given && "value" in given ? given.value : one.default;
+  return {
+    name: one.name.startsWith("$") ? `p${place + 1}` : one.name,
+    type: one.type,
+    ...(one.label?.trim() ? { label: one.label.trim() } : {}),
+    ...(value !== undefined && value !== null && value !== "" ? { default: value } : {}),
+    ...(one.required ? { required: true } : {}),
+  };
+}
+
+/** A value for a parameter, typed as its type asks: a menu for yes or no, a date field for a date. */
+function TypedField({
+  name,
+  label,
+  type,
+  value,
+  onChange,
+  error,
+  hint,
+}: {
+  name: string;
+  label: string;
+  type: string;
+  value: string;
+  onChange: (value: string) => void;
+  error?: string | undefined;
+  hint?: string | undefined;
+}) {
+  return type === "boolean" ? (
+    <SelectField
+      name={name}
+      label={label}
+      options={[
+        { value: "", label: "Not set" },
+        { value: "true", label: "Yes" },
+        { value: "false", label: "No" },
+      ]}
+      value={value}
+      onChange={onChange}
+    />
+  ) : (
+    <TextField
+      name={name}
+      label={label}
+      required={false}
+      {...(type === "date" ? { type: "date" as const } : {})}
+      {...(hint ? { hint } : {})}
+      {...(error ? { error } : {})}
+      value={value}
+      onChange={onChange}
+    />
   );
 }
 
@@ -114,6 +207,11 @@ export function Queries({ root, link }: { root: string; link: string }) {
   const [open, setOpen] = useUrlParam("query", undefined, { push: true });
   const [text, setText] = useState("");
   const [typed, setTyped] = useState<Record<string, string>>({});
+  // What the query says of itself, saved with its text.
+  const [description, setDescription] = useState("");
+  const [declared, setDeclared] = useState<Parameter[]>([]);
+  /** How many rows a run asks for, as typed. */
+  const [wanted, setWanted] = useState("1000");
   const [result, setResult] = useState<Result>();
   const [refusal, setRefusal] = useState<{ message: string; line?: number; column?: number }>();
   const [busy, setBusy] = useState(false);
@@ -145,34 +243,31 @@ export function Queries({ root, link }: { root: string; link: string }) {
   const savedAs = useRef<string>(undefined);
   const creating = useRef(false);
   const createRefusal = useRef<unknown>(undefined);
-  const keep = useDraftSave<string, { revision: number }>({
-    send: (sql, at) =>
-      putDraft<{ revision: number }>(
+  const keep = useDraftSave<QueryDraft, { revision: number }>({
+    send: async (now, at) => {
+      const all = parametersFor(now.sql, now.declared);
+      // What is wrong with a parameter is said on its field: nothing is sent while it is.
+      if (declaredProblems(all).some((one) => one.name || one.default)) {
+        throw new Error("A parameter's name or default is not right. It is said on its field.");
+      }
+      return putDraft<{ revision: number }>(
         root,
         target.current as string,
         {
           kind: "query",
           schemaVersion: 1,
           body: {
-            ...(current?.description ? { description: current.description } : {}),
-            sql,
-            ...(parametersIn(sql) > 0
-              ? {
-                  // A parameter is sent as it is known, with all it has (such as `required`);
-                  // only a name that is still `$n` is given one.
-                  parameters: parametersFor(sql, current).map((one, place) => ({
-                    ...one,
-                    name: one.name.startsWith("$") ? `p${place + 1}` : one.name,
-                  })),
-                }
-              : {}),
+            ...(now.description.trim() ? { description: now.description.trim() } : {}),
+            sql: now.sql,
+            ...(all.length > 0 ? { parameters: all.map(written) } : {}),
           },
         },
         // A query not yet named is a create: it never replaces what is at the path. One with no
         // draft yet makes its first.
         at ? { revision: at } : current ? { first: true } : { create: true },
-      ),
-    applied: (_answer, _sql, newest) => {
+      );
+    },
+    applied: (_answer, _sent, newest) => {
       const path = target.current as string;
       if (newest) {
         notify.success(`${path} is saved as a draft. It can be run by name once it is deployed.`, {
@@ -191,10 +286,22 @@ export function Queries({ root, link }: { root: string; link: string }) {
       else notify.error(error);
     },
   });
-  const changeText = (next: string) => {
-    setText(next);
+  /** Something about the query changed: on top of the newest, so that two changes both stay. */
+  const edit = (part: Partial<QueryDraft>) => {
+    const next = { sql: text, description, declared, ...keep.value(), ...part };
+    if (part.sql !== undefined) setText(part.sql);
+    if (part.description !== undefined) setDescription(part.description);
+    if (part.declared) setDeclared(part.declared);
     keep.edit(next);
   };
+  const changeText = (next: string) => edit({ sql: next });
+  /** One parameter says something of itself: all of them are written out first, as they will be saved. */
+  const change = (at: number, part: Partial<Parameter>) =>
+    edit({
+      declared: parametersFor(keep.value()?.sql ?? text, keep.value()?.declared ?? declared).map(
+        (one, place) => (place === at ? { ...one, ...part } : one),
+      ),
+    });
   // Typed and not kept: a saved query's changes not yet saved, or a new query's text.
   const unkept = current ? keep.dirty : text.trim() !== "";
   /** Opens a saved query, or an empty one, asking first when what is typed would be lost. */
@@ -215,10 +322,16 @@ export function Queries({ root, link }: { root: string; link: string }) {
     if (path === undefined) clearEditor();
     setOpen(path);
   };
-  const clearEditor = () => {
-    setText("");
-    keep.reset("");
+  /** A query put on the screen as it is saved: nothing is unsaved. */
+  const show = (one: QueryDraft, revision?: number) => {
+    setText(one.sql);
+    setDescription(one.description);
+    setDeclared(one.declared);
+    keep.reset(one, revision);
     setTyped({});
+  };
+  const clearEditor = () => {
+    show({ sql: "", description: "", declared: [] });
     setResult(undefined);
     setRefusal(undefined);
     setTook(undefined);
@@ -238,9 +351,10 @@ export function Queries({ root, link }: { root: string; link: string }) {
     }
     if (shown.current === key || !ready) return;
     shown.current = key;
-    setText(current.sql);
-    keep.reset(current.sql, drafted.data?.revision);
-    setTyped({});
+    show(
+      { sql: current.sql, description: current.description, declared: current.parameters },
+      drafted.data?.revision,
+    );
     setResult(undefined);
     setRefusal(undefined);
   }, [current?.path, ready, removing]);
@@ -254,11 +368,16 @@ export function Queries({ root, link }: { root: string; link: string }) {
         .catch(() => undefined),
     ]);
     const now = list.items.find((one) => one.path === listed.path);
-    const sql = theirs && !theirs.deleted ? (theirs.body?.sql ?? "") : (now?.sql ?? "");
+    const body = theirs && !theirs.deleted ? theirs.body : now;
     shown.current = `${listed.path}:${now?.draft === "removed"}`;
-    setText(sql);
-    keep.reset(sql, theirs?.revision);
-    setTyped({});
+    show(
+      {
+        sql: body?.sql ?? "",
+        description: body?.description ?? "",
+        declared: body?.parameters ?? [],
+      },
+      theirs?.revision,
+    );
     await saved.reload();
     await drafted.reload();
   };
@@ -272,23 +391,35 @@ export function Queries({ root, link }: { root: string; link: string }) {
     );
   }, [schema.data]);
 
-  const parameters = useMemo<Parameter[]>(() => parametersFor(text, current), [text, current]);
+  const parameters = useMemo<Parameter[]>(() => parametersFor(text, declared), [text, declared]);
+  const about = declaredProblems(parameters);
 
   /** What each parameter is given, or what is wrong with what was typed for it. */
-  const readings = parameters.map((one) =>
-    readTyped(one.type, typed[one.name] ?? String(one.default ?? "")),
-  );
+  const readings = parameters.map((one, at) => {
+    const given = typed[String(at)] ?? defaultText(one.default);
+    // A parameter that is needed has no default to fall back on: it is asked for here.
+    if (one.required && given.trim() === "") return { problem: "A value is needed." };
+    return readTyped(one.type, given);
+  });
   const problems = Object.fromEntries(
-    parameters.flatMap((one, at) => {
+    parameters.flatMap((_one, at) => {
       const reading = readings[at];
-      return reading?.problem ? [[one.name, reading.problem]] : [];
+      return reading?.problem ? [[String(at), reading.problem]] : [];
     }),
   );
+  // Asked of the server by name, which asks no SQL of whoever runs: what is saved and deployed.
+  const byName = current && !current.draft && !keep.dirty ? current : undefined;
+  const mayRun = schema.data?.maySql === true || byName !== undefined;
+  const asked = Number(wanted);
+  const rowsProblem =
+    Number.isInteger(asked) && asked >= 1 && asked <= MOST_ROWS && wanted.trim() !== ""
+      ? undefined
+      : `Must be a whole number from 1 to ${count(MOST_ROWS)}.`;
 
   const run = async () => {
-    if (text.trim() === "" || busy) return;
+    if (text.trim() === "" || busy || !mayRun) return;
     // A value that does not fit is said on its field, and nothing is asked of the server.
-    if (Object.keys(problems).length > 0) {
+    if (Object.keys(problems).length > 0 || rowsProblem) {
       setRefusal(undefined);
       setResult(undefined);
       setAttempted(true);
@@ -298,14 +429,32 @@ export function Queries({ root, link }: { root: string; link: string }) {
     setRefusal(undefined);
     const started = performance.now();
     try {
-      const answer = await api.post<Result>(`${root}/queries/run`, {
-        sql: text,
-        ...(parameters.length > 0
-          ? {
-              params: readings.map((reading) => ("value" in reading ? reading.value : null)),
-            }
-          : {}),
-      });
+      const values = readings.map((reading) => ("value" in reading ? reading.value : null));
+      // Without `sql:read` a saved query is run by name, as the route allows: its own text, by
+      // whoever may read the tables it names. A parameter left empty takes its default there.
+      const answer =
+        schema.data?.maySql || !byName
+          ? await api.post<Result>(`${root}/queries/run`, {
+              sql: text,
+              ...(parameters.length > 0 ? { params: values } : {}),
+              limit: asked,
+            })
+          : await api.get<Result>(
+              `${root}/queries/saved/${byName.path}?${new URLSearchParams({
+                limit: String(asked),
+                ...(parameters.length > 0
+                  ? {
+                      params: JSON.stringify(
+                        Object.fromEntries(
+                          parameters.flatMap((one, at) =>
+                            values[at] === null ? [] : [[one.name, values[at]]],
+                          ),
+                        ),
+                      ),
+                    }
+                  : {}),
+              })}`,
+            );
       setResult(answer);
       setTook(Math.round(performance.now() - started));
     } catch (error) {
@@ -442,12 +591,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
             >
               <Save aria-hidden="true" size={14} /> {current ? "Save" : "Save as…"}
             </Button>
-            <Button
-              variant="primary"
-              loading={busy}
-              disabled={!schema.data.maySql}
-              onClick={() => void run()}
-            >
+            <Button variant="primary" loading={busy} disabled={!mayRun} onClick={() => void run()}>
               <Play aria-hidden="true" size={16} /> Run
             </Button>
           </div>
@@ -460,10 +604,26 @@ export function Queries({ root, link }: { root: string; link: string }) {
           {keep.clashed ? <DraftClash what="query" mine={() => text} onTake={takeTheirs} /> : null}
           {schema.data.maySql ? null : (
             <Notice tone="plain">
-              You can read the queries kept here, but not run SQL: that takes the permission to read
-              with SQL (<code>sql:read</code>), which a role has only when it names it.
+              You cannot write or run SQL: that takes the permission to read with SQL (
+              <code>sql:read</code>), which a role has only when it names it.{" "}
+              {byName
+                ? "This query is deployed, so it can be run by name."
+                : current
+                  ? "This query has changes that are not deployed, so it cannot be run by name yet."
+                  : "A query kept here and deployed can be run by name by anyone who may read its tables."}
             </Notice>
           )}
+          {current && !removing ? (
+            <TextField
+              name="description"
+              label="What it is for"
+              required={false}
+              maxLength={500}
+              value={description}
+              hint="Shown beside the query in the list, and to whoever finds it by name."
+              onChange={(value) => edit({ description: value })}
+            />
+          ) : null}
           {/* The editor draws its own frame: a second border around it is a box in a box. */}
           <div>
             <Suspense fallback={<Loading />}>
@@ -473,7 +633,7 @@ export function Queries({ root, link }: { root: string; link: string }) {
                 path={`queries/${open ?? "new"}.sql`}
                 value={text}
                 onChange={changeText}
-                readOnly={removing}
+                readOnly={removing || !schema.data.maySql}
                 height="16rem"
                 onRun={() => void run()}
                 onSave={() => void save()}
@@ -483,38 +643,102 @@ export function Queries({ root, link }: { root: string; link: string }) {
           </div>
           {parameters.length > 0 ? (
             <div className="flex flex-wrap gap-3">
-              {parameters.map((one) => (
-                <div key={one.name} className="w-48">
-                  {one.type === "boolean" ? (
-                    <SelectField
-                      name={one.name}
-                      label={one.label ?? one.name}
-                      options={[
-                        { value: "", label: "Not set" },
-                        { value: "true", label: "Yes" },
-                        { value: "false", label: "No" },
-                      ]}
-                      value={typed[one.name] ?? String(one.default ?? "")}
-                      onChange={(value) => setTyped((now) => ({ ...now, [one.name]: value }))}
-                    />
-                  ) : (
-                    <TextField
-                      name={one.name}
-                      label={one.label ?? one.name}
-                      required={false}
-                      {...(one.type === "date" ? { type: "date" as const } : {})}
-                      {...(one.type === "text" || one.type === "date" ? {} : { hint: one.type })}
-                      {...(problems[one.name] && (attempted || typed[one.name] !== undefined)
-                        ? { error: problems[one.name] }
-                        : {})}
-                      value={typed[one.name] ?? String(one.default ?? "")}
-                      onChange={(value) => setTyped((now) => ({ ...now, [one.name]: value }))}
-                    />
-                  )}
+              {parameters.map((one, at) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: a parameter is its place, $1, $2, whatever it is called
+                <div key={at} className="w-48">
+                  <TypedField
+                    name={`value-${at}`}
+                    label={one.label ?? one.name}
+                    type={one.type}
+                    value={typed[String(at)] ?? defaultText(one.default)}
+                    onChange={(value) => setTyped((now) => ({ ...now, [String(at)]: value }))}
+                    {...(one.type === "text" || one.type === "date" || one.type === "boolean"
+                      ? {}
+                      : { hint: one.type })}
+                    error={
+                      problems[String(at)] && (attempted || typed[String(at)] !== undefined)
+                        ? problems[String(at)]
+                        : undefined
+                    }
+                  />
                 </div>
               ))}
             </div>
           ) : null}
+          {parameters.length > 0 && !removing ? (
+            <details className="rounded-control border border-line px-3 py-2">
+              <summary className="cursor-pointer text-body-sm font-medium">
+                What each parameter is
+              </summary>
+              <div className="mt-3 flex flex-col gap-4">
+                {parameters.map((one, at) => (
+                  <fieldset
+                    // biome-ignore lint/suspicious/noArrayIndexKey: a parameter is its place, $1, $2, whatever it is called
+                    key={at}
+                    className="m-0 grid min-w-0 gap-3 border-0 p-0 sm:grid-cols-2 lg:grid-cols-3"
+                  >
+                    <legend className="mb-2 font-mono text-code-sm">{`$${at + 1}`}</legend>
+                    <TextField
+                      name={`name-${at}`}
+                      label={`Name of parameter ${at + 1}`}
+                      required={false}
+                      maxLength={55}
+                      placeholder={`p${at + 1}`}
+                      value={one.name.startsWith("$") ? "" : one.name}
+                      hint="What whoever runs the query calls it."
+                      {...(about[at]?.name ? { error: about[at]?.name } : {})}
+                      onChange={(value) =>
+                        change(at, { name: value === "" ? `$${at + 1}` : value })
+                      }
+                    />
+                    <SelectField
+                      name={`type-${at}`}
+                      label={`Type of parameter ${at + 1}`}
+                      options={QUERY_PARAMETER_TYPES.map((type) => ({ value: type, label: type }))}
+                      value={one.type}
+                      onChange={(type) => change(at, { type })}
+                    />
+                    <TextField
+                      name={`label-${at}`}
+                      label={`Label of parameter ${at + 1}`}
+                      required={false}
+                      maxLength={100}
+                      value={one.label ?? ""}
+                      hint="What the field is called. The name when empty."
+                      onChange={(value) => change(at, { label: value })}
+                    />
+                    <TypedField
+                      name={`default-${at}`}
+                      label={`Default of parameter ${at + 1}`}
+                      type={one.type}
+                      value={defaultText(one.default)}
+                      error={about[at]?.default}
+                      onChange={(value) => change(at, { default: value })}
+                    />
+                    <CheckboxField
+                      name={`required-${at}`}
+                      label={`Parameter ${at + 1} is needed`}
+                      checked={one.required === true}
+                      hint="A run with no value for it is refused."
+                      onChange={(on) => change(at, { required: on })}
+                    />
+                  </fieldset>
+                ))}
+              </div>
+            </details>
+          ) : null}
+          <div className="w-48">
+            <TextField
+              name="rows"
+              label="Rows to return"
+              type="number"
+              required={false}
+              value={wanted}
+              hint={`Up to ${count(MOST_ROWS)}.`}
+              {...(rowsProblem ? { error: rowsProblem } : {})}
+              onChange={setWanted}
+            />
+          </div>
           {refusal ? (
             <Notice tone="danger">
               {refusal.line ? `Line ${refusal.line}, column ${refusal.column}: ` : ""}
@@ -589,7 +813,17 @@ export function Queries({ root, link }: { root: string; link: string }) {
                           one.path === open ? "bg-action-soft" : ""
                         }`}
                       >
-                        <span className="font-mono text-code">{one.path}</span>
+                        {one.title ? <span>{one.title}</span> : null}
+                        <span
+                          className={`font-mono ${one.title ? "text-meta text-ink-muted" : "text-code"}`}
+                        >
+                          {one.path}
+                        </span>
+                        {one.renamedFrom ? (
+                          <span className="text-meta text-ink-muted">
+                            Renamed from {one.renamedFrom}, once deployed.
+                          </span>
+                        ) : null}
                         {one.description ? (
                           <span className="text-meta text-ink-muted">{one.description}</span>
                         ) : null}

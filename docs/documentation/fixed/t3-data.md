@@ -1,0 +1,14 @@
+# Fixed: lane t3-data (tier 3, queries, sources, dashboards, files)
+
+Items QSD-MP1 to MP11 and the "Found" row (DAT-30). Merged `phase-29-correct-the-product` first. Nothing else is shared with another lane unless said.
+
+## Queries: QSD-MP3, QSD-MP7, QSD-MP8, DAT-30
+
+Tests (all seen failing before): `apps/console/src/Queries.test.tsx` ("running a saved query without sql:read (QSD-MP7)", "how many rows a run returns (QSD-MP8)", "what a query says of itself (QSD-MP3)", "the list of saved queries (DAT-30)"), `apps/control-plane/src/queries.test.ts` ("the list gives a query's title ... (DAT-30)"). No migration. One addition to `GET queries`: `title`.
+
+- **QSD-MP3.** `Queries.tsx`: the draft is now `QueryDraft` (`sql`, `description`, `declared` parameters), saved together by `useDraftSave`. A "What it is for" field, and "What each parameter is" (a details panel): name, type, label, default, "is needed" for each `$n`. A name is checked as the manifest asks (`Lowercase letters, digits and underscores, starting with a letter.`, and unique), a default is read with the same `readTyped` as a run; a save is refused while one is wrong, and the field says so. `written()` leaves out an empty label, an empty default and a false `required`. A parameter that is needed and left empty on screen is said (`A value is needed.`) and not run. The values typed are kept by place, not by name, so renaming a parameter keeps what was typed.
+- **QSD-MP7.** `Queries.tsx` `run`: without `sql:read`, a deployed query with no draft and no unsaved change is run by `GET queries/saved/<path>` with its parameters by name, as the route allows (`data:read` on its tables). Anything else stays disabled and the notice says which case it is. The editor is read-only without `sql:read`.
+- **QSD-MP8.** "Rows to return" (default 1,000, 1 to 10,000, said on the field) sent as `limit` on both run routes.
+- **DAT-30 / Found.** `routes/queries.ts` `GET queries` gives `title` (the draft's when there is one). The list shows the title with the path under it, and "Renamed from X, once deployed." for a draft that renames.
+- Siblings looked at: `routes/dashboards.ts` and the widget SQL editor do not scan for parameters; `kit/sqlParameters.ts` is shared and unchanged. The Resources list already shows a title.
+- Screens to walk: Data > Queries at 1440, 768, 390 px, light and dark: open a saved query with parameters; type in each parameter's panel; Save; reload and see them back; as a member without `sql:read` open a deployed query and Run it. States: loading, empty list, a bad name, a bad default, saving, failed save (a notify), refused run. Keyboard: the panel is a native `details` (Enter or Space on its summary), the fields tab in order, the checkbox is native. Copy: sentences end in a period, none says "simply".

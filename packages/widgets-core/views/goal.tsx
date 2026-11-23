@@ -63,7 +63,7 @@ export function GoalView(props: WidgetViewProps<GoalConfig>) {
   return (
     <div
       // A button only when the page does something on a click, as the Stat is.
-      className={`flex w-full flex-col gap-1.5 text-left text-ink ${pressable ? `${PRESSABLE} -m-2 rounded-control p-2` : ""}`}
+      className={`flex flex-col gap-1.5 text-left text-ink ${pressable ? `${PRESSABLE} -m-2 w-[calc(100%+1rem)] rounded-control p-2` : "w-full"}`}
       {...(pressable ? { role: "button", ...press(true, () => emit("click", {})) } : {})}
     >
       <span

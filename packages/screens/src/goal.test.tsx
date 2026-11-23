@@ -168,6 +168,23 @@ describe("the Goal's view", () => {
     expect(emit).toHaveBeenCalledWith("click", {});
   });
 
+  test("a pressable goal is as wide as a plain one: the negative margin is paid for in width (R-last)", () => {
+    render(
+      <GoalView
+        config={{ target: 100 }}
+        data={{ value: summary(10) }}
+        size={SIZE}
+        emit={vi.fn()}
+        building={false}
+        listens={(event) => event === "click"}
+      />,
+    );
+    const box = screen.getByRole("button");
+    expect(box.className).toContain("-m-2");
+    expect(box.className).not.toMatch(/(^|\s)w-full(\s|$)/);
+    expect(box.className).toContain("w-[calc(100%+1rem)]");
+  });
+
   test("is not a button when nothing listens to its click (WID-27)", () => {
     draw({ target: 100 }, 10);
     expect(screen.queryByRole("button")).toBeNull();

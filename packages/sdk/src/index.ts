@@ -724,6 +724,8 @@ type Target = string | { path: string };
 /** A node of a flow, as the manifest stores it. */
 export type FlowNode = Record<string, unknown> & { type: string };
 
+const keyed = (key: string | undefined) => (key ? { key } : {});
+
 /** The entry points of a flow. A flow may have several, each leading into its own part of the graph. */
 export const trigger = {
   /**
@@ -748,6 +750,12 @@ export const trigger = {
       timezone?: string;
       source?: Target;
       /**
+       * What names this start for as long as the flow lives. Its address, its pause and
+       * when it last fired follow the key when the step is renamed. Left out, the step's
+       * own name is the key.
+       */
+      key?: string;
+      /**
        * `skip`, the default, passes over a time while the flow's last run from this
        * trigger is still going. `allow` starts another beside it.
        */
@@ -755,6 +763,7 @@ export const trigger = {
     } = {},
   ): FlowNode => ({
     type: "trigger",
+    ...keyed(options.key),
     trigger: compact({
       type: "schedule",
       cron,
@@ -774,9 +783,16 @@ export const trigger = {
       source?: Target;
       /** `flow` holds the request open, for up to 25 seconds, for a respond step to answer. */
       respond?: "now" | "flow";
+      /**
+       * What names this start for as long as the flow lives. Its address, its pause and
+       * when it last fired follow the key when the step is renamed. Left out, the step's
+       * own name is the key.
+       */
+      key?: string;
     } = {},
   ): FlowNode => ({
     type: "trigger",
+    ...keyed(options.key),
     trigger: compact({
       type: "webhook",
       input: options.input,
@@ -786,13 +802,15 @@ export const trigger = {
     }),
   }),
   /** Started when someone sends the form, which the platform serves as a page. The input is the fields. */
-  form: (options: FormOptions): FlowNode => ({
+  form: ({ key, ...options }: FormOptions & { key?: string }): FlowNode => ({
     type: "trigger",
+    ...keyed(key),
     trigger: compact({ type: "form", ...options }),
   }),
   /** Started when an event is published. `filter` is CEL over `event.payload`. */
-  event: (event: Target, options: { filter?: string } = {}): FlowNode => ({
+  event: (event: Target, options: { filter?: string; key?: string } = {}): FlowNode => ({
     type: "trigger",
+    ...keyed(options.key),
     trigger: compact({ type: "event", event: pathOf(event), filter: options.filter }),
   }),
 };

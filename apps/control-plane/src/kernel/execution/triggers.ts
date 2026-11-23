@@ -151,6 +151,8 @@ interface Registration {
   form?: FormTrigger;
   /** CEL expressions that tag each run the trigger starts. */
   tags?: string[] | undefined;
+  /** What names the start through a rename of its step: its address and its pause follow it. */
+  key?: string | undefined;
 }
 
 /** What a webhook does with a request, as its trigger said. Kept with the registered trigger. */
@@ -251,6 +253,105 @@ function firstFire(schedule: ScheduleConfig, field: string): Date | null {
   }
 }
 
+/** What names a registered start: its key if it was given one, else its step's name. */
+const keyOfRow = (row: { node_id: string; config: unknown }): string => {
+  const config = typeof row.config === "string" ? JSON.parse(row.config) : row.config;
+  const key = (config as { key?: unknown } | null)?.key;
+  return typeof key === "string" && key ? key : row.node_id;
+};
+
+/**
+ * A start whose step was renamed keeps its row, its address, its pause and when it last
+ * fired, when its key is the one the row has. `existing` is changed to say where each row is.
+ */
+async function carryRenamed(
+  kernel: Kernel,
+  trx: Trx,
+  resource: AppliedResource,
+  wanted: Registration[],
+  existing: {
+    node_id: string;
+    type: string;
+    config: unknown;
+    token_encrypted: Buffer | null;
+  }[],
+) {
+  const named = new Set(wanted.map((registration) => registration.node));
+  const moves: { from: string; to: string; token: Buffer | null; row: { node_id: string } }[] = [];
+  for (const registration of wanted) {
+    if (existing.some((row) => row.node_id === registration.node && row.type === registration.type))
+      continue;
+    const identity = registration.key ?? registration.node;
+    const row = existing.find(
+      (one) =>
+        one.type === registration.type &&
+        !named.has(one.node_id) &&
+        !moves.some((move) => move.from === one.node_id) &&
+        keyOfRow(one) === identity,
+    );
+    if (row)
+      moves.push({ from: row.node_id, to: registration.node, token: row.token_encrypted, row });
+  }
+  if (moves.length === 0) return;
+  // Through a name of their own, so that two steps may swap names.
+  const away = (from: string) => `~moving~${from}`;
+  const pause = (node: string, to: string) =>
+    sql`update trigger_pause set node_id = ${to}
+        where workspace_id = ${resource.workspaceId} and path = ${resource.path} and node_id = ${node}`.execute(
+      trx,
+    );
+  const refusals = (node: string, to: string) =>
+    sql`update webhook_refusal set node_id = ${to}
+        where workspace_id = ${resource.workspaceId} and path = ${resource.path} and node_id = ${node}`.execute(
+      trx,
+    );
+  const tokens = new Map<string, Buffer>();
+  for (const move of moves) {
+    if (!move.token) continue;
+    const token = await webhookToken(kernel, {
+      resource_id: resource.id,
+      node_id: move.from,
+      tenant_id: resource.tenantId,
+      workspace_id: resource.workspaceId,
+      token_encrypted: move.token,
+    });
+    if (token)
+      tokens.set(
+        move.to,
+        await encryptFor(
+          kernel,
+          trx,
+          resource.tenantId,
+          resource.workspaceId,
+          `webhook:${resource.id}:${move.to}`,
+          token,
+        ),
+      );
+  }
+  for (const move of moves) {
+    await trx
+      .updateTable("trigger_state")
+      .set({ node_id: away(move.from) })
+      .where("resource_id", "=", resource.id)
+      .where("node_id", "=", move.from)
+      .execute();
+    await pause(move.from, away(move.from));
+    await refusals(move.from, away(move.from));
+  }
+  for (const move of moves) {
+    const token = tokens.get(move.to);
+    await trx
+      .updateTable("trigger_state")
+      .set({ node_id: move.to, ...(token ? { token_encrypted: token } : {}) })
+      .where("resource_id", "=", resource.id)
+      .where("node_id", "=", away(move.from))
+      .execute();
+    await pause(away(move.from), move.to);
+    await refusals(away(move.from), move.to);
+    move.row.node_id = move.to;
+  }
+}
+
 /**
  * Makes a resource's registered triggers match what its manifest says. A
  * webhook keeps its address for as long as its trigger exists.
@@ -263,9 +364,10 @@ async function register(
 ) {
   const existing = await trx
     .selectFrom("trigger_state")
-    .select(["node_id", "type"])
+    .select(["node_id", "type", "config", "token_encrypted"])
     .where("resource_id", "=", resource.id)
     .execute();
+  await carryRenamed(kernel, trx, resource, wanted, existing);
   const keep = new Set(wanted.map((registration) => registration.node));
   for (const row of existing) {
     const still = wanted.find((registration) => registration.node === row.node_id);
@@ -292,6 +394,7 @@ async function register(
       config: JSON.stringify({
         ...(registration.schedule ?? registration.webhook ?? registration.form ?? {}),
         ...(registration.tags?.length ? { tags: registration.tags } : {}),
+        ...(registration.key ? { key: registration.key } : {}),
       }),
     };
     const current = existing.find(
@@ -452,6 +555,7 @@ export function registerExecutionHooks(kernel: Kernel) {
           const trigger: Exclude<FlowTrigger, { type: "manual" }> = definition.trigger;
           wanted.push({
             node,
+            ...(definition.key ? { key: definition.key } : {}),
             type: trigger.type,
             target: { kind: "flow", path: resource.path },
             enabled: true,

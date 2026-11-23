@@ -60,6 +60,7 @@ export {
   sameResourceFile,
 } from "./files.js";
 export {
+  addressedStarts,
   checkFlow,
   type FlowBody,
   type FlowEdge,

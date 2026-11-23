@@ -31,3 +31,7 @@ A bundle is the unit of deploy: one workspace's manifests and its code, immutabl
 A manifest in a format 1 to 3 bundle carries none of these. A bundle in an older format that carries one is refused.
 
 Because a manifest without a `key` has its path as its key, a bundle built before keys names the same resources it always did. Deploying one after a resource was renamed renames it back.
+
+## The key of a start inside a flow
+
+A trigger node of a `flow` manifest may carry `key`: `^[a-z][a-z0-9_]*$`, up to 63 characters, unique among the flow's starts. It names the start for as long as the flow lives. A webhook's address, a form's address, a pause and when the start last fired follow the key when the node is renamed. Left out, the node's own name is the key, so a bundle written before keys behaves as it did: renaming such a node gives a webhook a new address, and the old one stops answering. A deploy that would do that lists it under `summary.breaking`. An older core refuses a bundle that carries `key` on a trigger node, as it refuses any field it does not know.

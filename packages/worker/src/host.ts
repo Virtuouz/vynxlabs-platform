@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import {
+  canSignalOtherUsers,
   formatMachine,
   type MachineProbe,
   type MachineShare,
@@ -129,6 +130,13 @@ export class WorkerHost {
       );
     }
     this.#log("info", "this machine's share", { ...this.machine, maxWorkers: max });
+    if (!canSignalOtherUsers()) {
+      this.#log(
+        "warn",
+        "this process may not send signals to workers of other users: it cannot stop them, " +
+          "drain them or end a script when memory runs short. Give its container CAP_KILL.",
+      );
+    }
     this.#guard.start();
     while (!this.#stopping) {
       if (this.#workers.size >= max || this.#shortOfMemory()) {
@@ -156,20 +164,35 @@ export class WorkerHost {
   }
 
   /** Stops asking, and asks each worker to finish what it is doing and exit. */
-  async stop(graceSeconds = 30): Promise<void> {
+  async stop(graceSeconds = 30, giveUpSeconds = 10): Promise<void> {
     this.#stopping = true;
     this.#asking?.abort();
     this.#guard.stop();
     await Promise.all(
-      [...this.#workers.values()].map(
-        (child) =>
+      [...this.#workers.entries()].map(
+        ([leaseId, child]) =>
           new Promise<void>((resolve) => {
             if (child.exitCode !== null || child.signalCode !== null) return resolve();
-            const force = setTimeout(() => child.kill("SIGKILL"), graceSeconds * 1000);
-            child.once("exit", () => {
-              clearTimeout(force);
+            const timers: NodeJS.Timeout[] = [];
+            const done = () => {
+              for (const timer of timers) clearTimeout(timer);
               resolve();
-            });
+            };
+            child.once("exit", done);
+            timers.push(setTimeout(() => child.kill("SIGKILL"), graceSeconds * 1000));
+            // A worker that cannot be signalled is left, and said: its lease stays held.
+            timers.push(
+              setTimeout(
+                () => {
+                  this.#log("error", "a worker could not be stopped and is left running", {
+                    leaseId,
+                    pid: child.pid,
+                  });
+                  done();
+                },
+                (graceSeconds + giveUpSeconds) * 1000,
+              ),
+            );
             child.kill("SIGTERM");
           }),
       ),
@@ -279,7 +302,20 @@ export class WorkerHost {
       void this.#ended(lease);
     };
     child.once("exit", end);
-    child.once("error", (error) => {
+    let spawned = false;
+    child.once("spawn", () => {
+      spawned = true;
+    });
+    // Node reports a signal that was refused here too, as it reports a worker that could not start.
+    // A refused signal leaves the worker running and its lease held: it is not an exit.
+    child.on("error", (error) => {
+      if (spawned) {
+        this.#log("error", "a signal to a worker was refused: the worker is still running", {
+          tenantId: lease.tenantId,
+          error: error.message,
+        });
+        return;
+      }
       this.#log("error", "a worker could not be started", {
         tenantId: lease.tenantId,
         error: error.message,

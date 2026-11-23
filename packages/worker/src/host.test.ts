@@ -162,4 +162,55 @@ describe("the worker host", () => {
     for (const one of started) await expect(stat(one.home)).rejects.toThrow(/ENOENT/);
     expect(ended.sort()).toEqual(["a", "b", "c"]);
   });
+
+  test("a worker that cannot be signalled keeps its lease, and stopping does not end the host (HOST-04)", async () => {
+    const bin = join(scratch, "stay.mjs");
+    await writeFile(
+      bin,
+      "setInterval(() => {}, 1000); process.once('SIGTERM', () => process.exit(0));",
+    );
+    const own = self();
+    let refuse = true;
+    const logged: string[] = [];
+    const children: ReturnType<typeof spawn>[] = [];
+    // A child whose `kill` fails as it does for another user's process without CAP_KILL.
+    const stubborn = ((command: string, args: string[], options: Record<string, unknown>) => {
+      const { uid: _uid, gid: _gid, ...rest } = options;
+      const child = spawn(command, args, { ...rest, uid: own.uid, gid: own.gid } as never);
+      const kill = child.kill.bind(child);
+      child.kill = ((signal?: NodeJS.Signals) => {
+        if (!refuse) return kill(signal);
+        child.emit("error", Object.assign(new Error("kill EPERM"), { code: "EPERM" }));
+        return false;
+      }) as typeof child.kill;
+      children.push(child);
+      return child;
+    }) as unknown as typeof Spawn;
+    const host = new WorkerHost({
+      url,
+      token: TOKEN,
+      user: self(),
+      scratchRoot: scratch,
+      spawn: stubborn,
+      workerBin: bin,
+      leaseWaitSeconds: 0,
+      log: (_level, message) => logged.push(message),
+    });
+    const running = host.run();
+    for (let i = 0; i < 100 && children.length === 0; i++) await sleep(50);
+    await sleep(200);
+    // Both signals are refused. The stop gives up, says so, and the host is still here.
+    await host.stop(0.1, 0.3);
+    await running;
+    expect(logged).toContain("a signal to a worker was refused: the worker is still running");
+    expect(logged).toContain("a worker could not be stopped and is left running");
+    expect(logged).not.toContain("a worker could not be started");
+    expect(host.running).toBe(1);
+    // Its lease is not said to be over while the worker runs.
+    expect(ended).toEqual([]);
+    refuse = false;
+    children[0]?.kill("SIGTERM");
+    for (let i = 0; i < 100 && ended.length === 0; i++) await sleep(50);
+    expect(ended).toEqual(["lease-1"]);
+  });
 });

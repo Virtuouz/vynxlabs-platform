@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canSignalOtherUsers,
   defaultFloorMb,
   defaultSlots,
   formatMachine,
@@ -57,5 +58,39 @@ describe("the memory guard", () => {
       process.kill = real;
     }
     expect(killed).toEqual([12, 12]);
+  });
+
+  it("says when it cannot end a script, and does not try again at once (HOST-04)", () => {
+    const real = process.kill;
+    let tries = 0;
+    process.kill = (() => {
+      tries += 1;
+      throw Object.assign(new Error("kill EPERM"), { code: "EPERM" });
+    }) as typeof process.kill;
+    const said: string[] = [];
+    try {
+      const guard = new MemoryGuard({
+        probe: machine(40),
+        log: (_level, message) => said.push(message),
+      });
+      expect(guard.check(1, 1000)).toBeUndefined();
+      expect(guard.check(1, 2000)).toBeUndefined();
+    } finally {
+      process.kill = real;
+    }
+    expect(tries).toBe(1);
+    expect(said).toEqual(["the machine is low on memory and a script cannot be stopped"]);
+  });
+});
+
+describe("whether a process may signal other users' processes", () => {
+  it("is root with CAP_KILL, as compose's capabilities leave it", () => {
+    // CapEff with only SETUID, SETGID, CHOWN, DAC_OVERRIDE, NET_ADMIN (compose before KILL).
+    const without = "Name:\tnode\nCapEff:\t0000000000001cc1\n";
+    // The same with bit 5 (KILL) added.
+    const withKill = "Name:\tnode\nCapEff:\t0000000000001ce1\n";
+    expect(canSignalOtherUsers(0, without)).toBe(false);
+    expect(canSignalOtherUsers(0, withKill)).toBe(true);
+    expect(canSignalOtherUsers(1000, withKill)).toBe(false);
   });
 });

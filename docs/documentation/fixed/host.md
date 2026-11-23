@@ -41,3 +41,31 @@
 - **Tests:** `token.test.ts` (the file reader; "nothing the deploy folder gives a standalone worker puts its credential in the environment (HOST-27)", which failed on the old files). `docker compose config` was run on the new file.
 - **Siblings:** the worker host passes workers their credential on standard input already; `deploy/fly` sets only the host token as a secret (an environment variable, as Fly's secrets are: not changed). The file is readable by the worker's own user, and so by its scripts: the gain is that `docker inspect` and `/proc/<pid>/environ` no longer show it. Running scripts as another user than the worker's (HOST-04's sibling) is not done.
 - **For the writing phase:** `docs/self-hosting.md:184` should name `--token-file` and the compose file's secret; `CHANGELOG`: "`volvel-worker --token-file`; the standalone compose reads `worker-token`. An existing `.env` with `VOLVEL_WORKER_TOKEN` must move it into the file."
+
+## HOST-01, HOST-02 again: a regression test without docker
+
+- `apps/control-plane/src/restore.test.ts`: a tenant in a database of its own with an open, an owner and a rules table, a row each. Test 1 drops every policy, `drop owned by` the `vxd_` role and drops the role, then opens the store again and reads and inserts as a member. Test 2 renames the database (the role's name comes from it), policies still handed to the old role. Both fail on the old code (checked by reversing the fix: 2 failed; with it: 2 passed).
+
+## HOST-04 The worker host stops, drains and guards workers of other users
+
+- **Changed:** `packages/worker/src/host.ts`: an `error` event after a worker has started (a refused signal) is logged and does not end the lease or delete the worker; `stop(graceSeconds = 30, giveUpSeconds = 10)` handles the error every time, ends with SIGKILL after the grace, and gives up with "a worker could not be stopped and is left running" rather than waiting for ever; at start the host says when it lacks CAP_KILL (`canSignalOtherUsers`, `machine.ts`, reads `CapEff`). `MemoryGuard.check` says "the machine is low on memory and a script cannot be stopped" when the kill is refused, then waits a minute. `deploy/compose/compose.yaml`: worker host gets `KILL` and `stop_grace_period: 60s` (30 drain, 10 give-up, 20 spare). Sibling `apps/control-plane/src/kernel/execution/supervisor.ts` (`process` mode, `#start`, `stop`): same distinction between a refused signal and a failed start, and `stop` gives up after the grace plus 10 s (typechecked only; nothing in the suite starts it as another user). Not done: a file capability on `node-cp`, and the Fly notes (Fly machines run as root with all capabilities by default).
+- **Tests:** `host.test.ts` "a worker that cannot be signalled keeps its lease, and stopping does not end the host (HOST-04)" (a child whose `kill` emits EPERM; failed with the old code); `machine.test.ts` the guard's refusal and `canSignalOtherUsers`.
+- **Left:** `worker.test.ts` and the runner's tests (4: "ends a script that ignores its time limit", "ends a canceled run's process") timed out or hit a node out-of-memory when I ran the whole `packages/worker` suite on the shared machine; I did not look into them. The files I touched pass.
+
+## Isolation proved as root in a container (HOST-03, HOST-04)
+
+Image `node:24-alpine` (already on the machine; nothing pulled or built), `--network none`, the worktree mounted read-only at `/app`, root with only `SETUID SETGID CHOWN DAC_OVERRIDE KILL`. The real `WorkerHost` from `packages/worker/dist` runs in it with a fake control plane on the container's loopback, two leases for two tenants, and a probe as each worker. The host's environment holds `WORKER_HOST_TOKEN`. Scripts: `docker run --rm --name p29_host_iso --network none --cap-drop ALL --cap-add SETUID --cap-add SETGID --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add KILL -v <worktree>:/app:ro -v <scripts>:/iso:ro --tmpfs /shared:mode=1777 node:24-alpine node /iso/harness.mjs`. Answers, the same for both workers (a is uid 20000, b is uid 20001):
+
+| attempt, by one worker against the other | answer |
+|---|---|
+| list the other's directory (`/tmp/volvel-lease-<id>`) | EACCES |
+| read the other's file (its cached bundle's place) | EACCES |
+| overwrite the other's file | EACCES |
+| create a file in the other's directory | EACCES |
+| signal the other's process (SIGTERM) | EPERM |
+| read the other's `/proc/<pid>/environ` | EACCES |
+| read the host's `/proc/<pid>/environ` (holds the host token) | EACCES |
+| signal the host | EPERM |
+| read its own file | allowed |
+
+Then both workers exited, both leases were reported ended, and no `volvel-lease-*` directory was left. Stopping, with a worker that stays: with `KILL` the worker was ended and `workers still running: 0`; without `KILL` the log says "this process may not send signals to workers of other users ... Give its container CAP_KILL", then "a signal to a worker was refused" twice and "a worker could not be stopped and is left running", and the host went on (it did not crash, as it did before). Output saved at `/tmp/claude-1000/-home-gplascencia-repos-vynxlabs-platform/45518b7f-b8fc-41f4-9613-9ba4253edadd/scratchpad/iso/out.txt`. Containers were started with `--rm`; `docker ps -a --filter name=p29_host` is empty.

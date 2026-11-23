@@ -67,10 +67,12 @@ services:
     command: ["volvel-worker-host"]
     # Root, to start each worker as a user of its own, holding only what that needs: SETUID and
     # SETGID to switch, CHOWN and DAC_OVERRIDE to make each worker's private directory and to
-    # remove it, and NET_ADMIN for the rules that keep workers from private and metadata addresses.
+    # remove it, KILL to stop workers and scripts of other users, and NET_ADMIN for the rules that keep workers from private and metadata addresses.
     user: "0:0"
     cap_drop: [ALL]
-    cap_add: [SETUID, SETGID, CHOWN, DAC_OVERRIDE, NET_ADMIN]
+    cap_add: [SETUID, SETGID, CHOWN, DAC_OVERRIDE, KILL, NET_ADMIN]
+    # The host asks each worker to finish for up to 30 seconds, then ends it, then gives up after 10 more.
+    stop_grace_period: 60s
     environment:
       VOLVEL_URL: http://control-plane:8080
       WORKER_HOST_TOKEN: ${WORKER_HOST_TOKEN:?set WORKER_HOST_TOKEN in .env}

@@ -338,7 +338,17 @@ export class WorkerSupervisor {
         .finally(() => this.#revoking.delete(revoking));
       this.#revoking.add(revoking);
     });
-    child.once("error", (error) => {
+    let spawned = false;
+    child.once("spawn", () => {
+      spawned = true;
+    });
+    child.on("error", (error) => {
+      // A signal that was refused (a worker of its own user, and no CAP_KILL) is reported the
+      // same way. The worker is still running and keeps its credential.
+      if (spawned) {
+        log.error({ err: error, tenantId }, "a signal to a managed worker was refused");
+        return;
+      }
       this.#workers.delete(tenantId);
       log.error({ err: error, tenantId }, "a managed worker could not be started");
     });
@@ -353,8 +363,11 @@ export class WorkerSupervisor {
         new Promise<void>((resolve) => {
           if (child.exitCode !== null) return resolve();
           const force = setTimeout(() => child.kill("SIGKILL"), graceSeconds * 1000);
+          // A worker that cannot be signalled is left; the control plane goes on stopping.
+          const giveUp = setTimeout(resolve, (graceSeconds + 10) * 1000);
           child.once("exit", () => {
             clearTimeout(force);
+            clearTimeout(giveUp);
             resolve();
           });
           child.kill("SIGTERM");

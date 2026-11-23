@@ -1,3 +1,4 @@
+import { sql } from "@volvel/db";
 import { type Bundle, type BundleManifest, bundleDigest } from "@volvel/manifest";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { fireDueSchedules } from "./kernel/execution/triggers.js";
@@ -208,4 +209,27 @@ test("a backlog is cancelled in bulk: queued runs, then flow runs in progress", 
   for (const one of listed.body.items as { status: string }[]) {
     expect(one.status).toBe("cancelled");
   }
+});
+
+test("a schedule whose bundle cannot be read does not stop the others from firing (OPS-04)", async () => {
+  const broken = await workspace("lost-object");
+  const fine = await workspace("kept-object");
+  const brokenId = broken.split("/").at(-1) as string;
+  // Its active bundle is one this process never read, whose object is gone from storage.
+  await t.db.transaction().execute(async (trx) => {
+    await sql`create temporary table lost_bundle on commit drop as select * from bundle where workspace_id = ${brokenId}`.execute(
+      trx,
+    );
+    await sql`update lost_bundle set id = gen_random_uuid(), version = version + 1000, digest = digest || 'x', storage_key = 'bundles/missing.json'`.execute(
+      trx,
+    );
+    await sql`insert into bundle select * from lost_bundle`.execute(trx);
+    await sql`update workspace set active_bundle_id = (select id from lost_bundle) where id = ${brokenId}`.execute(
+      trx,
+    );
+  });
+  await fireIn(2);
+  await fireIn(4);
+  expect(await flowRuns(fine, "skips")).toBeGreaterThan(0);
+  expect(await flowRuns(broken, "skips")).toBe(0);
 });

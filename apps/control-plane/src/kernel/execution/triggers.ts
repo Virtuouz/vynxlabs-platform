@@ -805,7 +805,33 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
   const backlogLimit = kernel.config.limits.scheduleBacklogLimit;
   let fired = 0;
   for (;;) {
-    const started = await kernel.db.transaction().execute(async (trx) => {
+    let started: Awaited<ReturnType<typeof fireOneDue>>;
+    try {
+      started = await fireOneDue();
+    } catch (error) {
+      if (!(error instanceof ScheduleStartFailed)) throw error;
+      // The start is rolled back with all it did. The schedule moves on to its next time in
+      // a transaction of its own, so that it is not the first due one again at every tick
+      // and the schedules behind it still fire.
+      kernel.log.error(
+        { schedule: error.label, err: error.cause },
+        "a schedule could not start its run, and was moved on to its next time",
+      );
+      await kernel.db
+        .updateTable("trigger_state")
+        .set({ next_fire_at: scheduleSource.nextFire?.(error.config, now) ?? null })
+        .where("resource_id", "=", error.resourceId)
+        .where("node_id", "=", error.nodeId)
+        .execute();
+      continue;
+    }
+    if (!started) return fired;
+    await kickStarted(kernel, [started]);
+    fired += 1;
+  }
+
+  function fireOneDue() {
+    return kernel.db.transaction().execute(async (trx) => {
       const due = await trx
         .selectFrom("trigger_state")
         .innerJoin("resource", "resource.id", "trigger_state.resource_id")
@@ -901,7 +927,15 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
         });
       } catch (error) {
         // A schedule that cannot start, such as one whose input no longer fits, must not block the rest.
-        if (!(error instanceof HttpError)) throw error;
+        if (!(error instanceof HttpError)) {
+          throw new ScheduleStartFailed(
+            error,
+            due.resource_id,
+            due.node_id,
+            due.node_id ? `${due.path}#${due.node_id}` : due.path,
+            config,
+          );
+        }
         kernel.log.warn(
           { schedule: due.path, reason: error.message },
           "a schedule could not start its run",
@@ -909,9 +943,19 @@ export async function fireDueSchedules(kernel: Kernel, now = new Date()): Promis
         return { kind: "none" as const, id: "" };
       }
     });
-    if (!started) return fired;
-    await kickStarted(kernel, [started]);
-    fired += 1;
+  }
+}
+
+/** What went wrong that is not the schedule's own to fix, such as a bundle that cannot be read. */
+class ScheduleStartFailed extends Error {
+  constructor(
+    override readonly cause: unknown,
+    readonly resourceId: string,
+    readonly nodeId: string,
+    readonly label: string,
+    readonly config: ScheduleConfig,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
   }
 }
 

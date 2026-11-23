@@ -328,11 +328,13 @@ async function seedRetry(
     } else if (step.child_flow_run_id) {
       const child = await trx
         .selectFrom("flow_run")
-        .select("output")
+        .select(["output", "output_ref"])
         .where("id", "=", step.child_flow_run_id)
         .executeTakeFirst();
-      output = child?.output ?? null;
-      outputRef = null;
+      // A large answer is copied to the retry's own key, as a script's is: the retry then
+      // needs nothing of the run it retries.
+      output = child?.output_ref ? null : (child?.output ?? null);
+      outputRef = child?.output_ref ?? null;
     }
     const name = `${step.node_id}${step.item_key ? `-${step.item_key}` : ""}`;
     await trx
@@ -1126,6 +1128,7 @@ class Advance {
       .set({
         status,
         output: stored.inline ?? JSON.stringify({ stored: stored.ref }),
+        output_ref: stored.ref,
         output_summary: summarize(output),
         error: error ? JSON.stringify(error) : null,
         finished_at: new Date(),

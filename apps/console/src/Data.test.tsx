@@ -290,10 +290,16 @@ test("a table made in the console is changed by saving its definition", async ()
   const dialog = await screen.findByRole("dialog");
   fireEvent.input(screen.getByLabelText("Name"), { target: { value: "paid" } });
   fireEvent.change(screen.getByLabelText("It holds"), { target: { value: "boolean" } });
-  fireEvent.input(screen.getByLabelText("Value when none is given"), { target: { value: "no" } });
+  // A yes/no column is given its value by a choice, not by typing a word.
+  fireEvent.change(screen.getByLabelText("Value when none is given"), {
+    target: { value: "false" },
+  });
+  fireEvent.change(screen.getByLabelText("Must every row's value be different?"), {
+    target: { value: "yes" },
+  });
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   await waitFor(() =>
-    expect(saved().body.columns.paid).toEqual({ type: "boolean", default: false }),
+    expect(saved().body.columns.paid).toEqual({ type: "boolean", default: false, unique: true }),
   );
   // It says what was made, not only that something was.
   expect(await screen.findByText("The column paid was added.")).toBeTruthy();
@@ -1070,4 +1076,178 @@ test("TAB-28: a time is shown, typed and read in the reader's zone, with UTC on 
   show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
   await screen.findByText("A-1");
   expect(await screen.findAllByTitle("2026-11-01T10:00:00.000Z (UTC)")).not.toHaveLength(0);
+});
+
+/** A table made in the console, whose stored definition is read and saved as the screen changes it. */
+function editable(extra: Record<string, object> = {}, columns: object[] = []) {
+  const body = {
+    columns: {
+      number: { type: "text", required: true, unique: true },
+      total: { type: "number", default: 0 },
+      owner_id: { type: "uuid" },
+      ...extra,
+    },
+    policy: { type: "owner", column: "owner_id" },
+  };
+  const table = orders("ui");
+  (table.columns as object[]).push(...columns);
+  routes[`GET /api/v1${root}/tables/orders`] = () => [200, table];
+  routes[`GET /api/v1${root}/resources/orders`] = () => [200, { body, version: 3 }];
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [200, { version: 4 }];
+  return () =>
+    calls.filter((call) => call.method === "PUT").at(-1)?.body as {
+      body: { columns: Record<string, Record<string, unknown>> };
+    };
+}
+const column = (name: string, type: string, more: object = {}) => ({
+  name,
+  type,
+  required: false,
+  unique: false,
+  default: null,
+  references: null,
+  status: "active",
+  held: null,
+  ...more,
+});
+
+test("TAB-P1 and TAB-P2: a column's required, no-two-alike and default are changed from its row, and a refusal names the values", async () => {
+  const saved = editable();
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  // The number column was required and unique: both are taken off, and a default is given.
+  fireEvent.click(screen.getAllByRole("button", { name: "Rules" })[0] as HTMLElement);
+  let dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Must every row have one?"), {
+    target: { value: "no" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Must every row's value be different?"), {
+    target: { value: "no" },
+  });
+  fireEvent.input(within(dialog).getByLabelText("Value when none is given"), {
+    target: { value: "none yet" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(saved().body.columns.number).toEqual({ type: "text", default: "none yet" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // Unique on a column whose rows share values is refused, and the refusal is read in the dialog.
+  routes[`PUT /api/v1${root}/resources/orders`] = () => [
+    409,
+    {
+      status: 409,
+      code: "conflict",
+      detail:
+        'The table "orders" cannot be changed: column "total" is now unique, and some rows share a value: "0" is in 3 rows. Make the values distinct first.',
+    },
+  ];
+  fireEvent.click(screen.getAllByRole("button", { name: "Rules" })[1] as HTMLElement);
+  dialog = await screen.findByRole("dialog");
+  // The default is shown in the control that fits its type, with what it is now.
+  expect(
+    (within(dialog).getByLabelText("Value when none is given") as HTMLInputElement).value,
+  ).toBe("0");
+  fireEvent.change(within(dialog).getByLabelText("Must every row's value be different?"), {
+    target: { value: "yes" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(await within(dialog).findByText(/"0" is in 3 rows/)).toBeTruthy();
+  expect(screen.getByRole("dialog")).toBe(dialog);
+  expect(
+    (within(dialog).getByLabelText("Must every row's value be different?") as HTMLSelectElement)
+      .value,
+  ).toBe("yes");
+});
+
+test("TAB-P2: a default is given in the column's own control, and one that does not read is said at the field", async () => {
+  const saved = editable(
+    {
+      state: { type: "enum", values: ["open", "closed"] },
+      paid: { type: "boolean" },
+    },
+    [
+      column("state", "enum", {
+        values: [{ value: "open" }, { value: "closed", label: "Closed" }],
+      }),
+      column("paid", "boolean"),
+    ],
+  );
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  const rulesOf = (name: string) => {
+    const at = ["number", "total", "owner_id", "state", "paid"].indexOf(name);
+    fireEvent.click(screen.getAllByRole("button", { name: "Rules" })[at] as HTMLElement);
+  };
+  rulesOf("state");
+  let dialog = await screen.findByRole("dialog");
+  const choice = within(dialog).getByLabelText("Value when none is given") as HTMLSelectElement;
+  expect(choice.tagName).toBe("SELECT");
+  expect([...choice.options].map((one) => one.textContent)).toEqual(["None", "open", "Closed"]);
+  fireEvent.change(choice, { target: { value: "closed" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(saved().body.columns.state?.default).toBe("closed"));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  rulesOf("paid");
+  dialog = await screen.findByRole("dialog");
+  fireEvent.change(within(dialog).getByLabelText("Value when none is given"), {
+    target: { value: "true" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(saved().body.columns.paid?.default).toBe(true));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // A number that is not one is said under its field, and nothing is saved.
+  const puts = calls.filter((call) => call.method === "PUT").length;
+  rulesOf("total");
+  dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Value when none is given"), {
+    target: { value: "lots" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  expect(await within(dialog).findByText("Enter a number.")).toBeTruthy();
+  expect(calls.filter((call) => call.method === "PUT").length).toBe(puts);
+});
+
+test("TAB-P3: a column's type is changed to what keeps its values, and a reference is pointed at another table", async () => {
+  const saved = editable({ customer: { type: "reference", references: "customers" } }, [
+    column("customer", "reference", { references: "customers", onDelete: "restrict" }),
+  ]);
+  routes[`GET /api/v1${root}/tables`] = () => [
+    200,
+    {
+      items: [
+        { name: "orders", status: "active" },
+        { name: "customers", status: "active" },
+        { name: "clients", status: "active" },
+        { name: "old", status: "retired" },
+      ],
+    },
+  ];
+  show(<TableView root={root} name="orders" link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Definition" }));
+  // Number can become text, and keeps its default as text. A text column can become a list only.
+  expect(screen.getAllByRole("button", { name: "Change type" }).length).toBe(3);
+  fireEvent.click(screen.getAllByRole("button", { name: "Change type" })[1] as HTMLElement);
+  let dialog = await screen.findByRole("dialog");
+  const kinds = within(dialog).getByLabelText("It holds") as HTMLSelectElement;
+  expect([...kinds.options].map((one) => one.value)).toEqual(["number", "text"]);
+  fireEvent.change(kinds, { target: { value: "text" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(saved().body.columns.total).toEqual({ type: "text", default: "0" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  // A reference's table is changed, among the active tables.
+  fireEvent.click(await screen.findByRole("button", { name: "Change table" }));
+  dialog = await screen.findByRole("dialog");
+  const box = within(dialog).getByRole("combobox");
+  fireEvent.click(box);
+  fireEvent.keyDown(box, { key: "ArrowDown" });
+  await screen.findByRole("option", { name: "customers" });
+  expect(screen.queryByRole("option", { name: "old" })).toBeNull();
+  fireEvent.click(await screen.findByRole("option", { name: "clients" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(saved().body.columns.customer?.references).toBe("clients"));
 });

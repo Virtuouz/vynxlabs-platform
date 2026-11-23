@@ -43,6 +43,13 @@ import { UndoRedo } from "../kit/UndoRedo.tsx";
 import { ColumnsMenu, ViewsMenu } from "../kit/views.tsx";
 import { type CreateConfig, CreateDialog, ListScreen, Page, RemoveButton } from "../ListScreen.tsx";
 import { Link, navigate, useNavigationGuard, useUrlParam, useUrlState } from "../router.tsx";
+import {
+  ChangeTypeDialog,
+  ColumnRulesDialog,
+  DefaultField,
+  hasNoDefault,
+  typesFrom,
+} from "./ColumnControls.tsx";
 import { ResourceIdentity } from "./ResourceIdentity.tsx";
 import {
   type Policy,
@@ -1944,6 +1951,9 @@ function Definition({
   const [adding, setAdding] = useState(false);
   // The column whose values, or whose rule for a delete, are being changed.
   const [optionsOf, setOptionsOf] = useState<TableColumn>();
+  // The column whose rules (required, no two alike, what it is given) or whose type is being changed.
+  const [rulesOf, setRulesOf] = useState<TableColumn>();
+  const [typeOf, setTypeOf] = useState<TableColumn>();
   const [failure, setFailure] = useState<string>();
   // What was chosen for "What stands for a row" shows at once, until the save has answered.
   const [chosenDisplay, setChosenDisplay] = useState<string>();
@@ -2068,6 +2078,17 @@ function Definition({
           {
             label: row.values ? "Values" : "On delete",
             onSelect: () => setOptionsOf(row),
+          },
+        ]
+      : []),
+    ...(hasNoDefault(row.type) && row.type === "file"
+      ? []
+      : [{ label: "Rules", onSelect: () => setRulesOf(row) }]),
+    ...(row.references || typesFrom(row.type).length > 1
+      ? [
+          {
+            label: row.references ? "Change table" : "Change type",
+            onSelect: () => setTypeOf(row),
           },
         ]
       : []),
@@ -2492,6 +2513,50 @@ function Definition({
           )
         }
       </Closing>
+      <Closing subject={rulesOf}>
+        {(column, shown) => (
+          <ColumnRulesDialog
+            key={column.name}
+            open={shown}
+            column={column}
+            onClose={() => setRulesOf(undefined)}
+            onSave={(edit) =>
+              change(
+                (body) => {
+                  const definition = body.columns[column.name];
+                  if (definition) edit(definition);
+                },
+                { report: false, label: `the rules of ${column.name}` },
+              )
+            }
+          />
+        )}
+      </Closing>
+      <Closing subject={typeOf}>
+        {(column, shown) => (
+          <ChangeTypeDialog
+            key={column.name}
+            root={root}
+            open={shown}
+            column={column}
+            onClose={() => setTypeOf(undefined)}
+            onSave={(edit) =>
+              change(
+                (body) => {
+                  const definition = body.columns[column.name];
+                  if (definition) edit(definition);
+                },
+                {
+                  report: false,
+                  label: column.references
+                    ? `the table ${column.name} points to`
+                    : `the type of ${column.name}`,
+                },
+              )
+            }
+          />
+        )}
+      </Closing>
       <CreateDialog
         open={adding}
         onClose={() => setAdding(false)}
@@ -2530,10 +2595,31 @@ function Definition({
               ],
             },
             {
+              name: "unique",
+              label: "Must every row's value be different?",
+              options: [
+                { value: "no", label: "No" },
+                { value: "yes", label: "Yes: no two rows alike" },
+              ],
+              when: (values) => !["json", "file", "enum_list"].includes(values.type ?? "text"),
+            },
+            {
               name: "fallback",
               label: "Value when none is given",
               required: false,
               hint: "Optional.",
+              when: (values) => !hasNoDefault(values.type ?? "text"),
+              render: ({ value, values, error, onChange }) => (
+                <DefaultField
+                  // A new control when the type changes: a yes/no and a date hold different text.
+                  key={values.type ?? "text"}
+                  type={values.type ?? "text"}
+                  values={listOf(values.values ?? "")}
+                  value={value}
+                  error={error}
+                  onChange={onChange}
+                />
+              ),
             },
           ],
           done: (_result, sent) => `The column ${sent.name} was added.`,
@@ -2544,6 +2630,7 @@ function Definition({
             onDelete,
             values,
             required,
+            unique,
             fallback,
           }) =>
             change(
@@ -2559,7 +2646,10 @@ function Definition({
                     ? { values: listOf(values ?? "") }
                     : {}),
                   ...(required === "yes" ? { required: true } : {}),
-                  ...(fallback ? { default: parseValue(type, fallback) } : {}),
+                  ...(unique === "yes" ? { unique: true } : {}),
+                  ...(fallback && !hasNoDefault(type)
+                    ? { default: parseValue(type, fallback) }
+                    : {}),
                 };
               },
               { label: `adding ${name}` },

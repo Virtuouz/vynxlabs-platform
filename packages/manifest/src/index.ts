@@ -229,6 +229,7 @@ export {
   validateJson,
 } from "./registry.js";
 export {
+  COLUMN_WIDENINGS,
   checkTable,
   conditionColumn,
   displayGuess,

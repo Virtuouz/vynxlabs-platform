@@ -172,6 +172,54 @@ const draft = (client: Client, path: string, kind: string, body: object, more: o
   });
 
 describe("a data source's table on a page", () => {
+  test("the list says whether the caller may make a dashboard (DAT-24)", async () => {
+    expect((await plain.get(`${ws()}/dashboards`)).body.mayCreate).toBe(true);
+    expect((await nodata.get(`${ws()}/dashboards`)).body.mayCreate).toBe(false);
+  });
+
+  test("figures over a source's table are refused in the source's words, not as a missing table (DAT-28)", async () => {
+    const made = await reader.post(`${ws()}/dashboards`, { title: "Counts" });
+    const stat = {
+      id: "n",
+      type: "core/stat",
+      at: { x: 0, y: 0, w: 3, h: 3 },
+      data: {
+        value: {
+          source: {
+            visual: {
+              table: "erp/customers",
+              measures: [{ fn: "count", as: "customers" }],
+            },
+          },
+        },
+      },
+    };
+    const saved = await reader.put(`${ws()}/dashboards/${made.body.id}`, {
+      body: { widgets: [stat] },
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    const read = await reader.get(`${ws()}/widget-data?of=dashboard&path=${made.body.id}&widget=n`);
+    expect(read.status, JSON.stringify(read.body)).toBe(400);
+    expect(JSON.stringify(read.body)).toContain("data source");
+    expect(JSON.stringify(read.body)).not.toContain("you may read here");
+  });
+
+  test("a member's dashboard over a table that is not there is kept, and its answer says so (DAT-28)", async () => {
+    const made = await reader.post(`${ws()}/dashboards`, { title: "Leads" });
+    const saved = await reader.put(`${ws()}/dashboards/${made.body.id}`, {
+      body: board({ visual: { table: "nowhere/leads", columns: ["name"] } }),
+    });
+    expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+    expect(saved.body.problems).toEqual([
+      expect.objectContaining({ message: 'there is no table "nowhere/leads" in this workspace' }),
+    ]);
+    const again = await reader.get(`${ws()}/dashboards/${made.body.id}`);
+    expect(again.body.problems).toHaveLength(1);
+    // One that is complete says nothing.
+    const fine = await reader.post(`${ws()}/dashboards`, { title: "Fine" });
+    expect(fine.body.problems).toEqual([]);
+  });
+
   test("is saved in a member's dashboard only by whoever may read the source", async () => {
     const made = await plain.post(`${ws()}/dashboards`, { title: "Customers" });
     expect(made.status).toBe(201);

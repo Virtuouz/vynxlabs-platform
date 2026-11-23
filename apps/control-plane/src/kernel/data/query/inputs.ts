@@ -554,15 +554,14 @@ export async function readWidget(
     return found;
   };
 
-  /** Rows of a table in a bound data source, which SQL views cannot read. */
-  const external = async (input: DataInput, offset: number) => {
+  /** The data source and table a visual input names, when the table is one in a bound source. */
+  const inSource = async (input: DataInput) => {
     if (!("visual" in input.source)) return undefined;
     const visual = input.source.visual;
     if (catalog.tables.has(visual.table)) return undefined;
     const slash = visual.table.lastIndexOf("/");
     if (slash <= 0) return undefined;
     const sourcePath = visual.table.slice(0, slash);
-    const table = visual.table.slice(slash + 1);
     const bound = await kernel.db
       .selectFrom("data_source_binding")
       .select("id")
@@ -573,6 +572,14 @@ export async function readWidget(
     if (!(await ctx.allowed("data:read", at))) {
       throw forbiddenBecause("This needs the data:read permission.");
     }
+    return { visual, sourcePath, table: visual.table.slice(slash + 1) };
+  };
+
+  /** Rows of a table in a bound data source, which SQL views cannot read. */
+  const external = async (input: DataInput, offset: number) => {
+    const found = await inSource(input);
+    if (!found) return undefined;
+    const { visual, sourcePath, table } = found;
     if ((visual.groupBy?.length ?? 0) > 0 || (visual.measures?.length ?? 0) > 0) {
       throw badRequest("Rows of a data source's table can be listed, not totalled.");
     }
@@ -875,6 +882,10 @@ export async function readWidget(
 
     if (declared.shape === "summary") {
       if (offset > 0) throw badRequest("A summary has one page.");
+      // Figures are drawn from the workspace's tables. A data source's table is read for its rows.
+      if (await inSource(input)) {
+        throw badRequest("Rows of a data source's table can be listed, not totalled.");
+      }
       const asked = await inputQuery(kernel, at, input, page, { shape: "summary" });
       const result = await run(asked);
       const rows = asRecords(result, asked.columns);

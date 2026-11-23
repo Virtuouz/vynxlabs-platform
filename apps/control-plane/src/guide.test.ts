@@ -10,7 +10,7 @@ test("every series the metrics answer with is in the self-hosting guide (INS-29)
   const names = new Set<string>();
   for (const file of ["routes/execution.ts", "kernel/metrics.ts"]) {
     const source = readFileSync(join(here, file), "utf8");
-    for (const found of source.matchAll(/(?:# TYPE |")(platform_[a-z_]+)/g)) {
+    for (const found of source.matchAll(/(?:# TYPE |")(volvel_[a-z_]+)/g)) {
       names.add(found[1] as string);
     }
   }
@@ -33,4 +33,19 @@ test("the guide does not say what the code does not do (INS-29)", () => {
   expect(guide).toMatch(/`\/api\/v1\/readyz` stays 200/);
   // The screen is called Console branding in the navigation.
   expect(guide).toContain("**Instance → Console branding**");
+});
+
+test("the guide says how to restore, upgrade Postgres, change AUTH_SECRET, install with no internet, and what the object store must allow (HOST-28)", () => {
+  for (const heading of [
+    "## Restoring an instance",
+    "### Changing `AUTH_SECRET`",
+    "### Upgrading Postgres to a newer major version",
+    "### Installing where there is no internet",
+  ]) {
+    expect(guide, heading).toContain(`\n${heading}\n`);
+  }
+  // The four things the object store is asked, and the one case that makes the bucket.
+  expect(guide).toMatch(/HeadBucket/);
+  expect(guide).toMatch(/CreateBucket/);
+  expect(guide).toMatch(/DeleteObject/);
 });

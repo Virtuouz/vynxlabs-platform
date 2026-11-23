@@ -104,19 +104,19 @@ export const COMMANDS = [
     "deploy",
     REPOSITORY,
     "deploy --tenant <slug> --workspace <slug> [--preview] [--message <text>] [--json] [--allow-delete <path>]",
-    "Build, upload and activate the bundle. Stops before uploading when it would delete console resources the repository has no file for, unless --allow-delete names each. With --preview, says what it would do and changes nothing. --message is kept with the version; in CI (CI is set) the subject of the last git commit is used when there is none. With --json, the one answer is a JSON document.",
+    "Build, upload and deploy the bundle. Stops before uploading when it would delete console resources the repository has no file for, unless --allow-delete names each. With --preview, says what it would do and changes nothing. --message is kept with the version; in CI (CI is set) the subject of the last git commit is used when there is none. With --json, the one answer is a JSON document.",
   ),
   entry(
     "rollback",
     REPOSITORY,
     "rollback <version> --tenant <slug> --workspace <slug> [--message <text>] [--json]",
-    "Activate an earlier version of the workspace's code again, as a deploy of that version. Console resources stay as they are.",
+    "Roll back to an earlier version of the workspace's code, as a deploy of that version. Console resources stay as they are.",
   ),
   entry(
     "promote",
     REPOSITORY,
     "promote --tenant <slug> --workspace <slug> [--preview] [--message <text>] [--json] [--allow-delete <path>] [--confirm-breaking]",
-    "Activate this workspace's bundle in the workspace it is linked to. Nothing is rebuilt. With --preview, exits 4 when a production promotion would be refused for breaking changes without --confirm-breaking. A failed push to the release branch is a warning: the promotion stands and the exit is 0. --message is kept with the version, as deploy's is.",
+    "Promote this workspace's bundle to the workspace it is linked to. Nothing is rebuilt. With --preview, exits 4 when a production promotion would be refused for breaking changes without --confirm-breaking. A failed push to the release branch is a warning: the promotion stands and the exit is 0. --message is kept with the version, as deploy's is.",
   ),
 
   entry(

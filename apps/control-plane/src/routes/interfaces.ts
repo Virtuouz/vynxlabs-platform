@@ -355,7 +355,7 @@ export function interfaceRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
                   ? { default: column.default_value }
                   : {}),
                 references: column.reference_table,
-                // A colour by name is given as the colour itself: a page needs no list of names.
+                // A color by name is given as the color itself: a page needs no list of names.
                 ...(column.options?.values
                   ? {
                       values: column.options.values.map((one) => {

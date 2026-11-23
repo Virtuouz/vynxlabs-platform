@@ -14,12 +14,22 @@ let server: Server;
 let url: string;
 let leases: { id: string; tenantId: string; token: string; idleExitSeconds: number }[];
 let ended: string[];
+let routeOff = false;
+let asked = 0;
 
 beforeEach(async () => {
   scratch = await mkdtemp(join(tmpdir(), "worker-host-"));
   leases = [{ id: "lease-1", tenantId: "tenant-1", token: "vxw_tenant-1", idleExitSeconds: 7 }];
   ended = [];
+  routeOff = false;
+  asked = 0;
   server = createServer((request, response) => {
+    asked += 1;
+    if (routeOff) {
+      // As a control plane whose MANAGED_WORKERS is not host answers: the route is not there.
+      response.statusCode = 404;
+      return response.end();
+    }
     if (request.headers.authorization !== `Bearer ${TOKEN}`) {
       response.statusCode = 401;
       return response.end();
@@ -161,6 +171,29 @@ describe("the worker host", () => {
     await running;
     for (const one of started) await expect(stat(one.home)).rejects.toThrow(/ENOENT/);
     expect(ended.sort()).toEqual(["a", "b", "c"]);
+  });
+
+  test("a control plane whose managed workers are not set to host is said once, and asked again only after a long pause (HOST-19)", async () => {
+    routeOff = true;
+    const logged: { level: string; message: string }[] = [];
+    const host = new WorkerHost({
+      url,
+      token: TOKEN,
+      user: self(),
+      workerBin: await fakeWorker(),
+      leaseWaitSeconds: 0,
+      routeOffPauseMs: 400,
+      log: (level, message) => logged.push({ level, message }),
+    });
+    const running = host.run();
+    await sleep(900);
+    await host.stop(1);
+    await running;
+    const said = logged.filter((one) => /MANAGED_WORKERS/.test(one.message));
+    expect(said).toHaveLength(1);
+    expect(said[0]?.message).toMatch(/not set to host/);
+    expect(logged.map((one) => one.message).join("\n")).not.toContain("could not be reached");
+    expect(asked).toBeLessThanOrEqual(4);
   });
 
   test("a worker that cannot be started ends its lease and is not called unreachable (HOST-06)", async () => {

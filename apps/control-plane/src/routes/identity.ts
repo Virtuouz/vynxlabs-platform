@@ -258,9 +258,23 @@ export interface AuditFilters {
  */
 async function auditSelect(kernel: Kernel, tenantId: string | null, query: AuditFilters) {
   let select = kernel.db.selectFrom("audit_entry");
+  // The instance's log is its own entries and those of tenants that are gone: a deleted tenant
+  // has no log to read, and what was done in it is read here (D47).
   select =
     tenantId === null
-      ? select.where("tenant_id", "is", null)
+      ? select.where((eb) =>
+          eb.or([
+            eb("tenant_id", "is", null),
+            eb.not(
+              eb.exists(
+                eb
+                  .selectFrom("tenant")
+                  .select(sql<number>`1`.as("one"))
+                  .whereRef("tenant.id", "=", "audit_entry.tenant_id"),
+              ),
+            ),
+          ]),
+        )
       : select.where("tenant_id", "=", tenantId);
   if (query.action) select = select.where("action", "=", query.action);
   // The pattern on `area` allows no wildcard character, so it is safe inside `like`.
@@ -1038,6 +1052,17 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         if (body.disabled && ctx.principal.id === params.id) {
           throw badRequest("You cannot disable your own account.");
         }
+        // Already as asked: nothing changes, so nothing is written and nothing is audited.
+        const now = await kernel.db
+          .selectFrom("member")
+          .select(["id", "name", "email", "created_at", "disabled_at"])
+          .where("id", "=", params.id)
+          .executeTakeFirst();
+        if (!now) throw notFound("The member");
+        if ((now.disabled_at !== null) === body.disabled) {
+          ctx.mutated = true;
+          return { ...toMember(now), tenantsWithoutAdmin: [] };
+        }
         return ctx.mutate(async (trx, audit) => {
           const done = await setMemberDisabled(
             trx,
@@ -1221,7 +1246,8 @@ export function identityRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         config: { access: access.instance("audit:read") },
         schema: {
           summary: "Instance-level audit entries, newest first",
-          description: "Entries that belong to no tenant. A tenant's entries are under the tenant.",
+          description:
+            "Entries that belong to no tenant, and the entries of tenants that were deleted: a deleted tenant has no log of its own, and its `tenantId` says whose they were. A tenant's entries are under the tenant.",
           tags: ["audit"],
           querystring: AuditQuery,
           response: { 200: pageOf(AuditEntry) },

@@ -38,7 +38,7 @@ const FILL: Record<Band | "plain", string> = {
   plain: "bg-action",
 };
 
-/** How the bar is coloured: green once reached when the goal says so, else by how close, else plain. */
+/** How the bar is colored: green once reached when the goal says so, else by how close, else plain. */
 export function goalBand(share: number, config: GoalConfig): Band | "plain" {
   if (config.reached === "green" && share >= 1 && config.goodWhen !== "down") return "good";
   return config.bands ? bandOf(share, config.goodWhen ?? "up") : "plain";

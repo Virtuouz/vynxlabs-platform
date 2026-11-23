@@ -604,14 +604,24 @@ export function LogWindowNote({
 }
 
 /**
- * "Activate this version": the way back to a bundle that ran before, or on to one
- * that never ran here. It names the workspace, and asks as a danger in production.
+ * What putting a version in place is called: "roll_back" when it is earlier than the one running,
+ * "deploy" otherwise (a later one, one that never ran here, or nothing running). The one place
+ * that words it, for the button, the question and the confirm.
  */
-export function ActivateVersion({
+export function versionMove(version: number, running: number | null): "deploy" | "roll_back" {
+  return running !== null && version < running ? "roll_back" : "deploy";
+}
+
+/**
+ * "Deploy this version" or "Roll back to this version": the way back to a bundle that ran before,
+ * or on to one that never ran here. It names the workspace, and asks as a danger in production.
+ */
+export function DeployVersion({
   root,
   workspace,
   bundleId,
   version,
+  running,
   onDone,
 }: {
   root: string;
@@ -619,16 +629,22 @@ export function ActivateVersion({
   workspace: { name: string; type: string };
   bundleId: string;
   version: number;
+  /** The version running there now, or null when none is known. */
+  running: number | null;
   onDone: () => void;
 }) {
+  const back = versionMove(version, running) === "roll_back";
+  const verb = back ? "Roll back" : "Deploy";
   return (
     <Button
       size="small"
       onClick={async () => {
         const sure = await ask.confirm({
-          title: `Activate version ${version} in ${workspace.name}?`,
+          title: back
+            ? `Roll back ${workspace.name} to version ${version}?`
+            : `Deploy version ${version} to ${workspace.name}?`,
           text: `${workspace.name} stops running what it runs now and starts running version ${version} at once. Runs in progress there finish on the version they started with.`,
-          action: workspace.type === "production" ? "Activate in production" : "Activate",
+          action: workspace.type === "production" ? `${verb} in production` : verb,
           danger: workspace.type === "production",
         });
         if (!sure) return;
@@ -655,7 +671,7 @@ export function ActivateVersion({
         await activate();
       }}
     >
-      Activate this version
+      {back ? "Roll back to this version" : "Deploy this version"}
     </Button>
   );
 }

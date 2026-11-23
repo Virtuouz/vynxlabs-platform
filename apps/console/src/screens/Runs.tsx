@@ -1327,7 +1327,11 @@ export function ScriptRunPanel({
                         className="flex items-center justify-between gap-2"
                       >
                         <Mono>{one.connection}</Mono>
-                        {one.bound ? <Tag tone="live">Bound</Tag> : <StatePill state="unbound" />}
+                        {one.bound ? (
+                          <Tag tone="live">Set up here</Tag>
+                        ) : (
+                          <StatePill state="unbound" />
+                        )}
                       </span>
                     ))}
                   </div>

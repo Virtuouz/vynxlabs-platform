@@ -145,6 +145,31 @@ test("an entry linked to is opened, even when it is not among those loaded", asy
   history.replaceState(null, "", "/");
 });
 
+test("an entry the instance's log keeps for a deleted tenant says whose it was (INS-28)", async () => {
+  vi.stubGlobal("fetch", async (address: string) => {
+    if (address.includes("/audit-facets")) {
+      return new Response(JSON.stringify({ actions: [], actors: [], targetTypes: [] }), {
+        status: 200,
+      });
+    }
+    return new Response(
+      JSON.stringify({
+        items: [
+          entry("own", "instance.updated", { tenantId: null }),
+          entry("gone", "workspace.created", { tenantId: "00000000-0000-7000-8000-0000000000de" }),
+        ],
+        nextCursor: null,
+      }),
+      { status: 200 },
+    );
+  });
+  show(<AuditTable title="Instance log" description="" path="/audit" />);
+  const gone = (await screen.findAllByText("workspace.created"))[0]?.closest("tr") as HTMLElement;
+  expect(within(gone).getByText("Deleted tenant")).toBeTruthy();
+  const own = screen.getAllByText("instance.updated")[0]?.closest("tr") as HTMLElement;
+  expect(within(own).queryByText("Deleted tenant")).toBeNull();
+});
+
 test("an operator's access is said as the tenant's API, and empty details are not drawn as braces", async () => {
   expect(
     targetName({

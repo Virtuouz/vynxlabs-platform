@@ -130,7 +130,7 @@ export const loans = defineTable({
     request_number: column.text(),
     checked_out_at: column.timestamp({ required: true }),
     due_on: column.date({ required: true }),
-    // One of two, which the database holds it to, each with the colour it is drawn on.
+    // One of two, which the database holds it to, each with the color it is drawn on.
     status: column.enum(
       [
         { value: "out", label: "Out", color: "blue" },

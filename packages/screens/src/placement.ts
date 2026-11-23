@@ -520,7 +520,7 @@ export function usePlacement({
       end();
       if (was)
         setSaid(
-          `${how === "stretch" ? "Resize" : "Move"} cancelled. ${name} is back where it was.`,
+          `${how === "stretch" ? "Resize" : "Move"} canceled. ${name} is back where it was.`,
         );
     };
     const onEscape = (event: KeyboardEvent) => {

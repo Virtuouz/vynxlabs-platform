@@ -475,7 +475,7 @@ export const chart = defineWidget({
           group: "Chart type",
           control: "tiles",
           label: "Chart type",
-          help: "Types that cannot work with the data are greyed (see `chartFits`).",
+          help: "Types that cannot work with the data are grayed (see `chartFits`).",
           choices: {
             bar: "Bar",
             line: "Line",
@@ -551,7 +551,7 @@ export const chart = defineWidget({
           group: "Look",
           control: "choice",
           label: "Colors",
-          choices: { theme: "App theme", cool: "Cool", warm: "Warm", mono: "Greys" },
+          choices: { theme: "App theme", cool: "Cool", warm: "Warm", mono: "Grays" },
           order: 5,
         }),
       },

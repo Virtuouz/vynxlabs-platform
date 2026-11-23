@@ -49,7 +49,7 @@ export const API_TAGS = [
     name: "git",
     description: "Connecting a workspace to a repository, pulling from it and pushing to it.",
   },
-  { name: "runs", description: "Starting, reading and cancelling runs of scripts." },
+  { name: "runs", description: "Starting, reading and canceling runs of scripts." },
   { name: "flows", description: "Flows, their runs, their approvals and their steps." },
   { name: "events", description: "Publishing events and reading the ones published." },
   { name: "secrets", description: "Secrets of a workspace. Their values are never read back." },

@@ -6,7 +6,7 @@
  * - SHOW THIS WIDGET: Always, or Only when… (`rules.showWhen`), as sentence chips.
  * - WHO CAN SEE IT: everyone who can open the app, or limited to groups (`rules.seenBy`). Drawing
  *   only, and said so.
- * - CAN BE PRESSED WHEN (`action.when`): shown but greyed out otherwise, with the reason.
+ * - CAN BE PRESSED WHEN (`action.when`): shown but grayed out otherwise, with the reason.
  * - WHO CAN RUN IT (`action.runBy`): group chips. Checked on the server too.
  *
  * `ActionRules` draws the last two for one action at a config path, so an Action group can give
@@ -195,7 +195,7 @@ export function ActionRules({
     <>
       <DrawerGroup
         label="Can be pressed when"
-        note="Shown but greyed out otherwise, with the reason as a tooltip."
+        note="Shown but grayed out otherwise, with the reason as a tooltip."
       >
         <DrawerBlock className="[&_fieldset]:w-full [&_fieldset]:flex-nowrap [&_label]:flex-1 [&_label]:justify-center">
           <SegmentedControl

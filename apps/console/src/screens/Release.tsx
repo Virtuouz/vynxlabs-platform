@@ -23,7 +23,7 @@ import { EnvTag, Mono, StatePill, Tag } from "../kit/status.tsx";
 import { Truncate } from "../kit/Truncate.tsx";
 import { Link, navigate, useUrlParam } from "../router.tsx";
 import { DriftView } from "./Drift.tsx";
-import { ActivateVersion } from "./Execution.tsx";
+import { DeployVersion } from "./Execution.tsx";
 import { type PromotionRequest, RequestPromotion } from "./Promotion.tsx";
 import { breakingOf, PromotionConfirm, sentence } from "./PromotionConfirm.tsx";
 
@@ -144,7 +144,7 @@ export function Release({
 
   const steps =
     workspace.type === "production"
-      ? [{ key: "deploy", label: "What runs here", detail: "Versions and rollback" }]
+      ? [{ key: "deploy", label: "What runs here", detail: "Versions and roll back" }]
       : [
           {
             key: "review",
@@ -164,11 +164,11 @@ export function Release({
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        eyebrow="Release"
-        title={workspace.type === "production" ? "Versions" : "Release"}
+        eyebrow={workspace.type === "production" ? "Versions" : "Deploy"}
+        title={workspace.type === "production" ? "Versions" : "Deploy"}
         description={
           workspace.type === "production"
-            ? "What runs here, and what ran before. Rolling back activates an earlier version; promotion from the dev workspace is how changes arrive."
+            ? "What runs here, and what ran before. Rolling back deploys an earlier version; promotion from the dev workspace is how changes arrive."
             : "Drafts become a version of this dev workspace when deployed. A version reaches production only when it is promoted, and that is a separate, deliberate step."
         }
         meta={<EnvTag type={workspace.type} />}
@@ -620,7 +620,8 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
     ledger.reload();
     bundles.reload();
   };
-  const running = bundles.data?.items.find((one) => one.active)?.id;
+  const runningBundle = bundles.data?.items.find((one) => one.active);
+  const running = runningBundle?.id;
   const ran = new Set(ledger.data?.items.map((row) => row.bundleId));
   const neverRun = (bundles.data?.items ?? []).filter((one) => !ran.has(one.id));
   return (
@@ -652,7 +653,8 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
                   ))}
                 </span>
                 {row.bundleId !== running ? (
-                  <ActivateVersion
+                  <DeployVersion
+                    running={runningBundle?.version ?? null}
                     root={root}
                     workspace={workspace}
                     bundleId={row.bundleId}
@@ -673,10 +675,11 @@ function LedgerStep({ root, workspace }: { root: string; workspace: Workspace })
               <div key={one.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
                 <Mono className="w-12 shrink-0 text-ink">v{one.version}</Mono>
                 <span className="min-w-0 flex-1 text-ink-muted">
-                  Uploaded {ago(one.createdAt)}, never activated
+                  Uploaded {ago(one.createdAt)}, never run here
                 </span>
                 {one.active ? null : (
-                  <ActivateVersion
+                  <DeployVersion
+                    running={runningBundle?.version ?? null}
                     root={root}
                     workspace={workspace}
                     bundleId={one.id}

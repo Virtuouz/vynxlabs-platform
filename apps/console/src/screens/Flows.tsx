@@ -19,7 +19,7 @@ import { AttachedPages, workspaceOf } from "../help/glossary.tsx";
 import { InputDialog } from "../InputDialog.tsx";
 import { StateAnnouncer } from "../kit/Announce.tsx";
 import { REJECTING } from "../kit/approvals.ts";
-import { useMayOn } from "../kit/Can.tsx";
+import { useMay, useMayOn } from "../kit/Can.tsx";
 import { CollectionView } from "../kit/CollectionView.tsx";
 import { Current } from "../kit/current.ts";
 import { DataTable } from "../kit/DataTable.tsx";
@@ -93,7 +93,7 @@ export function Flows({
   return (
     <CollectionView<FlowRow>
       title="Flows"
-      needs={{ base: root, permission: "flow:write", what: "this workspace's flows" }}
+      needs={{ base: root, permission: "resource:write", what: "this workspace's flows" }}
       description="A flow is a graph of steps the platform runs in order, remembering where it is. It survives a restart."
       actions={
         editable ? (
@@ -391,13 +391,12 @@ export function FlowView({
 }) {
   const flow = useLoad<FlowDetail>(`${root}/flows/${path}`);
   // What this person may do here is asked before the controls are drawn (FLW-30).
-  const may = useMayOn(
-    root,
-    { kind: "flow", path },
-    "flow_run:write",
-    "resource:write",
-    "flow:write",
-  );
+  // Starting counts a grant on this flow; editing is a draft and arranging is a layout, which the
+  // server asks of the workspace.
+  const mayStart = useMayOn(root, { kind: "flow", path }, "flow_run:write");
+  const mayDraft = useMay(root, "resource:write", "flow:write");
+  const may = (permission: string) =>
+    permission === "flow_run:write" ? mayStart(permission) : mayDraft(permission);
   const runs = useLoad<{ items: FlowRunRow[] }>(
     `${root}/flow-runs?flow=${encodeURIComponent(path)}&limit=20`,
   );

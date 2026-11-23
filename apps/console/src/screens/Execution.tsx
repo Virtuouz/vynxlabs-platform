@@ -174,14 +174,17 @@ export function Scripts({
       (filter === "drafted" && row.draft === true),
   );
   const open = items.find((row) => row.path === chosen);
-  // What this person may do with the chosen script, held on the workspace or on it alone.
-  const may = useMayOn(
+  // What this person may do with the chosen script. Running it and giving it to someone count a
+  // grant on the script alone; a draft of it is the workspace's to change, which is asked there.
+  const mayOnIt = useMayOn(
     root,
     open ? { kind: "script", path: open.path } : undefined,
-    "resource:write",
     "run:write",
     "binding:write",
   );
+  const mayDraft = useMay(root, "resource:write");
+  const may = (permission: string) =>
+    permission === "resource:write" ? mayDraft(permission) : mayOnIt(permission);
   const missing = (["resource:write", "run:write", "binding:write"] as const).find(
     (permission) => !may(permission),
   );

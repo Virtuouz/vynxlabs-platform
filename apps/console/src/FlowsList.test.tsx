@@ -114,11 +114,13 @@ test("a flow page offers Start, Edit and arranging only to who may (FLW-30)", as
   });
   show(<FlowView root={root} path="orders/sync" link={link} editable />);
   await screen.findByRole("heading", { name: "orders/sync" });
-  await waitFor(() =>
+  // Starting counts a grant on this flow; a draft and a layout are the workspace's (GATE-ROLES).
+  await waitFor(() => {
     expect(asked).toContain(
-      `${api}/allowed?permissions=flow_run%3Awrite,resource%3Awrite,flow%3Awrite&kind=flow&path=orders%2Fsync`,
-    ),
-  );
+      `${api}/allowed?permissions=flow_run%3Awrite&kind=flow&path=orders%2Fsync`,
+    );
+    expect(asked).toContain(`${api}/allowed?permissions=resource%3Awrite,flow%3Awrite`);
+  });
   expect(screen.queryByRole("button", { name: "Start flow" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   expect(screen.queryByText(/Drag a step/)).toBeNull();

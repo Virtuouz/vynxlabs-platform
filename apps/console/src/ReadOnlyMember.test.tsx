@@ -133,7 +133,7 @@ test("the instance's branding and triggers are shown, and cannot be changed, wit
 });
 
 test("a workspace's lists offer no new item to someone who may only read them (GOV-37)", async () => {
-  await readOnly(<Tables root={root} link={link} />, /Create|Add|New/, "table:write");
+  await readOnly(<Tables root={root} link={link} />, /Create|Add|New/, "resource:write");
   cleanup();
   await readOnly(<Sources root={root} link={link} />, /Connect|Add|New/, "data_source:write");
   cleanup();
@@ -145,7 +145,7 @@ test("a workspace's lists offer no new item to someone who may only read them (G
   cleanup();
   await readOnly(<Scripts root={root} link={link} editable />, "New script", "resource:write");
   cleanup();
-  await readOnly(<Flows root={root} link={link} editable />, "New flow", "flow:write");
+  await readOnly(<Flows root={root} link={link} editable />, "New flow", "resource:write");
 });
 
 test("alerts, repository, export and workspace settings cannot be changed without their write (GOV-37)", async () => {

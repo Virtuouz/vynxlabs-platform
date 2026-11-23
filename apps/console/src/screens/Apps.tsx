@@ -477,9 +477,12 @@ function AppList({ root, onShare }: { root: string; onShare: (app: AppSummary) =
   const list = useLoad<{ items: AppSummary[] }>(`${root}/apps`);
   const instance = useLoad<{ appsAddress?: "separate" | "console" | "none" }>("/instance");
   const share = useNeeds({ base: root, permission: "binding:write", what: "who may open an app" });
+  // Taking a draft back is a change of a draft: `interface:write` or `doc:write` is enough for an
+  // app of their kind, as for any draft.
   const edit = useNeeds({
     base: root,
     permission: "resource:write",
+    alone: ["interface:write", "doc:write"],
     what: "this workspace's apps",
   });
   const [chosen, setChosen] = useUrlParam("app", undefined, { push: true });

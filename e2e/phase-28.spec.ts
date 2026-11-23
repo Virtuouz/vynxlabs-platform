@@ -29,7 +29,8 @@ const BOTH = "rowan.ellis@fernhill.example";
 const OUTSIDE = "devi.shah@fernhill.example";
 const stamp = Date.now().toString(36);
 const PREFIX = `P28-${stamp.toUpperCase()}`;
-const day = (ago: number) => new Date(Date.now() - ago * 86_400_000).toISOString().slice(0, 10);
+// The browser's "last 30 days" ends on its own local date, so a row issued "today" is dated there, not in UTC.
+const day = (ago: number) => new Date(Date.now() - ago * 86_400_000).toLocaleDateString("en-CA");
 
 // biome-ignore lint/suspicious/noExplicitAny: answers are inspected freely
 type Answer = { status: number; body: any };

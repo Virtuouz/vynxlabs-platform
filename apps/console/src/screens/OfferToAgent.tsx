@@ -2,6 +2,7 @@ import { Button, Dialog, Notice, SelectField } from "@volvel/ui";
 import { useState } from "react";
 import { api, useLoad } from "../api.ts";
 import { failureText, noteWaiting } from "../ask.tsx";
+import { useNeeds } from "../kit/Can.tsx";
 import { Loading } from "../kit/LoadState.tsx";
 import { CopyButton } from "../ListScreen.tsx";
 import { Link } from "../router.tsx";
@@ -224,11 +225,27 @@ export function OfferButton({
   deployed?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Offering gives an agent a role on this one script or flow: a binding, at the resource.
+  const may = useNeeds(
+    deployed
+      ? {
+          base: root,
+          permission: "binding:write",
+          what: "who may use this",
+          resource: { kind, path },
+        }
+      : undefined,
+  );
   if (!deployed) return null;
   const [, , tenantId = "", , workspaceId = ""] = root.split("/");
   return (
     <>
-      <Button {...(size ? { size } : {})} onClick={() => setOpen(true)}>
+      <Button
+        {...(size ? { size } : {})}
+        disabled={!may.can}
+        {...(may.reason ? { tooltip: may.reason } : {})}
+        onClick={() => setOpen(true)}
+      >
         Offer to an agent…
       </Button>
       <OfferToAgent

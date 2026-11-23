@@ -144,9 +144,9 @@ test("a viewer reads the alert settings and is offered no Save or test (OPS-35)"
   const buttons = ["Save", "Send a test alert"].flatMap((name) =>
     screen.queryAllByRole("button", { name }),
   );
-  expect(buttons.every((one) => (one.closest("fieldset") as HTMLFieldSetElement).disabled)).toBe(
-    true,
-  );
+  // Save asks workspace:write, the test asks connection:write (its own route): each is off itself.
+  expect(buttons.length).toBe(2);
+  expect(buttons.every((one) => (one as HTMLButtonElement).disabled)).toBe(true);
   cleanup();
   allowed = ["workspace:write", "connection:write"];
   show(<Alerts root={root} link={link} workspaceRoot={root} editable />);

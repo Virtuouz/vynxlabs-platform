@@ -107,7 +107,10 @@ export function App() {
   const ended = useSessionEnded();
   const holder = me.data?.principal.id;
   // From here on a 401 means the session ended, not that nobody signed in.
-  if (holder) beginSession(holder);
+  const stale = me.error !== undefined;
+  useEffect(() => {
+    if (holder && !stale) beginSession(holder);
+  }, [holder, stale]);
   const tenant = match("/t/:tenantId/*", path);
   const target = me.data ? returnTarget(location.search) : null;
   useEffect(() => {

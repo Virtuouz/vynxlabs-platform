@@ -220,11 +220,11 @@ export function formatCombo(combo: string, mac = isMac()): string {
   if (mac) {
     const order = ["Ctrl", "Alt", "Shift", "Mod"];
     const mods = parts.sort((a, b) => order.indexOf(a) - order.indexOf(b)).map(name);
-    return mods.join("") + (key.length === 1 && parts.length === 0 ? key : name(key));
+    return mods.join("") + (key.length === 1 && key !== " " && parts.length === 0 ? key : name(key));
   }
   const order = ["Mod", "Ctrl", "Alt", "Shift"];
   const mods = parts.sort((a, b) => order.indexOf(a) - order.indexOf(b)).map(name);
-  return [...mods, key.length === 1 && parts.length === 0 ? key : name(key)].join("+");
+  return [...mods, key.length === 1 && key !== " " && parts.length === 0 ? key : name(key)].join("+");
 }
 
 /** A shortcut's keys as people read them, its first combination only: for a tooltip or a menu. */

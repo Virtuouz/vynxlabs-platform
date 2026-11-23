@@ -113,7 +113,7 @@ export function PageDetails({
   ];
 
   return (
-    <Panel className="flex flex-col gap-5 p-4">
+    <Panel className="flex flex-col gap-5 p-4 max-sm:border-0 max-sm:bg-transparent max-sm:p-0">
       <div className="grid gap-4 md:grid-cols-2">
         <TextField
           name="title"

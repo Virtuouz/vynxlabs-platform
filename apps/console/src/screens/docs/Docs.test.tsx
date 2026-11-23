@@ -410,6 +410,15 @@ describe("the Documentation screen", () => {
     );
   });
 
+  test("F2 renames the page that is open when focus is not in the tree", async () => {
+    docs("handbook/support/refunds");
+    await screen.findByRole("heading", { name: "Refund an order" });
+    (document.activeElement as HTMLElement | null)?.blur();
+    fireEvent.keyDown(document.body, { key: "F2" });
+    expect(await screen.findByLabelText("Page title")).toBeTruthy();
+    expect((screen.getByLabelText("File name") as HTMLInputElement).value).toBe("refunds");
+  });
+
   test("Escape leaves a row as it was", async () => {
     docs();
     fireEvent.click(await screen.findByRole("button", { name: "Rename Questions" }));
@@ -1319,7 +1328,7 @@ describe("DOC-03 types and subjects in the docs editor", () => {
     fireEvent.change(title, { target: { value: "Check a limit" } });
     const type = screen.getByLabelText("Type") as HTMLSelectElement;
     // The folder says reference: leaving it be writes no type on the page.
-    expect(within(type).getByRole("option", { name: "Use the folder's (Reference)" })).toBeTruthy();
+    expect(within(type).getByRole("option", { name: "Folder: Reference" })).toBeTruthy();
     fireEvent.change(type, { target: { value: "how-to" } });
     fireEvent.keyDown(title, { key: "Enter" });
     await waitFor(() => expect(batches()).toHaveLength(1));
@@ -1339,6 +1348,21 @@ describe("DOC-03 types and subjects in the docs editor", () => {
     const title = await screen.findByLabelText("Page title");
     fireEvent.change(title, { target: { value: "Raise a limit" } });
     fireEvent.change(screen.getByLabelText("Type"), { target: { value: "reference" } });
+    fireEvent.keyDown(title, { key: "Enter" });
+    await waitFor(() => expect(batches()).toHaveLength(1));
+    const made = (batches()[0]?.body?.changes as { source: string }[] | undefined)?.[0];
+    expect(made?.source).not.toContain("type:");
+    expect(made?.source).toContain("## Fields");
+  });
+
+  test("a new page left to the folder's type starts from that type's template, with no type line", async () => {
+    typed();
+    docs();
+    fireEvent.click(await screen.findByRole("button", { name: "More for Limits" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: /New page here/ }));
+    const title = await screen.findByLabelText("Page title");
+    fireEvent.change(title, { target: { value: "Count limits" } });
+    expect((screen.getByLabelText("Type") as HTMLSelectElement).value).toBe("");
     fireEvent.keyDown(title, { key: "Enter" });
     await waitFor(() => expect(batches()).toHaveLength(1));
     const made = (batches()[0]?.body?.changes as { source: string }[] | undefined)?.[0];

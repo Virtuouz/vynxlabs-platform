@@ -176,6 +176,27 @@ describe("the search dialog", () => {
     expect(count.textContent).toBe("1 page");
   });
 
+  test("All is the one chip pressed when the pages that are in no collection are the ones being read", () => {
+    document.getElementById("docs-data")?.remove();
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `<script type="application/json" id="docs-data">${JSON.stringify({
+        base: "/",
+        collection: "",
+        collections: [
+          { id: "a", title: "A" },
+          { id: "b", title: "B" },
+          { id: "", title: "Uncategorized" },
+        ],
+      })}</script>`,
+    );
+    run();
+    (document.querySelector("[data-search]") as HTMLElement).click();
+    const chips = [...document.querySelectorAll('.finder [aria-label="Where to search"] button')];
+    expect(chips.map((one) => one.textContent)).toEqual(["All", "A", "B"]);
+    expect(chips.filter((one) => one.getAttribute("aria-pressed") === "true")).toHaveLength(1);
+  });
+
   test("recently viewed pages are a labelled group of options", async () => {
     localStorage.setItem("vd-recent:/", JSON.stringify([{ url: "a", title: "A", crumb: "" }]));
     run();

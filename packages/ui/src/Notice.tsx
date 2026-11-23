@@ -1,5 +1,25 @@
 import type { ReactNode } from "react";
+import { Button } from "./Button.tsx";
 import { useContained } from "./Panel.tsx";
+
+/** What a failure's words can lead to: a label and where it goes. */
+export interface FailureHelp {
+  label: string;
+  onClick: () => void;
+}
+
+let explainer: ((words: string) => FailureHelp | undefined) | undefined;
+
+/**
+ * The host says, once, which words it knows a way to explain (the words of a failure the API gave
+ * a code for). A danger `Notice` of those words offers the way, as a toast does, so that a failure
+ * shown in a dialog and one shown in a corner are told alike.
+ */
+export function setFailureExplainer(
+  find: ((words: string) => FailureHelp | undefined) | undefined,
+) {
+  explainer = find;
+}
 
 const tones = {
   info: "bg-action-soft text-ink",
@@ -34,6 +54,10 @@ export function Notice({
 }) {
   const contained = useContained();
   const edge = (bare ?? contained) ? "" : edges[tone];
+  const help =
+    action === undefined && tone === "danger" && typeof children === "string"
+      ? explainer?.(children)
+      : undefined;
   return (
     <div
       role={tone === "danger" ? "alert" : "status"}
@@ -41,6 +65,11 @@ export function Notice({
     >
       <div>{children}</div>
       {action}
+      {help ? (
+        <Button size="small" variant="quiet" onClick={help.onClick}>
+          {help.label}
+        </Button>
+      ) : null}
     </div>
   );
 }

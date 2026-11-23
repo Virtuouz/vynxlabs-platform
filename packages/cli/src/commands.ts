@@ -98,7 +98,7 @@ export const COMMANDS = [
     "dev",
     REPOSITORY,
     "dev [app] --tenant <slug> --workspace <slug> [--port <n>] [--no-strict]",
-    "Serve an app with reload, against that workspace's data, as yourself: an app made of files (built from its source), an interface (drawn from its file with the platform's own screens) or a docs site (drawn from its pages with the platform's own renderer, with search). With one app it needs no name; otherwise [app] is its path. An interface needs the platform's screens files: SCREENS_DIR, as an instance is told. What only the instance knows, such as the product's own terms in a docs page, is said on the page. The page is served under the content policy the platform gives a deployed app, so what it would refuse fails here too; --no-strict leaves the policy off.",
+    "Serve an app with reload, against that workspace's data, as yourself: an app made of files (built from its source), an interface (drawn from its file with the platform's own screens) or a docs site (drawn from its pages with the platform's own renderer, with search). With one app it needs no name; otherwise [app] is its path. An interface is drawn with the platform's screens, which the CLI carries; set SCREENS_DIR to use another build of them. Field help is not drawn locally. What only the instance knows, such as the product's own terms in a docs page, is said on the page. The page is served under the content policy the platform gives a deployed app, so what it would refuse fails here too; --no-strict leaves the policy off.",
   ),
   entry(
     "deploy",

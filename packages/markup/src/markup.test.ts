@@ -596,6 +596,15 @@ describe("what is in a folder", () => {
     // Nothing to list draws nothing.
     expect(renderHtml(tree, { profile: "docs" })).toBe("");
   });
+
+  test("a description's backticks are drawn as code, and what is between them stays text", () => {
+    const folder = () => [
+      { title: "SDK", description: "Everything `@volvel/<x>` exports.", href: "sdk" },
+    ];
+    expect(renderHtml(parse("::pages\n"), { profile: "docs", folder })).toContain(
+      '<span class="vd-pages-text">Everything <code>@volvel/&lt;x&gt;</code> exports.</span>',
+    );
+  });
 });
 
 test("an editor's preview is told which lines each block came from", () => {

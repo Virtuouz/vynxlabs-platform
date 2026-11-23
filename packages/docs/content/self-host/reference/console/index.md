@@ -10,6 +10,7 @@ pages:
   - databases
   - import
   - triggers
+  - health
   - audit-log
   - branding
   - component-kit
@@ -26,6 +27,7 @@ For whoever operates the installation.
 - [Database locations](databases): The databases tenants' data can be placed in.
 - [Import a tenant](import): Bringing in a tenant exported from another instance.
 - [Pausing triggers](triggers): Stopping every trigger on the instance, for maintenance.
+- [Instance health](health): Whether a replica is ready, its keys, and what it is set to.
 - [Instance audit log](audit-log): What operators did, across the instance.
 - [Console branding](branding): The console's own name, logo and colours, set once for the instance.
 - [Component kit](component-kit): Every component the console is drawn with, live, for whoever builds on it.

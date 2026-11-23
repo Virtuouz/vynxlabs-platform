@@ -84,6 +84,10 @@ describe("volvel dev draws an interface and a docs app from their files", () => 
       expect((await fetch(`${dev.url}visits`)).status).toBe(200);
       expect(await (await fetch(`${dev.url}assets/app.js`)).text()).toContain("runtime");
       expect((await fetch(`${dev.url}assets/gone.js`)).status).toBe(404);
+      // The runtime asks for field help: it is told there is none here, not refused.
+      const fields = await fetch(`${dev.url}help/fields.json`);
+      expect(fields.status).toBe(200);
+      expect(await fields.json()).toEqual({});
       // The definition is the file's; the tables are the instance's.
       const definition = (await (
         await fetch(`${dev.url}api/v1/tenants/t1/workspaces/w1/interfaces/screens/performance`)
@@ -181,6 +185,9 @@ describe("volvel dev draws an interface and a docs app from their files", () => 
     expect(help).toContain("interface");
     expect(help).toContain("docs site");
     expect(help).toContain("app made of files");
+    // The packed CLI carries the runtime: an interface does not need SCREENS_DIR.
+    expect(help).not.toContain("needs the platform's screens files");
+    expect(help).toContain("which the CLI carries");
   });
 });
 

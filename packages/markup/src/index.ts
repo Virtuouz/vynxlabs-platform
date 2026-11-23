@@ -1,3 +1,4 @@
+export { splitCode } from "./code.js";
 export { type DirectiveMeta, readProps } from "./directive.js";
 export { ENHANCE_SCRIPT } from "./enhance.js";
 export { highlightCode } from "./highlight.js";

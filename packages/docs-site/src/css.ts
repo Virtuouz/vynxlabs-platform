@@ -150,7 +150,8 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; font-size: 14px; color: var(--vx-ink-muted); }
 .crumbs a { color: inherit; text-decoration: none; }
 .crumbs a:hover { color: var(--vx-ink); }
-.crumbs li + li::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); opacity: 0.7; }
+.crumbs li { display: flex; align-items: center; min-width: 0; }
+.crumbs li:not(:last-child)::after { content: ""; display: inline-block; flex: none; width: 6px; height: 6px; margin: 0 4px 0 10px; border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); opacity: 0.7; }
 .eyebrow { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--vx-action); }
 .lead h1 { margin: 0 0 8px; font-size: 34px; line-height: 1.15; letter-spacing: -0.02em; }
 .lead > p { margin: 0; color: var(--vx-ink-muted); font-size: 18px; }
@@ -164,10 +165,10 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .vd-doc { font-size: 16px; }
 .foot { margin-top: 56px; display: grid; gap: 16px; }
 .updated, .since { margin: 0; font-size: 13px; color: var(--vx-ink-muted); }
-.pager { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pager { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .pager a {
   display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border: 1px solid var(--vx-line); border-radius: 12px;
-  background: var(--vx-surface); color: var(--vx-ink); text-decoration: none; font-weight: 600;
+  background: var(--vx-surface); color: var(--vx-ink); text-decoration: none; font-weight: 600; min-width: 0; overflow-wrap: anywhere;
 }
 .pager a:hover { border-color: var(--vx-action); }
 .pager small { display: flex; align-items: center; gap: 4px; font-weight: 400; font-size: 13px; color: var(--vx-ink-muted); }
@@ -195,6 +196,9 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .tocbar .now { flex: 1; min-width: 0; overflow: hidden; color: var(--vx-ink); white-space: nowrap; text-overflow: ellipsis; }
 .tocbar ul { margin: 0 18px 12px; }
 @media (min-width: 1024px) { .tocbar { top: 0; margin: -48px -40px 32px; } .tocbar > summary { padding: 0 40px; } .tocbar ul { margin: 0 40px 12px; } }
+
+/* A description with code in it. */
+.lead code, .card code, .recent code, .results code, .switcher code { padding: 0.05em 0.3em; border-radius: 4px; background: var(--vx-sunken); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
 
 /* Results of a search, as a page. */
 .results { margin: 0; padding: 0; list-style: none; }
@@ -249,8 +253,8 @@ main { min-width: 0; padding: 20px 18px 64px; }
 .related section { margin-top: 14px; }
 .related h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--vx-ink-muted); }
 .related ul { margin: 0; padding: 0; list-style: none; }
-.related li a { display: block; padding: 4px 0; color: var(--vx-ink); text-decoration: none; }
-.related li a:hover { color: var(--vx-action); }
+.related li a { display: block; padding: 4px 0; color: var(--vx-action); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.related li a:hover { text-decoration-thickness: 2px; }
 .card .more { margin-top: auto; font-size: 13px; font-weight: 500; text-decoration: none; }
 .recent { margin: 0; padding: 0; list-style: none; border: 1px solid var(--vx-line); border-radius: 14px; background: var(--vx-surface); overflow: hidden; }
 .recent li + li { border-top: 1px solid var(--vx-line); }
@@ -265,10 +269,11 @@ main { min-width: 0; padding: 20px 18px 64px; }
 /* The search dialog, made by the script. */
 .finder { width: min(640px, calc(100vw - 24px)); max-height: min(560px, calc(100vh - 48px)); margin: 10vh auto auto; padding: 0; border: 1px solid var(--vx-line); border-radius: 14px; background: var(--vx-raised, var(--vx-surface)); color: var(--vx-ink); box-shadow: 0 24px 64px rgb(0 0 0 / 0.35); overflow: hidden; }
 .finder[open] { display: flex; flex-direction: column; }
+.finder:modal { max-width: none; }
 .finder::backdrop { background: rgb(0 0 0 / 0.45); }
 .finder .bar { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 56px; border-bottom: 1px solid var(--vx-line); color: var(--vx-ink-muted); }
 .finder input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; color: var(--vx-ink); font: inherit; font-size: 16px; outline: none; }
-.finder .chips { display: flex; gap: 6px; overflow-x: auto; padding: 10px 14px; border-bottom: 1px solid var(--vx-line); }
+.finder .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--vx-line); }
 .finder .chips button { flex: none; height: 28px; padding: 0 10px; border: 1px solid var(--vx-line); border-radius: 999px; background: none; color: var(--vx-ink-muted); font-size: 13px; cursor: pointer; }
 .finder .chips button[aria-pressed="true"] { border-color: var(--vx-action); background: var(--vx-action-soft); color: var(--vx-action); }
 .finder .results { flex: 1; overflow-y: auto; }

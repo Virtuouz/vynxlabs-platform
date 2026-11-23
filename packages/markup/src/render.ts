@@ -1,3 +1,4 @@
+import { splitCode } from "./code.js";
 import { imageKind, isExternal, safeHref, topicOf } from "./links.js";
 import { PROFILES, type ProfileName, REGISTRY, type Registry } from "./registry.js";
 import { type Component, type Node, plain } from "./tree.js";
@@ -545,7 +546,15 @@ function component(node: Component, ctx: Context): Drawn[] {
             const words: Drawn[] = [
               el("span", { class: "vd-pages-title" }, [item.title]),
               ...(item.description
-                ? [el("span", { class: "vd-pages-text" }, [item.description])]
+                ? [
+                    el(
+                      "span",
+                      { class: "vd-pages-text" },
+                      splitCode(item.description).map((part) =>
+                        part.code ? el("code", {}, [part.text]) : part.text,
+                      ),
+                    ),
+                  ]
                 : []),
             ];
             return el("li", item.folder ? { class: "vd-pages-folder" } : {}, [

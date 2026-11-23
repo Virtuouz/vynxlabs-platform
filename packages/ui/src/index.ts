@@ -82,7 +82,7 @@ export {
   useMarkdownKnowledge,
   type WorkspaceWords,
 } from "./markdownKnowledge.ts";
-export { EmptyState, Notice } from "./Notice.tsx";
+export { EmptyState, type FailureHelp, Notice, setFailureExplainer } from "./Notice.tsx";
 export { type PageNavItem, PageShell, type PageShellProps } from "./PageShell.tsx";
 export { Pagination, type PaginationProps } from "./Pagination.tsx";
 export { ContainedArea, Panel, useContained } from "./Panel.tsx";

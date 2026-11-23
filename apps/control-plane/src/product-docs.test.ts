@@ -89,7 +89,8 @@ describe("the product's documentation at /docs", () => {
     const home = await get(t, "/docs/");
     expect(home.statusCode).toBe(200);
     expect(home.headers["content-type"]).toContain("text/html");
-    expect(home.body).toContain("Welcome");
+    // The home is the product's documentation, named once by the instance, not by the page's own title.
+    expect(home.body).toContain("<h1>Volvel documentation</h1>");
     expect(home.body).toContain("Getting started");
     const page = await get(t, "/docs/start/first");
     expect(page.statusCode).toBe(200);

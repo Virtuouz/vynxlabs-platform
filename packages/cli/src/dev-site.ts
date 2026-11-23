@@ -355,6 +355,13 @@ export async function startSiteServer(options: SiteServerOptions) {
             });
           }
         }
+        // The runtime asks for what each field means. Field help is the instance's: here nothing is
+        // described, and the runtime is told so, not refused.
+        if (wanted === "help/fields.json") {
+          return send(response, 200, "application/json; charset=utf-8", "{}", {
+            "cache-control": "no-cache",
+          });
+        }
         if (wanted !== "" && /\.[A-Za-z0-9]+$/.test(wanted)) {
           return send(response, 404, "text/plain; charset=utf-8", "There is no such file.");
         }

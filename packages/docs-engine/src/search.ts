@@ -9,9 +9,17 @@ export { loadSearchIndex, mark } from "./search-query.js";
 /** The most characters of a page's or a section's words an index keeps for a result's snippet. */
 export const PASSAGE_LENGTH = 400;
 
+/** A line of words without what marks it as a list item, a heading or a quote. */
+export function unmarked(text: string): string {
+  return text
+    .split("\n")
+    .map((line) => line.replace(/^\s*(?:[-*+\u2022]|\d+[.)]|#{1,6}|>)\s+/, ""))
+    .join("\n");
+}
+
 /** Words clipped to a length at the end of a word. */
 function clip(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = unmarked(text).replace(/\s+/g, " ").trim();
   if (flat.length <= PASSAGE_LENGTH) return flat;
   const cut = flat.slice(0, PASSAGE_LENGTH);
   return cut.slice(0, Math.max(cut.lastIndexOf(" "), PASSAGE_LENGTH / 2));

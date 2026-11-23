@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { ERROR_CODES } from "@volvel/manifest";
 import { parse } from "@volvel/markup";
-import { Dialog, TextField } from "@volvel/ui";
+import { Dialog, Notice, TextField } from "@volvel/ui";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ApiError } from "../api.ts";
-import { notify } from "../ask.tsx";
+import { failureText, notify } from "../ask.tsx";
 import { PageHeader } from "../kit/PageHeader.tsx";
 import { SHORTCUTS } from "../kit/shortcuts.ts";
 import {
@@ -85,6 +85,17 @@ describe("every screen has help", () => {
     expect(sections.length).toBeGreaterThan(45);
     for (const section of sections) {
       expect(topics.has(section.help), `${section.label}: ${section.help}`).toBe(true);
+    }
+  });
+
+  test("no two sections of the navigation share a topic, so each opens its own page", () => {
+    const seen = new Map<string, string>();
+    for (const section of INSTANCE_SECTIONS) {
+      expect(
+        seen.get(section.help),
+        `${section.label} and ${seen.get(section.help)}`,
+      ).toBeUndefined();
+      seen.set(section.help, section.label);
     }
   });
 
@@ -239,6 +250,19 @@ describe("the help panel", () => {
     expect(within(panel()).queryByText(/New in version/)).toBeNull();
   });
 
+  test("closing it gives focus back to what had it when it was opened", async () => {
+    show(<Screen />);
+    act(() => setSectionTopic("data-tables"));
+    const opener = screen.getByRole("button", { name: "Help for Tables" });
+    opener.focus();
+    fireEvent.click(opener);
+    await within(panel()).findByText(/A table holds rows the workspace owns/);
+    expect(document.activeElement).toBe(within(panel()).getByRole("heading", { name: "Tables" }));
+    fireEvent.keyDown(within(panel()).getByRole("heading", { name: "Tables" }), { key: "Escape" });
+    expect(screen.queryByRole("complementary")).toBeNull();
+    expect(document.activeElement).toBe(opener);
+  });
+
   test("Escape closes it from inside", async () => {
     show(<Screen />);
     act(() => openHelp("data-tables"));
@@ -294,6 +318,31 @@ describe("the help panel", () => {
       target: { value: "zebra crossing" },
     });
     await within(panel()).findByText("Nothing in the help matches.");
+  });
+
+  test("a result says where its page is, so pages of one name in two places differ", async () => {
+    show(<Screen />);
+    act(() => openHelp("index"));
+    fireEvent.change(within(panel()).getByRole("searchbox", { name: "Search the help" }), {
+      target: { value: "approval" },
+    });
+    const found = await within(panel()).findByRole("list", { name: "Pages found" });
+    const hit = found.querySelector(":scope > li > button") as HTMLElement;
+    const where = [...hit.children].map((one) => one.textContent ?? "");
+    // The title, then where the page is: its collection, and its folders after it.
+    expect(where.length).toBeGreaterThan(1);
+    expect(where[1]).not.toBe("");
+    expect(where[1]).not.toBe(where[0]);
+  });
+
+  test("a stale ?help= says the page is not found, and offers this screen's own page", async () => {
+    show(<Screen />);
+    act(() => setSectionTopic("data-tables"));
+    act(() => openHelp("nonsense"));
+    await within(panel()).findByText(/The help has no page called “nonsense”/);
+    expect(within(panel()).queryByText(/no help for this screen yet/)).toBeNull();
+    fireEvent.click(within(panel()).getByRole("button", { name: "Help for this screen" }));
+    await within(panel()).findByRole("heading", { name: "Tables" });
   });
 
   test("a search shows the headings and passages that matched, and opens the page at one (DOC-MP3)", async () => {
@@ -555,6 +604,26 @@ describe("what an error means", () => {
     await within(panel).findByText(/Nothing was overwritten/);
   });
 
+  test("a failure shown inside a dialog offers the same, and a message from no code does not", async () => {
+    const err = new ApiError(409, {
+      code: "draft_changed",
+      detail: "Someone else saved this draft since you opened it.",
+    });
+    show(
+      <>
+        <Topic />
+        <Notice tone="danger">{failureText(err)}</Notice>
+        <Notice tone="danger">An invented sentence.</Notice>
+        <HelpDock />
+      </>,
+    );
+    const asks = screen.getAllByRole("button", { name: "What does this mean?" });
+    expect(asks).toHaveLength(1);
+    fireEvent.click(asks[0] as HTMLElement);
+    const panel = screen.getByRole("complementary", { name: "Help" });
+    await within(panel).findByRole("heading", { name: "Error codes" });
+  });
+
   test("a failure with no code of the API's, or none at all, offers nothing", async () => {
     show(<Topic />);
     act(() => {
@@ -668,6 +737,18 @@ describe("where the help panel's page is, and where it leads", () => {
     await within(panel()).findByRole("heading", { level: 2, name: manifest.nav.home.title });
     // Already at the root: nothing to go to.
     expect(within(panel()).queryByRole("button", { name: "Help home" })).toBeNull();
+  });
+
+  test("a trail's separator stays with the crumb before it, so a line never begins with one", async () => {
+    show(<Screen />);
+    act(() => openHelp("start/explanation/concepts"));
+    const trail = await within(panel()).findByRole("navigation", { name: "Where this page is" });
+    const items = [...trail.querySelectorAll("li")];
+    expect(items.length).toBeGreaterThan(1);
+    for (const [at, item] of items.entries()) {
+      expect(item.firstElementChild?.tagName.toLowerCase(), item.textContent ?? "").not.toBe("svg");
+      expect(item.lastElementChild?.tagName.toLowerCase() === "svg").toBe(at < items.length - 1);
+    }
   });
 
   test("previous and next lead through the folder, and the heading takes focus on the new page", async () => {

@@ -257,6 +257,20 @@ describe("making, copying and removing", () => {
     expect(planNewPage(handbook, "", { title: "Loose", name: "loose" })).toHaveProperty("problem");
   });
 
+  test("a page left to its folder's type starts from that type's template and says no type", () => {
+    const typed: PageSource[] = [
+      { path: "handbook/index", source: md("title: Handbook") },
+      { path: "handbook/guides/index", source: md("title: Guides\ntype: how-to") },
+    ];
+    const [one] = changes(planNewPage(typed, "handbook/guides", { title: "Close", name: "close" }));
+    expect(one?.source).toContain("## Goal");
+    expect(frontmatterOf(one?.source as string)).toEqual({ title: "Close" });
+    // A folder with no type leaves the page as it was: a title and nothing under it.
+    expect(
+      changes(planNewPage(typed, "handbook", { title: "Plain", name: "plain" }))[0]?.source,
+    ).toBe("---\ntitle: Plain\n---\n");
+  });
+
   test("a folder removed takes everything in it and leaves its folder's list", () => {
     const planned = changes(planDelete(handbook, "handbook/support"));
     expect(planned.every((one) => one.deleted)).toBe(true);

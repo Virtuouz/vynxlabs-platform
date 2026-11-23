@@ -320,7 +320,7 @@ describe("a folder of pages served as a docs app", () => {
 
   test("a page is drawn from its tree: terms, links, tabs and tables, and nothing its author wrote as markup", async () => {
     const refunds = (await browser().get(`${HELP}support/refunds`)).body;
-    expect(refunds).toContain("<title>Refund an order · Shop handbook</title>");
+    expect(refunds).toContain("<title>Refund an order · Customer support · Shop handbook</title>");
     expect(refunds).toContain("<p>Full and partial refunds.</p>");
     // The page's own title is its first heading. What its author wrote as # comes under it.
     expect(refunds).toContain('<h2 id="before-you-start">Before you start</h2>');
@@ -343,7 +343,8 @@ describe("a folder of pages served as a docs app", () => {
     expect(refunds).toContain('<div class="vd-tabs" data-vd-tabs="1">');
     expect(refunds).toContain('<h4 class="vd-tab-label">Cash</h4>');
     expect(refunds).toContain('<th class="vd-align-right">Amount</th>');
-    expect(refunds).toContain(`<a class="next" href="${HELP}ops/closing/checklist">`);
+    // The last page of a collection has no Next into the one after it.
+    expect(refunds).not.toContain('class="next"');
   });
 
   test("it is searched with a form, and the answer is a page", async () => {

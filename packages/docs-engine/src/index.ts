@@ -84,6 +84,7 @@ export {
   type Folder,
   folderItems,
   glossaryOf,
+  homeTypeCardsOf,
   type Nav,
   nameOf,
   neighboursOf,

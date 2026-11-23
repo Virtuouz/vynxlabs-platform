@@ -270,7 +270,7 @@ export const INSTANCE_SECTIONS: readonly (Section & { to: string })[] = [
     to: "/instance/health",
     label: "Health",
     icon: HeartPulse,
-    help: "instance-databases",
+    help: "volvel-instance-health",
   },
   {
     slug: "audit",

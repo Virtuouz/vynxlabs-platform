@@ -4,7 +4,7 @@
  * what fits: the chart types the data can work with, the look, and, over time, the extra options.
  */
 
-import type { PageWidget } from "@volvel/manifest";
+import { groupName, type PageWidget } from "@volvel/manifest";
 import {
   DrawerBlock,
   DrawerGroup,
@@ -35,8 +35,10 @@ import {
   Palette,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import type { Env } from "../controls.tsx";
 import { BreakdownRow, MeasureRow, MoreMeasures } from "../measureControls.tsx";
 import { heading } from "../model.ts";
+import { SortRow } from "../rowsItUses.tsx";
 import {
   ChoiceRow,
   CompareAcross,
@@ -346,6 +348,14 @@ export function ChartData({ env, data }: SectionProps) {
         </DrawerBlock>
       </DrawerGroup>
       <DrawerGroup label="Order">
+        <SortRow
+          env={env}
+          input="rows"
+          visual={query.visual}
+          columns={query.columns}
+          withSort
+          withLimit={false}
+        />
         {dated ? null : (
           <ChoiceRow
             idPrefix={env.widget.id}
@@ -462,6 +472,7 @@ export function ChartDisplay({ env, data }: SectionProps) {
       </DrawerGroup>
       <DrawerGroup label="Look">
         <NumbersRow env={env} />
+        {query ? <AxisRows env={env} query={query} /> : null}
         <ChoiceRow
           idPrefix={env.widget.id}
           label="Colors"
@@ -538,6 +549,46 @@ export function ChartDisplay({ env, data }: SectionProps) {
           ) : null}
         </DrawerGroup>
       ) : null}
+    </>
+  );
+}
+
+/** "Along the bottom" and "Up the side": which of the result's columns each axis draws; left out is the first. */
+function AxisRows({ env, query }: { env: Env; query: Query }) {
+  const set = setter(env);
+  const across = groupsOf(query).map((one) => groupName(one));
+  const up = (query.visual.measures ?? []).map((one) => one.as);
+  const rows = [
+    { name: "x", label: "Along the bottom", first: "First breakdown", names: across },
+    { name: "y", label: "Up the side", first: "First value", names: up },
+  ] as const;
+  return (
+    <>
+      {rows.map((row) =>
+        row.names.length < 2 ? null : (
+          <ChoiceRow
+            key={row.name}
+            idPrefix={env.widget.id}
+            label={row.label}
+            value={
+              row.names.includes(env.config[row.name] as string)
+                ? (env.config[row.name] as string)
+                : ""
+            }
+            options={[
+              { value: "", label: row.first },
+              ...row.names.map((name) => ({ value: name, label: heading(name) })),
+            ]}
+            onChange={(next) =>
+              set(
+                row.name,
+                next === "" ? undefined : next,
+                `changing what is ${row.label.toLowerCase()}`,
+              )
+            }
+          />
+        ),
+      )}
     </>
   );
 }

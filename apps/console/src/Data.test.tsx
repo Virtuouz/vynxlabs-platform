@@ -295,6 +295,8 @@ test("a table made in the console is changed by saving its definition", async ()
   await waitFor(() =>
     expect(saved().body.columns.paid).toEqual({ type: "boolean", default: false }),
   );
+  // It says what was made, not only that something was.
+  expect(await screen.findByText("The column paid was added.")).toBeTruthy();
 });
 
 test("a refused save of an enum's values or a reference's rule keeps its dialog open, with what was typed", async () => {
@@ -616,12 +618,53 @@ test("a connected data source is changed from what it is, and the stored passwor
   expect(host.value).toBe("erp.internal");
   expect((within(dialog).getByLabelText("Port") as HTMLInputElement).value).toBe("5433");
   expect((within(dialog).getByLabelText("Password") as HTMLInputElement).value).toBe("");
-  fireEvent.input(host, { target: { value: "erp2.internal" } });
+  // The same address with no password typed keeps the stored one.
+  fireEvent.input(within(dialog).getByLabelText("Schema"), { target: { value: "sales" } });
   fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
   await waitFor(() =>
     expect(calls.find((call) => call.method === "PUT")?.body).toEqual({
-      config: { host: "erp2.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+      config: {
+        host: "erp.internal",
+        port: 5433,
+        database: "erp",
+        user: "reader",
+        schema: "sales",
+        ssl: true,
+      },
     }),
+  );
+});
+
+test("WLK-07: another host asks for the password again instead of dropping it in silence", async () => {
+  routes[`GET /api/v1${root}/data-source-bindings`] = () => [
+    200,
+    {
+      items: [
+        {
+          path: "erp",
+          description: "The ERP",
+          bound: true,
+          config: { host: "erp.internal", port: 5433, database: "erp", user: "reader", ssl: true },
+          hasPassword: true,
+          health: null,
+        },
+      ],
+    },
+  ];
+  routes[`PUT /api/v1${root}/data-source-bindings/erp`] = () => [200, {}];
+  show(<Sources root={root} link="/t/t1/workspaces/w1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Change" }));
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.input(within(dialog).getByLabelText("Host"), { target: { value: "erp2.internal" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  expect((await within(dialog).findByRole("alert")).textContent).toMatch(/Type the password again/);
+  expect(calls.find((call) => call.method === "PUT")).toBeUndefined();
+  fireEvent.input(within(dialog).getByLabelText("Password"), { target: { value: "s3cret" } });
+  fireEvent.submit(dialog.querySelector("form") as HTMLFormElement);
+  await waitFor(() =>
+    expect(
+      ((calls.find((call) => call.method === "PUT")?.body ?? {}) as { password?: string }).password,
+    ).toBe("s3cret"),
   );
 });
 

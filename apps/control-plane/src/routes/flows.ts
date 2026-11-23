@@ -910,9 +910,22 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
       const body = manifest.body as unknown as FlowBody;
       const steps = await db
         .selectFrom("step_run")
-        .leftJoin("member", "member.id", "step_run.decided_by")
+        .leftJoin("member", (join) =>
+          join
+            .onRef("member.id", "=", "step_run.decided_by")
+            .on("step_run.decided_by_type", "=", "member"),
+        )
+        .leftJoin("service_account", (join) =>
+          join
+            .onRef("service_account.id", "=", "step_run.decided_by")
+            .on("step_run.decided_by_type", "=", "service_account"),
+        )
         .selectAll("step_run")
-        .select(["member.email as decided_by_email", "member.name as decided_by_name"])
+        .select([
+          "member.email as decided_by_email",
+          "member.name as decided_by_name",
+          "service_account.name as decided_by_service",
+        ])
         .where("step_run.flow_run_id", "=", id)
         .execute();
       const kept = keptNodes(body, steps, row.trigger_node);
@@ -935,7 +948,8 @@ export function flowRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
             )
             .map((step) => ({
               node: step.node_id,
-              decidedBy: step.decided_by_name ?? step.decided_by_email ?? null,
+              decidedBy:
+                step.decided_by_name ?? step.decided_by_email ?? step.decided_by_service ?? null,
             })),
         },
       };

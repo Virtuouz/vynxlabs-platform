@@ -254,6 +254,8 @@ test("disabling a member from the list asks first, and does not open the inspect
   await answer("Disable");
   expect(await screen.findByText("Disabled")).toBeTruthy();
   expect(screen.queryByRole("complementary")).toBeNull();
+  // Disabling someone whose tenants keep an admin still says it was done.
+  expect(await screen.findByText(/is disabled\./)).toBeTruthy();
 });
 
 test("a tenant is renamed from the inspector, keeping its slug", async () => {

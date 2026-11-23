@@ -500,3 +500,21 @@ test("a proved domain whose record is gone says since when, and stays proved (GO
   expect(document.body.textContent).toContain("record gone since");
   expect(document.body.textContent).toContain("No TXT record");
 });
+
+test("WLK-12: saving an issuer that dropped the client secret says so, and says what to do", async () => {
+  routes[`GET ${base}`] = () => [200, { items: [oidc] }];
+  routes[`PATCH ${base}/p1`] = (body) => [
+    200,
+    { ...oidc, config: (body as { config: object }).config, hasSecret: false },
+  ];
+  show(<SingleSignOn base="/tenants/t1" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Acme Login" }));
+  fireEvent.click(await screen.findByRole("tab", { name: "Settings" }));
+  fireEvent.change(await screen.findByLabelText("Issuer"), {
+    target: { value: "https://other.acme.example" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await answer("Change it");
+  expect(await screen.findByText(/client secret was dropped/i)).toBeTruthy();
+  expect(screen.queryByText("The provider was saved.")).toBeNull();
+});

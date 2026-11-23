@@ -387,7 +387,7 @@ export const PERMISSION_KINDS: readonly PermissionKind[] = [
   },
   {
     kind: "data_all",
-    label: "Rows, past the row policy",
+    label: "Rows past the row policy",
     group: "Data",
     scope: "workspace",
     appFacing: true,

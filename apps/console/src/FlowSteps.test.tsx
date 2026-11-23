@@ -267,3 +267,14 @@ test("a case is renamed when Enter is pressed, not on each key, and a taken name
   expect(onChange).toHaveBeenCalledTimes(1);
   expect(onChange.mock.calls[0]?.[1]).toEqual({ from: "a", to: "bc" });
 });
+
+test("WLK-15: a case called otherwise is refused for what it is, not as already used", () => {
+  const onChange = vi.fn();
+  render(<CasesEditor cases={[{ name: "a", when: "true" }]} onChange={onChange} />);
+  const name = screen.getAllByLabelText("Name")[0] as HTMLInputElement;
+  fireEvent.change(name, { target: { value: "otherwise" } });
+  fireEvent.submit(name.closest("form") as HTMLFormElement);
+  expect(onChange).not.toHaveBeenCalled();
+  expect(screen.getByText(/way out when no case holds/)).toBeTruthy();
+  expect(screen.queryByText(/already used/)).toBeNull();
+});

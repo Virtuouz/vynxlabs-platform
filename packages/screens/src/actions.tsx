@@ -549,6 +549,7 @@ function Confirmation({
 }) {
   const confirm = asking.action.confirm;
   const several = (asking.request.records?.length ?? 0) > 1;
+  const destroys = asking.action.steps.some((one) => one.do === "delete");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<ActionError | Error>();
   const words = confirmWords({
@@ -608,10 +609,21 @@ function Confirmation({
         />
       ) : (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          {/* Starts on the safe answer: the main button, or the way back when it removes a record. */}
+          <Button
+            variant="secondary"
+            onClick={onCancel}
+            disabled={busy}
+            {...(destroys ? { "data-autofocus": "" } : {})}
+          >
             {words.dismiss}
           </Button>
-          <Button variant="primary" loading={busy} data-autofocus="" onClick={() => go({})}>
+          <Button
+            variant="primary"
+            loading={busy}
+            onClick={() => go({})}
+            {...(destroys ? {} : { "data-autofocus": "" })}
+          >
             {button}
           </Button>
         </div>

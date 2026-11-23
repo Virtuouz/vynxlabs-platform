@@ -1491,6 +1491,12 @@ export function FlowEditor({
                   placeholder="Find a step"
                   value={addSearch}
                   onChange={(event) => setAddSearch(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Enter takes the first match, as a search that lists does everywhere else.
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    event.currentTarget.parentElement?.querySelector("button")?.click();
+                  }}
                   className="h-8 rounded-control border border-line bg-structure px-3 text-ink outline-none placeholder:text-ink-subtle"
                 />
                 {[...new Set(PALETTE.map((entry) => entry.group))].map((group) => {
@@ -2499,7 +2505,11 @@ function CaseName({
   const commit = () => {
     if (text === name) return setError(undefined);
     if (!text.trim()) return setError("A case needs a name.");
-    if (text === OTHERWISE || taken.includes(text))
+    if (text === OTHERWISE)
+      return setError(
+        `"${OTHERWISE}" is the way out when no case holds, so a case cannot be called that. Choose another name.`,
+      );
+    if (taken.includes(text))
       return setError(`The name "${text}" is already used. Each case needs its own.`);
     setError(undefined);
     onRename(text);
@@ -2627,7 +2637,9 @@ export function valueRowProblem(
 ): string | undefined {
   const name = rows[at]?.name ?? "";
   if (!name.trim()) return "A name is needed.";
-  if (rows.some((row, other) => other < at && row.name === name))
+  // Header names are the same name whatever their case.
+  const same = (a: string) => (headers ? a.toLowerCase() : a);
+  if (rows.some((row, other) => other < at && same(row.name) === same(name)))
     return `The name "${name}" is used twice. Each needs its own.`;
   if (headers) {
     if (!/^[A-Za-z0-9-]+$/.test(name)) return "Letters, digits and hyphens only.";

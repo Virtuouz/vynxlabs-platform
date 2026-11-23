@@ -800,7 +800,12 @@ function Settings({
           setClientSecret("");
           setRemoveSecret(false);
           onChanged(saved);
-          notify.success("The provider was saved.");
+          // A secret stored for the old issuer is not sent to a new one: said, not lost in silence.
+          if (provider.hasSecret && !saved.hasSecret)
+            notify.info(
+              "The provider was saved. Its client secret was dropped because the issuer changed: give it again in Settings.",
+            );
+          else notify.success("The provider was saved.");
         } catch (caught) {
           setError(caught as ApiError);
         } finally {

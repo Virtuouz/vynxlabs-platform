@@ -21,3 +21,5 @@ Each item was in a lane's brief and was not built, or was found by a lane. The f
 - The Health screen opens the help topic `instance-databases`; it needs its own (`instance-health`) once phase 31 writes the page (t3-instance).
 - The script page does not show the settings added to the editor (SCR-08); the repository form cannot show the stored user name, which the API does not return (t3-config).
 - Not a missing part, said in the phase: unpublishing an app made in the console needs a new field on the app kind (only docs apps have `published`) (t3-config).
+- `volvel dev` for file apps, interfaces and docs (CLI-MP7): build it (the owner's "build them too"); Git sync ignores `entry`/`resources` in volvel.yaml (t3-cli-docs).
+- Bring back does not restore a retired table's description; the filter language has no not-contains; the cell dialog leaves without motion (t3-tables).

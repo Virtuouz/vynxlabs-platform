@@ -340,8 +340,11 @@ describe("the data API", () => {
       { path: "/label", message: "must be text" },
       { path: "/count", message: "must be a whole number" },
       { path: "/ok", message: "must be true or false" },
-      { path: "/at", message: "must be a date and time, such as 2026-01-31T09:30:00Z" },
-      { path: "/day", message: "must be a date, such as 2026-01-31" },
+      {
+        path: "/at",
+        message: "must be a date and time that exists, with its zone, such as 2026-01-31T09:30:00Z",
+      },
+      { path: "/day", message: "must be a day that exists, such as 2026-01-31" },
       { path: "/ref", message: "must be an ID" },
       { path: "/nope", message: 'there is no column "nope" in lab/samples' },
       { path: "/id", message: '"id" is set by the platform' },
@@ -1326,7 +1329,9 @@ describe("enum columns", () => {
     const wrong = await alice.get(
       `${ws()}/rows/loans?filter=${encodeURIComponent(JSON.stringify({ column: "extras", op: "has", value: "bag" }))}`,
     );
-    expect(wrong.status).toBe(400);
+    // A value the list no longer offers is still found by `has`: a row may hold it (TAB-24).
+    expect(wrong.status).toBe(200);
+    expect(wrong.body.items).toEqual([]);
     const grouped = await alice.get(`${ws()}/aggregate/loans?group=status&measure=count`);
     expect(grouped.status, JSON.stringify(grouped.body)).toBe(200);
     expect(grouped.body.items.map((one: Any) => one.by)).toEqual(

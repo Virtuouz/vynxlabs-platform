@@ -5,7 +5,7 @@ export type Filter =
   | {
       column: string;
       /** Default `eq`. */
-      op?: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "contains" | "is_null";
+      op?: "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "in" | "has" | "contains" | "is_null";
       value?: unknown;
     };
 
@@ -172,7 +172,6 @@ export const column = {
   /** Any JSON value. */
   json: spec<unknown>("json"),
   uuid: spec<string>("uuid"),
-  /** The ID of a row in another table. */
   /**
    * One of a list of values, which a row's type is narrowed to:
    * `column.enum(["new", "paid"])`. The database refuses any other value.
@@ -180,6 +179,7 @@ export const column = {
   enum: listed("enum", "one"),
   /** Several of a list of values, each at most once. */
   enumList: listed("enum_list", "many"),
+  /** The ID of a row in another table. */
   reference: <const Options extends ReferenceOptions = Record<never, never>>(
     table: string | { path: string },
     options: Options = {} as Options,

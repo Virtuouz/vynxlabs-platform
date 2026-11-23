@@ -71,6 +71,14 @@ export async function putResource(
   if (!validation.ok) {
     throw badRequest("The manifest is not valid.", validation.issues);
   }
+  // Postgres keeps no text with the character that has code 0, so a resource that holds one
+  // cannot be stored: it is said where it is, not answered as a fault.
+  const nul = nulAt(input.body, "/body");
+  if (nul) {
+    throw badRequest("The manifest is not valid.", [
+      { path: nul, message: "holds the character with code 0, which cannot be stored" },
+    ]);
+  }
 
   const lookupPath = input.renameFrom ?? input.path;
   const existing = await trx
@@ -223,6 +231,26 @@ export async function putResource(
     warnings,
     resource: await findResource(trx, workspace.id, input.path),
   };
+}
+
+/** The path of the first text, or key, that holds the character with code 0. */
+function nulAt(value: unknown, path: string): string | undefined {
+  if (typeof value === "string") return value.includes("\u0000") ? path : undefined;
+  if (Array.isArray(value)) {
+    for (const [index, one] of value.entries()) {
+      const found = nulAt(one, `${path}/${index}`);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (typeof value === "object" && value !== null) {
+    for (const [key, one] of Object.entries(value)) {
+      if (key.includes("\u0000")) return path;
+      const found = nulAt(one, `${path}/${key}`);
+      if (found) return found;
+    }
+  }
+  return undefined;
 }
 
 export async function deleteResource(

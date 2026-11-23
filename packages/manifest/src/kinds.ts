@@ -1070,7 +1070,7 @@ export const tableKind: KindDefinition = {
               minItems: 1,
               maxItems: 200,
               description:
-                "For an enum or an enum_list: the values a row may hold, in the order they are offered and sorted.",
+                "For an enum or an enum_list: the values a row may hold, in the order they are offered. A sort by the column goes by the spelling of the value, not by this order.",
               items: {
                 oneOf: [
                   enumValue,

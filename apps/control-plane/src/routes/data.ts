@@ -258,6 +258,43 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
     const { db } = kernel;
     const base = "/tenants/:t/workspaces/:w";
 
+    /**
+     * A table asked for by a path it had before it was renamed still answers, and says so.
+     * One place for every route that finds a table by its name.
+     */
+    async function currentName(
+      ctx: RequestContext,
+      params: { t: string; w: string },
+      table: string,
+    ): Promise<string> {
+      const data = (await kernel.data.forTenant(params.t)).owner;
+      const active = await data
+        .selectFrom("data_table")
+        .select("id")
+        .where("workspace_id", "=", params.w)
+        .where("tenant_id", "=", params.t)
+        .where("name", "=", table)
+        .where("status", "=", "active")
+        .executeTakeFirst();
+      if (active) return table;
+      const alias = await findAlias(kernel.db, params.w, table, ["table"]);
+      const now = alias
+        ? await kernel.db
+            .selectFrom("resource")
+            .select("path")
+            .where("id", "=", alias.resource_id)
+            .executeTakeFirst()
+        : undefined;
+      if (!alias || !now) return table;
+      ctx.moved = {
+        path: table,
+        now: now.path,
+        createdAt: alias.created_at,
+        expiresAt: alias.expires_at,
+      };
+      return now.path;
+    }
+
     /** Checks the caller may touch this table's rows, and says how much of it they may see. */
     async function enter(
       ctx: RequestContext,
@@ -277,28 +314,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           .where("name", "=", name)
           .where("status", "=", "active")
           .executeTakeFirst();
-      let known = await lookUp(table);
-      if (!known) {
-        // A table asked for by a path it had before it was renamed still answers, and says so.
-        const alias = await findAlias(kernel.db, params.w, table, ["table"]);
-        const now = alias
-          ? await kernel.db
-              .selectFrom("resource")
-              .select("path")
-              .where("id", "=", alias.resource_id)
-              .executeTakeFirst()
-          : undefined;
-        if (alias && now) {
-          ctx.moved = {
-            path: table,
-            now: now.path,
-            createdAt: alias.created_at,
-            expiresAt: alias.expires_at,
-          };
-          table = now.path;
-          known = await lookUp(table);
-        }
-      }
+      table = await currentName(ctx, params, table);
+      const known = await lookUp(table);
       const at = {
         tenantId: params.t,
         workspaceId: params.w,
@@ -464,8 +481,8 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           },
         },
       },
-      async ({ params }) => {
-        const name = wildPath(params);
+      async ({ ctx, params }) => {
+        const name = await currentName(ctx, params, wildPath(params));
         const data = (await kernel.data.forTenant(params.t)).owner;
         const catalog = await loadCatalog(data, params.w);
         const table =
@@ -926,25 +943,32 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         const { target, scope } = await enter(ctx, params, wildPath(params), "read");
         const asked = parseRowsQuery(query);
         const names = target.columns.map((column) => column.name);
+        const pageOf = (after: unknown[] | undefined, offset: number, sent: number) =>
+          withData(kernel, params.t, scope, (data) =>
+            findRows(data, target, {
+              ...asked,
+              limit: Math.min(1000, CSV_CAP - sent),
+              ...(after ? { after } : { offset }),
+            }),
+          );
+        // The first page is read before anything is sent, so that a sort or filter that is
+        // refused, or a query that is too slow, is answered as such and not as a file that breaks.
+        const first = await pageOf(undefined, 0, 0);
         async function* lines() {
           yield `${names.map(csvCell).join(",")}\r\n`;
           let after: unknown[] | undefined;
           let offset = 0;
           let sent = 0;
-          while (sent < CSV_CAP) {
-            const page = await withData(kernel, params.t, scope, (data) =>
-              findRows(data, target, {
-                ...asked,
-                limit: Math.min(1000, CSV_CAP - sent),
-                ...(after ? { after } : { offset }),
-              }),
-            );
+          let page = first;
+          while (true) {
             for (const row of page.items)
               yield `${names.map((name) => csvCell(row[name])).join(",")}\r\n`;
             sent += page.items.length;
             if (page.nextAfter) after = page.nextAfter;
             else if (page.nextOffset !== null) offset = page.nextOffset;
             else return;
+            if (sent >= CSV_CAP) break;
+            page = await pageOf(after, offset, sent);
           }
           yield `"There were more than ${CSV_CAP} rows. Narrow the filter to export the rest."\r\n`;
         }

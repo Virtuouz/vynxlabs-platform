@@ -996,7 +996,7 @@ export interface TableOptions<C extends Record<string, ColumnSpec<unknown, boole
             | { everyone: true }
             /** The column holds the person's own ID. */
             | { column: Extract<keyof C, string>; is: "principal" }
-            /** The column names a group the person is in: its ID, or its name in a text column. */
+            /** The column names a group the person is in: its ID, or its key in a text column (its name too, in rows written before groups had keys). */
             | { column: Extract<keyof C, string>; in: "groups" }
             /** The column equals one of the person's attributes. */
             | { column: Extract<keyof C, string>; equals: { attribute: string } };

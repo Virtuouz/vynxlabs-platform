@@ -483,10 +483,21 @@ export async function runAction(
         return inputs[value.asked];
       };
       /** The values a step sets: what an answer left out is left alone, not emptied. */
-      const resolveAll = (set: Record<string, ActionValue>) => {
+      const resolveAll = (
+        set: Record<string, ActionValue>,
+        columns?: { name: string; type: string }[],
+      ) => {
         const out: Record<string, unknown> = {};
         for (const [name, value] of Object.entries(set)) {
-          const resolved = resolve(value);
+          let resolved = resolve(value);
+          // A day given for a moment means the start of that day, in UTC: a time is stored with its zone.
+          if (
+            typeof resolved === "string" &&
+            /^\d{4}-\d{2}-\d{2}$/.test(resolved) &&
+            columns?.find((column) => column.name === name)?.type === "timestamp"
+          ) {
+            resolved = `${resolved}T00:00:00Z`;
+          }
           if (resolved !== undefined) out[name] = resolved;
         }
         return out;
@@ -524,7 +535,7 @@ export async function runAction(
           const grant: DataScope = { ...(await callerScope(table)), all: true };
           await actAs(grant);
           if (step.do === "create") {
-            const set = resolveAll(step.set);
+            const set = resolveAll(step.set, table.columns);
             try {
               const [row] = await insertRowsKeepingFiles(
                 kernel,
@@ -549,7 +560,7 @@ export async function runAction(
             }
           } else if (step.do === "update") {
             const id = roundIds[step.record] as string;
-            const set = resolveAll(step.set);
+            const set = resolveAll(step.set, table.columns);
             try {
               records[step.record] = await updateRowKeepingFiles(
                 kernel,

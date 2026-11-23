@@ -173,7 +173,30 @@ export async function applyTable(
   await sql`create schema if not exists ${sql.id(schema)}`.execute(trx);
   await sql`grant usage on schema ${sql.id(schema)} to ${sql.id(role)}`.execute(trx);
 
+  // A policy names its column, and Postgres will not change the type of a column a policy
+  // names. Policies are lifted for a widen and put back after, unless the save sets another.
+  const widening = plan.steps.some((step) => step.op === "widen_column");
+  const before = widening
+    ? await trx
+        .selectFrom("data_table")
+        .select(["id", "physical_name", "policy"])
+        .where("resource_id", "=", resource.id)
+        .where("status", "=", "active")
+        .executeTakeFirst()
+    : undefined;
+  if (before) {
+    for (const name of POLICY_NAMES) {
+      await sql`drop policy if exists ${sql.id(name)} on ${sql.id(schema, before.physical_name)}`.execute(
+        trx,
+      );
+    }
+  }
+
   for (const step of plan.steps) await applyStep(trx, role, resource, schema, step);
+
+  if (before && !plan.steps.some((step) => step.op === "set_policy")) {
+    await setPolicy(trx, role, schema, before, before.policy as TablePolicy);
+  }
 
   // The catalog row always points at the resource that declares the table.
   await trx
@@ -302,6 +325,16 @@ async function applyStep(
         );
       }
     }
+    if (column.unique && column.default !== null && column.default !== undefined) {
+      const several = await sql`select 1 from ${target} offset 1 limit 1`.execute(trx);
+      if (several.rows.length > 0) {
+        throw refuse(
+          step.table,
+          column.name,
+          "is unique and has a default, so every row the table already has would get the same value. Add the column with no default, or fill it row by row first.",
+        );
+      }
+    }
     await sql`alter table ${target} add column ${columnDefinition(column)}`.execute(trx);
     await insertColumn(trx, table.id, column);
     if (column.unique) await setUnique(trx, schema, table.physical_name, column.physicalName, true);
@@ -336,6 +369,11 @@ async function applyStep(
         .execute();
       break;
     case "restore_column":
+      if (column.default_value !== null && column.default_value !== undefined) {
+        await sql`alter table ${target} alter column ${physical} set default ${literal(column.type as ColumnType, column.default_value)}`.execute(
+          trx,
+        );
+      }
       await trx
         .updateTable("data_column")
         .set({ status: "active", retired_at: null })
@@ -349,6 +387,8 @@ async function applyStep(
       await sql`alter table ${target} drop constraint if exists ${sql.id(constraintName("fk", table.physical_name, column.physical_name))}`.execute(
         trx,
       );
+      // Rows written from now on get no value for it. The catalog keeps the default, to put back.
+      await sql`alter table ${target} alter column ${physical} drop default`.execute(trx);
       await trx
         .updateTable("data_column")
         .set({ status: "retired", retired_at: new Date(), required: false, is_unique: false })
@@ -914,7 +954,8 @@ export async function restoreStructure(trx: Trx, role: string, workspaceId: stri
         type: column.type as ColumnType,
         required: false,
         unique: false,
-        default: column.default,
+        // A retired column fills with nothing; the catalog keeps its default for its return.
+        default: column.status === "retired" ? null : column.default,
         referenceTable: null,
         onDelete: null,
         values: null,
@@ -996,6 +1037,61 @@ export async function restoreRules(
     }
   }
   await reconcileReferences(trx, workspaceId, true);
+}
+
+/**
+ * Refuses to retire a table that active tables refer to, naming each column that does (D27):
+ * no deploy to the workspace could succeed until they were changed. A table that refers to
+ * itself does not hold itself.
+ */
+export async function refuseRetiringReferred(trx: Trx, workspaceId: string, name: string) {
+  const referrers = await trx
+    .selectFrom("data_column")
+    .innerJoin("data_table", "data_table.id", "data_column.table_id")
+    .select(["data_table.name as table", "data_column.name as column"])
+    .where("data_table.workspace_id", "=", workspaceId)
+    .where("data_table.status", "=", "active")
+    .where("data_table.name", "!=", name)
+    .where("data_column.status", "=", "active")
+    .where("data_column.reference_table", "=", name)
+    .orderBy("data_table.name")
+    .orderBy("data_column.name")
+    .execute();
+  if (referrers.length === 0) return;
+  const named = referrers.map((one) => `"${one.table}" (column "${one.column}")`);
+  throw conflict(
+    `The table "${name}" cannot be deleted: ${named.join(", ")} ${referrers.length === 1 ? "refers" : "refer"} to it. ` +
+      "Delete or change those references first.",
+  );
+}
+
+/** Refuses a table whose reference columns name a table the workspace does not have. */
+export async function refuseMissingTargets(
+  trx: Trx,
+  workspaceId: string,
+  name: string,
+  columns: Record<string, { type?: string; references?: string }>,
+) {
+  const issues: { path: string; message: string }[] = [];
+  for (const [column, definition] of Object.entries(columns)) {
+    const target = definition.references;
+    if (definition.type !== "reference" || !target || target === name) continue;
+    const found = await trx
+      .selectFrom("data_table")
+      .select("id")
+      .where("workspace_id", "=", workspaceId)
+      .where("name", "=", target)
+      .where("status", "=", "active")
+      .executeTakeFirst();
+    if (!found) {
+      issues.push({
+        path: `/body/columns/${column}/references`,
+        message: `there is no table "${target}" in this workspace`,
+      });
+    }
+  }
+  if (issues.length > 0)
+    throw badRequest(`The table "${name}" refers to a table that does not exist.`, issues);
 }
 
 /** Retires a table whose resource is being removed. Its data stays where it is. */

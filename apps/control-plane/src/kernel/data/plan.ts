@@ -197,9 +197,13 @@ export function planTable(
   }
   if (!table) {
     // Going back to an older definition: a table that used to have this path gets it back.
+    // Only one that is no longer declared (a deploy retires what it removes before it applies
+    // anything): a table still declared under its new path keeps its rows, and the old path is new.
     const former = catalog.find(
       (candidate) =>
-        candidate.previousNames.includes(name) && !catalog.some((other) => other.name === name),
+        candidate.status === "retired" &&
+        candidate.previousNames.includes(name) &&
+        !catalog.some((other) => other.name === name),
     );
     if (former) {
       steps.push({ op: "rename_table", tableId: former.id, from: former.name, to: name });

@@ -321,3 +321,23 @@ describe("a row of nobody's, and a time in microseconds", () => {
     }
   });
 });
+
+describe("tables and their names", () => {
+  test("TAB-04: a new table with a name another table used to have does not take that table's rows", async () => {
+    const columns = { label: { type: "text" } };
+    const own = (
+      await alice.post(`/tenants/${tenant}/workspaces`, { slug: "tab-04", name: "Names", type: "dev" })
+    ).body.id as string;
+
+    const first = await deploy(bundle([table("alpha", columns)], "a1"), own);
+    expect(first.status, JSON.stringify(first.body)).toBe(201);
+    await alice.post(`${ws(own)}/rows/alpha`, { label: "from alpha" });
+    const renamed = await deploy(bundle([table("beta", columns, { renamedFrom: "alpha" })], "a2"), own);
+    expect(renamed.status, JSON.stringify(renamed.body)).toBe(201);
+    const both = await deploy(bundle([table("beta", columns), table("alpha", columns)], "a3"), own);
+    expect(both.status, JSON.stringify(both.body)).toBe(201);
+    expect((await rows(alice, "beta", "", own)).map((row) => row.label)).toEqual(["from alpha"]);
+    expect(await rows(alice, "alpha", "", own)).toEqual([]);
+    expect((await alice.get(`${ws(own)}/tables/beta`)).status).toBe(200);
+  });
+});

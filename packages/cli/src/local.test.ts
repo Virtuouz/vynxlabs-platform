@@ -44,9 +44,11 @@ async function run(script: string) {
   const dir = await repository();
   const out: string[] = [];
   const err: string[] = [];
-  await runLocally([script, "--dir", dir], { out: (line) => out.push(line), err: (line) => err.push(line), env: {} }).catch(
-    (error) => err.push((error as Error).message),
-  );
+  await runLocally([script, "--dir", dir], {
+    out: (line) => out.push(line),
+    err: (line) => err.push(line),
+    env: {},
+  }).catch((error) => err.push((error as Error).message));
   return [...out, ...err].join("\n");
 }
 

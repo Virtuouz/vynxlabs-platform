@@ -50,7 +50,7 @@ test("node: imports, Buffer and process are not underlined", async () => {
   expect(await problems(SCRIPT, "")).toContain("Cannot find name 'node:fs'");
   expect(await problems(SCRIPT, NODE_TYPES)).toBe("");
   // A module that is not Node's is still missed.
-  expect(await problems('import x from "nothing-here";\nexport default x;\n', NODE_TYPES)).toContain(
-    "nothing-here",
-  );
+  expect(
+    await problems('import x from "nothing-here";\nexport default x;\n', NODE_TYPES),
+  ).toContain("nothing-here");
 }, 60_000);

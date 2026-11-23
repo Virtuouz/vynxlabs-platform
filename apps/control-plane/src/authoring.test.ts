@@ -1042,9 +1042,9 @@ describe("schemas read from code", () => {
       throw new Error(`Task ${id} did not end.`);
     };
     expect((await draft("orders/renamer", scriptBody(typed))).status).toBe(200);
-    expect(
-      (await alice.post(`${ws()}/changes/deploy`, { paths: ["orders/renamer"] })).status,
-    ).toBe(201);
+    expect((await alice.post(`${ws()}/changes/deploy`, { paths: ["orders/renamer"] })).status).toBe(
+      201,
+    );
     const renamed = await alice.put(`${ws()}/drafts/orders/renamer`, {
       kind: "script",
       schemaVersion: 1,

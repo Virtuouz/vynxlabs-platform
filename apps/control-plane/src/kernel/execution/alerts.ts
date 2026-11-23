@@ -184,8 +184,7 @@ async function alert(
         workspaceId: failure.workspaceId,
         // The run's own pool; a flow has none, so where a script that uses the connection runs.
         pool:
-          failure.pool ??
-          (await poolOfConnection(kernel.db, failure.workspaceId, wanted.notify)),
+          failure.pool ?? (await poolOfConnection(kernel.db, failure.workspaceId, wanted.notify)),
         kind: "deliver",
         subject: `${table}:${failure.id}`,
         request: {

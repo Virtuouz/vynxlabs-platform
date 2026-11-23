@@ -81,3 +81,18 @@ test("NARROW-1: a state never grows past its cell, and a health cell has no mini
   expect(container.querySelector("span.inline-flex")?.className).toContain("max-w-full");
   expect(container.querySelector("[data-health]")?.className).not.toContain("min-w-[");
 });
+
+test("R-last: a state of one word is not cut to a letter in a narrow row; a longer one still shortens", () => {
+  const { container } = render(
+    <>
+      <StatePill state="allowed" />
+      <StatePill state="waiting_approval" />
+    </>,
+  );
+  const [one, many] = [...container.querySelectorAll("[data-cut]")];
+  expect(one?.textContent).toBe("Allowed");
+  expect(one?.className).toContain("whitespace-nowrap");
+  expect(one?.className).not.toContain("truncate");
+  expect(one?.parentElement?.className).not.toContain("min-w-0");
+  expect(many?.className).toContain("truncate");
+});

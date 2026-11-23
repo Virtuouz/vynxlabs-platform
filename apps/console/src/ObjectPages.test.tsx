@@ -442,7 +442,13 @@ test("R-last: a script with a draft over a deployed version reads the draft and 
   scriptList("orders/sync");
   routes[`${root}/resources/orders/sync`] = () => [
     200,
-    { kind: "script", path: "orders/sync", ownership: "ui", version: 3, body: { timeoutSeconds: 90 } },
+    {
+      kind: "script",
+      path: "orders/sync",
+      ownership: "ui",
+      version: 3,
+      body: { timeoutSeconds: 90 },
+    },
   ];
   routes[`${root}/drafts/orders/sync`] = () => [
     200,

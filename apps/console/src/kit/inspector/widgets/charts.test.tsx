@@ -676,8 +676,6 @@ test("the count in 'Drawn as' is of distinct values, not of result rows (R-last)
     values: ["sum_total"],
     rows,
   };
-  show(
-    <Harness start={byClinicAndStatus()} definition={chart} tab="data" data={{ summary }} />,
-  );
+  show(<Harness start={byClinicAndStatus()} definition={chart} tab="data" data={{ summary }} />);
   expect(screen.getByTestId("reads-as").textContent).toContain("Drawn as a heatmap; 3 clinics.");
 });

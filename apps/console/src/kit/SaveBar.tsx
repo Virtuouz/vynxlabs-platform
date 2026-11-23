@@ -41,7 +41,7 @@ export function SaveBar({
   return (
     <section
       aria-label="Unsaved changes"
-      className="sticky bottom-0 layer-sticky -mx-4 mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-line border-t bg-raised px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:py-3 shadow-overlay md:-mx-6 md:px-6"
+      className="sticky bottom-0 layer-sticky -mx-4 -mb-6 mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-line border-t bg-raised px-4 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:py-3 shadow-overlay md:-mx-6 md:px-6"
     >
       <span className="text-body-sm">
         <span className="font-medium">Unsaved changes</span>

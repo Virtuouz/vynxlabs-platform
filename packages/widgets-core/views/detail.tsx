@@ -337,7 +337,7 @@ export function DetailView({
   // Which field is being edited in place.
   const [editing, setEditing] = useState<string>();
   // The editor leaves with its field's name here; the button that took its place gets the focus.
-  const leaving = useRef<string>();
+  const leaving = useRef<string | undefined>(undefined);
   const fields = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const column = leaving.current;

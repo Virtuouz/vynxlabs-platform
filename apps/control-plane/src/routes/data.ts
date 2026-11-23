@@ -899,7 +899,10 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
         },
         schema: {
           summary: "Insert one row, or up to 1,000",
-          description: 'Send a row, or `{ "rows": [...] }`. Either all are inserted or none.',
+          description:
+            'Send a row, or `{ "rows": [...] }`. Either all are inserted or none. A body with ' +
+            "`rows` alone is read as a batch: a row that has only a column named `rows` is sent " +
+            "as `{ rows: [row] }`.",
           tags: ["data"],
           params: WildParams,
           body: AnyObject,
@@ -1088,7 +1091,7 @@ export function dataRoutes(kernel: Kernel): FastifyPluginAsyncTypebox {
           summary: "Delete several rows",
           description:
             "Deletes the rows with these keys that the table's policy lets the caller delete, in " +
-            "one statement. Keys that name no such row come back in `missing`. Rows that a " +
+            "one statement. Keys that name no such row, or cannot be a row's key, come back in `missing`. Rows that a " +
             "reference's `cascade` or `set_null` rule deletes or empties with them are not " +
             "announced as changes; only the rows named here are.",
           tags: ["data"],

@@ -1,134 +1,165 @@
 # Inventory: extensions and kit
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
+Read from the code at `270e509` on 2026-11-22. Refreshed 2026-11-23 against the code at `4992c9da` (phase 29 built). A report, not checked prose: what it calls a bug is settled in (E).
 
-Paths below are relative to ``, with these prefixes: **Au** = `apps/console/src/screens/Authoring.tsx`, **SDK** = `packages/sdk/src/index.ts`, **W** = `packages/widget-sdk/src/index.ts`, **T** = `apps/control-plane/src/extensions.test.ts`, **CT** = `apps/control-plane/src/kernel/execution/triggers.ts`. I read code and tests only. Nothing was run, including the suspected bugs in (E).
+**Refreshed 2026-11-23.** What changed in this brief:
+- Section A now gives each page its collection and Diátaxis type, and lists sources. Pages added: an extensions how-to for the console, a flows-nodes how-to for "Use as a flow step", and a not-built note for developer widgets. `writing-a-widget` is retyped (tutorial, now on `core/goal`).
+- Corrected: `labs/goal` is `core/goal` (D37); the labs pack has no widgets that "Add to page" offers (only the hidden `labs/probe`); extensions now have a Problems list, a Settings worker pool, and a draft row reads its own draft; a connector made in the console may export `test`; a script may be a flow step from its Settings; `THEME_TOKENS` is exported by the SDK; a source's `uses` are checked at deploy; a tick over 100 items now fails instead of dropping them; numbers follow the reader's locale; `/instance/*` is for operators only; `tenant.console_code` has a switch under Repository.
+- Not verified: the 202-always webhook claim and the "nobody can start a source by hand" claim in (C) were not re-traced; the list of core pack widgets was not re-counted; no screen was run. I read code and the lane write-ups only.
+
+Paths below are relative to the repository root, with these prefixes: **Au** = `apps/console/src/screens/Authoring.tsx`, **CS** = `apps/console/src/screens/CodeSettings.tsx`, **SDK** = `packages/sdk/src/index.ts`, **W** = `packages/widget-sdk/src/index.ts`, **T** = `apps/control-plane/src/extensions.test.ts`, **CT** = `apps/control-plane/src/kernel/execution/triggers.ts`. Settled by phase 29: `docs/documentation/fixed/ext2.md`, `t4-config-ext.md`, `trg.md`, `t3-config.md`, `t2-walk-flow.md`, `bldwid.md`, `t3-widgets.md`, `sweep-build.md`, `fix-close.md`; decisions D17, D37, D38, D60.
 
 ## (A) Pages
 
-| Path in `packages/docs/content/` | State | Purpose | Topic id |
-|---|---|---|---|
-| `build/extensions.md` | stub | What extends Volvel, what extensions are, the list screen | `build-extensions` |
-| `build/extension-editor.md` | stub | Editor fields and lifecycle, both kinds | `build-extensions-editor` |
-| `build/writing-a-connector.md` | new | `defineConnector` and console form, tutorial | none |
-| `build/writing-a-trigger-source.md` | new | Webhook and poll sources | none |
-| `build/flow-nodes.md` | new | Core nodes, a script as a node, grants | none |
-| `build/writing-a-widget.md` | exists, stale | Tutorial | none |
-| `build/widget-contract.md` | new | `@volvel/widgets` reference | none |
-| `build/component-kit.md` (or `kit-components.md` + `kit-theming.md`) | new | `@volvel/ui` for app authors | none |
-| `instance/component-kit.md` | stub | The live sheet | `instance-kit` |
+Collections: Get started, Console, Develop, Administer, Self-host. "Today's file" is under `packages/docs/content/`; phase 31 moves or rewrites it. Register new pages in the folder index's `pages:`.
 
-Register new pages in `build/index.md` `pages:`. `build/resource-editor.md` (`build-resources-editor`) edits only connection, connection_group, variable, event, schedule, trigger (`apps/console/src/screens/ResourceEditor.tsx:36`). Connectors and trigger sources are not edited there; `kit/objects.tsx` links them to Extensions.
+| Page | Collection | Type | Purpose | Today's file | Sources |
+|---|---|---|---|---|---|
+| Extensions (the list) | Console | reference | The Extensions screen: columns, states, empty state, who may use it | `build/extensions.md` (`build-extensions`) | Au:1305-1440; `apps/console/src/Extensions.test.tsx` |
+| Write an extension in the console | Console | how-to | Make, save, deploy, test and remove a connector or a trigger source in the editor | `build/extension-editor.md` (`build-extensions-editor`) | Au:58-130, 590-780, 860-1150; CS:96-200 |
+| Extension editor fields | Console | reference | Every Settings field of both kinds, limits and defaults | same | CS:96-200; Au:600-640 |
+| What an extension is | Develop | explanation | Why extensions exist, the two kinds, what HTTP, mail and OAuth2 need none of | none | `docs/master-spec.md:574`; SDK:565-612 |
+| Write a connector | Develop | tutorial | `defineConnector`, `test`, the form the Connections screen draws, a connection that uses it | none (`build/writing-a-connector.md`) | SDK:565-612; T:145-300 |
+| Write a trigger source | Develop | tutorial | A webhook source (signature, split one request) and a poll source (cursor), named by a webhook or a schedule | none (`build/writing-a-trigger-source.md`) | SDK:357-480; CT:700-860 |
+| Trigger source answers | Develop | reference | `WebhookRequest`, `WebhookSourceResult`, `PollTick`, `PollResult`, limit of 100, refusal reasons | none | SDK:361-410; CT:711, 747-860 |
+| Flow steps from code | Develop | how-to | The core steps, and a script of your own as a step (Settings > "Use as a flow step" or `node` in code), `takes`, grants | none (`build/flow-nodes.md`) | `packages/nodes/src/index.ts`; SDK:220-230, 860-920; Au:649-715 |
+| Core steps | Develop | reference | Each core step's inputs, outputs, timeout | none | `packages/nodes/src/index.ts:50-340` |
+| Writing a widget (Goal, start to end) | Develop | tutorial | How a shipped widget is declared and viewed, using `core/goal` | `build/writing-a-widget.md` (stale) | `packages/widgets-core/src/index.ts:1498`; `packages/widgets-core/views/goal.tsx`; `packages/screens/src/goal.test.tsx` |
+| Widget contract (`@volvel/widgets`) | Develop | reference | Definition, data shapes, controls, view props, actions, helpers. Published, marked "for contributors to the platform" (D60) | none (`build/widget-contract.md`) | W (see B) |
+| Developer widgets are not available | Develop | explanation | Say it is not there: packs are hard-wired, a developer cannot ship one | inside the two pages above | (B) widget loading |
+| Component kit for app authors | Develop | reference | `@volvel/ui`: install, exports by group, theming tokens | none (`build/component-kit.md`, or `kit-components.md` + `kit-theming.md`) | `packages/ui/src/index.ts`; `packages/ui/package.json:7-11` |
+| Theme your workspace | Develop | how-to | `defineTheme({ tokens, dark })`, the 27 tokens, what is derived | none | SDK:1099-1150; `packages/manifest/src/kinds.ts:1267-1320` |
+| Component kit (the live sheet) | Self-host | reference | Instance > Component kit: what each section shows, which parts are console-only | `instance/component-kit.md` (`instance-kit`) | `apps/console/src/screens/KitSheet.tsx`; `KitDrawer.tsx`; `nav.ts:289-296` |
+
+`build/resource-editor.md` (`build-resources-editor`) edits only connection, connection_group, variable, event, schedule, trigger (`apps/console/src/screens/ResourceEditor.tsx`). Connectors and trigger sources are not edited there; `kit/objects.tsx:58` links them to Extensions.
 
 ## (B) Content
 
-**extensions.md**
+**Extensions (list)**
 - Spec's five extension points: trigger, step, connector, data source, interface widget (`docs/master-spec.md:574`). The screen lists only two kinds: `connector` and `trigger_source`.
-- Title "Extensions"; buttons "New trigger source" and primary "New connector" (dev workspace only). Columns Extension, What it is ("Connector", "Trigger source for a schedule", "Trigger source for a webhook"), What it does, State (deployed / Draft / "From the repository"). Empty state "No extensions yet". Au:1152-1300; `apps/console/src/Extensions.test.tsx`.
-- Routes: `extensions/{connector|trigger_source}/new` and `/edit/<path>` (`Tenant.tsx:600`).
-- Permissions: `resource:write` plus `code:write` (`packages/manifest/src/permissions.ts:259`, `apps/control-plane/src/routes/authoring.ts:202`). Tenant switch off gives 403 `console_code_off`.
+- Title "Extensions"; the description line says a connector "says how a kind of connection reaches an outside system" and a trigger source "stands between the outside and what a trigger starts". Buttons "New trigger source" and primary "New connector" (dev workspace only; Au:1351-1365). Columns Extension, What it is ("Connector", "Trigger source for a schedule", "Trigger source for a webhook"), What it does, State (deployed / Draft / "From the repository"). Empty state "No extensions yet" (Au:1375-1380). A draft row reads its own draft for "What it is" and "What it does" (EXT-13, `Extensions.test.tsx`). Before the draft is read, a draft trigger source says only "Trigger source".
+- Routes: `extensions/{connector|trigger_source}/new` and `/edit/<path>` (`Au:190`; `kit/objects.tsx:58`); the list is the "extensions" tab of the workspace (`apps/console/src/screens/Tenant.tsx:474, 710`).
+- Permissions: `resource:write` plus `code:write`; the tenant's switch off gives 403 `console_code_off` (`apps/control-plane/src/routes/authoring.ts:210-226`). The switch exists now: Repository > "Code in the console" (`screens/Git.tsx` `ConsoleCodeSwitch`), for an operator and a tenant admin (`tenant:write`), audited as `tenant.updated`, with confirm before turning off (D17; `fixed/t4-config-ext.md` EXT-10). The 403 text says who can turn it on.
 
-**extension-editor.md**
-- Header: "New connector" / "New trigger source" or the path; state pills; "Name and path", Discard draft / Remove, "Save draft", Deploy menu ("This change only", "Review all drafts"; toast "Promote to …", `kit/DeployMenu.tsx`). Path hint "Its name in this workspace. It can be renamed later, and stays the same resource."
-- Settings panel starts open for extensions. Fields:
+**Extension editor**
+- Header: "New connector" / "New trigger source" or the path; state pills; "Name and path" (hint "Its name in this workspace. It can be renamed later, and stays the same resource.", Au:929); "Discard draft" (a draft) or "Remove" (`kit/RemoveDraftButton.tsx:28-33`); "Save draft" (Au:902); a Deploy menu with "This change only" and "Review all drafts"; after a deploy the toast offers "Promote to <workspace>" (`kit/DeployMenu.tsx:84-117`).
+- Settings opens open for extensions (Au:1050); a script's opens closed once saved. Fields (`CS:96-200`, Au:600-640):
   - Both: "What it does".
-  - Connector: "What a connection is set up with, as JSON Schema" (Au:138-190). No timeout, uses or retries.
-  - Trigger source: "It is handed" (Each request to a webhook / Each tick of a schedule), "Give up after (seconds)" (1-300, default 30), "Connections it uses", "Secrets it reads", "Variables it reads" (Au:560-650).
-- Starters: Au:55, 76, 94. Changing mode swaps the code only while it is an untouched starter.
-- Saving: Ctrl/Cmd+S; autosave 3 s after the last change once saved or deployed; unsaved new one kept in the browser ("Restore it" / "Discard"). No test pane, no ⌘↵, no Problems tab (those are script-only, Au:1030). Both kinds say to deploy and try it through something else (Au:693, 699).
-- Repository-defined: read-only source, cannot be taken over; a new one at the same path replaces it on deploy.
-- Imports: `@volvel/sdk` and `node:` only, 256 KiB of source (`kinds.ts:112`); default export required. `packages/compose/src/index.ts:39-50,150-200`.
+  - Connector: "What a connection is set up with, as JSON Schema" (Au:194). No timeout, uses or worker pool.
+  - Trigger source: "It is handed" (Each request to a webhook / Each tick of a schedule), "Give up after (seconds)" (1-300, default 30), "Connections it uses", "Secrets it reads", "Variables it reads", "Worker pool" (new in phase 29, `fixed/t3-config.md` EXT-MP3). Memory, Runs at once and the rest are script-only.
+- Starters: connector Au:58 (now shows an optional `test`), webhook source Au:97, poll source Au:115. Changing "It is handed" swaps the code only while it is an untouched starter (Au:620-635).
+- Saving: Ctrl/Cmd+S; autosave 3 s after the last change once saved or deployed (Au:483-492); an unsaved new one is kept in the browser ("Restore it" / "Discard", Au:1020-1035).
+- Problems: a connector and a trigger source now list problems under the code, "Problems" or "Problems (n)", with editor diagnostics and build errors matched by `<path>.<kind>.ts`; each line jumps to its place (Au:1139-1150; `fixed/t3-config.md` EXT-12). A build error shows only when a deploy, preview or connection Test makes one; a plain save raises none.
+- No test pane, no run button and no ⌘↵ for either kind: those are script-only (Au:1030-1110). Both kinds say so in a note: "Nobody starts a trigger source by hand. To try it, deploy it and name it in a webhook or a schedule." and "A connection names this connector by its path. To try it, deploy it and set up a connection of this kind: Test on the connection runs the code's test export, or only builds its client when there is none." (Au:756-768).
+- Repository-defined: read-only source ("From the repository"), cannot be taken over; a new one at the same path replaces it on deploy. The notice names the kind (EXT-12, not "Code").
+- Imports: `@volvel/sdk` and `node:` only (`packages/compose/src/index.ts:191-205`), 256 KiB of source (`packages/manifest/src/kinds.ts:112`); default export required. The console's copy of the SDK types for the editor is `packages/sdk/dist/extensions.d.ts` and the others listed at `apps/console/src/editor/monaco.ts:10-16`.
 
-**writing-a-connector.md**
-- `defineConnector<Config, Client>({ path, key?, title?, description?, configSchema, create(config, credential, signal), test?(config, credential, signal) })` → `ConnectionTest { status?, message? }` (SDK:535-600; `packages/sdk/src/extensions.ts`). Must be exported.
-- Console form: default export is the `create` function alone.
+**Write a connector**
+- `defineConnector<Config, Client>({ path, key?, title?, description?, configSchema, create(config, credential, signal), test?(config, credential, signal) })` returns a definition; `test` resolves with a `ConnectionTest { status?, message? }` (SDK:565-612, `packages/sdk/src/extensions.ts`). Must be exported.
+- Console form: default export is `create`; a named export `test` is also carried (EXT-07: `packages/compose/src/index.ts:40-47, 170`, `compose.test.ts` "EXT-07"). Without `test`, Test only builds the client. This replaces the old claim that a console connector could not have `test`.
 - Use: `defineConnection({ path, connector })`, `defineConnectionGroup`; `await ctx.connection<Client>("path")`, `ctx.connections("group").get(key)`. Files: `<name>.connector.yaml` + `.connector.ts`.
-- Built-ins: `http` (config baseUrl, headers, auth bearer/header/basic), `smtp` (host, port 587, security starttls/tls/none, from, username), `oauth2`. Sources `packages/sdk/src/{http,smtp,oauth2}.ts`.
-- The Connections screen draws its form from `configSchema` (`ConnectionWizard.tsx:443`, SchemaForm); unsupported parts fall back to JSON. Give `title` and `format` (`textarea`). The secret is separate from config.
-- Validation (T:145-300; `bundle-check.ts:217-243`): unknown connector, a path equal to a built-in, or an invalid JSON Schema → 400. Binding is checked against the connector's schema, including an undeployed draft or uploaded bundle. Deploying a stricter schema → 409 `bindings_invalid` with `/connections/<path>`. Unbound → 409 `bindings_missing`.
-- Test: the worker runs `test` from the active bundle. Without one: "The connector has no test of its own. Its client was made." (`packages/worker/src/runner.ts:145`). `throw` with a numeric `status` reports it.
-- API: `GET …/connectors`, `PUT …/connection-bindings/{path}`, `POST …/connection-test*` (verify the last name; handler `routes/execution.ts:2625`).
+- Built-ins: `http` (config baseUrl, headers, auth bearer/header/basic), `smtp` (host, port default 587, security `tls` | `starttls` | `none`, default `starttls`, from, username), `oauth2`. Sources `packages/sdk/src/{http,smtp,oauth2}.ts`. A connection group cannot use `oauth2` yet: "Declare a connection for each account" (`packages/manifest/src/bundle-check.ts:316`).
+- The Connections screen draws its form from `configSchema` (`ConnectionWizard.tsx:487`, SchemaForm); unsupported parts fall back to JSON. Give `title` and `format` (`textarea`). The secret is separate from config. A name with `_` is now accepted in the wizard, as in the editor (CFG-20, EXT-16).
+- Validation (T:145-300; `bundle-check.ts:310-335`): unknown connector, a path equal to a built-in, or an invalid JSON Schema gives 400. Binding is checked against the connector's schema, including an undeployed draft or uploaded bundle. Deploying a stricter schema gives 409 `bindings_invalid` with `/connections/<path>`; unbound gives 409 `bindings_missing` (`kernel/execution/deploy.ts:642, 664`).
+- Test: the worker runs `test` from the active bundle; without one: "The connector has no test of its own. Its client was made." (`packages/worker/src/runner.ts:174`). `throw` with a numeric `status` reports it.
+- API: `GET …/connectors` (`routes/execution.ts:2616`), `PUT …/connection-bindings/{path}` (`:2596`), `POST …/connection-tests` (`:3005`).
 
-**writing-a-trigger-source.md**
-- `defineTriggerSource({ path, description?, mode: "webhook"|"poll", connections?, secrets?, variables?, timeoutSeconds?, worker?, run })` (SDK:404-480).
-- `WebhookRequest { method, headers, query, body, rawBody }` (lowercase headers; `authorization` and `cookie` removed). `WebhookSourceResult`: `{accept:false, reason?}`, `{input}`, `{inputs}`. `PollTick {cursor, scheduledFor}`, `PollResult {items, cursor?}`. SDK:357-410.
-- Naming it: `defineWebhook({source})`, `defineSchedule({source})`, `trigger.webhook({source})`, `trigger.schedule(cron,{source})`. Console: webhook "Each request is checked" → "By a trigger source of your own" (`FlowSteps.tsx:284`, offered only if a webhook source exists), schedule "Trigger source (optional)" (`ScheduleForm.tsx:163`).
-- Runtime (CT:569-660, 735-790, 1000-1020): runs on a worker, no retries, output unchecked. Max 100 starts per answer. Each start idempotent by `source:<run>:<index>`. Run trigger detail: `trigger`, `source`, `sourceRun`.
+**Write a trigger source**
+- `defineTriggerSource({ path, description?, mode: "webhook"|"poll", connections?, secrets?, variables?, timeoutSeconds?, worker?, run })` (SDK:404-480). `timeoutSeconds` default 30, at most 300.
+- `WebhookRequest { method, headers, query, body, rawBody }` (lowercase headers; the sender's `authorization` and `cookie` removed). `WebhookSourceResult`: `{accept:false, reason?}`, `{input}`, `{inputs}`. `PollTick {cursor, scheduledFor}`, `PollResult {items, cursor?}` (SDK:361-415).
+- Naming it: `defineWebhook({source})`, `defineSchedule({source})`, `trigger.webhook({source})`, `trigger.schedule(cron,{source})`. Console: webhook "Each request is checked" > "By a trigger source of your own" (`FlowSteps.tsx:405-411`, offered only if a webhook source exists), schedule "Trigger source (optional)" (`ScheduleForm.tsx:167`, hint "Each tick runs it, and what it starts starts once for each thing it finds."). A poll source that is only a draft is offered too (`fixed/t2-walk-flow.md`: `DraftSummary.mode`).
+- Runtime (CT:711, 747-860): runs on a worker, no retries, output unchecked. Passed on whole or not at all. More than 100 starts (`MAX_RELAYED`), or poll `items` that is no list, fails the source's run, starts nothing and keeps the cursor (D26, EXT-02, `fixed/trg.md`). An item that does not fit what it starts is refused alone: the others start, the cursor moves, and the item's place and reason go to the source run's `output.refused`. A failure elsewhere undoes the whole answer, cursor included. Each start is idempotent by `source:<run>:<index>`. A run's trigger detail: `trigger`, `source`, `sourceRun`; the API names `relay` (`resourceId`, `node`, `mode`) for a trigger source's run (`fixed/t2-walk-flow.md`).
+- Refusals are recorded on the trigger and shown on Triggers as "Last refused": reasons `input`, `filter`, `busy`, `error`, `paused` (OPS-08, EXT-04; `fixed/trg.md`).
+- A source's `uses` (connections, secrets, variables) are checked at deploy: a missing one is refused (EXT-01; `bundle-check.ts:155, 251-270`; `deploy.ts:50-67`).
 - Full example: Stripe-style HMAC and cursor inbox (T `sourced()`).
 
-**flow-nodes.md**
-- Core nodes (`packages/nodes/src/index.ts`): `core/http-request` "HTTP request", `core/send-email` "Send email", `core/table-read` "Read rows" (limit 1-1000, default 50), `core/table-write` "Write a row" (insert/update/delete), `core/publish-event` "Publish an event". Document inputs, outputs, timeouts. `GET /core-nodes`.
-- A script as a node: `defineScript({ node: { label ≤60, icon?, category? ≤40, takes?: ("connection"|"table"|"event")[] } })` (SDK:220; `kinds.ts:255`). Palette category: own `category`, else "This workspace's"; unlabelled scripts appear under "Scripts" by path (`FlowEditor.tsx:633`).
-- Input schema draws the step form: `title`, `description`, `enum`, `default`, and `"x-pick": "connection"|"table"|"event"` (`FlowSteps.tsx:42,70,142`). "Its input": "Field by field" / "As one expression".
-- Grants: `step.script("core/table-read", { inputs, with: { tables: [...] } })` (SDK:801-845). A step hands over exactly that. Errors "which does not take one", "which is not a table in this repository", "not both" (T "a node reaches what its step hands it").
+**Flow steps from code**
+- Core steps (`packages/nodes/src/index.ts`), palette group "Core": `core/http-request` "HTTP request", `core/send-email` "Send email", `core/table-read` "Read rows" (limit 1-1000, default 50), `core/table-write` "Write a row" (insert/update/delete), `core/publish-event` "Publish an event". Document inputs, outputs, timeouts. `GET /core-nodes` (`routes/identity.ts:830`).
+- A script as a step, in code: `defineScript({ node: { label ≤60, icon?, category? ≤40, takes?: ("connection"|"table"|"event")[] } })` (SDK:220-230; `kinds.ts:255-270`).
+- A script as a step, in the console (EXT-08): the script's Settings has a "Use as a flow step" group: "Step name" (empty keeps it out of the steps), "Icon", "Group" (placeholder "This workspace's"), "A step may hand it" (A connection, A table, An event) (Au:649-715). Emptying the name removes `node` from the draft; the icon and group come back when the name is typed again.
+- Palette: the step's own `category`, else "This workspace's"; unlabeled scripts appear under "Scripts" by path (`FlowEditor.tsx:1002`). The icon is drawn (EXT-09/17): `widgetIcons.ts` resolves the widgets' names, the page icons and `globe`, `radio`, `table-2`; `STEP_ICONS` (`widgetIcons.ts:59`) lists what a person may choose; an unknown name stays a puzzle piece.
+- Input schema draws the step form: `title`, `description`, `enum`, `default`, and `"x-pick": "connection"|"table"|"event"` (`FlowSteps.tsx:44, 86, 222`). "Its input": "Field by field" / "As one expression" (`FlowSteps.tsx:199-200`).
+- Grants: `step.script("core/table-read", { inputs, with: { tables: [...] } })` (SDK:860-920, `StepGrants`). A step hands over exactly that. Errors "which does not take one", "which is not a table in this repository" (`bundle-check.ts`), "not both" (`packages/manifest/src/flow.ts:382, 412`).
 - Core path prefix reserved. A bundle carries only used nodes, pinned at compose.
 
-**writing-a-widget.md / widget-contract.md**
+**Writing a widget (tutorial) and the widget contract**
 - Package `@volvel/widgets` (folder `packages/widget-sdk`, no React), re-exported from `@volvel/sdk`; subpaths `/page`, `/action`.
-- Definition (W:217): type regex `pack/name`, version x.y.z, title, description, category, icon, surfaces, `data`, `dataHints`, `config`, `defaults`, `initialData`, `events`, `layout` (`min`, `default`, `max`, `phone`, `frame: card|none`), `role` (core only).
-- Data shapes `rows|summary|record|approvals` (W:46); `DataInputDeclaration` label/required/sources/values/breakdowns (W:53). What views receive: `RowsData` (more, total, groups, sortBy, sorted, names), `SummaryData` (previous, trend), `RecordData`, `ApprovalsData` (W:377-458).
-- All 28 controls, grouped (W:126). Hint keys: tab, group, level, control, label, help, of, types, choices, when, order (W:174).
-- View props (W:516-585): config, data, size, emit, building, viewing, title, act, decide, refresh, can, why, close, viewer, selectedRecord, listens, choices, place, tab, filters. There are no hooks. `act` paths: `on/<event>`, `config/<prop>`, `config/<prop>/<i>/action`.
-- Actions are data: step kinds update, create, delete, flow, script, open, close, message, narrow, rows (`widget-sdk/src/action.ts`). Server steps are the first five.
-- Helpers: `formatValue`, `formatNumber`, `formatDay`, `numberOf`, `sentenceCase`, `choiceWords`, `mustGive`, `moneyFormatOf`, `parseMoney`, `moneyText`, `FORMAT_SCHEMA`.
+- Definition (W:219-256): `type` as `pack/name`, `version` x.y.z, `title`, `description`, `category`, `icon`, `surfaces`, `data`, `dataHints`, `config`, `defaults`, `initialData`, `events`, `layout` (`min`, `default`, `max`, `phone`: stack | list | hide, `frame`: card | none), `role` (core only: `container`, `filters`).
+- `icon`: the platform's widget names, the page icons (`PAGE_ICONS`) and `globe`, `radio`, `table-2`; any other draws a puzzle piece (W:233-237; EXT-17). The type stays `string`.
+- Data shapes `rows|summary|record|approvals` (W:48); `DataInputDeclaration` label/required/sources/values/breakdowns (W:55-72). What views receive: `RowsData` (more, total, groups, sortBy, sorted, names), `SummaryData` (previous, trend), `RecordData`, `ApprovalsData` (W:383-472).
+- All 28 controls (W:128-173, counted): text, markdown, number, switch, choice, segmented, format, column, columns, filter, action, actions, page, tabs, pageFilters, position, tiles, slots, icon, groups, fields, groupRows, source, measure, breakdown, conditions, sort, limit. Hint keys: tab, group, level, control, label, help, of, types, choices, when, order (W:176-199).
+- View props (W:530-600): config, data, size, emit, building, viewing, title, act, decide, refresh, can, why, close, viewer, selectedRecord, listens, choices, place, tab, filters. There are no hooks. `act` paths: `on/<event>`, `config/<prop>`, `config/<prop>/<i>/action`.
+- Actions are data: step kinds `update`, `create`, `delete`, `flow`, `script`, `open`, `close`, `message`, `narrow`, `rows` (`packages/widget-sdk/src/action.ts:39-76`). Server steps are the first five. A widget action may say something when done (`done`, WID-M2).
+- Helpers: `formatValue`, `formatNumber`, `formatDay`, `numberOf`, `sentenceCase`, `choiceWords`, `mustGive`, `countText`, `readerLocale`, `moneyFormatOf`, `parseMoney`, `moneyText`, `FORMAT_SCHEMA`. `formatValue(value, format, locale?)` and `formatNumber` follow the reader's browser language, else en-US (D38, `packages/widget-sdk/src/locale.ts`); the lower-case `$43.1k` compact rule stays for English only. Chart axes follow the same rule (`chartEngine.ts`).
 - Sizing: container queries on `cell` (`@[14rem]/cell:`).
-- Testing: `packages/widgets-labs/src/goal.test.tsx` (`definitionProblems`, `WidgetRegistry`, render the view with happy-dom).
-- Packaging and loading today: hard-wired imports only. Console `screens/builder/registry.ts:25`; served apps `packages/screens/runtime/main.tsx:37`; manifest `page.ts:602`; plus Tailwind `@source` (`apps/console/src/styles.css:6`) and Dockerfile. `viewRegistry` throws on a duplicate type or missing view (`packages/screens/src/types.ts:181`). Import rule: `enforce.test.ts:560`.
+- Shipped packs: `corePack` (`packages/widgets-core`, includes `core/goal`, `core/chart`, `core/table` and the rest) and `labsPack` (`packages/widgets-labs`), whose `LABS_WIDGETS` is empty; `labs/probe` exists only for tests and is not offered in "Add to page" (`widgets-labs/src/index.ts`; `fixed/bldwid.md` D37). `labs/goal` no longer exists.
+- Goal (the tutorial's example, `packages/widgets-core/src/index.ts:1498-1600`): `data.value` is a summary of 1 to 2 values and no breakdown; Data tab group "Progress" holds "Goal" (`target`) and "Goal from a column" (`goalFrom`, wins over the fixed amount); Display has "A line under it" (`label`), "Numbers" (`format`), "Show the percentage" (`percent`), "When reached, the bar" (`reached`: Turns green / Stays), "Good news is" (`goodWhen`, under More) and a color-by-closeness switch (`bands`). The view is a button (`role="button"`) only when the page listens to `click` (WID-27, `packages/widgets-core/views/goal.tsx`, `listensTo`). Test: `packages/screens/src/goal.test.tsx`. A money format uses the money field for the goal (WID-26).
+- Goal is not "nothing else was written": it has a custom drawer (`apps/console/src/kit/inspector/widgets/registerCharts.ts:16, 31`, `goalDrawer.tsx`) and an Add-to-page preview. The tutorial must say the builder gets the standard inspector plus whatever a pack registers, and that a pack cannot register a drawer (see E8).
+- Packaging and loading today: hard-wired imports only. Console `screens/builder/registry.ts:8-20` (`PACKS = [corePack, labsPack]`); served apps `packages/screens/runtime/main.tsx:13, 37`; manifest `packages/manifest/src/page.ts:26-27, 600-615` (`registerWidgets`, no callers outside its package); plus Tailwind `@source` (`apps/console/src/styles.css:5-6`) and the Dockerfile. `viewRegistry` throws on a duplicate type or missing view (`packages/screens/src/types.ts:183`). Import rule: `apps/console/src/enforce.test.ts:561-565` (views import only `react`, `@volvel/widgets`, `@volvel/ui`).
+- Testing: `definitionProblems`, `WidgetRegistry`; render the view with happy-dom (`packages/screens/src/goal.test.tsx`, `packages/widgets-labs/src/probe.test.ts`).
+- Developer widgets, packaged in a repository and run in a sandboxed frame, are designed and not built. The page must say it is not there (existing alert, still right). D60: publish the contract page, marked for platform contributors.
 
-**component-kit (kit reference)**. Install `@volvel/ui`, `@volvel/ui/tokens.css`, `@volvel/ui/icons` (Lucide, `ICON` 14/16/20, `STROKE` 1.75). Exports (`packages/ui/src/index.ts`):
+**Component kit reference (for app authors).** Install `@volvel/ui`, `@volvel/ui/tokens.css`, `@volvel/ui/icons` (Lucide; `ICON` 14/16/20 as `sm`/`md`/`lg`, `STROKE` 1.75; `packages/ui/src/icons.ts:15-17`; package exports `packages/ui/package.json:7-11`). Exports (`packages/ui/src/index.ts`):
 - *Actions*: Button (variants primary/main, secondary/normal, quiet, danger, danger-solid, promote, dashed; sizes small, regular, large; loading, tooltip, keys), Menu, ContextMenu (right-click menu), Popover, SegmentedControl, Switch, MoveButtons, Kbd, Tooltip/TooltipProvider.
-- *Fields*: TextField, TextAreaField, NumberField, MoneyField, DateField, DateInput, SelectField, ComboboxField, MultiSelectField, CheckboxField, DateStepper, FieldFrame, FieldHelp, FieldMarks, `fieldControl`, `utcInputValue`, `utcInstant`, `isoDay`.
+- *Fields*: TextField (with `showCount`, the typed count), TextAreaField, NumberField, MoneyField, DateField, DateInput, SelectField, ComboboxField, MultiSelectField, CheckboxField, DateStepper, FieldFrame, FieldHelp, FieldMarks, LimitNote/`pastLimit`, `fieldControl`, `utcInputValue`, `utcInstant`, `isoDay`.
 - *Forms*: Form/`checkForm` (flat JSON Schema), SchemaForm/`checkValue`/`cleanedValue`/`startValue` (nested).
-- *Data*: Table (plain), Grid (sort, filter, edit in place)/`parseValue`/`showValue`, Pagination, Tree, Facts, JsonView, ResultView/`resultShapes`/`columnsOf`/`MAX_TABLE_ROWS`, LogViewer/`logText`/`saveText`, Timeline, Sparkline, Chart (Vega-Lite; `seriesColors`, `chartConfig`, `readChartTokens`, `SURFACE`).
+- *Data*: Table (plain), Grid (sort, filter, edit in place)/`parseValue`/`showValue`/`instantFromText`/`keepsKey`/`localWall`/`utcOf`, Pagination, Tree, Facts, JsonView, ResultView/`resultShapes`/`columnsOf`/`MAX_TABLE_ROWS`, LogViewer/`logText`/`saveText`, Timeline, Sparkline, Chart (Vega-Lite; `seriesColors`, `chartConfig`, `readChartTokens`, `SURFACE`).
 - *Structure*: PageShell, Panel/ContainedArea/`useContained`, Tabs, Details, Dialog, SideSheet, HeadingSlot/OnHeading/`hasHeadingControls`, Appear/Closing/`useLast`/`useOpening`.
-- *Feedback*: Notice (info, attention, danger, success, plain), EmptyState, Badge, ValueChip, `readableOn`, Avatar/`initialsOf`, Skeleton, ToastProvider/`useToast`, DialogsProvider/`useDialogs` (confirm, prompt, type-to-confirm).
+- *Feedback*: Notice (info, attention, danger, success, plain), EmptyState, Badge, ValueChip, `readableOn`, Avatar/`initialsOf`, Skeleton, ToastProvider/`useToast`, DialogsProvider/`useDialogs` (confirm with an optional "Show it" link, prompt, type-to-confirm).
 - *Content*: Markdown, MarkdownKnows/`useMarkdownKnowledge`/`knowledgeFrom`, Doc, `servedComponents`, `reveal`, Term/TermScope/TermText/GlossaryProvider/Toggletip.
-- *Inspector ("drawer") kit* (`src/drawer/index.ts`): DrawerHeader, DrawerTabs, DrawerPanel, DrawerGroup, DrawerRow, DrawerBlock, DrawerEditor, DrawerSwitch, ToggleRow, DashedAdd, ChipSet, CheckChip, SentenceChip, AddChip, TilePicker, RadioCards, PositionPicker, ConditionEditor, SortEditor, NumberFormatPicker/Row, SortableRows/`useSortable`, `edgeShadows`.
-- *Utilities*: `duration`, `contrastRatio`, `CONTRAST_NEEDED`, `luminance`, `useFlip`, `useKeys`, `PAGE_ICONS`/`pageIconOf`.
-- Theming: 27 settable tokens (`kinds.ts:1233`); values must match `THEME_VALUE_PATTERN`, no `url`/`var()`. `data-theme` light/dark, else system. Derived, not settable: field, hover, ring, track, scrim, shadows, control height. Type roles, radii, layer and motion utilities: `tokens.css:243+`. Set via `defineTheme({tokens, dark})` or Branding.
+- *Inspector ("drawer") kit* (`packages/ui/src/drawer/index.ts`): DrawerHeader, DrawerTabs, DrawerPanel, DrawerGroup, DrawerRow, DrawerBlock, DrawerEditor, DrawerSwitch, ToggleRow, DashedAdd, ChipSet, CheckChip (takes `disabled`), SentenceChip, AddChip, TilePicker, RadioCards, PositionPicker, ConditionEditor (takes `valueFrom` and `money`), SortEditor, NumberFormatPicker/Row, SortableRows/`useSortable`, `edgeShadows`.
+- *Utilities*: `duration`, `contrastRatio`, `CONTRAST_NEEDED`, `luminance`, `parseColor`, `useFlip`, `useKeys`, `PAGE_ICONS`/`pageIconOf`.
+- Theming: 27 settable tokens (`packages/manifest/src/kinds.ts:1267`; the SDK exports the same list as `THEME_TOKENS`, `ThemeToken` is derived from it, and `apps/control-plane/src/theme-tokens.test.ts` holds the two equal). Values must match `THEME_VALUE_PATTERN` (`kinds.ts:1302`), no `url`/`var()`. `data-theme` light/dark, else system. Derived, not settable: field, hover, ring, track, scrim, shadows, control height. Type roles, radii, layer and motion utilities in `packages/ui/src/tokens.css`. Set via `defineTheme({tokens, dark})` (SDK:1148) or Branding.
 
-**instance/component-kit.md**: Instance > "Component kit", `/instance/kit` (`nav.ts:270`). Read-only samples. Sections in order: Tokens, Type roles, Corners and elevation, Motifs, State and environment, Actions, Narrowing stages and facts, Status with a next step, Fields, Notices, List densities, Grid, Saving a page, Tooltips keys and menus, Help/fold/tree, A page of documentation, Rows checked, Panes and a difference, Values, Drawer (`KitDrawer.tsx`), The boards' parts, Empty canvas. Say which parts are console-only (`apps/console/src/kit`: PageHeader, DataTable, StatePill, EnvTag, SignalPath, SplitPane, SaveBar, DiffView, etc.) and not importable from `@volvel/ui`.
+**Instance > Component kit (live sheet)**: `/instance/kit` (`nav.ts:290-294`, help topic `instance-kit`). The whole `/instance/*` area is for operators: anyone else sees "for operators" and a way home (`App.tsx:197-199`, `ForOperators`; INS, `fixed/ins2.md`). Read-only samples. Sections in order (`KitSheet.tsx`, `SectionLabel`): Tokens, Type roles, Corners and elevation, Motifs, State and environment, Actions, "Narrowing, stages and facts", Status with a next step, Fields, "Notices, loading and failing", "A list, at each density", "A grid of rows, from the keyboard", Saving a page, "Tooltips, keys and menus", "Help beside a word, a folded section and a tree", A page of documentation, "Rows checked, for a batch", "Panes, and a difference", "Values, cut and whole", The boards' parts, then Drawer (`KitDrawer.tsx`, rendered at `KitSheet.tsx:670`), and Empty canvas at the end. Say which parts are console-only (`apps/console/src/kit`: PageHeader, DataTable, StatePill, EnvTag, SignalPath, SplitPane, SaveBar, DiffView, DeployMenu, Can, etc.) and not importable from `@volvel/ui`. The kit's light and dark pictures are reference screenshots, taken with the default branding (phase 29 outcome).
 
 ## (C) Gotchas
-- Webhook sources answer 202 always: a rejected signature still creates a source run, and starts nothing. "The request is answered by the flow" and a source exclude each other (`FlowSteps.tsx:277`).
-- Nobody can start a source by hand (404). Pausing the trigger while its source runs drops the answer.
-- Poll: omitted cursor keeps its place; the cursor is committed even when an item cannot start (that item is logged and lost). A tick is skipped while the last is running, or over the backlog limit.
-- More than 100 items are dropped with only a server log, yet the cursor advances. Document "return at most 100".
+- Webhook sources answer 202 always: a rejected signature still creates a source run, and starts nothing. (Not re-traced in phase 29 review.) "The request is answered by the flow" and a source exclude each other (`FlowSteps.tsx`, the check field).
+- Nobody can start a source by hand; a run of a source cannot be run again by hand (OPS-22, `fixed/opsb.md`). Pausing the trigger (or the workspace or instance) while its source runs drops the answer, recorded as refusal `paused` (EXT-04).
+- Poll: omitted `cursor` keeps its place. An item that does not fit what it starts is refused alone and listed in the source run's `output.refused`; the cursor still moves, because the same item would be refused again (EXT-03). A tick is skipped while the last is running (overlap) or over the backlog limit (CT:1021-1042).
+- More than 100 items fail the whole tick and keep the cursor (this replaces the old "dropped, cursor advances"). Document "return at most 100, with the cursor of the last one".
 - A source cannot publish events or use tables: `uses` is connections, secrets, variables.
 - A run uses the connector code from its own pinned bundle.
-- OAuth2 is refused in connection groups; failure notifications need an `http` connection.
+- OAuth2 is refused in connection groups (`bundle-check.ts:316`); failure notifications need an `http` connection.
 - The credential never appears in run input/output or audit.
 - "As one expression" keeps earlier grants; switching back to fields clears them.
 - Core nodes started by hand have no grants and fail.
-- Icon names resolve only to 15 names in the builder; others draw a puzzle piece (`builder/widgetIcons.ts`).
-- `formatValue` is always en-US; `parseMoney` uses the person's locale.
+- Icon names: the builder and the flow palette resolve the names in `widgetIcons.ts`; others draw a puzzle piece.
+- Numbers and money follow the reader's browser language (D38). Some counts still write en-US: `packages/widgets-core/views/table.tsx`, `groups.tsx`, `chartSpec.ts:575` per `fixed/ext2.md`, though `fixed/t3-widgets.md` says none is left in `widgets-core`, `screens` or `ui`: unverified, do not promise it.
+- A script that has a step name loses nothing when the name is cleared and typed again, but the saved draft carries no `node` while the name is empty (`fixed/t2-walk-flow.md`).
+- A connection's Test and a failure alert run on the worker pool of the script or trigger source that uses the connection (`fixed/cfg2.md`, `poolOfConnection`).
 
-## (D) Wrong, stale, missing
-- `writing-a-widget.md`: three shapes (four exist); 15 controls listed (28 exist); five view props; `target` shown in Display, really Data/"Progress" and labelled "Goal"; `values: {1,1}`, really `{1,2}`; omits `goalFrom`, `percent`, `reached`; "Colour" vs "Color by how close"; hint `group`, `defaults`, `initialData`, `frame` missing.
-- Its "Nothing else was written" is false: Goal has a custom drawer (`kit/inspector/widgets/registerCharts.ts:22`, `goalDrawer.tsx`), an Add-to-page preview (`selectorData.ts:148`) and `InspectorHost.tsx:61`. The "not available yet" alert is still right.
-- `build/scripts.md` says Remove is in the list's inspector "…the same is true of extensions". Extensions has no inspector; Remove is only in the editor.
-- `docs/sdk-guide.md`: no `defineConnector`, `defineTriggerSource` or node section; its widget passage (192-230) uses old type names.
-- W:223 comment and decision 0005 say a deploy pins widget versions. I found no such code.
-- `registry.ts` INTEGRATOR comment is stale. `TriggerSource` in `extensions.ts` is an internal interface, not what authors implement: do not document it.
-- Generated kind pages omit descriptions for several fields; `coverage.json` kinds 0.429.
+## (D) Wrong, stale, missing (state of the docs files, 2026-11-23)
+- `build/writing-a-widget.md`: still says `labs/goal` at lines 6, 27, 97, 155 (it is `core/goal`, D37), says Goal is in the labs pack, lists three data shapes (four exist), 15 controls (28 exist), five view props, `target` shown in Display (really Data, group "Progress", labelled "Goal"), `values: {1,1}` (really `{1,2}`); omits `goalFrom`, `percent`, `reached`, `bands`; "Colour" is "color by closeness"; hint `group`, `defaults`, `initialData`, `frame` missing. Its "Nothing else was written" (line 148) is false (custom drawer). The "not available yet" alert is still right. American spelling throughout.
+- `build/scripts.md:11`: says Remove is in the list's inspector "…the same is true of extensions". Extensions has no inspector; Remove is only in the editor. A script can now be a flow step from its Settings (EXT-08), a connector can export `test` (EXT-07) (`fixed/ext2.md` EXT-21).
+- `docs/sdk-guide.md`: no `defineConnector`, `defineTriggerSource` or node section; its widget passage (192-230) uses old type names; `ThemeToken` has 27 names; numbers follow the reader's locale.
+- `packages/docs/content`: `variables.md`, `index.md` ("scripts and flows read variables": scripts and trigger sources do), `settings.md` not edited (`fixed/cfg2.md`).
+- `registry.ts` INTEGRATOR comment is stale. `TriggerSource` in `packages/sdk/src/extensions.ts` is an internal interface, not what authors implement: do not document it.
+- Generated kind pages omit descriptions for several fields; `coverage.json` kinds 0.429 (phase 30 M9, the docs generator).
+- W:223's comment, decision 0005 and the `version` field's comment ("a deploy pins the version it was checked against", W:222) say a deploy pins widget versions. I found no such code. Do not promise it.
+- No example repository uses `defineConnector` or `defineTriggerSource` (ext2 left it unbuilt): add one.
+- CHANGELOG lines not yet written: connector `test` from the console; "Use as a flow step"; step icons; 27 theme tokens; locale-following numbers.
 
-## (E) Likely bugs / questions
-1. Trigger sources' `uses` are never validated: not in bundle-check (`:189-202` is scripts only), nor `missingBindings` (`deploy.ts:30`). A missing secret fails at runtime.
-2. Console-written connectors cannot have `test` (`EXPORT_SHAPE`, `compose/index.ts:41`), though YAML + `.ts` files go the same way.
-3. The script editor has no UI for `node` (label, takes), yet its core notice says "give it a label" (Au:885). Only API or repo can.
-4. `node.icon` is accepted but ignored by the flow palette.
-5. `tenant.console_code` has no setter in UI or API: database only.
-6. Monaco never loads `@volvel/widgets` types, while the SDK's `index.d.ts` re-exports them (`editor/monaco.ts`).
-7. Editor for a read-only repository connector shows generic "Code" production text; a build error on deploy shows only as a message, no line jump (Problems is script-only).
-8. `slots` draws only "its places are drawn by the widget" unless registered (`controls.tsx:466`): unusable by a pack.
-9. Drafts: a new draft trigger source lists without its mode, and edited drafts show the old description (Au:1187).
-10. `/instance/kit` has no operator check in `App.tsx:143` (nav hides it).
-11. `ThemeToken` in SDK lists 19 tokens; the schema accepts 27.
-12. `registerWidgets` has no callers outside its package. Is it the intended pack hook?
-13. Path regex: connection wizard forbids `_`, extension editor allows it.
+## (E) Findings: settled
+1. A trigger source's `uses` are validated at deploy: settled (EXT-01; `fixed/trg.md`, `fixed/cfg2.md` CFG-14).
+2. A console connector can have `test`: settled (EXT-07; `fixed/ext2.md`).
+3. The script editor has Settings > "Use as a flow step": settled (EXT-08).
+4. `node.icon` is drawn in the flow palette: settled (EXT-09, EXT-17).
+5. `tenant.console_code` has a switch (Repository page, audited, an operator and a tenant admin): settled in the control plane and console (D17, EXT-10, SCR-16, REL-18). Not in the CLI (`outcomes.md`: a `console_code` CLI command is left on purpose).
+6. Monaco still does not load `@volvel/widgets` types (`editor/monaco.ts:10-16` lists the SDK files only). Left: an author writing a widget does not do so in the console.
+7. Extensions show Problems and a build error jumps to its line: settled (EXT-12, EXT-MP4). The read-only repository notice names the kind.
+8. `slots` draws only "its places are drawn by the widget" unless registered: unchanged (a pack cannot add a drawer). Open; say it in the contract page.
+9. A draft trigger source lists its mode and an edited draft its own description: settled (EXT-13).
+10. `/instance/kit` has an operator check: settled (the whole `/instance/*` gate, `fixed/ins2.md`).
+11. `ThemeToken` in the SDK lists all 27 tokens: settled (EXT-15, `fixed/ext2.md`).
+12. `registerWidgets` has no callers outside its package: unchanged. Open owner question, not asked in `decisions.md`; the pack hook for developer widgets is not built.
+13. Path regex: the connection wizard now uses the manifest's pattern, so `_` is accepted in both: settled (CFG-20, EXT-16).
+14. Numbers ignored the reader's locale: settled (EXT-18, D38).
+15. A poll source that was only a draft was not offered: settled (`fixed/t2-walk-flow.md`).
+16. The labs pack has no widget now, so nothing in "Add to page" shows a non-core pack. Open: say so in the contract page.
 
-Decide: publish widget-contract now, flagged "for platform contributors", or hide it?
+Decided: publish the widget contract, marked "for contributors to the platform" (D60). "Developer widgets" is the one thing to say is not there.
 
 ## (F) Screenshots and examples
-- Screens: Extensions list (mixed states, dev) and empty state; new connector; new trigger source in each mode; repository read-only notice; connection wizard drawn from a custom schema; webhook "By a trigger source of your own"; flow palette with Core and custom category; a labelled node's form with `x-pick`; Add to page with the labs tag; Goal inspector Data tab; Component kit light and dark; Drawer section.
-- Code: connector in SDK and console form with `test` (SDK); connection + script using it; HMAC webhook source and cursor poll source (lift from T); node script `count-rows` with `takes` (T); flow using core nodes via `step.script(... with)`; Goal definition, view and test (`packages/widgets-labs`); an app using PageShell, SchemaForm, Chart, toast; `defineTheme` example. Real usage: `examples/fernhill/apps/front-desk`, `examples/acme/apps/portal`. No example repo uses `defineConnector` or `defineTriggerSource`, so add one.
+- Screens: Extensions list (mixed states, dev) and empty state; new connector (starter shows `test`); new trigger source in each mode; Settings with Worker pool; Problems under the code of a connector with a build error; repository read-only notice; connection wizard drawn from a custom schema; Repository > "Code in the console" switch; webhook "By a trigger source of your own"; schedule "Trigger source (optional)"; script Settings > "Use as a flow step"; flow palette with Core and a custom category, with a step icon; a labeled node's form with `x-pick`; Add to page with Goal; Goal inspector Data tab ("Progress"); Component kit light and dark; Drawer section.
+- Code: connector in SDK and console form with `test` (SDK); connection + script using it; HMAC webhook source and cursor poll source (lift from T); node script `count-rows` with `takes` (T); flow using core nodes via `step.script(... with)`; Goal definition, view and test (`packages/widgets-core/src/index.ts`, `views/goal.tsx`, `packages/screens/src/goal.test.tsx`); an app using PageShell, SchemaForm, Chart, toast; `defineTheme` example. Real usage: `examples/fernhill/apps/front-desk`, `examples/acme/apps/portal`. No example repo uses `defineConnector` or `defineTriggerSource`, so add one.

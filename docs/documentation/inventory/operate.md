@@ -1,134 +1,168 @@
 # Inventory: operate
 
-Read from the code at `270e509` on 2026-11-22. A report, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md).
+Read from the code at `270e509` on 2026-11-22; refreshed against the code at `4992c9da` (branch `phase-30-docs-system`) on 2026-11-23. A brief for the writer, not checked prose: what it calls a bug is settled in [the findings](../findings/README.md), and what phase 29 did about it is in `../fixed/` (cited as `fixed/<lane>.md`).
 
-Paths: `S/` = `apps/console/src/screens/`, `CP/` = `apps/control-plane/src/`, `X/` = `CP/kernel/execution/`, `M/` = `packages/manifest/src/`. [read] = traced in code; none of the bugs in (E) were reproduced live.
+**Refreshed 2026-11-23.** What changed in this brief:
+- Section A now gives each page its collection and Diátaxis type, purpose and sources. Pages added for what phase 29 built: Run later, Publish an event, Platform events, Failure alerts (concept), Cancel by age, Runs between two times.
+- Section B is corrected to the code as it is: Runs "Between…", "Cancel by age…", "Cancel N queued" only under All/Queued and never for flows; the row menu; the Re-run menus; the run page's alert and Published sections; Events "Publish an event"; platform events; pause shown at three levels; Fire now rules (D31); the approvals fields in the flow editor; reject asks a reason on every route (D30); masking of approval mail, events and MCP (D13).
+- Section E (bugs) is now settled: each row cites its outcome. What stays open is in E.2.
+- Not verified: the browser walk of any screen (the lanes say theirs was not run); DST behavior of cron (cron-parser, no test); the line numbers of `S/FlowSteps.tsx` and `kit/views.tsx` (not re-read, claims there are unchanged by any lane); `platform/run-finished` is published but is in no editor's event picker (see B Events); the exact words of the Webhook step's labels in `S/FlowSteps.tsx`.
 
-## (A) Pages (under `packages/docs/content`)
+Paths: `S/` = `apps/console/src/screens/`, `CP/` = `apps/control-plane/src/`, `X/` = `CP/kernel/execution/`, `F/` = `CP/kernel/flows/`, `M/` = `packages/manifest/src/`. Vocabulary: Flow, Deploy (dev) / Versions (production), canceled (the API's `status` and some field names still spell `cancelled`), Access changes. Where the code says a word differently, take the code's.
 
-| Path | State | Purpose / topic |
-|---|---|---|
-| `operate/runs.md` | stub | list, filters, views, bulk actions / `operate-runs` (also `flow-runs/*`, nav.ts alias) |
-| `operate/run-page.md` | new | script and flow run page, logs, diagnosis, re-run, cancel |
-| `operate/comparing-runs.md` | new | "Since it last worked" and compare page |
-| `operate/run-states.md` | new | states, retries, timeouts, masking, retention |
-| `operate/events.md` | stub | / `operate-events` |
-| `operate/triggers.md` | stub | list, pause, fire now / `operate-triggers` |
-| `operate/triggers/{schedules,webhooks,forms,event-triggers}.md` | new | field reference per type |
-| `operate/approvals.md` | partial | / `operate-approvals` |
-| `operate/approval-mail.md` | new | mail links and `/approve/:token` |
-| `tenant/approvals.md` | partial | / `tenant-approvals` |
-| `configure/alerts.md` | stub | / `configure-alerts` |
-| `instance/triggers.md` | stub | / `instance-triggers` |
+## (A) Pages (under `packages/docs/content`; collection and type are the target of phase 31)
 
-`runs/:id` and compare show the `operate-runs` topic unless given their own.
+All pages are in the **Console** collection unless said. Types: T tutorial, H how-to, R reference, E explanation.
+
+| Path | Now | Coll. / type | Purpose | Sources |
+|---|---|---|---|---|
+| `operate/runs.md` | stub | Console / R | The Runs screen: list, filters, columns, views, keys, row menu, batch (`operate-runs`; also `flow-runs/*`, `nav.ts:132`) | `S/Runs.tsx`, `kit/DataTable.tsx:286-350` |
+| `operate/find-and-stop-runs.md` | new | Console / H | Find a run (search, status, kind, "Between…"), act on checked runs, "Cancel N queued", "Cancel by age…" | `S/Runs.tsx:107,875,880`, `X/bulk-cancel.ts:10`, `CP/routes/batch.ts:19`, `packages/cli/src/commands.ts:187` |
+| `operate/run-page.md` | new | Console / R | Script and flow run page: header, attempts, logs, diagnosis, failure alert, Published, input and output | `S/RunPage.tsx:242`, `S/RunAlert.tsx`, `S/Flows.tsx:780-1090` |
+| `operate/run-again.md` | new | Console / H | Run again, retry from the failed step, other input, another version, run later with a priority | `S/RunPage.tsx:408,876`, `S/Runs.tsx:566-640`, `S/InputDialog.tsx`, `fixed/t3-flow-ops-sdk.md` OPS-MP8 |
+| `operate/comparing-runs.md` | new | Console / H | "Since it last worked" and the compare page | `S/RunCompare.tsx`, `CP/routes/compare.ts` |
+| `operate/run-states.md` | new | Console / E | States, retries, timeouts, masking, retention | `X/state.ts`, `X/redact.ts`, `CP/config.ts:320-323` |
+| `operate/diagnosis.md` | new | Console / R | What the run page says is wrong and what to do next (the table in B) | `X/diagnose.ts` |
+| `operate/events.md` | stub | Console / R | Events screen: log, filter, inspector, `platform/*` | `S/Operate.tsx:793`, `CP/routes/flows.ts:1932-2090` |
+| `operate/publish-an-event.md` | new | Console / H | Publish an event by hand from the Events screen or an event's page | `S/PublishEvent.tsx`, `fixed/t3-flow-ops-sdk.md` OPS-MP1 |
+| `operate/platform-events.md` | new | Develop / R | The platform's own events and their payloads | `M/bundle-check.ts:42-90`, `X/runs.ts:645` |
+| `operate/triggers.md` | stub | Console / R | Triggers screen: list, pause, resume, fire now, address, refusals, three pause levels (`operate-triggers`) | `S/Operate.tsx:234-770` |
+| `operate/pause-triggers.md` | new | Console / H | Pause one trigger, a workspace's triggers, or the instance's | `S/Operate.tsx:178`, `S/Environments.tsx:76-111`, `S/InstanceTriggers.tsx` |
+| `operate/triggers/{schedules,webhooks,forms,event-triggers}.md` | new | Develop / R | Field reference per trigger type (manifest kinds and the console forms) | `M/kinds.ts:303,350-455,458`, `M/form.ts`, `S/ScheduleForm.tsx` |
+| `operate/triggers/webhook-verify.md` | new | Develop / H | Check a signed webhook (GitHub, Slack) | `M/kinds.ts:357-410` |
+| `operate/approvals.md` | partial | Console / R | Approvals screen: three chips, deciding, batch, who may decide | `S/Operate.tsx:1053`, `CP/routes/flows.ts` |
+| `operate/approve-and-reject.md` | new | Console / H | Decide in the console, in the mail, from an app | `S/Operate.tsx`, `S/ApproveLink.tsx`, `CP/kernel/pages/approvals.ts` |
+| `operate/approval-mail.md` | new | Console / R | Mail links and `/approve/:token` | `F/approval-links.ts:20`, `CP/routes/approval-links.ts`, `S/ApproveLink.tsx` |
+| `tenant/approvals.md` | partial | Administer / R | Tenant-wide approvals page (`surface: tenant`) (`tenant-approvals`) | `nav.ts:170`, `M/kinds.ts:715-740` |
+| `configure/alerts.md` | stub | Console / R | The Alerts screen and the workspace default | `S/Alerts.tsx`, `X/alerts.ts` |
+| `operate/failure-alerts.md` | new | Develop / E | What counts as a failure, who is told, the ten-minute window, `onFailure` replaces the default | `X/alerts.ts:55-260`, `fixed/opsb.md` C9 |
+| `instance/triggers.md` | stub | Administer / R | Pause every trigger in the instance (`instance-triggers`, `nav.ts:266`) | `S/InstanceTriggers.tsx`, `CP/config.ts:351` |
+
+`runs/:id` and compare show the `operate-runs` topic unless given their own. Deliberately not built (say so on the page): delegation, escalation and reminders for approvals; a mail trigger (a table change is an event trigger on `platform/row-changed`); an approvals field to forbid approving one's own request; a console way to publish `platform/*` events (the platform alone does); a flow run page's list of published events (the events list filters only by script run: `fixed/t3-flow-ops-sdk.md` OPS-MP9).
 
 ## (B) Per page
 
 ### Runs list (S/Runs.tsx)
-- **URL keys** (133-144): `status, kind, when, q, tag(list), target, sort, dir, cols, run`.
-- **Search** "A path, a run ID, a tag or an error": path prefix, exact tag, error-summary substring, exact ID (CP/routes/operations.ts:133-150). Max 200 chars, 300 ms debounce.
-- **Kind**: Scripts and flows / Scripts / Flows. **When**: Last hour / Last 24 hours (default) / Last 7 days / Everything kept.
-- **Status chips with counts** (91-100): All, Failed, Running, Waiting for approval, Waiting for a time, Queued, Succeeded, Canceled.
+- **URL keys** (`RUNS_URL`, 166-179): `status, kind, when, from, to, q, tag(list), target, sort, dir, cols, run`. `?status=cancelled` from older links still works (S/Runs.tsx:210).
+- **Search** "A path, a run ID, a tag or an error" (768): path prefix, exact tag, error-summary substring, exact ID (CP/routes/operations.ts:225-231). Max 200 chars, 300 ms debounce. The box follows the address, so a saved view keeps its search (`kit/useSearchParam.ts`, `fixed/opsa.md` OPS-12).
+- **Kind**: Scripts and flows / Scripts / Flows. **When** (104-108): Last hour / Last 24 hours (default) / Last 7 days / Between… / Everything kept. **Between…** shows From and To date-time fields in the reader's zone (one instant each in `from`/`to`; empty To means until now); a To before the From says "The end is before the start." and asks for nothing; choosing a relative window again clears both (`fixed/t3-flow-ops-sdk.md` OPS-MP7).
+- **Status chips with counts** (124-132): All, Failed, Running, Waiting for approval, Waiting for a time, Queued, Succeeded, Canceled. A run set to start later counts under Waiting for a time, not Queued (X/state.ts `runState`, `fixed/t4-flows-ops.md` OPS-25).
 - **Target/tag chips**: "Of x ✕", "Tagged x ✕"; tags AND together.
-- **Columns** (513-611): State, Target (kind icon, tags), Result, Trigger, Started (sortable), Duration (sortable), Attempt (only when >1), Run ID (last 8). State cannot be hidden.
-- **Toolbar**: Columns dialog ("Show every column", "Done", drag or arrows), density (compact default), Saved views, "Cancel N queued".
-- **Saved views** (kit/views.tsx): private per member; "Save this view…", "Save over", Rename, Delete, "Copy a link to this view". Limits: 50 per list, 16,384 bytes, name 80 chars (CP/routes/preferences.ts:22-37). Also on Events and Audit.
-- **Row menu** (428-511): Open; Run again…; Retry from the failed step…; Again from the start…; Cancel; Only runs of X; Copy the run ID; Copy a link to it.
-- **Checked rows**: Cancel, Run again. Batch max 100 per kind (CP/routes/batch.ts:19), each replayed as the caller. Failure dialog "N done, M not done", request ID, retry failed.
-- **Loading**: page size 100, "Load more"; pill "N new runs"; polls every 5 s without the stream.
-- **Inspector tabs** (script): Logs / Input and output / Details; "Open full view"; copy as curl.
-- **Keys** (kit/DataTable.tsx:258-331): ↑↓/j k, ←→, Home/End (Ctrl = whole table), PgUp/PgDn, Enter (⌘/Ctrl = new tab), Space/x check, Shift+arrows range, ⌘/Ctrl+A, Esc. j/k/x can be disabled.
-- **Permissions**: list needs `workspace:read` plus `run:read` or `flow_run:read` (only readable kinds shown). Script cancel/rerun `run:write`; flow cancel/retry `flow_run:write`.
+- **Columns** (S/Runs.tsx ~640-740): State, Target (kind icon, tags), Result, Trigger, Started (sortable), Duration (sortable; an unfinished run sorts last both ways, OPS-34), Attempt (shown as n/m only when >1), Run ID (last 8). State cannot be hidden.
+- **Toolbar**: Columns, density (compact default), Saved views, **Cancel N queued** (875) and **Cancel by age…** (880). Cancel N queued is offered only under the All or Queued chip, not when Kind is Flows, and only to a member who may `run:write`; its dialog says "Every queued script run <scope> is canceled, whether or not this page has loaded it. Runs already going carry on, and a flow's steps are left to their flow." It follows the target, search, tags and window, not the status chip (`X/bulk-cancel.ts:60-85`). "Queued" excludes runs set for later. Cancel by age asks for a length; it also cancels runs going (`include: all`), up to 10,000 per request (`X/bulk-cancel.ts:10`).
+- **Saved views** (kit/views.tsx): private per member; "Save this view…", "Save over", Rename, Delete, "Copy a link to this view". Limits: 50 per list, 16,384 bytes, name 80 chars (CP/routes/preferences.ts:20-35). Also on Events and Audit. A member working through an operator access grant may save views while it lasts (OPS-39).
+- **Row menu** (566-640): Open; Run again… (scripts, not a trigger source's runs); Retry from the failed step… (a failed flow); Again from the start… and On another version… (flows, not running); Cancel (running or queued); Only runs of X; Copy the run ID; Copy a link to it. Each action shows only if the member may do it (`useMay`, `fixed/t4-flows-ops.md` FLW-30/OPS-35).
+- **Checked rows**: Cancel, Run again. The API takes at most 100 per kind (CP/routes/batch.ts:19); the console sends more in slices of 100 and adds up the answers (`kit/BatchResult.tsx:21-33`). Rows checked and then filtered away are dropped. A trigger source's runs are left out of Run again and the dialog says so. Failure dialog "N done, M not done", request ID, retry failed.
+- **Loading**: page size 100, "Load more" shows older runs at once; pill "N new run(s)" holds only runs newer than the first row; polls every 5 s without the stream (337-342); the reader's place survives a refresh (`kit/paged.tsx`). Header says "Kept N days" (the tenant's retention, `tenant/retention.md`).
+- **Inspector tabs** (script): Logs / Input and output / Details; "Open full view"; Details "Started by" links its schedule, trigger, event or webhook (`startedBy` in S/Execution.tsx, OPS-16).
+- **Keys** (kit/DataTable.tsx:286-350): ↑↓/j k, ←→, Home/End (Ctrl = whole table), PgUp/PgDn, Enter (⌘/Ctrl = new tab), Space/x check, Shift+arrows range, ⌘/Ctrl+A, Esc. j/k/x can be disabled (preference `shortcuts.single-key`).
+- **Permissions**: list needs `workspace:read` plus `run:read` or `flow_run:read` (only readable kinds shown). Script cancel/rerun `run:write` (at the workspace or the script); flow cancel/retry `flow_run:write`.
+- **Opening a step's run by ID** (`?run=<id>`) shows the script panel under "A step of a flow run. Open the flow run" (OPS-33).
 
 ### Run page
-- **Script** (S/RunPage.tsx:245-641): header ID, state "attempt n of m", waited/ran, trigger link, version link (source tab), "Re-run of a run", "Run again N times", Trace ID, tags. "Cancel run". **Re-run** menu: With the same input / With other input… / On the version deployed now. "Edit with this input" or "Edit in <dev>". Copy as curl.
-- **Left pane**: Attempts, Received, Started, Finished, Worker, Time limit, Concurrency key, Uses (Bound/Not bound), failure handler link, suppressed-alert note.
+- **Script** (S/RunPage.tsx:242-641): header ID, state ("attempt n of m", "Waiting until HH:MM" for a run set for later), waited/ran, trigger link (`startedBy`), version link (source tab), "Re-run of a run", "Run again once / N times", Trace ID, tags. "Cancel run". **Re-run** menu (408): With the same input / With other input… / On the version deployed now. "Edit with this input" or "Edit in <dev>". Copy as curl: "run this again with the same input" (the `POST runs/:id/rerun` call, `scriptAgainCurl`). A trigger source's run has none of these, links the source's editor, and its curl is gone (OPS-22). Cancel and Re-run are greyed, with the reason, for a viewer.
+- **Left pane**: Attempts (each says "nothing logged" or "N error lines"; a failed attempt is one followed by another, or the one the run failed on), Received, Started, Finished, Worker, Time limit, Concurrency key, Uses (Bound/Not bound), failure alert outcome (below), "Published" (events the run published, each leading to Events, "It published no events." when none; ended runs only).
+- **Failure alert block** (S/RunAlert.tsx): "The failure handler's run" link; "The failure handler did not start: …"; "The failure notification was posted." / "was not sent: …" / "is waiting for a worker to post it."; "N later failures were counted on this alert, not sent on its own."; "No alert was sent: it is counted on the alert of an earlier failure, sent less than ten minutes before." Same on a flow run page.
 - **Right**: Why it failed, diagnosis, waiting reason, log, "Since it last worked", Input, Output/Error (`?io=`).
-- **Palette**: Cancel this run, Run again with the same input, Run again on the version deployed now, Open in editor, Compare with the last success, Copy the run ID.
-- **Waiting text** (CP/routes/execution.ts:1323-1398): no worker of pool / tenant's own workers / same concurrency key.
-- **Flow** (S/Flows.tsx:730-1090; header S/RunPage.tsx:643-873): tabs Timeline (legend "Waiting for a worker", "Running", "Waiting on purpose") and Graph (`?view=`, `?step=`); step panel Started, Waited for a worker, Ran, Run ID, input, log, output, "Kept from the run this one retries"; inline Approve/Reject. Re-run: Retry from the failed step…; …on vN (deployed now)…; Again from the start; Again, with other input…; On the version deployed now.
-- **Logs** (packages/ui/src/LogViewer.tsx): search (Enter/Shift+Enter), Only matching, level toggles, Wrap, Follow, Copy, Download, `#L42`, virtualised past 500 rows. 50,000 newest lines held (S/Execution.tsx:402), "Download the whole log". Message cut at 8,000 chars (CP/routes/worker.ts:115).
-- **Diagnosis** (X/diagnose.ts): unbound connection, secret/variable not set, timeout, unreachable, schema mismatch, HTTP 401/403, 404, 400/409/422, 429, 5xx. Otherwise none.
+- **Palette**: Cancel this run, Run again with the same input, Run again on the version deployed now, Open <script> in the editor, Compare with the last success, Copy the run ID.
+- **Waiting text** (CP/routes/execution.ts): no worker of pool / tenant's own workers / same concurrency key.
+- **Flow** (S/Flows.tsx:780-1090; header S/RunPage.tsx:643-873): tabs Timeline (legend "Waiting for a worker", "Running", "Waiting on purpose") and Graph (`?view=`, `?step=`); step panel Started, Waited for a worker, Ran, Run ID, input, log, output, "Kept from the run this one retries"; inline Approve/Reject (Reject asks why). Re-run menu (851-880): Retry from the failed step…; Retry from the failed step on vN (deployed now)…; Again from the start; Again, with other input…; On another version…; On the version deployed now. A step's page offers "Retry the flow that started it". Cancel and retry are greyed for a viewer.
+- **Logs** (packages/ui/src/LogViewer.tsx): search (Enter/Shift+Enter), Only matching, level toggles, Wrap, Follow, Copy, Download, `#L42`, virtualized past 500 rows (`VIRTUAL_AFTER`, line 62). 50,000 newest lines held (S/Execution.tsx:472), "Download the whole log". Log message cut at 8,000 chars (CP/routes/worker.ts:122). Logs, errors and alerts are masked by the values the run was given (X/redact.ts, `fixed/mask.md`); `console.log` goes to the run's log (D44); a log line's fields over 32 KB become a note.
+- **Diagnosis** (X/diagnose.ts, one cause and one next step each): connection has nothing bound; secret not set; variable not set; a declared use missing ("reads the table X without naming it in what it uses"); timed out ("longer than its timeout"); out of memory (script's or worker machine's); worker stopped reporting; service unreachable (ECONNREFUSED, ENOTFOUND…); schema mismatch; output too large; service answered 401/403, 404, 413, 400/409/422, 429 (points to Settings), 5xx. Otherwise none. It reads the run's own version, and names a connection only when the message names it (OPS-32).
 
 ### States (X/state.ts; labels kit/status.tsx)
-queued, running, waiting_approval, waiting_time ("Waiting until …"), succeeded, failed, canceled, skipped (steps). `status` in the API still spells `cancelled`. Payload over 256 KB goes to file storage; max 10 tags, pattern `[a-z0-9_.:-]{1,64}` (X/runs.ts:16,94-96). Output summary 200 chars. Secret-looking keys shown `[redacted]` (X/redact.ts). Kept 30 days by default (`RETENTION_RUNS_DAYS`); events 30; refusals 7.
+queued, running, waiting_approval, waiting_time ("Waiting until …"; also a queued run whose `scheduled_for` is in the future), succeeded, failed, canceled, skipped (steps). `status` in the API still spells `cancelled`. Payload over 256 KB goes to file storage (`INLINE_PAYLOAD_BYTES`, X/runs.ts:16); max 10 tags (`MAX_TAGS`, :95), each `[a-z0-9_.:-]{1,64}`. Output summary 200 chars. A script's output over 10 MB fails the run ("The output is larger than 10 MB") and is not retried. Secret-looking keys shown `[redacted]`. Kept 30 days by default (`RETENTION_RUNS_DAYS`; a tenant's retention policy may change it); events 30; refusals 7 (CP/config.ts:320-322).
+- **Events a run ends with**: `platform/run-succeeded` or `platform/run-failed`, and `platform/run-finished {runId, script, status, error?}` for every end, including canceled (`X/runs.ts:645,680`, D50).
 
 ### Compare (S/RunCompare.tsx, CP/routes/compare.ts)
-Only against the last earlier success of the same path. Rows Input / Version / Took; "Show the input's difference"; "Compare the source/flow" → `runs/:id/compare/:other`.
+Only against the last earlier success of the same path. Rows Input / Version / Took; "Show the input's difference" (the diff says "Only masked values differ." when only masked values differ, :123); "Compare the source/flow" → `runs/:id/compare/:other`.
 
-### Events (S/Operate.tsx:636-841; CP/routes/flows.ts:1662-1803)
-- Filter by exact name ("Show", "Show every event"), saved views. Columns When, Event, From, Started ("Nothing listens"/"Nothing"). Inspector: Published by, Listening, Event ID, What it started, Payload.
-- **No console publish button.** `ctx.events.publish` or `POST …/events {name,payload}` (`event:write`); payload must match schema; `platform/` refused. Max chain depth 10 (kernel/flows/events.ts:13).
-- **Platform events**: `platform/run-succeeded`, `run-failed`, `flow-run-finished`, `deployment-created`, `row-changed {table,change,id}` (inserted/updated/deleted). Stored only if an enabled, unpaused trigger subscribes.
+### Events (S/Operate.tsx:793-1010; CP/routes/flows.ts:1932-2090)
+- Filter by exact name ("Show", "Show every event"; the box follows its address), saved views. Columns When, Event, From (A script / The API / The platform), Started ("Nothing listens"; "Listeners are paused" when all listeners are held). Inspector: Published by, Listening ("2 triggers", "2 triggers, all paused", "1 trigger, and 1 paused": `listening()` :777; counts triggers that are on), Event ID, What it started (with each run's real state), Payload (masked by the event's schema).
+- **Publish an event** button (header; `event:write`): pick a declared event, fill its payload as fields drawn from the schema, a refusal at a field is shown at that field; the toast says how many runs started or "Nothing listens for it, so it started nothing." In production it asks again as a danger. Also "Publish it" on an event's own page. Platform events are not offered: `POST events` refuses a `platform/` name. Or `ctx.events.publish` / `POST …/events {name,payload}`. Payload must match the schema. Max chain depth 10 (F/events.ts:13); a script's own row changes carry their depth, so a chain of them stops (OPS-05).
+- **Platform events** (M/bundle-check.ts:42-90, offered in the trigger and flow editors' event pickers with a hint, `kit/platformEvents.ts`): `platform/run-succeeded {runId, script}`, `run-failed {runId, script, error?}`, `flow-run-finished {flowRunId, flow, status}`, `deployment-created {deploymentId, bundleVersion}`, `row-changed {table, change, id}` (inserted/updated/deleted; rows changed by a reference's rule are not announced, D28). **Also `platform/run-finished {runId, script, status, error?}`, published (X/runs.ts:645) but missing from that list and so from the pickers**: say so, or add it to the list in phase 30 M9. Stored only if an enabled, unpaused trigger subscribes.
 
-### Triggers (S/Operate.tsx:31-634; X/triggers.ts)
-- **Types**: schedule, webhook, event, form; `manual` in flows only. **No mail trigger; table change = event trigger on `platform/row-changed`.**
-- "New trigger" → Schedule/Webhook/Form/Event (disabled in production). Columns Trigger, Starts, State, Last fired. Inspector: Fire now, Pause this trigger, Resume, Edit, deploy menu, address with Copy, last refusal, skip reasons. Batch Pause/Resume.
-- Pause reason optional, 500 chars; survives deploys. `trigger:write` to pause or see an address; Fire now `run:write`.
-- **Schedule** (S/ScheduleForm.tsx; M/kinds.ts:303): What it starts, What it is for (500), Often used (5 presets), When as a cron line, Time zone, next five times, overlap, Trigger source, Input, Turned on; `tags` (10 CEL) code-only. Exactly five fields; IANA zone; manifest default UTC, console writes the workspace's zone. Scheduler tick 2 s.
-- **Overlap default**: schedule resource `allow`; flow schedule node `skip`.
-- **Missed times**: fires once, then next time. Backlog: ≥200 queued (`SCHEDULE_BACKLOG_LIMIT`, 0 off) skips.
-- **Webhook** (S/FlowSteps.tsx:229; M/kinds.ts:349): The flow is given (body / whole request); The request is answered (at once / by the flow, 25 s); Each request is checked (address / signature / trigger source). Signature: HMAC SHA-256/SHA-1, header, secret, Hex/Base64, prefix. Code-only: `signed`, `timestampHeader`, `toleranceSeconds` (default 300, max 86400).
-- `POST /api/v1/hooks/vxh_…` (CP/routes/execution.ts:3245): 202 `{runId}`, 401, 400, 404, 503 paused, 120/min, `idempotency-key` ≤200, `x-flow-run`. `authorization`, `cookie`, `proxy-authorization` not passed. Flow answer ≤256 KB.
-- **Form** (M/form.ts; S/FlowSteps.tsx:421): title 120, 1-30 fields, types text(500)/textarea(5000)/email(320)/number/date/select(100 options)/checkbox; reserved `website,key,return`; access anyone/signed in; 20 posts/min per IP and tenant; `/portal/<tenant>/forms/vxf_…`.
-- **Event trigger**: Event, "Only when (optional)" CEL over `event`.
-- **Workspace pause**: Workspace settings (S/Environments.tsx:88-113). New dev workspaces start paused.
-- **Instance** (S/InstanceTriggers.tsx): "Pause every trigger" with Why; `instance:write`; read cached 2 s; `TRIGGERS_PAUSED` overrides.
+### Triggers (S/Operate.tsx:234-770; X/triggers.ts)
+- **Types**: schedule, webhook, event, form; `manual` in flows only. **No mail trigger.** A schedule may start a script or a flow (`M/kinds.ts:313-318`); the other trigger kinds start a script (a flow has its own start nodes).
+- "New trigger" → Schedule/Webhook/Form/Event (disabled in production: "Triggers change in a dev workspace and reach production by promotion."). Columns Trigger, Starts, State, Last fired ("This trigger has not started anything yet. Runs started by hand are not counted."). Inspector: Fire now (609), Pause this trigger (614), Resume, Edit (not in production), the deploy menu, address with "Copy address", "Last refused <ago>: <reason>" (the reasons: the signature did not match; the body could not be read; the trigger was paused; what it was given does not fit what it starts; its filter could not be worked out; its source was still looking; its source could not pass on what it gave: `REFUSED`, :83), "Paused 2 hours ago by Carl: reason", skip reasons. Batch Pause/Resume.
+- **State** (`TriggerState`, `nextFireOf` :104): a trigger says "Instance paused", "Workspace paused" or its own pause; a turned-off or held schedule shows no next time; one held while due says it fires once when resumed. The same rule applies on a script's or flow's Triggers tab (the list answers `pausedBy: instance | workspace | trigger`, OPS-21).
+- **Pause**: reason optional ("Why (shown to everyone here)"), 500 chars; survives deploys. `trigger:write` to pause or see an address (its permission text now says it pauses and resumes). **Fire now**: server needs `run:write` (`POST schedule-firings`, CP/routes/execution.ts:2173); the Triggers inspector offers it to whoever holds `trigger:write` (S/Operate.tsx:605); both a script's and a flow's schedule node can be fired. Refused (409, with words) when the schedule, its workspace or the instance is paused; allowed when only turned off, to try it (D31). With a source it starts the source, and says "The source is still looking from the last time" if busy.
+- **Schedule** (S/ScheduleForm.tsx; M/kinds.ts:303): What it starts, What it is for (500), Trigger source (optional), Turned on, Often used (5 presets), When, as a cron line, Time zone, next five times, "Skip a time while the run it started last is still going" (`overlap`), Input; `tags` (10 CEL) code-only. Exactly five fields; IANA zone; manifest default UTC, console writes the workspace's zone. Scheduler tick 2 s. A flow's schedule node shows its own cron and zone (OPS-17).
+- **Overlap default**: schedule resource `allow`; flow schedule node `skip` (X/triggers.ts:610).
+- **Missed times**: fires once, then next time. Backlog: ≥200 queued (`SCHEDULE_BACKLOG_LIMIT`, 0 off; X/triggers.ts:948,1034) skips. A schedule whose bundle cannot be read no longer stops the others (OPS-04). Editing a schedule keeps its next time and "last skipped" if cron and zone are the same (OPS-07).
+- **Webhook** (S/FlowSteps.tsx; M/kinds.ts:350): The flow is given (body / whole request); The request is answered (at once / by the flow, 25 s); Each request is checked (address / signature / trigger source). Signature: HMAC SHA-256/SHA-1, header, secret, Hex/Base64, prefix. Code-only: `signed` (Slack: `v0:{timestamp}:{body}`), `timestampHeader`, `toleranceSeconds` (default 300, max 86400). A flow's webhook or form start has a stable `key` that its address, pause and last fired follow through a rename (D33, M/flow.ts:89); a deploy lists, as breaking, each one whose address stops.
+- `POST /api/v1/hooks/vxh_…` (CP/routes/execution.ts:3711): 202 `{runId}`, 401 `signature_invalid`, 400, 404, **503 `workspace_paused`, or 503 `trigger_paused` when the trigger or the instance holds it**, 120/min, `idempotency-key` ≤200, `x-flow-run`. `authorization`, `cookie`, `proxy-authorization` not passed. Flow answer ≤256 KB.
+- **Form** (M/form.ts; M/kinds.ts:421): title 120, 1-30 fields, types text(500)/textarea(5000)/email(320)/number/date/select(100 options)/checkbox; reserved `website,key,return`; access anyone/signed in; 20 posts/min per IP and tenant; `/portal/<tenant>/forms/vxf_…`.
+- **Event trigger**: Event (own events, then the platform's), "Only when (optional)" CEL over `event`. A filter that fails or a payload that does not fit skips that subscriber and records a refusal (`filter` or `input`), shown as "Last refused" (OPS-08).
+- **Trigger source** runs (`extensions/trigger_source`): a tick may start at most 100 items; more fails the tick and keeps the cursor (D26); an item that does not fit is refused alone (listed in the source run's `output.refused`), the others start, and the workspace's failure alert goes out once.
+- **Workspace pause**: Workspace settings (S/Environments.tsx:76-111): "Triggers are paused"; runs started by hand still work. New dev workspaces start paused.
+- **Instance** (S/InstanceTriggers.tsx): "Pause every trigger" with Why; `instance:write`; read cached 2 s; `TRIGGERS_PAUSED` overrides. Shown as "Triggers are paused by the instance" in workspace settings, the Shell, Overview and Triggers.
 
-### Approvals (S/Operate.tsx:898-1327; CP/routes/flows.ts:1340-1636)
-- Chips Waiting for you / Waiting for others / Decided (`?show=`). Columns Decision, Waiting, Who decides; Decided: Decision, Flow, By, When ("decided from the mail"). Last 100 decided; timed-out ones excluded. Batch decide with one comment; comment 2000.
-- **Rule**: `approval:write` plus, if named, member of a group or bound to a role (max 20 each). Groups are resolved by ID when the wait begins; *membership* is checked at decision time. Tenant page shows only `surface: tenant`.
-- Step `timeoutSeconds` ≤ 2,592,000 (30 days). **No delegation, escalation or reminders.** MCP: `list_approvals`, `decide_approval`. App Builder Approvals widget also decides (`POST …/page-approvals`).
-- **Mail** (kernel/flows/approval-links.ts): needs SMTP; max 50 people (kernel/flows/approvers.ts); 48 h or step timeout; single use; 30 req/min; other links die once decided. Page states: form, "Approved/Rejected. Thank you", "Nothing to decide here".
+### Approvals (S/Operate.tsx:1053-1480; CP/routes/flows.ts:1700-1900)
+- Chips Waiting for you / Waiting for others / Decided (`?show=`). Columns Decision, Waiting, Who decides; Decided: Decision, Flow, By (members and service accounts), When ("decided from the mail"). Last 100 decided; timed-out ones excluded. Batch decide with one comment (sent in slices of 100); comment 2000. Titles and details are masked by the values the run was given (`F/approval-detail.ts`).
+- **Reject asks "Why is it rejected?"** and the server refuses a rejection without a reason on every route (400; D30). Approve's note is optional.
+- **Rejecting**: one sentence everywhere: "Rejecting fails the step: the flow takes its error path, or fails if it has none." (`kit/approvals.ts:5`; screen, toast, mailed page, inline dialog, MCP).
+- **Rule**: `approval:write` plus, if named, member of a group or bound to a role (max 20 each). In the flow editor: the approval step's "What is being approved" (200), "Detail to show", "Give up after" (hint: when nobody has decided by then, the step fails and takes its error path; empty waits as long as it takes), **Who may decide** (Groups by key, Roles by name; empty = anyone with the approval permission), "Where it waits" (This workspace / This workspace and the tenant) (S/FlowEditor.tsx:2210-2250, S/FlowStepFields.tsx:290). Groups are resolved by ID when the wait begins (`F/approvers.ts`); *membership* is checked at decision time. Tenant page shows only `surface: tenant`.
+- Step `timeoutSeconds` ≤ 2,592,000 (30 days; M/kinds.ts:721). **No delegation, escalation or reminders.** MCP: `list_approvals` (masked, D13), `decide_approval`; `get_run`/`get_flow_run` mask another person's run. App Builder Approvals widget also decides (`POST …/page-approvals`); there a rejection always asks why.
+- **Mail** (F/approval-links.ts): needs SMTP; max 50 people (F/approvers.ts:248); 48 h or step timeout; single use; 30 req/min; other links die once decided (410 "This link has been used, or the approval was decided, or it ran out."). Page (`/approve/:token`, S/ApproveLink.tsx): form, "Approved/Rejected. Thank you", "Nothing to decide here"; times in the reader's zone. The mail and page show the same masked detail as the queue.
 
 ### Alerts (S/Alerts.tsx; X/alerts.ts)
-- Workspace default: "Start a script" (input `{run:{id,script,attempt,error}}`), "Post to a connection" (bound `http` only), Save (`workspace:write`), Send a test alert (`connection:write`). Sections "Set by scripts themselves", "Recent alerts" (50/page, "Older alerts").
-- Only condition: final failure of a script run or top-level flow run. 10-minute window per path; later ones counted "+N more".
-- Body `{text, run:{id,script,attempt,error,workspace}}`, sent by a worker.
+- Page text: "Who is told when a script or a flow fails for the last time. A script's own onFailure replaces this workspace's default, as a whole. More failures of one script within ten minutes of an alert are counted on it, not sent again."
+- Workspace default ("This workspace's default"): "Start a script" (input `{run:{id,script,attempt,error}}`), "Post to a connection" (bound `http` only), Save (`workspace:write`), Send a test alert (`connection:write`; each control is greyed for who lacks it). Sections "Set by scripts themselves" (with a "From the repository" tag), "Recent alerts" (50/page, "Older alerts").
+- Only condition: final failure of a script run or top-level flow run (a sub-flow's failure is reported by its parent). 10-minute window per script or flow path (`ALERT_WINDOW_MS`, X/alerts.ts:217); later ones counted "+N more" and shown on the first alert. **A script's `onFailure` replaces the default as a whole**; one that names neither a script nor a connection leaves the default (X/alerts.ts:129, D29).
+- Body `{text, run:{id,script,attempt,error,workspace}}`, text "Run failed: <path> in <workspace>. <error>", sent by a worker of the failed run's pool (D42). A renamed connection renames what the default points at (OPS-09).
 
 ## (C) Gotchas
-1. Search is limited by When: an ID older than 24 h needs "Everything kept". `?run=` links are not limited.
-2. Steps and sub-flows are not in the Runs list; a step cannot be re-run alone (409).
+1. Search is limited by When: an ID older than 24 h needs "Everything kept". `?run=` links are not limited, and a step's run ID is looked up on its own. A child flow's run ID, or an exact ID older than the window, can still say "No run has this ID".
+2. Steps and sub-flows are not in the Runs list; a step cannot be re-run alone (409): retry its flow run.
 3. Re-run defaults to the original version. Retry on a newer version requires unchanged kept steps. Granted approvals are kept; rejected or pending are asked again.
-4. Attempts come from log lines: an attempt that logged nothing is absent, and one `error` line marks it failed even if the run succeeded (operations.ts:510-520, 575).
-5. Diagnosis and Uses read the currently deployed script, not the run's version.
+4. Attempts: 1 to the run's attempt count; one that logged nothing says "nothing logged"; one `error` line no longer marks a successful run failed (OPS-31).
+5. Diagnosis and Uses read the run's own version (OPS-32). Uses (Bound/Not bound) not re-checked.
 6. Rejecting fails the step: an error path continues, otherwise the flow fails and an **alert is sent**. Same for timeouts.
-7. Console and mail require a reason to reject; the raw API does not.
-8. Nothing stops a requester approving their own request. Service accounts can decide only steps naming nobody.
-9. Alerts skip canceled runs, flow steps and handler runs. Script `onFailure` merges per field with the default (alerts.ts, `{...workspace, ...own}`), so `notify` alone still starts the default script.
-10. Paused webhook 503 and form 503; paused event is stored but not replayed; paused schedule fires once on resume.
-11. "Listening" counts disabled and paused triggers.
-12. Event filter errors or bad payloads skip that subscriber silently (server log only).
-13. Built-in `developer` lacks `trigger:write`, `approval:write`, `workspace:write`.
-14. Webhook source answers start at most 100 runs.
-15. Input marked different may show no diff when the change is in masked values.
+7. The server asks a reason to reject on every route (D30).
+8. Nothing stops a requester approving their own request (`mayDecide`, F/approvers.ts:301). Service accounts can decide only steps naming nobody (their decision is listed by name under Decided; the retry plan and the widget's decided list still name members only: found in `fixed/opsb.md`).
+9. Alerts skip canceled runs, flow steps and handler runs.
+10. Paused webhook 503 (`workspace_paused` or `trigger_paused`) and form "not taking answers"; paused event is stored but not replayed; paused schedule fires once on resume.
+11. "Listening" counts only triggers that are on, and says how many are paused.
+12. Event filter errors or bad payloads skip that subscriber and record a refusal on its trigger (kept 7 days).
+13. Built-in `developer` lacks `trigger:write`, `approval:write`, `workspace:write`; it has `connection:write` and so may send a test alert.
+14. A trigger source's tick starts at most 100 runs.
+15. Input marked different may show no diff when the change is in masked values; the page now says "Only masked values differ."
+16. A run's retries on the same source are not re-runnable by hand; the source is run by its trigger.
+17. A flow-level grant of `flow_run:write` is not seen when the console decides what to offer (workspace level only): someone who may start one flow only may lose Start on its page (found in `fixed/t4-flows-ops.md`).
 
 ## (D) Wrong, stale, missing
-- `configure/alerts.md`: "or a queue backs up" is **false**.
-- Four other stubs are empty; `operate/index.md` trigger line is fine.
-- `docs/self-hosting.md:290` says "Cancel queued runs"; the button is "Cancel N queued".
-- `batch.ts:113` comment says `run:execute`; real permission `run:write`.
-- Permission text for `trigger:write` (M/permissions.ts) omits pausing.
-- Approvals description "rejecting fails that step", toast "takes its rejected path" and the link page "The flow stops here" contradict each other.
-- Undocumented: `platform/*` events, `?step`/`?view`/`?io`.
+- `configure/alerts.md` (stub, lines 4 and 7): "or a queue backs up" is **false**; nothing alerts on a queue. Write "Who is told, and how, when a run fails."
+- The four other stubs are empty; `operate/index.md` trigger line is fine.
+- Fixed: `docs/self-hosting.md` now says "Cancel N queued"; `batch.ts` comment names `run:write`; `trigger:write`'s permission text says it pauses; the three rejection sentences are one (`fixed/opsb.md` OPS-28, OPS-40).
+- `operate/releases.md` and `operate/index.md` still call the screen "Releases" and the button "Activate": the screen is "Deploy" in a dev workspace and "Versions" in production, the actions "Deploy this version" / "Roll back to this version" (`fixed/voc-state.md`). Not this brief's pages, but a link from here must use the new words. Left in code: `S/ScheduleForm.tsx` and `S/Overview.tsx:217` may still say "Releases" for the Deploy screen (found by voc-state; ScheduleForm now says "Deploy").
+- `packages/docs/content`: "workflows" wording (`index.md:15`, `build/app-builder*.md`) belongs to others' briefs (VOC-17, 18).
+- Undocumented until now: `platform/*` events, `?step`/`?view`/`?io`/`?show`.
 
-## (E) Likely bugs / questions
-1. **Approval mail and link page show `detail` unredacted** (approval-links.ts:125, routes/approval-links.ts:60), while the queue redacts (flows.ts:1367). [read]
-2. Flow schedule nodes show no cron and zone "UTC": `cron: body.cron` reads the flow body (execution.ts:1834). [read]
-3. Schedule runs do not link to their trigger: detail key is `schedule`, UI reads `trigger` (RunPage.tsx:219, Runs.tsx:1079). [read]
-4. Fire now ignores `source` and starts the target directly (triggers.ts:842). The button stays on a turned-off schedule.
-5. Over 100 rows of one kind checked (after Load more) is refused whole.
-6. "Cancel N queued" ignores the Status chip, though the dialog says "this list shows".
-7. Copy as curl contains `[redacted]`.
-8. `platform/row-changed` always depth 0: a script that writes the table it listens to can loop unbounded.
-9. Script/flow pages pass `workspacePaused={false}` (S/ObjectPages.tsx:461), so a workspace pause is not shown. Instance pause seems unshown on workspace screens; I found no reference.
-10. Alerts always `editable` (S/Tenant.tsx:690): Save 403s for developers.
-11. Flow editor shows only title, detail and surface (S/FlowEditor.tsx:1667): **no approvers or timeout fields**; code only. Event picker in ResourceEditor lists only declared events, so `platform/*` is not offered there (flow editor not checked).
-12. Deploying rewrites trigger config, clearing "last skipped". Skips from a busy polling source are not recorded.
-13. DST behaviour is cron-parser's; no test found.
+## (E) Findings: settled (nothing here is an open bug unless E.2 says so)
+Each row of `findings/operate.md` and its outcome:
+
+**E.1 Fixed.**
+- OPS-01 mail and link page unmasked: fixed, `approvalDetail` (`fixed/mask.md`). OPS-02 MCP (D13) and OPS-03 event payloads: fixed (`fixed/mask.md`).
+- OPS-04 one bad schedule stopping all: fixed (`fixed/flw.md`). OPS-05 row-change loop: fixed by depth (`fixed/trg.md`). OPS-06 over 100 items (D26), OPS-07, OPS-08 refusal records: fixed (`fixed/trg.md`). OPS-09 renamed connection and the alert: fixed (`fixed/cfg.md`).
+- OPS-10 to OPS-15 Runs list (Load more, new run drops one, saved search, checked rows, >100 checked, Cancel N queued scope): fixed (`fixed/opsa.md`).
+- OPS-16 schedule run's trigger link, OPS-17 flow schedule cron and zone, OPS-18 Fire now with a source, OPS-19 "Not fired yet", OPS-20 next time of a held schedule: fixed (`fixed/opsa.md`).
+- OPS-21 pause shown (three levels), OPS-22 trigger source runs, OPS-23 Listening, OPS-24 event log link, OPS-26/27 decided by an account and reject reason (D30), OPS-28 one rejecting sentence, OPS-29 Copy as curl, OPS-31 attempts, OPS-32 version of diagnosis, OPS-33 a step's run, OPS-38 skip with a source, OPS-40 words, C9 (D29), D31 Fire now: fixed (`fixed/opsb.md`).
+- OPS-25 later run counted queued, OPS-30 empty diff, OPS-34 duration sort, OPS-35 viewer offered actions (list, peek and workbenches), OPS-36 who paused, OPS-37 which pause a webhook says, OPS-39 views under an access grant: fixed (`fixed/t4-flows-ops.md`).
+- Missing parts built: Fire now for a flow's schedule (OPS-MP3), runs between two times (MP7), run later with a priority (MP8), a run's published events (MP9), the failure notification's outcome (MP10), platform events in the picker (MP2), Publish an event (MP1) (`fixed/t3-flow-ops-sdk.md`). Flow editor fields for approvers, timeout, event filter, tags, input schema: `fixed/t3-flow-editor.md`.
+- Source run failing after being reported succeeded: `fixed/opsa.md` and walk note in `fixed/t2-walk-flow.md` (metric and trace now say failed).
+
+**E.2 Still true, say it on the page.**
+- The run page and flow run page: Cancel and Re-run are greyed with a reason for a viewer; the Triggers inspector's Edit is not gated (`fixed/t4-flows-ops.md`, Not done).
+- Fire now: the Triggers inspector shows it for `trigger:write`, the API needs `run:write` (inconsistent; found while refreshing, S/Operate.tsx:605 against CP/routes/execution.ts:2175).
+- `platform/run-finished` is published but not in `PLATFORM_EVENTS`, so no event picker offers it (M9's registry).
+- "Run again with other input" takes neither a start time nor a priority (only the script Run button and `/run` do). Flows cannot be run later.
+- An approval's title and event-filter refusal messages are masked by what the run was given; a rotated secret cannot be found in old log lines (`fixed/mask.md`).
+- A flow run page lists no published events (API filters by script run only).
+- The manual start's input schema is a JSON text box; "To fix" does not check an approver group still exists (`remaining.md`).
+- DST behavior of cron is cron-parser's; no test found.
 
 ## (F) Screenshots / examples
-Screenshots: Runs with checked rows and inspector; failed script run with diagnosis and compare; flow Timeline and Graph; input diff; trigger inspector with address and refusal; New schedule with next times; Approvals three chips; approve link page; Alerts; instance pause.
+Screenshots: Runs with checked rows and inspector; Runs "Between…"; failed script run with diagnosis, failure alert block and compare; flow Timeline and Graph; input diff; trigger inspector with address, refusal and "Paused … by"; New schedule with next times; Publish an event dialog; Approvals three chips; approve link page; Alerts; Triggers with the workspace paused and the instance paused.
 
-Examples: GitHub (`sha256=` prefix) and Slack (`v0:{timestamp}:{body}`) webhook verify; curl with `idempotency-key`; CEL filter; event publish and listener; approval with `approvers`, `timeoutSeconds` and error path; alert handler script; alert JSON body; `volvel runs cancel --tenant … --workspace … [--queued|--all] [--older-than <s>]` (10,000 per request, API-level `more`).
+Examples: GitHub (`sha256=` prefix) and Slack (`v0:{timestamp}:{body}`) webhook verify; curl with `idempotency-key`; CEL filter; event publish and listener (and a listener of `platform/run-finished`, `fixed/api2.md`); approval with `approvers`, `timeoutSeconds` and error path; alert handler script; alert JSON body; `volvel runs cancel --tenant … --workspace … [--queued|--all] [--older-than <s>]` (10,000 per request, API-level `more`).

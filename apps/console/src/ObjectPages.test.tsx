@@ -64,6 +64,7 @@ test("every kind of thing has a home to link to", () => {
   expect(objectHref(link, "flow", "orders/reorder")).toBe(`${link}/flows/orders/reorder`);
   expect(objectHref(link, "schedule", "nightly")).toBe(`${link}/triggers?trigger=nightly`);
   expect(objectHref(link, "table", "orders")).toBe(`${link}/tables/orders`);
+  expect(objectHref(link, "dashboard", "ops/daily")).toBe(`${link}/dashboards/at/ops/daily`);
   expect(objectHref(link, "connection_group", "crm/accounts")).toBe(`${link}/connections`);
   expect(objectHref(link, "workspace", "settings")).toBe(`${link}/alerts`);
 });

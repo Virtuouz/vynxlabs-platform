@@ -1277,7 +1277,12 @@ export function checkWidgets(
               at,
               `the person filling it in goes in a text column, and "${one.column}" is ${type}`,
             );
-          else if (one.initial.kind === "value" && !startFits(type, one.initial.value))
+          // "A value" chosen and not yet typed starts a field with nothing: it is no refusal.
+          else if (
+            one.initial.kind === "value" &&
+            one.initial.value !== undefined &&
+            !startFits(type, one.initial.value)
+          )
             say(at, `the value does not fit the ${type} column "${one.column}"`);
         });
       }

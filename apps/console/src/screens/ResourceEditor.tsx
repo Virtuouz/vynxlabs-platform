@@ -24,6 +24,7 @@ import { RemoveDraftButton } from "../kit/RemoveDraftButton.tsx";
 import { clearRecovery, useKeptCopy, useRecoveryCopy } from "../kit/recovery.ts";
 import { StatePill, Tag } from "../kit/status.tsx";
 import { navigate, useNavigationGuard, useQueryValue } from "../router.tsx";
+import { EventStartFields, TagsField } from "./FlowStepFields.tsx";
 import {
   FormDesigner,
   type FormTrigger,
@@ -657,22 +658,19 @@ export function ResourceEditor({
             ) : null}
             {body.type === "event" ? (
               <>
-                <ComboboxField
-                  label="Event"
-                  options={ofKind("event")}
-                  value={text("event") || undefined}
-                  disabled={readOnly}
-                  onChange={(value) => change({ event: value ?? "" })}
+                <EventStartFields
+                  events={ofKind("event")}
+                  event={text("event")}
+                  filter={text("filter") || undefined}
+                  readOnly={readOnly}
+                  onEvent={(event) => change({ event })}
+                  onFilter={(filter) => change({ filter })}
                 />
-                <TextAreaField
-                  name="filter"
-                  label="Only when (optional)"
-                  rows={2}
-                  value={text("filter")}
-                  required={false}
-                  disabled={readOnly}
-                  hint="An expression over event. The script starts only when it is true."
-                  onChange={(value) => change({ filter: value })}
+                <TagsField
+                  value={body.tags as string[] | undefined}
+                  readOnly={readOnly}
+                  given="the event's payload"
+                  onChange={(tags) => change({ tags })}
                 />
               </>
             ) : null}

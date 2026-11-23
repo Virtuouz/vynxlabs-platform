@@ -1,6 +1,6 @@
 import { Badge, Button, SelectField } from "@volvel/ui";
 import { useEffect, useState } from "react";
-import { api, useLoad } from "../api.ts";
+import { api, useLoad, useMay } from "../api.ts";
 import { failureText, notify } from "../ask.tsx";
 import { ago } from "../kit/format.ts";
 import { ErrorState } from "../kit/LoadState.tsx";
@@ -43,6 +43,9 @@ export function Alerts({
   workspaceRoot: string;
   editable: boolean;
 }) {
+  // What this person may do is asked before the controls are drawn (OPS-35).
+  const may = useMay(workspaceRoot, "workspace:write", "connection:write");
+  const canSave = editable && may("workspace:write");
   const settings = useLoad<Settings>(`${root}/alert-settings`);
   const scripts = useLoad<{ items: { path: string }[] }>(`${root}/scripts`);
   const connections = useLoad<{ items: { path: string; connector: string; bound: boolean }[] }>(
@@ -135,7 +138,7 @@ export function Alerts({
             name="handler"
             label="Start a script"
             value={script}
-            disabled={!editable}
+            disabled={!canSave}
             options={[
               { value: "", label: "None" },
               ...(scripts.data || scripts.error
@@ -148,7 +151,7 @@ export function Alerts({
             name="notify"
             label="Post to a connection"
             value={notifyPath}
-            disabled={!editable}
+            disabled={!canSave}
             options={[
               { value: "", label: "None" },
               ...(connections.data || connections.error
@@ -163,12 +166,12 @@ export function Alerts({
           line of text a chat webhook shows as it is.
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          {editable ? (
+          {canSave ? (
             <Button variant="primary" disabled={!changed || saving} onClick={save}>
               Save
             </Button>
           ) : null}
-          {notifyPath ? (
+          {notifyPath && may("connection:write") ? (
             <Button
               disabled={following.waiting}
               onClick={async () => {

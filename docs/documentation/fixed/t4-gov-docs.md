@@ -21,3 +21,9 @@ Migration: none.
 
 ## Found
 - A script that names pool `default` in its manifest is not refused; it would share the default queue. Not checked further.
+
+## DOC-13
+- Test failed before: `Help.test.tsx` "a term on the page that explains it does not offer to open that page (DOC-13)".
+- `help/HelpPanel.tsx` `term` resolver gives no `href` for a term whose page is the one shown, so no "More about" is drawn (the served site already did this, `docs.ts`).
+- Siblings: `help/glossary.tsx` (a workspace's own terms lead to handbook pages, never the shown help page); `DocServed` has its own exception.
+- Screens: open Help on Start > Concepts, press a term; 390 px, light and dark; Escape closes the popover.

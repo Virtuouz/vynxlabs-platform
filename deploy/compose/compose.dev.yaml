@@ -39,7 +39,7 @@ services:
   # An identity provider to try single sign-on against. Not started unless asked for:
   #   docker compose -f deploy/compose/compose.dev.yaml --profile sso up -d keycloak
   # The realm "acme" has two people, ada and ben, and an OIDC client. See
-  # docs/self-hosting.md, "Single sign-on", for the SAML side.
+  # /docs/self-host/how-to/sso/connect-an-identity-provider-for-operators on an instance, for the SAML side.
   keycloak:
     profiles: ["sso"]
     image: quay.io/keycloak/keycloak:26.4

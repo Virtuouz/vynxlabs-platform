@@ -31,7 +31,7 @@ Commands:
                              password once, for an instance with no operator who can sign in.
 
 --help or -h prints this and exits. The settings are the environment variables in
-docs/self-hosting.md; a command that reads them stops with every problem found, at once.`;
+the documentation at /docs/self-host/reference/running/configuration; a command that reads them stops with every problem found, at once.`;
 
 /** What the words after the program name ask for. */
 export function commandOf(argv: string[]): Command {

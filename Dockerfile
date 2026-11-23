@@ -40,7 +40,7 @@ FROM node:24-slim
 # worker and its scripts run on plain node and hold none, so they cannot switch back.
 # Without those capabilities in the container, node-cp cannot start at all, and
 # volvel-start runs the control plane on plain node instead: it then refuses managed
-# workers to tenants whose code is written outside the operator. See docs/self-hosting.md.
+# workers to tenants whose code is written outside the operator. See /docs/self-host/explanation/running/managed-workers-and-isolation on an instance.
 #
 # The same image runs the worker host (volvel-worker-host), which starts managed workers
 # in a container of its own; iptables lets it keep them from private addresses.

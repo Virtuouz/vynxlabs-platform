@@ -1,11 +1,21 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PERMISSION_KINDS } from "@volvel/manifest";
 import { expect, test } from "vitest";
 import { METRIC_LIST } from "./kernel/metric-list.js";
 
 const here = import.meta.dirname;
-const guide = readFileSync(join(here, "../../../docs/self-hosting.md"), "utf8");
+// The self-hosting guide is now the Self-host collection of the documentation.
+const content = join(here, "../../../packages/docs/content/self-host");
+const pages = (dir: string): string[] =>
+  readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
+    entry.isDirectory() ? pages(join(dir, entry.name)) : entry.name.endsWith(".md") ? [join(dir, entry.name)] : [],
+  );
+// The metrics reference is generated from the same typed list, into `generated/`.
+const generated = join(here, "../../../packages/docs/generated/self-host");
+const guide = [...pages(content), ...pages(generated)]
+  .map((file) => readFileSync(file, "utf8"))
+  .join("\n");
 
 test("every series the metrics answer with is in the self-hosting guide (INS-29)", () => {
   // Every series is declared once, in the typed list the metrics route answers from.
@@ -28,17 +38,17 @@ test("the guide does not say what the code does not do (INS-29)", () => {
   expect(guide).not.toMatch(/export it and import it into the location you want/);
   expect(guide).toMatch(/`\/api\/v1\/readyz` stays 200/);
   // The screen is called Console branding in the navigation.
-  expect(guide).toContain("**Instance → Console branding**");
+  expect(readFileSync(join(content, "reference/console/branding.md"), "utf8")).toContain("**Console branding**");
 });
 
-test("the guide says how to restore, upgrade Postgres, change AUTH_SECRET, install with no internet, and what the object store must allow (HOST-28)", () => {
-  for (const heading of [
-    "## Restoring an instance",
-    "### Changing `AUTH_SECRET`",
-    "### Upgrading Postgres to a newer major version",
-    "### Installing where there is no internet",
+test("the documentation says how to restore, upgrade Postgres, change AUTH_SECRET, install with no internet, and what the object store must allow (HOST-28)", () => {
+  for (const page of [
+    "how-to/running/restore-an-instance.md",
+    "how-to/running/change-auth-secret.md",
+    "how-to/running/upgrade-postgres.md",
+    "how-to/running/install-offline.md",
   ]) {
-    expect(guide, heading).toContain(`\n${heading}\n`);
+    expect(existsSync(join(content, page)), page).toBe(true);
   }
   // The four things the object store is asked, and the one case that makes the bucket.
   expect(guide).toMatch(/HeadBucket/);

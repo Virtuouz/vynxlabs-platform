@@ -38,7 +38,7 @@ kill_timeout = 60
 
 # With MANAGED_WORKERS=process (the default) scripts run on this machine beside the
 # control plane: 1 GB gives three run slots; each 160 MB more gives one more.
-# RUN_SLOTS sets them outright. See "Sizing" in docs/self-hosting.md.
+# RUN_SLOTS sets them outright. See /docs/self-host/explanation/running/sizing-and-scaling on an instance.
 [[vm]]
   size = "shared-cpu-1x"
   memory = "1024mb"

@@ -2,7 +2,7 @@
 
 Fly.io hosts the Vynxlabs-run instances. Nothing in the image is specific to Fly: it reads the same environment variables as every other deployment mode.
 
-This setup has not been run yet. Treat the commands as a starting point and check them against the current Fly documentation.
+The same steps, kept up to date, are in the documentation at `/docs/self-host/how-to/running/install-on-fly` on an instance. This setup has not been run yet. Treat the commands as a starting point and check them against the current Fly documentation.
 
 ## One-time setup
 
@@ -68,7 +68,7 @@ Fly does not restart a machine whose health check fails: the check only decides 
 - No worker takes more work below the memory floor (`RUN_MEMORY_FLOOR_MB`).
 - If memory still runs low, the largest script is stopped.
 
-`swap_size_mb` in `fly.toml` gives the machine room to slow down rather than stall. Size the machine with "Sizing" in `docs/self-hosting.md`.
+`swap_size_mb` in `fly.toml` gives the machine room to slow down rather than stall. Size the machine with [Sizing and scaling](/docs/self-host/explanation/running/sizing-and-scaling) in the documentation, served at `/docs` on the instance.
 
 The database matters as much as the app. A `shared-cpu-1x` Postgres has burst credit for a while, then a fraction of a core, and every tenant's queries slow down together. Give it a `performance` CPU, or use Fly Managed Postgres, for anything past a trial.
 

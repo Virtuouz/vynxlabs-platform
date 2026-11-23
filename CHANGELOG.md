@@ -2,6 +2,44 @@
 
 Versions before 1.0 may change the API, the manifest format and the worker protocol. Each entry says what an operator and a tenant developer need to do.
 
+## Unreleased: phase 31, the documentation, written
+
+Every screen and feature of the console, local development, administration and self-hosting is documented, at `/docs` on every instance.
+
+### For operators
+
+- **The documentation is on your instance.** `/docs` needs no sign-in, works offline and follows the console's branding. It has five collections: Get started, Console, Develop, Administer and Self-host, about 410 pages in all, each a tutorial, a how-to, a reference or an explanation. The reference for the API, the commands, the metrics and the kinds is generated from the code, so it cannot drift from it. The pictures are of the Fernhill example, in light and dark, taken again by one command.
+- **The static export** (`packages/docs/export.mjs`) writes the same pages as plain files under a base path, for a website. The release job builds it, crawls it for broken links, and can hand it to another repository.
+- **`docs/self-hosting.md` and `docs/sdk-guide.md` are now lists of where each section went.** The guides are the Self-host and Develop collections; every old section has a page, except three of self-hosting's short ones, which the console's own pages cover (see the pointer).
+- **`SECURITY.md` says how to report and what is supported:** a private vulnerability report on the repository's GitHub page, answered within 3 working days; the newest two minor versions get security fixes.
+- **Faults the writing found, fixed:** a Compose stack that left the worker host's user settings empty no longer restarts it; a restore makes the data role first and ends with no error; a webhook's 401 no longer repeats its token in the answer, the request log or a trace; an agent's role given for a whole workspace is enough to connect to MCP; canceled flow runs now publish `platform/flow-run-finished`; a worker is "outdated" only when older than both 0.6.0 and the control plane; a mail connection that is not deployed yet no longer fails with a type error; an unverified hostname an operator enabled says that it serves.
+
+### For tenant developers
+
+- **`volvel deploy` counts a changed script body as updated** (it said "0 updated"), `volvel promote` reads the breaking changes of a refusal, and a rollback says "runs what version N had, as version M" with `restoredFrom` in `--json`.
+- **A waiting access change answers one shape** (`{waiting, release, detail}`) for releases, rollbacks, bindings and service accounts.
+- **Tenant role and binding files take `title`**, and a schema refusal names the file.
+- **A service account's key can list its own tenant,** so `--tenant` works with one in CI.
+- **The MCP server is named `volvel:<slug>`.**
+- **The console:** a table's columns show their rules and actions at 390 px; a run waiting for its time has no "Cancel run" that does nothing; the Tenants inspector shows Rename for an operator who may; "Add operator" with nobody chosen says "Choose one."; the words "bound" and "unbound" became "set up here" and "not set up here".
+
+## Unreleased: phase 30, the documentation system
+
+Volvel's own documentation is served, typed and generated like a tenant's documentation site.
+
+### For operators
+
+- **`/docs` on every instance**, with no sign-in and nothing fetched from outside, in the console's branding. It lists the collections, searches, filters by type and follows a page to its related pages of other types.
+- **Pages have a type and subjects:** tutorial, how-to, reference or explanation, after Diataxis. A page shows its type, and related pages of the other types. Tables of reference are generated from the code and checked against it.
+- **F1 in the console opens the page for the screen in a help panel,** with breadcrumbs, previous and next, and "Open in documentation". Pages can ask readers whether they helped.
+- **A static export** writes the pages as files for any web server, under any base path, with the search index.
+- **Code is highlighted** with Prism, in light and dark, with no script that calls out.
+
+### For tenant developers
+
+- **A tenant's docs writer can give a page a type and subjects** in Page details and make a new page from a type's template. A site with no types looks as it did.
+- **`volvel dev` draws interface apps and docs apps** from local files with the instance's own packages.
+
 ## Unreleased: phase 28, the builder as the boards draw it, a phone layout, and publishing after a check
 
 The builder looks and works as the owner's nineteen boards draw it, and an app has a phone layout, a readiness check before it is published, "View as" a group, and earlier drafts that can be restored. Nothing made before needs migrating: every new setting is optional, and a page without them is drawn as before, except that a list's places are renamed (see below).

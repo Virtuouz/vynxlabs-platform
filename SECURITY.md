@@ -2,13 +2,13 @@
 
 ## Reporting a problem
 
-Please report a suspected vulnerability privately, and not in a public issue. Say what you found, how to reproduce it, and which version you tested.
+Report a suspected vulnerability privately, and not in a public issue, with GitHub's private vulnerability reports on this repository (the Security tab, then "Report a vulnerability"). There is no email address for security reports. A report is answered within 3 working days.
 
-The address to write to, and how quickly a report is answered, are to be set by the owner before the first public release.
+Say what you found, how to reproduce it, and which version you tested.
 
 ## Supported versions
 
-The newest minor version and the one before it get fixes for security problems. Older ones do not: upgrade. The date of the first public release is not set yet, and until it is, nothing has been published to be supported.
+The newest two minor versions get fixes for security problems: the newest minor version and the one before it. Older ones do not: upgrade. The date of the first public release is not set yet, and until it is, nothing has been published to be supported.
 
 ## Two rules
 

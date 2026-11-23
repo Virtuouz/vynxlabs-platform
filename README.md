@@ -4,7 +4,27 @@ Volvel is one self-hostable foundation for custom internal apps, business flows 
 
 A developer defines scripts, flows, tables, data sources and apps in a tenant's repository and deploys them. An app is served by the instance to the tenant's staff, to its own pool of end users, or to anyone, as its bindings say, with the tenant's branding. Changes move from a dev workspace to production as the same bundle, a tenant's data can live in a database of its own, and a whole tenant can be exported from one instance and imported into another.
 
-To run an instance, read [docs/self-hosting.md](docs/self-hosting.md).
+## Documentation
+
+Every instance serves its documentation at `/docs`, with no sign-in, and the pages are also exported as plain files for a website. It has five collections:
+
+| Collection | For |
+| --- | --- |
+| Get started | A first look: a first app, script and approval flow |
+| Console | Everyone who uses the console: each screen and what to do with it |
+| Develop | Writing a tenant repository, the `volvel` command, the API and extensions |
+| Administer | A tenant's administrators: access, single sign-on, releases, export |
+| Self-host | Running an instance: install, upgrade, back up, monitor and secure it |
+
+The old guides, `docs/self-hosting.md` and `docs/sdk-guide.md`, are lists of where their sections moved. The pages are in `packages/docs/content`.
+
+## Install
+
+Nothing is published yet; the first release is not dated. Once it is:
+
+- **An instance, with Docker:** the image is `volvel/volvel`. Run the Compose stack in `deploy/compose` with `VOLVEL_IMAGE=volvel/volvel:<version>`; see `/docs/self-host/how-to/running/install-with-compose`.
+- **The command line and SDK, with npm:** `npm install --global @volvel/cli`, and `@volvel/sdk` in a repository; see `/docs/develop/how-to/cli/install-the-cli`.
+- **From source:** the steps below build the image (`/docs/self-host/how-to/running/build-the-image`) and the command (`/docs/develop/how-to/cli/install-from-source`).
 
 ## Requirements
 
@@ -97,7 +117,7 @@ docker compose -f deploy/compose/compose.yaml up -d --wait
 
 This runs the control plane, the worker host that starts managed workers (it needs `WORKER_HOST_TOKEN` in `.env`), Postgres and the object store with persistent volumes. Take Postgres or the object store out of `COMPOSE_PROFILES` in `.env` to use your own. Keep a copy of `MASTER_KEY`: without it, stored secrets cannot be read again. The control plane listens on `127.0.0.1:8080` by default. Put a reverse proxy that terminates TLS in front of it before exposing it.
 
-The full guide, including TLS, backups, upgrades, dedicated databases, workers in another network and moving a tenant, is [docs/self-hosting.md](docs/self-hosting.md).
+The full guide, including TLS, backups, upgrades, dedicated databases, workers in another network and moving a tenant, is the Self-host collection of the documentation, at `/docs/self-host/` on an instance and in [`packages/docs/content/self-host`](packages/docs/content/self-host).
 
 For Fly.io, see [deploy/fly](deploy/fly/README.md).
 
@@ -113,7 +133,7 @@ For Fly.io, see [deploy/fly](deploy/fly/README.md).
 | `packages/worker` | The worker that runs a tenant's scripts |
 | `examples/acme` | A sample tenant repository |
 | `docs/contracts` | The worker protocol and the tenant export format |
-| `docs/self-hosting.md` | Installing, upgrading, backing up and moving tenants |
+| `packages/docs` | The documentation: five collections of pages, served at `/docs` |
 | `packages/db` | Database access, migrations, tenant routing |
 | `packages/manifest` | The resource envelope, kind registry and validation |
 | `schemas` | The manifest contract as JSON Schema, generated |

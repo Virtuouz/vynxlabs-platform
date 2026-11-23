@@ -1331,7 +1331,7 @@ export function Shell({
           ) : (
             <div
               // A dashboard in its editor changes this div's classes, not the tree, so it is not drawn again.
-              className={`w-full ${bleeding ? "flex min-h-0 flex-1 flex-col" : "flex min-h-full flex-col px-4 md:px-8"} ${
+              className={`w-full ${bleeding ? "flex min-h-0 flex-1 flex-col" : "flex min-h-full shrink-0 flex-col px-4 md:px-8"} ${
                 bleeding
                   ? ""
                   : where.editor

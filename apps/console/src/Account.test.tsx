@@ -232,7 +232,7 @@ test("tenants are found by name, and one opens in the inspector", async () => {
   );
   const table = await screen.findByRole("grid", { name: "Tenants" });
   expect(within(table).getByText("Member")).toBeTruthy();
-  expect(within(table).getByText("Through a grant")).toBeTruthy();
+  expect(within(table).getByText("Not a member")).toBeTruthy();
   fireEvent.input(screen.getByLabelText("Search tenants"), { target: { value: "glob" } });
   await waitFor(() => expect(within(table).queryByText("Acme Corp")).toBeNull());
   fireEvent.click(await within(table).findByText("eu"));

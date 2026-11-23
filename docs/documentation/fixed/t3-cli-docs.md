@@ -41,8 +41,7 @@ Verified, not built: every kind of access (group, end_user_group, service_accoun
 `SECURITY.md`: "Supported versions" (the newest minor and the one before; first public release date not set); the 7 days of a member's console session, 30 days of an end user's and 12 hours of a member at an app's address. `CONSOLE_SESSION_DAYS` in `CP/config.ts` is passed to the authentication library as `expiresIn` (was its default, 7 days). Test `CP/console-session.test.ts` (the session expires 7 days out; SECURITY.md says so).
 
 ## D37 `labs/goal` becomes `core/goal`
-The definition and view are in `packages/widgets-core` (`src/index.ts`, `views/goal.tsx`, last of `CORE_WIDGETS` so "Add to page" keeps its order); its test moved to `widgets-core/src/goal.test.tsx` (the package gained the test dev dependencies; `pnpm-lock.yaml` edited by hand to match, `pnpm install --frozen-lockfile --offline` accepts it). `widgets-labs` now holds `labs/probe`, for tests of the contract only, and ships nowhere: removed from the manifest's registry (`page.ts`), the served runtime (`packages/screens/runtime/main.tsx`), the console's `PACKS`, and from those packages' dependencies. Renamed `labs/goal` to `core/goal` in the console (`selectorData`, `InspectorHost`, `registerCharts`, `goalDrawer`), Fernhill (`operations.ts`, `apps.ts`, README), e2e (`phase-25`, `phase-28`), and the registry test. Pages saved with `labs/goal` are not read: no back-compat owed (D37). Tests: `widgets-core/src/goal.test.tsx`, `widgets-labs/src/probe.test.tsx`, `screens/src/types.test.ts`, `charts.test.tsx`.
-Likely to conflict with lane t3-widgets: `widgets-core/src/index.ts`, `registerCharts.ts`, `goalDrawer.tsx`, `selectorData.ts`, `charts.test.tsx`.
+Already done by lane bldwid (WID-Q3, D37: `core/goal` in `widgets-core`, `labs/probe` in labs, `packages/screens/src/goal.test.tsx`). I had built it too; my commit was reverted when the phase branch was merged, and theirs stands. Nothing of mine is left in the widget packages. Their labs pack still ships (manifest `page.ts`, console `PACKS`, served runtime), which the row's "keep a test-only widget in labs" may not mean; not changed here.
 
 ## Not mine, or not done
 - D60 (publish the widget contract page, marked for contributors) and the written parts of D51/D53: page content under `packages/docs/content`.
@@ -54,7 +53,7 @@ Likely to conflict with lane t3-widgets: `widgets-core/src/index.ts`, `registerC
 - API: `GET deployment-preview`; `message` on `POST promotions`.
 - Writing scripts: `@volvel/sdk/testing` (`runScript`, `testContext`, `memoryTable`).
 - Writing an app: `volvel dev` serves under the content policy; what it refuses in a browser's console is what a deployed app would refuse.
-- `build/writing-a-widget.md`: `labs/goal` is now `core/goal`, in the core pack; labs holds a test-only widget. Its lines 6, 27, 97, 155 name `labs/goal`.
+- `build/writing-a-widget.md`: lines 6, 27, 97 and 155 still say `labs/goal`; it is `core/goal` (D37).
 - Product pages may now set `since:`; none do.
 - Tenant access page: a script for the API (the `tenant release` flow in plain `curl` or Node), D53. Widget contract page: mark it for contributors, D60.
 - CHANGELOG: sessions say 7 days; `labs/goal` renamed `core/goal`; the new commands and flags.
@@ -63,7 +62,8 @@ Likely to conflict with lane t3-widgets: `widgets-core/src/index.ts`, `registerC
 - `apps/console/src/help/Help.test.tsx` "/t/acme/workspaces/dev/dashboards/sales has the help data-dashboards-editor" fails on the phase branch (gets `data-dashboards`). Not touched.
 - `packages/manifest/src/theme-tokens.test.ts` fails (`ThemeToken` in `packages/sdk/src/index.ts` is now `(typeof THEME_TOKENS)[number]`, so the test's regex finds no names). Not touched.
 - `packages/docs` `pnpm check` says `reference/index.md` lists "api", which only exists after the API generator ran with a database. Not touched.
+- `packages/cli/src/example.test.ts` "deploy says exactly what the workspace is missing" fails after the merge: the server now says "Set up each one, then promote again." for a deploy too (another lane's copy change; "promote" is wrong for a deploy). Not touched.
 - Git sync (`kernel/git.ts`) does not read `entry` or `resources` of `volvel.yaml` (see CLI-MP4).
 
 ## Screens to walk
-Help panel (any screen's Help): a search with results shows places under pages, Tab reaches each, Enter opens the page at the heading; a page with `since` shows "New in version X"; at 390 and 1440, light and dark. Served docs page with `since`. `volvel dev` in a browser (APP-MP1). Drawer of a Goal widget and Add to page: Goal is still offered under "Understand data" with no "Labs" tag.
+Help panel (any screen's Help): a search with results shows places under pages, Tab reaches each, Enter opens the page at the heading; a page with `since` shows "New in version X"; at 390 and 1440, light and dark. Served docs page with `since`. `volvel dev` in a browser (APP-MP1). 

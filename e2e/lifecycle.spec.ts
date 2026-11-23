@@ -156,7 +156,8 @@ test("a script, a flow, a query and a docs site are removed, taken back, removed
   await page.getByRole("menuitem", { name: /Remove the site's app/ }).click();
   await expect(page.getByRole("dialog")).toContainText("The site stops being served");
   await say(page, "Remove");
-  expect(await draftOf(page, W, "handbook-site")).toBe("removed");
+  // The save reads the draft it is based on first, so it lands a moment after the click.
+  await expect.poll(() => draftOf(page, W, "handbook-site")).toBe("removed");
   await expect(page.getByText("Words.").first()).toBeVisible();
 
   // The removals are deployed: what was removed is gone, and the pages of the site are not.

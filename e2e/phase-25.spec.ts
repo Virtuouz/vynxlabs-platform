@@ -340,7 +340,7 @@ test("POLISH-001: the page is published, says what it changes first, and opens f
   // It says what publishing does first, then what it changes on this page.
   const dialog = owner.getByRole("dialog", { name: "What publishing does" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByText(/^Publishes to Sandbox/)).toBeVisible();
+  await expect(dialog.getByText(/^Deploys to Sandbox/)).toBeVisible();
   await expect(dialog.getByText(/^\d+ changes?$/)).toBeVisible();
   await dialog.getByRole("button", { name: /^Publish/ }).click();
   await expect(owner.getByText("Published. People who open the app now see this.")).toBeVisible({

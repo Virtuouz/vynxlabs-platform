@@ -436,10 +436,15 @@ test("POLISH-002: Release is one list of deploys, and goes back from a row of it
   }
 
   // POLISH-010: going back asks first, and names the workspace.
-  await owner.getByRole("button", { name: "Activate this version" }).first().click();
+  await owner
+    .getByRole("button", { name: /^(Deploy|Roll back to) this version$/ })
+    .first()
+    .click();
   const dialog = owner.getByRole("dialog");
-  await expect(dialog).toContainText(/Activate version \d+ in Sandbox\?/);
-  await dialog.getByRole("button", { name: "Activate", exact: true }).click();
+  await expect(dialog).toContainText(
+    /(Deploy version \d+ to Sandbox|Roll back Sandbox to version \d+)\?/,
+  );
+  await dialog.getByRole("button", { name: /^(Deploy|Roll back)$/ }).click();
   await expect(owner.getByText(/is what runs here now/)).toBeVisible();
   const now = (
     (await ok(owner, "GET", `${W}/bundles`)).items as { id: string; active: boolean }[]

@@ -1374,6 +1374,36 @@ describe("someone who writes documentation in the console, and is not a develope
     expect(after.removedApps).toEqual([]);
     expect(after.apps.map((one: Any) => one.path)).not.toContain("solo-site");
   });
+
+  test("an app that is not a docs site, removed in a draft, is not the documentation's to deploy (P31)", async () => {
+    // A developer removes an app that is not a docs site; the doc writer's Deploy must not carry it,
+    // since that removal asks deployment:write, which a doc writer does not hold.
+    const screens = await alice.put(`${devWs()}/drafts/screens/solo-board`, {
+      kind: "interface",
+      schemaVersion: 2,
+      body: { title: "Board", pages: [{ id: "main", title: "Board", widgets: [] }] },
+    });
+    expect(screens.status, JSON.stringify(screens.body)).toBeLessThan(300);
+    const board = await alice.put(`${devWs()}/drafts/solo-board`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: { title: "Board", interface: "screens/solo-board" },
+    });
+    expect(board.status, JSON.stringify(board.body)).toBe(200);
+    const deployed = await alice.post(`${devWs()}/changes/deploy`, {
+      paths: ["screens/solo-board", "solo-board"],
+    });
+    expect(deployed.status, JSON.stringify(deployed.body)).toBeLessThan(300);
+    const gone = await alice.put(`${devWs()}/drafts/solo-board`, {
+      kind: "app",
+      schemaVersion: 1,
+      body: {},
+      deleted: true,
+    });
+    expect(gone.status, JSON.stringify(gone.body)).toBe(200);
+    const listed = (await wren.get(`${devWs()}/docs`)).body;
+    expect(listed.removedApps).toEqual([]);
+  });
 });
 
 describe("a docs app that asks its readers whether a page helped", () => {

@@ -80,9 +80,10 @@ export async function workingDocs(db: Db, workspaceId: string): Promise<Working>
   );
   return {
     resources,
-    removedApps: resources
-      .filter((one) => one.kind === "app" && one.state === "removed")
-      .map((one) => one.path),
+    // Only a docs site's removal is the documentation's to deploy: another app's asks more.
+    removedApps: docsApps(resources.filter((one) => one.state === "removed")).map(
+      (one) => one.path,
+    ),
     apps: docsApps(kept).map((one) => ({
       ...one,
       deployed: deployedApps.has(one.path),

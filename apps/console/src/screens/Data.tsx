@@ -1323,6 +1323,14 @@ function AddRow({
     const found: Record<string, string> = {};
     for (const column of columns) {
       if (column.type === "file") continue;
+      if (
+        column.required &&
+        column.type !== "boolean" &&
+        (values[column.name] ?? "").trim() === ""
+      ) {
+        found[column.name] = `${column.name} needs a value.`;
+        continue;
+      }
       try {
         const value = parseValue(column.type, values[column.name] ?? "");
         if (value !== null) row[column.name] = value;
@@ -1382,6 +1390,7 @@ function AddRow({
     >
       <form
         id="add-row"
+        noValidate
         className="flex flex-col gap-3"
         onSubmit={(event) => {
           event.preventDefault();
@@ -1424,6 +1433,7 @@ function AddRow({
               label={column.name}
               value={values[column.name] ?? ""}
               options={valueOptions(column, "")}
+              required={column.required}
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
             />
@@ -1459,7 +1469,7 @@ function AddRow({
               name={column.name}
               label={column.name}
               value={values[column.name] ?? ""}
-              required={false}
+              required={column.required}
               {...(column.type === "timestamp" ? { withTime: true } : {})}
               hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}${column.type === "timestamp" ? ", in your time zone." : ""}`}
               error={errors[column.name]}
@@ -1471,7 +1481,7 @@ function AddRow({
               name={column.name}
               label={column.name}
               value={values[column.name] ?? ""}
-              required={false}
+              required={column.required}
               hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}`}
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}
@@ -1482,7 +1492,7 @@ function AddRow({
               name={column.name}
               label={column.name}
               value={values[column.name] ?? ""}
-              required={false}
+              required={column.required}
               hint={`${typeLabel(column.type)}${column.required ? "" : ", optional"}`}
               error={errors[column.name]}
               onChange={(value) => setValues((current) => ({ ...current, [column.name]: value }))}

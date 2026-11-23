@@ -1,3 +1,4 @@
+import { readerLocale } from "@volvel/widgets";
 /**
  * Dates as the kit's date input reads, writes and says them. A day is `{ y, m, d }` with the
  * month from 1; a time is `{ h, mi }`. The text a field holds is a "wall" string, `2026-11-21` or
@@ -74,10 +75,7 @@ export function readWall(text: string | undefined): { day: Ymd; time: Hm | undef
 // ---------------------------------------------------------------------------
 // The person's locale
 
-export function localeOf(): string {
-  if (typeof navigator === "undefined") return "en-US";
-  return navigator.languages?.[0] || navigator.language || "en-US";
-}
+export const localeOf: () => string = readerLocale;
 
 /** In which order the locale writes day, month and year in numbers: `["m", "d", "y"]` in the US. */
 export function dateOrder(locale: string): ("d" | "m" | "y")[] {

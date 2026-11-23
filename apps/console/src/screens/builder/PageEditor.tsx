@@ -10,7 +10,7 @@ import {
   type WidgetIn,
 } from "@volvel/manifest";
 import { focusWidget, GRID, neighbourOf, sizedByHand } from "@volvel/screens";
-import { Button, Closing, EmptyState, edgeShadows, Kbd } from "@volvel/ui";
+import { Button, Closing, EmptyState, edgeShadows, Kbd, Notice } from "@volvel/ui";
 import type { Surface, Tab, WidgetDefinition } from "@volvel/widgets";
 import { Plus, X } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -248,7 +248,7 @@ export function PageEditor({
   /** Someone who may not edit looks at the page: nothing is added, moved or changed, and the drawer is read. */
   readOnly?: boolean;
 }) {
-  const { catalog } = useCatalog(root);
+  const { catalog, error: catalogError } = useCatalog(root);
   const { groups: keyed } = useGroupKeys(root);
   // What each group the rules name is called now: a renamed group keeps its key.
   const groupNames = useMemo(
@@ -900,6 +900,18 @@ export function PageEditor({
     <EditOnPage.Provider value={(id) => setWriting(id)}>
       <EditorShell
         {...shell}
+        notices={
+          <>
+            {shell.notices}
+            {catalogError ? (
+              <Notice tone="danger">
+                The tables and saved queries could not be read, so the widgets here cannot offer
+                them yet: {catalogError} Reload the page, or ask a tenant admin whether you may read
+                them.
+              </Notice>
+            ) : null}
+          </>
+        }
         outline={outline}
         outlineKey={pageInfo?.page.id ?? ""}
         {...(pageInfo ? { outlineLabel: pageInfo.page.title } : {})}

@@ -426,6 +426,19 @@ test("tables and groups that could not be read are said, not taken for missing (
   expect(screen.queryByText(/no longer exists/)).toBeNull();
 });
 
+test("the page editor and the new page dialog say that the tables could not be read (BLD-03)", async () => {
+  const before = globalThis.fetch;
+  vi.stubGlobal("fetch", async (address: string, init?: RequestInit) =>
+    address.includes("/queries/schema")
+      ? new Response(JSON.stringify({ detail: "The service is down.", status: 500 }), {
+          status: 500,
+        })
+      : before(address, init),
+  );
+  await open();
+  expect(await screen.findByText(/The tables and saved queries could not be read/)).toBeTruthy();
+});
+
 test("a table that is not there, or a group that is gone, is said before publishing", async () => {
   withAside({ rules: { seenBy: { groups: ["vanished"] } } });
   (stored.pages[0] as { widgets: PageWidget[] }).widgets.push({
